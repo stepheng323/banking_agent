@@ -36,8 +36,27 @@ class _GraphStub:
 
 
 class _ContextManagerStub:
-    async def load_context_parallel(self, phone_number: str):
-        del phone_number
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def load_context_parallel(
+        self,
+        phone_number: str,
+        *,
+        path_label: str = "planner_path",
+        user: object | None = None,
+        profile_mode: str = "full",
+        beneficiary_mode: str = "full",
+    ):
+        self.calls.append(
+            {
+                "phone_number": phone_number,
+                "path_label": path_label,
+                "user": user,
+                "profile_mode": profile_mode,
+                "beneficiary_mode": beneficiary_mode,
+            }
+        )
         return (
             {
                 "profile": {"id": str(uuid4())},
@@ -240,6 +259,64 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
     )
 
     assert ("orchestrator_semantic_path", {"semantic_path_shape": "semantic_router_direct", "path_label": "direct_path", "phone_number": "2348000000001"}) in events
+
+
+@pytest.mark.asyncio
+async def test_graph_handler_uses_lightweight_hydration_for_fresh_transfer(monkeypatch: pytest.MonkeyPatch) -> None:
+    graph = _GraphStub()
+    context_manager = _ContextManagerStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=context_manager,
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+    handler._cleanup_if_idle = AsyncMock()
+    handler._apply_session_ttl = AsyncMock()
+
+    resolved_user = SimpleNamespace(id="user-1")
+    await handler.invoke(
+        MessageContext(
+            phone_number="2348000000001",
+            text="send 10k to mum",
+            message_id="wamid.transfer.1",
+            channel="telegram",
+            channel_identity="927331985",
+            resolved_user=resolved_user,
+        )
+    )
+
+    assert context_manager.calls == [
+        {
+            "phone_number": "2348000000001",
+            "path_label": "direct_path",
+            "user": resolved_user,
+            "profile_mode": "minimal",
+            "beneficiary_mode": "cache_only",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -447,7 +524,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
             "progress_stage": "query.fetching_transactions",
             "progress_count": 0,
             "visible_progress_sent": False,
-            "typing_policy": "per_outbound_message_with_pre_send_delay",
+            "typing_policy": "explicit_progress_typing_only",
             "typing_visibility_delay_ms": 650,
         },
     ) in events
@@ -516,6 +593,7 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
             inbound_message_id="wamid.33",
             thread_id="whatsapp:2348000000003",
             turn_id="wamid.33",
+            enable_initial_typing=True,
         )
     )
     await asyncio.sleep(0)
@@ -636,6 +714,7 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
             inbound_message_id="wamid.44",
             thread_id="whatsapp:2348000000004",
             turn_id="wamid.44",
+            enable_initial_typing=True,
         )
     )
     await asyncio.sleep(0.01)
@@ -717,6 +796,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
             inbound_message_id="tg.1",
             thread_id="telegram:2348000000006",
             turn_id="tg.1",
+            enable_initial_typing=True,
         )
     )
     task_b = asyncio.create_task(
@@ -728,6 +808,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
             inbound_message_id="tg.2",
             thread_id="telegram:2348000000006",
             turn_id="tg.2",
+            enable_initial_typing=True,
         )
     )
 
@@ -824,6 +905,7 @@ async def test_deduped_progress_attempt_does_not_advance_progress_or_attach_deli
             inbound_message_id="tg.3",
             thread_id="telegram:2348000000007",
             turn_id="tg.3",
+            enable_initial_typing=True,
         )
     )
     await asyncio.sleep(0.01)

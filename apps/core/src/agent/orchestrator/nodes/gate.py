@@ -442,6 +442,11 @@ def _classify_obvious_transfer_request(message_text: str) -> str | None:
     return "fresh_transfer_command"
 
 
+def classify_obvious_transfer_request(message_text: str) -> str | None:
+    """Public helper for pre-graph fast-path hints."""
+    return _classify_obvious_transfer_request(message_text)
+
+
 def _build_query_session_exit_updates(
     state: OrchestratorState,
     *,
@@ -631,6 +636,22 @@ def _has_live_pending_interrupt(state: OrchestratorState) -> bool:
 
     # Active query sessions own their own follow-up semantics and should not pay interrupt-router cost.
     return any(task_type != "query" for task_type in task_types)
+
+
+def _is_numeric_input_interrupt_selection(state: OrchestratorState, message_text: str) -> bool:
+    interrupt = state.pending_interrupt
+    if interrupt is None or getattr(interrupt, "kind", None) != "input":
+        return False
+    if not message_text.strip().isdigit():
+        return False
+
+    task_ids = getattr(interrupt, "task_ids", None) or []
+    if len(task_ids) != 1:
+        return False
+
+    fields_by_task = getattr(interrupt, "fields_by_task", None) or {}
+    required_fields = fields_by_task.get(task_ids[0]) or []
+    return set(required_fields) == {"source_account_id"}
 
 
 def _query_followup_bypass_reason(
@@ -1026,7 +1047,9 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             }
 
     interrupt_kind = getattr(state.pending_interrupt, "kind", None)
-    skip_semantic_router_for_interrupt = live_pending_interrupt and interrupt_kind in {"confirmation", "auth"}
+    skip_semantic_router_for_interrupt = live_pending_interrupt and (
+        interrupt_kind in {"confirmation", "auth"} or _is_numeric_input_interrupt_selection(state, message_text)
+    )
 
     if skip_semantic_router_for_interrupt:
         logger.info(

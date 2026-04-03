@@ -108,6 +108,12 @@ async def _build_dynamic_risk_patch(
     if payload.amount is None:
         return {}
 
+    is_unsaved_recipient = (
+        not payload.beneficiary_id and not payload.resolved_from_saved_beneficiary and not payload.is_self
+    )
+    if not is_unsaved_recipient:
+        return {}
+
     user_id = getattr(worker_context, "user_id", None)
     tx_repo = getattr(worker_context, "transaction_repo", None)
     if not user_id or tx_repo is None:
@@ -129,9 +135,6 @@ async def _build_dynamic_risk_patch(
     except Exception as exc:
         logger.warning("dynamic_risk_threshold_lookup_failed", error=str(exc))
 
-    is_unsaved_recipient = (
-        not payload.beneficiary_id and not payload.resolved_from_saved_beneficiary and not payload.is_self
-    )
     amount = float(payload.amount)
     is_high_risk = bool(is_unsaved_recipient and amount >= threshold)
 

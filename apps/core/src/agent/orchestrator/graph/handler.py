@@ -17,6 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
+from apps.core.src.agent.orchestrator.nodes.gate import classify_obvious_transfer_request
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from apps.core.src.agent.orchestrator.progress import (
     MAX_PROGRESS_MESSAGES,
@@ -316,18 +317,23 @@ class OrchestratorGraphHandler:
         inbound_message_id: str | None,
         thread_id: str,
         turn_id: str,
+        enable_initial_typing: bool,
     ) -> None:
         deduped_progress_keys: set[str] = set()
 
-        try:
-            await enqueue_outbox_typing(
-                self.publisher,
-                phone_number,
-                channel,
-                metadata={"inbound_message_id": inbound_message_id, "dedupe_key": f"{thread_id}:{turn_id}:typing:0"},
-            )
-        except Exception as exc:
-            logger.warning("initial_typing_indicator_failed", error=str(exc))
+        if enable_initial_typing:
+            try:
+                await enqueue_outbox_typing(
+                    self.publisher,
+                    phone_number,
+                    channel,
+                    metadata={
+                        "inbound_message_id": inbound_message_id,
+                        "dedupe_key": f"{thread_id}:{turn_id}:typing:0",
+                    },
+                )
+            except Exception as exc:
+                logger.warning("initial_typing_indicator_failed", error=str(exc))
 
         try:
             while True:
@@ -410,11 +416,20 @@ class OrchestratorGraphHandler:
             turn_start = time.perf_counter()
 
             phone_number = context.phone_number
-            path_label = (
-                "media_path"
-                if (getattr(context, "is_media_input", False) or bool(context.image_data))
-                else "planner_path"
-            )
+            pre_route_transfer_reason = None
+            path_label = "planner_path"
+            hydration_profile_mode: Literal["full", "minimal"] = "full"
+            hydration_beneficiary_mode: Literal["full", "cache_only"] = "full"
+            enable_initial_typing = True
+            if getattr(context, "is_media_input", False) or bool(context.image_data):
+                path_label = "media_path"
+            else:
+                pre_route_transfer_reason = classify_obvious_transfer_request(context.text)
+                if pre_route_transfer_reason:
+                    path_label = "direct_path"
+                    hydration_profile_mode = "minimal"
+                    hydration_beneficiary_mode = "cache_only"
+                    enable_initial_typing = False
 
             try:
                 inputs = {
@@ -435,6 +450,9 @@ class OrchestratorGraphHandler:
                     user_ctx, _, _, _ = await self.context_manager.load_context_parallel(
                         phone_number,
                         path_label=path_label,
+                        user=context.resolved_user,
+                        profile_mode=hydration_profile_mode,
+                        beneficiary_mode=hydration_beneficiary_mode,
                     )
                 except TypeError:
                     user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
@@ -448,6 +466,7 @@ class OrchestratorGraphHandler:
                     "language": LocaleManager.normalize(user_ctx.get("language")).value,
                     "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
                     "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
+                    "beneficiary_context_mode": hydration_beneficiary_mode,
                 }
 
                 inputs["loaded_context"] = loaded_context
@@ -466,6 +485,7 @@ class OrchestratorGraphHandler:
                         inbound_message_id=context.message_id,
                         thread_id=thread_id,
                         turn_id=turn_id,
+                        enable_initial_typing=enable_initial_typing,
                     ),
                     name="orchestrator_progress_updates",
                 )
@@ -532,9 +552,7 @@ class OrchestratorGraphHandler:
                     progress_count=progress_snapshot.progress_count,
                     visible_progress_sent=progress_snapshot.progress_count > 0,
                     typing_policy=(
-                        "per_outbound_message_with_pre_send_delay"
-                        if typing_visibility_delay_ms > 0
-                        else "per_outbound_message"
+                        "explicit_progress_typing_only" if enable_initial_typing else "suppressed_for_fastpath"
                     ),
                     typing_visibility_delay_ms=typing_visibility_delay_ms,
                 )

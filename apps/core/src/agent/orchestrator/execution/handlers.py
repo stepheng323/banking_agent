@@ -24,6 +24,7 @@ from shared.utils.serialization import sqlalchemy_to_dict
 logger = get_logger(__name__)
 
 SessionState = Literal["WAITING_FOR_INPUT", "WAITING_FOR_AUTH", "RUNNING"]
+_RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}
 
 
 class ExecutionAggregation:
@@ -87,6 +88,15 @@ def _normalize_beneficiary_rows(rows: list[Any]) -> list[dict[str, Any]]:
         else:
             normalized.append(sqlalchemy_to_dict(row))
     return normalized
+
+
+def _recipient_supports_targeted_beneficiary_lookup(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    if not normalized:
+        return False
+    return normalized not in _RECIPIENT_PRONOUN_TOKENS
 
 
 def _is_resume_prompt_frame(frame: ContextFrame) -> bool:
@@ -306,6 +316,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
     recipient_name = task.payload.get("recipient_name")
     beneficiary_repo = ctx.config["configurable"].get("beneficiary_repo")
     user_id = ctx.state.loaded_context.get("user_id")
+    beneficiary_context_mode = str(ctx.state.loaded_context.get("beneficiary_context_mode") or "full")
     if (
         isinstance(recipient_name, str)
         and recipient_name.strip()
@@ -314,7 +325,24 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         and user_id
     ):
         try:
-            fetched_rows = await beneficiary_repo.get_by_user(str(user_id), beneficiary_type="transfer")
+            fetched_rows: list[Any] = []
+            reload_mode = "full"
+            if (
+                beneficiary_context_mode == "cache_only"
+                and _recipient_supports_targeted_beneficiary_lookup(recipient_name)
+                and hasattr(beneficiary_repo, "search_by_name")
+            ):
+                fetched_rows = await beneficiary_repo.search_by_name(
+                    str(user_id),
+                    recipient_name.strip(),
+                    beneficiary_type="transfer",
+                )
+                reload_mode = "targeted"
+
+            if not fetched_rows:
+                fetched_rows = await beneficiary_repo.get_by_user(str(user_id), beneficiary_type="transfer")
+                reload_mode = "full" if reload_mode == "full" else "targeted_fallback_full"
+
             beneficiaries = _normalize_beneficiary_rows(fetched_rows if isinstance(fetched_rows, list) else [])
             if isinstance(ctx.state.loaded_context, dict):
                 ctx.state.loaded_context["beneficiaries"] = beneficiaries
@@ -322,6 +350,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
                 "transfer_beneficiaries_reloaded_for_resolution",
                 user_id=str(user_id),
                 fetched_count=len(beneficiaries),
+                reload_mode=reload_mode,
             )
         except Exception as e:
             logger.warning(

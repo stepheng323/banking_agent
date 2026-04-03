@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any, cast
@@ -124,3 +125,65 @@ async def test_delivery_service_returns_deduped_resumed_status(monkeypatch: pyte
 
     assert result == DeliveryAttemptResult(status="deduped_resumed", message_ids=("tg-msg-2",))
     assert presenter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_delivery_service_defers_non_strict_actionable_persist(monkeypatch: pytest.MonkeyPatch) -> None:
+    presenter = _PresenterStub(message_ids=["tg-msg-3"])
+    service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
+    service.redis = _RedisStub()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _persist(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        started.set()
+        await release.wait()
+
+    monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
+    monkeypatch.setattr(service, "_persist_actionable_if_any", _persist)
+
+    result = await service.deliver_intents(
+        phone_number="2348000000000",
+        channel="telegram",
+        intents=[Say(text="Confirm transfer", actionable_payload={"kind": "confirm"})],
+    )
+
+    assert result == DeliveryAttemptResult(status="delivered", message_ids=("tg-msg-3",))
+    assert started.is_set() is False
+    await asyncio.sleep(0)
+    assert started.is_set() is True
+    assert service._background_tasks
+
+    release.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not service._background_tasks
+
+
+@pytest.mark.asyncio
+async def test_delivery_service_keeps_strict_actionable_persist_inline(monkeypatch: pytest.MonkeyPatch) -> None:
+    presenter = _PresenterStub(message_ids=["tg-msg-4"])
+    service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
+    service.redis = _RedisStub()
+    call_order: list[str] = []
+
+    async def _persist(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        call_order.append("persist_started")
+        await asyncio.sleep(0)
+        call_order.append("persist_finished")
+
+    monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
+    monkeypatch.setattr(service, "_persist_actionable_if_any", _persist)
+
+    result = await service.deliver_intents(
+        phone_number="2348000000000",
+        channel="telegram",
+        intents=[Say(text="Send receipt", actionable_payload={"transaction_id": "tx-1"})],
+        strict_actionable=True,
+    )
+
+    assert result == DeliveryAttemptResult(status="delivered", message_ids=("tg-msg-4",))
+    assert call_order == ["persist_started", "persist_finished"]
+    assert not service._background_tasks

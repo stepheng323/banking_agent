@@ -3,7 +3,7 @@
 import asyncio
 import json
 import time
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -64,6 +64,8 @@ class ContextManager:
         user: Any | None = None,
         cached_data: dict[str, Any],
         path_label: str,
+        profile_mode: Literal["full", "minimal"] = "full",
+        beneficiary_mode: Literal["full", "cache_only"] = "full",
     ) -> dict[str, Any]:
         cache_profile = cached_data.get("profile")
         cache_accounts = cached_data.get("accounts")
@@ -85,7 +87,12 @@ class ContextManager:
             }
 
         profile_obj = user if user is not None else cache_profile
-        if profile_obj is None and self.user_repo:
+        needs_accounts_fetch = cache_accounts is None
+        needs_beneficiaries_fetch = cache_beneficiaries is None and beneficiary_mode == "full"
+        needs_profile_for_collection_fetch = profile_obj is None and (needs_accounts_fetch or needs_beneficiaries_fetch)
+        if profile_obj is None and self.user_repo and (
+            profile_mode == "full" or needs_profile_for_collection_fetch
+        ):
             profile_start = time.perf_counter()
             profile_obj = await self.user_repo.get_by_phone(phone_number)
             self._log_latency_span(
@@ -114,7 +121,7 @@ class ContextManager:
         fetch_ops: list[tuple[str, Any]] = []
         if user_id and cache_accounts is None and self.account_repo:
             fetch_ops.append(("accounts", _timed_fetch("accounts", self.account_repo.get_by_user(user_id))))
-        if user_id and cache_beneficiaries is None and self.beneficiary_repo:
+        if user_id and cache_beneficiaries is None and beneficiary_mode == "full" and self.beneficiary_repo:
             fetch_ops.append(
                 ("beneficiaries", _timed_fetch("beneficiaries", self.beneficiary_repo.get_by_user(user_id)))
             )
@@ -142,7 +149,7 @@ class ContextManager:
 
         cache_profile_write = safe_profile is not None and cache_profile is None
         cache_accounts_write = bool(safe_accounts) and cache_accounts is None
-        cache_beneficiaries_write = cache_beneficiaries is None
+        cache_beneficiaries_write = cache_beneficiaries is None and beneficiary_mode == "full"
         if cache_profile_write or cache_accounts_write or cache_beneficiaries_write:
             write_start = time.perf_counter()
             await self.data_cache.set_user_data_snapshot(
@@ -174,6 +181,8 @@ class ContextManager:
         *,
         cached_data: dict[str, Any] | None = None,
         path_label: str = "planner_path",
+        profile_mode: Literal["full", "minimal"] = "full",
+        beneficiary_mode: Literal["full", "cache_only"] = "full",
     ) -> dict[str, Any]:
         """
         Load user context from cache or database.
@@ -190,6 +199,8 @@ class ContextManager:
             user=user,
             cached_data=cached_data,
             path_label=path_label,
+            profile_mode=profile_mode,
+            beneficiary_mode=beneficiary_mode,
         )
 
     async def get_user_accounts(self, phone_number: str) -> list[dict[str, Any]]:
@@ -379,6 +390,9 @@ class ContextManager:
         phone_number: str,
         *,
         path_label: str = "planner_path",
+        user: Any | None = None,
+        profile_mode: Literal["full", "minimal"] = "full",
+        beneficiary_mode: Literal["full", "cache_only"] = "full",
     ) -> tuple[dict[str, Any], dict[str, Any] | None, str | None, str | None]:
         """
         Load all context data in parallel using Redis pipeline for optimal performance.
@@ -408,6 +422,7 @@ class ContextManager:
                 f"cache:user:profile:{phone_number}",
                 f"cache:user:accounts:{phone_number}",
                 f"cache:user:beneficiaries:{phone_number}",
+                f"cache:user:snapshot:{phone_number}",
             ]
 
             cache_fetch_start = time.perf_counter()
@@ -416,7 +431,7 @@ class ContextManager:
                 pipe.get(key)
 
             pipe.lrange(keys[4], -10, -1)
-            for key in keys[5:8]:
+            for key in keys[5:9]:
                 pipe.get(key)
 
             results = await pipe.execute()
@@ -427,15 +442,57 @@ class ContextManager:
                 path_label=path_label,
             )
 
-            cached_user_data: dict[str, Any] = {
-                "profile": json.loads(results[5]) if results[5] else None,
-                "accounts": json.loads(results[6]) if results[6] else None,
-                "beneficiaries": json.loads(results[7]) if results[7] else None,
-            }
+            cached_user_data, snapshot_backfill = self.data_cache.decode_user_data_fields(
+                profile_raw=results[5],
+                accounts_raw=results[6],
+                beneficiaries_raw=results[7],
+                snapshot_raw=results[8],
+            )
+            if any(snapshot_backfill.values()):
+                logger.info(
+                    "context_user_data_snapshot_backfill",
+                    phone=phone_number,
+                    profile=snapshot_backfill["profile"],
+                    accounts=snapshot_backfill["accounts"],
+                    beneficiaries=snapshot_backfill["beneficiaries"],
+                )
+                await self.data_cache.set_user_data_snapshot(
+                    phone_number,
+                    profile=cached_user_data["profile"] if isinstance(cached_user_data["profile"], dict) else None,
+                    cache_profile=snapshot_backfill["profile"],
+                    accounts=cached_user_data["accounts"] if isinstance(cached_user_data["accounts"], list) else None,
+                    cache_accounts=snapshot_backfill["accounts"],
+                    beneficiaries=(
+                        cached_user_data["beneficiaries"]
+                        if isinstance(cached_user_data["beneficiaries"], list)
+                        else None
+                    ),
+                    cache_beneficiaries=snapshot_backfill["beneficiaries"],
+                    refresh_snapshot=False,
+                )
+
+            if (
+                cached_user_data.get("profile") is None
+                and cached_user_data.get("accounts") is None
+                and cached_user_data.get("beneficiaries") is None
+                and any(results[index] for index in range(0, 5))
+            ):
+                logger.info(
+                    "context_user_data_restart_gap",
+                    phone=phone_number,
+                    has_conversation_state=bool(results[0]),
+                    has_last_response=bool(results[1]),
+                    has_beneficiary_suggestion=bool(results[2]),
+                    has_language=bool(results[3]),
+                    has_history=bool(results[4]),
+                )
             user_ctx = await self._hydrate_user_context_from_cache_snapshot(
                 phone_number,
+                user=user,
                 cached_data=cached_user_data,
                 path_label=path_label,
+                profile_mode=profile_mode,
+                beneficiary_mode=beneficiary_mode,
             )
 
             conversation_state = None
@@ -464,7 +521,13 @@ class ContextManager:
 
         except Exception as e:
             logger.error("error_in_parallel_context", phone=phone_number, error=str(e))
-            user_ctx = await self.load_user_context(phone_number, path_label=path_label)
+            user_ctx = await self.load_user_context(
+                phone_number,
+                user=user,
+                path_label=path_label,
+                profile_mode=profile_mode,
+                beneficiary_mode=beneficiary_mode,
+            )
             conversation_state = await self.get_conversation_state(phone_number)
             last_response = await self.get_last_response(phone_number)
             language = await self.get_user_language(phone_number)

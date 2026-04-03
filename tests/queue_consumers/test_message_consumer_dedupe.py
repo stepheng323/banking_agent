@@ -1,6 +1,7 @@
 """Message consumer dedupe tests."""
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -23,9 +24,21 @@ class _RateLimiterAllow:
 class _UserRepoStub:
     def __init__(self, db: Any | None = None) -> None:
         self.db = db or SimpleNamespace(rollback=asyncio.sleep, commit=asyncio.sleep, close=asyncio.sleep)
+        self.channel_identity_calls = 0
+        self.phone_calls = 0
 
     async def get_by_channel_identity(self, channel: str, identity: str) -> Any:
         del channel, identity
+        self.channel_identity_calls += 1
+        return SimpleNamespace(
+            id="u1",
+            phone_number="2348162511023",
+            onboarding_status=UserOnboardingStatusEnum.ONBOARDING_COMPLETED,
+        )
+
+    async def get_by_phone(self, phone_number: str) -> Any:
+        del phone_number
+        self.phone_calls += 1
         return SimpleNamespace(
             id="u1",
             phone_number="2348162511023",
@@ -100,6 +113,7 @@ class _OrchestratorStub:
         self.output = output
         self.resume_output = resume_output or {"text": "ok", "outbox": []}
         self.invoke_calls = 0
+        self.last_user: Any | None = None
         self.resume_calls: list[dict[str, str]] = []
 
     async def invoke(
@@ -113,9 +127,11 @@ class _OrchestratorStub:
         quoted_message_id: str | None = None,
         channel: str = "whatsapp",
         channel_identity: str | None = None,
+        user: Any | None = None,
     ) -> dict[str, Any]:
         del phone_number, text, message_id, message_type, media_id, quoted_message_id, channel, channel_identity
         self.invoke_calls += 1
+        self.last_user = user
         if self.should_fail:
             raise RuntimeError("invoke failed")
         if self.output is not None:
@@ -155,6 +171,33 @@ def _message(message_id: str = "wamid-1") -> ChannelMessage:
     )
 
 
+def _telegram_message(message_id: str = "tg-1") -> ChannelMessage:
+    return ChannelMessage(
+        message_id=message_id,
+        channel_user_id="927331985",
+        message_type=MessageType.TEXT,
+        text="send 10k to mum",
+        flow_data=None,
+        media_id=None,
+        mime_type=None,
+        quoted_message_id=None,
+        timestamp=datetime.now(UTC),
+        channel="telegram",
+    )
+
+
+class _RedisStub:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self.values.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        del ex
+        self.values[key] = value
+
+
 @pytest.mark.asyncio
 async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     context_manager = _ContextManagerStub(should_claim=True)
@@ -189,6 +232,72 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
     assert second["status"] == "duplicate_ignored"
     assert orchestrator.invoke_calls == 1
     assert len(enqueue_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_passes_resolved_user_to_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    user_repository = _UserRepoStub()
+    consumer = MessageConsumer(
+        user_repository=user_repository,
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    await consumer._handle_message(_message("wamid-user-pass"))
+
+    assert orchestrator.last_user is not None
+    assert getattr(orchestrator.last_user, "phone_number", None) == "2348162511023"
+    assert user_repository.phone_calls == 1
+    assert user_repository.channel_identity_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_uses_cached_telegram_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    user_repository = _UserRepoStub()
+    consumer = MessageConsumer(
+        user_repository=user_repository,
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    redis_stub = _RedisStub()
+    redis_stub.values["cache:channel_identity:telegram:927331985"] = json.dumps(
+        {
+            "id": "u1",
+            "phone_number": "2348162511023",
+            "onboarding_status": UserOnboardingStatusEnum.ONBOARDING_COMPLETED.value,
+            "full_name": "Olamide Samuel",
+        }
+    )
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.RedisClient.get_client", lambda: redis_stub)
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    await consumer._handle_message(_telegram_message("tg-cache-hit"))
+
+    assert orchestrator.last_user is not None
+    assert getattr(orchestrator.last_user, "phone_number", None) == "2348162511023"
+    assert user_repository.channel_identity_calls == 0
+    assert user_repository.phone_calls == 0
 
 
 @pytest.mark.asyncio

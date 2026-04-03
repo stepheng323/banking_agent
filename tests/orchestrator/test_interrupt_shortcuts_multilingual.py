@@ -65,7 +65,7 @@ def test_status_query_shortcuts(locale: LocaleCode, text: str, status_type: str)
 
 def test_confirmation_guardrails_block_long_or_structured_messages() -> None:
     long_text = "yes " * 20
-    structured_text = "change memo to rent"
+    structured_text = "change beneficiary to tolu"
     assert resolve_interrupt_shortcut(text=long_text, interrupt_kind="confirmation", locale=LocaleCode.EN) is None
     assert resolve_interrupt_shortcut(text=structured_text, interrupt_kind="confirmation", locale=LocaleCode.EN) is None
 
@@ -116,6 +116,35 @@ def test_confirmation_bank_switch_stays_in_flow() -> None:
     )
     assert route is not None
     assert route.decision == "continue_flow"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "add that its for march salary",
+        "for rent",
+        "narration should be school fees",
+    ],
+)
+def test_confirmation_narration_edits_stay_in_flow(text: str) -> None:
+    route = resolve_interrupt_shortcut(
+        text=text,
+        interrupt_kind="confirmation",
+        locale=LocaleCode.EN,
+    )
+    assert route is not None
+    assert route.decision == "continue_flow"
+
+
+@pytest.mark.parametrize("text", ["repeat that", "show it again", "what do you need again"])
+def test_interrupt_restate_shortcuts_route_as_status_queries(text: str) -> None:
+    route = resolve_interrupt_shortcut(
+        text=text,
+        interrupt_kind="confirmation",
+        locale=LocaleCode.EN,
+    )
+    assert route is not None
+    assert route.decision == "status_query"
 
 
 def test_confirmation_correction_without_transfer_cue_falls_back_to_llm() -> None:

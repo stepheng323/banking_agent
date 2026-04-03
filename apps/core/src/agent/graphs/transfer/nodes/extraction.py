@@ -52,6 +52,15 @@ _CONFIRMATION_BANK_SWITCH_RE = re.compile(
     r"^(?:(?:use|switch(?:\s+to)?|change(?:\s+to)?)\s+)?[a-z0-9&' ]+(?:\s+bank)?(?:\s+instead)?$",
     re.IGNORECASE,
 )
+_CONFIRMATION_NARRATION_RE = re.compile(
+    r"^(?:"
+    r"(?:add\s+that\s+)?(?:it'?s|its|it\s+is|this\s+is)\s+for\s+(?P<for_text>.+)"
+    r"|for\s+(?P<bare_for_text>.+)"
+    r"|(?:narration|memo|note|description|reason|purpose)(?:\s+(?:should\s+be|is|as|to\s+be|to))?[:\s]+(?P<label_text>.+)"
+    r"|use\s+(?P<use_text>.+?)\s+as\s+(?:narration|memo|note|description)"
+    r")$",
+    re.IGNORECASE,
+)
 
 
 def _canonical_beneficiary_id(value: str) -> str:
@@ -342,6 +351,22 @@ def _build_confirmation_edit_description(current_payload: TransferPayload) -> st
     return f"Transfer to {str(name).title()}"
 
 
+def _normalize_note_text(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value.strip())
+    return normalized.strip(" .,!?:;\"'`~()[]{}")
+
+
+def _looks_like_explicit_bank_switch(value: str) -> bool:
+    normalized = _normalize_user_message(value)
+    if not normalized:
+        return False
+    return bool(
+        re.search(r"\b(?:use|switch|change)\b", normalized)
+        or normalized.endswith(" bank")
+        or normalized.endswith(" instead")
+    )
+
+
 def _parse_single_confirmation_amount_edit(
     user_message: str,
     current_payload: TransferPayload,
@@ -450,6 +475,47 @@ def _parse_single_confirmation_source_bank_edit(
     return patch
 
 
+def _parse_single_confirmation_narration_edit(
+    user_message: str,
+    current_payload: TransferPayload,
+) -> dict[str, Any] | None:
+    normalized = _normalize_user_message(user_message)
+    if not normalized:
+        return None
+
+    match = _CONFIRMATION_NARRATION_RE.fullmatch(normalized)
+    if not match:
+        return None
+
+    raw_note = next((group for group in match.groups() if group), "")
+    note = _normalize_note_text(raw_note)
+    if not note:
+        return None
+    if note.isdigit():
+        return None
+    if note in {"all", "everything", "half"}:
+        return None
+    if _parse_amount_input(note) is not None:
+        return None
+    if _CONFIRMATION_PERCENTAGE_RE.fullmatch(note):
+        return None
+    if _looks_like_explicit_bank_switch(note):
+        return None
+    if _parse_account_and_bank_input(note) is not None:
+        return None
+
+    patch: dict[str, Any] = {
+        "narration": note,
+        "user_note": note,
+        "confirmation": {"confirmed": False},
+        "transition_acknowledgment": "Added narration.",
+    }
+    description = _build_confirmation_edit_description(current_payload)
+    if description:
+        patch["description"] = description
+    return patch
+
+
 def _parse_single_confirmation_transfer_edit(
     user_message: str,
     current_payload: TransferPayload,
@@ -467,7 +533,11 @@ def _parse_single_confirmation_transfer_edit(
         return amount_patch
 
     accounts = context.accounts if isinstance(context.accounts, list) else []
-    return _parse_single_confirmation_source_bank_edit(user_message, current_payload, accounts)
+    source_bank_patch = _parse_single_confirmation_source_bank_edit(user_message, current_payload, accounts)
+    if source_bank_patch is not None:
+        return source_bank_patch
+
+    return _parse_single_confirmation_narration_edit(user_message, current_payload)
 
 
 class ExtractionStep(TransferStep):
@@ -495,6 +565,15 @@ class ExtractionStep(TransferStep):
 
         raw_required_fields = getattr(worker_context, "required_fields", [])
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
+        if (
+            gates.confirmation_confirmed
+            and data.confirmation.confirmed
+            and not required_fields
+            and data.recipient_account
+            and (data.source_account_id or data.source_bank_name)
+        ):
+            logger.info("skip_transfer_extraction_confirmed_resume")
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
         awaiting_amount = "amount" in required_fields
         if awaiting_amount and data.suggested_amount:
             reply = self.user_message.strip()

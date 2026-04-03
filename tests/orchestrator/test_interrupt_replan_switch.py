@@ -34,6 +34,7 @@ class _MockPlanner:
         self._output = output
         self._route = route
         self._semantic_route = semantic_route
+        self.route_calls = 0
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
@@ -46,6 +47,7 @@ class _MockPlanner:
         context: str = "None",
     ) -> InterruptRouteDecision:
         del phone_number, text, context
+        self.route_calls += 1
         if self._route is None:
             return InterruptRouteDecision(
                 decision="continue_flow",
@@ -88,6 +90,7 @@ class _RouteOnlyPlanner:
     def __init__(self, route: InterruptRouteDecision, semantic_route: SemanticRouteDecision | None = None) -> None:
         self._route = route
         self._semantic_route = semantic_route
+        self.route_calls = 0
 
     async def route_pending_input(
         self,
@@ -96,6 +99,7 @@ class _RouteOnlyPlanner:
         context: str = "None",
     ) -> InterruptRouteDecision:
         del phone_number, text, context
+        self.route_calls += 1
         return self._route
 
     async def route_semantic_turn(
@@ -711,6 +715,166 @@ async def test_confirmation_amount_shortcut_skips_interrupt_router() -> None:
         "amount": 10000,
         "recipient_name": "Mum",
     }
+
+
+@pytest.mark.asyncio
+async def test_confirmation_exact_repeat_shortcut_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_repeat_1",
+        phone_number="2348066666678",
+        channel="whatsapp",
+        last_message_text="send 10k to mum",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "message": "send 10k to mum",
+                    "instruction": "send 10k to mum",
+                    "idempotency_key": "idem-1",
+                    "confirmation": {
+                        "summary": "Confirm transfer to Mum",
+                        "snapshot": {"amount": 10000, "recipient_name": "Mum"},
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FailIfRouterCalledPlanner(),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
+async def test_input_numeric_source_selection_shortcut_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_shortcut_input_1",
+        phone_number="2348066666699",
+        channel="whatsapp",
+        last_message_text="1",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["source_account_id"]},
+            prompt="Which account should I use?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "confirmation": {
+                        "summary": "Confirm transfer to Mum",
+                        "snapshot": {"amount": 30000, "recipient_name": "Mum"},
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FailIfRouterCalledPlanner(),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload["confirmation"] == {}
+
+
+@pytest.mark.asyncio
+async def test_input_account_entry_shortcut_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_shortcut_input_2",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="8162511023",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_account"]},
+            prompt="What account number should I use?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FailIfRouterCalledPlanner(),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_confirmation_ambiguous_message_still_falls_back_to_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_router_fallback_1",
+        phone_number="2348066666701",
+        channel="whatsapp",
+        last_message_text="hello, maybe later but what do you think",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "message": "send 10k to mum",
+                    "instruction": "send 10k to mum",
+                    "confirmation": {"summary": "Confirm transfer to Mum"},
+                },
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.7,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="router fallback",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
 
 
 def _build_multi_transfer_confirmation_state(message_text: str) -> OrchestratorState:

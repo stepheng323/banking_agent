@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import time
 from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -79,6 +81,25 @@ class DeliveryService:
                 "telegram": DisabledMessagingClient("telegram"),
             }
         self.redis = RedisClient.get_client()
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    @staticmethod
+    def _log_latency_span(
+        *,
+        span: str,
+        duration_ms: float,
+        phone_number: str,
+        channel: str,
+        intent_count: int,
+    ) -> None:
+        logger.info(
+            "perf_timer_latency",
+            gate=span,
+            duration_ms=round(duration_ms, 2),
+            phone_number=phone_number,
+            channel=channel,
+            intent_count=intent_count,
+        )
 
     async def deliver_text(
         self,
@@ -143,7 +164,15 @@ class DeliveryService:
             capabilities={"flows": getattr(client, "supports_flows", True)},
             metadata=metadata or {},
         )
+        present_start = time.perf_counter()
         result = await presenter.present(ui_intents, context)
+        self._log_latency_span(
+            span="delivery_presenter_present",
+            duration_ms=(time.perf_counter() - present_start) * 1000,
+            phone_number=phone_number,
+            channel=channel,
+            intent_count=len(ui_intents),
+        )
         if not result.success:
             if ledger_key:
                 await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "unknown"}))
@@ -159,12 +188,28 @@ class DeliveryService:
                 )
             )
 
-        await self._persist_actionable_if_any(
+        actionable_start = time.perf_counter()
+        if strict_actionable:
+            await self._persist_actionable_if_any(
+                phone_number=phone_number,
+                channel=channel,
+                intents=ui_intents,
+                message_ids=result.message_ids,
+                strict_actionable=True,
+            )
+        else:
+            self._schedule_actionable_persist(
+                phone_number=phone_number,
+                channel=channel,
+                intents=ui_intents,
+                message_ids=result.message_ids,
+            )
+        self._log_latency_span(
+            span="delivery_actionable_persist",
+            duration_ms=(time.perf_counter() - actionable_start) * 1000,
             phone_number=phone_number,
             channel=channel,
-            intents=ui_intents,
-            message_ids=result.message_ids,
-            strict_actionable=strict_actionable,
+            intent_count=len(ui_intents),
         )
 
         if ledger_key:
@@ -241,13 +286,21 @@ class DeliveryService:
             except json.JSONDecodeError:
                 message_ids = []
 
-        await self._persist_actionable_if_any(
-            phone_number=phone_number,
-            channel=channel,
-            intents=intents,
-            message_ids=message_ids,
-            strict_actionable=strict_actionable,
-        )
+        if strict_actionable:
+            await self._persist_actionable_if_any(
+                phone_number=phone_number,
+                channel=channel,
+                intents=intents,
+                message_ids=message_ids,
+                strict_actionable=True,
+            )
+        else:
+            self._schedule_actionable_persist(
+                phone_number=phone_number,
+                channel=channel,
+                intents=intents,
+                message_ids=message_ids,
+            )
         await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "completed"}))
         logger.info("delivery_dedupe_resume_completed", ledger_key=ledger_key)
         self._log_progress_dedupe(
@@ -275,6 +328,53 @@ class DeliveryService:
             turn_id=metadata.get("progress_turn_id"),
             dedupe_key=metadata.get("dedupe_key"),
         )
+
+    def _schedule_actionable_persist(
+        self,
+        *,
+        phone_number: str,
+        channel: str,
+        intents: list[UiIntent],
+        message_ids: list[str],
+    ) -> None:
+        actionable_payload = next((intent.actionable_payload for intent in intents if intent.actionable_payload), None)
+        if not actionable_payload or not message_ids:
+            return
+
+        async def _run() -> None:
+            background_start = time.perf_counter()
+            try:
+                await self._persist_actionable_if_any(
+                    phone_number=phone_number,
+                    channel=channel,
+                    intents=intents,
+                    message_ids=message_ids,
+                    strict_actionable=False,
+                )
+                self._log_latency_span(
+                    span="delivery_actionable_persist_background",
+                    duration_ms=(time.perf_counter() - background_start) * 1000,
+                    phone_number=phone_number,
+                    channel=channel,
+                    intent_count=len(intents),
+                )
+            except Exception as exc:
+                logger.error(
+                    "delivery_actionable_background_failed",
+                    channel=channel,
+                    phone_number=phone_number,
+                    message_ids=message_ids,
+                    error=str(exc),
+                    exc_info=True,
+                )
+
+        task = asyncio.create_task(_run())
+        self._background_tasks.add(task)
+
+        def _cleanup(completed: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(completed)
+
+        task.add_done_callback(_cleanup)
 
     async def _persist_actionable_if_any(
         self,

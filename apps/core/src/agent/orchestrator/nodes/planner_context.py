@@ -512,18 +512,9 @@ def build_interrupt_context_from_summary(
         f"RECENT_DOMAIN_FOCUS={summary.recent_domain_focus or 'none'}",
         f"RECENT_ANSWER_FOCUS={summary.recent_answer_focus or 'none'}",
     ]
-    if summary.account_lines:
-        shared_lines.append("ACCOUNTS:")
-        shared_lines.extend(f"- {line}" for line in summary.account_lines[:2])
-    if summary.beneficiary_lines:
-        shared_lines.append("BENEFICIARIES:")
-        shared_lines.extend(f"- {line}" for line in summary.beneficiary_lines[:2])
     if summary.query_session_summary and summary.query_session_active:
         shared_lines.append("QUERY_SESSION:")
         shared_lines.append(_clip_text(summary.query_session_summary, INTERRUPT_CONTEXT_SECTION_MAX_CHARS))
-    if summary.history_lines:
-        shared_lines.append("RECENT_CHAT:")
-        shared_lines.extend(f"- {line}" for line in summary.history_lines[-2:])
     if summary.active_flow_summary:
         active_lines = [summary.active_flow_summary]
         if summary.active_flow_interrupt_kind:

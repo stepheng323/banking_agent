@@ -62,6 +62,7 @@ class OrchestratorAgent:
         quoted_message_id: str | None = None,
         channel: str = "whatsapp",
         channel_identity: str | None = None,
+        user: Any | None = None,
     ) -> dict[str, Any]:
         """Invoke the orchestrator with a user message."""
         self.message_type = message_type
@@ -85,6 +86,7 @@ class OrchestratorAgent:
             quoted_message_id=quoted_message_id,
             channel=channel,
             channel_identity=channel_identity,
+            resolved_user=user,
         )
 
         result = await self.orchestrator_handler.invoke(context)

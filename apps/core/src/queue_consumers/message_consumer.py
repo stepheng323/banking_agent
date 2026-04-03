@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
@@ -17,6 +18,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
 )
 from apps.core.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.cache.rate_limiter import message_rate_limiter
+from shared.cache.redis_client import RedisClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
@@ -27,6 +29,7 @@ from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
 _TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data"}
+_IDENTITY_CACHE_TTL_SECONDS = 3600
 RuntimeBundleFactory = Callable[
     [],
     tuple[UserRepository, OnboardingExecutor, OrchestratorAgent],
@@ -63,6 +66,115 @@ class MessageConsumer:
             return self.user_repository, self.onboarding_executor, self.orchestrator
 
         return self.runtime_bundle_factory()
+
+    @staticmethod
+    def _identity_cache_key(channel: str, channel_user_id: str) -> str:
+        return f"cache:channel_identity:{channel}:{channel_user_id}"
+
+    @staticmethod
+    def _looks_like_phone_number(value: str) -> bool:
+        normalized = value.strip()
+        return normalized.isdigit() and 10 <= len(normalized) <= 15
+
+    @staticmethod
+    def _serialize_cached_identity(user: Any) -> dict[str, str | None]:
+        return {
+            "id": str(getattr(user, "id", "")) or None,
+            "phone_number": str(getattr(user, "phone_number", "")) or None,
+            "onboarding_status": str(getattr(user, "onboarding_status", "")) or None,
+            "full_name": str(getattr(user, "full_name", "")) or None,
+        }
+
+    @staticmethod
+    def _hydrate_cached_identity(payload: dict[str, Any]) -> Any | None:
+        phone_number = payload.get("phone_number")
+        if not isinstance(phone_number, str) or not phone_number:
+            return None
+        return SimpleNamespace(
+            id=payload.get("id"),
+            phone_number=phone_number,
+            onboarding_status=payload.get("onboarding_status"),
+            full_name=payload.get("full_name"),
+        )
+
+    async def _load_user_from_identity_cache(self, channel: str, channel_user_id: str) -> Any | None:
+        if channel != "telegram":
+            return None
+        try:
+            redis_client = RedisClient.get_client()
+            cached = await redis_client.get(self._identity_cache_key(channel, channel_user_id))
+            if not cached:
+                return None
+            import json
+
+            payload = json.loads(cached)
+            user = self._hydrate_cached_identity(payload if isinstance(payload, dict) else {})
+            if user is not None:
+                logger.info("channel_identity_cache_hit", channel=channel, channel_user_id=channel_user_id)
+            return user
+        except Exception as exc:
+            logger.warning(
+                "channel_identity_cache_read_error",
+                channel=channel,
+                channel_user_id=channel_user_id,
+                error=str(exc),
+            )
+            return None
+
+    async def _store_user_in_identity_cache(self, channel: str, channel_user_id: str, user: Any) -> None:
+        if channel != "telegram":
+            return
+        try:
+            redis_client = RedisClient.get_client()
+            import json
+
+            await redis_client.set(
+                self._identity_cache_key(channel, channel_user_id),
+                json.dumps(self._serialize_cached_identity(user)),
+                ex=_IDENTITY_CACHE_TTL_SECONDS,
+            )
+        except Exception as exc:
+            logger.warning(
+                "channel_identity_cache_write_error",
+                channel=channel,
+                channel_user_id=channel_user_id,
+                error=str(exc),
+            )
+
+    async def _resolve_channel_user(
+        self,
+        *,
+        user_repository: UserRepository,
+        channel: str,
+        channel_user_id: str,
+    ) -> Any | None:
+        if channel == "whatsapp" and self._looks_like_phone_number(channel_user_id):
+            return await user_repository.get_by_phone(channel_user_id)
+
+        cached_user = await self._load_user_from_identity_cache(channel, channel_user_id)
+        if cached_user is not None:
+            return cached_user
+
+        user = await user_repository.get_by_channel_identity(channel, channel_user_id)
+        if user is not None:
+            await self._store_user_in_identity_cache(channel, channel_user_id, user)
+        return user
+
+    @staticmethod
+    def _log_latency_span(
+        *,
+        span: str,
+        duration_ms: float,
+        channel_user_id: str,
+        phone_number: str | None = None,
+    ) -> None:
+        logger.info(
+            "perf_timer_latency",
+            gate=span,
+            duration_ms=round(duration_ms, 2),
+            channel_user_id=channel_user_id,
+            phone_number=phone_number,
+        )
 
     async def process_record(self, topic: str, payload: dict[str, Any]) -> None:
         """Route one transport payload by logical topic."""
@@ -229,7 +341,17 @@ class MessageConsumer:
         if message.message_type.value == "flow":
             return {"status": "skipped", "reason": "flow_messages_handled_by_flow_ingress"}
 
-        user = await runtime_user_repository.get_by_channel_identity(message.channel, channel_user_id)
+        identity_start = time.perf_counter()
+        user = await self._resolve_channel_user(
+            user_repository=runtime_user_repository,
+            channel=message.channel,
+            channel_user_id=channel_user_id,
+        )
+        self._log_latency_span(
+            span="message_consumer_identity_lookup",
+            duration_ms=(time.perf_counter() - identity_start) * 1000,
+            channel_user_id=channel_user_id,
+        )
         logger.info("channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id)
 
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
@@ -237,9 +359,16 @@ class MessageConsumer:
 
         phone_number = str(user.phone_number)
 
+        claim_start = time.perf_counter()
         claimed_message = await runtime_orchestrator.context_manager.claim_inbound_message(
             phone_number,
             str(message.message_id),
+        )
+        self._log_latency_span(
+            span="message_consumer_dedupe_claim",
+            duration_ms=(time.perf_counter() - claim_start) * 1000,
+            channel_user_id=channel_user_id,
+            phone_number=phone_number,
         )
         if not claimed_message:
             logger.info("duplicate_inbound_message_ignored", phone_number=phone_number, message_id=message.message_id)
@@ -247,8 +376,16 @@ class MessageConsumer:
 
         response_text: str | None = None
         try:
+            save_start = time.perf_counter()
             await runtime_orchestrator.context_manager.save_message_id(phone_number, str(message.message_id))
+            self._log_latency_span(
+                span="message_consumer_message_id_save",
+                duration_ms=(time.perf_counter() - save_start) * 1000,
+                channel_user_id=channel_user_id,
+                phone_number=phone_number,
+            )
 
+            invoke_start = time.perf_counter()
             orchestrator_output = await runtime_orchestrator.invoke(
                 phone_number,
                 sanitized_text,
@@ -258,6 +395,13 @@ class MessageConsumer:
                 quoted_message_id=message.quoted_message_id,
                 channel=message.channel,
                 channel_identity=channel_user_id,
+                user=user,
+            )
+            self._log_latency_span(
+                span="message_consumer_orchestrator_invoke",
+                duration_ms=(time.perf_counter() - invoke_start) * 1000,
+                channel_user_id=channel_user_id,
+                phone_number=phone_number,
             )
 
             intents: list[UiIntent] = orchestrator_output.get("intents", [])
@@ -275,12 +419,19 @@ class MessageConsumer:
                 intents.append(Say(text=response_text))
 
             if intents:
+                outbox_start = time.perf_counter()
                 await enqueue_outbox_intents(
                     self.publisher,
                     channel_user_id,
                     message.channel,
                     cast(list[UiIntent | dict[str, Any]], intents),
                     metadata={"source": "message_consumer", "message_id": message.message_id, **delivery_metadata},
+                )
+                self._log_latency_span(
+                    span="message_consumer_outbox_enqueue",
+                    duration_ms=(time.perf_counter() - outbox_start) * 1000,
+                    channel_user_id=channel_user_id,
+                    phone_number=phone_number,
                 )
                 logger.info("message_consumer_enqueued_outbox", count=len(intents))
         except Exception:

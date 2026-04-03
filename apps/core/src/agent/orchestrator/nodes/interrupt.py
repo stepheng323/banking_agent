@@ -67,6 +67,7 @@ _CONFIRMATION_AMOUNT_RE = re.compile(
     r"(?:^|\s)(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?(?:\s|$)",
     re.IGNORECASE,
 )
+_INPUT_SIMPLE_AMOUNT_REPLY_RE = re.compile(r"^(?:₦?\d[\d,]*(?:\.\d+)?k?|all|everything|half|50%)$", re.IGNORECASE)
 _CONFIRMATION_ACCOUNT_BANK_REPLY_RE = re.compile(r"[a-zA-Z].*\d[\d\s,.\-]{8,}|\d[\d\s,.\-]{8,}.*[a-zA-Z]")
 _NON_TRANSFER_INTENT_HINT_RE = re.compile(
     r"\b(airtime|data|bundle|balance|statement|support|faq|ticket|complaint)\b",
@@ -181,15 +182,18 @@ def _build_interrupt_context(
         path_label="interrupt_path",
     )
     active_task_state = _build_active_task_router_state(state=state, task_ids=task_ids)
+    raw_active_task_state_text = json.dumps(active_task_state, ensure_ascii=True)
     active_task_state_text = _clip_text(
-        json.dumps(active_task_state, ensure_ascii=True),
+        raw_active_task_state_text,
         INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS,
     )
+    raw_required_fields_text = json.dumps(fields_by_task, ensure_ascii=True)
     required_fields_text = _clip_text(
-        json.dumps(fields_by_task, ensure_ascii=True),
+        raw_required_fields_text,
         INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
     )
-    prompt_text = _clip_text(prompt or "", INTERRUPT_PROMPT_MAX_CHARS)
+    raw_prompt_text = prompt or ""
+    prompt_text = _clip_text(raw_prompt_text, INTERRUPT_PROMPT_MAX_CHARS)
     context = build_interrupt_context_from_summary(
         summary,
         kind=kind,
@@ -199,7 +203,18 @@ def _build_interrupt_context(
         required_fields_json=required_fields_text,
         prompt_text=prompt_text,
     )
-    logger.info("interrupt_context_size", chars=len(context), truncated=len(context) >= INTERRUPT_CONTEXT_MAX_CHARS)
+    logger.info(
+        "interrupt_context_size",
+        chars=len(context),
+        final_chars=len(context),
+        raw_active_task_state_chars=len(raw_active_task_state_text),
+        clipped_active_task_state_chars=len(active_task_state_text),
+        raw_required_fields_chars=len(raw_required_fields_text),
+        clipped_required_fields_chars=len(required_fields_text),
+        raw_prompt_chars=len(raw_prompt_text),
+        clipped_prompt_chars=len(prompt_text),
+        truncated=len(context) >= INTERRUPT_CONTEXT_MAX_CHARS,
+    )
     return context
 
 
@@ -213,6 +228,20 @@ def _route_fallback(reason: str) -> InterruptRouteDecision:
         status_query_type=None,
         reason=reason,
     )
+
+
+def _shortcut_miss_category(reason: str) -> str:
+    if reason == "ambiguous":
+        return "ambiguity"
+    if reason == "guardrail_blocked":
+        return "guardrail"
+    if reason == "unsupported_locale":
+        return "unsupported"
+    if reason == "no_match":
+        return "unsupported"
+    if reason == "matched":
+        return "matched"
+    return "other"
 
 
 def _resolve_deterministic_status_query_route(
@@ -238,6 +267,36 @@ def _resolve_deterministic_status_query_route(
         locale=shortcut_locale.value if shortcut_locale else None,
     )
     return shortcut_route
+
+
+def _resolve_deterministic_input_selection_route(
+    *,
+    interrupt: Any,
+    text: str,
+) -> InterruptRouteDecision | None:
+    if getattr(interrupt, "kind", None) != "input":
+        return None
+    if not text.strip().isdigit():
+        return None
+
+    task_ids = getattr(interrupt, "task_ids", None) or []
+    if len(task_ids) != 1:
+        return None
+
+    fields_by_task = getattr(interrupt, "fields_by_task", None) or {}
+    required_fields = fields_by_task.get(task_ids[0]) or []
+    if set(required_fields) != {"source_account_id"}:
+        return None
+
+    return InterruptRouteDecision(
+        decision="continue_flow",
+        confidence=0.99,
+        detected_language="English",
+        target_intent=None,
+        target_mode=None,
+        status_query_type=None,
+        reason="shortcut_input_numeric_selection",
+    )
 
 
 def _compact_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1550,6 +1609,128 @@ def _digits_only(value: str | None) -> str:
     return re.sub(r"\D+", "", value)
 
 
+def _task_request_variants(task: TaskSpec) -> list[str]:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    variants: list[str] = []
+    for field in ("message", "instruction"):
+        value = payload.get(field)
+        if isinstance(value, str) and value.strip():
+            variants.append(_normalize_recipient_match_text(value))
+    return [variant for variant in variants if variant]
+
+
+def _resolve_deterministic_confirmation_repeat_route(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    text: str,
+) -> InterruptRouteDecision | None:
+    if getattr(interrupt, "kind", None) != "confirmation":
+        return None
+
+    normalized_text = _normalize_recipient_match_text(text)
+    if not normalized_text:
+        return None
+
+    matched_task_ids: list[str] = []
+    for task_id in getattr(interrupt, "task_ids", []) or []:
+        task = state.tasks.get(str(task_id))
+        if task is None:
+            continue
+        if normalized_text in _task_request_variants(task):
+            matched_task_ids.append(str(task_id))
+
+    if not matched_task_ids:
+        return None
+
+    logger.info(
+        "interrupt_repeat_in_flow_detected",
+        kind=interrupt.kind,
+        matched_task_ids=matched_task_ids,
+        match_kind="exact_request_repeat",
+    )
+    return InterruptRouteDecision(
+        decision="continue_flow",
+        confidence=0.99,
+        detected_language="English",
+        target_intent=None,
+        target_mode=None,
+        status_query_type=None,
+        reason="shortcut_confirmation_exact_repeat",
+    )
+
+
+def _resolve_deterministic_input_slot_route(
+    *,
+    interrupt: Any,
+    text: str,
+) -> InterruptRouteDecision | None:
+    if getattr(interrupt, "kind", None) != "input":
+        return None
+
+    task_ids = getattr(interrupt, "task_ids", None) or []
+    if len(task_ids) != 1:
+        return None
+
+    fields_by_task = getattr(interrupt, "fields_by_task", None) or {}
+    required_fields = {
+        field
+        for field in (fields_by_task.get(str(task_ids[0])) or [])
+        if isinstance(field, str)
+    }
+    if not required_fields:
+        return None
+
+    stripped_text = text.strip()
+    numeric_text = _digits_only(text)
+
+    if required_fields == {"beneficiary_id"} and stripped_text.isdigit():
+        return InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.99,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type=None,
+            reason="shortcut_input_beneficiary_selection",
+        )
+
+    if required_fields == {"recipient_account"} and 8 <= len(numeric_text) <= 16:
+        return InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.99,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type=None,
+            reason="shortcut_input_account_entry",
+        )
+
+    if required_fields in ({"recipient_phone"}, {"phone"}, {"target_phone"}) and 10 <= len(numeric_text) <= 15:
+        return InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.99,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type=None,
+            reason="shortcut_input_phone_entry",
+        )
+
+    if required_fields == {"amount"} and _INPUT_SIMPLE_AMOUNT_REPLY_RE.fullmatch(stripped_text):
+        return InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.99,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type=None,
+            reason="shortcut_input_amount_entry",
+        )
+
+    return None
+
+
 def _message_targets_transfer_task(message_text: str, task: TaskSpec) -> bool:
     payload = task.payload if isinstance(task.payload, dict) else {}
     normalized_message = _normalize_recipient_match_text(message_text)
@@ -1693,7 +1874,7 @@ def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str
                 interrupt,
             )
         logger.info(
-            "confirmation_update_detected_via_llm",
+            "confirmation_update_detected",
             tasks=interrupt.task_ids,
             reset_task_ids=task_ids_to_reset,
             selection_reason=selection_reason,
@@ -1894,6 +2075,50 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             redis_client=redis_client,
         )
 
+    input_shortcut_route = _resolve_deterministic_input_selection_route(
+        interrupt=interrupt,
+        text=text,
+    )
+    if input_shortcut_route is not None:
+        logger.info(
+            "interrupt_input_shortcut_hit",
+            kind=interrupt.kind,
+            decision=input_shortcut_route.decision,
+            reason=input_shortcut_route.reason,
+        )
+        return _continue_flow_updates(state, interrupt)
+
+    input_slot_shortcut_route = _resolve_deterministic_input_slot_route(
+        interrupt=interrupt,
+        text=text,
+    )
+    if input_slot_shortcut_route is not None:
+        logger.info(
+            "interrupt_input_shortcut_hit",
+            kind=interrupt.kind,
+            decision=input_slot_shortcut_route.decision,
+            reason=input_slot_shortcut_route.reason,
+        )
+        return _continue_flow_updates(state, interrupt)
+
+    repeat_shortcut_route = _resolve_deterministic_confirmation_repeat_route(
+        state=state,
+        interrupt=interrupt,
+        text=text,
+    )
+    if repeat_shortcut_route is not None:
+        logger.info(
+            "interrupt_shortcut_hit",
+            kind=interrupt.kind,
+            decision=repeat_shortcut_route.decision,
+            reason=repeat_shortcut_route.reason,
+            status_query_type=repeat_shortcut_route.status_query_type,
+            locale=resolve_shortcut_locale((state.loaded_context or {}).get("language")).value
+            if resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+            else None,
+        )
+        return _continue_flow_updates(state, interrupt)
+
     if interrupt.kind == "auth":
         shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
         shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
@@ -1922,6 +2147,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 kind=interrupt.kind,
                 locale=shortcut_locale.value if shortcut_locale else None,
                 reason=miss_reason,
+                miss_category=_shortcut_miss_category(miss_reason),
             )
 
         route = await _route_interrupt(
@@ -1979,6 +2205,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             "interrupt_shortcut_hit",
             kind=interrupt.kind,
             decision=route.decision,
+            reason=route.reason,
             status_query_type=route.status_query_type,
             locale=shortcut_locale.value if shortcut_locale else None,
         )
@@ -1988,6 +2215,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             kind=interrupt.kind,
             locale=shortcut_locale.value if shortcut_locale else None,
             reason=miss_reason,
+            miss_category=_shortcut_miss_category(miss_reason),
         )
         route = await _route_interrupt(
             task_planner=task_planner,

@@ -38,6 +38,12 @@ class _MockTxRepo:
         return [SimpleNamespace(amount=amt) for amt in self.amounts]
 
 
+class _FailIfTxRepoCalled:
+    async def get_successful_transfers_since(self, user_id: str, since, limit: int = 500) -> list[SimpleNamespace]:
+        del user_id, since, limit
+        raise AssertionError("transaction repo should not be called for saved-beneficiary risk checks")
+
+
 async def test_resolver_relational_alias_exempts_name_mismatch_warning() -> None:
     payload = TransferPayload(
         recipient_name="dad",
@@ -709,3 +715,24 @@ async def test_dynamic_risk_patch_flags_large_unsaved_transfer() -> None:
     assert isinstance(patch["high_risk_warning"], str) and patch["high_risk_warning"]
     assert confirmed.confirmation_summary is not None
     assert "high-risk transfer" in confirmed.confirmation_summary.lower()
+
+
+async def test_dynamic_risk_patch_skips_repo_lookup_for_saved_beneficiary() -> None:
+    payload = TransferPayload(
+        amount=70000,
+        recipient_name="Mum",
+        recipient_account="1234567890",
+        recipient_bank_name="GTBank",
+        beneficiary_id="bene-1",
+        resolved_from_saved_beneficiary=True,
+        is_self=False,
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        user_id="user-1",
+        transaction_repo=_FailIfTxRepoCalled(),
+    )
+
+    patch = await _build_dynamic_risk_patch(payload, ctx, worker_context)
+
+    assert patch == {}

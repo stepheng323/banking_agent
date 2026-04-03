@@ -64,16 +64,34 @@ CANCEL_PHRASES: dict[LocaleCode, set[str]] = {
 }
 
 STATUS_RECAP_PHRASES: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"where did we stop", "where are we", "recap", "which step", "how far"},
-    LocaleCode.PCM: {"where we stop", "where we dey", "which step", "how far"},
+    LocaleCode.EN: {
+        "where did we stop",
+        "where are we",
+        "recap",
+        "which step",
+        "how far",
+        "repeat that",
+        "say that again",
+        "show that again",
+        "show it again",
+        "repeat the details",
+        "restate that",
+    },
+    LocaleCode.PCM: {"where we stop", "where we dey", "which step", "how far", "repeat am", "show am again"},
     LocaleCode.YO: {"nibo la duro", "ibo la duro", "ta ni ipele"},
     LocaleCode.HA: {"ina muka tsaya", "a ina muka tsaya"},
     LocaleCode.IG: {"ebe ka anyi kwusiri", "ebe anyi kwusiri"},
 }
 
 STATUS_REQUIREMENTS_PHRASES: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"what do you need from me", "what do you need", "what next", "what is needed"},
-    LocaleCode.PCM: {"wetin remain", "wetin you need from me", "wetin you need", "wetin next"},
+    LocaleCode.EN: {
+        "what do you need from me",
+        "what do you need",
+        "what next",
+        "what is needed",
+        "what do you need again",
+    },
+    LocaleCode.PCM: {"wetin remain", "wetin you need from me", "wetin you need", "wetin next", "wetin you need again"},
     LocaleCode.YO: {"kini mo tun fi ranse", "kini e nilo lowo mi", "kini mo se tele"},
     LocaleCode.HA: {"me ake bukata daga gare ni", "menene na gaba", "me ya rage"},
     LocaleCode.IG: {"gini ka ichoro n'aka m", "gini foduru"},
@@ -92,6 +110,15 @@ _CONFIRMATION_SIMPLE_AMOUNT_EDIT_RE = re.compile(
 )
 _CONFIRMATION_BANK_SWITCH_RE = re.compile(
     r"^(?:(?:use|switch(?:\s+to)?|change(?:\s+to)?)\s+)?[a-z0-9&' ]+ bank(?:\s+instead)?$"
+)
+_CONFIRMATION_NARRATION_EDIT_RE = re.compile(
+    r"^(?:"
+    r"(?:add\s+that\s+)?(?:it'?s|its|it is|this is)\s+for\s+.+"
+    r"|for\s+.+"
+    r"|(?:narration|memo|note|description|reason|purpose)(?:\s+(?:should\s+be|is|as|to\s+be|to))?[:\s]+.+"
+    r"|use\s+.+\s+as\s+(?:narration|memo|note|description)"
+    r")$",
+    re.IGNORECASE,
 )
 
 
@@ -204,6 +231,15 @@ def _resolve_interrupt_shortcut(
                 locale=locale,
                 decision="continue_flow",
                 reason="shortcut_confirmation_bank_edit",
+            ),
+            "matched",
+        )
+    if _CONFIRMATION_NARRATION_EDIT_RE.fullmatch(normalized):
+        return (
+            _build_decision(
+                locale=locale,
+                decision="continue_flow",
+                reason="shortcut_confirmation_narration_edit",
             ),
             "matched",
         )

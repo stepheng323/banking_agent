@@ -52,6 +52,45 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _resolve_role_model(*, role: str, configured_model: str, planner_model: str, app_env: str) -> str:
+    """Resolve role model from env and emit actionable overlap warnings."""
+    role_env_map = {
+        "query": "QUERY_MODEL",
+        "interrupt_router": "INTERRUPT_ROUTER_MODEL",
+    }
+    env_var = role_env_map[role]
+    model = configured_model.strip()
+    if not model:
+        model = planner_model
+        logger.warning(
+            f"{role}_model_missing_fallback",
+            app_env=app_env,
+            fallback_model=model,
+            planner_model=planner_model,
+            recommended_env=env_var,
+        )
+
+    if model == planner_model:
+        logger.warning(
+            f"{role}_model_same_as_planner",
+            app_env=app_env,
+            model=model,
+            planner_model=planner_model,
+            recommended_env=env_var,
+            dedicated=False,
+        )
+    else:
+        logger.info(
+            f"{role}_model_dedicated",
+            app_env=app_env,
+            model=model,
+            planner_model=planner_model,
+            recommended_env=env_var,
+            dedicated=True,
+        )
+    return model
+
+
 def _build_orchestrator_runtime_bundle(
     queue_publisher,
     messaging_clients,
@@ -208,35 +247,19 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
     llm = ChatOpenAI(model=settings.planner_model, temperature=0, timeout=30.0, max_retries=1)
-    query_model = settings.query_model.strip()
-    if not query_model:
-        query_model = settings.planner_model
-        logger.warning(
-            "query_model_missing_fallback",
-            app_env=settings.app_env,
-            fallback_model=query_model,
-        )
-    if query_model == settings.planner_model:
-        logger.warning(
-            "query_model_same_as_planner",
-            app_env=settings.app_env,
-            model=query_model,
-        )
+    query_model = _resolve_role_model(
+        role="query",
+        configured_model=settings.query_model,
+        planner_model=settings.planner_model,
+        app_env=settings.app_env,
+    )
     query_llm = ChatOpenAI(model=query_model, temperature=0, timeout=30.0, max_retries=1)
-    interrupt_router_model = settings.interrupt_router_model.strip()
-    if not interrupt_router_model:
-        interrupt_router_model = settings.planner_model
-        logger.warning(
-            "interrupt_router_model_missing_fallback",
-            app_env=settings.app_env,
-            fallback_model=interrupt_router_model,
-        )
-    if interrupt_router_model == settings.planner_model:
-        logger.warning(
-            "interrupt_router_model_same_as_planner",
-            app_env=settings.app_env,
-            model=interrupt_router_model,
-        )
+    interrupt_router_model = _resolve_role_model(
+        role="interrupt_router",
+        configured_model=settings.interrupt_router_model,
+        planner_model=settings.planner_model,
+        app_env=settings.app_env,
+    )
 
     interrupt_llm = ChatOpenAI(model=interrupt_router_model, temperature=0, timeout=15.0, max_retries=1)
 

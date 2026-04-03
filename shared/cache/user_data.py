@@ -22,6 +22,7 @@ class UserDataCache:
     PROFILE_TTL = int(timedelta(minutes=10).total_seconds())
     ACCOUNTS_TTL = int(timedelta(minutes=5).total_seconds())
     BENEFICIARIES_TTL = int(timedelta(minutes=5).total_seconds())
+    SNAPSHOT_TTL = int(timedelta(hours=24).total_seconds())
 
     def __init__(self, redis_client: Redis | None = None):
         self.redis = redis_client or RedisClient.get_client()
@@ -105,6 +106,7 @@ class UserDataCache:
         cache_accounts: bool = False,
         beneficiaries: list[dict[str, Any]] | None = None,
         cache_beneficiaries: bool = False,
+        refresh_snapshot: bool = False,
     ) -> None:
         """Write multiple user-data cache keys in one Redis pipeline."""
         pipe = self.redis.pipeline()
@@ -137,7 +139,56 @@ class UserDataCache:
             else:
                 pipe.delete(alias_key)
 
+        if refresh_snapshot:
+            pipe.set(
+                f"cache:user:snapshot:{phone_number}",
+                json.dumps(
+                    {
+                        "profile": profile,
+                        "accounts": accounts if accounts is not None else None,
+                        "beneficiaries": beneficiaries if beneficiaries is not None else None,
+                    }
+                ),
+                ex=self.SNAPSHOT_TTL,
+            )
+
         await pipe.execute()
+
+    @staticmethod
+    def decode_user_data_fields(
+        *,
+        profile_raw: str | bytes | None,
+        accounts_raw: str | bytes | None,
+        beneficiaries_raw: str | bytes | None,
+        snapshot_raw: str | bytes | None = None,
+    ) -> tuple[dict[str, Any | None], dict[str, bool]]:
+        """Decode granular cache keys and fall back to session snapshot when needed."""
+        profile = json.loads(profile_raw) if profile_raw else None
+        accounts = json.loads(accounts_raw) if accounts_raw else None
+        beneficiaries = json.loads(beneficiaries_raw) if beneficiaries_raw else None
+        snapshot = json.loads(snapshot_raw) if snapshot_raw else None
+
+        backfill = {
+            "profile": False,
+            "accounts": False,
+            "beneficiaries": False,
+        }
+        if isinstance(snapshot, dict):
+            if profile is None and snapshot.get("profile") is not None:
+                profile = snapshot["profile"]
+                backfill["profile"] = True
+            if accounts is None and "accounts" in snapshot:
+                accounts = snapshot.get("accounts") or []
+                backfill["accounts"] = True
+            if beneficiaries is None and "beneficiaries" in snapshot:
+                beneficiaries = snapshot.get("beneficiaries") or []
+                backfill["beneficiaries"] = True
+
+        return {
+            "profile": profile,
+            "accounts": accounts,
+            "beneficiaries": beneficiaries,
+        }, backfill
 
     async def get_beneficiary_by_alias(self, phone_number: str, alias: str) -> dict[str, Any] | None:
         """
@@ -175,17 +226,32 @@ class UserDataCache:
 
     async def get_all_user_data(self, phone_number: str) -> dict[str, Any | None]:
         """Get all cached user data in one call."""
-        profile, accounts, beneficiaries = await self.redis.mget(
+        profile, accounts, beneficiaries, snapshot = await self.redis.mget(
             f"cache:user:profile:{phone_number}",
             f"cache:user:accounts:{phone_number}",
             f"cache:user:beneficiaries:{phone_number}",
+            f"cache:user:snapshot:{phone_number}",
         )
 
-        return {
-            "profile": json.loads(profile) if profile else None,
-            "accounts": json.loads(accounts) if accounts else None,
-            "beneficiaries": json.loads(beneficiaries) if beneficiaries else None,
-        }
+        decoded, backfill = self.decode_user_data_fields(
+            profile_raw=profile,
+            accounts_raw=accounts,
+            beneficiaries_raw=beneficiaries,
+            snapshot_raw=snapshot,
+        )
+        if any(backfill.values()):
+            await self.set_user_data_snapshot(
+                phone_number,
+                profile=decoded["profile"] if isinstance(decoded["profile"], dict) else None,
+                cache_profile=backfill["profile"],
+                accounts=decoded["accounts"] if isinstance(decoded["accounts"], list) else None,
+                cache_accounts=backfill["accounts"],
+                beneficiaries=decoded["beneficiaries"] if isinstance(decoded["beneficiaries"], list) else None,
+                cache_beneficiaries=backfill["beneficiaries"],
+                refresh_snapshot=False,
+            )
+
+        return decoded
 
     async def get_or_set_profile(
         self,

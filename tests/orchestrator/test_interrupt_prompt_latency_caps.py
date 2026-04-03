@@ -1,5 +1,7 @@
 """Latency guard tests for interrupt routing context prompt growth."""
 
+import pytest
+
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.interrupt import (
@@ -46,6 +48,9 @@ def test_interrupt_context_is_bounded_and_keeps_prefix_fields() -> None:
     assert "required_fields=" in context
     assert "prompt=" in context
     assert "...[truncated]" in context
+    assert "ACCOUNTS:" not in context
+    assert "BENEFICIARIES:" not in context
+    assert "RECENT_CHAT:" not in context
 
 
 def test_interrupt_context_prefix_survives_tail_truncation() -> None:
@@ -122,3 +127,42 @@ def test_interrupt_context_includes_compact_active_task_state() -> None:
     assert "\"t9\"" in context
     assert "\"recipient_name\": \"Mum\"" in context
     assert "\"has_recipient_account\": true" in context
+
+
+def test_interrupt_context_logs_raw_and_clipped_component_sizes(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.interrupt.logger.info", _capture)
+
+    state = OrchestratorState(
+        user_id="u_interrupt_cap_4",
+        phone_number="2348099999994",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"message": "send 10k to mum", "confirmation": {"summary": "Confirm transfer"}},
+            )
+        },
+    )
+
+    _build_interrupt_context(
+        state=state,
+        kind="confirmation",
+        task_ids=["t1"],
+        current_task_types={"transfer"},
+        fields_by_task={"t1": ["amount"]},
+        prompt="Confirm transfer",
+    )
+
+    matching = [payload for event, payload in events if event == "interrupt_context_size"]
+    assert matching
+    assert matching[-1]["raw_active_task_state_chars"] >= matching[-1]["clipped_active_task_state_chars"]
+    assert matching[-1]["raw_required_fields_chars"] >= matching[-1]["clipped_required_fields_chars"]
+    assert matching[-1]["raw_prompt_chars"] >= matching[-1]["clipped_prompt_chars"]
+    assert matching[-1]["final_chars"] == matching[-1]["chars"]
