@@ -71,3 +71,4 @@ terraform.tfstate*
 
 # Local agent instructions
 AGENTS.md
+.codex
