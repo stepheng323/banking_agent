@@ -391,6 +391,71 @@ async def test_graph_handler_cancel_prefastpath_uses_cache_only_hydration(monkey
 
 
 @pytest.mark.asyncio
+async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_typing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _GraphStub()
+    context_manager = _ContextManagerStub()
+    typing_mock = AsyncMock()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing",
+        typing_mock,
+    )
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=context_manager,
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+    handler._cleanup_if_idle = AsyncMock()
+    handler._apply_session_ttl = AsyncMock()
+
+    await handler.invoke(
+        MessageContext(
+            phone_number="2348000000009",
+            text="what can you do",
+            message_id="wamid.meta.1",
+            channel="telegram",
+            channel_identity="927331985",
+        )
+    )
+
+    assert context_manager.calls == [
+        {
+            "phone_number": "2348000000009",
+            "path_label": "direct_path",
+            "user": None,
+            "profile_mode": "minimal",
+            "account_mode": "cache_only",
+            "beneficiary_mode": "cache_only",
+        }
+    ]
+    typing_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     class _RouteMetricsGraphStub(_GraphStub):
         async def ainvoke(self, inputs: dict, config: dict) -> dict:

@@ -18,7 +18,10 @@ from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.nodes.cancellation import cancel_match_kind, is_obvious_cancel_message
-from apps.core.src.agent.orchestrator.nodes.gate import classify_obvious_transfer_request
+from apps.core.src.agent.orchestrator.nodes.gate import (
+    classify_deterministic_meta_response,
+    classify_obvious_transfer_request,
+)
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from apps.core.src.agent.orchestrator.progress import (
     MAX_PROGRESS_MESSAGES,
@@ -419,6 +422,7 @@ class OrchestratorGraphHandler:
             phone_number = context.phone_number
             pre_route_transfer_reason = None
             pre_route_cancel_kind = None
+            pre_route_meta_response = None
             path_label = "planner_path"
             hydration_profile_mode: Literal["full", "minimal"] = "full"
             hydration_account_mode: Literal["full", "cache_only"] = "full"
@@ -449,6 +453,21 @@ class OrchestratorGraphHandler:
                     hydration_account_mode = "full"
                     hydration_beneficiary_mode = "cache_only"
                     enable_initial_typing = False
+                elif not context.quoted_message_id:
+                    pre_route_meta_response = classify_deterministic_meta_response(context.text)
+                    if pre_route_meta_response:
+                        response_key, response_locale = pre_route_meta_response
+                        path_label = "direct_path"
+                        hydration_profile_mode = "minimal"
+                        hydration_account_mode = "cache_only"
+                        hydration_beneficiary_mode = "cache_only"
+                        enable_initial_typing = False
+                        logger.info(
+                            "orchestrator_meta_prefastpath",
+                            phone_number=phone_number,
+                            response_key=response_key,
+                            response_locale=response_locale,
+                        )
 
             try:
                 inputs = {

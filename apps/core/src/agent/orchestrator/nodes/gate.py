@@ -365,7 +365,7 @@ def _should_invoke_semantic_router(message_text: str) -> bool:
     return bool(normalized)
 
 
-def _deterministic_meta_response_key(message_text: str) -> tuple[str, str | None] | None:
+def classify_deterministic_meta_response(message_text: str) -> tuple[str, str | None] | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if normalized in DETERMINISTIC_LOCALE_META_EXACT:
         return DETERMINISTIC_LOCALE_META_EXACT[normalized]
@@ -854,7 +854,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         }
 
     if not live_pending_interrupt and not state.has_quote:
-        deterministic_meta = _deterministic_meta_response_key(message_text)
+        deterministic_meta = classify_deterministic_meta_response(message_text)
         if deterministic_meta:
             response_key, response_locale = deterministic_meta
             locale = response_locale or LocaleManager.normalize((state.loaded_context or {}).get("language")).value
