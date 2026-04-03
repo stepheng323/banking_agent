@@ -65,6 +65,7 @@ class ContextManager:
         cached_data: dict[str, Any],
         path_label: str,
         profile_mode: Literal["full", "minimal"] = "full",
+        account_mode: Literal["full", "cache_only"] = "full",
         beneficiary_mode: Literal["full", "cache_only"] = "full",
     ) -> dict[str, Any]:
         cache_profile = cached_data.get("profile")
@@ -87,7 +88,7 @@ class ContextManager:
             }
 
         profile_obj = user if user is not None else cache_profile
-        needs_accounts_fetch = cache_accounts is None
+        needs_accounts_fetch = cache_accounts is None and account_mode == "full"
         needs_beneficiaries_fetch = cache_beneficiaries is None and beneficiary_mode == "full"
         needs_profile_for_collection_fetch = profile_obj is None and (needs_accounts_fetch or needs_beneficiaries_fetch)
         if profile_obj is None and self.user_repo and (
@@ -119,7 +120,7 @@ class ContextManager:
         beneficiaries: list[Any] = list(cache_beneficiaries) if cache_beneficiaries is not None else []
 
         fetch_ops: list[tuple[str, Any]] = []
-        if user_id and cache_accounts is None and self.account_repo:
+        if user_id and cache_accounts is None and account_mode == "full" and self.account_repo:
             fetch_ops.append(("accounts", _timed_fetch("accounts", self.account_repo.get_by_user(user_id))))
         if user_id and cache_beneficiaries is None and beneficiary_mode == "full" and self.beneficiary_repo:
             fetch_ops.append(
@@ -182,6 +183,7 @@ class ContextManager:
         cached_data: dict[str, Any] | None = None,
         path_label: str = "planner_path",
         profile_mode: Literal["full", "minimal"] = "full",
+        account_mode: Literal["full", "cache_only"] = "full",
         beneficiary_mode: Literal["full", "cache_only"] = "full",
     ) -> dict[str, Any]:
         """
@@ -200,6 +202,7 @@ class ContextManager:
             cached_data=cached_data,
             path_label=path_label,
             profile_mode=profile_mode,
+            account_mode=account_mode,
             beneficiary_mode=beneficiary_mode,
         )
 
@@ -392,6 +395,7 @@ class ContextManager:
         path_label: str = "planner_path",
         user: Any | None = None,
         profile_mode: Literal["full", "minimal"] = "full",
+        account_mode: Literal["full", "cache_only"] = "full",
         beneficiary_mode: Literal["full", "cache_only"] = "full",
     ) -> tuple[dict[str, Any], dict[str, Any] | None, str | None, str | None]:
         """
@@ -492,6 +496,7 @@ class ContextManager:
                 cached_data=cached_user_data,
                 path_label=path_label,
                 profile_mode=profile_mode,
+                account_mode=account_mode,
                 beneficiary_mode=beneficiary_mode,
             )
 

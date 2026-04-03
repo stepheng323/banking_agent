@@ -46,6 +46,7 @@ class _ContextManagerStub:
         path_label: str = "planner_path",
         user: object | None = None,
         profile_mode: str = "full",
+        account_mode: str = "full",
         beneficiary_mode: str = "full",
     ):
         self.calls.append(
@@ -54,6 +55,7 @@ class _ContextManagerStub:
                 "path_label": path_label,
                 "user": user,
                 "profile_mode": profile_mode,
+                "account_mode": account_mode,
                 "beneficiary_mode": beneficiary_mode,
             }
         )
@@ -314,6 +316,75 @@ async def test_graph_handler_uses_lightweight_hydration_for_fresh_transfer(monke
             "path_label": "direct_path",
             "user": resolved_user,
             "profile_mode": "minimal",
+            "account_mode": "full",
+            "beneficiary_mode": "cache_only",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_graph_handler_cancel_prefastpath_uses_cache_only_hydration(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _CancelGraphStub(_GraphStub):
+        async def ainvoke(self, inputs: dict, config: dict) -> dict:
+            del config
+            self.last_inputs = inputs
+            return {
+                "outbox": [],
+                "final_response": "Transaction cancelled.",
+                "loaded_context": {"language": "en"},
+                "direct_path_triggered": True,
+            }
+
+    graph = _CancelGraphStub()
+    context_manager = _ContextManagerStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=context_manager,
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+    handler._cleanup_if_idle = AsyncMock()
+    handler._apply_session_ttl = AsyncMock()
+
+    await handler.invoke(
+        MessageContext(
+            phone_number="2348000000008",
+            text="please cancel",
+            message_id="wamid.cancel.1",
+            channel="whatsapp",
+            channel_identity="2348000000008",
+        )
+    )
+
+    assert context_manager.calls == [
+        {
+            "phone_number": "2348000000008",
+            "path_label": "cancel_path",
+            "user": None,
+            "profile_mode": "minimal",
+            "account_mode": "cache_only",
             "beneficiary_mode": "cache_only",
         }
     ]

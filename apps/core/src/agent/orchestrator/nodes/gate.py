@@ -705,21 +705,6 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         gate_updates["pending_interrupt"] = None
 
     if is_explicit_cancel_message(message_text):
-        query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
-        if (
-            isinstance(query_session_snapshot, dict)
-            and query_session_snapshot.get("session_active")
-            and query_session_snapshot.get("pending_clarification")
-            and not has_cancelable_state(state)
-        ):
-            await clear_query_session(redis_client, state.phone_number)
-            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
-            return {
-                **gate_updates,
-                "direct_path_triggered": True,
-                "final_response": render_message("query.session.goodbye", locale),
-                **_route_observability_updates(owner="guardrail", decision="cancel"),
-            }
         if has_cancelable_state(state):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
             return {
@@ -727,6 +712,20 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 **cleanup_updates,
                 "direct_path_triggered": True,
                 "final_response": cancelled_message(state),
+                **_route_observability_updates(owner="guardrail", decision="cancel"),
+            }
+        query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
+        if (
+            isinstance(query_session_snapshot, dict)
+            and query_session_snapshot.get("session_active")
+            and query_session_snapshot.get("pending_clarification")
+        ):
+            await clear_query_session(redis_client, state.phone_number)
+            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+            return {
+                **gate_updates,
+                "direct_path_triggered": True,
+                "final_response": render_message("query.session.goodbye", locale),
                 **_route_observability_updates(owner="guardrail", decision="cancel"),
             }
         return {

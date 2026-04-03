@@ -407,7 +407,9 @@ async def test_ambiguous_status_wording_still_uses_interrupt_router() -> None:
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert planner.last_context is not None
-    assert "ACCOUNTS:" in planner.last_context
+    assert "ACCOUNTS:" not in planner.last_context
+    assert "BENEFICIARIES:" not in planner.last_context
+    assert "Interrupt Kind: input" in planner.last_context
     assert updates["pending_interrupt"] is not None
     assert updates["outbox"][0]["type"] == "say"
     assert "transfer flow" in updates["outbox"][0]["text"]
@@ -818,12 +820,12 @@ async def test_auth_reprompt_for_mixed_task_types_uses_default_header() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_cancel_uses_router_and_resets_flow() -> None:
+async def test_auth_obvious_cancel_shortcut_resets_flow() -> None:
     state = OrchestratorState(
         user_id="u_budget_7",
         phone_number="2348100000007",
         channel="whatsapp",
-        last_message_text="cancel",
+        last_message_text="abort this",
         loaded_context={"language": "en"},
         pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin", prompt="Enter your PIN"),
         tasks={
@@ -842,7 +844,7 @@ async def test_auth_cancel_uses_router_and_resets_flow() -> None:
             detected_language="English",
             target_intent=None,
             target_mode=None,
-            reason="explicit cancellation",
+            reason="unused cancel route",
         ),
         output=PlannerOutput(primary_intent="cancel"),
     )
@@ -850,7 +852,7 @@ async def test_auth_cancel_uses_router_and_resets_flow() -> None:
 
     updates = await handle_pending_interrupt(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert updates["pending_interrupt"] is None
     assert updates["tasks"] == {}

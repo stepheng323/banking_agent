@@ -302,6 +302,34 @@ async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately(
     assert updates["current_wave_index"] == 0
 
 
+async def test_gate_explicit_cancel_with_active_state_skips_query_session_lookup() -> None:
+    redis_client = _TrackingRedisWithSession(
+        '{"session_active": true, "pending_clarification": {"kind": "pending_clarification"}}'
+    )
+    state = OrchestratorState(
+        user_id="u_gate_cancel_fast_1",
+        phone_number="2348888888890",
+        channel="whatsapp",
+        last_message_text="cancel",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"]),
+        session_stack=[
+            ActiveSession(
+                domain="transfer",
+                state="WAITING_FOR_INPUT",
+                interrupt_policy="BLOCK",
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["final_response"] == render_cancelled_prompt("en")
+    assert redis_client.query_session_gets == 0
+    assert redis_client.deleted_keys == ["query:session:2348888888890"]
+
+
 async def test_gate_query_shortcut_followup_bypasses_semantic_router_without_pending_interrupt() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -1098,9 +1126,11 @@ class _TrackingRedisWithSession(_TrackingRedis):
     def __init__(self, payload: str | None) -> None:
         super().__init__()
         self.payload = payload
+        self.query_session_gets = 0
 
     async def get(self, key: str) -> str | None:
         if "query:session:" in key:
+            self.query_session_gets += 1
             return self.payload
         return None
 

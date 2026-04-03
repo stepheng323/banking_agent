@@ -17,6 +17,26 @@ _CANCEL_PHRASES = {
     for phrases in CANCEL_PHRASES.values()
     for phrase in phrases
 }
+_CANCEL_HINT_TOKENS = {
+    "cancel",
+    "abort",
+    "stop",
+    "nevermind",
+    "commot",
+    "fagile",
+    "dawoduro",
+    "soke",
+    "dakatar",
+    "kagbuo",
+    "kwusi",
+}
+_OBVIOUS_CANCEL_RE = re.compile(
+    r"^(?:(?:please|pls|abeg|kindly|just)\s+)?"
+    r"(?:cancel|abort|stop)"
+    r"(?:\s+(?:this|it|this one|this transfer|the transfer|this transaction|the transaction|"
+    r"this flow|the flow|current transfer|current transaction|current flow))?"
+    r"(?:\s+(?:please|pls|abeg))?$"
+)
 
 
 def _normalize_message(text: str | None) -> str:
@@ -38,8 +58,37 @@ def clarify_message(state: OrchestratorState, locale_override: str | None = None
     return render_message("conversational.clarify", state_locale(state, locale_override))
 
 
+def _cancel_match_kind(text: str | None) -> str | None:
+    normalized = _normalize_message(text)
+    if not normalized:
+        return None
+    if normalized in _CANCEL_PHRASES:
+        return "exact"
+    if _OBVIOUS_CANCEL_RE.fullmatch(normalized):
+        return "obvious"
+    return None
+
+
 def is_explicit_cancel_message(text: str | None) -> bool:
-    return _normalize_message(text) in _CANCEL_PHRASES
+    return _cancel_match_kind(text) == "exact"
+
+
+def is_obvious_cancel_message(text: str | None) -> bool:
+    return _cancel_match_kind(text) is not None
+
+
+def cancel_match_kind(text: str | None) -> str | None:
+    return _cancel_match_kind(text)
+
+
+def cancel_router_fallback_reason(text: str | None) -> str:
+    normalized = _normalize_message(text)
+    if not normalized:
+        return "unsupported"
+    tokens = set(normalized.split())
+    if "never mind" in normalized or any(token in tokens for token in _CANCEL_HINT_TOKENS):
+        return "ambiguous"
+    return "unsupported"
 
 
 def has_cancelable_state(state: OrchestratorState) -> bool:
@@ -95,10 +144,13 @@ async def build_cancellation_reset_updates(
 
 __all__ = [
     "build_cancellation_reset_updates",
+    "cancel_match_kind",
     "cancelled_message",
+    "cancel_router_fallback_reason",
     "clarify_message",
     "clear_query_session",
     "has_cancelable_state",
     "is_explicit_cancel_message",
+    "is_obvious_cancel_message",
     "state_locale",
 ]

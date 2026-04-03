@@ -17,6 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
+from apps.core.src.agent.orchestrator.nodes.cancellation import cancel_match_kind, is_obvious_cancel_message
 from apps.core.src.agent.orchestrator.nodes.gate import classify_obvious_transfer_request
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from apps.core.src.agent.orchestrator.progress import (
@@ -417,17 +418,35 @@ class OrchestratorGraphHandler:
 
             phone_number = context.phone_number
             pre_route_transfer_reason = None
+            pre_route_cancel_kind = None
             path_label = "planner_path"
             hydration_profile_mode: Literal["full", "minimal"] = "full"
+            hydration_account_mode: Literal["full", "cache_only"] = "full"
             hydration_beneficiary_mode: Literal["full", "cache_only"] = "full"
             enable_initial_typing = True
             if getattr(context, "is_media_input", False) or bool(context.image_data):
                 path_label = "media_path"
             else:
-                pre_route_transfer_reason = classify_obvious_transfer_request(context.text)
+                pre_route_cancel_kind = (
+                    cancel_match_kind(context.text) if is_obvious_cancel_message(context.text) else None
+                )
+                if pre_route_cancel_kind:
+                    path_label = "cancel_path"
+                    hydration_profile_mode = "minimal"
+                    hydration_account_mode = "cache_only"
+                    hydration_beneficiary_mode = "cache_only"
+                    enable_initial_typing = False
+                    logger.info(
+                        "orchestrator_cancel_prefastpath",
+                        phone_number=phone_number,
+                        match_kind=pre_route_cancel_kind,
+                    )
+                else:
+                    pre_route_transfer_reason = classify_obvious_transfer_request(context.text)
                 if pre_route_transfer_reason:
                     path_label = "direct_path"
                     hydration_profile_mode = "minimal"
+                    hydration_account_mode = "full"
                     hydration_beneficiary_mode = "cache_only"
                     enable_initial_typing = False
 
@@ -452,6 +471,7 @@ class OrchestratorGraphHandler:
                         path_label=path_label,
                         user=context.resolved_user,
                         profile_mode=hydration_profile_mode,
+                        account_mode=hydration_account_mode,
                         beneficiary_mode=hydration_beneficiary_mode,
                     )
                 except TypeError:
@@ -466,6 +486,7 @@ class OrchestratorGraphHandler:
                     "language": LocaleManager.normalize(user_ctx.get("language")).value,
                     "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
                     "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
+                    "account_context_mode": hydration_account_mode,
                     "beneficiary_context_mode": hydration_beneficiary_mode,
                 }
 

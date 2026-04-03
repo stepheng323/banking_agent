@@ -9,7 +9,10 @@ from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.cancellation import (
     build_cancellation_reset_updates,
+    cancel_match_kind,
+    cancel_router_fallback_reason,
     cancelled_message,
+    is_obvious_cancel_message,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
     INTERRUPT_CONTEXT_MAX_CHARS,
@@ -2119,6 +2122,15 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         )
         return _continue_flow_updates(state, interrupt)
 
+    deterministic_cancel_kind = cancel_match_kind(text) if is_obvious_cancel_message(text) else None
+    if deterministic_cancel_kind is not None:
+        logger.info(
+            "interrupt_deterministic_cancel_hit",
+            kind=interrupt.kind,
+            match_kind=deterministic_cancel_kind,
+        )
+        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+
     if interrupt.kind == "auth":
         shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
         shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
@@ -2126,14 +2138,6 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             interrupt_kind=interrupt.kind,
             locale=shortcut_locale,
         )
-
-        if shortcut_route is not None and shortcut_route.decision == "cancel":
-            logger.info(
-                "interrupt_cancel_shortcut_disabled",
-                kind=interrupt.kind,
-                locale=shortcut_locale.value if shortcut_locale else None,
-            )
-            shortcut_route = None
 
         if shortcut_route is not None:
             logger.info(
@@ -2148,6 +2152,11 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 locale=shortcut_locale.value if shortcut_locale else None,
                 reason=miss_reason,
                 miss_category=_shortcut_miss_category(miss_reason),
+            )
+            logger.info(
+                "interrupt_cancel_router_fallback",
+                kind=interrupt.kind,
+                reason=cancel_router_fallback_reason(text),
             )
 
         route = await _route_interrupt(
@@ -2192,14 +2201,6 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
     )
 
     if shortcut_route is not None:
-        if shortcut_route.decision == "cancel":
-            logger.info(
-                "interrupt_cancel_shortcut_disabled",
-                kind=interrupt.kind,
-                locale=shortcut_locale.value if shortcut_locale else None,
-            )
-            shortcut_route = None
-    if shortcut_route is not None:
         route = shortcut_route
         logger.info(
             "interrupt_shortcut_hit",
@@ -2216,6 +2217,11 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             locale=shortcut_locale.value if shortcut_locale else None,
             reason=miss_reason,
             miss_category=_shortcut_miss_category(miss_reason),
+        )
+        logger.info(
+            "interrupt_cancel_router_fallback",
+            kind=interrupt.kind,
+            reason=cancel_router_fallback_reason(text),
         )
         route = await _route_interrupt(
             task_planner=task_planner,

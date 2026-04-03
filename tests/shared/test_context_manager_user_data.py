@@ -374,6 +374,34 @@ async def test_load_user_context_minimal_profile_mode_skips_profile_fetch_when_t
     assert ctx["beneficiaries"] == [{"id": "bene-cached"}]
 
 
+async def test_load_user_context_cache_only_account_and_beneficiary_modes_skip_fetches() -> None:
+    cache = _FakeUserDataCache(
+        {
+            "profile": None,
+            "accounts": None,
+            "beneficiaries": None,
+        }
+    )
+    manager = ContextManager(
+        user_repo=_FailingRepo(),  # type: ignore[arg-type]
+        beneficiary_repo=_FakeBeneficiaryRepo([]),  # type: ignore[arg-type]
+        account_repo=_FakeAccountRepo(),  # type: ignore[arg-type]
+    )
+    manager.data_cache = cache  # type: ignore[assignment]
+
+    ctx = await manager.load_user_context(
+        "2348000000100",
+        profile_mode="minimal",
+        account_mode="cache_only",
+        beneficiary_mode="cache_only",
+    )
+
+    assert ctx["profile"] is None
+    assert ctx["accounts"] == []
+    assert ctx["beneficiaries"] == []
+    assert cache.batch_calls == []
+
+
 async def test_load_user_context_cache_only_beneficiary_mode_skips_beneficiary_fetch() -> None:
     cache = _FakeUserDataCache(
         {

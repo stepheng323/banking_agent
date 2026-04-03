@@ -50,7 +50,7 @@ CONFIRM_APPROVE_PHRASES: dict[LocaleCode, set[str]] = {
 CONFIRM_REJECT_PHRASES: dict[LocaleCode, set[str]] = {
     LocaleCode.EN: {"no", "not now", "later", "do not proceed", "don't proceed"},
     LocaleCode.PCM: {"no o", "no abeg", "not now", "later"},
-    LocaleCode.YO: {"rara", "ma se", "dawoduro", "ko to bayi"},
+    LocaleCode.YO: {"rara", "ma se", "dawoduro"},
     LocaleCode.HA: {"a'a", "a a", "dakatar", "ba yanzu ba"},
     LocaleCode.IG: {"mba", "kwusi", "ugbua a"},
 }

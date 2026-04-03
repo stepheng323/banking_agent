@@ -1351,12 +1351,12 @@ async def test_callback_flow_type_mismatch_reprompts_confirmation_without_advanc
 
 
 @pytest.mark.asyncio
-async def test_input_cancel_router_decision_resets_for_fresh_start() -> None:
+async def test_input_obvious_cancel_shortcut_resets_for_fresh_start() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_cancel_all",
         phone_number="2348010101099",
         channel="whatsapp",
-        last_message_text="cancel",
+        last_message_text="stop this transfer",
         loaded_context={"language": "en"},
         pending_interrupt=PendingInterrupt(kind="input", task_ids=["t_transfer"], fields_by_task={"t_transfer": ["amount"]}),
         tasks={
@@ -1382,17 +1382,10 @@ async def test_input_cancel_router_decision_resets_for_fresh_start() -> None:
         waves=[["t_transfer", "t_airtime", "t_account"]],
         current_wave_index=0,
     )
-    planner = _RouteOnlyPlanner(
-        InterruptRouteDecision(
-            decision="cancel",
-            confidence=0.99,
-            detected_language="English",
-            target_intent=None,
-            target_mode=None,
-            reason="explicit cancellation",
-        )
-    )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner(), "redis_client": None},
+        "recursion_limit": 50,
+    }
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -1404,6 +1397,76 @@ async def test_input_cancel_router_decision_resets_for_fresh_start() -> None:
     assert updates["active_domain"] is None
     assert updates["stashed_query_session"] is None
     assert updates["stashed_sessions"] == []
+    assert updates["final_response"] == render_cancelled_prompt("en")
+
+
+@pytest.mark.asyncio
+async def test_confirmation_obvious_cancel_shortcut_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_cancel_confirmation",
+        phone_number="2348010101100",
+        channel="whatsapp",
+        last_message_text="please cancel",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"], prompt="Confirm transfer"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"recipient_name": "Mum", "amount": 10000},
+            )
+        },
+        waves=[["t1"]],
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner(), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["final_response"] == render_cancelled_prompt("en")
+
+
+@pytest.mark.asyncio
+async def test_confirmation_ambiguous_cancel_phrase_falls_back_to_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_cancel_confirmation_ambiguous",
+        phone_number="2348010101101",
+        channel="whatsapp",
+        last_message_text="maybe cancel later",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"], prompt="Confirm transfer"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"recipient_name": "Mum", "amount": 10000},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="cancel",
+            confidence=0.9,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="ambiguous cancellation",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"] == {}
     assert updates["final_response"] == render_cancelled_prompt("en")
 
 
