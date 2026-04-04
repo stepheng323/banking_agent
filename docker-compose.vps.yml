@@ -31,6 +31,8 @@ services:
       RUNTIME_STACK_ROLE: vps-primary
       CHAT_TRANSPORT: redis
       ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
       ENABLE_WEBHOOK_INGRESS: "true"
       ENABLE_OUTBOUND_SENDER: "true"
       ENABLE_CHAT_CONSUMERS: "false"
@@ -40,6 +42,8 @@ services:
       ENABLE_REFUND_WORKER: "false"
       ENABLE_RECEIPT_WORKER: "false"
     restart: unless-stopped
+    volumes:
+      - /root/.aws:/root/.aws:ro
     networks:
       - banking_network
 
@@ -52,6 +56,8 @@ services:
       RUNTIME_STACK_ROLE: vps-primary
       CHAT_TRANSPORT: redis
       ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
       ENABLE_WEBHOOK_INGRESS: "false"
       ENABLE_OUTBOUND_SENDER: "true"
       ENABLE_CHAT_CONSUMERS: "false"
@@ -61,6 +67,8 @@ services:
       ENABLE_REFUND_WORKER: "false"
       ENABLE_RECEIPT_WORKER: "false"
     restart: unless-stopped
+    volumes:
+      - /root/.aws:/root/.aws:ro
     networks:
       - banking_network
 
@@ -73,9 +81,13 @@ services:
       RUNTIME_STACK_ROLE: vps-primary
       CHAT_TRANSPORT: redis
       ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
       ENABLE_CHAT_CONSUMERS: "true"
       ENABLE_OUTBOUND_SENDER: "true"
     restart: unless-stopped
+    volumes:
+      - /root/.aws:/root/.aws:ro
     networks:
       - banking_network
 
@@ -88,12 +100,16 @@ services:
       RUNTIME_STACK_ROLE: vps-primary
       CHAT_TRANSPORT: redis
       ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
       ENABLE_TRANSACTION_WORKER: "true"
       ENABLE_FUNDING_WORKER: "true"
       ENABLE_PAYOUT_WORKER: "true"
       ENABLE_REFUND_WORKER: "true"
       ENABLE_OUTBOUND_SENDER: "true"
     restart: unless-stopped
+    volumes:
+      - /root/.aws:/root/.aws:ro
     networks:
       - banking_network
 
@@ -106,9 +122,13 @@ services:
       RUNTIME_STACK_ROLE: vps-primary
       CHAT_TRANSPORT: redis
       ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
       ENABLE_RECEIPT_WORKER: "true"
       ENABLE_OUTBOUND_SENDER: "true"
     restart: unless-stopped
+    volumes:
+      - /root/.aws:/root/.aws:ro
     networks:
       - banking_network
 
