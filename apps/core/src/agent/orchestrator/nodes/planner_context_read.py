@@ -44,6 +44,24 @@ NO_ACTIVE_FLOW_CONTEXT_READ_MESSAGE = (
     "There is no active transfer flow right now. Start a transfer and I will guide you."
 )
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_BENEFICIARY_DETAIL_HINTS = (
+    "full details",
+    "details",
+    "detail",
+    "full info",
+    "more info",
+    "information",
+    "account details",
+)
+_BENEFICIARY_GROUP_HINTS = ("their", "them", "these", "those", "all", "every", "saved beneficiaries")
+_BENEFICIARY_BARE_DETAIL_PATTERNS = {
+    "show full details",
+    "show details",
+    "full details",
+    "more details",
+    "show the beneficiary details",
+    "show beneficiary details",
+}
 
 
 def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
@@ -83,6 +101,73 @@ def _planner_context_read_subtype(planner_output: Any) -> str | None:
 
 def _compact_token(value: str) -> str:
     return _NON_ALNUM_RE.sub("", value.lower())
+
+
+def _is_beneficiary_detail_followup(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    if not normalized:
+        return False
+    if not any(hint in normalized for hint in _BENEFICIARY_DETAIL_HINTS):
+        return False
+    return any(token in normalized for token in ("beneficiar", "recipient", "saved") + _BENEFICIARY_GROUP_HINTS) or (
+        normalized in _BENEFICIARY_BARE_DETAIL_PATTERNS
+    )
+
+
+def _format_beneficiary_detail_block(entity: ContextEntity, *, ordinal: int | None = None) -> str | None:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    alias = str(data.get("alias") or entity.label or "").strip()
+    account_name = str(data.get("account_name") or "").strip()
+    bank_name = str(data.get("bank_name") or data.get("bank") or "").strip()
+    account_number = str(data.get("account_number") or data.get("account") or "").strip()
+    if not any((alias, account_name, bank_name, account_number)):
+        return None
+
+    header = alias or account_name or entity.label or "Beneficiary"
+    if ordinal is not None:
+        header = f"{ordinal}. {header}"
+
+    lines = [header]
+    if account_name:
+        lines.append(f"Account Name: {account_name}")
+    if bank_name:
+        lines.append(f"Bank: {bank_name}")
+    if account_number:
+        lines.append(f"Account Number: {account_number}")
+    return "\n".join(lines)
+
+
+def build_beneficiary_context_followup_response(
+    state: OrchestratorState,
+    text: str,
+) -> str | None:
+    """Answer beneficiary detail follow-ups directly from the latest beneficiary frame."""
+    if not _is_beneficiary_detail_followup(text):
+        return None
+
+    frame = OrchestratorContextManager().latest_beneficiary_frame(state)
+    if frame is None or not frame.items:
+        return None
+
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    wants_group_details = any(token in normalized for token in _BENEFICIARY_GROUP_HINTS)
+
+    detail_blocks: list[str] = []
+    if wants_group_details or len(frame.items) > 1:
+        for idx, entity in enumerate(frame.items[:CONTEXT_READ_LIST_LIMIT], 1):
+            block = _format_beneficiary_detail_block(entity, ordinal=idx)
+            if block:
+                detail_blocks.append(block)
+        if not detail_blocks:
+            return None
+        overflow = len(frame.items) - len(detail_blocks)
+        suffix = f"\n\nShowing {len(detail_blocks)} of {len(frame.items)} beneficiaries." if overflow > 0 else ""
+        return "Saved Beneficiary Details\n\n" + "\n\n".join(detail_blocks) + suffix
+
+    single_block = _format_beneficiary_detail_block(frame.items[0])
+    if single_block is None:
+        return None
+    return "Beneficiary Details\n\n" + single_block
 
 
 def _find_account_for_bank_followup(text: str, accounts: list[dict[str, Any]]) -> dict[str, Any] | None:

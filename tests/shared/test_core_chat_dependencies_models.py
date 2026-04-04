@@ -37,6 +37,7 @@ def test_resolve_role_model_warns_when_query_matches_planner(monkeypatch: pytest
                 "planner_model": "gpt-4o-mini",
                 "recommended_env": "QUERY_MODEL",
                 "dedicated": False,
+                "recommended_model": None,
             },
         )
     ]
@@ -76,6 +77,7 @@ def test_resolve_role_model_logs_dedicated_interrupt_router_model(monkeypatch: p
                 "planner_model": "gpt-4o-mini",
                 "recommended_env": "INTERRUPT_ROUTER_MODEL",
                 "dedicated": True,
+                "recommended_model": "gpt-5.4-nano",
             },
         )
     ]
@@ -107,6 +109,7 @@ def test_resolve_role_model_blank_config_logs_fallback_then_overlap(monkeypatch:
                 "fallback_model": "gpt-4o-mini",
                 "planner_model": "gpt-4o-mini",
                 "recommended_env": "INTERRUPT_ROUTER_MODEL",
+                "recommended_model": "gpt-5.4-nano",
             },
         ),
         (
@@ -117,6 +120,7 @@ def test_resolve_role_model_blank_config_logs_fallback_then_overlap(monkeypatch:
                 "planner_model": "gpt-4o-mini",
                 "recommended_env": "INTERRUPT_ROUTER_MODEL",
                 "dedicated": False,
+                "recommended_model": "gpt-5.4-nano",
             },
         ),
     ]

@@ -837,6 +837,93 @@ async def test_input_account_entry_shortcut_skips_interrupt_router() -> None:
 
 
 @pytest.mark.asyncio
+async def test_input_recipient_alias_shortcut_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_shortcut_input_3",
+        phone_number="2348066666701",
+        channel="whatsapp",
+        last_message_text="Its to mum",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_account", "recipient_bank_name"]},
+            prompt="What's recipient's account number and bank?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 10000.0},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FailIfRouterCalledPlanner(),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_input_query_pivot_still_uses_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_shortcut_input_4",
+        phone_number="2348066666702",
+        channel="whatsapp",
+        last_message_text="How much did I spend last week?",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_account", "recipient_bank_name"]},
+            prompt="What's recipient's account number and bank?",
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 10000.0},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.96,
+            detected_language="English",
+            target_intent="query",
+            target_mode="new",
+            reason="explicit query pivot",
+        )
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["pending_interrupt"] is None
+    assert len(updates["stashed_sessions"]) == 1
+    switched_task_ids = list(updates["tasks"].keys())
+    assert len(switched_task_ids) == 1
+    assert updates["tasks"][switched_task_ids[0]].type == "query"
+
+
+@pytest.mark.asyncio
 async def test_confirmation_ambiguous_message_still_falls_back_to_router() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_router_fallback_1",
@@ -1112,6 +1199,51 @@ async def test_confirmation_switch_to_account_uses_user_message_for_balance_exec
 
     assert account_worker.last_user_message == "what's my balance"
     assert execution_updates["outbox"][0]["text"].startswith("*Your Balance*")
+
+
+@pytest.mark.asyncio
+async def test_confirmation_same_flow_switch_intent_shortcuts_back_to_continue_flow() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_same_flow_1",
+        phone_number="2348077777700",
+        channel="whatsapp",
+        last_message_text="change it to 20k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Mum",
+                    "confirmation": {"summary": "Confirm transfer"},
+                    "idempotency_key": "idem-same-flow-1",
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.88,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="same flow correction misclassified as switch",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
 
 
 @pytest.mark.asyncio
@@ -1683,7 +1815,7 @@ async def test_status_query_without_transaction_flow_recovers_to_fresh_query_rou
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert updates["last_interrupt"].task_ids == ["t1"]
+    assert updates["last_interrupt"] is None
     assert set(updates["tasks"].keys()) == {"interrupt_query_1"}
     task = updates["tasks"]["interrupt_query_1"]
     assert task.type == "query"

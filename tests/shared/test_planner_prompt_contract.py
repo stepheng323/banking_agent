@@ -194,6 +194,26 @@ def test_transfer_only_prompt_bundle_excludes_executor_coverage_guard() -> None:
     assert "EXECUTOR COVERAGE GUARD" not in runtime_prompt
 
 
+def test_transactional_interrupt_replan_uses_transfer_only_bundle() -> None:
+    runtime_prompt, _, bundles = _build_prompt(
+        "change it to 20k",
+        "Active transfer flow",
+        PlannerPromptSignals(
+            active_flow_type="transfer",
+            pending_interrupt_kind="confirmation",
+            forced_domain_owner="transfer",
+            expected_transaction_executors=("transfer",),
+        ),
+    )
+    assert "transfer_only" in bundles
+    assert "money_move" not in bundles
+    assert "context" not in bundles
+    assert "executor_coverage_guard" not in bundles
+    assert "TARGETED EXAMPLES (TRANSFER_ONLY)" in runtime_prompt
+    assert "TARGETED EXAMPLES (MONEY_MOVE)" not in runtime_prompt
+    assert "TARGETED EXAMPLES (CONTEXT)" not in runtime_prompt
+
+
 def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     """Semantic-router prompt should require all explicit mixed transaction executors."""
     assert "direct_context_answer" in SEMANTIC_ROUTER_SYSTEM_PROMPT

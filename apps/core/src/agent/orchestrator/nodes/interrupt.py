@@ -76,6 +76,19 @@ _NON_TRANSFER_INTENT_HINT_RE = re.compile(
     r"\b(airtime|data|bundle|balance|statement|support|faq|ticket|complaint)\b",
     re.IGNORECASE,
 )
+_INPUT_RECIPIENT_REPLY_PREFIX_RE = re.compile(
+    r"^(?:(?:it'?s|its|it is|this is)\s+)?(?:(?:to|for|send(?:\s+it)?\s+to)\s+)?(?P<recipient>.+?)$",
+    re.IGNORECASE,
+)
+_INPUT_RECIPIENT_REPLY_BLOCK_RE = re.compile(
+    r"\b(and|also|plus|then|while|cancel|stop|show|list|check|buy|help|support|faq|balance|statement|spend|spent|transaction|transactions|airtime|data|beneficiar(?:y|ies)|account(?:s)?|week|month|today|tomorrow|yesterday)\b",
+    re.IGNORECASE,
+)
+_INPUT_RECIPIENT_REPLY_QUESTION_RE = re.compile(r"^(what|how|why|when|where|who|which)\b", re.IGNORECASE)
+_INPUT_RECIPIENT_REPLY_META_RE = re.compile(
+    r"^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no)$",
+    re.IGNORECASE,
+)
 _CONFIRMATION_COLLECTIVE_SCOPE_RE = re.compile(
     r"\b(both|all|everyone|everybody|all of them|for both)\b",
     re.IGNORECASE,
@@ -970,7 +983,7 @@ def _build_stash_switch_updates(
     )
     updates: dict[str, Any] = {
         "pending_interrupt": None,
-        "last_interrupt": interrupt,
+        "last_interrupt": None,
         "tasks": new_tasks,
         "waves": waves,
         "current_wave_index": 0,
@@ -1007,7 +1020,7 @@ def _build_replace_switch_updates(
     )
     updates: dict[str, Any] = {
         "pending_interrupt": None,
-        "last_interrupt": interrupt,
+        "last_interrupt": None,
         "tasks": new_tasks,
         "waves": waves,
         "current_wave_index": 0,
@@ -1044,7 +1057,7 @@ def _build_transaction_replacement_updates(
     )
     updates: dict[str, Any] = {
         "pending_interrupt": None,
-        "last_interrupt": interrupt,
+        "last_interrupt": None,
         "tasks": new_tasks,
         "waves": waves,
         "current_wave_index": 0,
@@ -1665,6 +1678,7 @@ def _resolve_deterministic_confirmation_repeat_route(
 
 def _resolve_deterministic_input_slot_route(
     *,
+    state: OrchestratorState,
     interrupt: Any,
     text: str,
 ) -> InterruptRouteDecision | None:
@@ -1674,6 +1688,9 @@ def _resolve_deterministic_input_slot_route(
     task_ids = getattr(interrupt, "task_ids", None) or []
     if len(task_ids) != 1:
         return None
+
+    active_task = state.tasks.get(str(task_ids[0]))
+    active_task_type = active_task.type if active_task is not None else None
 
     fields_by_task = getattr(interrupt, "fields_by_task", None) or {}
     required_fields = {
@@ -1731,7 +1748,55 @@ def _resolve_deterministic_input_slot_route(
             reason="shortcut_input_amount_entry",
         )
 
+    if (
+        active_task_type == "transfer"
+        and required_fields == {"recipient_account", "recipient_bank_name"}
+        and _looks_like_simple_transfer_recipient_reply(stripped_text)
+    ):
+        return InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type=None,
+            reason="shortcut_input_recipient_reply",
+        )
+
     return None
+
+
+def _looks_like_simple_transfer_recipient_reply(text: str) -> bool:
+    stripped_text = text.strip()
+    if not stripped_text:
+        return False
+    if _INPUT_RECIPIENT_REPLY_META_RE.fullmatch(stripped_text):
+        return False
+    if "?" in stripped_text or _INPUT_RECIPIENT_REPLY_QUESTION_RE.search(stripped_text):
+        return False
+    if _NON_TRANSFER_INTENT_HINT_RE.search(stripped_text) or _INPUT_RECIPIENT_REPLY_BLOCK_RE.search(stripped_text):
+        return False
+
+    match = _INPUT_RECIPIENT_REPLY_PREFIX_RE.fullmatch(stripped_text)
+    if match is None:
+        return False
+
+    candidate = (match.group("recipient") or "").strip(" .,!?:;\"'()[]{}")
+    if not candidate:
+        return False
+
+    if _digits_only(candidate):
+        return False
+
+    normalized_candidate = _normalize_recipient_match_text(candidate)
+    if not normalized_candidate:
+        return False
+
+    tokens = normalized_candidate.split()
+    if not tokens or len(tokens) > 4:
+        return False
+
+    return all(len(token) >= 2 for token in tokens)
 
 
 def _message_targets_transfer_task(message_text: str, task: TaskSpec) -> bool:
@@ -1941,6 +2006,21 @@ def _approve_auth_updates(state: OrchestratorState, interrupt: Any) -> dict[str,
     }
 
 
+def _is_same_flow_transactional_switch(
+    *,
+    route: InterruptRouteDecision,
+    interrupt: Any,
+    active_type: str,
+) -> bool:
+    if route.decision != "switch_intent":
+        return False
+    if interrupt.kind != "confirmation":
+        return False
+    if active_type not in TRANSACTION_INTENTS:
+        return False
+    return str(route.target_intent or "").strip().lower() == active_type
+
+
 async def _handle_switch_intent_route(
     *,
     state: OrchestratorState,
@@ -2092,6 +2172,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         return _continue_flow_updates(state, interrupt)
 
     input_slot_shortcut_route = _resolve_deterministic_input_slot_route(
+        state=state,
         interrupt=interrupt,
         text=text,
     )
@@ -2174,6 +2255,14 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             return await _cancel_updates(state, interrupt, current_task_types, redis_client)
 
         if route.decision == "switch_intent":
+            if _is_same_flow_transactional_switch(route=route, interrupt=interrupt, active_type=active_type):
+                logger.info(
+                    "interrupt_same_flow_switch_shortcut",
+                    kind=interrupt.kind,
+                    active_type=active_type,
+                    target_intent=route.target_intent,
+                )
+                return _continue_flow_updates(state, interrupt)
             return await _handle_switch_intent_route(
                 state=state,
                 interrupt=interrupt,
@@ -2272,6 +2361,14 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         return _continue_flow_updates(state, interrupt)
 
     if route.decision == "switch_intent":
+        if _is_same_flow_transactional_switch(route=route, interrupt=interrupt, active_type=active_type):
+            logger.info(
+                "interrupt_same_flow_switch_shortcut",
+                kind=interrupt.kind,
+                active_type=active_type,
+                target_intent=route.target_intent,
+            )
+            return _continue_flow_updates(state, interrupt)
         return await _handle_switch_intent_route(
             state=state,
             interrupt=interrupt,

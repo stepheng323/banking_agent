@@ -67,9 +67,13 @@ class OrchestratorContextManager:
         """Return whether a recent beneficiary-list frame with entries exists."""
         return self._latest_active_frame(state, frame_type=ContextFrameType.BENEFICIARY_LIST) is not None
 
+    def latest_beneficiary_frame(self, state: OrchestratorState) -> ContextFrame | None:
+        """Return the latest active beneficiary-list frame with entries."""
+        return self._latest_active_frame(state, frame_type=ContextFrameType.BENEFICIARY_LIST)
+
     def latest_beneficiary_entity(self, state: OrchestratorState) -> ContextEntity | None:
         """Return the focused beneficiary entity from the latest active beneficiary frame."""
-        frame = self._latest_active_frame(state, frame_type=ContextFrameType.BENEFICIARY_LIST)
+        frame = self.latest_beneficiary_frame(state)
         if frame is None:
             return None
         if len(frame.items) == 1:

@@ -41,6 +41,7 @@ QUOTED_REPLAY_MIN_CONFIDENCE = _QUOTED_REPLAY_MIN_CONFIDENCE
 _UNEXPECTED_ROUTE_RECOVERY_MIN_CONFIDENCE = 0.5
 
 _PLANNER_DOMAIN_TARGETS = {"query", "account", "support", "beneficiary", "transfer", "airtime", "data"}
+_PLANNER_TRANSFER_PREFIXES = ("send", "transfer", "pay", "remit")
 
 
 def _planner_route_updates(
@@ -86,6 +87,41 @@ def _recover_unexpected_question_task(planner_output: Any, text: str) -> Planned
         instruction=instruction,
         parameters=TaskParameters(),
         risk="READ_ONLY",
+    )
+
+
+def _looks_like_amount_only_transfer_start(text: str) -> bool:
+    normalized = " ".join((text or "").strip().lower().split())
+    if not normalized:
+        return False
+    if not any(normalized.startswith(prefix) for prefix in _PLANNER_TRANSFER_PREFIXES):
+        return False
+    if not any(char.isdigit() for char in normalized):
+        return False
+    if any(marker in normalized for marker in (" and ", " then ", ",")):
+        return False
+    if any(keyword in normalized for keyword in ("airtime", "data", "bundle", "balance", "transaction", "statement")):
+        return False
+    return True
+
+
+def _recover_missing_slot_transfer_task(planner_output: Any, text: str) -> PlannedTask | None:
+    if not planner_output or getattr(planner_output, "tasks", None):
+        return None
+    if not _looks_like_amount_only_transfer_start(text):
+        return None
+
+    primary_intent = str(getattr(planner_output, "primary_intent", "") or "").strip().lower()
+    if primary_intent not in {"conversational", "transfer"}:
+        return None
+
+    return PlannedTask(
+        task_id="transfer_missing_slots_recovery",
+        action="send_money",
+        executor="transfer",
+        instruction=text,
+        parameters=TaskParameters(),
+        risk="MONEY_MOVE",
     )
 
 
@@ -180,6 +216,22 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             policy_blocked=False,
             fallback_path="worker_task_injected",
         )
+    else:
+        recovered_transfer_task = _recover_missing_slot_transfer_task(planner_output, text)
+        if recovered_transfer_task is not None:
+            planner_output.tasks = [recovered_transfer_task]
+            planner_output.primary_intent = "transfer"
+            planner_output.response = ""
+            planner_output.response_key = None
+            logger.info(
+                "unexpected_turn_route_breadcrumb",
+                user_turn_kind=str(getattr(planner_output, "primary_intent", "unknown") or "unknown"),
+                active_session_present=bool(state.session_stack),
+                selected_route="transfer_missing_slot_recovery",
+                route_reason="planner_amount_only_transfer_recovery",
+                policy_blocked=False,
+                fallback_path="worker_task_injected",
+            )
 
     handled_response = await _build_non_task_response(
         state=state,

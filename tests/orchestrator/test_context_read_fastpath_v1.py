@@ -1,9 +1,11 @@
 """Tests for context-read fastpath planner behavior."""
 
+import time
+
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.context.models import ContextFrameType
+from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
@@ -28,6 +30,12 @@ class _CapturingPlanner(_MockPlanner):
         del phone_number, text
         self.last_context = context
         return self._output
+
+
+class _FailingPlanner:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+        del phone_number, text, context, prompt_signals
+        raise AssertionError("planner should not be called for grounded beneficiary detail follow-up")
 
 
 @pytest.mark.asyncio
@@ -671,3 +679,104 @@ async def test_fastpath_beneficiary_name_preview_persists_context_frame() -> Non
     assert state.context_frames
     assert state.context_frames[-1].frame_type == ContextFrameType.BENEFICIARY_LIST
     assert state.context_frames[-1].items[0].data["id"] == "bene-2"
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_detail_followup_answers_directly_from_recent_frame() -> None:
+    now = int(time.time())
+    state = OrchestratorState(
+        user_id="u_bene_details_1",
+        phone_number="2348111000002",
+        channel="telegram",
+        last_message_text="Show their full details",
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Mum",
+                        data={
+                            "alias": "Mum",
+                            "account_name": "MERCY JOHNSON",
+                            "bank_name": "Opay",
+                            "account_number": "8162511023",
+                        },
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Gaines",
+                        data={
+                            "alias": "Gaines",
+                            "account_name": "Yusuf Ibrahim",
+                            "bank_name": "Access Bank",
+                            "account_number": "0000005262",
+                        },
+                    ),
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailingPlanner(), "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    response = updates.get("final_response", "")
+    assert response.startswith("Saved Beneficiary Details")
+    assert "1. Mum" in response
+    assert "Account Name: MERCY JOHNSON" in response
+    assert "Account Number: 8162511023" in response
+    assert "2. Gaines" in response
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_single_beneficiary_detail_followup_returns_single_block() -> None:
+    now = int(time.time())
+    state = OrchestratorState(
+        user_id="u_bene_details_2",
+        phone_number="2348111000003",
+        channel="telegram",
+        last_message_text="Show the beneficiary details",
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiary_recent_single",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Mum",
+                        data={
+                            "alias": "Mum",
+                            "account_name": "MERCY JOHNSON",
+                            "bank_name": "Opay",
+                            "account_number": "8162511023",
+                        },
+                    )
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailingPlanner(), "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    response = updates.get("final_response", "")
+    assert response.startswith("Beneficiary Details")
+    assert "Mum" in response
+    assert "Account Name: MERCY JOHNSON" in response
+    assert "tasks" not in updates

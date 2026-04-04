@@ -318,7 +318,7 @@ async def test_plan_tasks_marks_guardrail_transfer_handoff_for_transfer_only_pro
 
 
 @pytest.mark.asyncio
-async def test_plan_tasks_does_not_mark_interrupt_turn_for_transfer_only_prompt() -> None:
+async def test_plan_tasks_marks_narrow_transfer_interrupt_for_transfer_only_prompt() -> None:
     planner = _CapturingPlanner(
         PlannerOutput(
             primary_intent="transfer",
@@ -357,7 +357,67 @@ async def test_plan_tasks_does_not_mark_interrupt_turn_for_transfer_only_prompt(
     await plan_tasks(state, config)
 
     assert planner.last_prompt_signals is not None
-    assert getattr(planner.last_prompt_signals, "forced_domain_owner", None) is None
+    assert getattr(planner.last_prompt_signals, "forced_domain_owner", None) == "transfer"
+
+
+@pytest.mark.asyncio
+async def test_plan_tasks_trims_user_state_for_narrow_transfer_replan() -> None:
+    planner = _CapturingPlanner(
+        PlannerOutput(
+            primary_intent="transfer",
+            response="",
+            response_key=None,
+            confidence=0.9,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language="English",
+            context_read_subtype=None,
+            normalized_instruction="make it 20k",
+            tasks=[],
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_prompt_trim_1",
+        phone_number="2348044444467",
+        channel="whatsapp",
+        last_message_text="make it 20k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"], fields_by_task={"t1": []}),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Mum",
+                    "confirmation": {"summary": "Confirm transfer"},
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "history": [{"role": "assistant", "content": "Confirm the transfer to Mum."}],
+            "accounts": [{"bank_name": "First Bank", "account_number": "0000000001", "mandate_status": "ready"}],
+            "beneficiaries": [{"alias": "Mum", "bank_name": "Opay", "account_number": "0123456789"}],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    await plan_tasks(state, config)
+
+    assert planner.last_context is not None
+    assert "Active Flow:" in planner.last_context
+    assert "User State:" not in planner.last_context
+    assert "Recent Chat:" not in planner.last_context
 
 
 @pytest.mark.asyncio

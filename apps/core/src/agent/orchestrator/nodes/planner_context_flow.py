@@ -7,6 +7,7 @@ from typing import Any, cast
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
     PLANNER_CONTEXT_MAX_CHARS,
+    PLANNER_CONTEXT_SECTION_SEPARATOR,
     _assemble_planner_context,
     _clip_text,
     _derive_recent_answer_focus,
@@ -17,7 +18,9 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
 from apps.core.src.agent.orchestrator.nodes.planner_context_read import (
     TRANSACTION_EXECUTORS,
     _infer_recent_domain_focus,
+    build_beneficiary_context_followup_response,
 )
+from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import RouterDomainIntent, TransactionExecutor
 from shared.utils.logging import get_logger
@@ -112,7 +115,45 @@ def _should_use_minimal_planner_context(
     return True
 
 
-def _forced_domain_owner(state: OrchestratorState) -> RouterDomainIntent | None:
+def _is_narrow_transfer_replan(
+    *,
+    state: OrchestratorState,
+    active_intent: str | None,
+    expected_executors: tuple[TransactionExecutor, ...],
+    query_session_active: bool,
+) -> bool:
+    if state.has_quote:
+        return False
+    if query_session_active:
+        return False
+    if state.pending_interrupt is None:
+        return False
+    if active_intent != "transfer":
+        task_ids = getattr(state.pending_interrupt, "task_ids", None) or []
+        active_interrupt_types = {
+            state.tasks[task_id].type
+            for task_id in task_ids
+            if isinstance(task_id, str) and task_id in state.tasks
+        }
+        if active_interrupt_types != {"transfer"} and state.routing_target_domain != "transfer":
+            return False
+    return expected_executors in {(), ("transfer",)}
+
+
+def _forced_domain_owner(
+    state: OrchestratorState,
+    *,
+    active_intent: str | None,
+    expected_executors: tuple[TransactionExecutor, ...],
+    query_session_active: bool,
+) -> RouterDomainIntent | None:
+    if _is_narrow_transfer_replan(
+        state=state,
+        active_intent=active_intent,
+        expected_executors=expected_executors,
+        query_session_active=query_session_active,
+    ):
+        return "transfer"
     if state.pending_interrupt is not None:
         return None
     if state.has_quote:
@@ -137,6 +178,36 @@ async def _build_planner_context(
     redis_client: Any | None,
     locale_updates: dict[str, Any],
 ) -> PlannerContextBuildResult:
+    beneficiary_followup_response = build_beneficiary_context_followup_response(state, text)
+    if beneficiary_followup_response:
+        frame = OrchestratorContextManager().latest_beneficiary_frame(state)
+        logger.info("beneficiary_context_detail_followup_hit", item_count=len(frame.items) if frame else 0)
+        return PlannerContextBuildResult(
+            planner_context="None",
+            active_intent=None,
+            query_session_snapshot=None,
+            query_session_source=None,
+            prompt_signals=PlannerPromptSignals(
+                active_flow_type=None,
+                pending_interrupt_kind=None,
+                query_session_active=False,
+                query_session_source=None,
+                recent_domain_focus="beneficiary",
+                has_beneficiary_suggestion=False,
+                has_user_state_summary=False,
+                has_short_term_memory=False,
+                has_quote=False,
+                has_transaction_intent_hint=False,
+                forced_domain_owner=None,
+                expected_transaction_executors=(),
+            ),
+            shortcut_updates={
+                "final_response": beneficiary_followup_response,
+                "semantic_path_shape": "beneficiary_context_details",
+                **locale_updates,
+            },
+        )
+
     planner_context_sections: list[tuple[str, str]] = []
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
@@ -180,7 +251,18 @@ async def _build_planner_context(
         for item in state.preplanner_expected_transaction_executors
         if item in TRANSACTION_EXECUTORS
     )
-    forced_domain_owner = _forced_domain_owner(state)
+    forced_domain_owner = _forced_domain_owner(
+        state,
+        active_intent=active_intent,
+        expected_executors=expected_executors,
+        query_session_active=query_session_active,
+    )
+    narrow_transfer_replan = _is_narrow_transfer_replan(
+        state=state,
+        active_intent=active_intent,
+        expected_executors=expected_executors,
+        query_session_active=query_session_active,
+    )
     if _should_use_minimal_planner_context(
         state=state,
         active_intent=active_intent,
@@ -236,7 +318,7 @@ async def _build_planner_context(
         )
         logger.info("planner_context_active_flow_injected", intent=active_intent)
 
-    if turn_summary.short_term_memory_summary:
+    if turn_summary.short_term_memory_summary and not narrow_transfer_replan:
         has_short_term_memory = True
         planner_context_sections.append(
             (
@@ -247,7 +329,7 @@ async def _build_planner_context(
         logger.info("planner_context_injected", context="short_term_memory")
 
     recent_domain_focus = turn_summary.recent_domain_focus
-    if recent_domain_focus:
+    if recent_domain_focus and not narrow_transfer_replan:
         planner_context_sections.append(
             (
                 "recent_domain_focus",
@@ -278,7 +360,7 @@ async def _build_planner_context(
         )
         logger.info("planner_context_injected", context="recent_answer_focus", focus=turn_summary.recent_answer_focus)
 
-    user_state_summary = build_user_state_summary_from_summary(turn_summary)
+    user_state_summary = build_user_state_summary_from_summary(turn_summary) if not narrow_transfer_replan else None
     if user_state_summary:
         has_user_state_summary = True
         planner_context_sections.append(
@@ -286,6 +368,9 @@ async def _build_planner_context(
         )
         logger.info("planner_context_injected", context="user_state_history")
 
+    raw_chars = sum(len(content) for _, content in planner_context_sections)
+    if len(planner_context_sections) > 1:
+        raw_chars += len(PLANNER_CONTEXT_SECTION_SEPARATOR) * (len(planner_context_sections) - 1)
     planner_context, included_sections, clipped_sections, dropped_sections = _assemble_planner_context(
         planner_context_sections,
         max_chars=PLANNER_CONTEXT_MAX_CHARS,
@@ -293,8 +378,10 @@ async def _build_planner_context(
     logger.info(
         "planner_context_size",
         chars=len(planner_context),
+        raw_chars=raw_chars,
         truncated=bool(clipped_sections),
         sections=len(included_sections),
+        included_sections=included_sections,
         clipped_sections=clipped_sections,
         dropped_sections=dropped_sections,
     )

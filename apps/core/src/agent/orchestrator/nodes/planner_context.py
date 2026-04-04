@@ -430,6 +430,8 @@ def build_router_context_from_summary(
     summary: TurnContextSummary,
     *,
     expected_executors: list[str] | None = None,
+    include_account_preview: bool = True,
+    include_beneficiary_preview: bool = True,
 ) -> str:
     expected = expected_executors or []
     sections = [
@@ -440,13 +442,13 @@ def build_router_context_from_summary(
         f"EXPECTED_TRANSACTION_EXECUTORS={','.join(expected) if expected else 'none'}",
     ]
 
-    if summary.account_lines:
+    if include_account_preview and summary.account_lines:
         account_block = ["ACCOUNTS:"] + [f"- {line}" for line in summary.account_lines[:3]]
         if summary.remaining_accounts > 0:
             account_block.append(f"- +{summary.remaining_accounts} more")
         sections.append("\n".join(account_block))
 
-    if summary.beneficiary_lines:
+    if include_beneficiary_preview and summary.beneficiary_lines:
         beneficiary_block = ["BENEFICIARIES:"] + [f"- {line}" for line in summary.beneficiary_lines[:3]]
         if summary.remaining_beneficiaries > 0:
             beneficiary_block.append(f"- +{summary.remaining_beneficiaries} more")

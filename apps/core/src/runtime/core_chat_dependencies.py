@@ -58,7 +58,12 @@ def _resolve_role_model(*, role: str, configured_model: str, planner_model: str,
         "query": "QUERY_MODEL",
         "interrupt_router": "INTERRUPT_ROUTER_MODEL",
     }
+    recommended_model_map = {
+        "query": None,
+        "interrupt_router": "gpt-5.4-nano",
+    }
     env_var = role_env_map[role]
+    recommended_model = recommended_model_map[role]
     model = configured_model.strip()
     if not model:
         model = planner_model
@@ -68,6 +73,7 @@ def _resolve_role_model(*, role: str, configured_model: str, planner_model: str,
             fallback_model=model,
             planner_model=planner_model,
             recommended_env=env_var,
+            recommended_model=recommended_model,
         )
 
     if model == planner_model:
@@ -78,6 +84,7 @@ def _resolve_role_model(*, role: str, configured_model: str, planner_model: str,
             planner_model=planner_model,
             recommended_env=env_var,
             dedicated=False,
+            recommended_model=recommended_model,
         )
     else:
         logger.info(
@@ -87,6 +94,7 @@ def _resolve_role_model(*, role: str, configured_model: str, planner_model: str,
             planner_model=planner_model,
             recommended_env=env_var,
             dedicated=True,
+            recommended_model=recommended_model,
         )
     return model
 

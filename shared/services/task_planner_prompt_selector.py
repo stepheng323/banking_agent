@@ -19,6 +19,16 @@ def _has_transactional_active_flow(signals: PlannerPromptSignals) -> bool:
     return bool(signals.active_flow_type and signals.active_flow_type in _TRANSACTIONAL_EXECUTORS)
 
 
+def _is_transactional_interrupt(signals: PlannerPromptSignals) -> bool:
+    if signals.pending_interrupt_kind is None:
+        return False
+    if _has_transactional_active_flow(signals):
+        return True
+    if signals.forced_domain_owner == "transfer":
+        return True
+    return bool(signals.expected_transaction_executors)
+
+
 def _include_money_move_bundle(signals: PlannerPromptSignals) -> bool:
     if _include_transfer_only_bundle(signals):
         return False
@@ -37,10 +47,10 @@ def _include_money_move_bundle(signals: PlannerPromptSignals) -> bool:
 def _include_context_bundle(signals: PlannerPromptSignals) -> bool:
     if signals.has_beneficiary_suggestion:
         return True
-    if signals.pending_interrupt_kind is not None:
-        return True
     if signals.active_flow_type is not None and signals.active_flow_type not in _TRANSACTIONAL_EXECUTORS:
         return True
+    if signals.pending_interrupt_kind is not None:
+        return not _is_transactional_interrupt(signals)
     return False
 
 
@@ -51,9 +61,9 @@ def _include_transfer_only_bundle(signals: PlannerPromptSignals) -> bool:
         return False
     if signals.has_quote:
         return False
-    if signals.pending_interrupt_kind is not None:
+    if signals.query_session_active:
         return False
-    if _has_transactional_active_flow(signals):
+    if signals.active_flow_type is not None and signals.active_flow_type != "transfer":
         return False
     return True
 
@@ -76,7 +86,7 @@ def _include_mixed_tx_bundle(signals: PlannerPromptSignals) -> bool:
 def _include_executor_coverage_guard(signals: PlannerPromptSignals) -> bool:
     if _include_transfer_only_bundle(signals):
         return False
-    return bool(signals.expected_transaction_executors)
+    return len(signals.expected_transaction_executors) > 1
 
 
 def select_prompt_bundles(signals: PlannerPromptSignals) -> tuple[str, ...]:

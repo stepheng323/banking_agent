@@ -376,8 +376,8 @@ def test_interrupt_and_quoted_context_render_from_shared_summary() -> None:
     assert len(interrupt_context) <= INTERRUPT_CONTEXT_MAX_CHARS
     assert "Active Flow: input required for tasks ['t1']" in interrupt_context
     assert "RECENT_ANSWER_FOCUS=" in interrupt_context
-    assert "ACCOUNTS:" in interrupt_context
-    assert "BENEFICIARIES:" in interrupt_context
+    assert "ACCOUNTS:" not in interrupt_context
+    assert "BENEFICIARIES:" not in interrupt_context
 
     assert len(quoted_context) <= QUOTED_REPLAY_CONTEXT_MAX_CHARS
     assert "QUOTED_MESSAGE_ID=wamid.quoted.1" in quoted_context
