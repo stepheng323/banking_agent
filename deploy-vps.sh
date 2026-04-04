@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # ── Config (override via env or edit defaults here) ──────────────────────────
-VPS_HOST="${VPS_HOST:-62.169.20.218}"
+VPS_HOST="${VPS_HOST:-217.216.66.68}"
 VPS_SSH_USER="${VPS_SSH_USER:-root}"
 VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 VPS_APP_DIR="${VPS_APP_DIR:-/srv/banking_agent}"
@@ -15,6 +15,11 @@ COMPOSE_FILE="docker-compose.vps.yml"
 
 SSH="ssh -p $VPS_SSH_PORT"
 REMOTE="$VPS_SSH_USER@$VPS_HOST"
+LOCAL_ENV_FILE=".env"
+REMOTE_ENV_FILE="$VPS_APP_DIR/.env"
+
+echo "▶ Ensuring remote app directory exists at $REMOTE:$VPS_APP_DIR ..."
+$SSH "$REMOTE" "mkdir -p '$VPS_APP_DIR'"
 
 echo "▶ Syncing repo to $REMOTE:$VPS_APP_DIR ..."
 rsync -az \
@@ -27,9 +32,19 @@ rsync -az \
   --exclude '__pycache__/' \
   --exclude '*.pyc' \
   --exclude '.env' \
-  --exclude 'whatsapp_flow_private_key.pem' \
   -e "$SSH" \
   ./ "$REMOTE:$VPS_APP_DIR/"
+
+if [[ -f "$LOCAL_ENV_FILE" ]]; then
+  echo "▶ Syncing env file to $REMOTE:$REMOTE_ENV_FILE ..."
+  rsync -az -e "$SSH" "$LOCAL_ENV_FILE" "$REMOTE:$REMOTE_ENV_FILE"
+else
+  echo "▶ Verifying remote env file exists at $REMOTE:$REMOTE_ENV_FILE ..."
+  if ! $SSH "$REMOTE" "test -f '$REMOTE_ENV_FILE'"; then
+    echo "✗ Missing env file. Expected local $LOCAL_ENV_FILE or remote $REMOTE_ENV_FILE."
+    exit 1
+  fi
+fi
 
 echo "▶ Deploying stack on VPS ..."
 $SSH "$REMOTE" "APP_DIR='$VPS_APP_DIR' COMPOSE_FILE='$COMPOSE_FILE' bash -s" <<'REMOTE_SCRIPT'
