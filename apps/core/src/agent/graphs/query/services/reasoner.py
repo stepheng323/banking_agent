@@ -308,6 +308,26 @@ class QuerySemanticReasoner:
         )
 
     @staticmethod
+    def _log_llm_call(
+        *,
+        duration_ms: float,
+        reasoner_schema: ReasonerSchemaType,
+        prompt_item_count: int,
+        prompt_frame_count: int,
+        prompt_surface_type: str | None,
+        context_bytes: int,
+    ) -> None:
+        logger.info(
+            "query_reasoner_llm_call",
+            duration_ms=round(duration_ms, 2),
+            reasoner_schema=reasoner_schema,
+            prompt_item_count=prompt_item_count,
+            prompt_frame_count=prompt_frame_count,
+            prompt_surface_type=prompt_surface_type,
+            context_bytes=context_bytes,
+        )
+
+    @staticmethod
     def _annotate_decision(
         *,
         context_mode: SemanticContextModeType,
@@ -527,7 +547,7 @@ class QuerySemanticReasoner:
         prompt_context_bytes = len(dynamic_context.encode("utf-8"))
         if context.session_mode == "pending_clarification":
             structured_llm = self._pending_structured_llm
-            reasoner_schema = "pending_clarification"
+            reasoner_schema: ReasonerSchemaType = "pending_clarification"
         else:
             structured_llm = self._active_structured_llm
             reasoner_schema = "active_continuation"
@@ -535,10 +555,19 @@ class QuerySemanticReasoner:
         try:
             raw_decision = await structured_llm.ainvoke(messages)
         except Exception:
+            duration_ms = (perf_counter() - started_at) * 1000.0
+            self._log_llm_call(
+                duration_ms=duration_ms,
+                reasoner_schema=reasoner_schema,
+                prompt_item_count=prompt_item_count,
+                prompt_frame_count=prompt_frame_count,
+                prompt_surface_type=prompt_surface_type,
+                context_bytes=prompt_context_bytes,
+            )
             self._log_query_trace(
                 context=context,
                 phase="semantic_reasoner",
-                latency_ms=(perf_counter() - started_at) * 1000.0,
+                latency_ms=duration_ms,
                 llm_used=True,
                 decision=None,
                 prompt_item_count=prompt_item_count,
@@ -551,11 +580,20 @@ class QuerySemanticReasoner:
                 single_llm_invariant=True,
             )
             raise
+        duration_ms = (perf_counter() - started_at) * 1000.0
+        self._log_llm_call(
+            duration_ms=duration_ms,
+            reasoner_schema=reasoner_schema,
+            prompt_item_count=prompt_item_count,
+            prompt_frame_count=prompt_frame_count,
+            prompt_surface_type=prompt_surface_type,
+            context_bytes=prompt_context_bytes,
+        )
         decision = raw_decision.to_public_decision() if hasattr(raw_decision, "to_public_decision") else raw_decision
         self._log_query_trace(
             context=context,
             phase="semantic_reasoner",
-            latency_ms=(perf_counter() - started_at) * 1000.0,
+            latency_ms=duration_ms,
             llm_used=True,
             decision=decision,
             prompt_item_count=prompt_item_count,

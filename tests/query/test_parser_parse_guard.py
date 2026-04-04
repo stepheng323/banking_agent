@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 
+from apps.core.src.agent.graphs.query.compiler import finalize
 from apps.core.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
@@ -70,6 +71,35 @@ async def test_time_comparison_without_explicit_time_returns_needs_input() -> No
     assert result.outcome.value == "NEEDS_INPUT"
     assert result.resolver_message == render_message("query.time_comparison.prompt_specify_period", "en")
     assert result.query_contract is None
+
+
+@pytest.mark.asyncio
+async def test_parser_logs_llm_call_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, dict(kwargs)))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.compiler.finalize.logger.info", _capture)
+
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        raw_query="show my last 3 transfers",
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    await finalize.parse(
+        parser,
+        "show my last 3 transfers",
+        today=date(2026, 3, 7),
+        language="en",
+    )
+
+    llm_call_events = [payload for event, payload in events if event == "query_parser_llm_call"]
+    assert llm_call_events
+    assert llm_call_events[0]["language"] == "en"
+    assert isinstance(llm_call_events[0]["prompt_chars"], int)
+    assert llm_call_events[0]["prompt_chars"] > 0
 
 
 @pytest.mark.asyncio

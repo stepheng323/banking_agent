@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from time import perf_counter
 from typing import Any, Literal, cast
 
 from apps.core.src.agent.graphs.query.models import (
@@ -438,7 +439,15 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
     structured_llm = cast(Any, parser.llm).with_structured_output(ParserQueryExtraction)
 
     try:
+        started_at = perf_counter()
         raw_extraction = await structured_llm.ainvoke(prompt)
+        duration_ms = (perf_counter() - started_at) * 1000.0
+        logger.info(
+            "query_parser_llm_call",
+            duration_ms=round(duration_ms, 2),
+            prompt_chars=len(prompt),
+            language=language,
+        )
         extraction = parser._inflate_parser_extraction(raw_extraction, question=question, language=language)
         return parser._finalize_extraction(extraction, today=today, language=language)
     except Exception as e:

@@ -1126,6 +1126,12 @@ async def test_reasoner_logs_single_llm_trace_metadata(monkeypatch: pytest.Monke
     assert query_trace_events[0]["single_llm_invariant"] is True
     assert isinstance(query_trace_events[0]["context_bytes"], int)
     assert query_trace_events[0]["context_bytes"] > 0
+    llm_call_events = [payload for event, payload in events if event == "query_reasoner_llm_call"]
+    assert llm_call_events
+    assert llm_call_events[0]["reasoner_schema"] == "active_continuation"
+    assert llm_call_events[0]["prompt_surface_type"] == "list"
+    assert isinstance(llm_call_events[0]["context_bytes"], int)
+    assert llm_call_events[0]["context_bytes"] > 0
 
 
 @pytest.mark.asyncio
