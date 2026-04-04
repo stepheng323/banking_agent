@@ -107,7 +107,6 @@ Workflow behavior:
 - runs VPS runtime image smoke checks
 - syncs the checked-out repo to the VPS over SSH
 - does not overwrite the VPS `.env`
-- does not overwrite `whatsapp_flow_private_key.pem`
 - runs `docker compose -f docker-compose.vps.yml up -d --build`
 - verifies `/health`, `/core/health`, `/transaction/health`, and `/receipt/health`
 

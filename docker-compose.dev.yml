@@ -43,7 +43,7 @@ services:
       - META_VERIFY_TOKEN=${META_VERIFY_TOKEN}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - WHATSAPP_FLOW_PRIVATE_KEY_PATH=/app/whatsapp_flow_private_key.pem
+      - WHATSAPP_FLOW_PRIVATE_KEY=${WHATSAPP_FLOW_PRIVATE_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_MINI_APP_BASE_URL=${TELEGRAM_MINI_APP_BASE_URL}
       - TELEGRAM_WEBHOOK_SECRET_TOKEN=${TELEGRAM_WEBHOOK_SECRET_TOKEN}
@@ -62,8 +62,6 @@ services:
     volumes:
       - ./apps/gateway:/app/apps/gateway
       - ./shared:/app/shared
-      - ./whatsapp_flow_private_key.pem:/app/whatsapp_flow_private_key.pem:ro
-
   core:
     build:
       context: .

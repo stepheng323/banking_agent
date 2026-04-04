@@ -33,7 +33,6 @@ locals {
   non_secret_env_vars = merge(
     {
       META_PHONE_NUMBER_ID           = var.meta_phone_number_id
-      WHATSAPP_FLOW_PRIVATE_KEY_PATH = var.whatsapp_flow_private_key_path
       ONBOARDING_FLOW_ID             = var.onboarding_flow_id
       ACCOUNT_LINKING_FLOW_ID        = var.account_linking_flow_id
       PIN_CONFIRMATION_FLOW_ID       = var.pin_confirmation_flow_id
@@ -121,11 +120,8 @@ check "critical_non_secret_config_present" {
 
 check "whatsapp_flow_private_key_source_present" {
   assert {
-    condition = (
-      trimspace(lookup(local.secret_env_vars, "WHATSAPP_FLOW_PRIVATE_KEY_PEM", "")) != ""
-      || trimspace(lookup(local.non_secret_env_vars, "WHATSAPP_FLOW_PRIVATE_KEY_PATH", "")) != ""
-    )
-    error_message = "Set either WHATSAPP_FLOW_PRIVATE_KEY_PEM (preferred) or WHATSAPP_FLOW_PRIVATE_KEY_PATH."
+    condition     = trimspace(lookup(local.secret_env_vars, "WHATSAPP_FLOW_PRIVATE_KEY", "")) != ""
+    error_message = "Set WHATSAPP_FLOW_PRIVATE_KEY."
   }
 }
 

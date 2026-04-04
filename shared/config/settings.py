@@ -16,7 +16,7 @@ class Settings:
         self.meta_verify_token: str = os.getenv("META_VERIFY_TOKEN", "development_token")
         self.meta_access_token: str = os.getenv("META_ACCESS_TOKEN", "development_access_token")
         self.meta_phone_number_id: str = os.getenv("META_PHONE_NUMBER_ID", "development_phone_id")
-        self.whatsapp_flow_private_key_path: str = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY_PATH", "")
+        self.whatsapp_flow_private_key: str = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY", "").strip()
         self.onboarding_flow_id: str = os.getenv("ONBOARDING_FLOW_ID", "")
         self.account_linking_flow_id: str = os.getenv("ACCOUNT_LINKING_FLOW_ID", "")
 
