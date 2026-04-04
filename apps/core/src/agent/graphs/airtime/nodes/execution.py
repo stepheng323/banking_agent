@@ -84,14 +84,21 @@ class ExecutionStep(AirtimeStep):
                     "transaction_id": transaction_id,
                     "phone_number": context.phone_number,
                     "channel": context.channel,
+                    "channel_identity": getattr(worker_context, "channel_identity", None),
                     "airtime_data": airtime_data,
                 },
+            )
+            logger.info(
+                "airtime_job_published",
+                transaction_id=transaction_id,
+                channel=context.channel,
+                has_channel_identity=bool(getattr(worker_context, "channel_identity", None)),
             )
 
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 receipt={
-                    "status": "queued",
+                    "status": "processing",
                     "id": key,
                     "amount": data.amount,
                     "recipient_phone": data.recipient_phone,

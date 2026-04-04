@@ -246,7 +246,7 @@ async def test_finalize_mixed_transaction_batch_emits_summary_only() -> None:
                     "network": "MTN",
                     "receipt": {
                         "status": "queued",
-                        "message": "Your purchase of ₦1,000.00 airtime for 08162511023 (MTN) has been queued.",
+                        "message": "Your airtime purchase of ₦1,000.00 for 08162511023 (MTN) is being processed.",
                     },
                 },
             ),

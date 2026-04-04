@@ -47,12 +47,21 @@ class AirtimeExecutor:
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
             amount = airtime_data.get("amount")
-            phone_number = airtime_data.get("phone_number")
+            recipient_phone = airtime_data.get("phone_number")
             network = airtime_data.get("network")
+            delivery_target = str(data.get("channel_identity") or data.get("phone_number") or "").strip()
+            channel = data.get("channel", "whatsapp")
+            logger.info(
+                "airtime_delivery_target_selected",
+                transaction_id=transaction_id,
+                channel=channel,
+                has_channel_identity=bool(data.get("channel_identity")),
+                used_fallback_phone=bool(data.get("phone_number")) and not bool(data.get("channel_identity")),
+            )
 
             result = await self.bill_provider.purchase_airtime(
                 amount=amount,
-                recipient_phone=phone_number,
+                recipient_phone=recipient_phone,
                 network=network,
             )
 
@@ -60,26 +69,53 @@ class AirtimeExecutor:
                 await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
                 logger.info("airtime_success", transaction_id=transaction_id, ref=result.get("reference"))
 
-                if phone_number:
+                if delivery_target:
                     ref = result.get("reference") or render_message("airtime.executor.reference_fallback", locale)
                     message = render_message(
                         "airtime.executor.success_message",
                         locale,
-                        {"amount": f"{amount:,.2f}", "reference": ref},
+                        {
+                            "amount": f"{amount:,.2f}",
+                            "recipient_phone": recipient_phone or "",
+                            "network": network or "",
+                            "reference": ref,
+                        },
                     )
                     await self.delivery_service.deliver_text(
-                        phone_number=phone_number,
-                        channel=data.get("channel", "whatsapp"),
+                        phone_number=delivery_target,
+                        channel=channel,
                         text=message,
                         metadata={"source": "airtime_executor", "transaction_id": transaction_id},
-                        dedupe_key=f"airtime:{transaction_id}",
+                        dedupe_key=f"airtime:success:{transaction_id}",
                     )
+                else:
+                    logger.warning("airtime_delivery_target_missing", transaction_id=transaction_id, channel=channel)
             else:
                 error_msg = result.get("message") or render_message("airtime.error.provider_failed", locale)
                 await self.transaction_repo.update_status(
                     transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
                 )
                 logger.error("airtime_failed", transaction_id=transaction_id, error=error_msg)
+                if delivery_target:
+                    message = render_message(
+                        "airtime.executor.failure_message",
+                        locale,
+                        {
+                            "amount": f"{amount:,.2f}",
+                            "recipient_phone": recipient_phone or "",
+                            "network": network or "",
+                            "reason": error_msg,
+                        },
+                    )
+                    await self.delivery_service.deliver_text(
+                        phone_number=delivery_target,
+                        channel=channel,
+                        text=message,
+                        metadata={"source": "airtime_executor", "transaction_id": transaction_id},
+                        dedupe_key=f"airtime:failed:{transaction_id}",
+                    )
+                else:
+                    logger.warning("airtime_delivery_target_missing", transaction_id=transaction_id, channel=channel)
 
         except Exception as e:
             logger.error("airtime_execution_exception", transaction_id=transaction_id, error=str(e))

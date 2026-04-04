@@ -2,15 +2,23 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from apps.core.src.agent.orchestrator.models.domain import TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 SESSION_TZ = ZoneInfo("Africa/Lagos")
+_TERMINAL_TASK_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 
 
 def _current_session_date() -> str:
     return datetime.now(SESSION_TZ).date().isoformat()
+
+
+def _all_tasks_terminal(state: OrchestratorState) -> bool:
+    if not state.tasks:
+        return False
+    return all(task.stage in _TERMINAL_TASK_STAGES for task in state.tasks.values())
 
 
 async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
@@ -56,6 +64,27 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
                 "active_domain": None,
                 "stashed_sessions": [],
                 "stashed_query_session": None,
+            }
+        )
+
+    if _all_tasks_terminal(state) and state.pending_interrupt is None:
+        logger.info(
+            "ingest_terminal_state_reset",
+            phone_number=state.phone_number,
+            task_count=len(state.tasks),
+            wave_count=len(state.waves),
+        )
+        updates.update(
+            {
+                "tasks": {},
+                "waves": [],
+                "current_wave_index": 0,
+                "task_results": {},
+                "planner_output": None,
+                "normalized_instruction": None,
+                "session_stack": [],
+                "active_domain": None,
+                "pin_verified": False,
             }
         )
 

@@ -34,6 +34,7 @@ class AirtimeWorkerContext:
     transaction_repo: Any
     redis_client: Any
     user_id: str | None
+    channel_identity: str | None
     required_fields: list[str]
 
 
@@ -86,6 +87,7 @@ class AirtimeWorker:
             transaction_repo=self.transaction_repo,
             redis_client=self.redis_client,
             user_id=context.get("user_id"),
+            channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
             required_fields=required_fields if isinstance(required_fields, list) else [],
         )
 

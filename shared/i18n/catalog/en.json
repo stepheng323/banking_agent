@@ -656,7 +656,7 @@
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Your purchase of ₦{amount} airtime for {recipient_phone} ({network}) has been queued.",
+      "message_queued": "Your airtime purchase of ₦{amount} for {recipient_phone} ({network}) is being processed.",
       "system_error": "System error during execution."
     },
     "error": {
@@ -671,7 +671,8 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "✓ Airtime Purchase Successful!\n\nAmount: ₦{amount}\nRef: {reference}"
+      "success_message": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+      "failure_message": "Airtime purchase failed for {recipient_phone} ({network}).\nReason: {reason}"
     }
   },
   "data": {

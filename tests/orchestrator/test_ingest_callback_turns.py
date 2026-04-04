@@ -2,6 +2,7 @@
 
 import pytest
 
+from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
 
@@ -111,5 +112,62 @@ async def test_same_day_keeps_existing_session_state(monkeypatch: pytest.MonkeyP
     updates = await ingest_message(state)
 
     assert updates["last_activity_date"] == "2026-03-10"
+    assert "tasks" not in updates
+    assert "waves" not in updates
+
+
+@pytest.mark.asyncio
+async def test_same_day_clears_terminal_only_stale_state() -> None:
+    state = OrchestratorState(
+        user_id="u_ingest_6",
+        phone_number="2348000000006",
+        channel="telegram",
+        last_message_text="send 10k",
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.COMPLETED,
+                payload={"receipt": {"status": "processing"}},
+            )
+        },
+        waves=[["t_airtime"]],
+        current_wave_index=0,
+        session_stack=[{"domain": "airtime", "state": "WAITING_FOR_AUTH", "interrupt_policy": "CONFIRM"}],
+        active_domain="airtime",
+        pin_verified=True,
+    )
+
+    updates = await ingest_message(state)
+
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["current_wave_index"] == 0
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+    assert updates["pin_verified"] is False
+
+
+@pytest.mark.asyncio
+async def test_same_day_keeps_non_terminal_state() -> None:
+    state = OrchestratorState(
+        user_id="u_ingest_7",
+        phone_number="2348000000007",
+        channel="telegram",
+        last_message_text="continue",
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 10000},
+            )
+        },
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+    )
+
+    updates = await ingest_message(state)
+
     assert "tasks" not in updates
     assert "waves" not in updates

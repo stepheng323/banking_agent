@@ -658,6 +658,7 @@ async def _handle_purchase_task(
     }
     if include_channel:
         context_data["channel"] = ctx.state.channel
+        context_data["channel_identity"] = ctx.state.channel_identity
 
     result = await worker.run(
         payload=task.payload,
