@@ -15,7 +15,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_policy import (
     _build_policy_aware_greeting,
     _detected_locale_value,
 )
-from shared.i18n import MessageKey, render_message, render_safe_capability_fallback, render_text
+from shared.i18n import LocaleManager, MessageKey, render_message, render_safe_capability_fallback, render_text
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -55,10 +55,17 @@ async def _build_non_task_response(
 ) -> dict[str, Any] | None:
     detected_locale = _detected_locale_value(planner_output)
 
-    def _localized_planner_response(raw_response: str | None) -> str:
+    async def _resolved_locale_with_precedence() -> tuple[str, dict[str, Any]]:
+        if detected_locale is None or detected_locale == current_locale:
+            return current_locale, locale_updates
+        if redis_client and await LocaleManager.is_explicit_locale(state.phone_number):
+            return current_locale, locale_updates
+        return detected_locale, _build_locale_update(state, detected_locale)
+
+    def _localized_planner_response(raw_response: str | None, locale: str) -> str:
         if not raw_response:
             return ""
-        return cast(str, render_text(raw_response, current_locale))
+        return cast(str, render_text(raw_response, locale))
 
     if getattr(planner_output, "is_cancellation", False) or planner_output.primary_intent == "cancel":
         logger.info("planner_cancellation_detected", intent=planner_output.primary_intent)
@@ -84,15 +91,14 @@ async def _build_non_task_response(
         return None
 
     if planner_output and planner_output.primary_intent == "conversational":
-        conversational_locale = detected_locale or current_locale
-        conversational_locale_updates = (
-            locale_updates
-            if conversational_locale == current_locale
-            else _build_locale_update(state, conversational_locale)
-        )
+        conversational_locale, conversational_locale_updates = await _resolved_locale_with_precedence()
         response_key = planner_output.response_key
         if response_key == "conversational.out_of_scope":
-            empathy_source = _localized_planner_response(planner_output.response) if planner_output.response else None
+            empathy_source = (
+                _localized_planner_response(planner_output.response, conversational_locale)
+                if planner_output.response
+                else None
+            )
             _log_unexpected_turn_route(
                 state=state,
                 planner_output=planner_output,
@@ -118,7 +124,7 @@ async def _build_non_task_response(
                 fallback_path="planner_non_task",
             )
             return {
-                "final_response": _localized_planner_response(planner_output.response),
+                "final_response": _localized_planner_response(planner_output.response, conversational_locale),
                 **conversational_locale_updates,
                 **context_read_updates,
             }
@@ -163,15 +169,15 @@ async def _build_non_task_response(
         return {
             "final_response": render_message(fallback_key, conversational_locale),
             **conversational_locale_updates,
-            **context_read_updates,
-        }
+                **context_read_updates,
+            }
 
     if state.waves and planner_output and planner_output.primary_intent != "conversational":
         if planner_output.primary_intent != active_intent:
             logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
             return {
                 "waves": [],
-                "final_response": _localized_planner_response(planner_output.response),
+                "final_response": _localized_planner_response(planner_output.response, current_locale),
                 **locale_updates,
                 **context_read_updates,
             }
@@ -186,7 +192,7 @@ async def _build_non_task_response(
             fallback_path="planner_non_task",
         )
         return {
-            "final_response": _localized_planner_response(planner_output.response),
+            "final_response": _localized_planner_response(planner_output.response, current_locale),
             **locale_updates,
             **context_read_updates,
         }

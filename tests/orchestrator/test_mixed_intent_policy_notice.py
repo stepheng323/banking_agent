@@ -805,6 +805,45 @@ async def test_conversational_missing_response_key_falls_back_deterministically(
 
 
 @pytest.mark.asyncio
+async def test_planner_amount_only_transfer_recovers_to_transfer_task() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key=None,
+        confidence=0.82,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="send 10k",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_7b",
+        phone_number="2348666666667",
+        channel="whatsapp",
+        last_message_text="send 10k",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response is None
+    assert "transfer_missing_slots_recovery" in state.tasks
+    assert state.tasks["transfer_missing_slots_recovery"].type == "transfer"
+    assert state.waves == [["transfer_missing_slots_recovery"]]
+
+
+@pytest.mark.asyncio
 async def test_conversational_response_uses_detected_language_even_with_cached_pidgin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -851,6 +890,55 @@ async def test_conversational_response_uses_detected_language_even_with_cached_p
 
     assert state.final_response == _expected_policy_greeting("en")
     assert (state.loaded_context or {}).get("language") == "en"
+
+
+@pytest.mark.asyncio
+async def test_conversational_response_keeps_explicit_locale_even_when_turn_detects_english(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.greeting",
+        confidence=1.0,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="Hi",
+        tasks=[],
+    )
+
+    fake_redis = _FakeRedis()
+    phone = "2348770000001"
+    fake_redis._store[f"user:{phone}:language"] = "pcm"
+    fake_redis._store[f"user:{phone}:language_explicit"] = "1"
+
+    from shared.cache.redis_client import RedisClient
+
+    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls: fake_redis))
+
+    state = OrchestratorState(
+        user_id="u_8b",
+        phone_number=phone,
+        channel="whatsapp",
+        last_message_text="Hi",
+        loaded_context={"language": "pcm"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {},
+            "redis_client": fake_redis,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == _expected_policy_greeting("pcm")
+    assert (state.loaded_context or {}).get("language") == "pcm"
 
 
 @pytest.mark.asyncio

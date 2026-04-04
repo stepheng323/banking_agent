@@ -100,6 +100,47 @@ DETERMINISTIC_CAPABILITY_EXACT = {
     "what can you help me with",
     "what do you handle",
 }
+_SUPPORTED_SWITCHABLE_LOCALES = {"en", "pcm", "yo", "ha", "ig"}
+_ENGLISH_FASTPATH_CUE_RE = re.compile(
+    r"^(?:show|list|view|get|check|what(?:'s| is)|how much|send|transfer|pay|buy|recharge|top\s*up|topup|"
+    r"link|unlink|set|make)\b",
+    re.IGNORECASE,
+)
+_LANGUAGE_SWITCH_EXACT: dict[str, str] = {
+    "switch to english": "en",
+    "speak english": "en",
+    "reply in english": "en",
+    "continue in english": "en",
+    "use english": "en",
+    "switch to pidgin": "pcm",
+    "switch to naija": "pcm",
+    "speak pidgin": "pcm",
+    "reply in pidgin": "pcm",
+    "continue in pidgin": "pcm",
+    "use pidgin": "pcm",
+    "abeg yarn for pidgin": "pcm",
+    "make we yarn pidgin": "pcm",
+    "switch to yoruba": "yo",
+    "speak yoruba": "yo",
+    "reply in yoruba": "yo",
+    "continue in yoruba": "yo",
+    "use yoruba": "yo",
+    "so yoruba": "yo",
+    "so ede yoruba": "yo",
+    "ba mi soro ni ede yoruba": "yo",
+    "switch to hausa": "ha",
+    "speak hausa": "ha",
+    "reply in hausa": "ha",
+    "continue in hausa": "ha",
+    "use hausa": "ha",
+    "yi magana da hausa": "ha",
+    "switch to igbo": "ig",
+    "speak igbo": "ig",
+    "reply in igbo": "ig",
+    "continue in igbo": "ig",
+    "use igbo": "ig",
+    "kwuo igbo": "ig",
+}
 DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[str, str]] = {
     # Pidgin
     "wetin you fit do": ("conversational.capability_question", "pcm"),
@@ -132,8 +173,59 @@ ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bhow\s+much\s+do\s+i\s+have\b",
     r"\bhow\s+much\s+is\s+in\s+my\s+account\b",
 )
+ACCOUNT_DOMAIN_PATTERNS = (
+    r"^(?:(?:show|list|view|get|display|tell me)\s+)?(?:all\s+)?(?:my\s+)?(?:linked\s+)?accounts?\b",
+    r"^what\s+(?:linked\s+)?accounts?\s+do\s+i\s+have\b",
+    r"^how\s+many\s+accounts?\s+do\s+i\s+have\b",
+    r"^do\s+i\s+have\s+any\s+(?:linked\s+)?accounts?\b",
+    r"^(?:link|add)\s+(?:a\s+)?(?:new\s+|another\s+)?account\b",
+    r"^(?:unlink|remove|disconnect)\s+(?:my\s+)?account\b",
+    r"^(?:set|make)\s+.+\s+default\b",
+)
+BENEFICIARY_DOMAIN_PATTERNS = (
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?beneficiar(?:y|ies)\b",
+    r"^who\s+do\s+i\s+have\s+saved\b",
+    r"^(?:show|list|view|get)\s+(?:my\s+)?saved\s+(?:recipients?|beneficiar(?:y|ies))\b",
+)
+_AIRTIME_DIRECT_PREFIX_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:buy|recharge|top\s*up|topup|load|send)\b",
+    re.IGNORECASE,
+)
+_AIRTIME_DIRECT_HINT_RE = re.compile(
+    r"\b(?:airtime|mtn|glo|airtel|9mobile)\b|(?:\+?234|0)?(?:[\s().-]*\d){10,13}",
+    re.IGNORECASE,
+)
+_DATA_DIRECT_PREFIX_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:buy|get|send)\b",
+    re.IGNORECASE,
+)
+_DATA_DIRECT_HINT_RE = re.compile(
+    r"\b(?:data|bundle)\b|\d+\s*(?:mb|gb)\b|(?:\+?234|0)?(?:[\s().-]*\d){10,13}",
+    re.IGNORECASE,
+)
+_DIRECT_CONTEXT_RECAP_EXACT = {
+    "where did we stop",
+    "what are we doing again",
+    "what do you need again",
+    "repeat that",
+    "show it again",
+}
 BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS = (
     r"\b(send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",
+)
+_MIXED_TRANSFER_CLAUSE_RE = re.compile(
+    r"\b(?:send|transfer|pay|remit|split)\b.*(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?",
+    re.IGNORECASE,
+)
+_MIXED_AIRTIME_CLAUSE_RE = re.compile(
+    r"\b(?:buy|recharge|top\s*up|topup|load)\b.*\b(?:airtime|mtn|glo|airtel|9mobile)\b",
+    re.IGNORECASE,
+)
+_MIXED_DATA_CLAUSE_RE = re.compile(
+    r"\b(?:buy|get|send)\b.*\b(?:data|bundle|\d+\s*(?:mb|gb))\b",
+    re.IGNORECASE,
 )
 BALANCE_DIRECT_CANCEL_PREFIX_RE = re.compile(
     r"^(?:cancel|abort|stop|nevermind|never\s+mind)(?:\s+(?:and|then))?\s+",
@@ -343,6 +435,10 @@ def _build_direct_domain_task(
     if domain == "query":
         if mode == "new":
             payload["force_new_query"] = True
+    elif domain == "beneficiary":
+        payload["action"] = "list_beneficiaries"
+        payload["intent"] = "list_beneficiaries"
+        payload["list_intent"] = True
 
     spec = TaskSpec(
         id=task_id,
@@ -358,6 +454,53 @@ def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
     loaded_context["language"] = locale
     loaded_context["detected_language"] = locale
     return {"loaded_context": loaded_context}
+
+
+def _current_locale(state: OrchestratorState) -> str:
+    return LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+
+
+def _normalize_user_text(message_text: str) -> str:
+    return re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+
+
+def _allow_phrase_heavy_fastpath(message_text: str, locale: str) -> bool:
+    normalized = _normalize_user_text(message_text)
+    if not normalized:
+        return False
+    if locale == "en":
+        return True
+    return bool(_ENGLISH_FASTPATH_CUE_RE.match(normalized))
+
+
+def _resolve_explicit_language_switch(message_text: str) -> str | None:
+    normalized = _normalize_user_text(message_text)
+    if not normalized:
+        return None
+    requested = _LANGUAGE_SWITCH_EXACT.get(normalized)
+    if requested in _SUPPORTED_SWITCHABLE_LOCALES:
+        return requested
+    return None
+
+
+async def _effective_response_locale(
+    *,
+    state: OrchestratorState,
+    redis_client: Any | None,
+    detected_language: str | None,
+) -> tuple[str, dict[str, Any]]:
+    locale = _current_locale(state)
+    if not detected_language:
+        return locale, {}
+
+    detected_locale = LocaleManager.from_detection(detected_language).value
+    if detected_locale == locale:
+        return locale, {}
+
+    if redis_client and await LocaleManager.is_explicit_locale(state.phone_number):
+        return locale, {}
+
+    return detected_locale, _locale_update(state, detected_locale)
 
 
 def _should_invoke_semantic_router(message_text: str) -> bool:
@@ -384,10 +527,18 @@ def classify_deterministic_meta_response(message_text: str) -> tuple[str, str | 
     return None
 
 
-def _build_semantic_router_context(summary: TurnContextSummary, expected_executors: list[str]) -> str:
+def _build_semantic_router_context(
+    summary: TurnContextSummary,
+    expected_executors: list[str],
+    *,
+    message_text: str,
+) -> str:
+    include_account_preview, include_beneficiary_preview = _semantic_router_preview_policy(message_text)
     return build_router_context_from_summary(
         summary,
         expected_executors=expected_executors,
+        include_account_preview=include_account_preview,
+        include_beneficiary_preview=include_beneficiary_preview,
     )
 
 
@@ -406,6 +557,74 @@ def _is_query_domain_request(message_text: str) -> bool:
     if not normalized:
         return False
     return any(re.search(pattern, normalized) for pattern in _QUERY_DOMAIN_PATTERNS)
+
+
+def _is_account_domain_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return False
+    if _is_account_balance_request(normalized):
+        return False
+    if _is_query_domain_request(normalized):
+        return False
+    return any(re.search(pattern, normalized) for pattern in ACCOUNT_DOMAIN_PATTERNS)
+
+
+def _is_beneficiary_domain_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in BENEFICIARY_DOMAIN_PATTERNS)
+
+
+def _is_obvious_airtime_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized or not _AIRTIME_DIRECT_PREFIX_RE.search(normalized):
+        return False
+    has_mixed_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
+    if has_mixed_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
+        return False
+    return bool(_TRANSFER_DIRECT_AMOUNT_RE.search(normalized) and _AIRTIME_DIRECT_HINT_RE.search(normalized))
+
+
+def _is_obvious_data_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized or not _DATA_DIRECT_PREFIX_RE.search(normalized):
+        return False
+    has_mixed_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
+    if has_mixed_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
+        return False
+    return bool(_DATA_DIRECT_HINT_RE.search(normalized))
+
+
+def _semantic_router_preview_policy(message_text: str) -> tuple[bool, bool]:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if not normalized:
+        return False, False
+
+    include_accounts = bool(
+        re.search(r"\b(?:account|accounts|bank|banks|balance|default|unlink|link|ready)\b", normalized)
+    )
+    include_beneficiaries = bool(re.search(r"\b(?:beneficiar|recipient|saved|alias)\b", normalized))
+    return include_accounts, include_beneficiaries
+
+
+def _build_direct_context_recap_response(summary: TurnContextSummary) -> str | None:
+    if summary.active_flow_intent:
+        next_step = "Continue with that flow."
+        if summary.active_flow_missing_fields:
+            next_step = f"Next step: provide {', '.join(summary.active_flow_missing_fields)}."
+        return f"We are still in your {summary.active_flow_intent} flow. {next_step}"
+    if summary.query_session_active:
+        return "You are still viewing transaction results. You can refine the query or ask a follow-up."
+    if summary.recent_answer_focus:
+        return f"The last thing I showed was your {summary.recent_answer_focus.replace('_', ' ')}."
+    return None
+
+
+def _is_direct_context_recap_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    return normalized in _DIRECT_CONTEXT_RECAP_EXACT
 
 
 def _has_explicit_cancel(message_text: str) -> bool:
@@ -436,14 +655,35 @@ def _classify_obvious_transfer_request(message_text: str) -> str | None:
 
     has_amount_like = bool(_TRANSFER_DIRECT_AMOUNT_RE.search(normalized))
     has_transfer_shape = bool(_TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized))
-    if not has_amount_like or not has_transfer_shape:
+    if not has_amount_like:
         return None
+    if not has_transfer_shape:
+        return "fresh_transfer_missing_recipient_command"
 
     return "fresh_transfer_command"
 
 
-def classify_obvious_transfer_request(message_text: str) -> str | None:
+def _obvious_mixed_transaction_executors(message_text: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return []
+
+    executors: list[str] = []
+    if _MIXED_TRANSFER_CLAUSE_RE.search(normalized):
+        executors.append("transfer")
+    if _MIXED_AIRTIME_CLAUSE_RE.search(normalized):
+        executors.append("airtime")
+    if _MIXED_DATA_CLAUSE_RE.search(normalized):
+        executors.append("data")
+    if len(executors) < 2:
+        return []
+    return executors
+
+
+def classify_obvious_transfer_request(message_text: str, *, locale: str | None = None) -> str | None:
     """Public helper for pre-graph fast-path hints."""
+    if locale and not _allow_phrase_heavy_fastpath(message_text, LocaleManager.normalize(locale).value):
+        return None
     return _classify_obvious_transfer_request(message_text)
 
 
@@ -693,6 +933,8 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
     )
 
     message_text = (state.last_message_text or "").strip()
+    current_locale = _current_locale(state)
+    phrase_heavy_fastpath_allowed = _allow_phrase_heavy_fastpath(message_text, current_locale)
     gate_updates: dict[str, Any] = {}
     live_pending_interrupt = _has_live_pending_interrupt(state)
     if state.pending_interrupt is not None and not live_pending_interrupt:
@@ -704,6 +946,26 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         )
         gate_updates["pending_interrupt"] = None
 
+    requested_locale = _resolve_explicit_language_switch(message_text)
+    if requested_locale is not None:
+        if redis_client:
+            resolved = await LocaleManager.set_locale(
+                state.phone_number,
+                requested_locale,
+                source="user_command",
+            )
+            next_locale = resolved.value
+        else:
+            next_locale = requested_locale
+        logger.info("gate_explicit_language_switch", locale=next_locale)
+        return {
+            **gate_updates,
+            "direct_path_triggered": True,
+            "final_response": render_locale_switched(next_locale),
+            **_locale_update(state, next_locale),
+            **_route_observability_updates(owner="guardrail", decision="language_switch"),
+        }
+
     if is_explicit_cancel_message(message_text):
         if has_cancelable_state(state):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
@@ -711,7 +973,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 **gate_updates,
                 **cleanup_updates,
                 "direct_path_triggered": True,
-                "final_response": cancelled_message(state),
+                "final_response": cancelled_message(state, current_locale),
                 **_route_observability_updates(owner="guardrail", decision="cancel"),
             }
         query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
@@ -721,17 +983,16 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             and query_session_snapshot.get("pending_clarification")
         ):
             await clear_query_session(redis_client, state.phone_number)
-            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
             return {
                 **gate_updates,
                 "direct_path_triggered": True,
-                "final_response": render_message("query.session.goodbye", locale),
+                "final_response": render_message("query.session.goodbye", current_locale),
                 **_route_observability_updates(owner="guardrail", decision="cancel"),
             }
         return {
             **gate_updates,
             "direct_path_triggered": True,
-            "final_response": clarify_message(state),
+            "final_response": clarify_message(state, current_locale),
             **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
 
@@ -753,17 +1014,16 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             except Exception:
                 suggestion_payload = None
 
-            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
             decision = _resolve_beneficiary_suggestion_reply(
                 message_text,
-                locale=locale,
+                locale=current_locale,
                 suggestion_payload=suggestion_payload,
             )
             logger.info(
                 "beneficiary_suggestion_gate_decision",
                 decision=decision.action,
                 reason=decision.reason,
-                locale=locale,
+                locale=current_locale,
                 alias_present=bool(decision.alias),
             )
             if decision.action in {"save_default", "save_alias"}:
@@ -804,7 +1064,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             else:
                 logger.info("beneficiary_suggestion_dismissed", reason=decision.reason)
 
-    if not live_pending_interrupt and _is_account_balance_request(message_text):
+    if not live_pending_interrupt and phrase_heavy_fastpath_allowed and _is_account_balance_request(message_text):
         cleanup_updates: dict[str, Any] = {}
         if _has_explicit_cancel(message_text):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
@@ -838,16 +1098,119 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             ),
         }
 
+    if (
+        not live_pending_interrupt
+        and not state.has_quote
+        and phrase_heavy_fastpath_allowed
+        and _is_account_domain_request(message_text)
+    ):
+        cleanup_updates: dict[str, Any] = {}
+        if _has_explicit_cancel(message_text):
+            cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
+        task_id, spec = _build_direct_domain_task(state=state, domain="account", mode="new")
+        logger.info("gate_deterministic_account_domain", task_id=task_id)
+        return {
+            **gate_updates,
+            **cleanup_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "pending_interrupt": None,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "deterministic_account_domain",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="deterministic_account_domain",
+                target_domain="account",
+                mode="new",
+            ),
+        }
+
+    if (
+        not live_pending_interrupt
+        and not state.has_quote
+        and phrase_heavy_fastpath_allowed
+        and _is_beneficiary_domain_request(message_text)
+    ):
+        task_id, spec = _build_direct_domain_task(state=state, domain="beneficiary", mode="new")
+        logger.info("gate_deterministic_beneficiary_domain", task_id=task_id)
+        return {
+            **gate_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "pending_interrupt": None,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "deterministic_beneficiary_domain",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="deterministic_beneficiary_domain",
+                target_domain="beneficiary",
+                mode="new",
+            ),
+        }
+
+    if (
+        not live_pending_interrupt
+        and not state.has_quote
+        and phrase_heavy_fastpath_allowed
+        and _is_obvious_airtime_request(message_text)
+    ):
+        task_id, spec = _build_direct_domain_task(state=state, domain="airtime", mode="new")
+        logger.info("gate_deterministic_airtime_domain", task_id=task_id)
+        return {
+            **gate_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "pending_interrupt": None,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "deterministic_airtime_domain",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="deterministic_airtime_domain",
+                target_domain="airtime",
+                mode="new",
+            ),
+        }
+
+    if (
+        not live_pending_interrupt
+        and not state.has_quote
+        and phrase_heavy_fastpath_allowed
+        and _is_obvious_data_request(message_text)
+    ):
+        task_id, spec = _build_direct_domain_task(state=state, domain="data", mode="new")
+        logger.info("gate_deterministic_data_domain", task_id=task_id)
+        return {
+            **gate_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "pending_interrupt": None,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "deterministic_data_domain",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="deterministic_data_domain",
+                target_domain="data",
+                mode="new",
+            ),
+        }
+
     # --- PIN callback with no active session (checkpoint was cleaned) ---
     if state.pin_verified and not live_pending_interrupt:
-        locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
         logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")
         return {
             **gate_updates,
             "direct_path_triggered": True,
             "final_response": render_message(
                 "orchestrator.session.expired_pin",
-                locale,
+                current_locale,
                 fallback_en="Your transaction session has expired. Please start a new transaction.",
             ),
             **_route_observability_updates(owner="guardrail", decision="expired_pin_session"),
@@ -857,7 +1220,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         deterministic_meta = classify_deterministic_meta_response(message_text)
         if deterministic_meta:
             response_key, response_locale = deterministic_meta
-            locale = response_locale or LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+            locale = response_locale or current_locale
             locale_updates = _locale_update(state, locale) if response_locale else {}
             query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
             exit_updates = _build_query_session_exit_updates(
@@ -915,11 +1278,28 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         query_session_stack=has_query_session_stack,
     )
 
+    if not live_pending_interrupt and not state.has_quote and _is_direct_context_recap_request(message_text):
+        response = _build_direct_context_recap_response(turn_summary)
+        if response is not None:
+            logger.info(
+                "gate_direct_context_recap",
+                focus=turn_summary.recent_answer_focus,
+                active_flow=turn_summary.active_flow_intent,
+            )
+            return {
+                **gate_updates,
+                **summary_updates,
+                "direct_path_triggered": True,
+                "final_response": response,
+                "semantic_path_shape": "direct_context_recap",
+                **_route_observability_updates(owner="guardrail", decision="direct_context_recap"),
+            }
+        logger.info("gate_direct_context_recap_miss", reason="no_active_context")
+
     if not live_pending_interrupt and not state.has_quote:
-        locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
         bypass_reason, bypass_detail = _query_followup_bypass_reason(
             message_text=message_text,
-            locale=locale,
+            locale=current_locale,
             query_session_snapshot=query_session_snapshot if isinstance(query_session_snapshot, dict) else None,
         )
         if bypass_reason is not None:
@@ -951,6 +1331,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         not live_pending_interrupt
         and not state.has_quote
         and not has_active_query_session
+        and phrase_heavy_fastpath_allowed
         and _is_query_domain_request(message_text)
     ):
         task_id, spec = _build_direct_domain_task(state=state, domain="query", mode="new")
@@ -973,8 +1354,10 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         }
 
     if not live_pending_interrupt and not state.has_quote:
-        transfer_request_reason = _classify_obvious_transfer_request(message_text)
-        if transfer_request_reason == "fresh_transfer_command":
+        transfer_request_reason = (
+            _classify_obvious_transfer_request(message_text) if phrase_heavy_fastpath_allowed else None
+        )
+        if transfer_request_reason in {"fresh_transfer_command", "fresh_transfer_missing_recipient_command"}:
             transfer_updates: dict[str, Any] = {}
             if (
                 isinstance(query_session_snapshot, dict)
@@ -1067,6 +1450,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             route_context = _build_semantic_router_context(
                 turn_summary,
                 state.preplanner_expected_transaction_executors,
+                message_text=message_text,
             )
             try:
                 route = await task_planner.route_semantic_turn(
@@ -1130,10 +1514,12 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 canonical_mode = None
 
             if route is not None and canonical_decision == "cancel":
-                locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
-                if route.detected_language:
-                    locale = LocaleManager.from_detection(route.detected_language).value
-                    updates.update(_locale_update(state, locale))
+                locale, detected_locale_updates = await _effective_response_locale(
+                    state=state,
+                    redis_client=redis_client,
+                    detected_language=getattr(route, "detected_language", None),
+                )
+                updates.update(detected_locale_updates)
                 if has_cancelable_state(state):
                     text = cancelled_message(state, locale)
                     updates.update(await build_cancellation_reset_updates(state, redis_client))
@@ -1154,10 +1540,12 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 }
 
             if route is not None and canonical_decision in {"direct_reply", "direct_context_answer"}:
-                locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
-                if route.detected_language:
-                    locale = LocaleManager.from_detection(route.detected_language).value
-                    updates.update(_locale_update(state, locale))
+                locale, detected_locale_updates = await _effective_response_locale(
+                    state=state,
+                    redis_client=redis_client,
+                    detected_language=getattr(route, "detected_language", None),
+                )
+                updates.update(detected_locale_updates)
                 if route.response_key:
                     if route.response_key == "conversational.out_of_scope":
                         text = format_out_of_scope_reply(locale, route.response)
@@ -1224,6 +1612,25 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             }
             if route is not None and canonical_decision in route_to_domain:
                 domain = route_to_domain[canonical_decision]
+                mixed_executors = _obvious_mixed_transaction_executors(message_text)
+                if domain in TRANSACTION_EXECUTORS and mixed_executors:
+                    updates["preplanner_expected_transaction_executors"] = mixed_executors
+                    logger.info(
+                        "gate_semantic_router_mixed_veto",
+                        decision=canonical_decision,
+                        attempted_domain=domain,
+                        expected_executors=mixed_executors,
+                    )
+                    return {
+                        **gate_updates,
+                        **summary_updates,
+                        **_route_observability_updates(
+                            owner="planner",
+                            decision="planner_handoff",
+                            mode=canonical_mode,
+                        ),
+                        **updates,
+                    }
                 if (
                     domain != "query"
                     and isinstance(query_session_snapshot, dict)

@@ -97,6 +97,28 @@ async def test_explicit_locale_switch_overrides(monkeypatch):
     assert effective == LocaleCode.PCM
 
 
+@pytest.mark.asyncio
+async def test_explicit_locale_lock_blocks_auto_detection_override(monkeypatch):
+    fake_redis = _FakeRedis()
+
+    from shared.cache.redis_client import RedisClient
+
+    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls: fake_redis))
+
+    phone = "2348222222222"
+    resolved = await LocaleManager.set_locale(phone, "pcm", source="user_command")
+    assert resolved == LocaleCode.PCM
+
+    updated = await LocaleManager.update_locale(
+        phone,
+        LanguageDetectionSignal(locale=LocaleCode.EN, confidence=0.99, source="planner"),
+    )
+
+    assert updated == LocaleCode.PCM
+    assert fake_redis._store[f"user:{phone}:language"] == "pcm"
+    assert fake_redis._store[f"user:{phone}:language_explicit"] == "1"
+
+
 def test_catalog_completeness():
     validate_catalog_completeness()
 

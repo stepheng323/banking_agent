@@ -65,6 +65,10 @@ class LocaleManager:
         return f"user:{phone_number}:language_candidate"
 
     @classmethod
+    def _explicit_key(cls, phone_number: str) -> str:
+        return f"user:{phone_number}:language_explicit"
+
+    @classmethod
     async def get_locale(cls, phone_number: str) -> LocaleCode | None:
         try:
             redis_client = RedisClient.get_client()
@@ -77,16 +81,52 @@ class LocaleManager:
             return None
 
     @classmethod
-    async def set_locale(cls, phone_number: str, locale: str | LocaleCode, *, source: str = "explicit") -> LocaleCode:
+    async def is_explicit_locale(cls, phone_number: str) -> bool:
+        try:
+            redis_client = RedisClient.get_client()
+            value = await redis_client.get(cls._explicit_key(phone_number))
+            return str(value).strip().lower() == "1"
+        except Exception as exc:
+            logger.warning("locale_explicit_read_failed", phone_number=phone_number, error=str(exc))
+            return False
+
+    @classmethod
+    async def _write_locale(
+        cls,
+        phone_number: str,
+        locale: str | LocaleCode,
+        *,
+        source: str,
+        explicit_override: bool,
+    ) -> LocaleCode:
         resolved = cls.normalize(locale)
         try:
             redis_client = RedisClient.get_client()
             await redis_client.set(cls._locale_key(phone_number), resolved.value, ex=cls.LOCALE_TTL_SECONDS)
+            if explicit_override:
+                await redis_client.set(cls._explicit_key(phone_number), "1", ex=cls.LOCALE_TTL_SECONDS)
+            else:
+                await redis_client.delete(cls._explicit_key(phone_number))
             await redis_client.delete(cls._candidate_key(phone_number))
-            logger.info("locale_switched_explicit", phone_number=phone_number, locale=resolved.value, source=source)
+            logger.info(
+                "locale_switched_explicit" if explicit_override else "locale_updated_detected",
+                phone_number=phone_number,
+                locale=resolved.value,
+                source=source,
+            )
         except Exception as exc:
-            logger.warning("locale_write_failed", phone_number=phone_number, error=str(exc), locale=resolved.value)
+            logger.warning(
+                "locale_write_failed",
+                phone_number=phone_number,
+                error=str(exc),
+                locale=resolved.value,
+                explicit_override=explicit_override,
+            )
         return resolved
+
+    @classmethod
+    async def set_locale(cls, phone_number: str, locale: str | LocaleCode, *, source: str = "explicit") -> LocaleCode:
+        return await cls._write_locale(phone_number, locale, source=source, explicit_override=True)
 
     @classmethod
     async def _load_candidate(cls, phone_number: str) -> tuple[LocaleCode | None, int]:
@@ -117,9 +157,18 @@ class LocaleManager:
         if signal.explicit:
             return await cls.set_locale(phone_number, signal.locale, source=signal.source)
 
+        explicit_locked = await cls.is_explicit_locale(phone_number)
+        if explicit_locked and current is not None:
+            return current
+
         candidate = signal.locale
         if current is None:
-            return await cls.set_locale(phone_number, candidate, source=f"{signal.source}:initial")
+            return await cls._write_locale(
+                phone_number,
+                candidate,
+                source=f"{signal.source}:initial",
+                explicit_override=False,
+            )
 
         if candidate == current:
             try:
@@ -138,7 +187,12 @@ class LocaleManager:
         await cls._save_candidate(phone_number, candidate, new_count)
 
         if new_count >= cls.AUTO_SWITCH_THRESHOLD:
-            resolved = await cls.set_locale(phone_number, candidate, source=f"{signal.source}:auto")
+            resolved = await cls._write_locale(
+                phone_number,
+                candidate,
+                source=f"{signal.source}:auto",
+                explicit_override=False,
+            )
             logger.info(
                 "locale_switched_auto",
                 phone_number=phone_number,
