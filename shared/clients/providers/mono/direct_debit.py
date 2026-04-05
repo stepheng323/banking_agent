@@ -85,13 +85,15 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 beneficiary_bank_code=beneficiary_bank_code,
             )
             logger.info("mono_initiate_debit_mode", mode=mode, reference=reference)
+            success, status, error_message = self._normalize_debit_outcome(response)
 
             return DebitResult(
-                success=True,
-                status=self._map_status(response.get("status", "pending")),
+                success=success,
+                status=status,
                 debit_id=response.get("id"),
-                reference=reference,
+                reference=response.get("reference") or reference,
                 amount=amount,
+                error_message=error_message,
                 provider_response=response,
             )
         except Exception as e:
@@ -108,13 +110,15 @@ class MonoDirectDebitProvider(DirectDebitProvider):
         """Get debit status from Mono."""
         try:
             response = await self._client.get_debit_status(debit_id)
+            success, status, error_message = self._normalize_debit_outcome(response)
 
             return DebitResult(
-                success=True,
-                status=self._map_status(response.get("status", "pending")),
+                success=success,
+                status=status,
                 debit_id=debit_id,
                 reference=response.get("reference"),
                 amount=response.get("amount", 0) / 100,  # Kobo to Naira
+                error_message=error_message,
                 provider_response=response,
             )
         except Exception as e:
@@ -156,3 +160,45 @@ class MonoDirectDebitProvider(DirectDebitProvider):
             "reversed": DebitStatus.REVERSED,
         }
         return status_map.get(mono_status.lower(), DebitStatus.PENDING)
+
+    @staticmethod
+    def _response_code(response: dict | None) -> str | None:
+        """Extract Mono response code when present."""
+        if not isinstance(response, dict):
+            return None
+        code = response.get("response_code")
+        if code is None:
+            code = response.get("responseCode")
+        return None if code is None else str(code)
+
+    @staticmethod
+    def _response_message(response: dict | None) -> str | None:
+        """Extract the best available provider error message."""
+        if not isinstance(response, dict):
+            return None
+        for key in ("message", "response_message", "description", "reason"):
+            value = response.get(key)
+            if value is not None:
+                return str(value)
+        return None
+
+    def _normalize_debit_outcome(self, response: dict | None) -> tuple[bool, DebitStatus, str | None]:
+        """Normalize Mono debit status using response_code when available."""
+        mono_status = str((response or {}).get("status", "pending"))
+        mapped_status = self._map_status(mono_status)
+        response_code = self._response_code(response)
+
+        if response_code is None:
+            success = mapped_status != DebitStatus.FAILED
+            error_message = self._response_message(response) if mapped_status == DebitStatus.FAILED else None
+            return success, mapped_status, error_message
+
+        if mapped_status == DebitStatus.SUCCESSFUL:
+            if response_code == "00":
+                return True, DebitStatus.SUCCESSFUL, None
+            return False, DebitStatus.FAILED, self._response_message(response)
+
+        if mapped_status == DebitStatus.FAILED:
+            return False, DebitStatus.FAILED, self._response_message(response)
+
+        return True, mapped_status, None

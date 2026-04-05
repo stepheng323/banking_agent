@@ -9,16 +9,23 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _normalize_status(status: str) -> str:
+    status = (status or "unknown").strip().lower()
+    if status == "success":
+        return "successful"
+    return status
+
+
 async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle retry_transfer intent.
     Checks if retryable and prepares for TransferFlowGraph hydration.
     """
-    status = transaction.get("status", "unknown")
+    status = _normalize_status(str(transaction.get("status", "unknown")))
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
 
-    if status == "success":
+    if status == "successful":
         message = render_message(
             "support.retry.already_success",
             locale,
@@ -30,7 +37,7 @@ async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> Su
             transaction_data=transaction,
         )
 
-    if status == "pending":
+    if status in {"pending", "processing"}:
         message = render_message("support.retry.pending_wait", locale)
         return SupportResponse(
             message=message,

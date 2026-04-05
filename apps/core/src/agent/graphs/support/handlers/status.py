@@ -9,12 +9,19 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _normalize_status(status: str) -> str:
+    status = (status or "unknown").strip().lower()
+    if status == "success":
+        return "successful"
+    return status
+
+
 async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle transfer_status intent.
     Confirms success or explains current state.
     """
-    status = transaction.get("status", "unknown")
+    status = _normalize_status(str(transaction.get("status", "unknown")))
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
     created_at = transaction.get("created_at", "")
@@ -30,7 +37,7 @@ async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "
         except Exception:
             time_str = ""
 
-    if status == "success":
+    if status == "successful":
         message = render_message(
             "support.status.success_no_time",
             locale,
@@ -48,7 +55,7 @@ async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "
             transaction_data=transaction,
         )
 
-    elif status == "pending":
+    elif status in {"pending", "processing"}:
         message = render_message(
             "support.status.pending",
             locale,
@@ -86,11 +93,11 @@ async def handle_pending(transaction: dict[str, Any], *, locale: str = "en") -> 
     Handle pending_transfer intent.
     Explains why transfer is stuck.
     """
-    status = transaction.get("status", "unknown")
+    status = _normalize_status(str(transaction.get("status", "unknown")))
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
 
-    if status == "pending":
+    if status in {"pending", "processing"}:
         message = render_message(
             "support.pending.pending",
             locale,
@@ -101,7 +108,7 @@ async def handle_pending(transaction: dict[str, Any], *, locale: str = "en") -> 
             transaction_data=transaction,
         )
 
-    elif status == "success":
+    elif status == "successful":
         message = render_message("support.pending.success_completed", locale)
         return SupportResponse(
             message=message,

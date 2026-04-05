@@ -1,5 +1,8 @@
 """Mono API Client for bank data access."""
 
+from datetime import UTC, datetime
+from uuid import uuid4
+
 import aiohttp
 
 from shared.config.settings import settings
@@ -387,9 +390,33 @@ class MonoClient:
         Returns:
             Dict with debit_id and status
         """
-        is_direct_to_beneficiary = beneficiary_account and beneficiary_bank_code
+        is_direct_to_beneficiary = bool(beneficiary_account and beneficiary_bank_code)
 
         if self.use_mock:
+            now = datetime.now(UTC).isoformat()
+            debit_id = f"mock_debit_{uuid4().hex[:12]}"
+            mock_status = "pending"
+            debit_type = "direct-to-beneficiary" if is_direct_to_beneficiary else "pooling"
+            beneficiary = None
+            if is_direct_to_beneficiary:
+                beneficiary = {
+                    "account_number": beneficiary_account,
+                    "bank_code": beneficiary_bank_code,
+                }
+            mock_debit = mock_data.store_mock_debit(
+                {
+                    "id": debit_id,
+                    "mandate": mandate_id,
+                    "status": mock_status,
+                    "reference": reference,
+                    "amount": amount,
+                    "narration": narration,
+                    "debit_type": debit_type,
+                    "beneficiary": beneficiary,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
             logger.info(
                 "mock_initiate_debit",
                 mandate_id=mandate_id,
@@ -397,12 +424,7 @@ class MonoClient:
                 reference=reference,
                 direct_to_beneficiary=is_direct_to_beneficiary,
             )
-            return {
-                "id": f"mock_debit_{reference}",
-                "status": "pending",
-                "reference": reference,
-                "amount": amount,
-            }
+            return mock_debit
 
         body = {
             "mandate": mandate_id,
@@ -440,12 +462,30 @@ class MonoClient:
         """
         if self.use_mock:
             logger.info("mock_get_debit_status", debit_id=debit_id)
-            return {
-                "id": debit_id,
-                "status": "successful",
-                "reference": debit_id.replace("mock_debit_", ""),
-                "amount": 10000,  # 100 naira in kobo
-            }
+            mock_debit = mock_data.get_mock_debit(debit_id)
+            if mock_debit is None:
+                raise MonoApiError(404, f"Mock debit not found for id {debit_id}", error_code="not_found")
+
+            current_status = str(mock_debit.get("status", "pending")).lower()
+            next_status = {
+                "pending": "processing",
+                "processing": "successful",
+            }.get(current_status, current_status)
+            updates: dict[str, str] = {"updated_at": datetime.now(UTC).isoformat()}
+            if next_status == "successful":
+                updates["response_code"] = "00"
+            elif next_status == "failed" and not mock_debit.get("response_code"):
+                updates["response_code"] = "51"
+                updates["message"] = str(mock_debit.get("message") or "Debit failed")
+            if next_status != current_status:
+                mock_debit = mock_data.update_mock_debit(
+                    debit_id,
+                    status=next_status,
+                    **updates,
+                ) or mock_debit
+            elif current_status == "failed" and not mock_debit.get("response_code"):
+                mock_debit = mock_data.update_mock_debit(debit_id, **updates) or mock_debit
+            return mock_debit
 
         data = await self._request("GET", f"/v3/payments/debits/{debit_id}")
         return data

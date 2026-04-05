@@ -9,16 +9,23 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _normalize_status(status: str) -> str:
+    status = (status or "unknown").strip().lower()
+    if status == "success":
+        return "successful"
+    return status
+
+
 async def handle_reversal_status(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle reversal_refund_status intent.
     Explains refund status - never promises timelines unless explicitly known.
     """
-    status = transaction.get("status", "unknown")
+    status = _normalize_status(str(transaction.get("status", "unknown")))
     amount = transaction.get("amount", 0)
     provider_response = transaction.get("provider_response", {})
 
-    if status == "success":
+    if status == "successful":
         return SupportResponse(
             message=render_message("support.reversal.success_no_reversal", locale),
             offer_receipt=True,

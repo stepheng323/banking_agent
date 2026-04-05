@@ -1,7 +1,8 @@
 import pytest
 
 from shared.clients.providers.mono.client import MonoClient
-from shared.clients.providers.mono.mock_data import reset_mock_transaction_state
+from shared.clients.providers.mono.mock_data import reset_mock_transaction_state, update_mock_debit
+from shared.clients.providers.mono.models import MonoApiError
 from shared.config.settings import settings
 
 
@@ -89,3 +90,78 @@ async def test_mono_client_mock_transactions_use_account_slot_per_user(monkeypat
 
     assert first_account[0].id == "txn_001"
     assert second_account[0].id == "txn_b01"
+
+
+@pytest.mark.asyncio
+async def test_mono_client_mock_debit_lifecycle_matches_mono_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "mono_use_mock_override", True)
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    client = MonoClient()
+    initiated = await client.initiate_debit(
+        mandate_id="mandate_123",
+        amount=1_000_000,
+        reference="transfer-ref-123",
+        narration="Allowance",
+        beneficiary_account="8162511023",
+        beneficiary_bank_code="100004",
+    )
+
+    assert initiated["id"].startswith("mock_debit_")
+    assert initiated["mandate"] == "mandate_123"
+    assert initiated["status"] == "pending"
+    assert initiated["reference"] == "transfer-ref-123"
+    assert initiated["amount"] == 1_000_000
+    assert initiated["narration"] == "Allowance"
+    assert initiated["debit_type"] == "direct-to-beneficiary"
+    assert "response_code" not in initiated
+    assert initiated["beneficiary"] == {
+        "account_number": "8162511023",
+        "bank_code": "100004",
+    }
+
+    first_status = await client.get_debit_status(initiated["id"])
+    second_status = await client.get_debit_status(initiated["id"])
+
+    assert first_status["id"] == initiated["id"]
+    assert first_status["status"] == "processing"
+    assert first_status["reference"] == initiated["reference"]
+    assert first_status["amount"] == initiated["amount"]
+    assert "response_code" not in first_status
+    assert second_status["status"] == "successful"
+    assert second_status["response_code"] == "00"
+    assert second_status["beneficiary"] == initiated["beneficiary"]
+
+
+@pytest.mark.asyncio
+async def test_mono_client_mock_get_debit_status_raises_for_unknown_debit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "mono_use_mock_override", True)
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    client = MonoClient()
+
+    with pytest.raises(MonoApiError) as exc_info:
+        await client.get_debit_status("missing_mock_debit")
+
+    assert exc_info.value.is_not_found is True
+
+
+@pytest.mark.asyncio
+async def test_mono_client_mock_failed_debit_uses_non_zero_response_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "mono_use_mock_override", True)
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    client = MonoClient()
+    initiated = await client.initiate_debit(
+        mandate_id="mandate_123",
+        amount=500_000,
+        reference="transfer-ref-failed",
+        narration="Transport",
+    )
+    update_mock_debit(initiated["id"], status="failed")
+
+    failed_status = await client.get_debit_status(initiated["id"])
+
+    assert failed_status["status"] == "failed"
+    assert failed_status["response_code"] == "51"
+    assert failed_status["message"] == "Debit failed"

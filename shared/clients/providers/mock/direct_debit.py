@@ -1,6 +1,7 @@
 """Mock implementation of DirectDebitProvider for development and testing."""
 
 import uuid
+from datetime import UTC, datetime
 
 from shared.clients.abstractions.direct_debit import (
     BalanceResult,
@@ -30,6 +31,53 @@ class MockDirectDebitProvider(DirectDebitProvider):
             "mock_account_3": 25000.0,
         }
         self._debits: dict[str, dict] = {}
+
+    @staticmethod
+    def _response_code(payload: dict | None) -> str | None:
+        if not isinstance(payload, dict):
+            return None
+        code = payload.get("response_code")
+        if code is None:
+            code = payload.get("responseCode")
+        return None if code is None else str(code)
+
+    @staticmethod
+    def _response_message(payload: dict | None) -> str | None:
+        if not isinstance(payload, dict):
+            return None
+        for key in ("message", "response_message", "description", "reason"):
+            value = payload.get(key)
+            if value is not None:
+                return str(value)
+        return None
+
+    @classmethod
+    def _build_result(cls, payload: dict, *, amount_naira: float | None = None) -> DebitResult:
+        code = cls._response_code(payload)
+        status = payload.get("status", DebitStatus.PENDING.value)
+        amount = amount_naira if amount_naira is not None else float(payload.get("amount", 0.0))
+        if status == DebitStatus.SUCCESSFUL.value:
+            success = code in (None, "00")
+            normalized_status = DebitStatus.SUCCESSFUL if success else DebitStatus.FAILED
+        elif status == DebitStatus.FAILED.value:
+            success = False
+            normalized_status = DebitStatus.FAILED
+        elif status == DebitStatus.PROCESSING.value:
+            success = True
+            normalized_status = DebitStatus.PROCESSING
+        else:
+            success = True
+            normalized_status = DebitStatus.PENDING
+        error_message = cls._response_message(payload) if not success else None
+        return DebitResult(
+            success=success,
+            status=normalized_status,
+            debit_id=str(payload.get("id") or payload.get("debit_id") or ""),
+            reference=str(payload.get("reference") or ""),
+            amount=amount,
+            error_message=error_message,
+            provider_response=dict(payload),
+        )
 
     @property
     def provider_name(self) -> str:
@@ -73,14 +121,25 @@ class MockDirectDebitProvider(DirectDebitProvider):
             )
 
         debit_id = f"mock_debit_{uuid.uuid4().hex[:8]}"
-
-        self._debits[reference] = {
-            "debit_id": debit_id,
+        now = datetime.now(UTC).isoformat()
+        mode = "direct-to-beneficiary" if has_beneficiary_account else "pooling"
+        payload = {
+            "id": debit_id,
             "mandate_id": mandate_id,
             "amount": amount,
             "reference": reference,
-            "status": DebitStatus.PROCESSING,
+            "status": DebitStatus.PENDING.value,
+            "narration": narration,
+            "debit_type": mode,
+            "beneficiary": (
+                {"account_number": beneficiary_account, "bank_code": beneficiary_bank_code}
+                if has_beneficiary_account
+                else None
+            ),
+            "created_at": now,
+            "updated_at": now,
         }
+        self._debits[reference] = payload
 
         logger.info(
             "mock_initiate_debit",
@@ -89,32 +148,33 @@ class MockDirectDebitProvider(DirectDebitProvider):
             reference=reference,
             mode="direct_beneficiary" if has_beneficiary_account else "pooling",
         )
-
-        return DebitResult(
-            success=True,
-            status=DebitStatus.PROCESSING,
-            debit_id=debit_id,
-            reference=reference,
-            amount=amount,
-        )
+        return self._build_result(payload, amount_naira=amount)
 
     async def get_debit_status(self, debit_id: str) -> DebitResult:
-        """Get simulated debit status (always returns successful for testing)."""
+        """Get simulated debit status with Mono-like lifecycle semantics."""
         for _ref, debit in self._debits.items():
-            if debit["debit_id"] == debit_id:
-                debit["status"] = DebitStatus.SUCCESSFUL
-                return DebitResult(
-                    success=True,
-                    status=DebitStatus.SUCCESSFUL,
-                    debit_id=debit_id,
-                    reference=debit["reference"],
-                    amount=debit["amount"],
-                )
+            if debit.get("id") == debit_id or debit.get("debit_id") == debit_id:
+                current_status = str(debit.get("status", DebitStatus.PENDING.value))
+                next_status = {
+                    DebitStatus.PENDING.value: DebitStatus.PROCESSING.value,
+                    DebitStatus.PROCESSING.value: DebitStatus.SUCCESSFUL.value,
+                }.get(current_status, current_status)
+                debit["status"] = next_status
+                debit["updated_at"] = datetime.now(UTC).isoformat()
+                if next_status == DebitStatus.SUCCESSFUL.value:
+                    debit["response_code"] = "00"
+                    debit.pop("message", None)
+                elif next_status == DebitStatus.FAILED.value and "response_code" not in debit:
+                    debit["response_code"] = "51"
+                    debit["message"] = "Debit failed"
+                return self._build_result(debit, amount_naira=float(debit.get("amount", 0.0)))
 
         return DebitResult(
-            success=True,
-            status=DebitStatus.SUCCESSFUL,
+            success=False,
+            status=DebitStatus.FAILED,
             debit_id=debit_id,
+            error_message="Mock debit not found",
+            provider_response={"id": debit_id, "status": DebitStatus.FAILED.value, "response_code": "404"},
         )
 
     async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
@@ -134,9 +194,15 @@ class MockDirectDebitProvider(DirectDebitProvider):
     def simulate_debit_success(self, reference: str) -> None:
         """Mark a debit as successful (for testing webhooks)."""
         if reference in self._debits:
-            self._debits[reference]["status"] = DebitStatus.SUCCESSFUL
+            self._debits[reference]["status"] = DebitStatus.SUCCESSFUL.value
+            self._debits[reference]["response_code"] = "00"
+            self._debits[reference]["updated_at"] = datetime.now(UTC).isoformat()
+            self._debits[reference].pop("message", None)
 
     def simulate_debit_failure(self, reference: str) -> None:
         """Mark a debit as failed (for testing failure paths)."""
         if reference in self._debits:
-            self._debits[reference]["status"] = DebitStatus.FAILED
+            self._debits[reference]["status"] = DebitStatus.FAILED.value
+            self._debits[reference]["response_code"] = "51"
+            self._debits[reference]["message"] = "Debit failed"
+            self._debits[reference]["updated_at"] = datetime.now(UTC).isoformat()

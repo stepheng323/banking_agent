@@ -1,5 +1,7 @@
 """Mock data for Mono API (development environment)."""
 
+from copy import deepcopy
+
 from .mock_transactions import (
     account_a_transactions,
     account_b_transactions,
@@ -72,11 +74,37 @@ def get_mock_balance(account_id: str) -> BalanceData:
 
 # Track user-scoped account-to-slot assignment for deterministic mock routing.
 _user_account_slots: dict[str, dict[str, int]] = {}
+_mock_debits_by_id: dict[str, dict] = {}
 
 
 def reset_mock_transaction_state() -> None:
     """Reset mock account-slot state - useful between test runs."""
     _user_account_slots.clear()
+    _mock_debits_by_id.clear()
+
+
+def store_mock_debit(debit: dict) -> dict:
+    """Persist a mock debit payload for later status retrieval."""
+    stored = deepcopy(debit)
+    _mock_debits_by_id[str(stored["id"])] = stored
+    return deepcopy(stored)
+
+
+def get_mock_debit(debit_id: str) -> dict | None:
+    """Return a copy of a stored mock debit payload."""
+    debit = _mock_debits_by_id.get(str(debit_id))
+    if debit is None:
+        return None
+    return deepcopy(debit)
+
+
+def update_mock_debit(debit_id: str, **updates: object) -> dict | None:
+    """Apply partial updates to a stored mock debit payload."""
+    debit = _mock_debits_by_id.get(str(debit_id))
+    if debit is None:
+        return None
+    debit.update(updates)
+    return deepcopy(debit)
 
 
 def _normalize_user_key(user_id: str | None) -> str:
