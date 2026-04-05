@@ -1096,6 +1096,74 @@ async def test_confirmation_continue_flow_collective_update_resets_all_tasks() -
 
 
 @pytest.mark.asyncio
+async def test_confirmation_continue_flow_scopes_multi_recipient_narration_updates_per_task() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_multi_confirm_note",
+        phone_number="2348066666778",
+        channel="whatsapp",
+        last_message_text="The one for mum is allowance and tolu is transport",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_mum", "t_tolu"]),
+        tasks={
+            "t_mum": TaskSpec(
+                id="t_mum",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Mum",
+                    "idempotency_key": "idem-mum",
+                    "confirmation": {"summary": "Confirm Mum", "snapshot": {"amount": 10000, "recipient_name": "Mum"}},
+                },
+            ),
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Tolu",
+                    "idempotency_key": "idem-tolu",
+                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 10000, "recipient_name": "Tolu"}},
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(
+                PlannerOutput(primary_intent="transfer"),
+                route=InterruptRouteDecision(
+                    decision="continue_flow",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_intent=None,
+                    target_mode=None,
+                    reason="recipient-scoped narration update",
+                ),
+            )
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_mum"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_mum"].payload["pending_user_message"] == "for allowance"
+    assert updates["tasks"]["t_mum"].payload["confirmation_message_scoped"] is True
+    assert updates["tasks"]["t_mum"].payload["previous_confirmation_snapshot"] == {
+        "amount": 10000,
+        "recipient_name": "Mum",
+    }
+    assert updates["tasks"]["t_tolu"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_tolu"].payload["pending_user_message"] == "for transport"
+    assert updates["tasks"]["t_tolu"].payload["confirmation_message_scoped"] is True
+    assert updates["tasks"]["t_tolu"].payload["previous_confirmation_snapshot"] == {
+        "amount": 10000,
+        "recipient_name": "Tolu",
+    }
+    assert set(updates["last_interrupt"].task_ids) == {"t_mum", "t_tolu"}
+
+
+@pytest.mark.asyncio
 async def test_confirmation_switch_to_account_is_direct_and_stashes_transfer() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_7",

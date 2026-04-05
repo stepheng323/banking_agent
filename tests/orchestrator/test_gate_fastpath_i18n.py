@@ -330,6 +330,32 @@ async def test_gate_explicit_cancel_with_active_state_skips_query_session_lookup
     assert redis_client.deleted_keys == ["query:session:2348888888890"]
 
 
+async def test_gate_explicit_cancel_dismisses_pending_mandate_notice() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_cancel_mandate_1",
+        phone_number="2348888888891",
+        channel="whatsapp",
+        last_message_text="Abort",
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "bank_name": "First Bank",
+                    "account_number": "0334557890",
+                    "mandate_status": "pending",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["final_response"] == render_cancelled_prompt("en")
+    assert updates["routing_decision"] == "cancel_pending_mandate_notice"
+
+
 async def test_gate_query_shortcut_followup_bypasses_semantic_router_without_pending_interrupt() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -1012,6 +1038,72 @@ async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
     assert updates.get("direct_path_triggered") is None
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "batch_transfer_command"
+
+
+async def test_gate_multi_amount_transfer_turn_falls_through_to_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_mixed",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="multi recipient transfer requires decomposition",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_batch_4",
+        phone_number="2348999999922",
+        channel="whatsapp",
+        last_message_text="Send 12k to mum and 6k to gaines",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "batch_transfer_command"
+
+
+async def test_gate_multi_recipient_transfer_turn_falls_through_to_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_mixed",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="multi recipient transfer requires decomposition",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_batch_5",
+        phone_number="2348999999923",
+        channel="whatsapp",
+        last_message_text="Send 10k to tolu and mum",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"

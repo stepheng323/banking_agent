@@ -62,6 +62,10 @@ _TRANSFER_DIRECT_QUERY_MARKER_RE = re.compile(
     r"\b(?:how much|what(?:'s| is)?|when|who did i|show|list|view|get)\b",
     re.IGNORECASE,
 )
+_TRANSFER_MULTI_RECIPIENT_TAIL_RE = re.compile(
+    r"\b(?:to|for|between|btw)\b\s+.+\b(?:and|&)\b\s+.+",
+    re.IGNORECASE,
+)
 DETERMINISTIC_GREETING_EXACT = {
     "hi",
     "hello",
@@ -634,6 +638,41 @@ def _has_explicit_cancel(message_text: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
 
 
+def _has_pending_mandate_without_ready_accounts(loaded_context: dict[str, Any] | None) -> bool:
+    if not isinstance(loaded_context, dict):
+        return False
+    accounts_raw = loaded_context.get("accounts")
+    if not isinstance(accounts_raw, list):
+        return False
+
+    has_ready = False
+    has_pending_like = False
+    for account in accounts_raw:
+        if not isinstance(account, dict):
+            continue
+        status = str(account.get("mandate_status") or "").strip().lower()
+        if not status:
+            continue
+        if status == "ready":
+            has_ready = True
+        else:
+            has_pending_like = True
+
+    return has_pending_like and not has_ready
+
+
+def _looks_like_multi_recipient_transfer(normalized: str) -> bool:
+    if "split" in normalized or " each " in f" {normalized} " or re.search(r"\b(?:between|btw)\b", normalized):
+        return True
+    if len(_TRANSFER_DIRECT_AMOUNT_RE.findall(normalized)) >= 2:
+        return True
+    if not _TRANSFER_MULTI_RECIPIENT_TAIL_RE.search(normalized):
+        return False
+    if _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
+        return False
+    return True
+
+
 def _classify_obvious_transfer_request(message_text: str) -> str | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if not normalized or not _TRANSFER_DIRECT_PREFIX_RE.search(normalized):
@@ -648,7 +687,7 @@ def _classify_obvious_transfer_request(message_text: str) -> str | None:
     if _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized) and not _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized):
         return None
 
-    if "split" in normalized or " each " in f" {normalized} " or re.search(r"\b(?:between|btw)\b", normalized):
+    if _looks_like_multi_recipient_transfer(normalized):
         return "batch_transfer_command"
     if _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized) or _TRANSFER_DIRECT_SOURCE_RE.search(normalized):
         return "account_aware_transfer_command"
@@ -988,6 +1027,14 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 "direct_path_triggered": True,
                 "final_response": render_message("query.session.goodbye", current_locale),
                 **_route_observability_updates(owner="guardrail", decision="cancel"),
+            }
+        if _has_pending_mandate_without_ready_accounts(state.loaded_context):
+            logger.info("gate_pending_mandate_notice_dismissed")
+            return {
+                **gate_updates,
+                "direct_path_triggered": True,
+                "final_response": cancelled_message(state, current_locale),
+                **_route_observability_updates(owner="guardrail", decision="cancel_pending_mandate_notice"),
             }
         return {
             **gate_updates,

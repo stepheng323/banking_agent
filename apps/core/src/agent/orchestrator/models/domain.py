@@ -67,6 +67,7 @@ class TransferPayload(BaseModel):
     source_accounts: list[str] | None = None
     explicit_split: dict[str, float] | None = None
 
+    authored_narration: str | None = None
     narration: str | None = None
 
     # Special modes
@@ -91,6 +92,7 @@ class TransferPayload(BaseModel):
 
     # Confirmation sub-state
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
+    confirmation_message_scoped: bool = False
 
     @field_validator("transfer_all", mode="before")
     @classmethod

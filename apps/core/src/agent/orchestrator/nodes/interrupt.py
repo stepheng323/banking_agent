@@ -93,6 +93,7 @@ _CONFIRMATION_COLLECTIVE_SCOPE_RE = re.compile(
     r"\b(both|all|everyone|everybody|all of them|for both)\b",
     re.IGNORECASE,
 )
+_CONFIRMATION_MULTI_CLAUSE_SPLIT_RE = re.compile(r"\s+(?:and|then)\s+|[;\n]+|,\s*", re.IGNORECASE)
 _TRANSFER_CANCEL_SCHEDULE_RE = re.compile(
     r"\b(cancel|stop|delete|remove)\b[\w\s]{0,40}\b(schedule|scheduled|recurring|auto)\b",
     re.IGNORECASE,
@@ -1891,6 +1892,73 @@ def _message_targets_confirmation_task(message_text: str, task: TaskSpec) -> boo
     return False
 
 
+def _transfer_confirmation_clause_override(clause: str, task: TaskSpec) -> str | None:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    candidates = [
+        str(payload.get("recipient_name") or "").strip(),
+        str(payload.get("recipient_resolved_name") or "").strip(),
+    ]
+    cleaned_clause = clause.strip(" \t\r\n.,;:!?")
+    if not cleaned_clause:
+        return None
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        escaped = re.escape(candidate)
+        patterns = (
+            rf"^(?:the\s+one|the\s+transfer)\s+for\s+{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$",
+            rf"^for\s+{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$",
+            rf"^{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$",
+            rf"^{escaped}\s*[:=-]\s*(?P<value>.+)$",
+        )
+        for pattern in patterns:
+            match = re.match(pattern, cleaned_clause, re.IGNORECASE)
+            if match is None:
+                continue
+            value = str(match.group("value") or "").strip(" \t\r\n.,;:!?")
+            if value:
+                return f"for {value}"
+    return cleaned_clause
+
+
+def _build_confirmation_message_overrides(
+    state: OrchestratorState,
+    task_ids: list[str],
+    *,
+    message_text: str,
+) -> dict[str, str]:
+    if len(task_ids) < 2:
+        return {}
+
+    clauses = [part.strip() for part in _CONFIRMATION_MULTI_CLAUSE_SPLIT_RE.split(message_text) if part.strip()]
+    if len(clauses) < 2:
+        return {}
+
+    overrides: dict[str, str] = {}
+    for clause in clauses:
+        matched_task_ids = [
+            task_id
+            for task_id in task_ids
+            if task_id in state.tasks and _message_targets_confirmation_task(clause, state.tasks[task_id])
+        ]
+        if len(matched_task_ids) != 1:
+            continue
+
+        task_id = matched_task_ids[0]
+        task = state.tasks[task_id]
+        override = clause.strip()
+        if task.type == "transfer":
+            override = _transfer_confirmation_clause_override(clause, task) or override
+        if task_id in overrides:
+            return {}
+        overrides[task_id] = override
+
+    if len(overrides) < 2:
+        return {}
+    return overrides
+
+
 def _select_confirmation_continue_flow_task_ids(
     state: OrchestratorState,
     interrupt: Any,
@@ -1956,6 +2024,28 @@ def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str
             copy_task=True,
             clear_idempotency=True,
         )
+        if interrupt.kind == "confirmation":
+            message_text = (state.last_message_text or "").strip()
+            message_overrides = _build_confirmation_message_overrides(
+                state,
+                task_ids_to_reset,
+                message_text=message_text,
+            )
+            if message_overrides:
+                logger.info(
+                    "confirmation_task_message_overrides_applied",
+                    task_ids=sorted(message_overrides.keys()),
+                )
+            for task_id in task_ids_to_reset:
+                task = state.tasks.get(task_id)
+                if task is None:
+                    continue
+                if task_id in message_overrides:
+                    task.payload["pending_user_message"] = message_overrides[task_id]
+                    task.payload["confirmation_message_scoped"] = True
+                else:
+                    task.payload.pop("pending_user_message", None)
+                    task.payload.pop("confirmation_message_scoped", None)
         last_interrupt = interrupt
         if interrupt.kind == "confirmation" and task_ids_to_reset != [str(task_id) for task_id in interrupt.task_ids]:
             if hasattr(interrupt, "model_copy"):

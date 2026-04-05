@@ -167,6 +167,27 @@ def _normalize_text(value: Any) -> str:
     return normalized
 
 
+def _display_narration(payload: TransferPayload) -> str | None:
+    for value in (payload.authored_narration, payload.user_note):
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _effective_narration(payload: TransferPayload) -> str | None:
+    for value in (payload.authored_narration, payload.user_note, payload.narration):
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _derived_description(payload: TransferPayload, recipient_display_name: str | None) -> str | None:
+    recipient = (recipient_display_name or payload.recipient_resolved_name or payload.recipient_name or "").strip()
+    if not recipient:
+        return None
+    return f"Transfer to {recipient}"
+
+
 def _field_value_changed(field: str, previous: Any, current: Any) -> bool:
     if field == "amount":
         try:
@@ -400,6 +421,9 @@ def build_confirmation(
         or payload.recipient_resolved_name
         or payload.recipient_name
     )
+    display_narration = _display_narration(payload)
+    effective_narration = _effective_narration(payload)
+    description = _derived_description(payload, recipient_display_name)
     snap = {
         "amount": payload.amount,
         "recipient_name": recipient_display_name,
@@ -407,8 +431,9 @@ def build_confirmation(
         "recipient_account": payload.recipient_account,
         "sourceBank": payload.source_bank_name,
         "sourceAccount": payload.source_account_number,
-        "narration": payload.narration,
-        "description": payload.description,
+        "authored_narration": payload.authored_narration,
+        "narration": effective_narration,
+        "description": description,
         "user_note": payload.user_note,
     }
     update_message = _resolve_transition_update_message(
@@ -424,8 +449,9 @@ def build_confirmation(
             "recipientAccount": payload.recipient_account,
             "sourceBank": payload.source_bank_name,
             "sourceAccount": payload.source_account_number,
-            "narration": payload.narration,
-            "description": payload.description,
+            "authored_narration": payload.authored_narration,
+            "narration": display_narration,
+            "description": description,
             "user_note": payload.user_note,
         },
         include_source=False,  # Orchestrator will handle the "From" line for batching

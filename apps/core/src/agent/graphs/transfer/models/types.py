@@ -37,6 +37,8 @@ class TransferPayload(BaseModel):
     recipient_bank_name: str | None = None
     recipient_resolved_name: str | None = None
     recipient_reference: dict[str, Any] | None = None
+    recipient_binding_source: Literal["fanout"] | None = None
+    recipient_binding_index: int | None = None
     beneficiary_id: str | None = None
     beneficiary_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_self: bool = False
@@ -59,7 +61,12 @@ class TransferPayload(BaseModel):
 
     idempotency_key: str | None = None
     transaction_id: str | None = None
+    authored_narration: str | None = None
     narration: str | None = None
+    async_group_id: str | None = None
+    async_group_size: int | None = None
+    async_group_kind: Literal["single", "multi_transfer", "mixed_batch"] | None = None
+    async_group_index: int | None = None
     description: str | None = None
     user_note: str | None = None
     transition_acknowledgment: str | None = None
@@ -71,6 +78,7 @@ class TransferPayload(BaseModel):
 
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
     skip_extraction: bool = False
+    confirmation_message_scoped: bool = False
 
     # Scheduling fields (phase 1 transfer scheduling)
     schedule_mode: Literal["one_time", "recurring"] | None = None

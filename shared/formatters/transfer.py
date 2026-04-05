@@ -23,6 +23,14 @@ def _calculate_transfer_fee(amount: float) -> float:
     return float(max(fee, 10))
 
 
+def _resolve_display_narration(data: dict) -> str | None:
+    for key in ("authored_narration", "user_note"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 def format_transfer_summary(data: dict, include_source: bool = True, locale: str = "en") -> str:
     """Format a WhatsApp-friendly transfer confirmation summary.
 
@@ -33,6 +41,7 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
       recipientAccount: str
       sourceBank: str
       sourceAccount: str
+      authored_narration: Optional[str]
       narration: Optional[str]
       description: Optional[str]
       user_note: Optional[str]
@@ -45,7 +54,7 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
     recipient_account = str(data.get("recipientAccount") or "")
     source_bank = str(data.get("sourceBank") or "")
     source_account = str(data.get("sourceAccount") or "")
-    user_note: str | None = data.get("user_note")
+    display_narration = _resolve_display_narration(data)
     lines = [
         render_message(
             "transfer.format.summary.title",
@@ -59,12 +68,12 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
         ),
     ]
 
-    if user_note:
+    if display_narration:
         lines.append(
             render_message(
                 "transfer.format.summary.user_note",
                 locale,
-                {"user_note": user_note.strip().capitalize()},
+                {"user_note": display_narration.strip().capitalize()},
             )
         )
 
@@ -90,6 +99,7 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
       recipientBank: str
       recipientAccount: str
       funding_sources: List[Dict] - each with bank_name, account_number, amount
+      authored_narration: Optional[str]
       narration: Optional[str]
     """
     amount = float(data.get("amount", 0))
@@ -99,7 +109,7 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
     recipient_bank = str(data.get("recipientBank") or "")
     recipient_account = str(data.get("recipientAccount") or "")
     funding_sources: list[dict] = data.get("funding_sources", [])
-    narration: str | None = data.get("narration")
+    narration = _resolve_display_narration(data)
 
     fee = _calculate_transfer_fee(amount)
     total = amount + fee

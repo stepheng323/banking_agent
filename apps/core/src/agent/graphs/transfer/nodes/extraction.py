@@ -344,13 +344,6 @@ def _format_amount_ack(amount: float) -> str:
     return f"Changing amount to ₦{rounded:,.2f}."
 
 
-def _build_confirmation_edit_description(current_payload: TransferPayload) -> str | None:
-    name = current_payload.recipient_name or current_payload.recipient_resolved_name
-    if not name:
-        return None
-    return f"Transfer to {str(name).title()}"
-
-
 def _normalize_note_text(value: str) -> str:
     normalized = re.sub(r"\s+", " ", value.strip())
     return normalized.strip(" .,!?:;\"'`~()[]{}")
@@ -426,10 +419,6 @@ def _parse_single_confirmation_amount_edit(
 
     if patch is None:
         return None
-
-    description = _build_confirmation_edit_description(current_payload)
-    if description:
-        patch["description"] = description
     return patch
 
 
@@ -469,9 +458,6 @@ def _parse_single_confirmation_source_bank_edit(
         "confirmation": {"confirmed": False},
         "transition_acknowledgment": f"Using {bank_name} instead.",
     }
-    description = _build_confirmation_edit_description(current_payload)
-    if description:
-        patch["description"] = description
     return patch
 
 
@@ -505,14 +491,12 @@ def _parse_single_confirmation_narration_edit(
         return None
 
     patch: dict[str, Any] = {
+        "authored_narration": note,
         "narration": note,
         "user_note": note,
         "confirmation": {"confirmed": False},
         "transition_acknowledgment": "Added narration.",
     }
-    description = _build_confirmation_edit_description(current_payload)
-    if description:
-        patch["description"] = description
     return patch
 
 
@@ -523,7 +507,8 @@ def _parse_single_confirmation_transfer_edit(
     worker_context: Any,
 ) -> dict[str, Any] | None:
     confirmation_task_count = getattr(worker_context, "confirmation_task_count", None)
-    if confirmation_task_count != 1:
+    scoped_confirmation_message = bool(current_payload.confirmation_message_scoped)
+    if confirmation_task_count != 1 and not scoped_confirmation_message:
         return None
     if not current_payload.previous_confirmation_snapshot:
         return None
@@ -557,10 +542,13 @@ class ExtractionStep(TransferStep):
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
         def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any] | None:
-            if not data.skip_extraction:
+            if not data.skip_extraction and not data.confirmation_message_scoped:
                 return patch
             merged = dict(patch or {})
-            merged.setdefault("skip_extraction", False)
+            if data.skip_extraction:
+                merged.setdefault("skip_extraction", False)
+            if data.confirmation_message_scoped:
+                merged.setdefault("confirmation_message_scoped", False)
             return merged
 
         raw_required_fields = getattr(worker_context, "required_fields", [])
@@ -774,8 +762,7 @@ class ExtractionStep(TransferStep):
                 },
             },
         )
-        if data.skip_extraction:
-            res.patch = _with_skip_patch(res.patch)
+        res.patch = _with_skip_patch(res.patch)
 
         return res
 
@@ -820,21 +807,10 @@ async def _extract_transfer_update(
                 extracted_data["amount"] = None
                 extracted_data["suggested_amount"] = None
 
-        # [UX] Narration vs Description Split
-        # Default description to "Transfer to {name}"
-        # user_note only populated if user actually typed one.
-        name = (
-            extracted_data.get("recipient_resolved_name")
-            or extracted_data.get("recipient_name")
-            or current_payload.recipient_resolved_name
-            or current_payload.recipient_name
-        )
-        if name:
-            extracted_data["description"] = f"Transfer to {name.title()}"
-
         if "narration" in extracted_data:
-            # Keep the execution-facing narration while also preserving a user-authored note
-            # for confirmation summaries.
+            # Keep execution-facing narration while preserving the user's authored note
+            # as the canonical confirmation/display value.
+            extracted_data["authored_narration"] = extracted_data["narration"]
             extracted_data["user_note"] = extracted_data["narration"]
 
         needs_source = (
@@ -905,8 +881,20 @@ async def _extract_transfer_update(
             # from wiping out valid account details we just collected.
             new_name = extracted_data["recipient_name"]
             names_match = _recipient_name_matches_existing_binding(new_name, current_payload)
+            authoritative_fanout_binding = current_payload.recipient_binding_source == "fanout"
 
-            if not names_match:
+            if authoritative_fanout_binding and not names_match:
+                extracted_data.pop("recipient_name", None)
+                extracted_data.pop("recipient_resolved_name", None)
+                extracted_data.pop("beneficiary_id", None)
+                extracted_data.pop("resolved_from_saved_beneficiary", None)
+                extracted_data.pop("name_mismatch", None)
+                extracted_data.pop("name_match_score", None)
+                extracted_data.pop("name_mismatch_warning", None)
+                extracted_data.pop("recipient_bank_code", None)
+                extracted_data.pop("recipient_bank_name", None)
+
+            elif not names_match:
                 extracted_data["recipient_account"] = None
                 extracted_data["recipient_bank_code"] = None
                 extracted_data["recipient_bank_name"] = None

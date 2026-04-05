@@ -77,6 +77,26 @@ def test_extractor_context_string_includes_required_fields_and_known_recipient_h
     assert "KnownRecipientBank: Access Bank" in context_str
 
 
+def test_extractor_context_string_trims_beneficiary_aliases_for_compact_mode() -> None:
+    extractor = TransferEntityExtractor.__new__(TransferEntityExtractor)
+    context_str = extractor._build_context_string(
+        {
+            "required_fields": ["recipient_account"],
+            "known_recipient": {"recipient_name": "Tolu"},
+            "beneficiaries": [
+                {"alias": "Mum"},
+                {"alias": "Tolu"},
+                {"alias": "Doyin"},
+                {"alias": "Gaines"},
+                {"alias": "Dad"},
+            ],
+        }
+    )
+
+    assert "Beneficiaries: Tolu, Mum, Doyin, Gaines" in context_str
+    assert "Dad" not in context_str
+
+
 async def test_extraction_step_numeric_reply_selects_beneficiary_when_awaiting_beneficiary_id() -> None:
     first_id = str(uuid4())
     second_id = str(uuid4())
@@ -519,6 +539,7 @@ async def test_narration_correction_updates_narration_and_user_note() -> None:
     result = await step.execute(payload, context, TransferGates(), worker_context)
 
     assert result.outcome == TransactionOutcome.OK
+    assert result.patch["authored_narration"] == "groceries"
     assert result.patch["narration"] == "groceries"
     assert result.patch["user_note"] == "groceries"
     assert result.patch["transition_acknowledgment"] == "Updated narration."
@@ -558,6 +579,47 @@ async def test_amount_update_does_not_clear_recipient_binding_when_name_matches_
     assert "recipient_account" not in result.patch
     assert "recipient_bank_name" not in result.patch
     assert "beneficiary_id" not in result.patch
+
+
+async def test_fanout_bound_confirmation_edit_keeps_recipient_binding_on_narration_update() -> None:
+    class _FanoutNarrationExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                entities=TransferEntities(recipient_name="Mum", narration="allowance"),
+                acknowledgment="Updated narration.",
+            )
+
+    step = ExtractionStep(user_message="The transfer is for allowance")
+    payload = TransferPayload(
+        recipient_name="Tolu",
+        recipient_resolved_name="Tolu Adedayo",
+        recipient_account="0760505261",
+        recipient_bank_name="First Bank",
+        recipient_bank_code="011",
+        recipient_binding_source="fanout",
+        recipient_binding_index=2,
+        previous_confirmation_snapshot={"amount": 10000, "recipient_name": "Tolu"},
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_FanoutNarrationExtractor(),
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=2,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["authored_narration"] == "allowance"
+    assert result.patch["narration"] == "allowance"
+    assert result.patch["transition_acknowledgment"] == "Updated narration."
+    assert "recipient_name" not in result.patch
+    assert "recipient_resolved_name" not in result.patch
+    assert "recipient_bank_name" not in result.patch
+    assert "recipient_bank_code" not in result.patch
+    assert "description" not in result.patch
 
 
 async def test_amount_update_does_not_clear_binding_for_combined_alias_and_resolved_name() -> None:
@@ -926,6 +988,7 @@ async def test_single_confirmation_narration_fastpath_skips_extractor() -> None:
     result = await step.execute(payload, context, TransferGates(), worker_context)
 
     assert result.outcome == TransactionOutcome.OK
+    assert result.patch["authored_narration"] == "march salary"
     assert result.patch["narration"] == "march salary"
     assert result.patch["user_note"] == "march salary"
     assert result.patch["transition_acknowledgment"] == "Added narration."
@@ -992,3 +1055,75 @@ async def test_confirmation_edit_fastpath_does_not_trigger_for_multi_task_confir
     assert result.outcome == TransactionOutcome.OK
     assert "amount" not in result.patch
     assert extractor.last_user_message == "make it 20k"
+
+
+async def test_scoped_multi_task_confirmation_narration_fastpath_skips_extractor() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="for transport")
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="tolu",
+        previous_confirmation_snapshot={"amount": 10000, "recipient_name": "tolu"},
+        confirmation_message_scoped=True,
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=2,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["authored_narration"] == "transport"
+    assert result.patch["narration"] == "transport"
+    assert result.patch["user_note"] == "transport"
+    assert result.patch["confirmation_message_scoped"] is False
+    assert "description" not in result.patch
+    assert extractor.called is False
+
+
+async def test_fanout_bound_recipient_misparse_does_not_leave_stale_description() -> None:
+    class _RecipientMisparseExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                entities=TransferEntities(recipient_name="Transport"),
+                acknowledgment="Updated narration.",
+            )
+
+    step = ExtractionStep(user_message="for transport")
+    payload = TransferPayload(
+        recipient_name="Tolu",
+        recipient_resolved_name="Tolu Adedayo",
+        recipient_account="0760505261",
+        recipient_bank_name="First Bank",
+        recipient_bank_code="011",
+        recipient_binding_source="fanout",
+        recipient_binding_index=2,
+        previous_confirmation_snapshot={"amount": 10000, "recipient_name": "Tolu"},
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_RecipientMisparseExtractor(),
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=2,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "recipient_name" not in result.patch
+    assert "recipient_bank_name" not in result.patch
+    assert "description" not in result.patch
