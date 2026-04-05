@@ -1,4 +1,4 @@
-.PHONY: help lint type-check format test clean check-all fix \
+.PHONY: help lint type-check format test clean clean-runtime-artifacts check-all fix \
       lint-fix format-check test-file test-coverage test-watch \
       run-gateway run-core run-all run-receipt \
       docker-build docker-up docker-down docker-logs docker-restart docker-clean \
@@ -13,6 +13,8 @@ GREEN := \033[32m
 YELLOW := \033[33m
 RED := \033[31m
 RESET := \033[0m
+DOCKER_COMPOSE ?= docker compose
+COMPOSE_FILE ?= docker-compose.yml
 
 help:
 	@echo '$(BLUE)Banking Agent - Makefile Commands$(RESET)'
@@ -98,27 +100,27 @@ run-all: ## Run all services (gateway + core + receipt)
 # Docker
 docker-build: ## Build Docker images
 	@echo "$(BLUE)🐳 Building Docker images...$(RESET)"
-	@docker-compose build
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) build
 
 docker-up: ## Start services with Docker Compose
 	@echo "$(GREEN)🐳 Starting services with Docker Compose...$(RESET)"
-	@docker-compose up -d
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d
 	@echo "$(GREEN)✅ Services started!$(RESET)"
-	@echo "$(YELLOW)View logs: docker-compose logs -f$(RESET)"
+	@echo "$(YELLOW)View logs: $(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs -f$(RESET)"
 
 docker-down: ## Stop Docker services
 	@echo "$(RED)🐳 Stopping Docker services...$(RESET)"
-	@docker-compose down
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down
 
 docker-logs: ## View Docker logs
 	@echo "$(BLUE)📋 Viewing Docker logs...$(RESET)"
-	@docker-compose logs -f
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs -f
 
 docker-restart: docker-down docker-up ## Restart Docker services
 
 docker-clean: ## Remove all Docker containers, images, and volumes
 	@echo "$(RED)🧹 Cleaning Docker resources...$(RESET)"
-	@docker-compose down -v --rmi all --remove-orphans
+	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down -v --rmi all --remove-orphans
 	@echo "$(GREEN)✅ Docker cleanup complete!$(RESET)"
 
 # Database
@@ -208,7 +210,15 @@ clean: ## Clean Python artifacts and caches
 	@find . -type d -name "dist" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name "build" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	@find . -maxdepth 1 -type f -name ".coverage*" -delete
 	@echo "$(GREEN)✅ Cleanup complete!$(RESET)"
+
+clean-runtime-artifacts: ## Remove generated runtime smoke venvs and local test artifacts
+	@echo "$(YELLOW)🧹 Removing generated runtime artifacts...$(RESET)"
+	@find . -maxdepth 1 -type d -name ".venv-*" -exec rm -rf {} +
+	@find . -maxdepth 1 -type d \( -name ".pytest_cache" -o -name ".mypy_cache" -o -name ".ruff_cache" \) -exec rm -rf {} +
+	@find . -maxdepth 1 -type f -name ".coverage*" -delete
+	@echo "$(GREEN)✅ Runtime artifacts removed!$(RESET)"
 
 install-hooks: ## Install pre-commit Git hooks
 	@echo "$(BLUE)🔧 Installing pre-commit hooks...$(RESET)"

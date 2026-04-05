@@ -140,6 +140,7 @@ banking_agent/
 ├── infrastructure/      # AWS / deployment configuration
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
+├── docker-compose.vps.yml
 └── pyproject.toml
 ```
 
@@ -147,9 +148,10 @@ banking_agent/
 
 ```bash
 bash scripts/setup.sh
-cp .env.example .env
 make docker-up
 ```
+
+Create `.env` from your local secrets/template before starting the stack.
 
 | Endpoint | URL |
 |----------|-----|

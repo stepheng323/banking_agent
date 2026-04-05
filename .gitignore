@@ -24,6 +24,7 @@ MANIFEST
 # Virtual Environments
 .env
 .venv
+.venv-*/
 env/
 venv/
 ENV/
@@ -46,6 +47,7 @@ build/
 # Testing
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
 .mypy_cache/

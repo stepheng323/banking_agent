@@ -5,6 +5,14 @@
 *.dll
 *.exe
 
+# Local runtime/build artifacts
+.venv*/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+
 # Asset files (Agent tries to read them as text)
 *.png
 *.jpg
