@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, Response
 
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 from apps.gateway.api.webhooks.ownership import require_webhook_ingress_enabled
+from shared.cache.redis_client import RedisClient
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -18,7 +19,7 @@ def _get_service() -> MonoWebhookService:
     global _service_instance
     if _service_instance is None:
         publisher = QueuePublisherFactory.get_async_publisher()
-        _service_instance = MonoWebhookService(publisher=publisher)
+        _service_instance = MonoWebhookService(publisher=publisher, redis_client=RedisClient.get_client())
     return _service_instance
 
 

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,10 @@ class DataPayload(BaseModel):
     receipt: dict[str, Any] | None = None
     error: str | None = None
     skip_extraction: bool = False
+    async_group_id: str | None = None
+    async_group_size: int | None = None
+    async_group_kind: Literal["single", "multi_transfer", "mixed_batch"] | None = None
+    async_group_index: int | None = None
     source_account_id: str | None = None
     source_bank_name: str | None = None
     source_account_name: str | None = None
@@ -35,6 +39,7 @@ class DataContext(BaseModel):
 
     phone_number: str
     language: str = "en"
+    channel: str = "whatsapp"
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
     all_accounts: list[dict[str, Any]] = Field(default_factory=list)

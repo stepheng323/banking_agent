@@ -2,27 +2,28 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
-import redis.asyncio as redis
 from langchain_core.runnables import RunnableConfig
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 
 from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.formatters.transaction_summary import format_multi_action_summary
-from shared.i18n import LocaleManager, render_cancelled_prompt, render_generic_capability_blocked, render_message
-from shared.queue.adapter import QueuePublisher
-from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
+from shared.i18n import (
+    LocaleManager,
+    render_cancelled_prompt,
+    render_generic_capability_blocked,
+    render_message,
+    render_text,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 TERMINAL_TASK_STAGES = {TaskStage.COMPLETED.value, TaskStage.FAILED.value, TaskStage.CANCELLED.value}
 STASH_RESUME_TTL_SECONDS = 1800
+ASYNC_RECEIPT_STATUSES = {"queued", "processing", "pending"}
 
 
 def _extract_interrupt_task_ids(pending_interrupt: Any) -> list[str]:
@@ -85,16 +86,109 @@ def _has_live_resume_prompt_frame(frames: list[ContextFrame]) -> bool:
     return False
 
 
+def _receipt_status(task: TaskSpec) -> str:
+    receipt = task.payload.get("receipt")
+    if not isinstance(receipt, dict):
+        return ""
+    raw_status = receipt.get("status")
+    if not isinstance(raw_status, str):
+        return ""
+    return raw_status.strip().lower()
+
+
+def _is_async_transfer_task(task: TaskSpec) -> bool:
+    return task.type == "transfer" and _receipt_status(task) in ASYNC_RECEIPT_STATUSES
+
+
+def _append_transfer_processing_message(task: TaskSpec, outbox: list[dict[str, Any]], locale: str) -> None:
+    display_name = (
+        task.payload.get("recipient_resolved_name")
+        or task.payload.get("recipient_name")
+        or render_message("orchestrator.finalize.recipient_fallback", locale)
+    )
+    amount = task.payload.get("amount", "")
+    outbox.append(
+        {
+            "type": "say",
+            "text": render_message(
+                "orchestrator.finalize.transfer_processing",
+                locale,
+                {"amount": f"{amount:,.2f}", "display_name": display_name},
+            ),
+        }
+    )
+
+
+async def _enqueue_finalize_transfer_receipt(
+    *,
+    task: TaskSpec,
+    state: OrchestratorState,
+    config: RunnableConfig,
+    locale: str,
+) -> None:
+    configurable = config.get("configurable", {})
+    publisher = configurable.get("publisher")
+    if publisher is None:
+        return
+
+    transaction_reference = task.payload.get("transaction_id")
+    if not isinstance(transaction_reference, str) or not transaction_reference.strip():
+        return
+
+    beneficiary_suggestion_message: str | None = None
+    suggestion_service = configurable.get("beneficiary_suggestion_service")
+    recipient_account = task.payload.get("recipient_account")
+    recipient_bank_code = task.payload.get("recipient_bank_code")
+    if suggestion_service is not None and recipient_account:
+        beneficiary_suggestion_message = await suggestion_service.check_and_suggest_beneficiary(
+            phone_number=state.phone_number,
+            beneficiary_type="transfer",
+            recipient_data={
+                "account_number": recipient_account,
+                "bank_code": recipient_bank_code,
+                "bank_name": task.payload.get("recipient_bank_name"),
+                "name": task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"),
+                "original_alias": task.payload.get("recipient_name"),
+            },
+            transaction_id=transaction_reference,
+            send_message=False,
+            channel=state.channel,
+            locale=locale,
+        )
+
+    payload: dict[str, Any] = {
+        "phone_number": state.phone_number,
+        "channel": state.channel,
+        "channel_identity": state.channel_identity,
+        "transfer_data": {
+            "amount": task.payload.get("amount"),
+            "source": {
+                "name": task.payload.get("source_bank_name"),
+                "account_name": task.payload.get("source_account_name"),
+                "account_number": task.payload.get("source_account_number"),
+            },
+            "recipient": {
+                "name": task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"),
+                "account_number": recipient_account,
+                "bank_name": task.payload.get("recipient_bank_name"),
+            },
+            "narration": task.payload.get("narration"),
+            "channel": state.channel,
+            "session_id": task.payload.get("idempotency_key") or transaction_reference,
+        },
+        "transaction_reference": transaction_reference,
+        "signal_key": f"receipt:{uuid.uuid4()}",
+    }
+    if beneficiary_suggestion_message:
+        payload["beneficiary_suggestion_message"] = beneficiary_suggestion_message
+
+    await publisher.publish("receipt.process", payload)
+
+
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Final Step. Generate response and queue receipts."""
     outbox = list(state.outbox)
     locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
-
-    configurable = cast(dict[str, Any], config.get("configurable", {}))
-    beneficiary_service: BeneficiarySuggestionService | None = configurable.get("beneficiary_suggestion_service")
-    redis_client: redis.Redis | None = configurable.get("redis_client")
-    publisher: QueuePublisher | None = configurable.get("publisher")
-
     completed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.COMPLETED]
     failed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.FAILED]
     cancelled_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.CANCELLED]
@@ -103,9 +197,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
         await _handle_completed_tasks(
             completed_tasks=completed_tasks,
             state=state,
-            publisher=publisher,
-            redis_client=redis_client,
-            beneficiary_service=beneficiary_service,
+            config=config,
             outbox=outbox,
         )
 
@@ -190,9 +282,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
 async def _handle_completed_tasks(
     completed_tasks: list[TaskSpec],
     state: OrchestratorState,
-    publisher: QueuePublisher | None,
-    redis_client: redis.Redis | None,
-    beneficiary_service: BeneficiarySuggestionService | None,
+    config: RunnableConfig,
     outbox: list[dict[str, Any]],
 ) -> None:
     """Handle completed tasks and generate receipts or summaries."""
@@ -210,7 +300,10 @@ async def _handle_completed_tasks(
             payload_keys=list(t.payload.keys()),
         )
     transaction_visible_tasks = [task for task in visible_tasks if task.type in TRANSACTION_TASK_TYPES]
-
+    async_transaction_tasks = [
+        task for task in transaction_visible_tasks if _receipt_status(task) in ASYNC_RECEIPT_STATUSES
+    ]
+    async_transfer_tasks = [task for task in transaction_visible_tasks if _is_async_transfer_task(task)]
     is_single_transfer = (
         len(visible_tasks) == 1
         and visible_tasks[0].type == "transfer"
@@ -225,39 +318,26 @@ async def _handle_completed_tasks(
 
     if is_single_transfer:
         task = visible_tasks[0]
-        beneficiary_suggestion_message: str | None = None
-        if beneficiary_service:
-            beneficiary_suggestion_message = await _build_beneficiary_suggestion(
-                task=task,
-                beneficiary_service=beneficiary_service,
-                phone_number=state.phone_number,
-                locale=locale,
-            )
+        if _receipt_status(task) not in ASYNC_RECEIPT_STATUSES:
+            await _enqueue_finalize_transfer_receipt(task=task, state=state, config=config, locale=locale)
+        _append_transfer_processing_message(task, outbox, locale)
 
-        await _queue_single_transfer_receipt(
-            task=task,
-            state=state,
-            publisher=publisher,
-            redis_client=redis_client,
-            beneficiary_suggestion_message=beneficiary_suggestion_message,
+    elif len(async_transaction_tasks) > 1:
+        logger.info(
+            "finalize_async_batch_processing",
+            count=len(async_transaction_tasks),
+            task_ids=[task.id for task in async_transaction_tasks],
         )
+        outbox.append({"type": "say", "text": render_text("Your transactions are being processed.", locale)})
 
-        display_name = (
-            task.payload.get("recipient_resolved_name")
-            or task.payload.get("recipient_name")
-            or render_message("orchestrator.finalize.recipient_fallback", locale)
+    elif async_transfer_tasks:
+        logger.info(
+            "finalize_async_transfer_processing",
+            count=len(async_transfer_tasks),
+            task_ids=[task.id for task in async_transfer_tasks],
         )
-        amount = task.payload.get("amount", "")
-        outbox.append(
-            {
-                "type": "say",
-                "text": render_message(
-                    "orchestrator.finalize.transfer_processing",
-                    locale,
-                    {"amount": f"{amount:,.2f}", "display_name": display_name},
-                ),
-            }
-        )
+        for task in async_transfer_tasks:
+            _append_transfer_processing_message(task, outbox, locale)
 
     elif is_async_transaction:
         task = visible_tasks[0]
@@ -284,87 +364,3 @@ async def _handle_completed_tasks(
         summary_source = transaction_visible_tasks or visible_tasks
         summary_text = format_multi_action_summary(summary_source, locale=locale)
         outbox.append({"type": "say", "text": summary_text})
-
-
-
-
-
-async def _queue_single_transfer_receipt(
-    task: TaskSpec,
-    state: OrchestratorState,
-    publisher: QueuePublisher | None,
-    redis_client: redis.Redis | None,
-    beneficiary_suggestion_message: str | None = None,
-) -> None:
-    """Queue receipt for a single transfer."""
-    receipt_data = task.payload.get("receipt")
-    if not receipt_data or not (publisher or redis_client):
-        return
-
-    logger.info("queuing_single_transfer_receipt", task_id=task.id)
-    import uuid
-
-    signal_key = f"receipt:signal:{uuid.uuid4()}"
-
-    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
-    transfer_data: ReceiptTransferData = {
-        "amount": task.payload.get("amount"),
-        "source": {
-            "name": cast(str | None, task.payload.get("source_bank_name")),
-            "account_name": cast(str | None, task.payload.get("source_account_name")),
-            "account_number": cast(str | None, task.payload.get("source_account_number")),
-        },
-        "recipient": {
-            "name": cast(str | None, task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")),
-            "account_number": cast(str | None, task.payload.get("recipient_account")),
-            "bank_name": cast(str | None, task.payload.get("recipient_bank_name")),
-        },
-        "narration": cast(str | None, task.payload.get("narration")),
-        "channel": state.channel,
-        "session_id": cast(str | None, task.payload.get("idempotency_key") or task.payload.get("transaction_id")),
-        "processor_name": cast(str | None, task.payload.get("processor_name")),
-    }
-    job_payload: ReceiptJobPayload = {
-        "phone_number": state.phone_number,
-        "channel": state.channel,
-        "channel_identity": state.channel_identity,
-        "transfer_data": transfer_data,
-        "transaction_reference": cast(
-            str | None,
-            task.payload.get("transaction_id")
-            or task.payload.get("idempotency_key")
-            or render_message("orchestrator.finalize.na", locale),
-        ),
-        "signal_key": signal_key,
-    }
-    if beneficiary_suggestion_message:
-        job_payload["beneficiary_suggestion_message"] = beneficiary_suggestion_message
-
-    if publisher:
-        await publisher.publish("receipt.process", cast(dict[str, Any], job_payload))
-    else:
-        logger.warning("publisher_not_available", message="Cannot queue receipt, QueuePublisher is None")
-
-
-async def _build_beneficiary_suggestion(
-    task: TaskSpec,
-    beneficiary_service: BeneficiarySuggestionService,
-    phone_number: str,
-    locale: str = "en",
-) -> str | None:
-    """Build beneficiary suggestion text for deferred delivery after receipt."""
-    suggestion_msg = await beneficiary_service.check_and_suggest_beneficiary(
-        phone_number=phone_number,
-        beneficiary_type="transfer",
-        recipient_data={
-            "account_number": task.payload.get("recipient_account"),
-            "bank_code": task.payload.get("recipient_bank_code"),
-            "bank_name": task.payload.get("recipient_bank_name"),
-            "name": task.payload.get("recipient_name"),
-            "is_self": False,
-        },
-        transaction_id=task.payload.get("transaction_id") or task.payload.get("idempotency_key"),
-        send_message=False,
-        locale=locale,
-    )
-    return cast(str | None, suggestion_msg)

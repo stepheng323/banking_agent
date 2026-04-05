@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+from apps.core.src.agent.executors.async_completion import record_group_leg_and_maybe_build_summary
+
+
+class _RedisStub:
+    def __init__(self) -> None:
+        self.hashes: dict[str, dict[str, str]] = {}
+        self.values: dict[str, str] = {}
+
+    async def hset(self, key: str, field: str, value: str) -> None:
+        self.hashes.setdefault(key, {})[field] = value
+
+    async def expire(self, key: str, ttl: int) -> None:
+        return None
+
+    async def hlen(self, key: str) -> int:
+        return len(self.hashes.get(key, {}))
+
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def get(self, key: str) -> str | None:
+        return self.values.get(key)
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self.hashes.get(key, {}))
+
+
+def _message(
+    *,
+    transaction_id: str,
+    async_group_id: str,
+    async_group_index: int,
+    async_group_size: int = 2,
+    async_group_kind: str = "multi_transfer",
+) -> dict[str, object]:
+    return {
+        "transaction_id": transaction_id,
+        "async_group": {
+            "async_group_id": async_group_id,
+            "async_group_size": async_group_size,
+            "async_group_kind": async_group_kind,
+            "async_group_index": async_group_index,
+        },
+    }
+
+
+def _transfer_payload(*, amount: int, recipient: str, final_status: str) -> dict[str, object]:
+    return {
+        "amount": amount,
+        "recipient_name": recipient,
+        "recipient_resolved_name": recipient,
+        "recipient_bank_name": "Opay",
+        "recipient_account": "8162511023",
+        "final_status": final_status,
+    }
+
+
+def _airtime_payload(*, amount: int, phone: str, final_status: str) -> dict[str, object]:
+    return {
+        "amount": amount,
+        "phone_number": phone,
+        "network": "MTN",
+        "final_status": final_status,
+    }
+
+
+async def test_async_completion_latest_terminal_state_wins_before_finalization() -> None:
+    redis_client = _RedisStub()
+    first_leg = _message(transaction_id="tx-1", async_group_id="group-latest", async_group_index=1)
+    second_leg = _message(transaction_id="tx-2", async_group_id="group-latest", async_group_index=2)
+
+    initial = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=first_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=10000, recipient="Mum", final_status="failed"),
+        locale="en",
+    )
+    assert initial is None
+
+    overwritten = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=first_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=10000, recipient="Mum", final_status="success"),
+        locale="en",
+    )
+    assert overwritten is None
+
+    summary = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=second_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=6000, recipient="Gaines", final_status="success"),
+        locale="en",
+    )
+
+    assert summary is not None
+    assert summary["stage"] == "final"
+    assert "Transfers Complete" in summary["text"]
+    assert "Mum" in summary["text"]
+    assert "Gaines" in summary["text"]
+    assert "Transfers completed successfully" in summary["text"]
+    assert "✗" not in summary["text"]
+
+
+async def test_async_completion_duplicate_terminal_processing_emits_summary_once() -> None:
+    redis_client = _RedisStub()
+    first_leg = _message(transaction_id="tx-1", async_group_id="group-dedupe", async_group_index=1)
+    second_leg = _message(transaction_id="tx-2", async_group_id="group-dedupe", async_group_index=2)
+
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=first_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=10000, recipient="Mum", final_status="success"),
+        locale="en",
+    )
+
+    first_summary = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=second_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=6000, recipient="Gaines", final_status="success"),
+        locale="en",
+    )
+    duplicate_summary = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=second_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=6000, recipient="Gaines", final_status="success"),
+        locale="en",
+    )
+
+    assert first_summary is not None
+    assert first_summary["stage"] == "final"
+    assert duplicate_summary is None
+
+
+async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None:
+    redis_client = _RedisStub()
+    transfer_leg = _message(
+        transaction_id="tx-transfer",
+        async_group_id="group-mixed",
+        async_group_index=1,
+        async_group_kind="mixed_batch",
+    )
+    airtime_leg = _message(
+        transaction_id="tx-airtime",
+        async_group_id="group-mixed",
+        async_group_index=2,
+        async_group_kind="mixed_batch",
+    )
+
+    first = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=transfer_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=10000, recipient="Mum", final_status="success"),
+        locale="en",
+    )
+    summary = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=airtime_leg,
+        task_type="airtime",
+        payload=_airtime_payload(amount=2000, phone="08031234567", final_status="failed"),
+        locale="en",
+    )
+
+    assert first is None
+    assert summary is not None
+    assert summary["stage"] == "final"
+    assert "Transaction Summary" in summary["text"]
+    assert "Mum" in summary["text"]
+    assert "08031234567" in summary["text"]
+    assert "Some transactions completed, but others failed." in summary["text"]
+
+async def test_async_completion_transfer_summary_sends_initial_then_final_update() -> None:
+    redis_client = _RedisStub()
+    first_leg = _message(transaction_id="tx-1", async_group_id="group-processing", async_group_index=1)
+    second_leg = _message(transaction_id="tx-2", async_group_id="group-processing", async_group_index=2)
+
+    first = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=first_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=10000, recipient="Mum", final_status="success"),
+        locale="en",
+    )
+    summary = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=second_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=6000, recipient="Tolu", final_status="processing"),
+        locale="en",
+    )
+
+    assert first is None
+    assert summary is not None
+    assert summary["stage"] == "initial"
+    assert "✓ ₦10,000 → Mum" in summary["text"]
+    assert "… ₦6,000 → Tolu" in summary["text"]
+    assert "You'll be notified when the final update arrives." in summary["text"]
+
+    final_summary = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=second_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=6000, recipient="Tolu", final_status="failed"),
+        locale="en",
+    )
+
+    assert final_summary is not None
+    assert final_summary["stage"] == "final"
+    assert "Transaction Summary" in final_summary["text"] or "Transfers Complete" in final_summary["text"]
+    assert "✓ ₦10,000 → Mum" in final_summary["text"]
+    assert "✗ ₦6,000 → Tolu" in final_summary["text"]

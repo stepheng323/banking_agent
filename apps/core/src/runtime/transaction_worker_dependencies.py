@@ -8,6 +8,7 @@ from apps.core.src.queue_consumers.funding_consumer import FundingConsumer
 from apps.core.src.queue_consumers.payout_consumer import PayoutConsumer
 from apps.core.src.queue_consumers.refund_consumer import RefundConsumer
 from apps.core.src.queue_consumers.transaction_consumer import TransactionConsumer
+from shared.cache.redis_client import RedisClient
 from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.database.connection import get_db_session
@@ -38,20 +39,24 @@ def setup_transaction_worker_consumers() -> tuple[
     bill_provider = ProviderFactory.get_bill_provider()
     if bill_provider is None:
         raise RuntimeError("Bill provider is not configured")
+    redis_client = RedisClient.get_client()
     airtime_executor = AirtimeExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
+        redis_client=redis_client,
     )
     transfer_executor = TransferExecutor(
         direct_debit_provider=direct_debit_provider,
         account_repo=account_repository,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
+        redis_client=redis_client,
     )
     data_executor = DataExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
+        redis_client=redis_client,
     )
 
     transaction_consumer = TransactionConsumer(

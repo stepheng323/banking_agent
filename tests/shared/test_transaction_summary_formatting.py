@@ -165,6 +165,41 @@ def test_multi_action_summary_mixed_batch_keeps_neutral_wrapper_copy() -> None:
     assert "*Transaction Summary*" in summary
     assert "_All transactions completed successfully_" in summary
 
+
+def test_multi_action_summary_processing_transfer_uses_update_copy() -> None:
+    tasks = [
+        _transfer_task(
+            task_id="t1",
+            amount=10000,
+            recipient_name="Mum",
+            recipient_resolved_name="MERCY JOHNSON",
+            bank="Opay",
+            account="8162511023",
+        ),
+        TaskSpec(
+            id="t2",
+            type="transfer",
+            stage=TaskStage.COMPLETED,
+            payload={
+                "amount": 7000,
+                "recipient_name": "Tolu",
+                "recipient_resolved_name": "TOLU ADEDAYO",
+                "recipient_bank_name": "First Bank",
+                "recipient_account": "0760505261",
+                "final_status": "processing",
+            },
+        ),
+    ]
+
+    summary = format_multi_action_summary(tasks, locale="en")
+
+    assert "*Transfers Update*" in summary
+    assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
+    assert "… ₦7,000 → Tolu (Tolu Adedayo) • First Bank • 0760505261" in summary
+    assert "*Total Spent:* ₦10,000" in summary
+    assert "awaiting provider confirmation" in summary
+    assert "You'll be notified when the final update arrives." in summary
+
 def test_batch_confirmation_summary_uses_compact_total_amount() -> None:
     summary = format_batch_transfer_summary(
         num_transfers=2,

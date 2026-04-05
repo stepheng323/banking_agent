@@ -3,8 +3,16 @@
 Handles execution of airtime transactions from the queue.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
+import redis.asyncio as redis
+
+from apps.core.src.agent.executors.async_completion import (
+    is_grouped_async_message,
+    record_group_leg_and_maybe_build_summary,
+)
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.i18n import render_message
@@ -25,11 +33,13 @@ class AirtimeExecutor:
         transaction_repo: TransactionRepository,
         publisher: QueuePublisher,
         delivery_service: DeliveryService | None = None,
+        redis_client: redis.Redis | None = None,
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.publisher = publisher
         self.delivery_service = delivery_service or DeliveryService()
+        self.redis_client = redis_client
 
     async def handle_airtime(self, data: dict[str, Any]) -> None:
         """Handle execution of an airtime transaction."""
@@ -68,8 +78,33 @@ class AirtimeExecutor:
             if result.get("success"):
                 await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
                 logger.info("airtime_success", transaction_id=transaction_id, ref=result.get("reference"))
-
-                if delivery_target:
+                completion_payload = {
+                    "amount": amount,
+                    "recipient_phone": recipient_phone,
+                    "network": network,
+                    "final_status": "success",
+                }
+                batch_summary = await record_group_leg_and_maybe_build_summary(
+                    self.redis_client,
+                    message=data,
+                    task_type="airtime",
+                    payload=completion_payload,
+                    locale=locale,
+                )
+                if batch_summary and delivery_target:
+                    await self.delivery_service.deliver_text(
+                        phone_number=delivery_target,
+                        channel=channel,
+                        text=batch_summary["text"],
+                        metadata={
+                            "source": "airtime_executor",
+                            "transaction_id": transaction_id,
+                            "batched": True,
+                            "summary_stage": batch_summary["stage"],
+                        },
+                        dedupe_key=f"airtime:batch:{batch_summary['stage']}:{transaction_id}",
+                    )
+                elif delivery_target and not is_grouped_async_message(data):
                     ref = result.get("reference") or render_message("airtime.executor.reference_fallback", locale)
                     message = render_message(
                         "airtime.executor.success_message",
@@ -96,7 +131,34 @@ class AirtimeExecutor:
                     transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
                 )
                 logger.error("airtime_failed", transaction_id=transaction_id, error=error_msg)
-                if delivery_target:
+                completion_payload = {
+                    "amount": amount,
+                    "recipient_phone": recipient_phone,
+                    "network": network,
+                    "final_status": "failed",
+                    "error_message": error_msg,
+                }
+                batch_summary = await record_group_leg_and_maybe_build_summary(
+                    self.redis_client,
+                    message=data,
+                    task_type="airtime",
+                    payload=completion_payload,
+                    locale=locale,
+                )
+                if batch_summary and delivery_target:
+                    await self.delivery_service.deliver_text(
+                        phone_number=delivery_target,
+                        channel=channel,
+                        text=batch_summary["text"],
+                        metadata={
+                            "source": "airtime_executor",
+                            "transaction_id": transaction_id,
+                            "batched": True,
+                            "summary_stage": batch_summary["stage"],
+                        },
+                        dedupe_key=f"airtime:batch:{batch_summary['stage']}:{transaction_id}",
+                    )
+                elif delivery_target and not is_grouped_async_message(data):
                     message = render_message(
                         "airtime.executor.failure_message",
                         locale,

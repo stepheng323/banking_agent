@@ -3,6 +3,13 @@
 from typing import Any, Literal, NotRequired, TypedDict
 
 
+class AsyncGroupMeta(TypedDict):
+    async_group_id: str
+    async_group_size: int
+    async_group_kind: Literal["single", "multi_transfer", "mixed_batch"]
+    async_group_index: int
+
+
 class ReceiptTransferDataRecipient(TypedDict):
     name: str | None
     account_number: str | None
@@ -49,8 +56,12 @@ class TransferJobPayload(TypedDict):
     idempotency_key: str
     transaction_id: str
     phone_number: str
+    channel: str
+    channel_identity: NotRequired[str | None]
+    language: str
     transfer_data: dict[str, Any]
     scheduled_meta: NotRequired[TransferScheduledMeta]
+    async_group: NotRequired[AsyncGroupMeta]
 
 
 class RefundJobPayload(TypedDict):
@@ -104,6 +115,9 @@ class AirtimeJobPayload(TypedDict):
     airtime_data: AirtimeData
     transaction_id: str
     channel: str
+    channel_identity: NotRequired[str | None]
+    language: str
+    async_group: NotRequired[AsyncGroupMeta]
 
 
 class DataPurchaseData(TypedDict):
@@ -122,6 +136,9 @@ class DataJobPayload(TypedDict):
     data_purchase: DataPurchaseData
     transaction_id: str
     channel: str
+    channel_identity: NotRequired[str | None]
+    language: str
+    async_group: NotRequired[AsyncGroupMeta]
 
 
 class FlowEventPayload(TypedDict):

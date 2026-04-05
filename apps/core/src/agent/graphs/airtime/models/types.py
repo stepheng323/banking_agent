@@ -50,6 +50,10 @@ class AirtimePayload(BaseModel):
     idempotency_key: str | None = None
     transaction_id: str | None = None
     narration: str | None = None
+    async_group_id: str | None = None
+    async_group_size: int | None = None
+    async_group_kind: Literal["single", "multi_transfer", "mixed_batch"] | None = None
+    async_group_index: int | None = None
 
     correction_field: str | None = None
     correction_value: Any | None = None

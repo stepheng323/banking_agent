@@ -151,12 +151,28 @@ class TransactionRepository(BaseRepository[Transaction]):
         return result.scalars().first()
 
     async def update_status(
-        self, transaction_id: str, status: str, error_message: str | None = None
+        self,
+        transaction_id: str,
+        status: str,
+        error_message: str | None = None,
+        *,
+        provider_transaction_id: str | None = None,
+        provider_status: str | None = None,
+        provider_response: dict | None = None,
+        provider_error_code: str | None = None,
     ) -> Transaction | None:
-        """Update transaction status."""
+        """Update transaction status and optional provider metadata."""
         transaction = await self.get_by_id(transaction_id)
         if transaction:
             transaction.status = status
+            if provider_transaction_id:
+                transaction.transaction_id = provider_transaction_id
+            if provider_status:
+                transaction.provider_status = provider_status
+            if provider_response is not None:
+                transaction.provider_response = provider_response
+            if provider_error_code:
+                transaction.provider_error_code = provider_error_code
             if error_message:
                 transaction.error_message = error_message
             self.db.add(transaction)

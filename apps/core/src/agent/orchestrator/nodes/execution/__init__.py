@@ -588,6 +588,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         config=config,
         services=services,
         current_wave_len=len(current_wave),
+        current_wave_task_ids=list(current_wave),
         agg=agg,
     )
     locale = (state.loaded_context or {}).get("language", "en")

@@ -217,7 +217,7 @@ async def test_finalize_does_not_repeat_resume_prompt_with_live_resume_frame() -
 
 
 @pytest.mark.asyncio
-async def test_finalize_mixed_transaction_batch_emits_summary_only() -> None:
+async def test_finalize_mixed_transaction_batch_emits_processing_only() -> None:
     state = OrchestratorState(
         user_id="u_resume_9",
         phone_number="2348000000019",
@@ -234,6 +234,7 @@ async def test_finalize_mixed_transaction_batch_emits_summary_only() -> None:
                     "recipient_resolved_name": "Mercy Johnson",
                     "recipient_bank_name": "Opay",
                     "recipient_account": "8162511023",
+                    "receipt": {"status": "processing"},
                 },
             ),
             "t_airtime": TaskSpec(
@@ -257,7 +258,49 @@ async def test_finalize_mixed_transaction_batch_emits_summary_only() -> None:
 
     say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
     assert len(say_entries) == 1
-    assert "Transaction Summary" in say_entries[0]["text"]
+    assert say_entries[0]["text"] == "Your transactions are being processed."
+
+
+@pytest.mark.asyncio
+async def test_finalize_queued_transfer_batch_does_not_emit_completed_summary() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_11",
+        phone_number="2348000000021",
+        channel="telegram",
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer_1": TaskSpec(
+                id="t_transfer_1",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Mum",
+                    "recipient_resolved_name": "Mercy Johnson",
+                    "receipt": {"status": "queued"},
+                },
+            ),
+            "t_transfer_2": TaskSpec(
+                id="t_transfer_2",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adedayo",
+                    "receipt": {"status": "queued"},
+                },
+            ),
+        },
+    )
+
+    updates = await finalize(state, _config())
+
+    say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
+    assert len(say_entries) == 1
+    assert say_entries[0]["text"] == "Your transactions are being processed."
+    assert "Transaction Summary" not in say_entries[0]["text"]
+    assert "All transactions completed successfully" not in say_entries[0]["text"]
 
 
 @pytest.mark.asyncio

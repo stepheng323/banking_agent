@@ -3,7 +3,7 @@
 from typing import Any
 
 from shared.formatters.recipient_display import format_summary_recipient_display_label
-from shared.formatters.transaction_copy import build_completion_frame, format_amount_compact
+from shared.formatters.transaction_copy import build_completion_frame, derive_task_mix, format_amount_compact
 from shared.i18n import render_message
 
 
@@ -72,13 +72,34 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
 
         _All transactions completed successfully_
     """
+    task_types = [getattr(task, "type", "") for task in completed_tasks]
     header, footer = build_completion_frame(
-        task_types=[getattr(task, "type", "") for task in completed_tasks],
+        task_types=task_types,
         locale=locale,
         task_count=len(completed_tasks),
     )
     lines = [header, ""]
     total_spent = 0.0
+    task_statuses = [
+        _normalize_final_status(str(getattr(task, "payload", {}).get("final_status") or "success").lower())
+        for task in completed_tasks
+        if isinstance(getattr(task, "payload", None), dict)
+    ]
+    any_failed = any(status == "failed" for status in task_statuses)
+    any_succeeded = any(status == "success" for status in task_statuses)
+    any_processing = any(status == "processing" for status in task_statuses)
+    task_mix = derive_task_mix(task_types)
+
+    if any_processing:
+        if task_mix == "transfer":
+            header = "*Transfers Update*" if len(completed_tasks) > 1 else "*Transfer Update*"
+        elif task_mix == "airtime":
+            header = "*Airtime Update*"
+        elif task_mix == "data":
+            header = "*Data Update*"
+        else:
+            header = "*Transaction Update*"
+        lines = [header, ""]
 
     # Group by task type
     transfer_tasks = [t for t in completed_tasks if t.type == "transfer"]
@@ -111,8 +132,8 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                         str(r.get("account") or r.get("recipient_account") or "").strip()
                         or render_message("transaction_summary.multi.account_fallback", locale)
                     )
-                    status = r.get("status", "success")
-                    status_icon = "✓" if status == "success" else "✗"
+                    status = _normalize_final_status(str(r.get("status", "success")).lower())
+                    status_icon = _status_icon(status)
                     lines.append(
                         render_message(
                             "transaction_summary.multi.transfer_compact_line",
@@ -128,6 +149,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                     )
             else:
                 amount = float(task.payload.get("amount", 0) or 0)
+                status = _normalize_final_status(str(task.payload.get("final_status") or "success").lower())
                 recipient = (
                     format_summary_recipient_display_label(
                         task.payload.get("recipient_name"),
@@ -143,13 +165,14 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                     str(task.payload.get("recipient_account") or "").strip()
                     or render_message("transaction_summary.multi.account_fallback", locale)
                 )
-                total_spent += amount
+                if status == "success":
+                    total_spent += amount
                 lines.append(
                     render_message(
                         "transaction_summary.multi.transfer_compact_line",
                         locale,
                         {
-                            "icon": "✓",
+                            "icon": _status_icon(status),
                             "amount": format_amount_compact(amount),
                             "recipient": recipient,
                             "bank": bank,
@@ -164,6 +187,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
     if airtime_tasks:
         for task in airtime_tasks:
             amount = float(task.payload.get("amount", 0) or 0)
+            status = _normalize_final_status(str(task.payload.get("final_status") or "success").lower())
             raw_phone = (
                 task.payload.get("phone_number")
                 or task.payload.get("recipient_phone")
@@ -174,21 +198,23 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
             if not phone:
                 phone = render_message("transaction_summary.multi.phone_fallback", locale)
             network = str(task.payload.get("network") or "")
-            total_spent += amount
-            lines.append(
-                render_message(
-                    "transaction_summary.multi.airtime_line",
-                    locale,
-                    {"amount": format_amount_compact(amount), "phone": phone, "network": network},
-                )
+            if status == "success":
+                total_spent += amount
+            icon = _status_icon(status)
+            airtime_line = render_message(
+                "transaction_summary.multi.airtime_line",
+                locale,
+                {"amount": format_amount_compact(amount), "phone": phone, "network": network},
             )
+            lines.append(f"{icon} {airtime_line}")
         lines.append("")
 
     # Handle data purchases
     if data_tasks:
         for task in data_tasks:
-            amount = task.payload.get("amount", 0)
-            phone = task.payload.get("phone_number") or render_message(
+            amount = float(task.payload.get("amount", 0) or 0)
+            status = _normalize_final_status(str(task.payload.get("final_status") or "success").lower())
+            phone = task.payload.get("phone_number") or task.payload.get("target_phone") or render_message(
                 "transaction_summary.multi.phone_fallback",
                 locale,
             )
@@ -196,14 +222,15 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                 "transaction_summary.multi.data_plan_fallback",
                 locale,
             )
-            total_spent += amount
-            lines.append(
-                render_message(
-                    "transaction_summary.multi.data_line",
-                    locale,
-                    {"plan": plan, "amount": format_amount_compact(amount), "phone": phone},
-                )
+            if status == "success":
+                total_spent += amount
+            icon = _status_icon(status)
+            data_line = render_message(
+                "transaction_summary.multi.data_line",
+                locale,
+                {"plan": plan, "amount": format_amount_compact(amount), "phone": phone},
             )
+            lines.append(f"{icon} {data_line}")
         lines.append("")
 
     # Handle other task types
@@ -219,7 +246,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
         lines.append("")
 
     # Add total if multiple transactions
-    if len(completed_tasks) > 1:
+    if len(completed_tasks) > 1 and total_spent > 0:
         lines.append(
             render_message(
                 "transaction_summary.multi.total_spent",
@@ -229,9 +256,52 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
         )
         lines.append("")
 
+    if any_processing:
+        if any_succeeded and any_failed:
+            footer = (
+                "Some transactions completed, some failed, and others are still awaiting provider confirmation. "
+                "You'll be notified when the final update arrives."
+            )
+        elif any_succeeded:
+            footer = (
+                "Some transactions completed successfully. Others are still awaiting provider confirmation. "
+                "You'll be notified when the final update arrives."
+            )
+        elif any_failed:
+            footer = (
+                "Some transactions failed. Others are still awaiting provider confirmation. "
+                "You'll be notified when the final update arrives."
+            )
+        else:
+            footer = (
+                "Some transactions are still awaiting provider confirmation. "
+                "You'll be notified when the final update arrives."
+            )
+    elif any_failed:
+        footer = "Some transactions completed, but others failed." if any_succeeded else "All transactions failed."
+
     lines.append(footer)
 
     return "\n".join(lines)
+
+
+def _normalize_final_status(status: str) -> str:
+    normalized = (status or "").strip().lower()
+    if normalized in {"success", "successful", "confirmed", "completed"}:
+        return "success"
+    if normalized in {"pending", "processing", "queued"}:
+        return "processing"
+    if normalized in {"failed", "error"}:
+        return "failed"
+    return normalized or "success"
+
+
+def _status_icon(status: str) -> str:
+    if status == "success":
+        return "✓"
+    if status == "processing":
+        return "…"
+    return "✗"
 
 
 def format_intent_line(task_type: str, payload: dict[str, Any], locale: str = "en") -> str:

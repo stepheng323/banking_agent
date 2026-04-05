@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from apps.core.src.agent.executors.async_completion import record_group_leg_and_maybe_build_summary
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 
@@ -178,3 +179,399 @@ class TestMonoWebhookRefundGate:
         assert ("tx-1", FundedTransferStatusEnum.REFUNDING.value) in uow.funded_transfers.updated
         assert uow.commit_calls == 1
         service._queue_refunds.assert_awaited_once()
+
+
+class _FakeTransactions:
+    def __init__(self, tx: SimpleNamespace | None = None) -> None:
+        self.tx = tx
+
+    async def get_by_transaction_id(self, transaction_id: str) -> SimpleNamespace | None:
+        if self.tx and self.tx.transaction_id == transaction_id:
+            return self.tx
+        return None
+
+    async def get_by_idempotency_key(self, idempotency_key: str) -> SimpleNamespace | None:
+        if self.tx and self.tx.idempotency_key == idempotency_key:
+            return self.tx
+        return None
+
+
+class _FakeUsers:
+    def __init__(self, user: SimpleNamespace | None = None) -> None:
+        self.user = user
+
+    async def get_by_id(self, user_id: str) -> SimpleNamespace | None:
+        if self.user and str(self.user.id) == str(user_id):
+            return self.user
+        return None
+
+
+class _FakeExecuteResult:
+    def __init__(self, row: tuple[str, str] | None = None) -> None:
+        self.row = row
+
+    def first(self) -> tuple[str, str] | None:
+        return self.row
+
+
+class _FakeDb:
+    def __init__(self, row: tuple[str, str] | None = None) -> None:
+        self.row = row
+
+    def add(self, _: object) -> None:
+        return None
+
+    async def execute(self, _stmt) -> _FakeExecuteResult:
+        return _FakeExecuteResult(self.row)
+
+
+class _FakeTransferUow:
+    def __init__(
+        self,
+        tx: SimpleNamespace | None = None,
+        *,
+        user: SimpleNamespace | None = None,
+        channel_identity: tuple[str, str] | None = None,
+    ) -> None:
+        self.transactions = _FakeTransactions(tx)
+        self.funding_steps = None
+        self.funded_transfers = None
+        self.accounts = None
+        self.users = _FakeUsers(user)
+        self.db = _FakeDb(channel_identity)
+        self.commit_calls = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
+
+
+class _RedisStub:
+    def __init__(self) -> None:
+        self.hashes: dict[str, dict[str, str]] = {}
+        self.values: dict[str, str] = {}
+
+    async def hset(self, key: str, field: str, value: str) -> None:
+        self.hashes.setdefault(key, {})[field] = value
+
+    async def expire(self, key: str, ttl: int) -> None:
+        return None
+
+    async def hlen(self, key: str) -> int:
+        return len(self.hashes.get(key, {}))
+
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def get(self, key: str) -> str | None:
+        return self.values.get(key)
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self.hashes.get(key, {}))
+
+
+class TestMonoWebhookTransferUpdates:
+    @pytest.mark.asyncio
+    async def test_debit_success_updates_transfer_transaction(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        tx = SimpleNamespace(
+            id="tx-1",
+            user_id="user-1",
+            idempotency_key="idem-1",
+            transaction_id="debit-1",
+            status="processing",
+            provider_status=None,
+            provider_error_code=None,
+            provider_response=None,
+            error_message=None,
+            completed_at=None,
+        )
+        user = SimpleNamespace(id="user-1", phone_number="2348162511023")
+        fake_uow = _FakeTransferUow(tx, user=user, channel_identity=("telegram", "927331985"))
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: fake_uow)
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        service = MonoWebhookService(publisher=_NoopPublisher(), delivery_service=delivery_service)  # type: ignore[arg-type]
+
+        processed = await service.handle_debit_event(
+            "events.mandates.debit.successful",
+            {"id": "debit-1", "reference_number": "idem-1", "status": "successful", "response_code": "00"},
+        )
+
+        assert processed is True
+        assert tx.status == "successful"
+        assert tx.provider_status == "successful"
+        assert tx.provider_error_code == "00"
+        assert tx.provider_response == {
+            "id": "debit-1",
+            "reference_number": "idem-1",
+            "status": "successful",
+            "response_code": "00",
+        }
+        assert tx.completed_at is not None
+        assert fake_uow.commit_calls == 1
+        delivery_service.deliver_text.assert_awaited_once()
+        assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
+        assert delivery_service.deliver_text.await_args.kwargs["channel"] == "telegram"
+        assert "Transfer successful" in delivery_service.deliver_text.await_args.kwargs["text"]
+
+    @pytest.mark.asyncio
+    async def test_debit_failure_updates_transfer_transaction_by_reference(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        tx = SimpleNamespace(
+            id="tx-2",
+            user_id="user-2",
+            idempotency_key="idem-2",
+            transaction_id=None,
+            status="processing",
+            provider_status=None,
+            provider_error_code=None,
+            provider_response=None,
+            error_message=None,
+            completed_at=None,
+        )
+        user = SimpleNamespace(id="user-2", phone_number="2348162511024")
+        fake_uow = _FakeTransferUow(tx, user=user, channel_identity=("whatsapp", "2348162511024"))
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: fake_uow)
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        service = MonoWebhookService(publisher=_NoopPublisher(), delivery_service=delivery_service)  # type: ignore[arg-type]
+
+        processed = await service.handle_debit_event(
+            "events.mandates.debit.failed",
+            {
+                "reference_number": "idem-2",
+                "status": "failed",
+                "response_code": "51",
+                "message": "Insufficient funds",
+            },
+        )
+
+        assert processed is True
+        assert tx.status == "failed"
+        assert tx.provider_status == "failed"
+        assert tx.provider_error_code == "51"
+        assert tx.error_message == "Insufficient funds"
+        assert tx.completed_at is not None
+        delivery_service.deliver_text.assert_awaited_once()
+        assert "Insufficient funds" in delivery_service.deliver_text.await_args.kwargs["text"]
+
+    @pytest.mark.asyncio
+    async def test_success_webhook_does_not_notify_again_when_transfer_already_terminal(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        tx = SimpleNamespace(
+            id="tx-3",
+            user_id="user-3",
+            idempotency_key="idem-3",
+            transaction_id="debit-3",
+            status="successful",
+            provider_status="successful",
+            provider_error_code="00",
+            provider_response=None,
+            error_message=None,
+            completed_at=None,
+        )
+        user = SimpleNamespace(id="user-3", phone_number="2348162511025")
+        fake_uow = _FakeTransferUow(tx, user=user, channel_identity=("telegram", "927331986"))
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: fake_uow)
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        service = MonoWebhookService(publisher=_NoopPublisher(), delivery_service=delivery_service)  # type: ignore[arg-type]
+
+        processed = await service.handle_debit_event(
+            "events.mandates.debit.successful",
+            {"id": "debit-3", "reference_number": "idem-3", "status": "successful", "response_code": "00"},
+        )
+
+        assert processed is True
+        delivery_service.deliver_text.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_grouped_transfer_webhook_suppresses_first_terminal_leg_notification(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        redis_client = _RedisStub()
+        await record_group_leg_and_maybe_build_summary(
+            redis_client,
+            message={
+                "transaction_id": "tx-10",
+                "async_group": {
+                    "async_group_id": "group-10",
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                    "async_group_index": 1,
+                },
+            },
+            task_type="transfer",
+            payload={
+                "amount": 10000,
+                "recipient_name": "Mum",
+                "recipient_resolved_name": "Mercy Johnson",
+                "recipient_bank_name": "Opay",
+                "recipient_account": "8162511023",
+                "final_status": "processing",
+            },
+            locale="en",
+        )
+        await record_group_leg_and_maybe_build_summary(
+            redis_client,
+            message={
+                "transaction_id": "tx-11",
+                "async_group": {
+                    "async_group_id": "group-10",
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                    "async_group_index": 2,
+                },
+            },
+            task_type="transfer",
+            payload={
+                "amount": 10000,
+                "recipient_name": "Tolu",
+                "recipient_resolved_name": "Tolu Adedayo",
+                "recipient_bank_name": "First Bank",
+                "recipient_account": "0760505261",
+                "final_status": "processing",
+            },
+            locale="en",
+        )
+
+        tx = SimpleNamespace(
+            id="tx-10",
+            user_id="user-10",
+            idempotency_key="idem-10",
+            transaction_id="debit-10",
+            status="processing",
+            provider_status=None,
+            provider_error_code=None,
+            provider_response=None,
+            error_message=None,
+            completed_at=None,
+            amount=10000,
+            recipient_name="Mercy Johnson",
+            recipient_account_number="8162511023",
+            recipient_bank_name="Opay",
+            source_bank_name="Zenith Bank",
+            narration="Allowance",
+        )
+        user = SimpleNamespace(id="user-10", phone_number="2348162511023")
+        fake_uow = _FakeTransferUow(tx, user=user, channel_identity=("telegram", "927331985"))
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: fake_uow)
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        service = MonoWebhookService(
+            publisher=_NoopPublisher(),
+            delivery_service=delivery_service,
+            redis_client=redis_client,
+        )  # type: ignore[arg-type]
+
+        processed = await service.handle_debit_event(
+            "events.mandates.debit.successful",
+            {"id": "debit-10", "reference_number": "idem-10", "status": "successful", "response_code": "00"},
+        )
+
+        assert processed is True
+        delivery_service.deliver_text.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_grouped_transfer_webhook_sends_final_batch_summary_with_per_leg_statuses(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        redis_client = _RedisStub()
+        await record_group_leg_and_maybe_build_summary(
+            redis_client,
+            message={
+                "transaction_id": "tx-20",
+                "async_group": {
+                    "async_group_id": "group-20",
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                    "async_group_index": 1,
+                },
+            },
+            task_type="transfer",
+            payload={
+                "amount": 10000,
+                "recipient_name": "Mum",
+                "recipient_resolved_name": "Mercy Johnson",
+                "recipient_bank_name": "Opay",
+                "recipient_account": "8162511023",
+                "final_status": "success",
+            },
+            locale="en",
+        )
+        await record_group_leg_and_maybe_build_summary(
+            redis_client,
+            message={
+                "transaction_id": "tx-21",
+                "async_group": {
+                    "async_group_id": "group-20",
+                    "async_group_size": 2,
+                    "async_group_kind": "multi_transfer",
+                    "async_group_index": 2,
+                },
+            },
+            task_type="transfer",
+            payload={
+                "amount": 10000,
+                "recipient_name": "Tolu",
+                "recipient_resolved_name": "Tolu Adedayo",
+                "recipient_bank_name": "First Bank",
+                "recipient_account": "0760505261",
+                "final_status": "processing",
+            },
+            locale="en",
+        )
+
+        tx = SimpleNamespace(
+            id="tx-21",
+            user_id="user-20",
+            idempotency_key="idem-21",
+            transaction_id="debit-21",
+            status="processing",
+            provider_status=None,
+            provider_error_code=None,
+            provider_response=None,
+            error_message=None,
+            completed_at=None,
+            amount=10000,
+            recipient_name="Tolu Adedayo",
+            recipient_account_number="0760505261",
+            recipient_bank_name="First Bank",
+            source_bank_name="Zenith Bank",
+            narration="Transport",
+        )
+        user = SimpleNamespace(id="user-20", phone_number="2348162511023")
+        fake_uow = _FakeTransferUow(tx, user=user, channel_identity=("telegram", "927331985"))
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: fake_uow)
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        service = MonoWebhookService(
+            publisher=_NoopPublisher(),
+            delivery_service=delivery_service,
+            redis_client=redis_client,
+        )  # type: ignore[arg-type]
+
+        processed = await service.handle_debit_event(
+            "events.mandates.debit.failed",
+            {
+                "id": "debit-21",
+                "reference_number": "idem-21",
+                "status": "failed",
+                "response_code": "51",
+                "message": "Insufficient funds",
+            },
+        )
+
+        assert processed is True
+        delivery_service.deliver_text.assert_awaited_once()
+        text = delivery_service.deliver_text.await_args.kwargs["text"]
+        assert "✓ ₦10,000 → Mum (Mercy Johnson)" in text
+        assert "✗ ₦10,000 → Tolu Adedayo" in text
+        assert "Some transactions completed, but others failed." in text

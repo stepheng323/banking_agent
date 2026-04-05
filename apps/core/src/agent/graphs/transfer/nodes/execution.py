@@ -57,7 +57,6 @@ class ExecutionStep(TransferStep):
             key = data.idempotency_key
             funded_transfer_id: str | None = None
 
-            # Format narration with deterministic rules
             narration = format_narration(data.narration, data.recipient_resolved_name or data.recipient_name)
 
             from shared.repositories.unit_of_work import UnitOfWork
@@ -140,6 +139,14 @@ class ExecutionStep(TransferStep):
                     },
                 )
             else:
+                async_group = None
+                if data.async_group_id and data.async_group_size and data.async_group_kind and data.async_group_index:
+                    async_group = {
+                        "async_group_id": data.async_group_id,
+                        "async_group_size": data.async_group_size,
+                        "async_group_kind": data.async_group_kind,
+                        "async_group_index": data.async_group_index,
+                    }
                 await publisher.publish(
                     topic="transaction.execute",
                     message={
@@ -147,23 +154,31 @@ class ExecutionStep(TransferStep):
                         "idempotency_key": key,
                         "transaction_id": transaction_id,
                         "phone_number": context.phone_number,
+                        "channel": context.channel,
+                        "channel_identity": context.channel_identity,
+                        "language": locale,
                         "transfer_data": {
                             "amount": data.amount,
                             "recipient": {
                                 "account_number": data.recipient_account,
                                 "bank_code": data.recipient_bank_code,
+                                "name": data.recipient_resolved_name or data.recipient_name,
+                                "bank_name": data.recipient_bank_name,
                             },
                             "source": {
                                 "account_id": data.source_account_id,
                                 "account_number": data.source_account_number,
+                                "account_name": data.source_account_name,
+                                "bank_name": data.source_bank_name,
                             },
                             "narration": narration,
                         },
+                        "async_group": async_group,
                     },
                 )
 
             receipt_data = {
-                "status": "queued",
+                "status": "processing",
                 "id": key,
                 "amount": data.amount,
                 "recipient_account": data.recipient_account,

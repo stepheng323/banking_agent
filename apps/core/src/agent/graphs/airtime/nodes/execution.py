@@ -75,6 +75,14 @@ class ExecutionStep(AirtimeStep):
                 "source_account_number": data.source_account_number,
                 "source_account_id": data.source_account_id,
             }
+            async_group = None
+            if data.async_group_id and data.async_group_size and data.async_group_kind and data.async_group_index:
+                async_group = {
+                    "async_group_id": data.async_group_id,
+                    "async_group_size": data.async_group_size,
+                    "async_group_kind": data.async_group_kind,
+                    "async_group_index": data.async_group_index,
+                }
 
             await publisher.publish(
                 topic="transaction.execute",
@@ -85,7 +93,9 @@ class ExecutionStep(AirtimeStep):
                     "phone_number": context.phone_number,
                     "channel": context.channel,
                     "channel_identity": getattr(worker_context, "channel_identity", None),
+                    "language": locale,
                     "airtime_data": airtime_data,
+                    "async_group": async_group,
                 },
             )
             logger.info(

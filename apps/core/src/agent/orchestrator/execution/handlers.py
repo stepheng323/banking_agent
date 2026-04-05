@@ -1,5 +1,7 @@
+import re
 import time
 from dataclasses import dataclass
+from hashlib import sha1
 from typing import Any, Literal, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -74,10 +76,49 @@ class ExecutionContext:
     services: dict[str, Any]
     current_wave_len: int
     agg: ExecutionAggregation
+    current_wave_task_ids: list[str] | None = None
 
 
 def _state_locale(state: OrchestratorState) -> str:
     return cast(str, LocaleManager.normalize(state.loaded_context.get("language")).value)
+
+
+def _stamp_async_group_metadata(task: Any, ctx: ExecutionContext) -> None:
+    if task.type not in {"transfer", "airtime", "data"}:
+        return
+
+    current_wave_task_ids = ctx.current_wave_task_ids or []
+    transaction_task_ids = [
+        task_id
+        for task_id in current_wave_task_ids
+        if (wave_task := ctx.state.tasks.get(task_id)) is not None and wave_task.type in {"transfer", "airtime", "data"}
+    ]
+    if not transaction_task_ids:
+        return
+
+    group_size = len(transaction_task_ids)
+    group_kind: Literal["single", "multi_transfer", "mixed_batch"]
+    if group_size == 1:
+        group_kind = "single"
+    elif all(ctx.state.tasks[task_id].type == "transfer" for task_id in transaction_task_ids):
+        group_kind = "multi_transfer"
+    else:
+        group_kind = "mixed_batch"
+
+    group_fingerprint = "|".join(
+        [
+            str(ctx.state.last_message_id or ""),
+            str(ctx.state.current_wave_index),
+            *transaction_task_ids,
+        ]
+    )
+    group_id = sha1(group_fingerprint.encode("utf-8")).hexdigest()[:20]
+    group_index = transaction_task_ids.index(task.id) + 1 if task.id in transaction_task_ids else 1
+
+    task.payload.setdefault("async_group_id", group_id)
+    task.payload.setdefault("async_group_size", group_size)
+    task.payload.setdefault("async_group_kind", group_kind)
+    task.payload.setdefault("async_group_index", group_index)
 
 
 def _normalize_beneficiary_rows(rows: list[Any]) -> list[dict[str, Any]]:
@@ -97,6 +138,27 @@ def _recipient_supports_targeted_beneficiary_lookup(value: Any) -> bool:
     if not normalized:
         return False
     return normalized not in _RECIPIENT_PRONOUN_TOKENS
+
+
+def _normalize_beneficiary_match_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
+
+
+def _beneficiary_cache_contains_recipient(beneficiaries: list[dict[str, Any]], recipient_name: str) -> bool:
+    requested = _normalize_beneficiary_match_text(recipient_name)
+    if not requested:
+        return False
+
+    for beneficiary in beneficiaries:
+        alias = _normalize_beneficiary_match_text(beneficiary.get("alias"))
+        account_name = _normalize_beneficiary_match_text(beneficiary.get("account_name"))
+        if alias and (requested in alias or alias in requested):
+            return True
+        if account_name and (requested in account_name or account_name in requested):
+            return True
+    return False
 
 
 def _is_resume_prompt_frame(frame: ContextFrame) -> bool:
@@ -176,6 +238,9 @@ def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
         # This prevents background/suppressed tasks from consuming input meant for the active task.
         if state.last_interrupt and task.id not in state.last_interrupt.task_ids:
             return None
+        scoped_user_message = task.payload.pop("pending_user_message", None)
+        if isinstance(scoped_user_message, str) and scoped_user_message.strip():
+            return scoped_user_message
         return cast(str | None, state.last_message_text)
     return None
 
@@ -320,9 +385,16 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
     if (
         isinstance(recipient_name, str)
         and recipient_name.strip()
-        and not beneficiaries
         and beneficiary_repo
         and user_id
+        and (
+            not beneficiaries
+            or (
+                beneficiary_context_mode == "cache_only"
+                and _recipient_supports_targeted_beneficiary_lookup(recipient_name)
+                and not _beneficiary_cache_contains_recipient(beneficiaries, recipient_name)
+            )
+        )
     ):
         try:
             fetched_rows: list[Any] = []
@@ -384,6 +456,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "confirmation_task_count": confirmation_task_count,
         "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
     }
+    _stamp_async_group_metadata(task, ctx)
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
     result = await worker.run(
@@ -659,6 +732,7 @@ async def _handle_purchase_task(
     if include_channel:
         context_data["channel"] = ctx.state.channel
         context_data["channel_identity"] = ctx.state.channel_identity
+    _stamp_async_group_metadata(task, ctx)
 
     result = await worker.run(
         payload=task.payload,
@@ -799,7 +873,7 @@ async def handle_data_task(task: Any, task_id: str, ctx: ExecutionContext) -> No
         worker_missing_log_key="data_worker_missing",
         worker_missing_error_message=render_message("orchestrator.error.data_worker_unavailable", locale),
         default_error=render_message("orchestrator.error.data_purchase_failed", locale),
-        include_channel=False,
+        include_channel=True,
     )
 
 
