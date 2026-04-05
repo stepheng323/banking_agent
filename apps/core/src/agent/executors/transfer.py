@@ -10,11 +10,6 @@ from typing import Any
 
 import redis.asyncio as redis
 
-from apps.core.src.agent.executors.async_completion import (
-    AsyncGroupSummaryResult,
-    is_grouped_async_message,
-    record_group_leg_and_maybe_build_summary,
-)
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.formatters.transfer import format_transfer_pending_message, format_transfer_success_message
@@ -23,6 +18,11 @@ from shared.queue.adapter import QueuePublisher
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.unit_of_work import UnitOfWork
+from shared.services.async_completion import (
+    AsyncGroupSummaryResult,
+    is_grouped_async_message,
+    record_group_leg_and_maybe_build_summary,
+)
 from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
 

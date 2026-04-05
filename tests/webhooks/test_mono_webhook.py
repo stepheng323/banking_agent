@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.core.src.agent.executors.async_completion import record_group_leg_and_maybe_build_summary
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
+from shared.services.async_completion import record_group_leg_and_maybe_build_summary
 
 
 class TestWebhookServiceBasics:

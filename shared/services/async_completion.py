@@ -1,12 +1,10 @@
-"""Shared async completion helpers for transaction-worker executors."""
+"""Shared async completion helpers for transaction-worker executors and webhook follow-ups."""
 
 from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import Any, Literal, TypedDict
-
-import redis.asyncio as redis
+from typing import Any, Literal, Protocol, TypedDict
 
 from shared.formatters.transaction_summary import format_multi_action_summary
 from shared.queue.models import AsyncGroupMeta
@@ -21,6 +19,20 @@ ASYNC_GROUP_LEGS_PREFIX = "async-group"
 class AsyncGroupSummaryResult(TypedDict):
     text: str
     stage: Literal["initial", "final"]
+
+
+class AsyncGroupRedis(Protocol):
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> Any: ...
+
+    async def get(self, key: str) -> Any: ...
+
+    async def hset(self, key: str, field: str, value: str) -> Any: ...
+
+    async def expire(self, key: str, ttl: int) -> Any: ...
+
+    async def hlen(self, key: str) -> int: ...
+
+    async def hgetall(self, key: str) -> dict[Any, Any]: ...
 
 
 def get_async_group_meta(message: dict[str, Any]) -> AsyncGroupMeta | None:
@@ -69,7 +81,7 @@ def _transaction_meta_key(transaction_id: str) -> str:
 
 
 async def _remember_transaction_group_meta(
-    redis_client: redis.Redis,
+    redis_client: AsyncGroupRedis,
     *,
     transaction_id: str | None,
     meta: AsyncGroupMeta,
@@ -84,7 +96,7 @@ async def _remember_transaction_group_meta(
 
 
 async def get_async_group_meta_for_transaction(
-    redis_client: redis.Redis | None,
+    redis_client: AsyncGroupRedis | None,
     *,
     transaction_id: str | None,
 ) -> AsyncGroupMeta | None:
@@ -109,7 +121,7 @@ def _is_terminal_status(status: str) -> bool:
     return status in {"success", "failed"}
 
 
-async def _load_ordered_legs(redis_client: redis.Redis, *, legs_key: str, group_id: str) -> list[dict[str, Any]]:
+async def _load_ordered_legs(redis_client: AsyncGroupRedis, *, legs_key: str, group_id: str) -> list[dict[str, Any]]:
     raw_legs = await redis_client.hgetall(legs_key)
     ordered: list[dict[str, Any]] = []
     for raw_index, raw_payload in sorted(raw_legs.items(), key=lambda item: int(item[0])):
@@ -137,7 +149,7 @@ def _all_legs_terminal(ordered: list[dict[str, Any]]) -> bool:
 
 
 async def record_group_leg_and_maybe_build_summary(
-    redis_client: redis.Redis | None,
+    redis_client: AsyncGroupRedis | None,
     *,
     message: dict[str, Any],
     task_type: str,

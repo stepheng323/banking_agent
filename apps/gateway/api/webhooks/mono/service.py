@@ -5,10 +5,6 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from apps.core.src.agent.executors.async_completion import (
-    get_async_group_meta_for_transaction,
-    record_group_leg_and_maybe_build_summary,
-)
 from shared.cache.user_data import UserDataCache
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.database.models import FundedTransfer, UserChannelIdentity
@@ -16,6 +12,10 @@ from shared.formatters.transfer import format_transfer_success_message
 from shared.i18n import render_message
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
+from shared.services.async_completion import (
+    get_async_group_meta_for_transaction,
+    record_group_leg_and_maybe_build_summary,
+)
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:

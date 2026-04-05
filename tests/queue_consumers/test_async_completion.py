@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from apps.core.src.agent.executors.async_completion import record_group_leg_and_maybe_build_summary
+from shared.services.async_completion import record_group_leg_and_maybe_build_summary
 
 
 class _RedisStub:
