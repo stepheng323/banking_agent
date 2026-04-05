@@ -18,11 +18,16 @@ class _FakeLLM:
 def test_task_planner_uses_dedicated_interrupt_model_when_provided() -> None:
     planner_llm = _FakeLLM("planner")
     interrupt_llm = _FakeLLM("interrupt")
+    semantic_router_llm = _FakeLLM("semantic")
 
-    planner = TaskPlanner(planner_llm=planner_llm, interrupt_llm=interrupt_llm)
+    planner = TaskPlanner(
+        planner_llm=planner_llm,
+        semantic_router_llm=semantic_router_llm,
+        interrupt_llm=interrupt_llm,
+    )
 
     assert planner.structured_planner == "planner:PlannerOutput"
-    assert planner.structured_semantic_router == "interrupt:SemanticRouteDecision"
+    assert planner.structured_semantic_router == "semantic:SemanticRouteDecision"
     assert planner.structured_interrupt_router == "interrupt:InterruptRouteDecision"
     assert planner.structured_quoted_replay == "planner:QuotedReplayInterpretation"
 
@@ -34,3 +39,13 @@ def test_task_planner_falls_back_to_planner_model_for_interrupt_router() -> None
 
     assert planner.structured_semantic_router == "planner:SemanticRouteDecision"
     assert planner.structured_interrupt_router == "planner:InterruptRouteDecision"
+
+
+def test_task_planner_falls_back_to_interrupt_model_for_semantic_router_when_not_provided() -> None:
+    planner_llm = _FakeLLM("planner")
+    interrupt_llm = _FakeLLM("interrupt")
+
+    planner = TaskPlanner(planner_llm=planner_llm, interrupt_llm=interrupt_llm)
+
+    assert planner.structured_semantic_router == "interrupt:SemanticRouteDecision"
+    assert planner.structured_interrupt_router == "interrupt:InterruptRouteDecision"

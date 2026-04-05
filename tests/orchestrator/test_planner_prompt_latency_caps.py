@@ -421,6 +421,55 @@ async def test_plan_tasks_trims_user_state_for_narrow_transfer_replan() -> None:
 
 
 @pytest.mark.asyncio
+async def test_plan_tasks_uses_compact_context_for_mixed_transaction_turns() -> None:
+    planner = _CapturingPlanner(
+        PlannerOutput(
+            primary_intent="transfer",
+            response="",
+            response_key=None,
+            confidence=0.9,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language="English",
+            context_read_subtype=None,
+            normalized_instruction="send 10k to mum and buy me 2k airtime",
+            tasks=[],
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_prompt_trim_2",
+        phone_number="2348044444468",
+        channel="whatsapp",
+        last_message_text="send 10k to mum and buy me 2k airtime",
+        routing_owner="semantic_router",
+        routing_decision="planner_mixed",
+        preplanner_expected_transaction_executors=["transfer", "airtime"],
+        loaded_context={
+            "history": [{"role": "assistant", "content": "Earlier summary."}],
+            "accounts": [{"bank_name": "First Bank", "account_number": "0000000001", "mandate_status": "ready"}],
+            "beneficiaries": [{"alias": "Mum", "bank_name": "Opay", "account_number": "0123456789"}],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    await plan_tasks(state, config)
+
+    assert planner.last_context is not None
+    assert "User State:" not in planner.last_context
+    assert "Recent Chat:" not in planner.last_context
+    assert planner.last_prompt_signals is not None
+    assert getattr(planner.last_prompt_signals, "compact_context", False) is True
+
+
+@pytest.mark.asyncio
 async def test_plan_tasks_keeps_context_for_referential_followups() -> None:
     planner = _CapturingPlanner(
         PlannerOutput(

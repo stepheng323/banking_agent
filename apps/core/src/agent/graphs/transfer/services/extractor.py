@@ -1,5 +1,6 @@
 """LLM-based transfer entity extractor (multilingual) with enhanced prompt."""
 
+import time
 from typing import Any, cast
 
 from langchain_openai import ChatOpenAI
@@ -9,6 +10,12 @@ from apps.core.src.agent.graphs.transfer.models.extraction import TransferExtrac
 from apps.core.src.agent.graphs.transfer.prompt.transfer_extraction import (
     TRANSFER_EXTRACTION_PROMPT,
 )
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+_COMPACT_BENEFICIARY_LIMIT = 4
+_FULL_BENEFICIARY_LIMIT = 6
 
 
 class TransferEntityExtractor:
@@ -17,6 +24,52 @@ class TransferEntityExtractor:
     def __init__(self, llm: ChatOpenAI | None = None) -> None:
         self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"seed": 42})
         self.structured = self.llm.with_structured_output(TransferExtractionResult)
+
+    @staticmethod
+    def _context_mode(smart_context: dict[str, Any] | None) -> str:
+        if not smart_context:
+            return "minimal"
+        if isinstance(smart_context, SmartContext):
+            return "compact"
+        required_fields = smart_context.get("required_fields", [])
+        if isinstance(required_fields, list) and required_fields:
+            return "compact"
+        if smart_context.get("previousResponse") or smart_context.get("previous_response"):
+            return "compact"
+        if isinstance(smart_context.get("known_recipient"), dict):
+            return "compact"
+        return "full"
+
+    @staticmethod
+    def _beneficiary_aliases(
+        beneficiaries: list[Any],
+        *,
+        limit: int,
+        recipient_hint: str | None = None,
+    ) -> list[str]:
+        prioritized: list[str] = []
+        fallback: list[str] = []
+        normalized_hint = (recipient_hint or "").strip().lower()
+
+        for beneficiary in beneficiaries:
+            alias: str | None = None
+            if isinstance(beneficiary, dict):
+                alias = cast(str | None, beneficiary.get("alias") or beneficiary.get("account_name"))
+            else:
+                alias = cast(str | None, getattr(beneficiary, "alias", None) or getattr(beneficiary, "account_name", None))
+            if not alias:
+                continue
+            bucket = prioritized if normalized_hint and normalized_hint in alias.lower() else fallback
+            if alias not in bucket:
+                bucket.append(alias)
+
+        aliases = prioritized[:]
+        for alias in fallback:
+            if alias not in aliases:
+                aliases.append(alias)
+            if len(aliases) >= limit:
+                break
+        return aliases[:limit]
 
     def _build_context_string(self, smart_context: dict[str, Any] | None) -> str:
         """Build context string from SmartContext or legacy dict format."""
@@ -27,6 +80,7 @@ class TransferEntityExtractor:
             return cast(str, smart_context.to_compact_string())
 
         parts = []
+        context_mode = self._context_mode(smart_context)
 
         if smart_context.get("previousResponse"):
             parts.append(f"LastMsg: {smart_context['previousResponse'][:150]}")
@@ -51,16 +105,11 @@ class TransferEntityExtractor:
 
         beneficiaries = smart_context.get("beneficiaries", [])
         if beneficiaries:
-            aliases = []
-            for b in beneficiaries:
-                if isinstance(b, dict):
-                    alias = b.get("alias") or b.get("account_name")
-                    if alias:
-                        aliases.append(alias)
-                elif hasattr(b, "alias") and b.alias:
-                    aliases.append(b.alias)
-                elif hasattr(b, "account_name") and b.account_name:
-                    aliases.append(b.account_name)
+            recipient_hint = None
+            if isinstance(known_recipient, dict):
+                recipient_hint = cast(str | None, known_recipient.get("recipient_name"))
+            limit = _COMPACT_BENEFICIARY_LIMIT if context_mode == "compact" else _FULL_BENEFICIARY_LIMIT
+            aliases = self._beneficiary_aliases(beneficiaries, limit=limit, recipient_hint=recipient_hint)
             if aliases:
                 parts.append(f"Beneficiaries: {', '.join(aliases)}")
 
@@ -77,6 +126,7 @@ class TransferEntityExtractor:
         user = text.strip()
         user_content = user
 
+        context_mode = self._context_mode(smart_context)
         context_str = self._build_context_string(smart_context)
         if context_str:
             user_content = f"{user}\n\nContext:\n{context_str}"
@@ -104,11 +154,22 @@ class TransferEntityExtractor:
         else:
             user_message = {"role": "user", "content": user_content}
 
+        start = time.perf_counter()
         result = await self.structured.ainvoke(
             [
                 {"role": "system", "content": TRANSFER_EXTRACTION_PROMPT},
                 user_message,
             ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "transfer_extractor_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None),
+            system_chars=len(TRANSFER_EXTRACTION_PROMPT),
+            user_chars=len(user_content),
+            context_chars=len(context_str),
+            context_mode=context_mode,
         )
         if isinstance(result, TransferExtractionResult):
             return result

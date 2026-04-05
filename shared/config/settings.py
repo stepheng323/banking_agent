@@ -42,6 +42,8 @@ class Settings:
         self.planner_model: str = os.getenv("PLANNER_MODEL", "gpt-4o-mini")
         self.query_model: str = os.getenv("QUERY_MODEL", self.planner_model).strip()
         self.interrupt_router_model: str = os.getenv("INTERRUPT_ROUTER_MODEL", self.planner_model).strip()
+        self.semantic_router_model: str = os.getenv("SEMANTIC_ROUTER_MODEL", "gpt-5.4-nano").strip()
+        self.extractor_model: str = os.getenv("EXTRACTOR_MODEL", "gpt-5.4-mini").strip()
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"

@@ -122,7 +122,11 @@ class ExtractionStep(AirtimeStep):
             "recipient_phone": data.recipient_phone,
             "network": data.network,
             "recipient_name": data.recipient_name,
+            "beneficiaries": context.beneficiaries,
             "accounts": context.accounts,
+            "required_fields": required_fields,
+            "previousResponse": getattr(worker_context, "previous_response", None),
+            "language": context.language,
         }
 
         try:

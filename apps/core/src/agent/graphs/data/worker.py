@@ -40,7 +40,9 @@ class DataWorkerContext:
     publisher: Any
     transaction_repo: Any
     user_id: str | None
+    channel_identity: str | None
     required_fields: list[str]
+    previous_response: str | None
 
 
 class DataWorker:
@@ -68,6 +70,7 @@ class DataWorker:
         return DataContext(
             phone_number=context.get("phone_number", ""),
             language=LocaleManager.normalize(context.get("language")).value,
+            channel=context.get("channel", "whatsapp"),
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
             all_accounts=context.get("all_accounts", []),
@@ -91,13 +94,16 @@ class DataWorker:
 
     def _build_worker_context(self, context: dict[str, Any]) -> DataWorkerContext:
         required_fields = context.get("required_fields")
+        previous_response = context.get("previous_response")
         return DataWorkerContext(
             extractor=self.extractor,
             bill_provider=self.bill_provider,
             publisher=self.publisher,
             transaction_repo=self.transaction_repo,
             user_id=context.get("user_id"),
+            channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
             required_fields=required_fields if isinstance(required_fields, list) else [],
+            previous_response=previous_response if isinstance(previous_response, str) else None,
         )
 
     @staticmethod

@@ -171,6 +171,33 @@ def _forced_domain_owner(
     return "transfer"
 
 
+def _should_use_compact_transaction_context(
+    *,
+    state: OrchestratorState,
+    active_intent: str | None,
+    forced_domain_owner: RouterDomainIntent | None,
+    expected_executors: tuple[TransactionExecutor, ...],
+    query_session_active: bool,
+) -> bool:
+    if state.has_quote:
+        return False
+    if query_session_active:
+        return False
+    if not expected_executors:
+        return False
+    if any(executor not in TRANSACTION_EXECUTORS for executor in expected_executors):
+        return False
+    if forced_domain_owner == "transfer":
+        return True
+    if len(expected_executors) >= 2:
+        return True
+    if state.pending_interrupt is None:
+        return False
+    if active_intent in TRANSACTION_EXECUTORS:
+        return True
+    return state.routing_target_domain in TRANSACTION_EXECUTORS
+
+
 async def _build_planner_context(
     *,
     state: OrchestratorState,
@@ -263,6 +290,13 @@ async def _build_planner_context(
         expected_executors=expected_executors,
         query_session_active=query_session_active,
     )
+    compact_transaction_context = narrow_transfer_replan or _should_use_compact_transaction_context(
+        state=state,
+        active_intent=active_intent,
+        forced_domain_owner=forced_domain_owner,
+        expected_executors=expected_executors,
+        query_session_active=query_session_active,
+    )
     if _should_use_minimal_planner_context(
         state=state,
         active_intent=active_intent,
@@ -288,6 +322,7 @@ async def _build_planner_context(
                 has_short_term_memory=False,
                 has_quote=False,
                 has_transaction_intent_hint=has_transaction_intent_hint,
+                compact_context=True,
                 forced_domain_owner=forced_domain_owner,
                 expected_transaction_executors=expected_executors,
             ),
@@ -318,7 +353,7 @@ async def _build_planner_context(
         )
         logger.info("planner_context_active_flow_injected", intent=active_intent)
 
-    if turn_summary.short_term_memory_summary and not narrow_transfer_replan:
+    if turn_summary.short_term_memory_summary and not compact_transaction_context:
         has_short_term_memory = True
         planner_context_sections.append(
             (
@@ -329,7 +364,7 @@ async def _build_planner_context(
         logger.info("planner_context_injected", context="short_term_memory")
 
     recent_domain_focus = turn_summary.recent_domain_focus
-    if recent_domain_focus and not narrow_transfer_replan:
+    if recent_domain_focus and not compact_transaction_context:
         planner_context_sections.append(
             (
                 "recent_domain_focus",
@@ -345,7 +380,7 @@ async def _build_planner_context(
         )
         logger.info("planner_context_injected", context="recent_domain_focus", domain=recent_domain_focus)
 
-    if turn_summary.recent_answer_focus:
+    if turn_summary.recent_answer_focus and not compact_transaction_context:
         planner_context_sections.append(
             (
                 "recent_answer_focus",
@@ -360,7 +395,9 @@ async def _build_planner_context(
         )
         logger.info("planner_context_injected", context="recent_answer_focus", focus=turn_summary.recent_answer_focus)
 
-    user_state_summary = build_user_state_summary_from_summary(turn_summary) if not narrow_transfer_replan else None
+    user_state_summary = (
+        build_user_state_summary_from_summary(turn_summary) if not compact_transaction_context else None
+    )
     if user_state_summary:
         has_user_state_summary = True
         planner_context_sections.append(
@@ -390,12 +427,13 @@ async def _build_planner_context(
         pending_interrupt_kind=state.pending_interrupt.kind if state.pending_interrupt else None,
         query_session_active=query_session_active,
         query_session_source=query_session_source,
-        recent_domain_focus=recent_domain_focus,
+        recent_domain_focus=None if compact_transaction_context else recent_domain_focus,
         has_beneficiary_suggestion=False,
         has_user_state_summary=has_user_state_summary,
         has_short_term_memory=has_short_term_memory,
         has_quote=state.has_quote and bool(state.quoted_message_id),
         has_transaction_intent_hint=_has_transaction_intent_hint(text),
+        compact_context=compact_transaction_context,
         forced_domain_owner=forced_domain_owner,
         expected_transaction_executors=expected_executors,
     )

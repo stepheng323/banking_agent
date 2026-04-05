@@ -56,11 +56,15 @@ def _resolve_role_model(*, role: str, configured_model: str, planner_model: str,
     """Resolve role model from env and emit actionable overlap warnings."""
     role_env_map = {
         "query": "QUERY_MODEL",
+        "semantic_router": "SEMANTIC_ROUTER_MODEL",
         "interrupt_router": "INTERRUPT_ROUTER_MODEL",
+        "extractor": "EXTRACTOR_MODEL",
     }
     recommended_model_map = {
         "query": None,
+        "semantic_router": "gpt-5.4-nano",
         "interrupt_router": "gpt-5.4-nano",
+        "extractor": "gpt-5.4-mini",
     }
     env_var = role_env_map[role]
     recommended_model = recommended_model_map[role]
@@ -105,11 +109,14 @@ def _build_orchestrator_runtime_bundle(
     shared_redis,
     llm,
     query_llm,
+    semantic_router_llm: ChatOpenAI | None = None,
     interrupt_llm: ChatOpenAI | None = None,
+    extractor_llm: ChatOpenAI | None = None,
 ) -> tuple[UserRepository, OnboardingExecutor, OrchestratorAgent]:
     """Build one isolated runtime bundle without a shared DB session."""
     session_factory = get_db_session
     logger.info("core_chat_runtime_db_access_mode", mode="session_scoped")
+    extractor_chat = extractor_llm or llm
 
     user_repository = SessionScopedUserRepository(session_factory)
     beneficiary_repository = SessionScopedBeneficiaryRepository(session_factory)
@@ -143,7 +150,7 @@ def _build_orchestrator_runtime_bundle(
     if bill_provider is None:
         raise RuntimeError("Bill provider is not configured")
     data_worker = AgentDataWorker(
-        extractor=DataEntityExtractor(llm=llm),
+        extractor=DataEntityExtractor(llm=extractor_chat),
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
@@ -169,7 +176,7 @@ def _build_orchestrator_runtime_bundle(
     bank_cache_service = BankCacheService(redis_client=shared_redis)
 
     agent_airtime_worker = AirtimeWorker(
-        extractor=AirtimeEntityExtractor(llm=llm),
+        extractor=AirtimeEntityExtractor(llm=extractor_chat),
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
@@ -183,7 +190,7 @@ def _build_orchestrator_runtime_bundle(
     agent_transfer_worker = TransferWorker(
         validation_service=None,
         publisher=queue_publisher,
-        extractor=TransferEntityExtractor(llm=llm),
+        extractor=TransferEntityExtractor(llm=extractor_chat),
         resolver_provider=resolver_provider,
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,
@@ -195,6 +202,7 @@ def _build_orchestrator_runtime_bundle(
 
     orchestrator_deps = OrchestratorDependencies(
         llm=llm,
+        semantic_router_llm=semantic_router_llm,
         interrupt_llm=interrupt_llm,
         user_repo=user_repository,
         beneficiary_repo=beneficiary_repository,
@@ -227,7 +235,9 @@ def _build_runtime_bundle_factory(
     shared_redis,
     llm,
     query_llm,
+    semantic_router_llm: ChatOpenAI | None = None,
     interrupt_llm: ChatOpenAI | None = None,
+    extractor_llm: ChatOpenAI | None = None,
 ):
     """Build a factory that returns runtime dependencies with short-lived DB access."""
 
@@ -238,7 +248,9 @@ def _build_runtime_bundle_factory(
             shared_redis=shared_redis,
             llm=llm,
             query_llm=query_llm,
+            semantic_router_llm=semantic_router_llm,
             interrupt_llm=interrupt_llm,
+            extractor_llm=extractor_llm,
         )
 
     return _factory
@@ -255,6 +267,7 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
     llm = ChatOpenAI(model=settings.planner_model, temperature=0, timeout=30.0, max_retries=1)
+    logger.info("planner_model_selected", app_env=settings.app_env, model=settings.planner_model)
     query_model = _resolve_role_model(
         role="query",
         configured_model=settings.query_model,
@@ -262,6 +275,13 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         app_env=settings.app_env,
     )
     query_llm = ChatOpenAI(model=query_model, temperature=0, timeout=30.0, max_retries=1)
+    semantic_router_model = _resolve_role_model(
+        role="semantic_router",
+        configured_model=settings.semantic_router_model,
+        planner_model=settings.planner_model,
+        app_env=settings.app_env,
+    )
+    semantic_router_llm = ChatOpenAI(model=semantic_router_model, temperature=0, timeout=15.0, max_retries=1)
     interrupt_router_model = _resolve_role_model(
         role="interrupt_router",
         configured_model=settings.interrupt_router_model,
@@ -270,6 +290,21 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     )
 
     interrupt_llm = ChatOpenAI(model=interrupt_router_model, temperature=0, timeout=15.0, max_retries=1)
+    extractor_model = _resolve_role_model(
+        role="extractor",
+        configured_model=settings.extractor_model,
+        planner_model=settings.planner_model,
+        app_env=settings.app_env,
+    )
+    extractor_llm = ChatOpenAI(model=extractor_model, temperature=0, timeout=20.0, max_retries=1)
+    logger.info(
+        "core_chat_role_models_resolved",
+        planner_model=settings.planner_model,
+        query_model=query_model,
+        semantic_router_model=semantic_router_model,
+        interrupt_router_model=interrupt_router_model,
+        extractor_model=extractor_model,
+    )
 
     runtime_bundle_factory = _build_runtime_bundle_factory(
         queue_publisher=queue_publisher,
@@ -277,7 +312,9 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         shared_redis=shared_redis,
         llm=llm,
         query_llm=query_llm,
+        semantic_router_llm=semantic_router_llm,
         interrupt_llm=interrupt_llm,
+        extractor_llm=extractor_llm,
     )
 
     message_consumer = MessageConsumer(

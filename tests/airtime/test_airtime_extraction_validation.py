@@ -12,9 +12,11 @@ class _ExtractorStub:
     def __init__(self, result: dict) -> None:
         self._result = result
         self.calls = 0
+        self.last_state: dict | None = None
 
     async def run(self, _state: dict) -> dict:
         self.calls += 1
+        self.last_state = _state
         return self._result
 
 
@@ -69,6 +71,33 @@ async def test_airtime_extraction_phone_slot_fallback_normalizes_digits_only_rep
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch == {"recipient_phone": "08162511023"}
+
+
+@pytest.mark.asyncio
+async def test_airtime_extraction_passes_compact_context_to_extractor() -> None:
+    step = ExtractionStep("08162511023")
+    payload = AirtimePayload(amount=5000, recipient_name="Mum")
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[{"alias": name} for name in ("Mum", "Tolu", "Doyin", "Gaines", "Dad")],
+        accounts=[{"bank_name": "First Bank", "account_number": "0000000001"}],
+    )
+    gates = AirtimeGates()
+    extractor = _ExtractorStub({"entities": {"recipient_phone": "08162511023"}, "correction": None})
+    worker_context = SimpleNamespace(
+        required_fields=["recipient_phone"],
+        previous_response="Which phone number?",
+        extractor=extractor,
+    )
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert extractor.last_state is not None
+    assert extractor.last_state["required_fields"] == ["recipient_phone"]
+    assert extractor.last_state["previousResponse"] == "Which phone number?"
+    assert extractor.last_state["beneficiaries"][0]["alias"] == "Mum"
 
 
 @pytest.mark.asyncio

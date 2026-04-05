@@ -81,7 +81,20 @@ class ExtractionStep(PipelineStep):
         if not extractor:
             logger.info("data_extraction_skipped", reason="extractor_unavailable")
             return None
-        extraction_result = await extractor.extract(self.user_message)
+        extraction_result = await extractor.extract(
+            self.user_message,
+            smart_context={
+                "previousResponse": getattr(worker_context, "previous_response", None),
+                "required_fields": required_fields,
+                "beneficiaries": context.beneficiaries,
+                "accounts": context.accounts,
+                "language": context.language,
+                "target_phone": payload.target_phone,
+                "network": payload.network,
+                "plan_name": payload.plan_name,
+                "amount": payload.amount,
+            },
+        )
 
         payload.extraction = extraction_result
 

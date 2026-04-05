@@ -1,6 +1,6 @@
 """Task planner for breaking down user requests into executable tasks."""
 import time
-from typing import cast
+from typing import Any, cast
 
 from langchain_openai import ChatOpenAI
 
@@ -40,19 +40,24 @@ class TaskPlanner:
     def __init__(
         self,
         planner_llm: ChatOpenAI,
+        semantic_router_llm: ChatOpenAI | None = None,
         interrupt_llm: ChatOpenAI | None = None,
         task_queue_service: TaskQueueService | None = None,
     ) -> None:
         self.planner_llm = planner_llm
+        self.semantic_router_llm = semantic_router_llm or interrupt_llm or planner_llm
         self.interrupt_llm = interrupt_llm or planner_llm
         self.uses_dedicated_interrupt_model = interrupt_llm is not None
+        self.uses_dedicated_semantic_router_model = semantic_router_llm is not None
         self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
-        self.structured_semantic_router = self.interrupt_llm.with_structured_output(SemanticRouteDecision)
+        self.structured_semantic_router = self.semantic_router_llm.with_structured_output(SemanticRouteDecision)
         self.structured_interrupt_router = self.interrupt_llm.with_structured_output(InterruptRouteDecision)
         self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
         self.task_queue_service = task_queue_service
         if not self.uses_dedicated_interrupt_model:
             logger.warning("interrupt_router_model_not_dedicated", mode="planner_fallback")
+        if not self.uses_dedicated_semantic_router_model:
+            logger.warning("semantic_router_model_not_dedicated", mode="interrupt_or_planner_fallback")
 
     @staticmethod
     def _log_latency_span(*, span: str, duration_ms: float, path_label: str) -> None:
@@ -63,6 +68,10 @@ class TaskPlanner:
             duration_ms=round(duration_ms, 2),
             path_label=path_label,
         )
+
+    @staticmethod
+    def _model_name(llm: Any) -> str | None:
+        return cast(str | None, getattr(llm, "model_name", None) or getattr(llm, "model", None))
 
     async def plan_tasks(
         self,
@@ -99,8 +108,11 @@ class TaskPlanner:
         logger.info(
             "planner_llm_call",
             duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.planner_llm),
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
+            context_chars=len(context),
+            context_mode="compact" if prompt_signals.compact_context else "full",
             prompt_profile=prompt_result.profile,
             prompt_bundles=list(prompt_result.selected_bundle_ids),
             prompt_rule_count=len(prompt_result.selected_rule_ids),
@@ -140,8 +152,11 @@ class TaskPlanner:
         logger.info(
             "semantic_router_llm_call",
             duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.semantic_router_llm),
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
+            context_chars=len(context),
+            context_mode="compact" if context == "None" else "full",
         )
         self._log_latency_span(span="semantic_router_llm", duration_ms=duration_ms, path_label=path_label)
         if isinstance(result, SemanticRouteDecision):
@@ -174,8 +189,11 @@ class TaskPlanner:
         logger.info(
             "interrupt_router_llm_call",
             duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.interrupt_llm),
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
+            context_chars=len(context),
+            context_mode="compact" if context == "None" else "full",
         )
         self._log_latency_span(span="interrupt_router_llm", duration_ms=duration_ms, path_label=path_label)
         if isinstance(result, InterruptRouteDecision):
@@ -203,6 +221,7 @@ class TaskPlanner:
         logger.info(
             "quoted_replay_llm_call",
             duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.planner_llm),
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
         )

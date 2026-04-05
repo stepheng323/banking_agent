@@ -13,9 +13,11 @@ class _ExtractorStub:
     def __init__(self, result: DataExtractionResult) -> None:
         self._result = result
         self.calls = 0
+        self.last_context: dict | None = None
 
-    async def extract(self, _message: str) -> DataExtractionResult:
+    async def extract(self, _message: str, smart_context: dict | None = None) -> DataExtractionResult:
         self.calls += 1
+        self.last_context = smart_context
         return self._result
 
 
@@ -37,6 +39,35 @@ async def test_data_skip_extraction_overrides_for_phone_signal() -> None:
     assert payload.skip_extraction is False
     assert payload.target_phone == "08162511023"
     assert payload.stage == "extracted"
+
+
+@pytest.mark.asyncio
+async def test_data_extraction_passes_compact_context_to_extractor() -> None:
+    step = ExtractionStep("08162511023")
+    payload = DataPayload(network="MTN")
+    context = DataContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[{"alias": "Mum"}],
+        accounts=[{"bank_name": "First Bank", "account_number": "0000000001"}],
+    )
+    gates = DataGates()
+    extractor = _ExtractorStub(
+        DataExtractionResult(entities=DataPurchaseEntities(recipient_phone="08162511023")),
+    )
+    worker_context = SimpleNamespace(
+        required_fields=["target_phone"],
+        previous_response="Which line should I buy data for?",
+        extractor=extractor,
+    )
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is None
+    assert extractor.last_context is not None
+    assert extractor.last_context["required_fields"] == ["target_phone"]
+    assert extractor.last_context["previousResponse"] == "Which line should I buy data for?"
+    assert extractor.last_context["network"] == "MTN"
 
 
 @pytest.mark.asyncio

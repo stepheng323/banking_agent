@@ -36,6 +36,7 @@ class AirtimeWorkerContext:
     user_id: str | None
     channel_identity: str | None
     required_fields: list[str]
+    previous_response: str | None
 
 
 class AirtimeWorker:
@@ -80,6 +81,7 @@ class AirtimeWorker:
 
     def _build_worker_context(self, context: dict[str, Any]) -> AirtimeWorkerContext:
         required_fields = context.get("required_fields")
+        previous_response = context.get("previous_response")
         return AirtimeWorkerContext(
             extractor=self.extractor,
             bill_provider=self.bill_provider,
@@ -89,6 +91,7 @@ class AirtimeWorker:
             user_id=context.get("user_id"),
             channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
             required_fields=required_fields if isinstance(required_fields, list) else [],
+            previous_response=previous_response if isinstance(previous_response, str) else None,
         )
 
     @staticmethod

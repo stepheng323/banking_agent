@@ -21,6 +21,7 @@ class OrchestratorAgent:
         self.context_manager = OrchestratorContextManager(deps.user_repo, deps.beneficiary_repo, deps.account_repo)
         self.task_planner = OrchestratorTaskPlanner(
             planner_llm=deps.llm,
+            semantic_router_llm=deps.semantic_router_llm,
             interrupt_llm=deps.interrupt_llm,
             task_queue_service=deps.task_queue_service,
         )
