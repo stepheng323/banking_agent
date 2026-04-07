@@ -632,6 +632,56 @@ async def test_recipient_fact_drilldown_follow_up_converts_summary_to_transactio
 
 
 @pytest.mark.asyncio
+async def test_direct_answer_recipient_delta_follow_up_reuses_scope_and_swaps_counterparty() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 4, 6)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 4, 1), end=today),
+        filters=Filters(counterparty=["Mum"], transaction_type="debit"),
+        result_limit=1,
+        result_reference="latest",
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="recipient_drill_down",
+            followup_intent="none",
+            recipient_name="tolu",
+            delta_type="filter",
+            confidence=0.98,
+            reason="deterministic_scoped_recipient_delta",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about tolu?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "You paid Mum on April 03, 2026.",
+                "items": [],
+                "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
+            },
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.time_start == date(2026, 4, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters is not None
+    assert query_contract.filters.counterparty == ["tolu"]
+    assert query_contract.filters.transaction_type == "debit"
+
+
+@pytest.mark.asyncio
 async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitly_requested() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)

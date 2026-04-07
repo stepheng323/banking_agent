@@ -386,6 +386,46 @@ def test_interrupt_and_quoted_context_render_from_shared_summary() -> None:
     assert "BENEFICIARIES:" in quoted_context
 
 
+def test_interrupt_compact_context_trims_shared_sections() -> None:
+    state = OrchestratorState(
+        user_id="u_ctx_3_compact",
+        phone_number="2348000000399",
+        channel="whatsapp",
+        loaded_context={
+            "history": [
+                {"role": "user", "content": "Send 10k to Mum"},
+                {"role": "assistant", "content": "Confirm transfer"},
+            ],
+        },
+    )
+    summary = build_turn_context_summary(state)
+
+    compact_context = build_interrupt_context_from_summary(
+        summary,
+        kind="confirmation",
+        task_ids=["t_mum", "t_tolu"],
+        current_task_types={"transfer"},
+        active_task_state_json='{"t_mum":{"type":"transfer","stage":"awaiting_confirmation"}}',
+        required_fields_json="{}",
+        prompt_text="Confirm transfers",
+        prompt_mode="compact",
+    )
+    full_context = build_interrupt_context_from_summary(
+        summary,
+        kind="confirmation",
+        task_ids=["t_mum", "t_tolu"],
+        current_task_types={"transfer"},
+        active_task_state_json='{"t_mum":{"type":"transfer","stage":"awaiting_confirmation"}}',
+        required_fields_json="{}",
+        prompt_text="Confirm transfers",
+        prompt_mode="full",
+    )
+
+    assert len(compact_context) <= len(full_context)
+    assert "TURN_CONTEXT_ACTIVE_FLOW:" not in compact_context
+    assert "RECENT_ANSWER_FOCUS=" in compact_context
+
+
 def test_get_or_build_turn_context_summary_reuses_cached_state_payload(monkeypatch) -> None:
     state = OrchestratorState(
         user_id="u_ctx_4",

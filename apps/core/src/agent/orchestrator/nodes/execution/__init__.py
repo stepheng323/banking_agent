@@ -267,7 +267,10 @@ def _build_confirmation_gate_summary(
             task = state.tasks[tid]
             confirmation_payload = task.payload.get("confirmation") or {}
             snapshot = confirmation_payload.get("snapshot") or {}
-            if isinstance(snapshot, dict):
+            payload_amount = task.payload.get("amount")
+            if isinstance(payload_amount, (int, float)):
+                total_amount += float(payload_amount)
+            elif isinstance(snapshot, dict):
                 amount = snapshot.get("amount", 0)
                 if isinstance(amount, (int, float)):
                     total_amount += float(amount)

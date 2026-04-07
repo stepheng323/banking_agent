@@ -10,6 +10,8 @@ from apps.core.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
     TaskStage,
+    TransactionOutcome,
+    TransactionResult,
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
@@ -169,6 +171,36 @@ class _AccountBalanceWorker:
         return AccountResult(
             outcome=AccountOutcome.OK,
             response="*Your Balance*\n\n1. First Bank (****7890): **₦30,000.00**",
+        )
+
+
+class _TransferConfirmationRenderWorker:
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        amount = float(payload.get("amount") or 0.0)
+        recipient_name = str(payload.get("recipient_name") or "").strip()
+        resolved_name = str(payload.get("recipient_resolved_name") or recipient_name).strip()
+        bank_name = str(payload.get("recipient_bank_name") or "").strip()
+        account_number = str(payload.get("recipient_account") or "").strip()
+        narration = str(payload.get("narration") or "").strip()
+        lines = [f"₦{amount:,.0f} → {recipient_name} ({resolved_name})", f"{bank_name} • {account_number}"]
+        if narration:
+            lines.append(f"Narration: {narration.title()}")
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            confirmation_summary="\n".join(lines),
+            confirmation_snapshot={
+                "amount": amount,
+                "recipient_name": recipient_name,
+                "sourceBank": "Zenith Bank",
+                "sourceAccount": "0000009384",
+            },
         )
 
 
@@ -1147,20 +1179,199 @@ async def test_confirmation_continue_flow_scopes_multi_recipient_narration_updat
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t_mum"].stage == TaskStage.EXTRACTED
-    assert updates["tasks"]["t_mum"].payload["pending_user_message"] == "for allowance"
-    assert updates["tasks"]["t_mum"].payload["confirmation_message_scoped"] is True
+    assert updates["tasks"]["t_mum"].payload["narration"] == "allowance"
+    assert updates["tasks"]["t_mum"].payload["authored_narration"] == "allowance"
+    assert updates["tasks"]["t_mum"].payload["user_note"] == "allowance"
     assert updates["tasks"]["t_mum"].payload["previous_confirmation_snapshot"] == {
         "amount": 10000,
         "recipient_name": "Mum",
     }
     assert updates["tasks"]["t_tolu"].stage == TaskStage.EXTRACTED
-    assert updates["tasks"]["t_tolu"].payload["pending_user_message"] == "for transport"
-    assert updates["tasks"]["t_tolu"].payload["confirmation_message_scoped"] is True
+    assert updates["tasks"]["t_tolu"].payload["narration"] == "transport"
+    assert updates["tasks"]["t_tolu"].payload["authored_narration"] == "transport"
+    assert updates["tasks"]["t_tolu"].payload["user_note"] == "transport"
     assert updates["tasks"]["t_tolu"].payload["previous_confirmation_snapshot"] == {
         "amount": 10000,
         "recipient_name": "Tolu",
     }
     assert set(updates["last_interrupt"].task_ids) == {"t_mum", "t_tolu"}
+
+
+@pytest.mark.asyncio
+async def test_confirmation_continue_flow_scopes_multi_recipient_amount_and_narration_without_bleed() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_multi_confirm_note_amount",
+        phone_number="2348066666779",
+        channel="whatsapp",
+        last_message_text="The one for mum is allowance and tolu is transport also make tolu 5k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_mum", "t_tolu"]),
+        tasks={
+            "t_mum": TaskSpec(
+                id="t_mum",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Mum",
+                    "amount": 10000,
+                    "idempotency_key": "idem-mum",
+                    "confirmation": {"summary": "Confirm Mum", "snapshot": {"amount": 10000, "recipient_name": "Mum"}},
+                },
+            ),
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Tolu",
+                    "amount": 10000,
+                    "idempotency_key": "idem-tolu",
+                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 10000, "recipient_name": "Tolu"}},
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FailIfRouterCalledPlanner(),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_mum"].payload["narration"] == "allowance"
+    assert updates["tasks"]["t_mum"].payload["amount"] == 10000
+    assert updates["tasks"]["t_tolu"].payload["narration"] == "transport"
+    assert updates["tasks"]["t_tolu"].payload["amount"] == 5000
+    assert updates["tasks"]["t_tolu"].payload["user_note"] == "transport"
+    assert updates["tasks"]["t_tolu"].payload["narration"] != "transport also make tolu 5k"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_continue_flow_rerenders_multi_transfer_summary_from_scoped_task_payloads() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_multi_confirm_rerender",
+        phone_number="2348066666789",
+        channel="whatsapp",
+        last_message_text="The one for mum is allowance and tolu is transport also make tolu 5k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_mum", "t_tolu"]),
+        tasks={
+            "t_mum": TaskSpec(
+                id="t_mum",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Mum",
+                    "recipient_resolved_name": "Mercy Johnson",
+                    "recipient_bank_name": "Opay",
+                    "recipient_account": "8162511023",
+                    "amount": 10000,
+                    "source_account_id": "acct-1",
+                    "confirmation": {"summary": "Confirm Mum", "snapshot": {"amount": 10000, "recipient_name": "Mum"}},
+                },
+            ),
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adedayo",
+                    "recipient_bank_name": "First Bank",
+                    "recipient_account": "0760505261",
+                    "amount": 10000,
+                    "source_account_id": "acct-1",
+                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 10000, "recipient_name": "Tolu"}},
+                },
+            ),
+        },
+        waves=[["t_mum", "t_tolu"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    interrupt_updates = await handle_pending_interrupt(
+        state,
+        {
+            "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+            "recursion_limit": 50,
+        },
+    )
+
+    rerender_state = state.model_copy(
+        update={
+            "tasks": interrupt_updates["tasks"],
+            "pending_interrupt": interrupt_updates["pending_interrupt"],
+            "last_interrupt": interrupt_updates["last_interrupt"],
+        },
+        deep=True,
+    )
+    execution_updates = await advance_wave(
+        rerender_state,
+        {
+            "configurable": {"services": {"transfer": _TransferConfirmationRenderWorker()}},
+            "recursion_limit": 50,
+        },
+    )
+
+    confirmation_entry = next(entry for entry in execution_updates["outbox"] if entry["type"] == "request_confirmation")
+    summary = confirmation_entry["summary"]
+
+    assert "Confirm Transfers (2)" in summary
+    assert "Total out: ₦15,000" in summary
+    assert "₦10,000 → Mum (Mercy Johnson)" in summary
+    assert "Narration: Allowance" in summary
+    assert "₦5,000 → Tolu (Tolu Adedayo)" in summary
+    assert "Narration: Transport" in summary
+
+
+@pytest.mark.asyncio
+async def test_confirmation_continue_flow_clarifies_ambiguous_scoped_multi_recipient_update() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_multi_confirm_ambiguous",
+        phone_number="2348066666780",
+        channel="whatsapp",
+        last_message_text="The one is allowance and make it 5k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_mum", "t_tolu"]),
+        tasks={
+            "t_mum": TaskSpec(
+                id="t_mum",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"recipient_name": "Mum", "confirmation": {"summary": "Confirm Mum"}},
+            ),
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"recipient_name": "Tolu", "confirmation": {"summary": "Confirm Tolu"}},
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FailIfRouterCalledPlanner(),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["outbox"][0]["text"] == "Which recipient did you mean?"
+    assert updates["tasks"]["t_mum"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["tasks"]["t_tolu"].stage == TaskStage.AWAITING_CONFIRMATION
 
 
 @pytest.mark.asyncio

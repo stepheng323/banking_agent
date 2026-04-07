@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -269,6 +269,36 @@ async def test_latest_transaction_query_drops_spurious_narration_negotiation_wit
     assert result.query_contract is not None
     assert result.query_contract["result_limit"] == 1
     assert result.query_contract["result_reference"] == "latest"
+
+
+@pytest.mark.asyncio
+async def test_latest_received_amount_query_normalizes_to_latest_credit_fact_lookup() -> None:
+    parser = QueryParser(
+        _DummyLLM(
+            QueryExtractionResult(
+                intent=ExtractionIntent.SPENDING_TOTAL,
+                raw_query="fallback should not be used",
+            )
+        )
+    )
+    today = date(2026, 3, 21)
+
+    result = await parser.parse(
+        "How much did I receive last",
+        today=today,
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.resolver_message is None
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["result_limit"] == 1
+    assert result.query_contract["result_reference"] == "latest"
+    assert result.query_contract["answer_fact_field"] == "amount"
+    assert result.query_contract["time_start"] == today - timedelta(days=180)
+    assert result.query_contract["time_end"] == today
+    assert result.query_contract["filters"]["transaction_type"] == "credit"
 
 
 @pytest.mark.asyncio

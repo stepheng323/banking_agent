@@ -696,6 +696,7 @@ class QuerySemanticReasoner:
                 items=context.items,
                 surface_view=context.surface_view,
                 language=context.language,
+                query_contract=context.query_contract,
             )
             if guarded is not None:
                 continuation_type, data = guarded

@@ -55,6 +55,9 @@ KNOWN_SWITCH_INTENTS = TRANSACTION_INTENTS | NON_TRANSACTION_SWITCH_INTENTS
 INTERRUPT_REQUIRED_FIELDS_MAX_CHARS = 700
 INTERRUPT_PROMPT_MAX_CHARS = 300
 INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS = 700
+INTERRUPT_REQUIRED_FIELDS_COMPACT_MAX_CHARS = 240
+INTERRUPT_PROMPT_COMPACT_MAX_CHARS = 160
+INTERRUPT_ACTIVE_TASK_STATE_COMPACT_MAX_CHARS = 320
 
 _CONFIRMATION_UPDATE_VERB_RE = re.compile(
     r"\b(change|update|edit|instead|set|make(?:\s+it)?|replace|correct|meant|add|use)\b",
@@ -101,6 +104,10 @@ _TRANSFER_CANCEL_SCHEDULE_RE = re.compile(
 _TRANSFER_RECURRING_RE = re.compile(r"\b(every|daily|weekly|monthly|recurring)\b", re.IGNORECASE)
 _TRANSFER_SCHEDULE_RE = re.compile(
     r"\b(schedule|scheduled|tomorrow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
+_SCOPED_CONFIRMATION_AMOUNT_RE = re.compile(
+    r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?",
     re.IGNORECASE,
 )
 
@@ -183,7 +190,7 @@ def _is_resumable_interrupt(interrupt: Any) -> bool:
     return kind in {"input", "confirmation", "auth"} and isinstance(task_ids, list) and bool(task_ids)
 
 
-def _build_interrupt_context(
+def _build_interrupt_context_details(
     *,
     state: OrchestratorState,
     kind: str,
@@ -191,26 +198,39 @@ def _build_interrupt_context(
     current_task_types: set[str],
     fields_by_task: dict[str, list[str]],
     prompt: str | None,
-) -> str:
+) -> tuple[str, str, str]:
+    prompt_mode = _select_interrupt_router_prompt_mode(
+        kind=kind,
+        task_ids=task_ids,
+        current_task_types=current_task_types,
+    )
+    compact_mode = prompt_mode == "compact"
     summary, _ = get_or_build_turn_context_summary(
         state,
         query_session_snapshot=state.stashed_query_session if isinstance(state.stashed_query_session, dict) else None,
         query_session_source="stashed" if isinstance(state.stashed_query_session, dict) else None,
         path_label="interrupt_path",
     )
-    active_task_state = _build_active_task_router_state(state=state, task_ids=task_ids)
+    active_task_state = _build_active_task_router_state(
+        state=state,
+        task_ids=task_ids,
+        compact_mode=compact_mode,
+    )
     raw_active_task_state_text = json.dumps(active_task_state, ensure_ascii=True)
     active_task_state_text = _clip_text(
         raw_active_task_state_text,
-        INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS,
+        INTERRUPT_ACTIVE_TASK_STATE_COMPACT_MAX_CHARS if compact_mode else INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS,
     )
     raw_required_fields_text = json.dumps(fields_by_task, ensure_ascii=True)
     required_fields_text = _clip_text(
         raw_required_fields_text,
-        INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
+        INTERRUPT_REQUIRED_FIELDS_COMPACT_MAX_CHARS if compact_mode else INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
     )
     raw_prompt_text = prompt or ""
-    prompt_text = _clip_text(raw_prompt_text, INTERRUPT_PROMPT_MAX_CHARS)
+    prompt_text = _clip_text(
+        raw_prompt_text,
+        INTERRUPT_PROMPT_COMPACT_MAX_CHARS if compact_mode else INTERRUPT_PROMPT_MAX_CHARS,
+    )
     context = build_interrupt_context_from_summary(
         summary,
         kind=kind,
@@ -219,6 +239,7 @@ def _build_interrupt_context(
         active_task_state_json=active_task_state_text,
         required_fields_json=required_fields_text,
         prompt_text=prompt_text,
+        prompt_mode=prompt_mode,
     )
     logger.info(
         "interrupt_context_size",
@@ -231,6 +252,30 @@ def _build_interrupt_context(
         raw_prompt_chars=len(raw_prompt_text),
         clipped_prompt_chars=len(prompt_text),
         truncated=len(context) >= INTERRUPT_CONTEXT_MAX_CHARS,
+        prompt_mode=prompt_mode,
+        active_task_state_mode="minimal" if compact_mode else "json",
+        task_count=len(task_ids),
+        interrupt_kind=kind,
+    )
+    return context, prompt_mode, ("minimal" if compact_mode else "json")
+
+
+def _build_interrupt_context(
+    *,
+    state: OrchestratorState,
+    kind: str,
+    task_ids: list[str],
+    current_task_types: set[str],
+    fields_by_task: dict[str, list[str]],
+    prompt: str | None,
+) -> str:
+    context, _, _ = _build_interrupt_context_details(
+        state=state,
+        kind=kind,
+        task_ids=task_ids,
+        current_task_types=current_task_types,
+        fields_by_task=fields_by_task,
+        prompt=prompt,
     )
     return context
 
@@ -367,18 +412,74 @@ def _compact_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[
     return compact
 
 
-def _build_active_task_router_state(*, state: OrchestratorState, task_ids: list[str]) -> dict[str, Any]:
+def _minimal_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[str, Any]:
+    minimal: dict[str, Any] = {}
+    for field in (
+        "amount",
+        "recipient_name",
+        "recipient_resolved_name",
+        "recipient_phone",
+        "network",
+        "source_bank_name",
+    ):
+        value = payload.get(field)
+        if isinstance(value, (str, int, float, bool)) and value not in ("", None):
+            minimal[field] = value
+    confirmation = payload.get("confirmation")
+    if isinstance(confirmation, dict):
+        snapshot = confirmation.get("snapshot")
+        if isinstance(snapshot, dict):
+            summary_view = {
+                key: snapshot.get(key)
+                for key in ("amount", "recipient_name", "recipient_phone", "recipient_bank_name")
+                if key in snapshot and isinstance(snapshot.get(key), (str, int, float, bool))
+            }
+            if summary_view:
+                minimal["confirmation"] = summary_view
+    if payload.get("recipient_account"):
+        minimal["has_recipient_account"] = True
+    if payload.get("recipient_bank_name"):
+        minimal["has_recipient_bank_name"] = True
+    return minimal
+
+
+def _build_active_task_router_state(
+    *,
+    state: OrchestratorState,
+    task_ids: list[str],
+    compact_mode: bool,
+) -> dict[str, Any]:
     task_state: dict[str, Any] = {}
     for task_id in task_ids:
         task = state.tasks.get(task_id)
         if not task:
             continue
+        payload = cast(dict[str, Any], task.payload)
         task_state[task_id] = {
             "type": str(task.type),
             "stage": str(task.stage),
-            "payload": _compact_task_payload_for_interrupt_router(cast(dict[str, Any], task.payload)),
+            "payload": (
+                _minimal_task_payload_for_interrupt_router(payload)
+                if compact_mode
+                else _compact_task_payload_for_interrupt_router(payload)
+            ),
         }
     return task_state
+
+
+def _select_interrupt_router_prompt_mode(
+    *,
+    kind: str,
+    task_ids: list[str],
+    current_task_types: set[str],
+) -> str:
+    if kind == "auth":
+        return "compact"
+    if len(task_ids) != 1:
+        return "full"
+    if len(current_task_types) > 1:
+        return "full"
+    return "compact"
 
 
 def _is_beneficiary_clarification_interrupt(interrupt: Any) -> bool:
@@ -407,7 +508,7 @@ async def _route_interrupt(
         return _route_fallback("router_unavailable")
 
     try:
-        route_context = _build_interrupt_context(
+        route_context, prompt_mode, active_task_state_mode = _build_interrupt_context_details(
             state=state,
             kind=kind,
             task_ids=task_ids,
@@ -415,12 +516,20 @@ async def _route_interrupt(
             fields_by_task=fields_by_task,
             prompt=prompt,
         )
+        logger.info(
+            "interrupt_router_context_selected",
+            prompt_mode=prompt_mode,
+            active_task_state_mode=active_task_state_mode,
+            task_count=len(task_ids),
+            interrupt_kind=kind,
+        )
         try:
             route = await task_planner.route_pending_input(
                 state.phone_number,
                 text,
                 context=route_context,
                 path_label="interrupt_path",
+                prompt_mode=prompt_mode,
             )
         except TypeError:
             route = await task_planner.route_pending_input(
@@ -438,6 +547,9 @@ async def _route_interrupt(
             target_intent=route.target_intent,
             target_mode=route.target_mode,
             status_query_type=route.status_query_type,
+            prompt_mode=prompt_mode,
+            active_task_state_mode=active_task_state_mode,
+            task_count=len(task_ids),
         )
         return route
     except Exception as exc:
@@ -1677,6 +1789,45 @@ def _resolve_deterministic_confirmation_repeat_route(
     )
 
 
+def _resolve_deterministic_confirmation_scope_update_route(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    text: str,
+) -> InterruptRouteDecision | None:
+    if getattr(interrupt, "kind", None) != "confirmation":
+        return None
+    task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
+    if len(task_ids) < 2:
+        return None
+    payload_overrides, _message_overrides, ambiguity_reason = _build_confirmation_task_overrides(
+        state,
+        task_ids,
+        message_text=text,
+    )
+    if ambiguity_reason is not None:
+        return InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.99,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type=None,
+            reason=f"shortcut_confirmation_scope_clarify:{ambiguity_reason}",
+        )
+    if not payload_overrides:
+        return None
+    return InterruptRouteDecision(
+        decision="continue_flow",
+        confidence=0.99,
+        detected_language="English",
+        target_intent=None,
+        target_mode=None,
+        status_query_type=None,
+        reason="shortcut_confirmation_scoped_update",
+    )
+
+
 def _resolve_deterministic_input_slot_route(
     *,
     state: OrchestratorState,
@@ -1892,50 +2043,141 @@ def _message_targets_confirmation_task(message_text: str, task: TaskSpec) -> boo
     return False
 
 
-def _transfer_confirmation_clause_override(clause: str, task: TaskSpec) -> str | None:
+def _transfer_task_candidate_patterns(task: TaskSpec) -> list[tuple[str, str]]:
     payload = task.payload if isinstance(task.payload, dict) else {}
     candidates = [
         str(payload.get("recipient_name") or "").strip(),
         str(payload.get("recipient_resolved_name") or "").strip(),
     ]
-    cleaned_clause = clause.strip(" \t\r\n.,;:!?")
-    if not cleaned_clause:
-        return None
-
+    patterns: list[tuple[str, str]] = []
     for candidate in candidates:
         if not candidate:
             continue
         escaped = re.escape(candidate)
-        patterns = (
-            rf"^(?:the\s+one|the\s+transfer)\s+for\s+{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$",
-            rf"^for\s+{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$",
-            rf"^{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$",
-            rf"^{escaped}\s*[:=-]\s*(?P<value>.+)$",
+        patterns.extend(
+            [
+                (
+                    "for_target",
+                    rf"^(?:the\s+one|the\s+transfer)\s+for\s+{escaped}\s+"
+                    rf"(?:should\s+be|is|as)\s+(?P<value>.+)$",
+                ),
+                ("for_target", rf"^for\s+{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$"),
+                ("named_target", rf"^{escaped}\s+(?:should\s+be|is|as)\s+(?P<value>.+)$"),
+                ("named_target", rf"^{escaped}\s*[:=-]\s*(?P<value>.+)$"),
+                (
+                    "amount_target",
+                    rf"^(?:also\s+)?(?:make|change|update|set)\s+"
+                    rf"(?:the\s+one\s+for\s+)?{escaped}\s+"
+                    rf"(?:amount\s+)?(?:to\s+)?(?P<value>.+)$",
+                ),
+            ]
         )
-        for pattern in patterns:
-            match = re.match(pattern, cleaned_clause, re.IGNORECASE)
-            if match is None:
-                continue
-            value = str(match.group("value") or "").strip(" \t\r\n.,;:!?")
-            if value:
-                return f"for {value}"
-    return cleaned_clause
+    return patterns
 
 
-def _build_confirmation_message_overrides(
+def _normalize_scoped_note_value(value: str) -> str | None:
+    note = value.strip(" \t\r\n.,;:!?")
+    if not note:
+        return None
+    if note.isdigit():
+        return None
+    return note
+
+
+def _parse_scoped_confirmation_amount(value: str) -> float | None:
+    text = value.strip()
+    if not text:
+        return None
+    match = _SCOPED_CONFIRMATION_AMOUNT_RE.search(text)
+    if match is None:
+        return None
+    token = match.group(0)
+    suffix = token[-1].lower() if token and token[-1].lower() in {"k", "h"} else ""
+    number_part = token[:-1] if suffix else token
+    normalized = re.sub(r"(?i)(?:₦|ngn)", "", number_part).strip()
+    normalized = normalized.replace(",", "")
+    try:
+        amount = float(normalized)
+    except ValueError:
+        return None
+    if suffix == "k":
+        amount *= 1000.0
+    elif suffix == "h":
+        amount *= 100.0
+    return amount if amount > 0 else None
+
+
+def _extract_scoped_transfer_task_updates(clause: str, task: TaskSpec) -> dict[str, Any] | None:
+    cleaned_clause = clause.strip(" \t\r\n.,;:!?")
+    if not cleaned_clause:
+        return None
+
+    note_value: str | None = None
+    amount_value: float | None = None
+    for pattern_kind, pattern in _transfer_task_candidate_patterns(task):
+        match = re.match(pattern, cleaned_clause, re.IGNORECASE)
+        if match is None:
+            continue
+        raw_value = str(match.group("value") or "").strip()
+        if not raw_value:
+            continue
+        if pattern_kind == "amount_target":
+            amount_value = _parse_scoped_confirmation_amount(raw_value)
+            continue
+
+        split_parts = re.split(
+            r"\s+also\s+(?=(?:make|change|update|set)\b)",
+            raw_value,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )
+        note_candidate = _normalize_scoped_note_value(split_parts[0] if split_parts else raw_value)
+        if note_candidate and _parse_scoped_confirmation_amount(note_candidate) is None:
+            note_value = note_candidate
+        if len(split_parts) == 2:
+            amount_value = _parse_scoped_confirmation_amount(split_parts[1])
+
+    if note_value is None and amount_value is None:
+        return None
+
+    patch: dict[str, Any] = {"confirmation": {"confirmed": False}}
+    if note_value is not None:
+        patch.update(
+            {
+                "authored_narration": note_value,
+                "narration": note_value,
+                "user_note": note_value,
+            }
+        )
+    if amount_value is not None:
+        patch.update(
+            {
+                "amount": amount_value,
+                "transfer_percentage": None,
+                "transfer_all": False,
+                "funding_plan": None,
+                "suggested_amount": None,
+            }
+        )
+    return patch
+
+
+def _build_confirmation_task_overrides(
     state: OrchestratorState,
     task_ids: list[str],
     *,
     message_text: str,
-) -> dict[str, str]:
-    if len(task_ids) < 2:
-        return {}
+) -> tuple[dict[str, dict[str, Any]], dict[str, str], str | None]:
+    if not task_ids:
+        return {}, {}, None
 
     clauses = [part.strip() for part in _CONFIRMATION_MULTI_CLAUSE_SPLIT_RE.split(message_text) if part.strip()]
-    if len(clauses) < 2:
-        return {}
+    if not clauses:
+        return {}, {}, None
 
-    overrides: dict[str, str] = {}
+    payload_overrides: dict[str, dict[str, Any]] = {}
+    message_overrides: dict[str, str] = {}
+
     for clause in clauses:
         matched_task_ids = [
             task_id
@@ -1943,20 +2185,61 @@ def _build_confirmation_message_overrides(
             if task_id in state.tasks and _message_targets_confirmation_task(clause, state.tasks[task_id])
         ]
         if len(matched_task_ids) != 1:
+            if _looks_like_ambiguous_scoped_confirmation_clause(clause):
+                return {}, {}, "ambiguous_clause_scope"
             continue
 
         task_id = matched_task_ids[0]
         task = state.tasks[task_id]
-        override = clause.strip()
         if task.type == "transfer":
-            override = _transfer_confirmation_clause_override(clause, task) or override
-        if task_id in overrides:
-            return {}
-        overrides[task_id] = override
+            scoped_patch = _extract_scoped_transfer_task_updates(clause, task)
+            if scoped_patch:
+                if task_id in payload_overrides:
+                    payload_overrides[task_id].update(scoped_patch)
+                else:
+                    payload_overrides[task_id] = scoped_patch
+                continue
 
-    if len(overrides) < 2:
-        return {}
-    return overrides
+    if not payload_overrides and not message_overrides:
+        return {}, {}, None
+    return payload_overrides, message_overrides, None
+
+
+def _synth_confirmation_followup_message(task: TaskSpec) -> str | None:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    if task.type != "transfer":
+        return None
+
+    recipient_name = str(payload.get("recipient_name") or "").strip()
+    amount = payload.get("amount")
+    narration = str(
+        payload.get("authored_narration") or payload.get("narration") or payload.get("user_note") or ""
+    ).strip()
+    if not recipient_name:
+        return None
+
+    amount_text = None
+    if isinstance(amount, (int, float)) and float(amount) > 0:
+        amount_text = str(int(amount)) if float(amount).is_integer() else str(float(amount))
+
+    base = f"Send {amount_text} to {recipient_name}" if amount_text else f"Send money to {recipient_name}"
+    if narration:
+        return f"{base} for {narration}"
+    return base
+
+
+def _looks_like_ambiguous_scoped_confirmation_clause(clause: str) -> bool:
+    if _CONFIRMATION_COLLECTIVE_SCOPE_RE.search(clause):
+        return False
+    has_scope_reference = bool(re.search(r"\b(?:the\s+one|this\s+one|that\s+one|it)\b", clause, re.IGNORECASE))
+    if not has_scope_reference:
+        return False
+    return bool(
+        _CONFIRMATION_UPDATE_VERB_RE.search(clause)
+        or _CONFIRMATION_NOTE_FIELD_RE.search(clause)
+        or _CONFIRMATION_ITS_FOR_RE.search(clause)
+        or re.search(r"\b(?:is|as)\b", clause, re.IGNORECASE)
+    )
 
 
 def _select_confirmation_continue_flow_task_ids(
@@ -1999,16 +2282,44 @@ def _stash_previous_confirmation_snapshots(state: OrchestratorState, task_ids: l
             task.payload.pop("previous_confirmation_snapshot", None)
 
 
+def _build_confirmation_scope_clarification_outbox(state: OrchestratorState, interrupt: Any) -> list[dict[str, Any]]:
+    del interrupt
+    locale = _state_locale(state)
+    return [{"type": "say", "text": render_message("transfer.resolve.which_recipient", locale)}]
+
+
 def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
     if interrupt.kind in {"input", "confirmation"}:
         task_ids_to_reset = [str(task_id) for task_id in interrupt.task_ids]
         selection_reason = "input_flow"
         matched_task_ids: list[str] = []
+        payload_overrides: dict[str, dict[str, Any]] = {}
+        message_overrides: dict[str, str] = {}
         if interrupt.kind == "confirmation":
             task_ids_to_reset, selection_reason, matched_task_ids = _select_confirmation_continue_flow_task_ids(
                 state,
                 interrupt,
             )
+            original_task_ids = [str(task_id) for task_id in interrupt.task_ids]
+            if len(original_task_ids) > 1 and selection_reason != "collective_scope":
+                message_text = (state.last_message_text or "").strip()
+                payload_overrides, message_overrides, ambiguity_reason = _build_confirmation_task_overrides(
+                    state,
+                    original_task_ids,
+                    message_text=message_text,
+                )
+                if ambiguity_reason is not None:
+                    logger.info(
+                        "confirmation_scoped_update_clarification",
+                        tasks=task_ids_to_reset,
+                        reason=ambiguity_reason,
+                    )
+                    return {
+                        "pending_interrupt": interrupt,
+                        "last_interrupt": interrupt,
+                        "tasks": state.tasks,
+                        "outbox": _build_confirmation_scope_clarification_outbox(state, interrupt),
+                    }
         logger.info(
             "confirmation_update_detected",
             tasks=interrupt.task_ids,
@@ -2025,12 +2336,11 @@ def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str
             clear_idempotency=True,
         )
         if interrupt.kind == "confirmation":
-            message_text = (state.last_message_text or "").strip()
-            message_overrides = _build_confirmation_message_overrides(
-                state,
-                task_ids_to_reset,
-                message_text=message_text,
-            )
+            if payload_overrides:
+                logger.info(
+                    "confirmation_task_payload_overrides_applied",
+                    task_ids=sorted(payload_overrides.keys()),
+                )
             if message_overrides:
                 logger.info(
                     "confirmation_task_message_overrides_applied",
@@ -2040,9 +2350,19 @@ def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str
                 task = state.tasks.get(task_id)
                 if task is None:
                     continue
+                if task_id in payload_overrides:
+                    task.payload.update(payload_overrides[task_id])
                 if task_id in message_overrides:
                     task.payload["pending_user_message"] = message_overrides[task_id]
                     task.payload["confirmation_message_scoped"] = True
+                elif task_id in payload_overrides:
+                    synthesized = _synth_confirmation_followup_message(task)
+                    if synthesized:
+                        task.payload["pending_user_message"] = synthesized
+                        task.payload["confirmation_message_scoped"] = True
+                    else:
+                        task.payload.pop("pending_user_message", None)
+                        task.payload.pop("confirmation_message_scoped", None)
                 else:
                     task.payload.pop("pending_user_message", None)
                     task.payload.pop("confirmation_message_scoped", None)
@@ -2290,6 +2610,21 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             locale=resolve_shortcut_locale((state.loaded_context or {}).get("language")).value
             if resolve_shortcut_locale((state.loaded_context or {}).get("language"))
             else None,
+        )
+        return _continue_flow_updates(state, interrupt)
+
+    confirmation_scope_shortcut_route = _resolve_deterministic_confirmation_scope_update_route(
+        state=state,
+        interrupt=interrupt,
+        text=text,
+    )
+    if confirmation_scope_shortcut_route is not None:
+        logger.info(
+            "interrupt_shortcut_hit",
+            kind=interrupt.kind,
+            decision=confirmation_scope_shortcut_route.decision,
+            reason=confirmation_scope_shortcut_route.reason,
+            status_query_type=confirmation_scope_shortcut_route.status_query_type,
         )
         return _continue_flow_updates(state, interrupt)
 

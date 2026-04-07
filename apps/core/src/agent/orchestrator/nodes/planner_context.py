@@ -496,6 +496,7 @@ def build_interrupt_context_from_summary(
     active_task_state_json: str,
     required_fields_json: str,
     prompt_text: str,
+    prompt_mode: str = "full",
 ) -> str:
     sections = [
         (
@@ -514,15 +515,17 @@ def build_interrupt_context_from_summary(
         f"RECENT_DOMAIN_FOCUS={summary.recent_domain_focus or 'none'}",
         f"RECENT_ANSWER_FOCUS={summary.recent_answer_focus or 'none'}",
     ]
-    if summary.query_session_summary and summary.query_session_active:
+    if prompt_mode != "compact" and summary.query_session_summary and summary.query_session_active:
         shared_lines.append("QUERY_SESSION:")
         shared_lines.append(_clip_text(summary.query_session_summary, INTERRUPT_CONTEXT_SECTION_MAX_CHARS))
-    if summary.active_flow_summary:
-        active_lines = [summary.active_flow_summary]
-        if summary.active_flow_interrupt_kind:
-            active_lines.append(f"Interrupt Kind: {summary.active_flow_interrupt_kind}")
-        if summary.active_flow_missing_fields:
-            active_lines.append(f"Missing Fields: {', '.join(summary.active_flow_missing_fields)}")
+    active_lines: list[str] = []
+    if prompt_mode != "compact" and summary.active_flow_summary:
+        active_lines.append(summary.active_flow_summary)
+    if summary.active_flow_interrupt_kind:
+        active_lines.append(f"Interrupt Kind: {summary.active_flow_interrupt_kind}")
+    if summary.active_flow_missing_fields:
+        active_lines.append(f"Missing Fields: {', '.join(summary.active_flow_missing_fields)}")
+    if active_lines:
         shared_lines.append("TURN_CONTEXT_ACTIVE_FLOW:")
         shared_lines.append(
             _clip_text(

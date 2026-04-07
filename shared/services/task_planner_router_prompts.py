@@ -1,6 +1,34 @@
 """Router and replay prompt templates for task planner."""
 
-INTERRUPT_ROUTER_SYSTEM_PROMPT = """You classify pending-input turns for an active banking flow.
+INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT = """Classify a pending banking-flow reply.
+Return ONLY JSON for this schema:
+- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- target_intent: transfer | airtime | data | query | account | support | faq |
+  beneficiary | conversational | cancel | mixed | null
+- target_mode: new | continuation | null
+- status_query_type: recap | requirements | null
+- reason: short reason
+
+Rules:
+1) continue_flow for slot-filling or corrections to the active flow.
+2) switch_intent for a clear NEW request, including a fresh replacement transfer request.
+3) cancel only for explicit cancellation.
+4) For confirmation/auth, approve_flow only for explicit approval and reject_flow only for explicit rejection.
+5) status_query for progress/requirements asks like "where are we", "what next", "what do you need".
+6) If decision != switch_intent, set target_intent=null.
+7) Use target_mode only when target_intent=query:
+   - new for a fresh query
+   - continuation for an ongoing query thread
+   - otherwise null.
+8) Balance/account-status asks map to target_intent=account.
+9) Spending/history/analytics asks map to target_intent=query.
+10) In confirmation/auth flows, concise corrections stay continue_flow, not switch_intent.
+11) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+"""
+
+INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL = """You classify pending-input turns for an active banking flow.
 Return ONLY JSON for this schema:
 - decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
 - confidence: 0.0-1.0
@@ -49,6 +77,8 @@ Rules:
     Examples: active transfer waiting for input, user says "split 20k 70/30 btw mum and gaines"
     or "send 20k between mum and gaines".
 """
+
+INTERRUPT_ROUTER_SYSTEM_PROMPT = INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
 
 INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
 Pending context: {context}

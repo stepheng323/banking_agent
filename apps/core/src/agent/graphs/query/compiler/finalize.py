@@ -328,7 +328,6 @@ def parse_deterministic(
 
     from apps.core.src.agent.graphs.query.models import (
         ExtractionIntent,
-        QueryAggregation,
         QueryOperation,
         QueryTimeRange,
     )
@@ -409,25 +408,20 @@ def parse_deterministic(
         )
         return parser._finalize_extraction(extraction, today=today, language=language)
 
-    match = re.fullmatch(r"how\s+much\s+(?:did|have)\s+i\s+(spend|spent|send|sent|pay|paid|receive|received)\s+(today|this week|this month|last week|last month|yesterday)", normalized)
+    match = re.fullmatch(
+        r"how\s+much\s+(?:did|have)\s+i\s+(receive|received|get|got)\s+last",
+        normalized,
+    )
     if match:
-        action, period_phrase = match.groups()
-        tx_type = cast(Literal["credit", "debit"], "credit" if action in ("receive", "received") else "debit")
-        period_map = {
-            "today": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
-            "yesterday": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday", days_back=1),
-            "this week": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
-            "this month": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
-            "last week": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
-            "last month": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_month"),
-        }
         extraction = QueryExtractionResult(
-            intent=ExtractionIntent.SPENDING_TOTAL,
-            query_operation=QueryOperation.SUM_TRANSACTIONS,
+            intent=ExtractionIntent.SINGLE_TRANSACTION,
+            query_operation=QueryOperation.SEARCH_SINGLE_TRANSACTION,
             raw_query=question,
-            time_range=period_map[period_phrase],
-            filters=QueryFilters(transaction_type=tx_type),
-            aggregation=QueryAggregation(type="sum"),
+            time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+            filters=QueryFilters(transaction_type="credit"),
+            result_limit=1,
+            result_reference="latest",
+            answer_fact_field="amount",
         )
         return parser._finalize_extraction(extraction, today=today, language=language)
 
@@ -435,6 +429,10 @@ def parse_deterministic(
 
 
 async def parse(parser: Any, question: str, today: Any, language: str = "en") -> QueryParseResult:
+    deterministic = parse_deterministic(parser, question, today=today, language=language)
+    if deterministic is not None:
+        return deterministic
+
     prompt = QUERY_PARSER_PROMPT.format(today=today.isoformat(), question=question)
     structured_llm = cast(Any, parser.llm).with_structured_output(ParserQueryExtraction)
 

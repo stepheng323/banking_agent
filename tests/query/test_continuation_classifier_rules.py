@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import QueryResultItem
+from apps.core.src.agent.graphs.query.models import Filters, QueryExecutionContract, QueryIntent, QueryResultItem
 from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier
 from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 
@@ -93,6 +93,33 @@ def test_beneficiary_summary_fact_followup_maps_to_recipient_drilldown_with_fact
     assert data["reason"] == "deterministic_recipient_fact_drill_down"
     assert data["recipient_name"] == "Adesanya Kunle"
     assert data["fact_field"] == "date"
+
+
+def test_direct_answer_recipient_delta_reply_maps_to_recipient_drilldown() -> None:
+    classifier = _classifier()
+    surface_view = SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"})
+    query_contract = QueryExecutionContract(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_start=date(2026, 4, 1),
+        time_end=date(2026, 4, 6),
+        filters=Filters(counterparty=["Mum"], transaction_type="debit"),
+        result_limit=1,
+        result_reference="latest",
+    )
+
+    guarded = classifier._guardrail_classify(
+        message="What about tolu?",
+        items=None,
+        surface_view=surface_view,
+        language="en",
+        query_contract=query_contract,
+    )
+
+    assert guarded is not None
+    continuation_type, data = guarded
+    assert continuation_type == "recipient_drill_down"
+    assert data["reason"] == "deterministic_scoped_recipient_delta"
+    assert data["recipient_name"] == "tolu"
 
 
 def test_retransfer_phrase_maps_to_drill_down_for_list_surface() -> None:

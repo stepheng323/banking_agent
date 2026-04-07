@@ -1,4 +1,5 @@
 """Task planner for breaking down user requests into executable tasks."""
+
 import time
 from typing import Any, cast
 
@@ -15,6 +16,8 @@ from shared.services.task_planner_prompts import (
 )
 from shared.services.task_planner_router_prompts import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
+    INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT,
+    INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
     INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE,
     QUOTED_REPLAY_SYSTEM_PROMPT,
     QUOTED_REPLAY_USER_PROMPT_TEMPLATE,
@@ -170,6 +173,7 @@ class TaskPlanner:
         context: str = "None",
         *,
         path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
         """Classify whether pending-input turn should continue current flow or switch intent."""
         user_prompt = INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE.format(
@@ -177,7 +181,11 @@ class TaskPlanner:
             user_message=text,
             context=context,
         )
-        system_prompt = INTERRUPT_ROUTER_SYSTEM_PROMPT
+        system_prompt = (
+            INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
+            if prompt_mode == "compact"
+            else INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+        )
         start = time.perf_counter()
         result = await self.structured_interrupt_router.ainvoke(
             [
@@ -194,6 +202,7 @@ class TaskPlanner:
             user_chars=len(user_prompt),
             context_chars=len(context),
             context_mode="compact" if context == "None" else "full",
+            prompt_mode=prompt_mode,
         )
         self._log_latency_span(span="interrupt_router_llm", duration_ms=duration_ms, path_label=path_label)
         if isinstance(result, InterruptRouteDecision):
@@ -241,6 +250,8 @@ class TaskPlanner:
 OrchestratorTaskPlanner = TaskPlanner
 
 __all__ = [
+    "INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT",
+    "INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL",
     "INTERRUPT_ROUTER_SYSTEM_PROMPT",
     "PLANNER_PROMPT_BASELINE_RESULT",
     "PLANNER_RULE_ATOMS",

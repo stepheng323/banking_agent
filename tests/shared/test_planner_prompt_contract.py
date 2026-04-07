@@ -6,6 +6,8 @@ import tiktoken
 
 from shared.services.task_planner import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
+    INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT,
+    INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
     PLANNER_PROMPT_BASELINE_RESULT,
     SEMANTIC_ROUTER_SYSTEM_PROMPT,
     PlannerPromptBuildInput,
@@ -63,6 +65,15 @@ def test_interrupt_status_query_contract_present() -> None:
     assert '"make it 20k"' in INTERRUPT_ROUTER_SYSTEM_PROMPT
     assert '"split 20k 70/30 btw mum and gaines"' in INTERRUPT_ROUTER_SYSTEM_PROMPT
     assert "target_intent=null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
+
+
+def test_interrupt_compact_prompt_is_shorter_but_keeps_core_contract() -> None:
+    assert len(INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT) < len(INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL)
+    assert "decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query" in (
+        INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
+    )
+    assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
+    assert "Balance/account-status asks map to target_intent=account." in INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
 
 
 def test_transfer_recipient_fidelity_rules_present() -> None:

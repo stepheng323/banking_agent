@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from apps.core.src.agent.graphs.query.models import QueryResultItem
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent, QueryResultItem
 from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from shared.i18n import render_message
 
@@ -43,6 +43,7 @@ _FILTER_DELTA_RE = re.compile(
     r"^(?:what about|how about|show me?|and)\s+(credit|debit)s?(?:\?|!|\.)?$",
     re.IGNORECASE,
 )
+_RECIPIENT_DELTA_RE = re.compile(r"^(?:what about|how about|and)\s+(.+?)(?:\?|!|\.)?$", re.IGNORECASE)
 _FRESH_LIST_RESET_PATTERNS = (
     re.compile(
         r"^(?:show|list|check|display|see|get|view)\s+.+\brecent\b.+\b(?:transactions?|debits?|credits?|payments?)\b(?:.*)?$",
@@ -88,12 +89,14 @@ class ContinuationClassifier:
         items: list[QueryResultItem] | None,
         surface_view: SurfaceView | None,
         language: str,
+        query_contract: QueryExecutionContract | None = None,
     ) -> tuple[str, dict[str, Any]] | None:
         return self.guardrail_classify(
             message=message,
             items=items,
             surface_view=surface_view,
             language=language,
+            query_contract=query_contract,
         )
 
     @staticmethod
@@ -181,6 +184,44 @@ class ContinuationClassifier:
 
         return None
 
+    def _resolve_recipient_delta_reply(
+        self,
+        *,
+        message: str,
+        surface_view: SurfaceView | None,
+        query_contract: QueryExecutionContract | None,
+    ) -> str | None:
+        if query_contract is None or query_contract.filters is None or not query_contract.filters.counterparty:
+            return None
+        if query_contract.intent not in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}:
+            return None
+        surface_mode = self._surface_mode(surface_view)
+        if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
+            return None
+        candidate_match = _RECIPIENT_DELTA_RE.match(self._normalize_message(message))
+        if candidate_match is None:
+            return None
+        candidate = self._strip_trailing_punctuation(candidate_match.group(1))
+        if not candidate:
+            return None
+        lowered = candidate.lower()
+        if lowered in {
+            "today",
+            "yesterday",
+            "last week",
+            "this week",
+            "last month",
+            "this month",
+            "credit",
+            "credits",
+            "debit",
+            "debits",
+        }:
+            return None
+        if any(ch.isdigit() for ch in candidate):
+            return None
+        return " ".join(candidate.split())
+
     def guardrail_classify(
         self,
         *,
@@ -188,6 +229,7 @@ class ContinuationClassifier:
         items: list[QueryResultItem] | None,
         surface_view: SurfaceView | None,
         language: str,
+        query_contract: QueryExecutionContract | None = None,
     ) -> tuple[str, dict[str, Any]] | None:
         normalized = self._strip_trailing_punctuation(self._normalize_message(message))
         if not normalized:
@@ -251,6 +293,20 @@ class ContinuationClassifier:
                 "confidence": 0.95,
                 "reason": "deterministic_filter_delta",
                 "transaction_type": filter_match.group(1).lower(),
+            }
+
+        scoped_recipient = self._resolve_recipient_delta_reply(
+            message=message,
+            surface_view=surface_view,
+            query_contract=query_contract,
+        )
+        if scoped_recipient:
+            return "recipient_drill_down", {
+                "confidence": 0.95,
+                "reason": "deterministic_scoped_recipient_delta",
+                "delta_type": "filter",
+                "recipient_name": scoped_recipient,
+                "fact_field": None,
             }
 
         if surface_view is not None and self._is_fresh_list_reset_request(message):

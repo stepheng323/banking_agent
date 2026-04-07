@@ -433,7 +433,7 @@ def build_time_range(
         and effective_intent == ExtractionIntent.SINGLE_TRANSACTION
         and query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
         and result_reference == "latest"
-        and answer_fact_field == "date"
+        and answer_fact_field in {"date", "counterparty", "amount", "bank"}
     ):
         days_back = QUERY_LIMITS["max_lookback_days"]
     elif reference_type == TimeReference.UNSPECIFIED:
