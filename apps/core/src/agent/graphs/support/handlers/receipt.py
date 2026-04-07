@@ -14,13 +14,13 @@ async def handle_receipt_request(transaction: dict[str, Any], *, locale: str = "
     Handle receipt_request intent.
     Only provides receipt for successful transactions.
     """
-    status = transaction.get("status", "unknown")
+    status = str(transaction.get("status", "unknown") or "unknown").strip().lower()
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
     tx_id = transaction.get("transaction_id", "")
     created_at = transaction.get("created_at", "")
 
-    if status != "success":
+    if status not in {"success", "successful"}:
         message = render_message("support.receipt.unavailable_for_status", locale, {"status": status})
         return SupportResponse(
             message=message,

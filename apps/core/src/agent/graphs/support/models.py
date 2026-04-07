@@ -53,6 +53,30 @@ class TransactionReference(BaseModel):
     use_recent: bool = Field(default=False, description="Use most recent tx")
 
 
+class SupportReferenceCandidate(BaseModel):
+    """Resolvable support follow-up candidate kept across clarification turns."""
+
+    transaction_id: str
+    ordinal: int
+    task_type: str
+    amount: float | None = None
+    recipient_name: str | None = None
+    recipient_resolved_name: str | None = None
+    recipient_label: str | None = None
+    bank_display: str | None = None
+    account_display: str | None = None
+    final_status: Literal["success", "processing", "failed"] = "success"
+    receipt_allowed: bool = False
+
+
+class PendingReferenceState(BaseModel):
+    """Pending clarification state for follow-up transaction resolution."""
+
+    source: Literal["recent_batch"] = "recent_batch"
+    candidates: list[SupportReferenceCandidate] = Field(default_factory=list)
+    reminder: str | None = None
+
+
 class SupportContext(BaseModel):
     """Session context for support continuity."""
 
@@ -61,6 +85,7 @@ class SupportContext(BaseModel):
     last_issue_intent: SupportIntent | None = Field(default=None)
     last_support_step: str | None = Field(default=None, description="collect_ref, explained_status, etc")
     attempts: int = Field(default=0, description="Resolution attempts in this session")
+    pending_reference: PendingReferenceState | None = Field(default=None)
 
 
 class SupportExtractionResult(BaseModel):

@@ -1,5 +1,7 @@
 """Direct-path gate tests for conversational i18n behavior."""
 
+import json
+
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import (
@@ -58,6 +60,79 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_decision"] == "meta_direct"
+
+
+async def test_gate_routes_recent_batch_receipt_followup_to_support_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run for recent batch receipt follow-up",
+        )
+    )
+    redis_client = _TrackingLocaleRedis()
+    redis_client.store["async-group:recent-batch:927331985"] = json.dumps(
+        {
+            "async_group_id": "group-1",
+            "stored_at_ts": 1,
+            "legs": [
+                {
+                    "index": 1,
+                    "transaction_id": "tx-1",
+                    "task_type": "transfer",
+                    "amount": 10000,
+                    "recipient_name": "Mum",
+                    "recipient_resolved_name": "Mercy Johnson",
+                    "recipient_label": "Mercy Johnson",
+                    "bank_display": "Opay",
+                    "account_display": "8162511023",
+                    "final_status": "success",
+                    "receipt_allowed": True,
+                },
+                {
+                    "index": 2,
+                    "transaction_id": "tx-2",
+                    "task_type": "transfer",
+                    "amount": 10000,
+                    "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adedayo",
+                    "recipient_label": "Tolu Adedayo",
+                    "bank_display": "First Bank",
+                    "account_display": "0760505261",
+                    "final_status": "success",
+                    "receipt_allowed": True,
+                },
+            ],
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_receipt_recent_batch",
+        phone_number="2348162511023",
+        channel="telegram",
+        channel_identity="927331985",
+        last_message_text="Get me the receipt for the second transaction",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_decision"] == "recent_batch_receipt_support"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+    assert task.payload["intent"] == "receipt_request"
+    assert task.payload["recent_batch_followup"] is True
 
 
 async def test_gate_handles_capitalized_greeting_meta_before_query_routing() -> None:

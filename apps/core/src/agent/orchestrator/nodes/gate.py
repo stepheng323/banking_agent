@@ -31,6 +31,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     get_or_build_turn_context_summary,
 )
 from shared.i18n import LocaleManager, render_locale_switched, render_message
+from shared.services.async_completion import get_recent_batch_reference
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -242,6 +243,10 @@ _QUERY_DOMAIN_PATTERNS = (
     r"^(?:what(?:'s| is|'s)|how\s+much\s+is)\s+my\s+(?:spending|expenses?|income|inflow)",
     r"^who\s+did\s+i\s+(?:send|transfer|pay)\s+(?:money\s+)?to",
     r"^(?:top|my)\s+(?:recipients?|beneficiar)",
+)
+_RECEIPT_REQUEST_RE = re.compile(
+    r"\b(?:receipt|proof\s+of\s+payment|payment\s+receipt|show\s+receipt|send\s+receipt)\b",
+    re.IGNORECASE,
 )
 EXPLICIT_CANCEL_PATTERNS = (
     r"\bcancel\b",
@@ -462,6 +467,17 @@ def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
 
 def _current_locale(state: OrchestratorState) -> str:
     return LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+
+
+def _recent_batch_identity_for_state(state: OrchestratorState) -> str | None:
+    for value in (state.channel_identity, state.phone_number, state.user_id):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _looks_like_receipt_request(message_text: str) -> bool:
+    return bool(_RECEIPT_REQUEST_RE.search(message_text or ""))
 
 
 def _normalize_user_text(message_text: str) -> str:
@@ -1042,6 +1058,35 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             "final_response": clarify_message(state, current_locale),
             **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
+
+    if not live_pending_interrupt and redis_client and _looks_like_receipt_request(message_text):
+        recent_batch_identity = _recent_batch_identity_for_state(state)
+        recent_batch = await get_recent_batch_reference(redis_client, identity=recent_batch_identity)
+        if recent_batch is not None and recent_batch.get("legs"):
+            task_id, spec = _build_direct_domain_task(state=state, domain="support")
+            spec.payload["intent"] = "receipt_request"
+            spec.payload["recent_batch_followup"] = True
+            logger.info(
+                "gate_recent_batch_receipt_support_handoff",
+                task_id=task_id,
+                async_group_id=recent_batch.get("async_group_id"),
+                identity=recent_batch_identity,
+            )
+            return {
+                **gate_updates,
+                "tasks": {task_id: spec},
+                "waves": [[task_id]],
+                "current_wave_index": 0,
+                "planner_output": None,
+                "pending_interrupt": None,
+                "direct_path_triggered": True,
+                "semantic_path_shape": "support_receipt_direct",
+                **_route_observability_updates(
+                    owner="guardrail",
+                    decision="recent_batch_receipt_support",
+                    target_domain="support",
+                ),
+            }
 
     if not live_pending_interrupt and redis_client:
         import json

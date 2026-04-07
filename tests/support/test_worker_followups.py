@@ -1,0 +1,418 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
+import pytest
+
+from apps.core.src.agent.graphs.support.worker import SupportWorker
+from apps.core.src.agent.orchestrator.models.domain import SupportOutcome
+from shared.services.async_completion import record_group_leg_and_maybe_build_summary
+
+
+class _RedisStub:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
+
+    async def get(self, key: str):
+        return self.values.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
+        del ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def setex(self, key: str, ttl: int, value: str):
+        del ttl
+        self.values[key] = value
+
+    async def delete(self, key: str):
+        self.values.pop(key, None)
+
+    async def hset(self, key: str, field: str, value: str):
+        self.hashes.setdefault(key, {})[field] = value
+
+    async def expire(self, key: str, ttl: int):
+        del key, ttl
+
+    async def hlen(self, key: str) -> int:
+        return len(self.hashes.get(key, {}))
+
+    async def hgetall(self, key: str):
+        return dict(self.hashes.get(key, {}))
+
+
+class _TxRepoStub:
+    def __init__(self, transactions: dict[str, object]) -> None:
+        self.transactions = transactions
+
+    async def get_by_id(self, transaction_id: str):
+        return self.transactions.get(transaction_id)
+
+    async def get_by_idempotency_key(self, idempotency_key: str):
+        return None
+
+    async def get_by_user(self, user_id: str, limit: int = 50):
+        del user_id, limit
+        return []
+
+    async def get_by_status(self, user_id: str, status: str):
+        del user_id, status
+        return []
+
+
+class _ActionableRepoStub:
+    async def get_by_channel_message_id_for_user(self, channel_message_id: str, user_id: str):
+        del channel_message_id, user_id
+        return None
+
+
+def _tx(
+    transaction_id: str,
+    *,
+    amount: float,
+    recipient_name: str,
+    bank_name: str,
+    account_number: str,
+    status: str = "successful",
+):
+    return SimpleNamespace(
+        id=transaction_id,
+        transaction_type="transfer",
+        transaction_id=transaction_id,
+        status=status,
+        amount=amount,
+        currency="NGN",
+        recipient_name=recipient_name,
+        recipient_account_number=account_number,
+        recipient_bank_code="011",
+        recipient_bank_name=bank_name,
+        source_bank_name="Zenith Bank",
+        narration=None,
+        error_message=None,
+        provider_response={},
+        provider_status=status,
+        provider_error_code="00" if status == "successful" else None,
+        created_at=datetime.now(UTC).replace(tzinfo=None),
+        completed_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+
+
+def _worker(redis_client: _RedisStub, transactions: dict[str, object]) -> SupportWorker:
+    return SupportWorker(
+        llm=SimpleNamespace(),
+        transaction_repo=_TxRepoStub(transactions),
+        actionable_message_repo=_ActionableRepoStub(),
+        redis_client=redis_client,
+    )
+
+
+@pytest.mark.asyncio
+async def test_support_worker_enqueues_single_transfer_receipt_for_successful_transaction() -> None:
+    worker = _worker(
+        _RedisStub(),
+        {
+            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
+        },
+    )
+
+    result = await worker.run(
+        payload={
+            "intent": "receipt_request",
+            "transaction": {
+                "id": "tx-1",
+                "transaction_type": "transfer",
+                "transaction_id": "tx-1",
+                "status": "successful",
+                "amount": 10000,
+                "recipient_name": "Mercy Johnson",
+                "recipient_account_number": "8162511023",
+                "recipient_bank_name": "Opay",
+                "source_bank_name": "Zenith Bank",
+                "narration": "Allowance",
+            },
+        },
+        context={
+            "phone_number": "2348162511023",
+            "channel": "telegram",
+            "channel_identity": "927331985",
+            "language": "en",
+        },
+        user_message="Get me the receipt",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert result.response is not None and "image shortly" in result.response
+    assert len(result.receipt_jobs) == 1
+    assert result.receipt_jobs[0]["transaction_reference"] == "tx-1"
+
+
+def _group_message(tx_id: str, index: int) -> dict[str, object]:
+    return {
+        "transaction_id": tx_id,
+        "async_group": {
+            "async_group_id": "group-receipt",
+            "async_group_size": 2,
+            "async_group_kind": "multi_transfer",
+            "async_group_index": index,
+        },
+        "channel": "telegram",
+        "channel_identity": "927331985",
+        "phone_number": "2348162511023",
+    }
+
+
+def _leg_payload(*, amount: int, recipient_name: str, resolved_name: str, account: str, bank: str) -> dict[str, object]:
+    return {
+        "amount": amount,
+        "recipient_name": recipient_name,
+        "recipient_resolved_name": resolved_name,
+        "recipient_account": account,
+        "recipient_bank_name": bank,
+        "final_status": "success",
+    }
+
+
+@pytest.mark.asyncio
+async def test_support_worker_resolves_batch_receipt_followup_by_ordinal() -> None:
+    redis_client = _RedisStub()
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-1", 1),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=10000,
+            recipient_name="Mum",
+            resolved_name="Mercy Johnson",
+            account="8162511023",
+            bank="Opay",
+        ),
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-2", 2),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=5000,
+            recipient_name="Tolu",
+            resolved_name="Tolu Adedayo",
+            account="0760505261",
+            bank="First Bank",
+        ),
+        locale="en",
+    )
+
+    worker = _worker(
+        redis_client,
+        {
+            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
+            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+        },
+    )
+
+    result = await worker.run(
+        payload={"intent": "receipt_request"},
+        context={"phone_number": "2348162511023", "channel_identity": "927331985", "language": "en"},
+        user_message="Get me the receipt for the second transaction",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "receipt" in (result.response or "").lower()
+    assert len(result.receipt_jobs) == 1
+    receipt_job = result.receipt_jobs[0]
+    assert receipt_job["transaction_reference"] == "tx-2"
+    assert receipt_job["transfer_data"]["recipient"]["name"] == "Tolu Adedayo"
+    assert receipt_job["transfer_data"]["recipient"]["account_number"] == "0760505261"
+
+
+@pytest.mark.asyncio
+async def test_support_worker_keeps_batch_clarification_alive_for_acknowledgement_reply() -> None:
+    redis_client = _RedisStub()
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-1", 1),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=10000,
+            recipient_name="Mum",
+            resolved_name="Mercy Johnson",
+            account="8162511023",
+            bank="Opay",
+        ),
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-2", 2),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=5000,
+            recipient_name="Tolu",
+            resolved_name="Tolu Adedayo",
+            account="0760505261",
+            bank="First Bank",
+        ),
+        locale="en",
+    )
+
+    worker = _worker(redis_client, {})
+
+    first = await worker.run(
+        payload={"intent": "receipt_request"},
+        context={"phone_number": "2348162511023", "channel_identity": "927331985", "language": "en"},
+        user_message="Get me the receipt for the transaction",
+    )
+    second = await worker.run(
+        payload={},
+        context={"phone_number": "2348162511023", "channel_identity": "927331985", "language": "en"},
+        user_message="Ok",
+    )
+
+    assert first.outcome == SupportOutcome.NEEDS_INPUT
+    assert "Are you referring to:" in first.response
+    assert "1️⃣" in first.response
+    assert "2️⃣" in first.response
+    assert second.outcome == SupportOutcome.NEEDS_INPUT
+    assert second.response == "Reply with 1 or 2."
+
+
+@pytest.mark.asyncio
+async def test_support_worker_enqueues_all_receipts_for_recent_transfer_batch_in_order() -> None:
+    redis_client = _RedisStub()
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-1", 1),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=10000,
+            recipient_name="Mum",
+            resolved_name="Mercy Johnson",
+            account="8162511023",
+            bank="Opay",
+        ),
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-2", 2),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=5000,
+            recipient_name="Tolu",
+            resolved_name="Tolu Adedayo",
+            account="0760505261",
+            bank="First Bank",
+        ),
+        locale="en",
+    )
+
+    worker = _worker(
+        redis_client,
+        {
+            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
+            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+        },
+    )
+
+    result = await worker.run(
+        payload={"intent": "receipt_request"},
+        context={
+            "phone_number": "2348162511023",
+            "channel": "telegram",
+            "channel_identity": "927331985",
+            "language": "en",
+        },
+        user_message="Send all the receipts",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "receipts" in (result.response or "").lower()
+    assert [job["transaction_reference"] for job in result.receipt_jobs] == ["tx-1", "tx-2"]
+
+
+@pytest.mark.asyncio
+async def test_support_worker_all_receipts_skips_non_successful_and_non_transfer_legs() -> None:
+    redis_client = _RedisStub()
+    base_message = {
+        "async_group": {
+            "async_group_id": "group-mixed",
+            "async_group_size": 3,
+            "async_group_kind": "mixed_batch",
+            "async_group_index": 1,
+        },
+        "channel": "telegram",
+        "channel_identity": "927331985",
+        "phone_number": "2348162511023",
+    }
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message={**base_message, "transaction_id": "tx-1", "async_group": {**base_message["async_group"], "async_group_index": 1}},
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=10000,
+            recipient_name="Mum",
+            resolved_name="Mercy Johnson",
+            account="8162511023",
+            bank="Opay",
+        ),
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message={**base_message, "transaction_id": "tx-2", "async_group": {**base_message["async_group"], "async_group_index": 2}},
+        task_type="transfer",
+        payload={
+            **_leg_payload(
+                amount=5000,
+                recipient_name="Tolu",
+                resolved_name="Tolu Adedayo",
+                account="0760505261",
+                bank="First Bank",
+            ),
+            "final_status": "processing",
+        },
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message={**base_message, "transaction_id": "tx-3", "async_group": {**base_message["async_group"], "async_group_index": 3}},
+        task_type="airtime",
+        payload={"amount": 2000, "network": "MTN", "phone_number": "2348012345678", "final_status": "success"},
+        locale="en",
+    )
+
+    worker = _worker(
+        redis_client,
+        {
+            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
+            "tx-2": _tx(
+                "tx-2",
+                amount=5000,
+                recipient_name="Tolu Adedayo",
+                bank_name="First Bank",
+                account_number="0760505261",
+                status="pending",
+            ),
+        },
+    )
+
+    result = await worker.run(
+        payload={"intent": "receipt_request"},
+        context={
+            "phone_number": "2348162511023",
+            "channel": "telegram",
+            "channel_identity": "927331985",
+            "language": "en",
+        },
+        user_message="all receipts",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert [job["transaction_reference"] for job in result.receipt_jobs] == ["tx-1"]
+    assert "skipped" in (result.response or "").lower()
+    assert "pending" in (result.response or "").lower()
+    assert "non-transfer" in (result.response or "").lower()

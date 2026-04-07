@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from shared.services.async_completion import record_group_leg_and_maybe_build_summary
+from shared.services.async_completion import get_recent_batch_reference, record_group_leg_and_maybe_build_summary
 
 
 class _RedisStub:
@@ -220,3 +220,34 @@ async def test_async_completion_transfer_summary_sends_initial_then_final_update
     assert "Transaction Summary" in final_summary["text"] or "Transfers Complete" in final_summary["text"]
     assert "✓ ₦10,000 → Mum" in final_summary["text"]
     assert "✗ ₦6,000 → Tolu" in final_summary["text"]
+
+
+async def test_async_completion_stores_recent_batch_reference_by_delivery_identity() -> None:
+    redis_client = _RedisStub()
+    first_leg = _message(transaction_id="tx-1", async_group_id="group-recent", async_group_index=1)
+    first_leg["channel_identity"] = "927331985"
+    second_leg = _message(transaction_id="tx-2", async_group_id="group-recent", async_group_index=2)
+    second_leg["channel_identity"] = "927331985"
+
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=first_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=10000, recipient="Mum", final_status="success"),
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=second_leg,
+        task_type="transfer",
+        payload=_transfer_payload(amount=6000, recipient="Tolu", final_status="success"),
+        locale="en",
+    )
+
+    recent = await get_recent_batch_reference(redis_client, identity="927331985")
+
+    assert recent is not None
+    assert recent["async_group_id"] == "group-recent"
+    assert len(recent["legs"]) == 2
+    assert recent["legs"][1]["recipient_name"] == "Tolu"
+    assert recent["legs"][1]["receipt_allowed"] is True

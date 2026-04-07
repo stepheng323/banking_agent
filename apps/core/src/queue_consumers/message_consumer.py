@@ -405,26 +405,39 @@ class MessageConsumer:
             )
 
             intents: list[UiIntent] = orchestrator_output.get("intents", [])
+            raw_outbox = orchestrator_output.get("outbox")
             response_text = orchestrator_output.get("text")
             delivery_metadata = (
                 orchestrator_output.get("delivery_metadata")
                 if isinstance(orchestrator_output.get("delivery_metadata"), dict)
                 else {}
             )
-            has_primary_interaction = any(
-                isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions, ShowFlow))
-                for intent in intents
-            )
-            if response_text and not has_primary_interaction and not any(isinstance(intent, Say) for intent in intents):
-                intents.append(Say(text=response_text))
-
+            intents_to_send: list[UiIntent | dict[str, Any]]
             if intents:
+                has_primary_interaction = any(
+                    isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions, ShowFlow))
+                    for intent in intents
+                )
+                if response_text and not has_primary_interaction and not any(isinstance(intent, Say) for intent in intents):
+                    intents.append(Say(text=response_text))
+                intents_to_send = cast(list[UiIntent | dict[str, Any]], intents)
+            else:
+                fallback_outbox = [item for item in raw_outbox if isinstance(item, dict)] if isinstance(raw_outbox, list) else []
+                intents_to_send = fallback_outbox
+                if fallback_outbox:
+                    logger.warning(
+                        "message_consumer_empty_intents_falling_back_to_raw_outbox",
+                        outbox_count=len(fallback_outbox),
+                        message_id=message.message_id,
+                    )
+
+            if intents_to_send:
                 outbox_start = time.perf_counter()
                 await enqueue_outbox_intents(
                     self.publisher,
                     channel_user_id,
                     message.channel,
-                    cast(list[UiIntent | dict[str, Any]], intents),
+                    intents_to_send,
                     metadata={"source": "message_consumer", "message_id": message.message_id, **delivery_metadata},
                 )
                 self._log_latency_span(
@@ -433,7 +446,7 @@ class MessageConsumer:
                     channel_user_id=channel_user_id,
                     phone_number=phone_number,
                 )
-                logger.info("message_consumer_enqueued_outbox", count=len(intents))
+                logger.info("message_consumer_enqueued_outbox", count=len(intents_to_send))
         except Exception:
             await runtime_orchestrator.context_manager.release_inbound_message_claim(
                 phone_number, str(message.message_id)

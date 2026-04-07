@@ -363,6 +363,45 @@ async def test_message_consumer_does_not_append_say_for_show_flow(monkeypatch: p
 
 
 @pytest.mark.asyncio
+async def test_message_consumer_falls_back_to_raw_outbox_when_intents_are_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        output={
+            "intents": [],
+            "outbox": [{"type": "say", "text": "I am generating your receipt now."}],
+            "text": None,
+        },
+    )
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    sent_payloads: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        sent_payloads.append(list(args))
+
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    response = await consumer._handle_message(_message("wamid-outbox-fallback"))
+
+    assert response is not None
+    assert response["status"] == "success"
+    assert len(sent_payloads) == 1
+    assert sent_payloads[0][3] == [{"type": "say", "text": "I am generating your receipt now."}]
+
+
+@pytest.mark.asyncio
 async def test_non_transaction_pin_verified_flow_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     context_manager = _ContextManagerStub(should_claim=True)
     orchestrator = _OrchestratorStub(context_manager)

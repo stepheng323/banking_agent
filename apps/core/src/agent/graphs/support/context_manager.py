@@ -90,6 +90,7 @@ class SupportContextManager:
 
         context.attempts = 0
         context.last_support_step = "resolved" if not ticket_id else "ticket_created"
+        context.pending_reference = None
 
         await self.save(user_id, context)
         return context

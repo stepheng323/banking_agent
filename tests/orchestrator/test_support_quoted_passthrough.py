@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 
 from apps.core.src.agent.orchestrator.execution.handlers import (
@@ -12,11 +14,12 @@ from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 class _SupportWorkerStub:
     def __init__(self) -> None:
         self.last_payload: dict | None = None
+        self.result = SupportResult(outcome=SupportOutcome.OK, response="ok")
 
     async def run(self, payload: dict, context: dict, user_message: str | None = None) -> SupportResult:
         del context, user_message
         self.last_payload = payload
-        return SupportResult(outcome=SupportOutcome.OK, response="ok")
+        return self.result
 
 
 @pytest.mark.asyncio
@@ -53,3 +56,42 @@ async def test_support_handler_passes_quoted_message_id_without_mutating_task_pa
     assert worker.last_payload["quoted_message_id"] == "wamid.receipt.1"
     assert "quoted_message_id" not in task.payload
     assert task.stage == TaskStage.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_support_handler_enqueues_receipt_jobs() -> None:
+    worker = _SupportWorkerStub()
+    worker.result = SupportResult(
+        outcome=SupportOutcome.OK,
+        response="sending",
+        receipt_jobs=[{"transaction_reference": "tx-2", "phone_number": "2348000000001"}],
+    )
+    publisher = AsyncMock()
+    task = TaskSpec(
+        id="t1",
+        type="support",
+        stage=TaskStage.DRAFT,
+        payload={"intent": "receipt_request"},
+    )
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348000000001",
+        channel="whatsapp",
+        last_message_text="receipt for the second transaction",
+        tasks={"t1": task},
+        waves=[["t1"]],
+        loaded_context={"language": "en", "user_id": "u1", "profile": {"email": "u1@example.com"}},
+    )
+
+    ctx = ExecutionContext(
+        state=state,
+        config={"configurable": {"publisher": publisher}},
+        services={"support": worker},
+        current_wave_len=1,
+        agg=ExecutionAggregation(state.tasks),
+    )
+
+    await handle_support_task(task, "t1", ctx)
+
+    publisher.publish.assert_awaited_once_with("receipt.process", {"transaction_reference": "tx-2", "phone_number": "2348000000001"})
+    assert ctx.agg.updates["outbox"] == [{"type": "say", "text": "sending"}]

@@ -3,6 +3,8 @@
 Stateless worker for Support tasks using LangGraph.
 """
 
+import re
+import uuid
 from typing import Any
 
 from apps.core.src.agent.graphs.support.classifier import SupportClassifier
@@ -26,18 +28,142 @@ from apps.core.src.agent.graphs.support.micro_resolver import (
     resolve as micro_resolve,
 )
 from apps.core.src.agent.graphs.support.models import (
+    PendingReferenceState,
     SupportExtractionResult,
     SupportIntent,
+    SupportReferenceCandidate,
     SupportResponse,
     TransactionReference,
 )
 from apps.core.src.agent.graphs.support.resolver import TransactionResolver
 from apps.core.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from shared.i18n import LocaleManager, render_message
+from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
+from shared.services.async_completion import RecentBatchLeg, get_recent_batch_reference
 from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_ACK_ONLY_RE = re.compile(r"^(ok(?:ay)?|alright|yes|yeah|yep|sure)\.?$", re.IGNORECASE)
+_ORDINAL_RE = re.compile(r"\b(?:(first|second|third|fourth|fifth|last)|([1-5])(?:st|nd|rd|th)?)\b", re.IGNORECASE)
+_AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)")
+_ALL_RECEIPTS_RE = re.compile(r"\b(?:all|every)\b.*\breceipts?\b|\breceipts?\b.*\b(?:all|every)\b", re.IGNORECASE)
+
+
+def _support_identity(context: dict[str, Any]) -> str | None:
+    for key in ("channel_identity", "phone_number", "user_id"):
+        value = context.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _normalize_match_text(value: str | None) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
+
+
+def _parse_amount_reference(message: str) -> float | None:
+    match = _AMOUNT_RE.search(message)
+    if match is None:
+        return None
+    try:
+        amount = float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    suffix = (match.group(2) or "").lower()
+    if suffix == "k":
+        amount *= 1000.0
+    elif suffix == "h":
+        amount *= 100.0
+    return amount if amount > 0 else None
+
+
+def _ordinal_from_message(message: str) -> int | None:
+    match = _ORDINAL_RE.search(message)
+    if match is None:
+        return None
+    word = str(match.group(1) or "").strip().lower()
+    if word == "last":
+        return -1
+    if word in {"first", "second", "third", "fourth", "fifth"}:
+        return {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}[word]
+    digit = str(match.group(2) or "").strip()
+    return int(digit) if digit.isdigit() else None
+
+
+def _candidate_label(candidate: SupportReferenceCandidate) -> str:
+    if candidate.recipient_label:
+        return candidate.recipient_label
+    if candidate.recipient_resolved_name:
+        return candidate.recipient_resolved_name
+    if candidate.recipient_name:
+        return candidate.recipient_name
+    return candidate.task_type.replace("_", " ").title()
+
+
+def _build_reference_prompt(candidates: list[SupportReferenceCandidate]) -> str:
+    if not candidates:
+        return "Which transaction do you mean?"
+    lines = ["I'm not sure which one you mean (Which transaction).", "", "Are you referring to:"]
+    for candidate in candidates:
+        amount = f"₦{candidate.amount:,.0f}" if isinstance(candidate.amount, (int, float)) else "This transaction"
+        lines.append(f"{candidate.ordinal}️⃣ {amount} — {_candidate_label(candidate)}")
+    lines.extend(["", "Reply with the number or rephrase."])
+    return "\n".join(lines)
+
+
+def _build_reference_reminder(candidates: list[SupportReferenceCandidate]) -> str:
+    if not candidates:
+        return render_message("support.ask_clarification", "en")
+    if len(candidates) == 1:
+        return "Reply with 1."
+    return f"Reply with 1 or {len(candidates)}."
+
+
+def _leg_to_candidate(leg: RecentBatchLeg) -> SupportReferenceCandidate | None:
+    transaction_id = leg.get("transaction_id")
+    if not isinstance(transaction_id, str) or not transaction_id.strip():
+        return None
+    return SupportReferenceCandidate(
+        transaction_id=transaction_id,
+        ordinal=int(leg.get("index") or 0),
+        task_type=str(leg.get("task_type") or ""),
+        amount=leg.get("amount"),
+        recipient_name=leg.get("recipient_name"),
+        recipient_resolved_name=leg.get("recipient_resolved_name"),
+        recipient_label=leg.get("recipient_label"),
+        bank_display=leg.get("bank_display"),
+        account_display=leg.get("account_display"),
+        final_status=str(leg.get("final_status") or "success"),
+        receipt_allowed=bool(leg.get("receipt_allowed")),
+    )
+
+
+def _is_all_receipts_request(message: str) -> bool:
+    return bool(_ALL_RECEIPTS_RE.search(message))
+
+
+def _build_batch_receipt_ack(
+    *,
+    total_jobs: int,
+    skipped_failed: int,
+    skipped_processing: int,
+    skipped_non_transfer: int,
+) -> str:
+    base = "I'm sending the receipt now." if total_jobs == 1 else "I'm sending the receipts for the successful transfers now."
+    skipped_parts: list[str] = []
+    if skipped_failed:
+        skipped_parts.append(f"{skipped_failed} failed")
+    if skipped_processing:
+        skipped_parts.append(f"{skipped_processing} pending")
+    if skipped_non_transfer:
+        skipped_parts.append(f"{skipped_non_transfer} non-transfer")
+    if not skipped_parts:
+        return base
+    skipped_text = ", ".join(skipped_parts)
+    return f"{base} I skipped {skipped_text} item{'s' if sum((skipped_failed, skipped_processing, skipped_non_transfer)) != 1 else ''}."
 
 
 class SupportWorker:
@@ -57,6 +183,274 @@ class SupportWorker:
         self.context_manager = SupportContextManager(redis_client)
         self._ticket_service = ticket_service
 
+    def _build_receipt_transfer_data(self, transaction: dict[str, Any], *, locale: str) -> ReceiptTransferData:
+        return {
+            "amount": transaction.get("amount"),
+            "source": {
+                "name": transaction.get("source_bank_name"),
+                "account_name": transaction.get("source_bank_name") or render_message("query.receipt.user_account", locale),
+                "account_number": transaction.get("source_account_number"),
+            },
+            "recipient": {
+                "name": transaction.get("recipient_name"),
+                "account_number": transaction.get("recipient_account_number"),
+                "bank_name": transaction.get("recipient_bank_name"),
+            },
+            "narration": transaction.get("narration"),
+            "session_id": str(transaction.get("transaction_id") or transaction.get("id") or ""),
+        }
+
+    def _build_receipt_job(
+        self,
+        *,
+        transaction: dict[str, Any],
+        context: dict[str, Any],
+        locale: str,
+    ) -> ReceiptJobPayload:
+        phone_number = str(context.get("phone_number") or "")
+        channel = str(context.get("channel") or "whatsapp")
+        channel_identity = context.get("channel_identity")
+        transaction_reference = str(transaction.get("transaction_id") or transaction.get("id") or "")
+        return {
+            "phone_number": phone_number,
+            "channel": channel,
+            "channel_identity": str(channel_identity) if isinstance(channel_identity, str) and channel_identity.strip() else None,
+            "transfer_data": self._build_receipt_transfer_data(transaction, locale=locale),
+            "transaction_reference": transaction_reference or None,
+            "signal_key": f"receipt:{uuid.uuid4()}",
+        }
+
+    def _receipt_unavailable_result(self, *, transaction: dict[str, Any], locale: str) -> SupportResult:
+        response = render_message(
+            "support.receipt.unavailable_for_status",
+            locale,
+            {"status": str(transaction.get("status", "unknown") or "unknown").strip().lower()},
+        )
+        return SupportResult(
+            outcome=SupportOutcome.OK,
+            response=response,
+            final_message=response,
+        )
+
+    def _receipt_only_transfer_result(self, *, transaction_type: str, locale: str) -> SupportResult:
+        response = render_message(
+            "query.receipt.only_transfer",
+            locale,
+            {"transaction_type": transaction_type.replace("_", " ") or "transaction"},
+        )
+        return SupportResult(
+            outcome=SupportOutcome.OK,
+            response=response,
+            final_message=response,
+        )
+
+    def _build_receipt_result(
+        self,
+        *,
+        transaction: dict[str, Any],
+        context: dict[str, Any],
+        locale: str,
+    ) -> SupportResult:
+        transaction_type = str(transaction.get("transaction_type") or "").strip().lower()
+        if transaction_type != "transfer":
+            return self._receipt_only_transfer_result(transaction_type=transaction_type, locale=locale)
+
+        status = str(transaction.get("status", "unknown") or "unknown").strip().lower()
+        if status not in {"success", "successful"}:
+            return self._receipt_unavailable_result(transaction=transaction, locale=locale)
+
+        response = render_message("query.receipt.generating", locale)
+        return SupportResult(
+            outcome=SupportOutcome.OK,
+            response=response,
+            final_message=response,
+            receipt_jobs=[self._build_receipt_job(transaction=transaction, context=context, locale=locale)],
+        )
+
+    async def _load_transaction_dict(self, transaction_id: str) -> dict[str, Any] | None:
+        tx = await self.resolver.tx_repo.get_by_id(transaction_id)
+        if not tx:
+            return None
+        return self.resolver.transaction_to_dict(tx)
+
+    def _match_reference_candidates(
+        self,
+        *,
+        message: str,
+        candidates: list[SupportReferenceCandidate],
+    ) -> list[SupportReferenceCandidate]:
+        if not message.strip():
+            return []
+
+        ordinal = _ordinal_from_message(message)
+        if ordinal is not None:
+            if ordinal == -1:
+                return [max(candidates, key=lambda candidate: candidate.ordinal)] if candidates else []
+            return [candidate for candidate in candidates if candidate.ordinal == ordinal]
+
+        normalized_message = _normalize_match_text(message)
+        if not normalized_message:
+            return []
+
+        amount = _parse_amount_reference(message)
+        if amount is not None:
+            amount_matches = [
+                candidate for candidate in candidates if candidate.amount is not None and abs(candidate.amount - amount) < 1
+            ]
+            if amount_matches:
+                return amount_matches
+
+        recipient_matches = []
+        for candidate in candidates:
+            labels = {
+                _normalize_match_text(candidate.recipient_label),
+                _normalize_match_text(candidate.recipient_name),
+                _normalize_match_text(candidate.recipient_resolved_name),
+            }
+            labels = {label for label in labels if label}
+            if any(label in normalized_message or normalized_message in label for label in labels):
+                recipient_matches.append(candidate)
+        return recipient_matches
+
+    async def _save_pending_reference(
+        self,
+        *,
+        user_id: str,
+        support_ctx: Any,
+        candidates: list[SupportReferenceCandidate],
+        locale: str,
+    ) -> None:
+        reminder = _build_reference_reminder(candidates)
+        support_ctx.pending_reference = PendingReferenceState(
+            source="recent_batch",
+            candidates=candidates,
+            reminder=reminder if locale == "en" else reminder,
+        )
+        await self.context_manager.save(user_id, support_ctx)
+
+    async def _clear_pending_reference(self, *, user_id: str, support_ctx: Any) -> None:
+        if support_ctx.pending_reference is None:
+            return
+        support_ctx.pending_reference = None
+        await self.context_manager.save(user_id, support_ctx)
+
+    async def _handle_pending_reference_followup(
+        self,
+        *,
+        user_id: str,
+        support_ctx: Any,
+        message: str,
+        locale: str,
+    ) -> tuple[dict[str, Any] | None, SupportResult | None]:
+        pending = support_ctx.pending_reference
+        if pending is None or not pending.candidates:
+            return None, None
+
+        if _ACK_ONLY_RE.match(message):
+            reminder = pending.reminder or _build_reference_reminder(pending.candidates)
+            await self.context_manager.save(user_id, support_ctx)
+            return None, SupportResult(outcome=SupportOutcome.NEEDS_INPUT, response=reminder)
+
+        matches = self._match_reference_candidates(message=message, candidates=pending.candidates)
+        if len(matches) != 1:
+            return None, None
+
+        resolved = await self._load_transaction_dict(matches[0].transaction_id)
+        if resolved is None:
+            return None, None
+
+        support_ctx.pending_reference = None
+        support_ctx.last_transaction_ref = str(resolved.get("id") or resolved.get("transaction_id") or "")
+        await self.context_manager.save(user_id, support_ctx)
+        return resolved, None
+
+    async def _resolve_recent_batch_receipt_reference(
+        self,
+        *,
+        user_id: str,
+        support_ctx: Any,
+        context: dict[str, Any],
+        message: str,
+        locale: str,
+    ) -> tuple[dict[str, Any] | None, SupportResult | None]:
+        identity = _support_identity(context)
+        recent_batch = await get_recent_batch_reference(self.context_manager.redis, identity=identity)
+        if recent_batch is None:
+            return None, None
+
+        candidates = [candidate for leg in recent_batch["legs"] if (candidate := _leg_to_candidate(leg)) is not None]
+        if not candidates:
+            return None, None
+
+        if _is_all_receipts_request(message):
+            ordered_candidates = sorted(candidates, key=lambda candidate: candidate.ordinal)
+            jobs: list[dict[str, Any]] = []
+            skipped_failed = 0
+            skipped_processing = 0
+            skipped_non_transfer = 0
+            for candidate in ordered_candidates:
+                if candidate.task_type != "transfer":
+                    skipped_non_transfer += 1
+                    continue
+                if not candidate.receipt_allowed:
+                    if candidate.final_status == "failed":
+                        skipped_failed += 1
+                    else:
+                        skipped_processing += 1
+                    continue
+                transaction = await self._load_transaction_dict(candidate.transaction_id)
+                if transaction is None:
+                    skipped_failed += 1
+                    continue
+                jobs.append(self._build_receipt_job(transaction=transaction, context=context, locale=locale))
+
+            if not jobs:
+                response = "I can't send receipts for that batch yet because none of those transfer legs completed successfully."
+                return None, SupportResult(
+                    outcome=SupportOutcome.OK,
+                    response=response,
+                    final_message=response,
+                )
+
+            await self._clear_pending_reference(user_id=user_id, support_ctx=support_ctx)
+            response = _build_batch_receipt_ack(
+                total_jobs=len(jobs),
+                skipped_failed=skipped_failed,
+                skipped_processing=skipped_processing,
+                skipped_non_transfer=skipped_non_transfer,
+            )
+            return None, SupportResult(
+                outcome=SupportOutcome.OK,
+                response=response,
+                final_message=response,
+                receipt_jobs=jobs,
+            )
+
+        matches = self._match_reference_candidates(message=message, candidates=candidates)
+        if len(matches) == 1:
+            resolved = await self._load_transaction_dict(matches[0].transaction_id)
+            if resolved is not None:
+                support_ctx.pending_reference = None
+                support_ctx.last_transaction_ref = str(resolved.get("id") or resolved.get("transaction_id") or "")
+                await self.context_manager.save(user_id, support_ctx)
+                return resolved, None
+
+        if len(matches) > 1:
+            prompt_candidates = sorted(matches, key=lambda candidate: candidate.ordinal)
+        else:
+            prompt_candidates = sorted(candidates, key=lambda candidate: candidate.ordinal)
+
+        await self._save_pending_reference(
+            user_id=user_id,
+            support_ctx=support_ctx,
+            candidates=prompt_candidates,
+            locale=locale,
+        )
+        return None, SupportResult(
+            outcome=SupportOutcome.NEEDS_INPUT,
+            response=_build_reference_prompt(prompt_candidates),
+        )
+
     async def run(
         self,
         payload: dict[str, Any],
@@ -75,6 +469,20 @@ class SupportWorker:
         transaction = payload.get("transaction")
 
         support_ctx = await self.context_manager.get(user_id)
+        pending_tx, pending_response = await self._handle_pending_reference_followup(
+            user_id=user_id,
+            support_ctx=support_ctx,
+            message=message,
+            locale=locale,
+        )
+        if pending_response is not None:
+            return pending_response
+        if pending_tx is not None:
+            return self._build_receipt_result(
+                transaction=pending_tx,
+                context=context,
+                locale=locale,
+            )
 
         try:
             # 1. Classification
@@ -114,9 +522,34 @@ class SupportWorker:
             extraction = SupportExtractionResult(
                 intent=intent,
                 intent_confidence=classification.confidence if classification else 1.0,
-                transaction_ref=tx_ref,
+                transaction_ref=tx_ref or TransactionReference(),
                 raw_issue=message,
             )
+            has_explicit_tx_ref = bool(tx_ref and self.resolver._has_explicit_ref(tx_ref))  # type: ignore[attr-defined]
+
+            resolved_tx = transaction
+            if (
+                resolved_tx is None
+                and intent == SupportIntent.RECEIPT_REQUEST
+                and not quoted_message_id
+                and not has_explicit_tx_ref
+            ):
+                resolved_tx, receipt_followup = await self._resolve_recent_batch_receipt_reference(
+                    user_id=user_id,
+                    support_ctx=support_ctx,
+                    context=context,
+                    message=message,
+                    locale=locale,
+                )
+                if receipt_followup is not None:
+                    return receipt_followup
+
+            if resolved_tx is not None and intent == SupportIntent.RECEIPT_REQUEST:
+                return self._build_receipt_result(
+                    transaction=resolved_tx,
+                    context=context,
+                    locale=locale,
+                )
 
             # 3. Micro-Resolution (Context Aware)
             decision = micro_resolve(
@@ -147,7 +580,6 @@ class SupportWorker:
                 )
 
             # 5. Transaction Resolution
-            resolved_tx = transaction
             if not resolved_tx and next_step in (
                 NextStep.LOOKUP_TRANSACTION,
                 NextStep.EXPLAIN_STATUS,
@@ -186,10 +618,23 @@ class SupportWorker:
                 return await self._create_ticket_response(user_id, intent, resolved_tx, reason, locale=locale)
 
             if resolved_tx or intent in (SupportIntent.TICKET_STATUS, SupportIntent.FRAUD_REPORT):
+                if intent == SupportIntent.RECEIPT_REQUEST and isinstance(resolved_tx, dict):
+                    return self._build_receipt_result(
+                        transaction=resolved_tx,
+                        context=context,
+                        locale=locale,
+                    )
                 response = await self._dispatch_handler(intent, resolved_tx, user_id=user_id, locale=locale)
 
                 if response and response.next_step == "NEEDS_INFO":
                     await self.context_manager.increment_attempts(user_id)
+
+                if isinstance(resolved_tx, dict):
+                    support_ctx.pending_reference = None
+                    support_ctx.last_transaction_ref = str(
+                        resolved_tx.get("id") or resolved_tx.get("transaction_id") or support_ctx.last_transaction_ref or ""
+                    )
+                    await self.context_manager.save(user_id, support_ctx)
 
                 final_msg = response.message if response else render_message("support.unable_to_process", locale)
                 return SupportResult(

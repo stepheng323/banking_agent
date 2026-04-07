@@ -926,6 +926,8 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
     user_msg = ctx.state.last_message_text
     context_data = {
         "phone_number": ctx.state.phone_number,
+        "channel": ctx.state.channel,
+        "channel_identity": ctx.state.channel_identity,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "email": ctx.state.loaded_context.get("profile", {}).get("email"),
         "language": _state_locale(ctx.state),
@@ -942,7 +944,21 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
     if result.outcome == SupportOutcome.OK:
         task.stage = TaskStage.COMPLETED
-        ctx.agg.say(result.response)
+        receipt_jobs = [job for job in result.receipt_jobs if isinstance(job, dict)]
+        if receipt_jobs:
+            publisher = ctx.config.get("configurable", {}).get("publisher")
+            if publisher is None:
+                ctx.agg.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
+            else:
+                try:
+                    for job in receipt_jobs:
+                        await publisher.publish("receipt.process", job)
+                except Exception:
+                    ctx.agg.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
+                else:
+                    ctx.agg.say(result.response)
+        else:
+            ctx.agg.say(result.response)
     elif result.outcome == SupportOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         if result.response:
