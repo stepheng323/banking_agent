@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent
 from apps.core.src.agent.orchestrator.system_profile import SYSTEM_PROFILE, SystemProfile
+from shared.assistant_profile.adapters import build_meta_profile_payload
+from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.i18n import LocaleManager, render_message
-from shared.policy.adapters import build_meta_policy_payload
-from shared.policy.loader import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -29,7 +29,7 @@ class MetaReply(BaseModel):
 
 META_SYSTEM_PROMPT = (
     "You write short WhatsApp replies for a banking assistant.\n"
-    "You MUST follow system_profile and soul_policy exactly.\n"
+    "You MUST follow system_profile and assistant_profile exactly.\n"
     "- Never claim a feature that is not listed in system_profile.supported_domains.\n"
     "- For identity/brand-origin answers, only use facts explicitly present in system_profile.\n"
     "- If asked about something not supported, say it's not available yet and suggest a supported alternative.\n"
@@ -172,7 +172,7 @@ async def generate_meta_reply(
     path_label: str = "planner_path",
 ) -> tuple[str, Literal["meta", "domain"]]:
     """Generate a meta response grounded in the SystemProfile with Caching."""
-    policy = get_cached_policy()
+    assistant_profile = get_cached_assistant_profile()
 
     # 1. Deterministic Cache Key Construction
     language = normalize_language_hint(user_language_hint)
@@ -196,7 +196,7 @@ async def generate_meta_reply(
         "user_message": user_message,
         "language_hint": language,
         "system_profile": asdict(profile),
-        "soul_policy": build_meta_policy_payload(policy),
+        "assistant_profile": build_meta_profile_payload(assistant_profile),
     }
     if meta_intent:
         payload["intent_context"] = meta_intent.value

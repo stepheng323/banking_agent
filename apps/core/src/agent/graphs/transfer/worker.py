@@ -34,8 +34,8 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from shared.config.settings import settings
 from shared.database.enums import ScheduledInstructionStatusEnum
-from shared.i18n import LocaleManager, render_capability_limitation, render_message
-from shared.policy.adapters import resolve_capability_alternative, resolve_capability_rule
+from shared.i18n import LocaleManager, render_message
+from shared.policy.service import capability_block_message
 from shared.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
 from shared.repositories.transaction_repository import (
     TransactionRepository,
@@ -139,19 +139,7 @@ class TransferWorker:
 
     @staticmethod
     def _policy_gate_message(action: str, *, locale: str = "en") -> str | None:
-        rule = resolve_capability_rule(domain="transfer", action=action)
-        if rule is not None and rule.supported:
-            return None
-
-        alt = resolve_capability_alternative(domain="transfer", action=action)
-        return cast(
-            str,
-            render_capability_limitation(
-                locale=locale,
-                action_label=action.replace("_", " "),
-                alternative_labels=[alt.replace("_", " ")] if alt else [],
-            ),
-        )
+        return cast(str, capability_block_message(domain="transfer", action=action, locale=locale))
 
     @staticmethod
     def _build_pipeline(user_message: str | None, *, include_execution: bool = True) -> TransferPipeline:

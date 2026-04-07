@@ -1,4 +1,4 @@
-"""Loader and cache for Soul policy."""
+"""Loader and cache for runtime capability policy."""
 
 from __future__ import annotations
 
@@ -7,17 +7,17 @@ from pathlib import Path
 from typing import Any, cast
 
 from shared.config.settings import settings
-from shared.policy.models import SoulPolicy
+from shared.policy.models import CapabilityPolicy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_POLICY_CACHE: SoulPolicy | None = None
+_POLICY_CACHE: CapabilityPolicy | None = None
 
 
 def _resolve_policy_path(path: str | None) -> str:
-    """Resolve effective policy path."""
-    return path or settings.soul_policy_path
+    """Resolve effective capability policy path."""
+    return path or settings.capability_policy_path
 
 
 def _load_json_payload(path: str) -> dict[str, Any]:
@@ -33,20 +33,20 @@ def _load_json_payload(path: str) -> dict[str, Any]:
     return payload
 
 
-def load_policy(path: str | None = None) -> SoulPolicy:
-    """Load and validate policy from canonical JSON file."""
+def load_policy(path: str | None = None) -> CapabilityPolicy:
+    """Load and validate capability policy from canonical JSON file."""
     effective_path = _resolve_policy_path(path)
     payload = _load_json_payload(effective_path)
-    return cast(SoulPolicy, SoulPolicy.model_validate(payload))
+    return cast(CapabilityPolicy, CapabilityPolicy.model_validate(payload))
 
 
-def load_soul_policy(path: str | None = None) -> SoulPolicy:
-    """Backward-compatible alias that loads JSON policy only."""
+def load_soul_policy(path: str | None = None) -> CapabilityPolicy:
+    """Backward-compatible alias for runtime capability policy."""
     return load_policy(path=path)
 
 
-def get_cached_policy(path: str | None = None, force_reload: bool = False) -> SoulPolicy:
-    """Get cached policy and fail fast when policy JSON is invalid/missing."""
+def get_cached_policy(path: str | None = None, force_reload: bool = False) -> CapabilityPolicy:
+    """Get cached capability policy and fail fast when JSON is invalid/missing."""
     global _POLICY_CACHE
     effective_path = _resolve_policy_path(path)
 

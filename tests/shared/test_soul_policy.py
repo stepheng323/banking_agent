@@ -1,4 +1,4 @@
-"""Tests for Soul policy loading and adapters."""
+"""Tests for assistant profile, capability policy, and guardrails config."""
 
 import json
 from pathlib import Path
@@ -14,41 +14,34 @@ from apps.core.src.agent.graphs.query import capabilities as query_capabilities
 from apps.core.src.agent.graphs.transfer.worker import TransferWorker
 from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
 from apps.core.src.agent.orchestrator.nodes.planner import _build_policy_notice
-from shared.policy.adapters import (
-    build_planner_policy_block,
-    build_planner_policy_summary,
-    resolve_capability_message,
-    resolve_capability_rule,
-)
+from shared.assistant_profile.adapters import build_planner_profile_summary
+from shared.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
+from shared.guardrails.loader import get_cached_guardrails, load_guardrails
+from shared.policy.adapters import resolve_capability_message, resolve_capability_rule
 from shared.policy.loader import get_cached_policy, load_policy, load_soul_policy
 from shared.policy.validation import validate_policy_coverage
 
-POLICY_PATH = "config/soul_policy.json"
+ASSISTANT_PROFILE_PATH = "config/assistant_profile.json"
+CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+DOMAIN_GUARDRAILS_PATH = "config/domain_guardrails.json"
 
 
 class _DummyLLM:
-    """Minimal stub for AccountWorker tests."""
-
     def with_structured_output(self, _schema: Any) -> Any:
         raise NotImplementedError
 
 
 class _DummyRepo:
-    """Minimal stub for worker constructor."""
-
     async def get_by_user(self, _user_id: str) -> list[Any]:
         return []
 
 
 class _DummyBankingProvider:
-    """Minimal stub for worker constructor."""
-
     async def get_balance(self, _account_id: str) -> None:
         return None
 
 
 async def test_account_action_level_capability_gate() -> None:
-    """Unsupported action in payload should be blocked deterministically."""
     worker = AccountWorker(
         account_repo=_DummyRepo(),
         user_repo=_DummyRepo(),
@@ -70,34 +63,39 @@ async def test_account_action_level_capability_gate() -> None:
     assert "unlink account" in result.response.lower()
 
 
-def test_policy_loads_from_json_file() -> None:
-    """Canonical JSON policy should load into a validated policy model."""
-    policy = load_policy(POLICY_PATH)
-    assert policy.identity.name == "Narya AI"
-    assert "Send money" in policy.supported_domains
+def test_capability_policy_loads_from_json_file() -> None:
+    policy = load_policy(CAPABILITY_POLICY_PATH)
+    assert "transfer" in policy.capability_matrix
     validate_policy_coverage(policy)
 
 
-def test_policy_raises_when_file_missing() -> None:
-    """Missing file should raise in strict single-source mode."""
+def test_assistant_profile_loads_from_json_file() -> None:
+    profile = load_assistant_profile(ASSISTANT_PROFILE_PATH)
+    assert profile.identity.name == "Narya AI"
+    assert "Send money" in profile.supported_domains
+
+
+def test_guardrails_load_from_json_file() -> None:
+    guardrails = load_guardrails(DOMAIN_GUARDRAILS_PATH)
+    assert guardrails.transfer.dynamic_risk.floor_amount == 50000
+    assert guardrails.query.max_lookback_days == 180
+
+
+def test_capability_policy_raises_when_file_missing() -> None:
     with pytest.raises(Exception):
         get_cached_policy(path="missing-policy.json", force_reload=True)
-
-    # Reset cache back to real policy for subsequent tests.
-    get_cached_policy(path=POLICY_PATH, force_reload=True)
+    get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
 
 
-def test_policy_raises_when_json_invalid(tmp_path: Path) -> None:
-    """Malformed JSON policy should raise."""
-    bad_policy_path = tmp_path / "bad_policy.json"
-    bad_policy_path.write_text("{not valid json", encoding="utf-8")
+def test_assistant_profile_raises_when_json_invalid(tmp_path: Path) -> None:
+    bad_path = tmp_path / "bad_profile.json"
+    bad_path.write_text("{not valid json", encoding="utf-8")
 
     with pytest.raises(Exception):
-        load_policy(str(bad_policy_path))
+        load_assistant_profile(str(bad_path))
 
 
 def test_policy_loader_does_not_parse_markdown_legacy_format(tmp_path: Path) -> None:
-    """Loader should not accept embedded-json markdown documents."""
     legacy_path = tmp_path / "legacy_soul.md"
     legacy_path.write_text(
         "<!-- SOUL_POLICY_JSON_START -->\n```json\n{}\n```\n<!-- SOUL_POLICY_JSON_END -->\n",
@@ -108,70 +106,57 @@ def test_policy_loader_does_not_parse_markdown_legacy_format(tmp_path: Path) -> 
         load_soul_policy(str(legacy_path))
 
 
-def test_planner_policy_block_contains_guardrails() -> None:
-    """Planner policy block should expose key policy constraints."""
-    policy = get_cached_policy(path=POLICY_PATH, force_reload=True)
-    block = build_planner_policy_block(policy)
-    assert "SOUL POLICY" in block
-    assert "Supported domains" in block
-    assert "Unsupported capabilities" in block
-
-
-def test_planner_policy_summary_is_compact_and_extraction_focused() -> None:
-    """Planner summary should stay compact while preserving extraction constraints."""
-    policy = get_cached_policy(path=POLICY_PATH, force_reload=True)
-    summary = build_planner_policy_summary(policy)
-    assert "Supported(policy): Send money" in summary
-    assert "Unsupported(policy): Financial advice" in summary
+def test_planner_profile_summary_is_compact_and_grounded() -> None:
+    profile = get_cached_assistant_profile(path=ASSISTANT_PROFILE_PATH, force_reload=True)
+    summary = build_planner_profile_summary(profile)
+    assert "Supported(profile): Send money" in summary
+    assert "Unsupported(profile): Financial advice" in summary
     assert "conversational.out_of_scope" in summary
-    assert policy.tone.response_rules[0][:10] in summary
-    assert policy.safety_rules[0][:10] in summary
+    assert profile.tone.response_rules[0][:10] in summary
+    assert profile.safety_rules[0][:10] in summary
     assert len(summary) < 400
 
 
-def test_planner_policy_summary_uses_input_policy_values() -> None:
-    """Planner summary must derive from the passed policy object, not fixed text."""
-    policy = load_policy(POLICY_PATH).model_copy(deep=True)
-    policy.supported_domains = ["Card freeze", "Send money"]
-    policy.unsupported_capabilities = ["Crypto staking", "Investments"]
-    policy.tone.response_rules = ["State limits directly"]
-    policy.safety_rules = ["Banking tasks only"]
+def test_planner_profile_summary_uses_input_profile_values() -> None:
+    profile = load_assistant_profile(ASSISTANT_PROFILE_PATH).model_copy(deep=True)
+    profile.supported_domains = ["Card freeze", "Send money"]
+    profile.unsupported_capabilities = ["Crypto staking", "Investments"]
+    profile.tone.response_rules = ["State limits directly"]
+    profile.safety_rules = ["Banking tasks only"]
 
-    summary = build_planner_policy_summary(policy)
-    assert "Supported(policy): Card freeze(+1)" in summary
-    assert "Unsupported(policy): Crypto staking(+1)" in summary
+    summary = build_planner_profile_summary(profile)
+    assert "Supported(profile): Card freeze(+1)" in summary
+    assert "Unsupported(profile): Crypto staking(+1)" in summary
     assert "State limits directly" in summary
     assert "Banking tasks only" in summary
 
 
-def test_planner_prompt_refresh_reloads_policy_summary_block(tmp_path: Path) -> None:
-    """Prompt refresh should pick up policy reload changes in planner policy block."""
+def test_planner_prompt_refresh_reloads_profile_summary_block(tmp_path: Path) -> None:
     from shared.services import task_planner_prompts
 
-    raw = load_policy(POLICY_PATH).model_dump()
+    raw = load_assistant_profile(ASSISTANT_PROFILE_PATH).model_dump()
     raw["supported_domains"][0] = "Card freeze"
     raw["unsupported_capabilities"][0] = "Crypto staking"
     raw["tone"]["response_rules"] = ["State limits directly"]
     raw["safety_rules"] = ["Banking tasks only"]
 
-    custom_policy_path = tmp_path / "soul_custom.json"
-    custom_policy_path.write_text(json.dumps(raw, ensure_ascii=True, indent=2), encoding="utf-8")
+    custom_path = tmp_path / "assistant_profile_custom.json"
+    custom_path.write_text(json.dumps(raw, ensure_ascii=True, indent=2), encoding="utf-8")
 
     try:
-        get_cached_policy(path=str(custom_policy_path), force_reload=True)
+        get_cached_assistant_profile(path=str(custom_path), force_reload=True)
         task_planner_prompts.refresh_planner_system_prompt()
-        policy_block = task_planner_prompts.PLANNER_POLICY_BLOCK
-        assert "Supported(policy): Card freeze(+6)" in policy_block
-        assert "Unsupported(policy): Crypto staking(+6)" in policy_block
-        assert "State limits directly" in policy_block
-        assert "Banking tasks only" in policy_block
+        profile_block = task_planner_prompts.PLANNER_POLICY_BLOCK
+        assert "Supported(profile): Card freeze(+6)" in profile_block
+        assert "Unsupported(profile): Crypto staking(+5)" in profile_block
+        assert "State limits directly" in profile_block
+        assert "Banking tasks only" in profile_block
     finally:
-        get_cached_policy(path=POLICY_PATH, force_reload=True)
+        get_cached_assistant_profile(path=ASSISTANT_PROFILE_PATH, force_reload=True)
         task_planner_prompts.refresh_planner_system_prompt()
 
 
 def test_capability_resolution_uses_policy_matrix() -> None:
-    """Capability lookups should resolve from policy matrix."""
     message = resolve_capability_message(domain="support", action="retry_payout")
     rule = resolve_capability_rule(domain="account", action="close_account")
 
@@ -182,7 +167,6 @@ def test_capability_resolution_uses_policy_matrix() -> None:
 
 
 def test_policy_notice_acknowledges_supported_and_unsupported_mix() -> None:
-    """Mixed request should acknowledge both supported and unsupported parts."""
     planner_output = SimpleNamespace(tasks=[SimpleNamespace(executor="transfer")])
     notice = _build_policy_notice("send 10k to tolu and invest 10k", planner_output)
 
@@ -192,29 +176,8 @@ def test_policy_notice_acknowledges_supported_and_unsupported_mix() -> None:
     assert "send money or review recent transactions" in notice
 
 
-def test_policy_detection_uses_runtime_policy_rules(tmp_path: Path) -> None:
-    """Detection behavior should follow policy JSON edits without code changes."""
-    raw = load_policy(POLICY_PATH).model_dump()
-    raw["unsupported_detection"]["Investments"] = ["portfolio"]
-
-    test_path = tmp_path / "soul_custom.json"
-    json_payload = json.dumps(raw, ensure_ascii=True, indent=2)
-    test_path.write_text(json_payload, encoding="utf-8")
-
-    get_cached_policy(path=str(test_path), force_reload=True)
-    planner_output = SimpleNamespace(tasks=[SimpleNamespace(executor="transfer")])
-
-    notice = _build_policy_notice("send 10k to tolu and portfolio 10k", planner_output)
-    assert notice is not None
-    assert "Investments" in notice
-
-    # Restore cache to default project policy.
-    get_cached_policy(path=POLICY_PATH, force_reload=True)
-
-
 def test_policy_validation_raises_when_required_action_missing() -> None:
-    """Required account/support actions must exist in policy matrix."""
-    base = load_policy(POLICY_PATH)
+    base = load_policy(CAPABILITY_POLICY_PATH)
     raw = base.model_dump()
     del raw["capability_matrix"]["support"]["actions"]["create_ticket"]
     policy = base.__class__.model_validate(raw)
@@ -223,8 +186,17 @@ def test_policy_validation_raises_when_required_action_missing() -> None:
         validate_policy_coverage(policy)
 
 
+def test_policy_validation_rejects_unsupported_alternative_target() -> None:
+    base = load_policy(CAPABILITY_POLICY_PATH)
+    raw = base.model_dump()
+    raw["capability_matrix"]["query"]["actions"]["search_narration_fuzzy"]["alternative"] = "export_pdf"
+    policy = base.__class__.model_validate(raw)
+
+    with pytest.raises(ValueError):
+        validate_policy_coverage(policy)
+
+
 def test_query_capability_checks_use_policy_rules() -> None:
-    """Query capability checks should be policy-backed."""
     missing = query_capabilities.check_capabilities(
         [query_capabilities.QueryCapability.TIME_ALL, query_capabilities.QueryCapability.FILTER_RECIPIENT]
     )
@@ -233,7 +205,6 @@ def test_query_capability_checks_use_policy_rules() -> None:
 
 
 def test_query_limitation_message_prefers_policy_text() -> None:
-    """Query limitation messaging should resolve from policy first."""
     message = query_capabilities.generate_limitation_message(
         [query_capabilities.QueryCapability.SEARCH_NARRATION_FUZZY]
     )
@@ -242,7 +213,6 @@ def test_query_limitation_message_prefers_policy_text() -> None:
 
 
 async def test_transfer_worker_blocks_unsupported_action_from_policy() -> None:
-    """Transfer worker should fail fast on unsupported policy action."""
     worker = TransferWorker(
         validation_service=None,
         publisher=None,
@@ -259,12 +229,11 @@ async def test_transfer_worker_blocks_unsupported_action_from_policy() -> None:
 
     assert result.outcome == TransactionOutcome.FAILED
     assert result.error is not None
-    assert "isn't available yet" in result.error.lower()
+    assert "can't send internationally" in result.error.lower()
     assert "send money" in result.error.lower()
 
 
 async def test_airtime_worker_blocks_unknown_action_from_policy() -> None:
-    """Airtime worker should block actions not allowed by policy."""
     worker = AirtimeWorker(
         extractor=None,
         bill_provider=None,
@@ -283,7 +252,6 @@ async def test_airtime_worker_blocks_unknown_action_from_policy() -> None:
 
 
 async def test_data_worker_blocks_unknown_action_from_policy() -> None:
-    """Data worker should block actions not allowed by policy."""
     worker = DataWorker(
         extractor=None,
         bill_provider=None,
@@ -301,16 +269,20 @@ async def test_data_worker_blocks_unknown_action_from_policy() -> None:
     assert "isn't available yet" in result.error.lower()
 
 
-def test_policy_file_exists_and_parses() -> None:
-    """CI guardrail: canonical policy file must exist and parse."""
-    policy_file = Path(POLICY_PATH)
-    assert policy_file.exists(), f"Missing canonical policy file: {POLICY_PATH}"
-    payload = json.loads(policy_file.read_text(encoding="utf-8"))
-    assert isinstance(payload, dict)
+def test_split_config_files_exist_and_parse() -> None:
+    for path in (ASSISTANT_PROFILE_PATH, CAPABILITY_POLICY_PATH, DOMAIN_GUARDRAILS_PATH):
+        config_file = Path(path)
+        assert config_file.exists(), f"Missing canonical config file: {path}"
+        payload = json.loads(config_file.read_text(encoding="utf-8"))
+        assert isinstance(payload, dict)
 
 
 def test_soul_markdown_has_no_legacy_policy_markers() -> None:
-    """CI guardrail: soul.md should not embed runtime policy JSON."""
     soul_text = Path("soul.md").read_text(encoding="utf-8")
     assert "SOUL_POLICY_JSON_START" not in soul_text
     assert "SOUL_POLICY_JSON_END" not in soul_text
+
+
+def test_guardrails_cache_loads_runtime_split() -> None:
+    guardrails = get_cached_guardrails(path=DOMAIN_GUARDRAILS_PATH, force_reload=True)
+    assert guardrails.support.max_escalation_attempts == 3

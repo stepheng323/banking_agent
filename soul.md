@@ -39,5 +39,9 @@ This document defines the banking agent's identity, boundaries, and deterministi
 
 ## 5) Runtime Policy Source
 
-The machine-readable runtime policy is defined in `config/soul_policy.json`.
+The machine-readable runtime policy is split across:
+- `config/assistant_profile.json`
+- `config/capability_policy.json`
+- `config/domain_guardrails.json`
+
 Authoring and validation instructions are documented in `docs/soul_policy.md`.

@@ -55,7 +55,9 @@ Required keys:
 - `PIN_CONFIRMATION_FLOW_ID`
 - `WHATSAPP_FLOW_PRIVATE_KEY`
 - `DEFAULT_CHANNEL`
-- `SOUL_POLICY_PATH`
+- `ASSISTANT_PROFILE_PATH`
+- `CAPABILITY_POLICY_PATH`
+- `DOMAIN_GUARDRAILS_PATH`
 - `ENABLE_CHANNEL_OPTION_UX_V2`
 - `TTL_SECONDS`
 - `FLOW_SESSION_TIMEOUT`
@@ -64,6 +66,7 @@ Required keys:
 Notes:
 
 - `INTERRUPT_ROUTER_MODEL` is optional; when missing, runtime defaults to `PLANNER_MODEL`.
+- `SOUL_POLICY_PATH` is deprecated compatibility only and should not be used for new deployments.
 - Setting a dedicated `INTERRUPT_ROUTER_MODEL` is still recommended for latency and routing isolation.
 
 Delivery model:

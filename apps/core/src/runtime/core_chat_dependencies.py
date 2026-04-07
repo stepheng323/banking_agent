@@ -21,6 +21,7 @@ from apps.core.src.agent.orchestrator.graph.orchestrator import OrchestratorAgen
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
 from apps.core.src.queue_consumers.message_consumer import MessageConsumer
 from apps.core.src.runtime.common import build_messaging_clients
+from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -28,6 +29,7 @@ from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.config.settings import settings
 from shared.database.connection import get_db_session
+from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import validate_catalog_completeness
 from shared.policy.loader import get_cached_policy
 from shared.policy.validation import validate_policy_coverage
@@ -259,8 +261,10 @@ def _build_runtime_bundle_factory(
 def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     """Setup core ECS chat runtime dependencies."""
     validate_catalog_completeness()
-    policy = get_cached_policy(force_reload=True)
-    validate_policy_coverage(policy)
+    capability_policy = get_cached_policy(force_reload=True)
+    validate_policy_coverage(capability_policy)
+    get_cached_assistant_profile(force_reload=True)
+    get_cached_guardrails(force_reload=True)
     refresh_planner_system_prompt()
 
     queue_publisher = QueuePublisherFactory.get_async_publisher()

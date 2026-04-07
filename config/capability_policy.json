@@ -1,0 +1,166 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-04-06",
+  "capability_matrix": {
+    "transfer": {
+      "domain": "transfer",
+      "actions": {
+        "send_money": {
+          "supported": true
+        },
+        "schedule_transfer": {
+          "supported": true
+        },
+        "recurring_transfer": {
+          "supported": true
+        },
+        "list_scheduled_transfers": {
+          "supported": true
+        },
+        "cancel_scheduled_transfer": {
+          "supported": true
+        },
+        "international_transfer": {
+          "supported": false,
+          "limitation_message": "I can't send internationally in this chat yet, but I can help you send money locally right away.",
+          "alternative": "send_money"
+        }
+      }
+    },
+    "airtime": {
+      "domain": "airtime",
+      "actions": {
+        "buy_airtime": {
+          "supported": true
+        }
+      }
+    },
+    "data": {
+      "domain": "data",
+      "actions": {
+        "buy_data": {
+          "supported": true
+        }
+      }
+    },
+    "query": {
+      "domain": "query",
+      "actions": {
+        "filter_recipient": {
+          "supported": true
+        },
+        "filter_amount": {
+          "supported": true
+        },
+        "filter_category": {
+          "supported": true
+        },
+        "filter_tx_type": {
+          "supported": true
+        },
+        "filter_bank": {
+          "supported": true
+        },
+        "search_narration_keyword": {
+          "supported": true
+        },
+        "search_narration_fuzzy": {
+          "supported": false,
+          "limitation_message": "I can search exact keywords in narration, but not similar descriptions yet. Want me to search the exact keyword?",
+          "alternative": "search_narration_keyword"
+        },
+        "time_relative": {
+          "supported": true
+        },
+        "time_all": {
+          "supported": false,
+          "limitation_message": "I can show transactions up to the last 6 months. Want me to show that instead?",
+          "alternative": "time_relative"
+        },
+        "aggregate_sum": {
+          "supported": true
+        },
+        "aggregate_group": {
+          "supported": true
+        },
+        "time_comparison": {
+          "supported": true
+        },
+        "export_pdf": {
+          "supported": false,
+          "limitation_message": "I can't generate a PDF in chat yet, but I can pull up the transactions here now. Want the last 5?"
+        },
+        "export_csv": {
+          "supported": false,
+          "limitation_message": "I can't generate a CSV in chat yet, but I can show those transactions here immediately. Want the last 5?"
+        }
+      }
+    },
+    "account": {
+      "domain": "account",
+      "actions": {
+        "list_accounts": {
+          "supported": true
+        },
+        "link_account": {
+          "supported": true
+        },
+        "unlink_account": {
+          "supported": true
+        },
+        "set_default": {
+          "supported": true
+        },
+        "close_account": {
+          "supported": false,
+          "limitation_message": "I can't close bank accounts — that needs to be done directly with your bank.\n\nWould you like me to *unlink* an account from this app instead?",
+          "alternative": "unlink_account"
+        },
+        "change_bvn": {
+          "supported": false,
+          "limitation_message": "BVN changes need to be done through your bank or NIBSS.\n\nI can only help with linking/unlinking accounts here.",
+          "alternative": "link_account"
+        },
+        "add_joint_holder": {
+          "supported": false,
+          "limitation_message": "Adding joint account holders needs to be done through your bank.\n\nIs there something else I can help with?"
+        }
+      }
+    },
+    "support": {
+      "domain": "support",
+      "actions": {
+        "lookup_transaction": {
+          "supported": true
+        },
+        "explain_status": {
+          "supported": true
+        },
+        "collect_details": {
+          "supported": true
+        },
+        "create_ticket": {
+          "supported": true
+        },
+        "escalate": {
+          "supported": true
+        },
+        "retry_payout": {
+          "supported": false,
+          "limitation_message": "I can't *retry the transfer* automatically right now.\n\nI can create a support ticket for the team to retry it. Want me to do that?",
+          "alternative": "create_ticket"
+        },
+        "initiate_refund": {
+          "supported": false,
+          "limitation_message": "I can't *process refund immediately* instantly, but I can submit a refund request.\n\nThe team will process it within 24-48 hours. Want me to submit it?",
+          "alternative": "create_ticket"
+        },
+        "queue_refund_request": {
+          "supported": false,
+          "limitation_message": "I can't *submit refund request* directly yet, but I can *create support ticket*. Want me to proceed?",
+          "alternative": "create_ticket"
+        }
+      }
+    }
+  }
+}

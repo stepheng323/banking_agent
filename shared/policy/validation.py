@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.policy.models import SoulPolicy
+from shared.policy.models import CapabilityPolicy
 
 REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
     "transfer": {
@@ -52,7 +52,7 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
 }
 
 
-def validate_policy_coverage(policy: SoulPolicy) -> None:
+def validate_policy_coverage(policy: CapabilityPolicy) -> None:
     """Validate required policy sections and action coverage.
 
     Raises:
@@ -68,15 +68,22 @@ def validate_policy_coverage(policy: SoulPolicy) -> None:
         missing_actions = sorted(required_actions - set(domain_policy.actions.keys()))
         if missing_actions:
             errors.append(f"capability_matrix.{domain}.actions missing: {', '.join(missing_actions)}")
+            continue
 
-    unsupported_set = set(policy.unsupported_capabilities)
-    unknown_detection = sorted(set(policy.unsupported_detection.keys()) - unsupported_set)
-    if unknown_detection:
-        errors.append(f"unsupported_detection has unknown capabilities: {', '.join(unknown_detection)}")
-
-    unknown_alternatives = sorted(set(policy.unsupported_alternatives.keys()) - unsupported_set)
-    if unknown_alternatives:
-        errors.append(f"unsupported_alternatives has unknown capabilities: {', '.join(unknown_alternatives)}")
+        for action_name, rule in domain_policy.actions.items():
+            if not rule.alternative:
+                continue
+            alt_rule = domain_policy.actions.get(rule.alternative)
+            if alt_rule is None:
+                errors.append(
+                    f"capability_matrix.{domain}.actions.{action_name} alternative '{rule.alternative}' is missing"
+                )
+                continue
+            if not alt_rule.supported:
+                errors.append(
+                    "capability_matrix."
+                    f"{domain}.actions.{action_name} alternative '{rule.alternative}' must be supported"
+                )
 
     if errors:
         raise ValueError("Invalid soul policy: " + " | ".join(errors))

@@ -14,8 +14,8 @@ from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transfer import format_funding_plan_summary, format_transfer_summary
+from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import render_message
-from shared.policy.loader import get_cached_policy
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 
@@ -119,8 +119,8 @@ async def _build_dynamic_risk_patch(
     if not user_id or tx_repo is None:
         return {}
 
-    policy = get_cached_policy()
-    risk_cfg = policy.transfer_guardrails.dynamic_risk
+    guardrails = get_cached_guardrails()
+    risk_cfg = guardrails.transfer.dynamic_risk
     floor_amount = float(risk_cfg.floor_amount)
     lookback_days = int(risk_cfg.lookback_days)
     percentile = float(risk_cfg.percentile)

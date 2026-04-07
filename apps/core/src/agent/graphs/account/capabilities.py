@@ -3,7 +3,7 @@
 from enum import Enum
 
 from shared.i18n import render_capability_limitation
-from shared.policy.adapters import resolve_capability_alternative, resolve_capability_rule
+from shared.policy.adapters import check_unsupported_actions, resolve_capability_alternative
 
 
 class AccountCapability(str, Enum):
@@ -34,12 +34,8 @@ def check_capabilities(requires: list[AccountCapability]) -> list[AccountCapabil
 
     Policy is authoritative: if an action has no rule, treat it as unsupported.
     """
-    missing: list[AccountCapability] = []
-    for cap in requires:
-        policy_rule = resolve_capability_rule(domain="account", action=cap.value)
-        if policy_rule is None or not policy_rule.supported:
-            missing.append(cap)
-    return missing
+    missing = check_unsupported_actions(domain="account", requested_actions=[cap.value for cap in requires])
+    return [cap for cap in requires if cap.value in missing]
 
 
 def derive_requirements(user_message: str) -> list[AccountCapability]:

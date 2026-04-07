@@ -170,10 +170,22 @@ variable "telegram_mini_app_base_url" {
   default     = ""
 }
 
-variable "soul_policy_path" {
-  description = "Path to the soul policy file in the container"
+variable "assistant_profile_path" {
+  description = "Path to the assistant profile file in the container"
   type        = string
-  default     = "config/soul_policy.json"
+  default     = "config/assistant_profile.json"
+}
+
+variable "capability_policy_path" {
+  description = "Path to the capability policy file in the container"
+  type        = string
+  default     = "config/capability_policy.json"
+}
+
+variable "domain_guardrails_path" {
+  description = "Path to the domain guardrails file in the container"
+  type        = string
+  default     = "config/domain_guardrails.json"
 }
 
 variable "enable_channel_option_ux_v2" {

@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from shared.policy.adapters import build_system_profile
-from shared.policy.loader import get_cached_policy
+from shared.assistant_profile.adapters import build_system_profile
+from shared.assistant_profile.loader import get_cached_assistant_profile
 
 
 @dataclass(frozen=True)
@@ -20,4 +20,4 @@ class SystemProfile:
     tone: str
 
 
-SYSTEM_PROFILE = SystemProfile(**build_system_profile(get_cached_policy()))
+SYSTEM_PROFILE = SystemProfile(**build_system_profile(get_cached_assistant_profile()))

@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-04-06",
+  "transfer": {
+    "relational_aliases": [
+      "dad",
+      "daddy",
+      "mum",
+      "mom",
+      "mummy",
+      "brother",
+      "sister",
+      "babe",
+      "wife",
+      "husband",
+      "aunty",
+      "uncle"
+    ],
+    "name_match": {
+      "min_similarity": 0.65
+    },
+    "dynamic_risk": {
+      "floor_amount": 50000,
+      "lookback_days": 90,
+      "percentile": 0.9
+    }
+  },
+  "query": {
+    "max_lookback_days": 180,
+    "max_results": 50,
+    "max_group_buckets": 20,
+    "max_narration_query_len": 40,
+    "default_lookback_days": 30
+  },
+  "support": {
+    "max_escalation_attempts": 3,
+    "max_tx_lookback_days": 90,
+    "sla_pending_hours": 24
+  }
+}

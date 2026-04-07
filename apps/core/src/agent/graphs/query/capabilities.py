@@ -6,8 +6,9 @@ LLM outputs requested_capabilities, resolver checks and negotiates.
 
 from enum import Enum
 
+from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import render_capability_limitation
-from shared.policy.adapters import resolve_capability_alternative, resolve_capability_rule
+from shared.policy.adapters import check_unsupported_actions, resolve_capability_alternative
 
 
 class QueryCapability(str, Enum):
@@ -39,13 +40,7 @@ class QueryCapability(str, Enum):
 
 
 # Limits for resolver negotiation (clamp instead of fail)
-QUERY_LIMITS = {
-    "max_lookback_days": 180,
-    "max_results": 50,
-    "max_group_buckets": 20,
-    "max_narration_query_len": 40,
-    "default_lookback_days": 30,
-}
+QUERY_LIMITS = get_cached_guardrails().query.model_dump()
 
 
 CAPABILITY_LABELS: dict[QueryCapability, str] = {
@@ -71,12 +66,8 @@ def check_capabilities(requires: list[QueryCapability]) -> list[QueryCapability]
 
     Policy is authoritative: if a capability has no rule, treat it as unsupported.
     """
-    missing: list[QueryCapability] = []
-    for cap in requires:
-        policy_rule = resolve_capability_rule(domain="query", action=cap.value)
-        if policy_rule is None or not policy_rule.supported:
-            missing.append(cap)
-    return missing
+    missing = check_unsupported_actions(domain="query", requested_actions=[cap.value for cap in requires])
+    return [cap for cap in requires if cap.value in missing]
 
 
 def get_alternative(cap: QueryCapability) -> QueryCapability | None:

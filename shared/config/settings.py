@@ -86,6 +86,9 @@ class Settings:
         }
         self.whatsapp_typing_indicator_delay_ms: int = int(os.getenv("WHATSAPP_TYPING_INDICATOR_DELAY_MS", "650"))
 
+        self.assistant_profile_path: str = os.getenv("ASSISTANT_PROFILE_PATH", "config/assistant_profile.json")
+        self.capability_policy_path: str = os.getenv("CAPABILITY_POLICY_PATH", "config/capability_policy.json")
+        self.domain_guardrails_path: str = os.getenv("DOMAIN_GUARDRAILS_PATH", "config/domain_guardrails.json")
         self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
         self.enable_transfer_scheduling: bool = os.getenv("ENABLE_TRANSFER_SCHEDULING", "true").lower() == "true"

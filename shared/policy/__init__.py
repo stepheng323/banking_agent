@@ -1,43 +1,29 @@
-"""Soul policy package."""
+"""Runtime capability policy package."""
 
 from shared.policy.adapters import (
-    build_meta_policy_payload,
-    build_planner_policy_block,
-    build_planner_policy_summary,
-    build_system_profile,
+    check_unsupported_actions,
     resolve_capability_alternative,
     resolve_capability_message,
     resolve_capability_rule,
 )
 from shared.policy.loader import get_cached_policy, load_policy, load_soul_policy
 from shared.policy.models import (
+    CapabilityPolicy,
     CapabilityRule,
     DomainCapabilityPolicy,
-    DynamicRiskGuardrails,
-    NameMatchGuardrails,
-    SoulIdentity,
-    SoulPolicy,
-    SoulTone,
-    TransferGuardrails,
 )
+from shared.policy.service import capability_block_message
 from shared.policy.validation import validate_policy_coverage
 
 __all__ = [
-    "SoulPolicy",
-    "SoulIdentity",
-    "SoulTone",
-    "NameMatchGuardrails",
-    "DynamicRiskGuardrails",
-    "TransferGuardrails",
+    "CapabilityPolicy",
     "CapabilityRule",
     "DomainCapabilityPolicy",
+    "capability_block_message",
+    "check_unsupported_actions",
     "load_policy",
     "load_soul_policy",
     "get_cached_policy",
-    "build_system_profile",
-    "build_planner_policy_block",
-    "build_planner_policy_summary",
-    "build_meta_policy_payload",
     "resolve_capability_rule",
     "resolve_capability_message",
     "resolve_capability_alternative",

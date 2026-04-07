@@ -2,8 +2,9 @@
 
 from enum import Enum
 
+from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import render_capability_limitation
-from shared.policy.adapters import resolve_capability_alternative, resolve_capability_rule
+from shared.policy.adapters import check_unsupported_actions, resolve_capability_alternative
 
 
 class SupportAction(str, Enum):
@@ -19,11 +20,7 @@ class SupportAction(str, Enum):
     ESCALATE = "escalate"
 
 
-SUPPORT_LIMITS = {
-    "max_escalation_attempts": 3,
-    "max_tx_lookback_days": 90,
-    "sla_pending_hours": 24,
-}
+SUPPORT_LIMITS = get_cached_guardrails().support.model_dump()
 
 ACTION_LABELS: dict[SupportAction, str] = {
     SupportAction.LOOKUP_TRANSACTION: "look up transaction",
@@ -42,12 +39,8 @@ def check_actions(requested: list[SupportAction]) -> list[SupportAction]:
 
     Policy is authoritative: if an action has no rule, treat it as unsupported.
     """
-    missing: list[SupportAction] = []
-    for action in requested:
-        policy_rule = resolve_capability_rule(domain="support", action=action.value)
-        if policy_rule is None or not policy_rule.supported:
-            missing.append(action)
-    return missing
+    missing = check_unsupported_actions(domain="support", requested_actions=[action.value for action in requested])
+    return [action for action in requested if action.value in missing]
 
 
 def get_alternative(action: SupportAction) -> SupportAction | None:

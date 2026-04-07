@@ -15,8 +15,8 @@ from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
 from shared.formatters.prompts import sanitize_recipient_display_name
+from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import render_message
-from shared.policy.loader import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -99,13 +99,13 @@ def _build_name_consistency_patch(payload: TransferPayload, resolved_name: str |
     if len(digits_only) >= 8:
         return {"name_mismatch": False, "name_match_score": None, "name_mismatch_warning": None}
 
-    policy = get_cached_policy()
-    aliases = policy.transfer_guardrails.relational_aliases
+    guardrails = get_cached_guardrails()
+    aliases = guardrails.transfer.relational_aliases
     if _is_relational_alias(requested_name, aliases):
         return {"name_mismatch": False, "name_match_score": None, "name_mismatch_warning": None}
 
     score = _similarity_score(requested_name, resolved_name)
-    threshold = float(policy.transfer_guardrails.name_match.min_similarity)
+    threshold = float(guardrails.transfer.name_match.min_similarity)
     if score < threshold:
         warning = render_message(
             "transfer.confirmation.name_mismatch_warning",

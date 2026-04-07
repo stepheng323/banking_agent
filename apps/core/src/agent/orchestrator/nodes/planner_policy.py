@@ -4,8 +4,8 @@ from typing import Any, cast
 
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.i18n import LocaleManager, render_message, render_policy_notice
-from shared.policy.loader import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,17 +28,37 @@ META_RESPONSE_KEY_TO_INTENT: dict[str, MetaIntent] = {
     "conversational.out_of_scope": MetaIntent.LIMITS,
 }
 
+UNSUPPORTED_CAPABILITY_PATTERNS: dict[str, list[str]] = {
+    "Financial advice": ["advice", "advise", "what should i do", "recommendation"],
+    "Investments": ["invest", "investment", "stocks", "mutual fund", "crypto"],
+    "International transfers": ["international transfer", "send abroad", "swift", "dollar transfer", "usd"],
+    "Scheduled or recurring transfers": ["schedule", "scheduled", "recurring", "every week", "every month"],
+    "All-time transaction history": ["all-time", "all time", "entire history", "lifetime history"],
+    "PDF exports": ["pdf", "export statement", "download statement"],
+    "CSV exports": ["csv", "export csv", "download csv"],
+}
+
+UNSUPPORTED_CAPABILITY_ALTERNATIVES: dict[str, list[str]] = {
+    "Financial advice": ["review recent transactions", "check balances"],
+    "Investments": ["send money", "review recent transactions"],
+    "International transfers": ["send money"],
+    "Scheduled or recurring transfers": ["one-time transfer"],
+    "All-time transaction history": ["review recent transactions"],
+    "PDF exports": ["review recent transactions"],
+    "CSV exports": ["review recent transactions"],
+}
+
 
 def _detect_unsupported_capabilities(message_text: str) -> list[str]:
-    """Resolve unsupported capabilities from policy-defined phrase patterns."""
-    policy = get_cached_policy()
+    """Resolve unsupported capabilities from planner-owned phrase patterns."""
     text = message_text.lower().strip()
 
     if not text:
         return []
 
-    configured_unsupported = policy.unsupported_capabilities
-    pattern_map = policy.unsupported_detection
+    profile = get_cached_assistant_profile()
+    configured_unsupported = profile.unsupported_capabilities
+    pattern_map = UNSUPPORTED_CAPABILITY_PATTERNS
 
     detected_set: set[str] = set()
     for capability, patterns in pattern_map.items():
@@ -54,12 +74,11 @@ def _detect_unsupported_capabilities(message_text: str) -> list[str]:
 
 
 def _resolve_unsupported_alternatives(unsupported: list[str]) -> list[str]:
-    """Resolve up to two unique alternatives from policy."""
-    policy = get_cached_policy()
+    """Resolve up to two unique alternatives for planner notices."""
     alternatives: list[str] = []
 
     for capability in unsupported:
-        cap_alts = policy.unsupported_alternatives.get(capability, [])
+        cap_alts = UNSUPPORTED_CAPABILITY_ALTERNATIVES.get(capability, [])
         for alt in cap_alts:
             if alt and alt not in alternatives:
                 alternatives.append(alt)
@@ -115,16 +134,16 @@ def _build_policy_notice(message_text: str, planner_output: Any, locale: str = "
 
 
 def _build_policy_aware_greeting(locale: str) -> str:
-    policy = get_cached_policy()
-    supported = ", ".join(policy.supported_domains)
+    profile = get_cached_assistant_profile()
+    supported = ", ".join(profile.supported_domains)
     return cast(
         str,
         render_message(
             "meta.fallback",
             locale,
             {
-                "name": policy.identity.name,
-                "description": policy.identity.description,
+                "name": profile.identity.name,
+                "description": profile.identity.description,
                 "supported": supported,
             },
         ),

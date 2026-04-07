@@ -43,7 +43,9 @@ locals {
       S3_BUCKET_NAME                 = var.s3_bucket_name
       DEFAULT_CHANNEL                = var.default_channel
       TELEGRAM_MINI_APP_BASE_URL     = var.telegram_mini_app_base_url
-      SOUL_POLICY_PATH               = var.soul_policy_path
+      ASSISTANT_PROFILE_PATH         = var.assistant_profile_path
+      CAPABILITY_POLICY_PATH         = var.capability_policy_path
+      DOMAIN_GUARDRAILS_PATH         = var.domain_guardrails_path
       ENABLE_CHANNEL_OPTION_UX_V2    = var.enable_channel_option_ux_v2
       ENABLE_TRANSFER_SCHEDULING     = var.enable_transfer_scheduling
       SCHEDULE_DISPATCHER_BATCH_SIZE = var.schedule_dispatcher_batch_size
