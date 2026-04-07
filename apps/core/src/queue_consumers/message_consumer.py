@@ -418,11 +418,19 @@ class MessageConsumer:
                     isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions, ShowFlow))
                     for intent in intents
                 )
-                if response_text and not has_primary_interaction and not any(isinstance(intent, Say) for intent in intents):
+                if (
+                    response_text
+                    and not has_primary_interaction
+                    and not any(isinstance(intent, Say) for intent in intents)
+                ):
                     intents.append(Say(text=response_text))
                 intents_to_send = cast(list[UiIntent | dict[str, Any]], intents)
             else:
-                fallback_outbox = [item for item in raw_outbox if isinstance(item, dict)] if isinstance(raw_outbox, list) else []
+                fallback_outbox = (
+                    [item for item in raw_outbox if isinstance(item, dict)]
+                    if isinstance(raw_outbox, list)
+                    else []
+                )
                 intents_to_send = fallback_outbox
                 if fallback_outbox:
                     logger.warning(
