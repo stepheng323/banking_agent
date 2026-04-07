@@ -395,7 +395,7 @@ class MonoClient:
         if self.use_mock:
             now = datetime.now(UTC).isoformat()
             debit_id = f"mock_debit_{uuid4().hex[:12]}"
-            mock_status = "pending"
+            mock_status = "successful"
             debit_type = "direct-to-beneficiary" if is_direct_to_beneficiary else "pooling"
             beneficiary = None
             if is_direct_to_beneficiary:
@@ -408,6 +408,7 @@ class MonoClient:
                     "id": debit_id,
                     "mandate": mandate_id,
                     "status": mock_status,
+                    "response_code": "00",
                     "reference": reference,
                     "amount": amount,
                     "narration": narration,
@@ -423,6 +424,7 @@ class MonoClient:
                 amount=amount,
                 reference=reference,
                 direct_to_beneficiary=is_direct_to_beneficiary,
+                default_status=mock_status,
             )
             return mock_debit
 
@@ -472,9 +474,10 @@ class MonoClient:
                 "processing": "successful",
             }.get(current_status, current_status)
             updates: dict[str, str] = {"updated_at": datetime.now(UTC).isoformat()}
+            current_code = mock_debit.get("response_code")
             if next_status == "successful":
                 updates["response_code"] = "00"
-            elif next_status == "failed" and not mock_debit.get("response_code"):
+            elif next_status == "failed" and current_code in (None, "00"):
                 updates["response_code"] = "51"
                 updates["message"] = str(mock_debit.get("message") or "Debit failed")
             if next_status != current_status:
@@ -483,7 +486,7 @@ class MonoClient:
                     status=next_status,
                     **updates,
                 ) or mock_debit
-            elif current_status == "failed" and not mock_debit.get("response_code"):
+            elif current_status == "failed" and current_code in (None, "00"):
                 mock_debit = mock_data.update_mock_debit(debit_id, **updates) or mock_debit
             return mock_debit
 

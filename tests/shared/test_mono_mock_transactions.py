@@ -93,7 +93,7 @@ async def test_mono_client_mock_transactions_use_account_slot_per_user(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_mono_client_mock_debit_lifecycle_matches_mono_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mono_client_mock_debit_defaults_to_immediate_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
     monkeypatch.setattr(settings, "app_env", "production")
 
@@ -109,28 +109,48 @@ async def test_mono_client_mock_debit_lifecycle_matches_mono_shape(monkeypatch: 
 
     assert initiated["id"].startswith("mock_debit_")
     assert initiated["mandate"] == "mandate_123"
-    assert initiated["status"] == "pending"
+    assert initiated["status"] == "successful"
     assert initiated["reference"] == "transfer-ref-123"
     assert initiated["amount"] == 1_000_000
     assert initiated["narration"] == "Allowance"
     assert initiated["debit_type"] == "direct-to-beneficiary"
-    assert "response_code" not in initiated
+    assert initiated["response_code"] == "00"
     assert initiated["beneficiary"] == {
         "account_number": "8162511023",
         "bank_code": "100004",
     }
 
+    status = await client.get_debit_status(initiated["id"])
+
+    assert status["id"] == initiated["id"]
+    assert status["status"] == "successful"
+    assert status["reference"] == initiated["reference"]
+    assert status["amount"] == initiated["amount"]
+    assert status["response_code"] == "00"
+    assert status["beneficiary"] == initiated["beneficiary"]
+
+
+@pytest.mark.asyncio
+async def test_mono_client_mock_debit_pending_lifecycle_can_still_be_forced(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "mono_use_mock_override", True)
+    monkeypatch.setattr(settings, "app_env", "production")
+
+    client = MonoClient()
+    initiated = await client.initiate_debit(
+        mandate_id="mandate_123",
+        amount=1_000_000,
+        reference="transfer-ref-pending",
+        narration="Allowance",
+    )
+    update_mock_debit(initiated["id"], status="pending", response_code=None)
+
     first_status = await client.get_debit_status(initiated["id"])
     second_status = await client.get_debit_status(initiated["id"])
 
-    assert first_status["id"] == initiated["id"]
     assert first_status["status"] == "processing"
-    assert first_status["reference"] == initiated["reference"]
-    assert first_status["amount"] == initiated["amount"]
-    assert "response_code" not in first_status
+    assert "response_code" not in first_status or first_status["response_code"] is None
     assert second_status["status"] == "successful"
     assert second_status["response_code"] == "00"
-    assert second_status["beneficiary"] == initiated["beneficiary"]
 
 
 @pytest.mark.asyncio

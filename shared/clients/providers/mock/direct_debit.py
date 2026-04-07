@@ -128,7 +128,8 @@ class MockDirectDebitProvider(DirectDebitProvider):
             "mandate_id": mandate_id,
             "amount": amount,
             "reference": reference,
-            "status": DebitStatus.PENDING.value,
+            "status": DebitStatus.SUCCESSFUL.value,
+            "response_code": "00",
             "narration": narration,
             "debit_type": mode,
             "beneficiary": (
@@ -147,6 +148,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
             amount=amount,
             reference=reference,
             mode="direct_beneficiary" if has_beneficiary_account else "pooling",
+            default_status=DebitStatus.SUCCESSFUL.value,
         )
         return self._build_result(payload, amount_naira=amount)
 

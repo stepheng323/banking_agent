@@ -7,7 +7,7 @@ from shared.clients.providers.mock.direct_debit import MockDirectDebitProvider
 
 
 @pytest.mark.asyncio
-async def test_mock_provider_initiate_returns_pending_without_terminal_code() -> None:
+async def test_mock_provider_initiate_returns_successful_with_terminal_code() -> None:
     provider = MockDirectDebitProvider()
 
     result = await provider.initiate_debit(
@@ -20,10 +20,10 @@ async def test_mock_provider_initiate_returns_pending_without_terminal_code() ->
     )
 
     assert result.success is True
-    assert result.status == DebitStatus.PENDING
+    assert result.status == DebitStatus.SUCCESSFUL
     assert result.provider_response is not None
-    assert result.provider_response["status"] == "pending"
-    assert "response_code" not in result.provider_response
+    assert result.provider_response["status"] == "successful"
+    assert result.provider_response["response_code"] == "00"
     assert result.provider_response["debit_type"] == "direct-to-beneficiary"
 
 
@@ -36,6 +36,8 @@ async def test_mock_provider_status_progresses_to_successful_with_00_code() -> N
         reference="ref-1",
         narration="Allowance",
     )
+    provider._debits["ref-1"]["status"] = DebitStatus.PENDING.value
+    provider._debits["ref-1"].pop("response_code", None)
 
     first_poll = await provider.get_debit_status(str(initiated.debit_id))
     second_poll = await provider.get_debit_status(str(initiated.debit_id))
