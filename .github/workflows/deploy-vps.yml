@@ -194,19 +194,32 @@ jobs:
           test -s ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
+      - name: Configure SSH client options
+        run: |
+          set -euo pipefail
+          cat > ~/.ssh/config <<EOF
+          Host vps-deploy
+            HostName ${VPS_HOST}
+            User ${VPS_SSH_USER}
+            Port ${VPS_SSH_PORT}
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+          chmod 600 ~/.ssh/config
+
       - name: Ensure remote app directory exists
         run: |
           set -euo pipefail
-          ssh -p "$VPS_SSH_PORT" "$VPS_SSH_USER@$VPS_HOST" "mkdir -p '$VPS_APP_DIR/deploy'"
+          ssh -F ~/.ssh/config vps-deploy "mkdir -p '$VPS_APP_DIR/deploy'"
 
       - name: Sync deploy assets to VPS
         run: |
           set -euo pipefail
           rsync -az \
-            -e "ssh -p $VPS_SSH_PORT" \
+            -e "ssh -F ~/.ssh/config" \
             docker-compose.vps.yml \
             deploy/ \
-            "$VPS_SSH_USER@$VPS_HOST:$VPS_APP_DIR/"
+            "vps-deploy:$VPS_APP_DIR/"
 
       - name: Pull and restart VPS stack
         env:
@@ -221,7 +234,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          ssh -p "$VPS_SSH_PORT" "$VPS_SSH_USER@$VPS_HOST" \
+          ssh -F ~/.ssh/config vps-deploy \
             "APP_DIR='$VPS_APP_DIR' \
             GITHUB_SHA='$GITHUB_SHA' \
             GHCR_PULL_USERNAME='$GHCR_PULL_USERNAME' \
@@ -271,5 +284,5 @@ jobs:
         if: failure()
         run: |
           set -euo pipefail
-          ssh -p "$VPS_SSH_PORT" "$VPS_SSH_USER@$VPS_HOST" \
+          ssh -F ~/.ssh/config vps-deploy \
             "cd '$VPS_APP_DIR' && docker compose -f docker-compose.vps.yml logs --tail=120 gateway core core-chat-worker transaction-worker receipt-worker caddy"
