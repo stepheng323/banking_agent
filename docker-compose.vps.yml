@@ -23,9 +23,7 @@ services:
       - banking_network
 
   gateway:
-    build:
-      context: .
-      dockerfile: apps/gateway/Dockerfile
+    image: ${VPS_GATEWAY_IMAGE:?set VPS_GATEWAY_IMAGE}
     env_file: .env
     environment:
       RUNTIME_STACK_ROLE: vps-primary
@@ -48,9 +46,7 @@ services:
       - banking_network
 
   core:
-    build:
-      context: .
-      dockerfile: apps/core/Dockerfile
+    image: ${VPS_CORE_IMAGE:?set VPS_CORE_IMAGE}
     env_file: .env
     environment:
       RUNTIME_STACK_ROLE: vps-primary
@@ -73,9 +69,7 @@ services:
       - banking_network
 
   core-chat-worker:
-    build:
-      context: .
-      dockerfile: apps/core/Dockerfile.worker
+    image: ${VPS_CORE_CHAT_WORKER_IMAGE:?set VPS_CORE_CHAT_WORKER_IMAGE}
     env_file: .env
     environment:
       RUNTIME_STACK_ROLE: vps-primary
@@ -92,9 +86,7 @@ services:
       - banking_network
 
   transaction-worker:
-    build:
-      context: .
-      dockerfile: apps/core/Dockerfile.transaction_worker
+    image: ${VPS_TRANSACTION_WORKER_IMAGE:?set VPS_TRANSACTION_WORKER_IMAGE}
     env_file: .env
     environment:
       RUNTIME_STACK_ROLE: vps-primary
@@ -114,9 +106,7 @@ services:
       - banking_network
 
   receipt-worker:
-    build:
-      context: .
-      dockerfile: apps/receipt/Dockerfile.local
+    image: ${VPS_RECEIPT_WORKER_IMAGE:?set VPS_RECEIPT_WORKER_IMAGE}
     env_file: .env
     environment:
       RUNTIME_STACK_ROLE: vps-primary

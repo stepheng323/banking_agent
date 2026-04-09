@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy-vps.sh — local equivalent of the GitHub Actions deploy-vps workflow.
+# deploy-vps.sh — legacy local build-on-VPS deploy helper.
 # Usage:
 #   ./deploy-vps.sh                        # uses defaults below
 #   VPS_HOST=1.2.3.4 ./deploy-vps.sh      # override any variable
