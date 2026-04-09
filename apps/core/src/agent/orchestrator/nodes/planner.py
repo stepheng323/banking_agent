@@ -243,6 +243,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         current_locale=current_locale,
         locale_updates=locale_updates,
         context_read_updates=context_read_updates,
+        conversation_responder=config["configurable"].get("conversation_responder"),
     )
     if handled_response is not None:
         return {

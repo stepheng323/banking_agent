@@ -1575,6 +1575,29 @@ class _TrackingRedisWithSession(_TrackingRedis):
         return None
 
 
+class _FakeConversationResponder:
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+        self.calls: list[dict[str, object]] = []
+
+    async def generate_reply(
+        self,
+        phone_number: str,
+        text: str,
+        user_ctx: dict[str, object],
+        intent: str | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "phone_number": phone_number,
+                "text": text,
+                "user_ctx": dict(user_ctx),
+                "intent": intent,
+            }
+        )
+        return self.reply
+
+
 async def test_gate_semantic_router_can_bypass_planner_with_direct_response() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -1638,7 +1661,7 @@ async def test_gate_semantic_router_context_omits_account_and_beneficiary_previe
     assert updates["routing_decision"] == "planner_handoff"
 
 
-async def test_gate_semantic_router_direct_clarify_for_question_falls_through_to_planner(
+async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_back_to_redirect(
     monkeypatch,
 ) -> None:
     events: list[tuple[str, dict[str, object]]] = []
@@ -1673,8 +1696,44 @@ async def test_gate_semantic_router_direct_clarify_for_question_falls_through_to
     assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "semantic_router_direct"
-    assert updates["final_response"] == render_message("conversational.clarify", "en")
+    assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
     assert not any(event == "unexpected_turn_route_breadcrumb" for event, _ in events)
+
+
+async def test_gate_semantic_router_missing_reply_uses_conversation_responder_for_non_banking_turn() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.83,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="casual non-banking turn",
+        )
+    )
+    responder = _FakeConversationResponder(
+        "Today is Thursday, April 09, 2026.\nI can still help with transfers, airtime/data, balances, and transaction history."
+    )
+    state = OrchestratorState(
+        user_id="u_gate_conv_1",
+        phone_number="23480000000052",
+        channel="whatsapp",
+        last_message_text="What's today's date",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["final_response"] == responder.reply
+    assert responder.calls
+    assert responder.calls[0]["intent"] == "non_banking_conversational"
 
 
 async def test_gate_semantic_router_can_answer_grounded_account_follow_up_without_planner() -> None:

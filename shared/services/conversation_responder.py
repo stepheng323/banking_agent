@@ -1,15 +1,67 @@
-"""Conversation responder service for generating conversational replies."""
+"""Conversation responder service for bounded casual replies."""
 
+from __future__ import annotations
+
+import re
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from langchain_openai import ChatOpenAI
 
+from shared.i18n import LocaleManager, render_message, render_text
+
+_LANGUAGE_LABELS = {
+    "en": "English",
+    "pcm": "Pidgin English",
+    "yo": "Yoruba",
+    "ha": "Hausa",
+    "ig": "Igbo",
+}
+_MAX_REPLY_CHARS = 220
+_MAX_REPLY_LINES = 3
+_WHITESPACE_RE = re.compile(r"[ \t]+")
+_MULTILINE_RE = re.compile(r"\n{3,}")
+_BLOCKED_PATTERN_RE = re.compile(
+    r"\b(?:investment advice|medical advice|legal advice|diagnose|prescription|"
+    r"sue|lawsuit|tax advice|buy this stock|sell this stock)\b",
+    re.IGNORECASE,
+)
+
+
+def _locale_to_language_label(raw_locale: str | None) -> str:
+    locale = LocaleManager.normalize(raw_locale).value
+    return _LANGUAGE_LABELS.get(locale, "English")
+
+
+def _normalize_reply_text(text: str) -> str:
+    cleaned_lines = [_WHITESPACE_RE.sub(" ", line).strip() for line in text.splitlines()]
+    collapsed = "\n".join(line for line in cleaned_lines if line)
+    return _MULTILINE_RE.sub("\n\n", collapsed).strip()
+
 
 class ConversationResponder:
-    """Generates conversational replies for complex cases (FAQ, support fallback)."""
+    """Generates bounded conversational replies for casual non-banking turns."""
 
     def __init__(self, llm: ChatOpenAI) -> None:
         self.llm = llm
+
+    def _redirect_text(self, locale: str) -> str:
+        return render_message("conversational.out_of_scope", locale)
+
+    def _sanitize_preface(self, raw_text: str | None, *, locale: str) -> str | None:
+        if not raw_text:
+            return None
+        localized = _normalize_reply_text(render_text(raw_text, locale))
+        if not localized:
+            return None
+        if len(localized) > _MAX_REPLY_CHARS:
+            return None
+        if len([line for line in localized.splitlines() if line.strip()]) > _MAX_REPLY_LINES:
+            return None
+        if _BLOCKED_PATTERN_RE.search(localized):
+            return None
+        return localized
 
     async def generate_reply(
         self,
@@ -18,49 +70,70 @@ class ConversationResponder:
         user_ctx: dict[str, Any],
         intent: str | None = None,
     ) -> str:
-        """Generate LLM reply for complex conversational cases."""
-        name = None
+        """Generate a short safe reply and append a deterministic banking redirect."""
+        del phone_number, intent
         profile = user_ctx.get("profile") or {}
-        if isinstance(profile, dict):
-            name = profile.get("full_name") or profile.get("first_name")
+        name = profile.get("full_name") or profile.get("first_name") if isinstance(profile, dict) else None
 
-        language = user_ctx.get("language") or "English"
+        locale = LocaleManager.normalize(user_ctx.get("language")).value
+        language = _locale_to_language_label(locale)
         history = user_ctx.get("history") or []
+        now = datetime.now(ZoneInfo("Africa/Lagos"))
+        redirect_text = self._redirect_text(locale)
 
         history_text = ""
         if history:
-            history_text = "\n\n**CONVERSATION HISTORY (Last 5 turns):**\n"
-            for turn in history[-5:]:
-                role = turn.get("role", "user")
-                content = turn.get("content", "")
-                history_text += f"{role.upper()}: {content}\n"
+            trimmed_history = history[-4:]
+            history_lines = []
+            for turn in trimmed_history:
+                role = str(turn.get("role", "user")).strip().lower() or "user"
+                content = str(turn.get("content", "")).strip()
+                if content:
+                    history_lines.append(f"{role}: {content}")
+            if history_lines:
+                history_text = "\nRecent turns:\n" + "\n".join(history_lines)
 
         system = (
-            "You are Fusepay, a helpful banking assistant on WhatsApp. "
-            f"Reply in {language}. Adapt to the user's tone.\n\n"
-            "**INSTRUCTIONS:**\n"
-            "1. Be helpful, professional but approachable. Use emojis sparingly.\n"
-            "2. If user uses Pidgin, reply in Pidgin/English mix.\n"
-            "3. If asked, you are Fusepay AI.\n"
-            "4. For jokes, tell safe, finance-related or general friendly jokes.\n"
-            "5. For thanks, respond warmly.\n"
-            "6. For criticism, apologize and promise to improve.\n"
+            "You are Narya, a banking assistant on WhatsApp.\n"
+            f"Reply in {language}.\n"
+            "The user's message is non-banking or casual chat.\n"
+            "Write ONLY a short conversational preface, not the banking redirect.\n"
+            "Rules:\n"
+            "- Answer briefly and harmlessly.\n"
+            "- Keep it to 1 or 2 short sentences.\n"
+            "- No financial, legal, medical, tax, or investment advice.\n"
+            "- No promises about unsupported capabilities.\n"
+            "- No broad topic drift, no markdown, no emojis.\n"
+            "- If asked about the current date or time, use the runtime Lagos timestamp provided.\n"
+            "- If the ask is unsafe, too broad, or not suitable, return an empty string.\n"
         )
 
-        user_input = text.strip()
+        user_parts = [
+            f"Runtime Lagos timestamp: {now.strftime('%A, %B %d, %Y %H:%M %Z')}",
+            f"User message: {text.strip()}",
+        ]
         if name:
-            user_input = f"{user_input}\n\n[User's name: {name}]"
+            user_parts.append(f"User name: {name}")
+        if history_text:
+            user_parts.append(history_text)
 
         reply = await self.llm.ainvoke(
             [
                 {"role": "system", "content": system},
-                {"role": "user", "content": f"{history_text}\n\nUser message: {user_input}"},
+                {"role": "user", "content": "\n".join(user_parts)},
             ]
         )
 
+        raw_content: str | None
         if isinstance(reply, str):
-            return reply
-        content = getattr(reply, "content", None)
-        if isinstance(content, str) and content:
-            return content
-        return "How can I help you today?"
+            raw_content = reply
+        else:
+            response_content: Any = getattr(reply, "content", None)
+            raw_content = response_content if isinstance(response_content, str) else None
+
+        preface = self._sanitize_preface(raw_content, locale=locale)
+        if not preface:
+            return redirect_text
+        if preface == redirect_text:
+            return redirect_text
+        return f"{preface}\n{redirect_text}"

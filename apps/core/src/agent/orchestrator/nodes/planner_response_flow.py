@@ -52,6 +52,7 @@ async def _build_non_task_response(
     current_locale: str,
     locale_updates: dict[str, Any],
     context_read_updates: dict[str, Any],
+    conversation_responder: Any | None = None,
 ) -> dict[str, Any] | None:
     detected_locale = _detected_locale_value(planner_output)
 
@@ -66,6 +67,23 @@ async def _build_non_task_response(
         if not raw_response:
             return ""
         return cast(str, render_text(raw_response, locale))
+
+    async def _build_bounded_conversational_reply(locale: str) -> str | None:
+        if conversation_responder is None:
+            return None
+        try:
+            return await conversation_responder.generate_reply(
+                state.phone_number,
+                text,
+                {
+                    **(state.loaded_context or {}),
+                    "language": locale,
+                },
+                intent="non_banking_conversational",
+            )
+        except Exception as exc:
+            logger.warning("conversation_responder_failed", error=str(exc))
+            return None
 
     if getattr(planner_output, "is_cancellation", False) or planner_output.primary_intent == "cancel":
         logger.info("planner_cancellation_detected", intent=planner_output.primary_intent)
@@ -156,12 +174,27 @@ async def _build_non_task_response(
             intent=planner_output.primary_intent,
             detected_language=getattr(planner_output, "detected_language", None),
         )
-        fallback_key: MessageKey = "conversational.clarify"
+        responder_reply = await _build_bounded_conversational_reply(conversational_locale)
+        if responder_reply:
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="conversation_responder",
+                route_reason="missing_conversational_response_key",
+                policy_blocked=False,
+                fallback_path="planner_non_task",
+            )
+            return {
+                "final_response": responder_reply,
+                **conversational_locale_updates,
+                **context_read_updates,
+            }
+        fallback_key: MessageKey = "conversational.out_of_scope"
         logger.info("conversational_fallback_deterministic_used", key=fallback_key, locale=conversational_locale)
         _log_unexpected_turn_route(
             state=state,
             planner_output=planner_output,
-            selected_route="clarify",
+            selected_route="out_of_scope",
             route_reason="missing_conversational_response_key",
             policy_blocked=False,
             fallback_path="planner_non_task",

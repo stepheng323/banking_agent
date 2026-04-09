@@ -91,6 +91,8 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     if result.surface_view is not None:
         return result.surface_view
 
+    query_contract = result_query_contract(result)
+
     if result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER and result.answer_context is not None:
         direct_items: list[SurfaceItemView] = []
         context: dict[str, Any] = {"hint_text": result.answer_context.hint_text}
@@ -129,6 +131,38 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
         return SurfaceView(
             mode=SurfaceViewMode.CLARIFICATION,
             lead_text=result.answer_context.primary_text,
+        )
+
+    if (
+        result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
+        and query_contract is not None
+        and query_contract.aggregation is not None
+        and query_contract.aggregation.type in {"largest", "smallest"}
+        and result.items
+    ):
+        ranking_context = {
+            **build_surface_view_context(result=result, mode=SurfaceViewMode.TRANSACTION_LIST),
+            "type": query_contract.aggregation.type,
+        }
+        return SurfaceView(
+            mode=SurfaceViewMode.TRANSACTION_LIST,
+            items=[
+                SurfaceItemView(
+                    id=item.id,
+                    label=item.description,
+                    amount=item.amount,
+                    count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
+                    payload=_build_selection_payload(
+                        result,
+                        item,
+                        mode=SurfaceViewMode.TRANSACTION_LIST,
+                        context=ranking_context,
+                    ),
+                    metadata=item.metadata or {},
+                )
+                for item in result.items or []
+            ],
+            context=ranking_context,
         )
 
     if result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST:

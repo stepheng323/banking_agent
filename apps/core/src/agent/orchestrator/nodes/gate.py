@@ -989,9 +989,28 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
 
     message_text = (state.last_message_text or "").strip()
     current_locale = _current_locale(state)
+    conversation_responder = config["configurable"].get("conversation_responder")
     phrase_heavy_fastpath_allowed = _allow_phrase_heavy_fastpath(message_text, current_locale)
     gate_updates: dict[str, Any] = {}
     live_pending_interrupt = _has_live_pending_interrupt(state)
+
+    async def _build_bounded_conversational_reply(locale: str) -> str | None:
+        if conversation_responder is None:
+            return None
+        try:
+            return await conversation_responder.generate_reply(
+                state.phone_number,
+                message_text,
+                {
+                    **(state.loaded_context or {}),
+                    "language": locale,
+                },
+                intent="non_banking_conversational",
+            )
+        except Exception as exc:
+            logger.warning("conversation_responder_failed", error=str(exc))
+            return None
+
     if state.pending_interrupt is not None and not live_pending_interrupt:
         logger.info(
             "interrupt_router_skipped_no_live_flow",
@@ -1650,7 +1669,18 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                     else:
                         text = render_message(route.response_key, locale)
                 else:
-                    text = route.response or render_message("conversational.clarify", locale)
+                    text = route.response or ""
+                    if not text and canonical_decision == "direct_reply":
+                        responder_reply = await _build_bounded_conversational_reply(locale)
+                        if responder_reply:
+                            text = responder_reply
+                    if not text:
+                        fallback_key = (
+                            "conversational.out_of_scope"
+                            if canonical_decision == "direct_reply"
+                            else "conversational.clarify"
+                        )
+                        text = render_message(fallback_key, locale)
 
                 had_active_query_session = bool(
                     isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active")

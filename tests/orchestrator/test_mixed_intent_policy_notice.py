@@ -115,6 +115,29 @@ class _FakeMetaLLM:
         return self._response
 
 
+class _FakeConversationResponder:
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+        self.calls: list[dict[str, Any]] = []
+
+    async def generate_reply(
+        self,
+        phone_number: str,
+        text: str,
+        user_ctx: dict[str, Any],
+        intent: str | None = None,
+    ) -> str:
+        self.calls.append(
+            {
+                "phone_number": phone_number,
+                "text": text,
+                "user_ctx": dict(user_ctx),
+                "intent": intent,
+            }
+        )
+        return self.reply
+
+
 def _apply(state: OrchestratorState, updates: dict) -> OrchestratorState:
     """Apply node updates to state."""
     return state.model_copy(update=updates)
@@ -680,6 +703,48 @@ async def test_conversational_response_key_localizes_for_yoruba() -> None:
 
 
 @pytest.mark.asyncio
+async def test_conversational_missing_response_uses_conversation_responder_not_clarify() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key=None,
+        confidence=0.76,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="what's today's date",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder(
+        "Today is Thursday, April 09, 2026.\nI can still help with transfers, airtime/data, balances, and transaction history."
+    )
+    state = OrchestratorState(
+        user_id="u_meta_conv_1",
+        phone_number="2348999999996",
+        channel="whatsapp",
+        last_message_text="What's today's date",
+        loaded_context={"language": "en", "profile": {"first_name": "Gaines"}},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == responder.reply
+    assert responder.calls
+    assert responder.calls[0]["intent"] == "non_banking_conversational"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("detected_language", "expected_locale", "message_text"),
     [
@@ -731,8 +796,8 @@ async def test_conversational_checkin_response_localizes_for_detected_language(
 
 
 @pytest.mark.asyncio
-async def test_conversational_missing_response_key_uses_deterministic_clarify() -> None:
-    """Missing conversational response_key should always use deterministic clarify fallback."""
+async def test_conversational_missing_response_key_uses_deterministic_redirect() -> None:
+    """Missing conversational response_key should use deterministic banking redirect fallback."""
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
@@ -764,12 +829,12 @@ async def test_conversational_missing_response_key_uses_deterministic_clarify() 
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "Say exactly what you want me to do with your money."
+    assert state.final_response == render_message("conversational.out_of_scope", "en")
 
 
 @pytest.mark.asyncio
 async def test_conversational_missing_response_key_falls_back_deterministically() -> None:
-    """Missing key fallback should stay localized and deterministic."""
+    """Missing key fallback should stay localized and use the banking redirect."""
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
@@ -801,7 +866,7 @@ async def test_conversational_missing_response_key_falls_back_deterministically(
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "Talk am straight. Wetin exactly you want make I do with your money?"
+    assert state.final_response == render_message("conversational.out_of_scope", "pcm")
 
 
 @pytest.mark.asyncio

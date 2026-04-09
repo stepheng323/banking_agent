@@ -44,6 +44,7 @@ class OrchestratorAgent:
             banking_provider=self.deps.banking_provider,
             publisher=self.deps.publisher,
             beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
+            conversation_responder=self.deps.conversation_responder,
         )
 
     async def resume_transaction(

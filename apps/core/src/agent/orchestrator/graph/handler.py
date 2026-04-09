@@ -44,6 +44,7 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.context_manager import ContextManager
+from shared.services.conversation_responder import ConversationResponder
 from shared.services.delivery_service import DeliveryAttemptResult
 from shared.services.task_planner import OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task
@@ -76,12 +77,14 @@ class OrchestratorGraphHandler:
         redis_client: redis.Redis,
         publisher: QueuePublisher,
         beneficiary_suggestion_service: BeneficiarySuggestionService,
+        conversation_responder: ConversationResponder | None = None,
         mode: Literal["planning", "execution", "both"] = "both",
     ):
         self.task_planner = task_planner
         self.redis_client = redis_client
         self.publisher = publisher
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
+        self.conversation_responder = conversation_responder
         self.mode = mode
         self.context_manager = context_manager
 
@@ -177,6 +180,7 @@ class OrchestratorGraphHandler:
                 "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
                 "redis_client": self.redis_client,
                 "publisher": self.publisher,
+                "conversation_responder": self.conversation_responder,
             },
             "recursion_limit": 50,
         }
