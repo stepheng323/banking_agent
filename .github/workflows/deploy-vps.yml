@@ -197,7 +197,7 @@ jobs:
       - name: Configure SSH client options
         run: |
           set -euo pipefail
-          cat > ~/.ssh/config <<EOF
+          cat > "$HOME/.ssh/config" <<EOF
           Host vps-deploy
             HostName ${VPS_HOST}
             User ${VPS_SSH_USER}
@@ -205,18 +205,18 @@ jobs:
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
           EOF
-          chmod 600 ~/.ssh/config
+          chmod 600 "$HOME/.ssh/config"
 
       - name: Ensure remote app directory exists
         run: |
           set -euo pipefail
-          ssh -F ~/.ssh/config vps-deploy "mkdir -p '$VPS_APP_DIR/deploy'"
+          ssh -F "$HOME/.ssh/config" vps-deploy "mkdir -p '$VPS_APP_DIR/deploy'"
 
       - name: Sync deploy assets to VPS
         run: |
           set -euo pipefail
           rsync -az \
-            -e "ssh -F ~/.ssh/config" \
+            -e "ssh -F $HOME/.ssh/config" \
             docker-compose.vps.yml \
             deploy/ \
             "vps-deploy:$VPS_APP_DIR/"
@@ -234,7 +234,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          ssh -F ~/.ssh/config vps-deploy \
+          ssh -F "$HOME/.ssh/config" vps-deploy \
             "APP_DIR='$VPS_APP_DIR' \
             GITHUB_SHA='$GITHUB_SHA' \
             GHCR_PULL_USERNAME='$GHCR_PULL_USERNAME' \
@@ -290,7 +290,7 @@ jobs:
           VPS_RECEIPT_WORKER_IMAGE: ${{ steps.image_refs.outputs.receipt_worker }}
         run: |
           set -euo pipefail
-          ssh -F ~/.ssh/config vps-deploy \
+          ssh -F "$HOME/.ssh/config" vps-deploy \
             "cd '$VPS_APP_DIR' \
             && VPS_GATEWAY_IMAGE='$VPS_GATEWAY_IMAGE' \
             VPS_CORE_IMAGE='$VPS_CORE_IMAGE' \
