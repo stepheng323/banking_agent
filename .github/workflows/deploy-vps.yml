@@ -98,13 +98,11 @@ jobs:
         env:
           VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
           VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           test -n "$VPS_HOST"
           test -n "$VPS_SSH_USER"
           test -n "$VPS_SSH_PRIVATE_KEY"
-          test -n "$VPS_SSH_KNOWN_HOSTS"
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -112,13 +110,12 @@ jobs:
           ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
 
       - name: Configure SSH known_hosts
-        env:
-          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keyscan -H -p "$VPS_SSH_PORT" -T 10 "$VPS_HOST" > ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       - name: Ensure remote app directory exists
