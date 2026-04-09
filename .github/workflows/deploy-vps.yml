@@ -56,19 +56,19 @@ jobs:
         include:
           - name: core-vps
             dockerfile: apps/core/Dockerfile
-            validate_cmd: python -c 'import importlib; m = importlib.import_module("apps.core.src.main"); getattr(m, "app")'
+            validate_expr: import importlib; m = importlib.import_module('apps.core.src.main'); getattr(m, 'app')
           - name: gateway-vps
             dockerfile: apps/gateway/Dockerfile
-            validate_cmd: python -c 'import importlib; m = importlib.import_module("apps.gateway.main"); getattr(m, "app")'
+            validate_expr: import importlib; m = importlib.import_module('apps.gateway.main'); getattr(m, 'app')
           - name: core-chat-worker-vps
             dockerfile: apps/core/Dockerfile.worker
-            validate_cmd: python -c 'import importlib; importlib.import_module("apps.core.src.worker_main")'
+            validate_expr: import importlib; importlib.import_module('apps.core.src.worker_main')
           - name: transaction-worker-vps
             dockerfile: apps/core/Dockerfile.transaction_worker
-            validate_cmd: python -c 'import importlib; m = importlib.import_module("apps.core.src.transaction_worker_app"); getattr(m, "app")'
+            validate_expr: import importlib; m = importlib.import_module('apps.core.src.transaction_worker_app'); getattr(m, 'app')
           - name: receipt-worker-vps
             dockerfile: apps/receipt/Dockerfile.local
-            validate_cmd: python -c 'import importlib; m = importlib.import_module("apps.receipt.main"); getattr(m, "app")'
+            validate_expr: import importlib; m = importlib.import_module('apps.receipt.main'); getattr(m, 'app')
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
       - name: Validate runtime image boot boundary
         run: |
           set -euo pipefail
-          docker run --rm "banking-agent-${{ matrix.name }}:ci" sh -lc "${{ matrix.validate_cmd }}"
+          docker run --rm "banking-agent-${{ matrix.name }}:ci" python -c "${{ matrix.validate_expr }}"
           echo "✓ ${{ matrix.name }} runtime image smoke passed"
 
   build-vps-images:
