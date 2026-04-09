@@ -565,6 +565,10 @@ def build_task_spec_from_plan_item(
     if plan_item.executor == "query" and not payload.get("message"):
         payload["message"] = fallback_message or plan_item.instruction or ""
 
+    source_clause_index = getattr(plan_item, "source_clause_index", None)
+    if isinstance(source_clause_index, int) and source_clause_index > 0:
+        payload["source_clause_index"] = source_clause_index
+
     if include_skip_extraction and plan_item.executor in ("transfer", "airtime", "data"):
         payload["skip_extraction"] = True
 

@@ -189,6 +189,11 @@ def test_mixed_money_move_coverage_rules_present() -> None:
     assert "send_money" in runtime_prompt
     assert "buy_airtime" in runtime_prompt
     assert "EXECUTOR COVERAGE GUARD" in runtime_prompt
+    assert "clauses[]" in runtime_prompt
+    assert "source_clause_index" in runtime_prompt
+    assert "Never use text from one clause to fill another clause's slots." in runtime_prompt
+    assert "Never drop a later read-only clause" in runtime_prompt
+    assert "Apply clause decomposition semantically across supported languages." in runtime_prompt
 
 
 def test_transfer_only_prompt_bundle_excludes_executor_coverage_guard() -> None:

@@ -1,6 +1,6 @@
 """Models for task planning and normalization."""
 
-from typing import Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, Field
 
@@ -79,6 +79,43 @@ class PlannedTask(BaseModel):
     condition: str | None = None
     risk: Literal["READ_ONLY", "MUTATION", "MONEY_MOVE"] = "READ_ONLY"
     idempotency_key: str | None = None  # Set by engine
+    source_clause_index: int | None = Field(
+        default=None,
+        description="1-based clause index in planner decomposition that produced this task",
+    )
+
+
+PlannerClauseIntentFamily: TypeAlias = Literal[
+    "transfer",
+    "airtime",
+    "data",
+    "account_query",
+    "query",
+    "support",
+    "faq",
+    "beneficiary",
+    "conversational",
+    "unknown",
+]
+
+
+class PlannerClause(BaseModel):
+    """Ordered clause decomposition for a single user turn."""
+
+    clause_index: int = Field(..., ge=1, description="1-based ordered semantic clause index")
+    text: str = Field(default="", description="User clause text for this semantic segment")
+    intent_family: PlannerClauseIntentFamily = Field(
+        default="unknown",
+        description="Normalized semantic family for this clause",
+    )
+    extracted_fields: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Clause-local extracted fields used for downstream validation and repair",
+    )
+    task_ids: list[str] = Field(
+        default_factory=list,
+        description="Task ids that this clause is expected to map to",
+    )
 
 
 PlannerResponseKey: TypeAlias = Literal[
@@ -273,6 +310,10 @@ class PlannerOutput(BaseModel):
 
     # Planning fields
     normalized_instruction: str = Field(default="", description="Cleaned up version of user request")
+    clauses: list[PlannerClause] = Field(
+        default_factory=list,
+        description="Ordered semantic clause decomposition for the turn",
+    )
     tasks: list[PlannedTask] = Field(default_factory=list)
     notes: str | None = None
     created_at: float = Field(default_factory=lambda: __import__("time").time())

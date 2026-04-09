@@ -2,17 +2,19 @@
 
 PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - Return only PlannerOutput JSON.
-- greeting/thanks/check-in -> conversational with tasks=[].
-- Banking asks handled by planner should emit task+.
+- greet|thanks|checkin -> conversational,tasks=[].
+- banking -> task+.
+- mixed asks: clauses[] first, then tasks[].
+- clauses[] item = {clause_index,text,intent_family,extracted_fields,task_ids}.
+- tasks may set source_clause_index.
 - transfer: send_money|schedule_transfer|recurring_transfer|list_scheduled_transfers|cancel_scheduled_transfer.
 - beneficiary: list_beneficiaries|add_beneficiary|delete_beneficiary|update_beneficiary|save_beneficiary.
 - query: transaction_list|transaction_search|analytics_summary|time_comparison|beneficiary_summary|affordability.
-- beneficiary_route:
-  beneficiary_list=list/manage, recipient_ranking=query.beneficiary_summary, none=save/other.
-- save_beneficiary only with beneficiary suggestion context.
+- beneficiary_route: beneficiary_list|recipient_ranking|none.
+- save_beneficiary only with suggestion context.
 - people transfer batch -> one task + recipient_allocations[].
 - funding split -> explicit_split.
-- Mixed/orchestration asks may include multiple tasks with depends_on preserving user order."""
+- mixed asks may emit multiple tasks with depends_on preserving order."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed.
@@ -30,16 +32,21 @@ PLANNER_TRANSFER_ONLY_PRECISION_PROMPT = """## TRANSFER_ONLY PRECISION
 - Never guess ambiguous fields."""
 
 PLANNER_MIXED_TX_PRECISION_PROMPT = """## MIXED_TX PRECISION
-- Explicit multi-transaction asks must emit every requested transaction executor in user order.
+- Decompose mixed turns into ordered semantic clauses before tasks.
+- Apply clause decomposition semantically across supported languages.
+- Emit every explicit transaction executor in user order.
+- Keep read-only balance/query clauses separate from transaction clauses.
 - Keep transfer recipient text exact.
-- Extract explicit transfer amount/account/bank and airtime/data amount/phone/network in one turn.
+- Extract explicit transfer/account/bank and airtime/data phone/network fields in one turn.
 - Preserve recipient_allocations for people splits.
+- Never use text from one clause to fill another clause's slots.
+- Never drop a later read-only clause.
 - Never guess ambiguous fields."""
 
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
     "## EXECUTOR COVERAGE GUARD\n"
     "- expected_transaction_executors: {expected_executors}.\n"
-    "- Explicit mixed asks must emit every expected executor in user order."
+    "- Emit every expected executor in user order."
 )
 
 PLANNER_RULE_ATOMS: dict[str, str] = {
@@ -101,7 +108,6 @@ PLANNER_RULE_ATOM_ORDER = [
     "R27_RECIPIENT_SPLIT",
 ]
 
-# Critical rules whose semantics must be explicit in the compiled prompt to prevent drift.
 PLANNER_RULE_SEMANTIC_GUARD_IDS = {
     "R05_CANCEL_CONFIRM",
     "R14_REFERENCE_BINDING",
@@ -179,15 +185,12 @@ PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
 PLANNER_RUNTIME_MIXED_TX_EXAMPLES = (
     "## TARGETED EXAMPLES (MIXED_TX)\n"
     "- Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.\n"
-    "- Send 20k to 0760505261 First Bank and buy 2k airtime for 08031234567 mtn ->\n"
-    "  send_money amount=20000, recipient_account=0760505261, bank_name=First Bank +\n"
-    "  buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.\n"
+    "- Send 4k to Gaines, but 2k airtime for 08162511024 and show my final balance ->\n"
+    "  clauses=[transfer, airtime, account_query] + send_money + buy_airtime + check_balance.\n"
     "- Send 10k each to Mum and Tolu, then buy 2k airtime for me ->\n"
-    "  send_money recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000}] +\n"
-    "  buy_airtime amount=2000, is_self=true.\n"
-    "- Buy 1GB for 08031234567 mtn and send 5k to Mum -> buy_data + send_money.\n"
-    "- Buy 200 airtime for 08031234567 and 08067892221, then send 5k to Mum ->\n"
-    "  2 x buy_airtime + 1 x send_money."
+    "  send_money recipient_allocations=[{recipient_name:Mum,amount:10000},"
+    "{recipient_name:Tolu,amount:10000}] + buy_airtime.\n"
+    "- Buy 1GB for 08031234567 mtn and send 5k to Mum -> buy_data + send_money."
 )
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)

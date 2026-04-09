@@ -15,7 +15,7 @@ from apps.core.src.agent.orchestrator.models.domain import TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context_read import TRANSACTION_EXECUTORS
 from apps.core.src.agent.orchestrator.utils.task_payload import _derive_recipients_from_user_text
-from shared.types.planner import PlannedTask
+from shared.types.planner import PlannedTask, PlannerClause, PlannerOutput, TaskParameters
 
 
 def _normalize_recipient_text(value: str | None) -> str:
@@ -23,6 +23,158 @@ def _normalize_recipient_text(value: str | None) -> str:
         return ""
     lowered = re.sub(r"([a-z])['’]s\b", r"\1", value.lower())
     return re.sub(r"[^a-z0-9]+", " ", lowered).strip()
+
+
+def _normalize_clause_family(value: str | None) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {"account", "balance", "balance_query", "account_balance"}:
+        return "account_query"
+    if normalized in {"transaction_query", "transactions"}:
+        return "query"
+    return normalized or "unknown"
+
+
+def _clause_to_executor_family(clause: PlannerClause) -> str | None:
+    family = _normalize_clause_family(clause.intent_family)
+    if family in {"transfer", "airtime", "data", "support", "faq", "beneficiary"}:
+        return family
+    if family == "account_query":
+        return "account_or_query"
+    if family == "query":
+        return "query"
+    return None
+
+
+def _is_actionable_clause(clause: PlannerClause) -> bool:
+    return _clause_to_executor_family(clause) is not None
+
+
+def _task_matches_clause(task: PlannedTask, clause: PlannerClause) -> bool:
+    family = _clause_to_executor_family(clause)
+    if family is None:
+        return False
+    if family == "account_or_query":
+        return task.executor in {"account", "query"}
+    return task.executor == family
+
+
+def _next_clause_repair_task_id(prefix: str, existing_ids: set[str], clause_index: int) -> str:
+    candidate = f"{prefix}_clause_{clause_index}"
+    if candidate not in existing_ids:
+        existing_ids.add(candidate)
+        return candidate
+    suffix = 2
+    while True:
+        candidate = f"{prefix}_clause_{clause_index}_{suffix}"
+        if candidate not in existing_ids:
+            existing_ids.add(candidate)
+            return candidate
+        suffix += 1
+
+
+def _coerce_clause_field_text(clause: PlannerClause, *keys: str) -> str | None:
+    for key in keys:
+        value = clause.extracted_fields.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _balance_like_clause(clause: PlannerClause) -> bool:
+    family = _normalize_clause_family(clause.intent_family)
+    if family != "account_query":
+        return False
+    action_hint = _coerce_clause_field_text(clause, "account_action_hint", "action", "query_kind")
+    if action_hint and action_hint.strip().lower().replace(" ", "_") in {
+        "check_balance",
+        "balance",
+        "show_balance",
+        "overall_balance",
+    }:
+        return True
+    normalized_text = _normalize_recipient_text(clause.text)
+    return any(token in normalized_text for token in ("balance", "remaining", "remain", "left"))
+
+
+def _build_balance_task_from_clause(
+    clause: PlannerClause,
+    *,
+    existing_ids: set[str],
+    depends_on: list[str],
+) -> PlannedTask:
+    return PlannedTask(
+        task_id=_next_clause_repair_task_id("account", existing_ids, clause.clause_index),
+        action="check_balance",
+        executor="account",
+        instruction=clause.text or "Show my balance",
+        parameters=TaskParameters(),
+        depends_on=depends_on,
+        risk="READ_ONLY",
+        source_clause_index=clause.clause_index,
+    )
+
+
+def _resolve_clause_for_task(task: PlannedTask, clauses: list[PlannerClause]) -> PlannerClause | None:
+    if isinstance(task.source_clause_index, int) and task.source_clause_index > 0:
+        for clause in clauses:
+            if clause.clause_index == task.source_clause_index:
+                return clause
+    compatible = [clause for clause in clauses if _task_matches_clause(task, clause)]
+    if len(compatible) == 1:
+        return compatible[0]
+    return None
+
+
+def _looks_like_cross_clause_recipient_leak(
+    recipient_name: str | None,
+    *,
+    non_transfer_clauses: list[PlannerClause],
+) -> bool:
+    normalized = _normalize_recipient_text(recipient_name)
+    if not normalized:
+        return False
+    if any(token in normalized for token in ("balance", "remaining", "left")):
+        return True
+    for clause in non_transfer_clauses:
+        clause_text = _normalize_recipient_text(clause.text)
+        if clause_text and (normalized == clause_text or clause_text in normalized or normalized in clause_text):
+            return True
+    return False
+
+
+def _repair_transfer_task_from_clause(
+    task: PlannedTask,
+    *,
+    clause: PlannerClause,
+    non_transfer_clauses: list[PlannerClause],
+) -> tuple[PlannedTask, bool]:
+    params = task.parameters.model_copy(deep=True) if task.parameters else TaskParameters()
+    current_recipient = str(params.recipient_name or params.recipient or "").strip()
+    if not _looks_like_cross_clause_recipient_leak(current_recipient, non_transfer_clauses=non_transfer_clauses):
+        if task.source_clause_index == clause.clause_index:
+            return task, False
+        return task.model_copy(update={"source_clause_index": clause.clause_index}), True
+
+    clause_recipient = _coerce_clause_field_text(clause, "recipient_name", "recipient")
+    if not clause_recipient:
+        derived = _derive_recipients_from_user_text(clause.text)
+        clause_recipient = derived[0] if len(derived) == 1 else None
+    if not clause_recipient:
+        return task, False
+
+    params.recipient = clause_recipient
+    params.recipient_name = clause_recipient
+    repaired_instruction = clause.text or task.instruction
+    return (
+        task.model_copy(
+            update={
+                "parameters": params,
+                "instruction": repaired_instruction,
+                "source_clause_index": clause.clause_index,
+            }
+        ),
+        True,
+    )
 
 
 def _recipient_overlap_score(left: str | None, right: str | None) -> int:
@@ -76,6 +228,8 @@ def _next_transfer_fanout_task_id(base_task_id: str, index: int, existing_ids: s
 def _expand_underproduced_transfer_tasks(
     planned_tasks: list[PlannedTask],
     user_text: str,
+    *,
+    clause_text_by_index: dict[int, str] | None = None,
 ) -> tuple[list[PlannedTask], dict[str, Any] | None]:
     """Fan out a single transfer task when user text clearly contains multiple recipients."""
     transfer_indices = [idx for idx, task in enumerate(planned_tasks) if task.executor == "transfer"]
@@ -93,7 +247,12 @@ def _expand_underproduced_transfer_tasks(
         return planned_tasks, None
 
     recipient_allocations = _planned_recipient_allocations(source_task)
-    recipients = _derive_recipients_from_user_text(user_text)
+    source_text = (
+        clause_text_by_index.get(source_task.source_clause_index or 0, user_text)
+        if clause_text_by_index
+        else user_text
+    )
+    recipients = _derive_recipients_from_user_text(source_text)
     if recipient_allocations is None and len(recipients) < 2:
         return planned_tasks, None
 
@@ -262,6 +421,66 @@ def _reconcile_multi_transfer_recipient_tasks(
     )
 
 
+def _validate_and_repair_planner_clauses(
+    planner_output: PlannerOutput,
+) -> tuple[PlannerOutput, dict[str, Any] | None]:
+    clauses = [clause for clause in getattr(planner_output, "clauses", []) if _is_actionable_clause(clause)]
+    if not clauses:
+        return planner_output, None
+
+    tasks = [task.model_copy(deep=True) for task in planner_output.tasks]
+    existing_ids = {task.task_id for task in tasks}
+    non_transfer_clauses = [
+        clause for clause in clauses if _normalize_clause_family(clause.intent_family) != "transfer"
+    ]
+    changed_tasks: list[str] = []
+    repaired_balance_clause_indexes: list[int] = []
+
+    for index, task in enumerate(tasks):
+        if task.executor != "transfer":
+            continue
+        matched_clause = _resolve_clause_for_task(task, clauses)
+        if matched_clause is None or _normalize_clause_family(matched_clause.intent_family) != "transfer":
+            continue
+        repaired_task, repaired = _repair_transfer_task_from_clause(
+            task,
+            clause=matched_clause,
+            non_transfer_clauses=non_transfer_clauses,
+        )
+        if repaired:
+            tasks[index] = repaired_task
+            changed_tasks.append(task.task_id)
+
+    for clause in clauses:
+        if any(_task_matches_clause(task, clause) for task in tasks):
+            continue
+        if _balance_like_clause(clause):
+            transaction_depends_on = [task.task_id for task in tasks if task.executor in TRANSACTION_EXECUTORS]
+            tasks.append(
+                _build_balance_task_from_clause(
+                    clause,
+                    existing_ids=existing_ids,
+                    depends_on=transaction_depends_on,
+                )
+            )
+            repaired_balance_clause_indexes.append(clause.clause_index)
+
+    if not changed_tasks and not repaired_balance_clause_indexes:
+        return planner_output, None
+
+    updated_output = planner_output.model_copy(update={"tasks": tasks})
+    if len(tasks) > 1:
+        updated_output = updated_output.model_copy(update={"primary_intent": "mixed", "is_complex": True})
+
+    return (
+        updated_output,
+        {
+            "repaired_balance_clause_indexes": repaired_balance_clause_indexes,
+            "changed_transfer_task_ids": changed_tasks,
+        },
+    )
+
+
 def _should_replan_active_wave(state: OrchestratorState) -> bool:
     """Allow replanning active waves only for explicit pre-execution update turns."""
     if not state.waves or state.pending_interrupt is not None:
@@ -318,4 +537,5 @@ __all__ = [
     "_reconcile_multi_transfer_recipient_tasks",
     "_should_replan_active_wave",
     "_strip_transactional_depends_on_edges",
+    "_validate_and_repair_planner_clauses",
 ]

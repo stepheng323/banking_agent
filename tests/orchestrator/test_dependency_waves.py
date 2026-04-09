@@ -7,7 +7,7 @@ from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, Accou
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
-from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
+from shared.types.planner import PlannedTask, PlannerClause, PlannerOutput, RecipientAllocation, TaskParameters
 
 
 class _MockPlanner:
@@ -328,7 +328,176 @@ async def test_planner_fans_out_single_transfer_when_text_has_multiple_recipient
     assert updates["tasks"]["t1_r2"].payload.get("recipient_binding_source") == "fanout"
     assert updates["tasks"]["t1"].payload.get("amount") == 10000
     assert updates["tasks"]["t1_r2"].payload.get("amount") == 10000
-    assert updates["waves"] == [["t1", "t1_r2"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_repairs_missing_balance_task_from_clause_decomposition() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        is_complex=True,
+        clauses=[
+            PlannerClause(
+                clause_index=1,
+                text="Send 4k to gaines",
+                intent_family="transfer",
+                extracted_fields={"recipient_name": "gaines", "amount": 4000},
+            ),
+            PlannerClause(
+                clause_index=2,
+                text="2k airtime for 0816 251 1024",
+                intent_family="airtime",
+                extracted_fields={"amount": 2000, "recipient_phone": "08162511024"},
+            ),
+            PlannerClause(
+                clause_index=3,
+                text="show my final balance",
+                intent_family="account_query",
+                extracted_fields={"account_action_hint": "check_balance"},
+            ),
+        ],
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 4k to gaines",
+                parameters=TaskParameters(amount=4000, recipient="gaines"),
+                risk="MONEY_MOVE",
+                source_clause_index=1,
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="buy_airtime",
+                executor="airtime",
+                instruction="2k airtime for 0816 251 1024",
+                parameters=TaskParameters(amount=2000, recipient_phone="08162511024"),
+                risk="MONEY_MOVE",
+                source_clause_index=2,
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_clause_1",
+        phone_number="2348111111193",
+        channel="whatsapp",
+        last_message_text="Send 4k to gaines, but 2k airtime for 0816 251 1024 and show my final balance",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert set(updates["tasks"].keys()) == {"t1", "t2", "account_clause_3"}
+    assert updates["tasks"]["account_clause_3"].type == "account"
+    assert updates["tasks"]["account_clause_3"].payload["action"] == "check_balance"
+    assert updates["tasks"]["account_clause_3"].depends_on == ["t1", "t2"]
+    assert updates["waves"] == [["t1", "t2"], ["account_clause_3"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_repairs_transfer_recipient_from_transfer_clause_when_read_only_clause_leaks() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        is_complex=True,
+        clauses=[
+            PlannerClause(
+                clause_index=1,
+                text="Send 4k to gaines",
+                intent_family="transfer",
+                extracted_fields={"recipient_name": "gaines", "amount": 4000},
+            ),
+            PlannerClause(
+                clause_index=2,
+                text="show my final balance",
+                intent_family="account_query",
+                extracted_fields={"account_action_hint": "check_balance"},
+            ),
+        ],
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 4k to gaines, but show my final balance",
+                parameters=TaskParameters(amount=4000, recipient_name="show my final balance"),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_clause_2",
+        phone_number="2348111111194",
+        channel="whatsapp",
+        last_message_text="Send 4k to gaines, but show my final balance",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates["tasks"]["t1"].payload["recipient_name"] == "gaines"
+    assert updates["tasks"]["t1"].payload["instruction"] == "Send 4k to gaines"
+    assert updates["tasks"]["t1"].payload["source_clause_index"] == 1
+    assert updates["tasks"]["account_clause_2"].type == "account"
+    assert updates["tasks"]["account_clause_2"].payload["action"] == "check_balance"
+    assert updates["tasks"]["account_clause_2"].payload["instruction"] == "show my final balance"
+    assert updates["waves"] == [["t1"], ["account_clause_2"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_repairs_transfer_recipient_from_non_english_read_only_clause_leak() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        is_complex=True,
+        clauses=[
+            PlannerClause(
+                clause_index=1,
+                text="Aika 4k zuwa gaines",
+                intent_family="transfer",
+                extracted_fields={"recipient_name": "gaines", "amount": 4000},
+            ),
+            PlannerClause(
+                clause_index=2,
+                text="nuna min final balance dina",
+                intent_family="account_query",
+                extracted_fields={"account_action_hint": "check_balance"},
+            ),
+        ],
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Aika 4k zuwa gaines kuma nuna min final balance dina",
+                parameters=TaskParameters(amount=4000, recipient_name="nuna min final balance dina"),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_clause_2b",
+        phone_number="2348111111195",
+        channel="whatsapp",
+        last_message_text="Aika 4k zuwa gaines kuma nuna min final balance dina",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates["tasks"]["t1"].payload["recipient_name"] == "gaines"
+    assert updates["tasks"]["t1"].payload["instruction"] == "Aika 4k zuwa gaines"
+    assert updates["tasks"]["t1"].payload["source_clause_index"] == 1
+    assert updates["tasks"]["account_clause_2"].type == "account"
+    assert updates["tasks"]["account_clause_2"].payload["action"] == "check_balance"
+    assert updates["tasks"]["account_clause_2"].payload["instruction"] == "nuna min final balance dina"
+    assert updates["waves"] == [["t1"], ["account_clause_2"]]
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 """Task planner for breaking down user requests into executable tasks."""
 
 import time
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from langchain_openai import ChatOpenAI
 
@@ -37,6 +37,21 @@ Context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 
+
+def _with_structured_output(
+    llm: ChatOpenAI,
+    schema: type[Any],
+    *,
+    method: Literal["function_calling", "json_mode", "json_schema"] | None = None,
+) -> Any:
+    if method is None:
+        return llm.with_structured_output(schema)
+    try:
+        return llm.with_structured_output(schema, method=method)
+    except TypeError:
+        return llm.with_structured_output(schema)
+
+
 class TaskPlanner:
     """Handles task planning for multi-step requests."""
 
@@ -52,10 +67,25 @@ class TaskPlanner:
         self.interrupt_llm = interrupt_llm or planner_llm
         self.uses_dedicated_interrupt_model = interrupt_llm is not None
         self.uses_dedicated_semantic_router_model = semantic_router_llm is not None
-        self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
-        self.structured_semantic_router = self.semantic_router_llm.with_structured_output(SemanticRouteDecision)
-        self.structured_interrupt_router = self.interrupt_llm.with_structured_output(InterruptRouteDecision)
-        self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
+        # PlannerOutput now includes clause-local free-form extracted fields. That shape is valid for
+        # tool/function calling, but OpenAI's strict response_format schema rejects it.
+        self.structured_planner = _with_structured_output(
+            planner_llm,
+            PlannerOutput,
+            method="function_calling",
+        )
+        self.structured_semantic_router = _with_structured_output(
+            self.semantic_router_llm,
+            SemanticRouteDecision,
+        )
+        self.structured_interrupt_router = _with_structured_output(
+            self.interrupt_llm,
+            InterruptRouteDecision,
+        )
+        self.structured_quoted_replay = _with_structured_output(
+            planner_llm,
+            QuotedReplayInterpretation,
+        )
         self.task_queue_service = task_queue_service
         if not self.uses_dedicated_interrupt_model:
             logger.warning("interrupt_router_model_not_dedicated", mode="planner_fallback")
