@@ -629,6 +629,48 @@ async def test_conversational_out_of_scope_falls_back_to_redirect_when_no_empath
 
 
 @pytest.mark.asyncio
+async def test_conversational_out_of_scope_without_empathy_uses_conversation_responder_when_available() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.out_of_scope",
+        confidence=0.78,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="tell me about joke",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder(
+        "I don't really do jokes, but I'm here when you're ready.\nI can still help with transfers, airtime/data, balances, and transaction history."
+    )
+    state = OrchestratorState(
+        user_id="u_meta_oos_conv_1",
+        phone_number="2348999999988",
+        channel="whatsapp",
+        last_message_text="Tell me about joke",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == responder.reply
+    assert responder.calls
+    assert responder.calls[0]["intent"] == "non_banking_conversational"
+
+
+@pytest.mark.asyncio
 async def test_conversational_planner_response_localizes_for_pidgin() -> None:
     """Conversational keyed response should localize for pidgin users."""
     planner_output = PlannerOutput(
@@ -867,6 +909,48 @@ async def test_conversational_missing_response_key_falls_back_deterministically(
     state = _apply(state, await plan_tasks(state, config))
 
     assert state.final_response == render_message("conversational.out_of_scope", "pcm")
+
+
+@pytest.mark.asyncio
+async def test_no_task_no_response_without_active_flow_uses_conversation_responder() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="unknown",
+        response="",
+        response_key=None,
+        confidence=0.61,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="please",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder(
+        "If you'd like, tell me the banking task you want.\nI can help with transfers, airtime/data, balances, and transaction history."
+    )
+    state = OrchestratorState(
+        user_id="u_meta_conv_please_1",
+        phone_number="2348999999987",
+        channel="whatsapp",
+        last_message_text="Please",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == responder.reply
+    assert responder.calls
+    assert responder.calls[0]["intent"] == "non_banking_conversational"
 
 
 @pytest.mark.asyncio

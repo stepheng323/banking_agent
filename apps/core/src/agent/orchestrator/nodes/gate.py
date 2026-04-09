@@ -105,6 +105,18 @@ DETERMINISTIC_CAPABILITY_EXACT = {
     "what can you help me with",
     "what do you handle",
 }
+DETERMINISTIC_CAPABILITY_PATTERNS = (
+    re.compile(
+        r"^(?:can|could|will|would)\s+you\s+(?:help|assist)(?:\s+me)?\s+"
+        r"(?:send|transfer|pay|buy|recharge|top\s*up|check|show|view|list)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:can|could|will|would)\s+you\s+(?:help|assist)(?:\s+me)?\s+(?:with\s+)?"
+        r"(?:funds?|money|transfers?|payments?|airtime|data|balances?|transactions?)\b",
+        re.IGNORECASE,
+    ),
+)
 _SUPPORTED_SWITCHABLE_LOCALES = {"en", "pcm", "yo", "ha", "ig"}
 _ENGLISH_FASTPATH_CUE_RE = re.compile(
     r"^(?:show|list|view|get|check|what(?:'s| is)|how much|send|transfer|pay|buy|recharge|top\s*up|topup|"
@@ -543,6 +555,8 @@ def classify_deterministic_meta_response(message_text: str) -> tuple[str, str | 
     if normalized in DETERMINISTIC_BRAND_ORIGIN_EXACT:
         return "conversational.brand_origin", None
     if normalized in DETERMINISTIC_CAPABILITY_EXACT:
+        return "conversational.capability_question", None
+    if any(pattern.match(normalized) for pattern in DETERMINISTIC_CAPABILITY_PATTERNS):
         return "conversational.capability_question", None
     return None
 
@@ -1659,7 +1673,10 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 updates.update(detected_locale_updates)
                 if route.response_key:
                     if route.response_key == "conversational.out_of_scope":
-                        text = format_out_of_scope_reply(locale, route.response)
+                        responder_reply = None
+                        if not route.response and canonical_decision == "direct_reply":
+                            responder_reply = await _build_bounded_conversational_reply(locale)
+                        text = responder_reply or format_out_of_scope_reply(locale, route.response)
                     elif route.response_key == "planner.cancelled":
                         if has_cancelable_state(state):
                             text = cancelled_message(state, locale)
@@ -1670,7 +1687,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                         text = render_message(route.response_key, locale)
                 else:
                     text = route.response or ""
-                    if not text and canonical_decision == "direct_reply":
+                    if not text:
                         responder_reply = await _build_bounded_conversational_reply(locale)
                         if responder_reply:
                             text = responder_reply

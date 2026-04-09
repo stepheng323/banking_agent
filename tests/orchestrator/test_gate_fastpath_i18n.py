@@ -196,6 +196,36 @@ async def test_gate_handles_capability_question_meta_deterministically() -> None
     assert updates["final_response"] == render_message("conversational.capability_question", "en")
 
 
+async def test_gate_handles_transfer_capability_question_meta_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for transfer capability question",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_cap_transfer_1",
+        phone_number="2348777777789",
+        channel="whatsapp",
+        last_message_text="Can you help me send funds?",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.capability_question", "en")
+
+
 async def test_gate_handles_identity_question_meta_deterministically() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -2103,6 +2133,42 @@ async def test_gate_semantic_router_out_of_scope_without_empathy_uses_redirect_o
 
     assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
+
+
+async def test_gate_semantic_router_out_of_scope_without_empathy_uses_conversation_responder_when_available() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.82,
+            detected_language="English",
+            response_key="conversational.out_of_scope",
+            response=None,
+            expected_transaction_executors=[],
+            reason="harmless non-banking turn",
+        )
+    )
+    responder = _FakeConversationResponder(
+        "I don't really do jokes, but I can still help when you're ready.\nI can handle transfers, airtime/data, balances, and transaction history."
+    )
+    state = OrchestratorState(
+        user_id="u_gate_oos_conv_1",
+        phone_number="23480000000059",
+        channel="whatsapp",
+        last_message_text="Tell me about joke",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["final_response"] == responder.reply
+    assert responder.calls
+    assert responder.calls[0]["intent"] == "non_banking_conversational"
 
 
 async def test_gate_semantic_router_passes_expected_executors_without_direct_path() -> None:

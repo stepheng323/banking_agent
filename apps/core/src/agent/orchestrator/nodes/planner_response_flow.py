@@ -112,6 +112,9 @@ async def _build_non_task_response(
         conversational_locale, conversational_locale_updates = await _resolved_locale_with_precedence()
         response_key = planner_output.response_key
         if response_key == "conversational.out_of_scope":
+            responder_reply = None
+            if not planner_output.response:
+                responder_reply = await _build_bounded_conversational_reply(conversational_locale)
             empathy_source = (
                 _localized_planner_response(planner_output.response, conversational_locale)
                 if planner_output.response
@@ -126,7 +129,7 @@ async def _build_non_task_response(
                 fallback_path="planner_non_task",
             )
             return {
-                "final_response": format_out_of_scope_reply(conversational_locale, empathy_source),
+                "final_response": responder_reply or format_out_of_scope_reply(conversational_locale, empathy_source),
                 **conversational_locale_updates,
                 **context_read_updates,
             }
@@ -229,6 +232,22 @@ async def _build_non_task_response(
             **locale_updates,
             **context_read_updates,
         }
+    if not state.session_stack and state.pending_interrupt is None:
+        responder_reply = await _build_bounded_conversational_reply(current_locale)
+        if responder_reply:
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="conversation_responder",
+                route_reason="no_tasks_no_response",
+                policy_blocked=False,
+                fallback_path="planner_non_task",
+            )
+            return {
+                "final_response": responder_reply,
+                **locale_updates,
+                **context_read_updates,
+            }
     _log_unexpected_turn_route(
         state=state,
         planner_output=planner_output,
