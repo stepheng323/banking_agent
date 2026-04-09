@@ -282,7 +282,19 @@ jobs:
 
       - name: Capture VPS logs on failure
         if: failure()
+        env:
+          VPS_GATEWAY_IMAGE: ${{ steps.image_refs.outputs.gateway }}
+          VPS_CORE_IMAGE: ${{ steps.image_refs.outputs.core }}
+          VPS_CORE_CHAT_WORKER_IMAGE: ${{ steps.image_refs.outputs.core_chat_worker }}
+          VPS_TRANSACTION_WORKER_IMAGE: ${{ steps.image_refs.outputs.transaction_worker }}
+          VPS_RECEIPT_WORKER_IMAGE: ${{ steps.image_refs.outputs.receipt_worker }}
         run: |
           set -euo pipefail
           ssh -F ~/.ssh/config vps-deploy \
-            "cd '$VPS_APP_DIR' && docker compose -f docker-compose.vps.yml logs --tail=120 gateway core core-chat-worker transaction-worker receipt-worker caddy"
+            "cd '$VPS_APP_DIR' \
+            && VPS_GATEWAY_IMAGE='$VPS_GATEWAY_IMAGE' \
+            VPS_CORE_IMAGE='$VPS_CORE_IMAGE' \
+            VPS_CORE_CHAT_WORKER_IMAGE='$VPS_CORE_CHAT_WORKER_IMAGE' \
+            VPS_TRANSACTION_WORKER_IMAGE='$VPS_TRANSACTION_WORKER_IMAGE' \
+            VPS_RECEIPT_WORKER_IMAGE='$VPS_RECEIPT_WORKER_IMAGE' \
+            docker compose -f docker-compose.vps.yml logs --tail=120 gateway core core-chat-worker transaction-worker receipt-worker caddy"

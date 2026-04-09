@@ -1,58 +1,91 @@
 #!/usr/bin/env bash
-# deploy-vps.sh — legacy local build-on-VPS deploy helper.
-# Usage:
-#   ./deploy-vps.sh                        # uses defaults below
-#   VPS_HOST=1.2.3.4 ./deploy-vps.sh      # override any variable
+# deploy-vps.sh — local GHCR pull-based VPS deploy helper.
+# Required env:
+#   GHCR_PULL_USERNAME
+#   GHCR_PULL_TOKEN
+# Optional env:
+#   VPS_HOST
+#   VPS_SSH_USER
+#   VPS_SSH_PORT
+#   VPS_APP_DIR
+#   GHCR_REGISTRY
+#   GHCR_OWNER
+#   GHCR_IMAGE_PREFIX
+#   IMAGE_TAG
 set -euo pipefail
 
-# ── Config (override via env or edit defaults here) ──────────────────────────
 VPS_HOST="${VPS_HOST:-217.216.66.68}"
 VPS_SSH_USER="${VPS_SSH_USER:-root}"
 VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
 VPS_APP_DIR="${VPS_APP_DIR:-/srv/banking_agent}"
-COMPOSE_FILE="docker-compose.vps.yml"
-# ─────────────────────────────────────────────────────────────────────────────
-
-SSH="ssh -p $VPS_SSH_PORT"
-REMOTE="$VPS_SSH_USER@$VPS_HOST"
-LOCAL_ENV_FILE=".env"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.vps.yml}"
+GHCR_REGISTRY="${GHCR_REGISTRY:-ghcr.io}"
+GHCR_OWNER="${GHCR_OWNER:-stepheng323}"
+GHCR_IMAGE_PREFIX="${GHCR_IMAGE_PREFIX:-banking-agent-vps}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+LOCAL_ENV_FILE="${LOCAL_ENV_FILE:-.env}"
 REMOTE_ENV_FILE="$VPS_APP_DIR/.env"
 
-echo "▶ Ensuring remote app directory exists at $REMOTE:$VPS_APP_DIR ..."
-$SSH "$REMOTE" "mkdir -p '$VPS_APP_DIR'"
+: "${GHCR_PULL_USERNAME:?set GHCR_PULL_USERNAME}"
+: "${GHCR_PULL_TOKEN:?set GHCR_PULL_TOKEN}"
 
-echo "▶ Syncing repo to $REMOTE:$VPS_APP_DIR ..."
+VPS_GATEWAY_IMAGE="${VPS_GATEWAY_IMAGE:-${GHCR_REGISTRY}/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-gateway:${IMAGE_TAG}}"
+VPS_CORE_IMAGE="${VPS_CORE_IMAGE:-${GHCR_REGISTRY}/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-core:${IMAGE_TAG}}"
+VPS_CORE_CHAT_WORKER_IMAGE="${VPS_CORE_CHAT_WORKER_IMAGE:-${GHCR_REGISTRY}/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-core-chat-worker:${IMAGE_TAG}}"
+VPS_TRANSACTION_WORKER_IMAGE="${VPS_TRANSACTION_WORKER_IMAGE:-${GHCR_REGISTRY}/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-transaction-worker:${IMAGE_TAG}}"
+VPS_RECEIPT_WORKER_IMAGE="${VPS_RECEIPT_WORKER_IMAGE:-${GHCR_REGISTRY}/${GHCR_OWNER}/${GHCR_IMAGE_PREFIX}-receipt-worker:${IMAGE_TAG}}"
+
+SSH_OPTS=(
+  -p "$VPS_SSH_PORT"
+  -o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null
+)
+REMOTE="${VPS_SSH_USER}@${VPS_HOST}"
+
+echo "▶ Ensuring remote app directory exists at $REMOTE:$VPS_APP_DIR ..."
+ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p '$VPS_APP_DIR/deploy'"
+
+echo "▶ Syncing deploy assets to $REMOTE:$VPS_APP_DIR ..."
 rsync -az \
-  --exclude '.git/' \
-  --exclude '.venv*/' \
-  --exclude 'infrastructure/' \
-  --exclude '.mypy_cache/' \
-  --exclude '.pytest_cache/' \
-  --exclude '.ruff_cache/' \
-  --exclude '__pycache__/' \
-  --exclude '*.pyc' \
-  --exclude '.env' \
-  -e "$SSH" \
-  ./ "$REMOTE:$VPS_APP_DIR/"
+  -e "ssh ${SSH_OPTS[*]}" \
+  docker-compose.vps.yml \
+  deploy/ \
+  "$REMOTE:$VPS_APP_DIR/"
 
 if [[ -f "$LOCAL_ENV_FILE" ]]; then
   echo "▶ Syncing env file to $REMOTE:$REMOTE_ENV_FILE ..."
-  rsync -az -e "$SSH" "$LOCAL_ENV_FILE" "$REMOTE:$REMOTE_ENV_FILE"
+  rsync -az -e "ssh ${SSH_OPTS[*]}" "$LOCAL_ENV_FILE" "$REMOTE:$REMOTE_ENV_FILE"
 else
   echo "▶ Verifying remote env file exists at $REMOTE:$REMOTE_ENV_FILE ..."
-  if ! $SSH "$REMOTE" "test -f '$REMOTE_ENV_FILE'"; then
+  if ! ssh "${SSH_OPTS[@]}" "$REMOTE" "test -f '$REMOTE_ENV_FILE'"; then
     echo "✗ Missing env file. Expected local $LOCAL_ENV_FILE or remote $REMOTE_ENV_FILE."
     exit 1
   fi
 fi
 
-echo "▶ Deploying stack on VPS ..."
-$SSH "$REMOTE" "APP_DIR='$VPS_APP_DIR' COMPOSE_FILE='$COMPOSE_FILE' bash -s" <<'REMOTE_SCRIPT'
+echo "▶ Pulling and restarting stack on VPS ..."
+ssh "${SSH_OPTS[@]}" "$REMOTE" \
+  "APP_DIR='$VPS_APP_DIR' \
+  COMPOSE_FILE='$COMPOSE_FILE' \
+  GHCR_PULL_USERNAME='$GHCR_PULL_USERNAME' \
+  GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' \
+  VPS_GATEWAY_IMAGE='$VPS_GATEWAY_IMAGE' \
+  VPS_CORE_IMAGE='$VPS_CORE_IMAGE' \
+  VPS_CORE_CHAT_WORKER_IMAGE='$VPS_CORE_CHAT_WORKER_IMAGE' \
+  VPS_TRANSACTION_WORKER_IMAGE='$VPS_TRANSACTION_WORKER_IMAGE' \
+  VPS_RECEIPT_WORKER_IMAGE='$VPS_RECEIPT_WORKER_IMAGE' \
+  bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 cd "$APP_DIR"
 
-docker compose -f "$COMPOSE_FILE" config > /dev/null
-docker compose -f "$COMPOSE_FILE" up -d --build
+export DOCKER_CONFIG
+DOCKER_CONFIG="$(mktemp -d)"
+trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+printf '%s' "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_PULL_USERNAME" --password-stdin
+
+docker compose -f "$COMPOSE_FILE" config >/dev/null
+docker compose -f "$COMPOSE_FILE" pull gateway core core-chat-worker transaction-worker receipt-worker
+docker compose -f "$COMPOSE_FILE" up -d --remove-orphans gateway core core-chat-worker transaction-worker receipt-worker caddy
 docker compose -f "$COMPOSE_FILE" ps
 
 check_health() {
@@ -61,7 +94,7 @@ check_health() {
   local attempt
   echo "  Waiting for $name ..."
   for attempt in $(seq 1 20); do
-    if curl -fsS "$url" > /tmp/health.out 2>/dev/null; then
+    if curl -fsS "$url" >/tmp/health.out 2>/dev/null; then
       echo "  ✓ $name: $(cat /tmp/health.out)"
       return 0
     fi
@@ -71,10 +104,10 @@ check_health() {
   return 1
 }
 
-check_health gateway     "http://localhost/health"
-check_health core        "http://localhost/core/health"
+check_health gateway "http://localhost/health"
+check_health core "http://localhost/core/health"
 check_health transaction "http://localhost/transaction/health"
-check_health receipt     "http://localhost/receipt/health"
+check_health receipt "http://localhost/receipt/health"
 REMOTE_SCRIPT
 
 echo "✅ Deploy complete."
