@@ -45,9 +45,7 @@ async def telegram_webhook(
         update = await request.json()
         user_repo = UserRepository(db)
         publisher = QueuePublisherFactory.get_publisher()
-        service = TelegramWebhookService(
-            publisher=publisher, user_repository=user_repo, telegram_client=TelegramClient()
-        )
+        service = TelegramWebhookService(publisher=publisher, user_repository=user_repo)
         handled = await service.process_update(update)
         logger.info(
             "telegram_webhook_processed",

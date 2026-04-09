@@ -22,11 +22,14 @@ class TelegramWebhookService:
     """Handles business logic for Telegram webhook events."""
 
     def __init__(
-        self, publisher: QueuePublisher, user_repository: UserRepository, telegram_client: TelegramClient
+        self,
+        publisher: QueuePublisher,
+        user_repository: UserRepository,
+        telegram_client: TelegramClient | None = None,
     ) -> None:
         self.publisher = publisher
         self.user_repository = user_repository
-        self.telegram_client = telegram_client
+        self.telegram_client = telegram_client or TelegramClient()
 
     async def process_update(self, update: dict[str, Any]) -> bool:
         """Process a single Telegram update. Returns True if handled."""
