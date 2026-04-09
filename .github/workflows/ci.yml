@@ -1,19 +1,6 @@
 name: CI
 
 on:
-  push:
-    paths:
-      - "apps/**"
-      - "shared/**"
-      - "tests/**"
-      - "config/**"
-      - "infrastructure/aws/**"
-      - "infrastructure/aws-backend-bootstrap/**"
-      - ".github/workflows/**"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "docker-compose*.yml"
-      - "Makefile"
   pull_request:
     branches: [main]
     paths:
