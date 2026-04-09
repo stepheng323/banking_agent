@@ -83,8 +83,29 @@ DOCKER_CONFIG="$(mktemp -d)"
 trap 'rm -rf "$DOCKER_CONFIG"' EXIT
 printf '%s' "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_PULL_USERNAME" --password-stdin
 
+pull_service() {
+  local service="$1"
+  local attempt=1
+  until [ "$attempt" -gt 3 ]; do
+    if docker compose -f "$COMPOSE_FILE" pull "$service"; then
+      return 0
+    fi
+    if [ "$attempt" -eq 3 ]; then
+      echo "Pull failed for $service after $attempt attempts"
+      return 1
+    fi
+    echo "Pull failed for $service on attempt $attempt, retrying..."
+    attempt=$((attempt + 1))
+    sleep 20
+  done
+}
+
 docker compose -f "$COMPOSE_FILE" config >/dev/null
-docker compose -f "$COMPOSE_FILE" pull gateway core core-chat-worker transaction-worker receipt-worker
+pull_service gateway
+pull_service core
+pull_service core-chat-worker
+pull_service transaction-worker
+pull_service receipt-worker
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans gateway core core-chat-worker transaction-worker receipt-worker caddy
 docker compose -f "$COMPOSE_FILE" ps
 
