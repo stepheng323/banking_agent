@@ -125,6 +125,7 @@ PlannerResponseKey: TypeAlias = Literal[
     "conversational.identity",
     "conversational.brand_origin",
     "conversational.capability_question",
+    "conversational.casual_chat",
     "conversational.out_of_scope",
     "conversational.clarify",
     "planner.cancelled",

@@ -2135,20 +2135,20 @@ async def test_gate_semantic_router_out_of_scope_without_empathy_uses_redirect_o
     assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
 
 
-async def test_gate_semantic_router_out_of_scope_without_empathy_uses_conversation_responder_when_available() -> None:
+async def test_gate_semantic_router_casual_chat_uses_conversation_responder_when_available() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="direct_reply",
             confidence=0.82,
             detected_language="English",
-            response_key="conversational.out_of_scope",
-            response=None,
+            response_key="conversational.casual_chat",
+            response="",
             expected_transaction_executors=[],
             reason="harmless non-banking turn",
         )
     )
     responder = _FakeConversationResponder(
-        "I don't really do jokes, but I can still help when you're ready.\nI can handle transfers, airtime/data, balances, and transaction history."
+        "Small one: bankers love balance because it always checks out.\nI can handle transfers, airtime/data, balances, and transaction history."
     )
     state = OrchestratorState(
         user_id="u_gate_oos_conv_1",
@@ -2169,6 +2169,39 @@ async def test_gate_semantic_router_out_of_scope_without_empathy_uses_conversati
     assert updates["final_response"] == responder.reply
     assert responder.calls
     assert responder.calls[0]["intent"] == "non_banking_conversational"
+
+
+async def test_gate_semantic_router_generic_banking_refusal_out_of_scope_uses_conversation_responder() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.82,
+            detected_language="English",
+            response_key="conversational.out_of_scope",
+            response="I can't help with jokes, but I can assist with your banking tasks.",
+            expected_transaction_executors=[],
+            reason="harmless non-banking turn misclassified as out-of-scope",
+        )
+    )
+    responder = _FakeConversationResponder(
+        "Small one: bankers love balance because it always checks out.\nI can handle transfers, airtime/data, balances, and transaction history."
+    )
+    state = OrchestratorState(
+        user_id="u_gate_oos_conv_2",
+        phone_number="23480000000060",
+        channel="whatsapp",
+        last_message_text="Tell me a joke",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["final_response"] == responder.reply
+    assert responder.calls
 
 
 async def test_gate_semantic_router_passes_expected_executors_without_direct_path() -> None:

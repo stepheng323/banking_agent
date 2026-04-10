@@ -27,6 +27,17 @@ _BLOCKED_PATTERN_RE = re.compile(
     r"sue|lawsuit|tax advice|buy this stock|sell this stock)\b",
     re.IGNORECASE,
 )
+_BANKING_REFUSAL_PATTERN_RE = re.compile(
+    r"\b(?:"
+    r"i can(?:not|'t)\s+(?:help|provide|do)\b|"
+    r"sorry[, ]+\s*i can(?:not|'t)\b|"
+    r"i(?:'m| am)\s+here\s+to\s+help\s+with\s+(?:your\s+)?banking\b|"
+    r"i\s+stay\s+on\s+banking\b|"
+    r"tell\s+me\s+what\s+you\s+want\s+to\s+do\s+with\s+your\s+money\b|"
+    r"banking\s+(?:tasks?|needs?)\s+only\b"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def _locale_to_language_label(raw_locale: str | None) -> str:
@@ -38,6 +49,20 @@ def _normalize_reply_text(text: str) -> str:
     cleaned_lines = [_WHITESPACE_RE.sub(" ", line).strip() for line in text.splitlines()]
     collapsed = "\n".join(line for line in cleaned_lines if line)
     return _MULTILINE_RE.sub("\n\n", collapsed).strip()
+
+
+def is_banking_refusal_reply(raw_text: str | None, *, locale: str) -> bool:
+    if not raw_text:
+        return False
+    localized = _normalize_reply_text(render_text(raw_text, locale))
+    if not localized:
+        return False
+    redirect_text = _normalize_reply_text(render_message("conversational.out_of_scope", locale))
+    if localized == redirect_text:
+        return True
+    if localized.endswith(f"\n{redirect_text}") or localized.endswith(f" {redirect_text}"):
+        return True
+    return bool(_BANKING_REFUSAL_PATTERN_RE.search(localized))
 
 
 class ConversationResponder:
@@ -60,6 +85,8 @@ class ConversationResponder:
         if len([line for line in localized.splitlines() if line.strip()]) > _MAX_REPLY_LINES:
             return None
         if _BLOCKED_PATTERN_RE.search(localized):
+            return None
+        if is_banking_refusal_reply(localized, locale=locale):
             return None
         return localized
 
@@ -101,10 +128,12 @@ class ConversationResponder:
             "Rules:\n"
             "- Answer briefly and harmlessly.\n"
             "- Keep it to 1 or 2 short sentences.\n"
+            "- For harmless casual asks like jokes, tiny banter, or date/time, answer directly instead of refusing.\n"
             "- No financial, legal, medical, tax, or investment advice.\n"
             "- No promises about unsupported capabilities.\n"
             "- No broad topic drift, no markdown, no emojis.\n"
             "- If asked about the current date or time, use the runtime Lagos timestamp provided.\n"
+            "- Do not say you only handle banking or that you cannot help with harmless casual chat.\n"
             "- If the ask is unsafe, too broad, or not suitable, return an empty string.\n"
         )
 

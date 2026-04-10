@@ -99,6 +99,7 @@ Return ONLY JSON with:
 - response_key: conversational.greeting | conversational.appreciation |
   conversational.checkin | conversational.identity |
   conversational.brand_origin | conversational.capability_question |
+  conversational.casual_chat |
   conversational.out_of_scope | conversational.clarify | planner.cancelled | null
 - response: short direct response text or null
 - expected_transaction_executors: array of transfer|airtime|data (empty if none)
@@ -113,7 +114,12 @@ Rules:
     - requested_language to the requested locale
     - response optional (do not include other router intent actions)
     - Do not apply cancellation/flow-guess logic for this request.
-2b) For out-of-scope/non-banking messages, ALWAYS set:
+2b) For harmless casual non-banking chat such as jokes, light banter, or date/time asks, set:
+    - decision=direct_reply
+    - response_key=conversational.casual_chat
+    - response optional (can be null)
+    - Never use conversational.out_of_scope for this case.
+2c) For unsupported product asks or broad non-banking requests, set:
     - response_key=conversational.out_of_scope
     - response as one short empathy sentence (optional) or null
     - Never use conversational.clarify for this case.

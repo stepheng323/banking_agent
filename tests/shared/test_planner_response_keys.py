@@ -26,6 +26,16 @@ def test_planner_output_accepts_identity_response_key() -> None:
     assert payload.response_key == "conversational.identity"
 
 
+def test_planner_output_accepts_casual_chat_response_key() -> None:
+    payload = PlannerOutput(
+        primary_intent="conversational",
+        response_key="conversational.casual_chat",
+        detected_language="English",
+        tasks=[],
+    )
+    assert payload.response_key == "conversational.casual_chat"
+
+
 def test_planner_output_rejects_unknown_response_key() -> None:
     with pytest.raises(ValidationError):
         PlannerOutput.model_validate(

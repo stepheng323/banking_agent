@@ -32,6 +32,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
 )
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.services.async_completion import get_recent_batch_reference
+from shared.services.conversation_responder import is_banking_refusal_reply
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -1672,9 +1673,20 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 )
                 updates.update(detected_locale_updates)
                 if route.response_key:
-                    if route.response_key == "conversational.out_of_scope":
+                    if route.response_key == "conversational.casual_chat":
+                        text = await _build_bounded_conversational_reply(locale) or render_message(
+                            "conversational.out_of_scope",
+                            locale,
+                        )
+                    elif route.response_key == "conversational.out_of_scope":
                         responder_reply = None
-                        if not route.response and canonical_decision == "direct_reply":
+                        if (
+                            canonical_decision == "direct_reply"
+                            and (
+                                not route.response
+                                or is_banking_refusal_reply(route.response, locale=locale)
+                            )
+                        ):
                             responder_reply = await _build_bounded_conversational_reply(locale)
                         text = responder_reply or format_out_of_scope_reply(locale, route.response)
                     elif route.response_key == "planner.cancelled":

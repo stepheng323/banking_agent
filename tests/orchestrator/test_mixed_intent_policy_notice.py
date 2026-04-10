@@ -629,11 +629,11 @@ async def test_conversational_out_of_scope_falls_back_to_redirect_when_no_empath
 
 
 @pytest.mark.asyncio
-async def test_conversational_out_of_scope_without_empathy_uses_conversation_responder_when_available() -> None:
+async def test_conversational_casual_chat_uses_conversation_responder_when_available() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
-        response_key="conversational.out_of_scope",
+        response_key="conversational.casual_chat",
         confidence=0.78,
         is_complex=False,
         is_cancellation=False,
@@ -643,7 +643,7 @@ async def test_conversational_out_of_scope_without_empathy_uses_conversation_res
         tasks=[],
     )
     responder = _FakeConversationResponder(
-        "I don't really do jokes, but I'm here when you're ready.\nI can still help with transfers, airtime/data, balances, and transaction history."
+        "Small one: bankers love balance because it always checks out.\nI can still help with transfers, airtime/data, balances, and transaction history."
     )
     state = OrchestratorState(
         user_id="u_meta_oos_conv_1",
@@ -668,6 +668,47 @@ async def test_conversational_out_of_scope_without_empathy_uses_conversation_res
     assert state.final_response == responder.reply
     assert responder.calls
     assert responder.calls[0]["intent"] == "non_banking_conversational"
+
+
+@pytest.mark.asyncio
+async def test_conversational_generic_banking_refusal_out_of_scope_uses_conversation_responder() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="I can't help with jokes, but I'm here to help with your banking tasks.",
+        response_key="conversational.out_of_scope",
+        confidence=0.78,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="tell me a joke",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder(
+        "Small one: bankers love balance because it always checks out.\nI can still help with transfers, airtime/data, balances, and transaction history."
+    )
+    state = OrchestratorState(
+        user_id="u_meta_oos_conv_2",
+        phone_number="2348999999986",
+        channel="whatsapp",
+        last_message_text="Tell me a joke",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == responder.reply
+    assert responder.calls
 
 
 @pytest.mark.asyncio

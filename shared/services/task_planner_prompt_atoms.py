@@ -56,7 +56,10 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R04_DEPENDENCIES": "explicit_order->depends_on",
     "R05_CANCEL_CONFIRM": "cancel_word->is_cancellation; pure_approve->is_confirmation",
     "R06_AMOUNT_NORMALIZATION": "5k->5000",
-    "R07_OUT_OF_SCOPE": "non_banking->conversational.out_of_scope",
+    "R07_OUT_OF_SCOPE": (
+        "harmless_non_banking->conversational.casual_chat;"
+        " unsupported_non_banking->conversational.out_of_scope"
+    ),
     "R08_ACTION_EXECUTOR": "action==executor_family",
     "R09_CONTEXT_OVERRIDE": "active_flow_reply->slot_update unless switch/cancel",
     "R10_LANGUAGE_ALIGNMENT": "response_lang=detected_lang",

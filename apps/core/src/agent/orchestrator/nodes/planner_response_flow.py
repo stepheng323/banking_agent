@@ -16,6 +16,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_policy import (
     _detected_locale_value,
 )
 from shared.i18n import LocaleManager, MessageKey, render_message, render_safe_capability_fallback, render_text
+from shared.services.conversation_responder import is_banking_refusal_reply
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -111,9 +112,28 @@ async def _build_non_task_response(
     if planner_output and planner_output.primary_intent == "conversational":
         conversational_locale, conversational_locale_updates = await _resolved_locale_with_precedence()
         response_key = planner_output.response_key
+        if response_key == "conversational.casual_chat":
+            responder_reply = await _build_bounded_conversational_reply(conversational_locale)
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="conversation_responder",
+                route_reason="conversational_casual_chat",
+                policy_blocked=False,
+                fallback_path="planner_non_task",
+            )
+            return {
+                "final_response": responder_reply
+                or render_message("conversational.out_of_scope", conversational_locale),
+                **conversational_locale_updates,
+                **context_read_updates,
+            }
         if response_key == "conversational.out_of_scope":
             responder_reply = None
-            if not planner_output.response:
+            if not planner_output.response or is_banking_refusal_reply(
+                planner_output.response,
+                locale=conversational_locale,
+            ):
                 responder_reply = await _build_bounded_conversational_reply(conversational_locale)
             empathy_source = (
                 _localized_planner_response(planner_output.response, conversational_locale)
