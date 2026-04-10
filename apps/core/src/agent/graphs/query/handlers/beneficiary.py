@@ -39,6 +39,7 @@ async def handle_beneficiary_summary(
     language: str = "en",
 ) -> QueryResult:
     """Handle beneficiary summary queries."""
+    del current_page, page_size
     transactions = await fetch_and_filter(
         provider,
         contract,

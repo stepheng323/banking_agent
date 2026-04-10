@@ -575,6 +575,7 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
 
 async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    del task_id
     action = task.payload.get("action")
     is_management = (
         task.payload.get("intent")
@@ -878,6 +879,7 @@ async def handle_data_task(task: Any, task_id: str, ctx: ExecutionContext) -> No
 
 
 async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    del task_id
     worker = _get_worker(
         ctx.services,
         "faq",

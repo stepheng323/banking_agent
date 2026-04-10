@@ -258,14 +258,10 @@ class TelegramWebhookService:
             logger.warning("telegram_web_app_missing_flow_token", chat_id=msg.chat_id)
             return False
 
-        # Parse flow_token like "transfer-pin-<idempotency_key>-<phone>"
         parts = flow_token.split("-", 2)
         flow_type = parts[0] if len(parts) > 0 else "unknown"
 
-        # Determine the idempotency_key portion
-        # Format: "<prefix>-pin-<idempotency_key>-<phone>"
-        # We need to extract the idempotency_key + phone from the flow_token
-        # The last segment after the last dash is the phone
+        # Extract the opaque idempotency payload carried after the "-pin-" delimiter.
         token_remainder = flow_token.split("-pin-", 1)[-1] if "-pin-" in flow_token else flow_token
 
         event = FlowEvent(

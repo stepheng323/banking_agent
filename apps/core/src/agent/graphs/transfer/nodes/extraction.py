@@ -364,6 +364,7 @@ def _parse_single_confirmation_amount_edit(
     user_message: str,
     current_payload: TransferPayload,
 ) -> dict[str, Any] | None:
+    del current_payload
     normalized = _normalize_user_message(user_message)
     if not normalized:
         return None
@@ -465,6 +466,7 @@ def _parse_single_confirmation_narration_edit(
     user_message: str,
     current_payload: TransferPayload,
 ) -> dict[str, Any] | None:
+    del current_payload
     normalized = _normalize_user_message(user_message)
     if not normalized:
         return None

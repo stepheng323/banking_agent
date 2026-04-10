@@ -193,7 +193,7 @@ def compile_query_fields_from_extraction(
         answer_fact_field=answer_fact_field,
         result_reference=result_reference,
     )
-    filters = parser._build_filters(extraction, effective_intent=effective_intent, query_operation=query_operation)
+    filters = parser._build_filters(extraction, effective_intent=effective_intent)
     aggregation = parser._build_aggregation(extraction, effective_intent=effective_intent, query_operation=query_operation)
     if aggregation is not None and aggregation.type in {"largest", "smallest"}:
         result_reference = None
@@ -483,7 +483,6 @@ def build_filters(
     extraction: QueryExtractionResult,
     *,
     effective_intent: ExtractionIntent,
-    query_operation: QueryOperation,
 ) -> Filters | None:
     if not extraction.filters:
         return None

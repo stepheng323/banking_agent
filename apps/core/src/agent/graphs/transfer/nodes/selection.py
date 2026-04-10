@@ -51,6 +51,7 @@ class SourceSelectionStep(TransferStep):
         gates: TransferGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates, worker_context
         return await select_source_account(data, context)
 
 

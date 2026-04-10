@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context_read import TRANSACTION_EXECUTORS
 from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
     _expand_underproduced_transfer_tasks,
@@ -18,7 +17,6 @@ logger = get_logger(__name__)
 
 async def _build_planner_task_updates(
     *,
-    state: OrchestratorState,
     planner_output: Any,
     text: str,
     query_session_source: str | None,

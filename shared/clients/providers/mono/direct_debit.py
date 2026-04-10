@@ -133,6 +133,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
     async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
         """Reverse a debit via Mono (if supported)."""
         # Note: Mono may not support direct reversals - this would trigger a refund flow
+        del reason
         logger.warning("mono_reverse_debit_not_implemented", debit_id=debit_id)
         return DebitResult(
             success=False,

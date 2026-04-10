@@ -68,6 +68,7 @@ def looks_like_vague_time_phrase(raw_query: str) -> str | None:
 
 
 def derive_ambiguities(parser: Any, extraction: QueryExtractionResult) -> list[Ambiguity]:
+    del parser
     ambiguities: list[Ambiguity] = []
     if extraction.time_range.reference_type == TimeReference.VAGUE:
         context = extraction.time_range.period or looks_like_vague_time_phrase(extraction.raw_query or "") or "that time"

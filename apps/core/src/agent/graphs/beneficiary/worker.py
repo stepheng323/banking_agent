@@ -253,6 +253,7 @@ class BeneficiaryWorker:
 
     async def _update_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
         # Placeholder for update logic
+        del user_id, payload
         locale = LocaleManager.normalize(context.get("language")).value
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,

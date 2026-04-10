@@ -32,6 +32,7 @@ async def handle_time_comparison(
     language: str = "en",
 ) -> QueryResult:
     """Handle time comparison queries (this month vs last month, etc.)."""
+    del current_page, page_size
     if not contract.time_range:
         return QueryResult(summary_text=render_message("query.time_comparison.prompt_specify_period", language))
 

@@ -100,7 +100,6 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
         if len(result_items) == 1:
             item = result_items[0]
             payload = _build_selection_payload(
-                result,
                 item,
                 mode=SurfaceViewMode.DIRECT_ANSWER,
                 context={"type": "single_transaction"},
@@ -153,7 +152,6 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
                     amount=item.amount,
                     count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
                     payload=_build_selection_payload(
-                        result,
                         item,
                         mode=SurfaceViewMode.TRANSACTION_LIST,
                         context=ranking_context,
@@ -175,7 +173,6 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
                     amount=item.amount,
                     count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
                     payload=_build_selection_payload(
-                        result,
                         item,
                         mode=SurfaceViewMode.GROUPED_SUMMARY,
                         context=build_surface_view_context(result=result, mode=SurfaceViewMode.GROUPED_SUMMARY),
@@ -203,7 +200,7 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
             label=item.description,
             amount=item.amount,
             count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
-            payload=_build_selection_payload(result, item, mode=mode, context=context),
+            payload=_build_selection_payload(item, mode=mode, context=context),
             metadata=item.metadata or {},
         )
         for item in result.items
@@ -287,7 +284,6 @@ def build_surface_view_context(*, result: QueryResult, mode: SurfaceViewMode) ->
 
 
 def _build_selection_payload(
-    result: QueryResult,
     item: QueryResultItem,
     *,
     mode: SurfaceViewMode,

@@ -227,6 +227,7 @@ def get_mock_mandate(
     start_date: str,
     end_date: str,
 ) -> MandateData:
+    del customer_id
     return MandateData(
         id="mock_mandate_id",
         status="awaiting_authorization",
@@ -255,6 +256,7 @@ def get_mock_account_lookup(account_number: str, bank_code: str | None = None) -
     Maps specific account numbers to specific names for testing.
     Falls back to a generative name for unknown numbers.
     """
+    del bank_code
     known_accounts = {
         "1234567890": "SAMUEL OLAMIDE NOMO",
         "0123456789": "CHINEDU OKAFOR PETER",

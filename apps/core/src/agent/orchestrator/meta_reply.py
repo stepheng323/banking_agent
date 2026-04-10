@@ -168,7 +168,6 @@ async def generate_meta_reply(
     meta_intent: MetaIntent | None = None,
     redis_client: Any | None = None,
     profile: SystemProfile = SYSTEM_PROFILE,
-    active_session: dict[str, Any] | None = None,
     path_label: str = "planner_path",
 ) -> tuple[str, Literal["meta", "domain"]]:
     """Generate a meta response grounded in the SystemProfile with Caching."""

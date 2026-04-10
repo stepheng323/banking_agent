@@ -18,6 +18,7 @@ class ExecutionStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
+        del gates
         locale = context.language
 
         try:

@@ -34,6 +34,8 @@
     "brand_origin": "Sunan Narya AI ya zo daga wahayin kindler. Kungiyar Fusepay ce ta gina ni domin nutsattsen kuma amintaccen banking execution.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
+    "out_of_scope_followup": "Idan kana so, zan kuma iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
+    "out_of_scope_firm": "Mu koma ga banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "clarify": "Don Allah ka kara bayyana abin da kake so na taimaka da shi."
   },
   "support": {

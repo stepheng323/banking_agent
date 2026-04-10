@@ -37,6 +37,7 @@ class FAQWorker:
         pin_verified: bool = False,
     ) -> FAQResult:
         """Run the FAQ flow."""
+        del payload, pin_verified
         phone_number = context.get("phone_number", "")
         message = (user_message or "").strip()
         locale = LocaleManager.normalize(context.get("language")).value

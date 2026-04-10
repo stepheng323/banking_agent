@@ -136,6 +136,7 @@ class MessagingClient(ABC):
         Default implementation returns not supported.
         Override in channel-specific implementations.
         """
+        del to, data, caption, mime_type, message_id, suppress_typing_indicator
         return MessageResult(
             success=False,
             error=f"send_image_data not supported on {self.channel_name}",
@@ -147,6 +148,7 @@ class MessagingClient(ABC):
 
         Default implementation does nothing (not all channels support this).
         """
+        del message_id
         return True
 
     async def send_flow(
@@ -163,6 +165,7 @@ class MessagingClient(ABC):
         Default implementation returns not supported.
         WhatsApp has native flows, other channels may need alternatives.
         """
+        del to, flow_id, flow_config, message_id, suppress_typing_indicator
         return MessageResult(
             success=False,
             error=f"send_flow not supported on {self.channel_name}",

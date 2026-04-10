@@ -47,7 +47,6 @@ async def _build_non_task_response(
     state: OrchestratorState,
     planner_output: Any,
     text: str,
-    task_planner: Any,
     redis_client: Any | None,
     active_intent: str | None,
     current_locale: str,

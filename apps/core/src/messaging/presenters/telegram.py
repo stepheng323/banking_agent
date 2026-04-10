@@ -115,6 +115,7 @@ class TelegramPresenter(Presenter):
         return result
 
     async def _present_typing(self, intent: SendTyping, context: PresentationContext) -> None:
+        del intent
         await self.client.send_typing_indicator(context.phone_number)
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:

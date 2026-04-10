@@ -342,6 +342,7 @@ class QueryWorker:
         pin_verified: bool = False,
     ) -> TransactionResult:
         """Run the query pipeline."""
+        del user_message, pin_verified
         locale = LocaleManager.normalize(context.get("language")).value
 
         # 1. Load Session

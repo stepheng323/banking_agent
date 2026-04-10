@@ -237,7 +237,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         state=state,
         planner_output=planner_output,
         text=text,
-        task_planner=task_planner,
         redis_client=redis_client,
         active_intent=active_intent,
         current_locale=current_locale,
@@ -259,7 +258,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         logger.info("planner_intent_switch_or_update", old=active_intent, new=planner_output.primary_intent)
 
     task_updates = await _build_planner_task_updates(
-        state=state,
         planner_output=planner_output,
         text=text,
         query_session_source=query_session_source,

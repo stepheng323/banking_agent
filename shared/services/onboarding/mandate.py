@@ -87,6 +87,7 @@ class MandateService:
         bank_name: str,
     ) -> dict:
         """Create a new mandate for an account."""
+        del bank_name
         mandate_reference = f"FP-{uuid_module.uuid4().hex[:12].upper()}"
         start_date = utc_now_naive().strftime("%Y-%m-%d")
         end_date = (utc_now_naive() + timedelta(days=365)).strftime("%Y-%m-%d")

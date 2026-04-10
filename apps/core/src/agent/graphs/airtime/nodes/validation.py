@@ -26,6 +26,7 @@ class ValidationStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates, worker_context
         locale = context.language
         missing: list[str] = []
         required_fields: list[str] = []

@@ -78,6 +78,7 @@ class FlutterwavePaymentProvider(PayoutProvider):
         TODO: Implement Flutterwave transfer API integration.
         This is a placeholder implementation that returns a mock success response.
         """
+        del sender_account_number, narration
         # Generate professional transaction ID: FP-YYYYMMDD-XXXX
         from shared.utils.datetime import utc_now_naive
 

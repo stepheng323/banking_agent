@@ -44,6 +44,7 @@ class SourceSelectionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates, worker_context
         locale = context.language
         linked_accounts = context.all_accounts or context.accounts
         if data.source_account_id:

@@ -78,6 +78,7 @@ class ExtractionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates
         locale = context.language
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK)

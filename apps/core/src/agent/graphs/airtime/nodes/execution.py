@@ -26,6 +26,7 @@ class ExecutionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates
         locale = context.language
 
         try:

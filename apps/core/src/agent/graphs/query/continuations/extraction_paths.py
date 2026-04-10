@@ -536,6 +536,7 @@ async def maybe_recover_time_rescope_continuation(
     today: date,
     language: str,
 ) -> dict[str, Any] | None:
+    del session
     if session_query_contract is None:
         step._log_time_rescope_recovery(
             trigger_reason=trigger_reason,
@@ -1619,6 +1620,7 @@ def parse_result_to_updates(
     message_override: str | None = None,
 ) -> dict[str, Any]:
     """Translate parser outcomes into extraction-step state updates."""
+    del state, message_override
 
     if result.outcome == ResolverOutcome.NEEDS_INPUT:
         clarify_fallback = render_message("query.clarify.default", language)

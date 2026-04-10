@@ -55,6 +55,7 @@ class ExtractionStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
+        del gates
         if not self.user_message:
             return None
 

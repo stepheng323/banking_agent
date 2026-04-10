@@ -98,6 +98,7 @@ class WhatsAppPresenter(Presenter):
         return result
 
     async def _present_typing(self, intent: SendTyping, context: PresentationContext) -> None:
+        del intent
         msg_id = context.metadata.get("inbound_message_id")
         await self.client.send_typing_indicator(msg_id)
 

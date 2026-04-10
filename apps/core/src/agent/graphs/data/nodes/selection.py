@@ -34,6 +34,7 @@ class SourceSelectionStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
+        del gates, worker_context
         locale = context.language
         linked_accounts = context.all_accounts or context.accounts
         if payload.source_account_id:

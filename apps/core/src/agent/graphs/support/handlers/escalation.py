@@ -92,12 +92,9 @@ async def handle_escalation(
         notify_human=notify_human,
     )
 
-    # TODO: If notify_human, send Slack/email notification
     if notify_human:
         logger.info("support_notification_pending", ticket_code=ticket.ticket_code)
-        # await notify_support_team(ticket)  # Future implementation
 
-    # Build response message
     message = render_message("support.escalation.logged", locale)
     message += render_message("support.escalation.ticket", locale, {"ticket_code": ticket.ticket_code})
 

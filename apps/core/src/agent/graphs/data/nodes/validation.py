@@ -9,13 +9,9 @@ class ValidationStep(PipelineStep):
     """Validation Step: Check balance and limits."""
 
     async def run(
-        self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
+        self, payload: DataPayload, _context: DataContext, _gates: DataGates, _worker_context: Any
     ) -> TransactionResult | None:
         if not payload.amount:
-            # Can't validate without amount
             return None
-
-        # Mock validation
-        # if payload.amount > available_balance: ...
 
         return None

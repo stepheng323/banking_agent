@@ -12,6 +12,7 @@ class ConfirmationStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
+        del worker_context
         if gates.confirmation_confirmed:
             return None
 

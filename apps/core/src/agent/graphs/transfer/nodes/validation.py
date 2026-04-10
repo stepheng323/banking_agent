@@ -110,6 +110,7 @@ class ValidationStep(TransferStep):
         gates: TransferGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates
         derived_amount_result = await _resolve_account_aware_amount(data, context, worker_context)
         if derived_amount_result is not None and derived_amount_result.outcome != TransactionOutcome.OK:
             return derived_amount_result

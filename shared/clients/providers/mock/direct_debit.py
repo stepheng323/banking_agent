@@ -90,6 +90,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
 
     async def get_balance(self, account_id: str, real_time: bool = True) -> BalanceResult:
         """Get simulated balance. Returns 30k default for unknown accounts."""
+        del real_time
         balance = self._balances.get(account_id, DEFAULT_MOCK_BALANCE)
         logger.info("mock_get_balance", account_id=account_id, balance=balance)
         return BalanceResult(

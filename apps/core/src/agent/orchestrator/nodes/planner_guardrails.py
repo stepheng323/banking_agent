@@ -137,6 +137,7 @@ def _routing_contract_context(
 
 
 def _beneficiary_contract_violations(planner_output: Any, *, has_beneficiary_suggestion: bool) -> list[str]:
+    del has_beneficiary_suggestion
     tasks = list(getattr(planner_output, "tasks", None) or [])
     route_hint = str(getattr(planner_output, "beneficiary_route", "none") or "none").strip().lower()
     if route_hint not in _BENEFICIARY_ROUTE_HINTS:

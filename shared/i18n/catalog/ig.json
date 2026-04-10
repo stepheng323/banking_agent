@@ -34,6 +34,8 @@
     "brand_origin": "Aha Narya AI sitere na mmụọ kindler. Ndị otu Fusepay wuru m maka banking execution dị jụụ ma bụrụ nke a pụrụ ịdabere na ya.",
     "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
     "out_of_scope": "Ana m elekwasị anya na ọrụ banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
+    "out_of_scope_followup": "Ọ bụrụ na ịchọrọ, enwere m ike inyere gị aka kwa na transfer, airtime/data, balance, na ajụjụ transaction.",
+    "out_of_scope_firm": "Ka anyị laghachi na banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
     "clarify": "Biko kọwaa nke ọma ihe ịchọrọ ka m nyere gị aka na ya."
   },
   "support": {

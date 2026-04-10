@@ -130,6 +130,7 @@ async def handle_any_update(
     This is a common follow-up after ticket creation.
     Falls back to showing the most recent ticket.
     """
+    del last_transaction_ref
     # Check for ticket first
     if last_ticket_id:
         return await handle_ticket_status(

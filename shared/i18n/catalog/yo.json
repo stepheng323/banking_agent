@@ -34,6 +34,8 @@
     "brand_origin": "Orukọ Narya AI wa lati ìmísí kindler. Ẹgbẹ Fusepay ni wọn kọ mi fun iṣẹ banking to dakẹ, to dájú.",
     "capability_question": "Mo le ran ọ lọwọ pẹlu gbigbe owo, rira airtime/data, ayẹwo balance, ati ibeere transaction.",
     "out_of_scope": "Mo n dojukọ iṣẹ banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
+    "out_of_scope_followup": "Ti o ba fẹ, mo tun le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
+    "out_of_scope_firm": "Ẹ jẹ ká pada sí banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "clarify": "Jọwọ ṣalaye ohun ti o fẹ ki n ran ọ lọwọ pẹlu."
   },
   "support": {

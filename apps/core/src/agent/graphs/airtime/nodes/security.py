@@ -21,6 +21,7 @@ class AuthorizationStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del data, context, worker_context
         if gates.pin_verified:
             return TransactionResult(outcome=TransactionOutcome.OK)
 

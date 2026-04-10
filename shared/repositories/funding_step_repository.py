@@ -107,6 +107,7 @@ class FundingStepRepository(BaseRepository[FundingStep]):
         error_message: str | None = None,
     ) -> FundingStep | None:
         """Update funding step status and provider details."""
+        del provider_response
         step = await self.get_by_id(step_id)
         if step:
             step.status = status

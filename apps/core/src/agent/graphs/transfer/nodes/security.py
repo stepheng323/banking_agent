@@ -21,6 +21,7 @@ class AuthorizationStep(TransferStep):
         gates: TransferGates,
         worker_context: Any = None,
     ) -> TransactionResult:
+        del data, context, worker_context
         if gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 

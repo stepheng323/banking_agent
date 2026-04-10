@@ -342,6 +342,7 @@ class SupportWorker:
         message: str,
         locale: str,
     ) -> tuple[dict[str, Any] | None, SupportResult | None]:
+        del locale
         pending = support_ctx.pending_reference
         if pending is None or not pending.candidates:
             return None, None
@@ -459,6 +460,7 @@ class SupportWorker:
         pin_verified: bool = False,
     ) -> SupportResult:
         """Run the Support flow."""
+        del pin_verified
         phone_number = context.get("phone_number", "")
         user_id = context.get("user_id") or phone_number
         locale = LocaleManager.normalize(context.get("language")).value

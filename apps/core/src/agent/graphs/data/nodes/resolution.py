@@ -13,6 +13,7 @@ class ResolutionStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
+        del gates, worker_context
         locale = context.language
         # 1. Resolve Target Phone
         if not payload.target_phone:

@@ -76,6 +76,7 @@ class BvnInput(BaseModel):
 @router.post("/telegram/onboarding/bvn")
 async def telegram_onboarding_bvn(data: BvnInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle BVN verification for Telegram Onboarding."""
+    del user_data
     try:
         session = await bvn_service.get_session_data(data.flow_token)
         phone_number = (session or {}).get("phone_number", "")
@@ -187,6 +188,7 @@ async def telegram_onboarding_linking_session(
 @router.post("/telegram/onboarding/send_otp")
 async def telegram_send_otp(data: MethodInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Send OTP for Telegram Onboarding."""
+    del user_data
     result = await bvn_service.send_otp(data.flow_token, data.method)
     return result
 
@@ -262,6 +264,7 @@ async def telegram_linking_account(
 @router.post("/telegram/onboarding/otp")
 async def telegram_onboarding_otp(data: OtpInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle OTP verification for Telegram Onboarding."""
+    del user_data
     result = await bvn_service.verify_otp(data.flow_token, data.otp)
     return result
 
@@ -291,6 +294,7 @@ async def telegram_onboarding_complete(
     data: CompleteInput, user_data: dict = Depends(verify_telegram_init_data)
 ) -> dict:
     """Handle Onboarding completion for Telegram Onboarding."""
+    del user_data
     result = await account_service.complete_onboarding(
         data.flow_token,
         pin=data.pin,
@@ -342,6 +346,7 @@ async def telegram_pin_submit(
     3. Only publish FlowEvent on success
     4. Return error details on failure so Mini App can show them
     """
+    del user_data
     if not data.flow_token or not data.pin:
         return {"success": False, "error": "Missing PIN or token"}
 

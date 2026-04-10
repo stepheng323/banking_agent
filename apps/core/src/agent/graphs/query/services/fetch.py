@@ -359,6 +359,7 @@ async def fetch_transactions_base(
     trace_context: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Fetch transaction base set for the query time/account envelope (no query.filters applied)."""
+    del language
     started_at = perf_counter()
     start, end = resolve_query_date_bounds(query_contract)
     start_bound = date.fromisoformat(start)

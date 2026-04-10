@@ -38,6 +38,7 @@ _BANKING_REFUSAL_PATTERN_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_JOKE_PATTERN_RE = re.compile(r"\b(?:joke|funny|laugh|another one)\b", re.IGNORECASE)
 
 
 def _locale_to_language_label(raw_locale: str | None) -> str:
@@ -71,8 +72,37 @@ class ConversationResponder:
     def __init__(self, llm: ChatOpenAI) -> None:
         self.llm = llm
 
-    def _redirect_text(self, locale: str) -> str:
+    def _redirect_text(self, locale: str, *, casual_streak: int = 0) -> str:
+        if casual_streak >= 2:
+            return render_message("conversational.out_of_scope_firm", locale)
+        if casual_streak == 1:
+            return render_message("conversational.out_of_scope_followup", locale)
         return render_message("conversational.out_of_scope", locale)
+
+    def _redirect_variants(self, locale: str) -> tuple[str, ...]:
+        return (
+            _normalize_reply_text(render_message("conversational.out_of_scope", locale)),
+            _normalize_reply_text(render_message("conversational.out_of_scope_followup", locale)),
+            _normalize_reply_text(render_message("conversational.out_of_scope_firm", locale)),
+        )
+
+    def _count_trailing_casual_replies(self, history: list[Any], *, locale: str) -> int:
+        redirect_variants = self._redirect_variants(locale)
+        streak = 0
+        for turn in reversed(history):
+            if not isinstance(turn, dict):
+                break
+            role = str(turn.get("role", "")).strip().lower()
+            content = _normalize_reply_text(str(turn.get("content", "") or ""))
+            if role == "assistant":
+                if any(variant and variant in content for variant in redirect_variants):
+                    streak += 1
+                    continue
+                break
+            if role == "user":
+                continue
+            break
+        return streak
 
     def _sanitize_preface(self, raw_text: str | None, *, locale: str) -> str | None:
         if not raw_text:
@@ -106,7 +136,9 @@ class ConversationResponder:
         language = _locale_to_language_label(locale)
         history = user_ctx.get("history") or []
         now = datetime.now(ZoneInfo("Africa/Lagos"))
-        redirect_text = self._redirect_text(locale)
+        casual_streak = self._count_trailing_casual_replies(history, locale=locale)
+        redirect_text = self._redirect_text(locale, casual_streak=casual_streak)
+        prefers_banking_humor = bool(_JOKE_PATTERN_RE.search(text))
 
         history_text = ""
         if history:
@@ -129,6 +161,8 @@ class ConversationResponder:
             "- Answer briefly and harmlessly.\n"
             "- Keep it to 1 or 2 short sentences.\n"
             "- For harmless casual asks like jokes, tiny banter, or date/time, answer directly instead of refusing.\n"
+            "- If the user asks for a joke or playful banter, prefer banking-, money-, balance-, savings-, "
+            "or transfer-themed humor.\n"
             "- No financial, legal, medical, tax, or investment advice.\n"
             "- No promises about unsupported capabilities.\n"
             "- No broad topic drift, no markdown, no emojis.\n"
@@ -136,11 +170,16 @@ class ConversationResponder:
             "- Do not say you only handle banking or that you cannot help with harmless casual chat.\n"
             "- If the ask is unsafe, too broad, or not suitable, return an empty string.\n"
         )
+        if casual_streak >= 2:
+            system += "- The user has stayed in casual-chat mode for several turns, so keep the reply extra short.\n"
 
         user_parts = [
             f"Runtime Lagos timestamp: {now.strftime('%A, %B %d, %Y %H:%M %Z')}",
             f"User message: {text.strip()}",
+            f"Recent casual streak: {casual_streak}",
         ]
+        if prefers_banking_humor:
+            user_parts.append("Use a banking-related joke or money-themed playful line if you answer with humor.")
         if name:
             user_parts.append(f"User name: {name}")
         if history_text:

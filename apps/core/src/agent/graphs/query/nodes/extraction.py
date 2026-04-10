@@ -505,6 +505,7 @@ class ExtractionStep(QueryStep):
 
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
         """Run extraction logic."""
+        del worker_context
         query_session = state.get("query_session")
         locale = LocaleManager.normalize(state.get("language")).value
 

@@ -26,6 +26,7 @@ class FundingStep(TransferStep):
         gates: TransferGates,
         worker_context: Any = None,
     ) -> TransactionResult:
+        del gates
         dd_provider = getattr(worker_context, "dd_provider", None)
         if dd_provider:
             return await plan_transaction_funding(data, context, dd_provider)

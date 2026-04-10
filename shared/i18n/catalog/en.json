@@ -34,6 +34,8 @@
     "brand_origin": "Narya AI is named after a kindler archetype, built by Fusepay for calm, reliable banking execution.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
     "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",
+    "out_of_scope_followup": "If you want, I can also help with transfers, airtime/data, balances, and transaction queries.",
+    "out_of_scope_firm": "Let's switch back to banking. I can help with transfers, airtime/data, balances, and transaction queries.",
     "clarify": "Say exactly what you want me to do with your money."
   },
   "support": {

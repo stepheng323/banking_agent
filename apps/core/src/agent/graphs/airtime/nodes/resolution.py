@@ -28,6 +28,7 @@ class ResolutionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates, worker_context
         locale = context.language
         patch = {}
 

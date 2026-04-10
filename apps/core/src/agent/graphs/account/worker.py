@@ -75,6 +75,7 @@ class AccountWorker:
         pin_verified: bool = False,
     ) -> AccountResult:
         """Execute account management logic and return a structured result."""
+        del pin_verified
         text = (user_message or "").strip()
         patch: dict[str, Any] = {}
 

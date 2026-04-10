@@ -11,6 +11,7 @@ class AuthorizationStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
+        del context, worker_context
         if gates.pin_verified:
             return None
 

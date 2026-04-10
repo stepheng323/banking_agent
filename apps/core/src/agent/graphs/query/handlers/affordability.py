@@ -15,6 +15,7 @@ async def handle_affordability(
     **kwargs: Any,
 ) -> QueryResult:
     """Handle affordability queries."""
+    del account_ids
     language = kwargs.get("language", "en")
 
     # Get balance

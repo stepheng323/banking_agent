@@ -373,6 +373,7 @@ class TelegramClient(MessagingClient):
         message_id: str | None = None,
     ) -> MessageResult:
         """Send a document via multipart upload."""
+        del message_id
         form_data: dict[str, Any] = {"chat_id": to}
         if caption:
             form_data["caption"] = caption
@@ -401,6 +402,7 @@ class TelegramClient(MessagingClient):
         Opens a Mini App (web_app button) for secure data entry.
         Falls back to text if no Mini App base URL is configured.
         """
+        del flow_id
         return await self.send_mini_app(
             to=to,
             flow_token=flow_config.get("flow_token", ""),

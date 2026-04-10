@@ -38,6 +38,7 @@ def format_insufficient_funds(
     Returns:
         WhatsApp-formatted error message
     """
+    del recipient_bank, recipient_account
 
     lines = []
 

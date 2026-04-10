@@ -375,13 +375,11 @@ class QueryParser:
         extraction: "QueryExtractionResult",
         *,
         effective_intent: ExtractionIntent,
-        query_operation: QueryOperation,
     ) -> Filters | None:
         return query_compiler.build_filters(
             self,
             extraction,
             effective_intent=effective_intent,
-            query_operation=query_operation,
         )
 
     @classmethod

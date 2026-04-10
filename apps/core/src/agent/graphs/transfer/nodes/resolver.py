@@ -329,6 +329,7 @@ class ResolutionStep(TransferStep):
         gates: TransferGates,
         worker_context: Any,
     ) -> TransactionResult:
+        del gates
         return await resolve_beneficiary(
             data,
             context,

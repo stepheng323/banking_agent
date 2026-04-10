@@ -36,6 +36,7 @@ class BaseSQSHandler:
 
     def handle(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
         """Entry point for Lambda."""
+        del context
         if self._loop.is_closed():
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
