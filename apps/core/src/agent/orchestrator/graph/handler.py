@@ -321,11 +321,13 @@ class OrchestratorGraphHandler:
         tracker: TurnProgressTracker,
         phone_number: str,
         channel: str,
+        channel_identity: str | None = None,
         inbound_message_id: str | None,
         thread_id: str,
         turn_id: str,
         enable_initial_typing: bool,
     ) -> None:
+        del channel_identity
         deduped_progress_keys: set[str] = set()
 
         if enable_initial_typing:
