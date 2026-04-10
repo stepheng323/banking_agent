@@ -71,7 +71,10 @@ async def test_conversation_responder_rejects_banking_only_refusal_for_harmless_
         {"language": "en", "history": [], "profile": {}},
     )
 
-    assert reply == render_message("conversational.out_of_scope", "en")
+    assert reply == (
+        "Why did the banker bring a ladder? To reach the next interest level.\n"
+        + render_message("conversational.out_of_scope", "en")
+    )
 
 
 @pytest.mark.asyncio
@@ -151,3 +154,94 @@ async def test_conversation_responder_prompt_prefers_banking_related_humor_for_j
     user_prompt = llm.messages[1]["content"]
     assert "prefer banking-, money-, balance-, savings-, or transfer-themed humor" in system_prompt
     assert "Use a banking-related joke or money-themed playful line" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_treats_one_more_as_joke_followup_from_history() -> None:
+    llm = _FakeLLM("Why did the savings account relax? It had strong interest.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "One more",
+        {
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Tell me a joke"},
+                {
+                    "role": "assistant",
+                    "content": "Why did the banker bring a ladder? To reach the next interest level.\n"
+                    + render_message("conversational.out_of_scope", "en"),
+                },
+            ],
+            "profile": {},
+        },
+    )
+
+    assert reply == (
+        "Why did the savings account relax? It had strong interest.\n"
+        + render_message("conversational.out_of_scope_followup", "en")
+    )
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_uses_deterministic_joke_fallback_when_llm_returns_refusal() -> None:
+    responder = ConversationResponder(
+        _FakeLLM("Sorry, I can't provide jokes - I'm here to help with your banking tasks only.")
+    )  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "Another one",
+        {
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Tell me a joke"},
+                {
+                    "role": "assistant",
+                    "content": "Bank joke.\n" + render_message("conversational.out_of_scope", "en"),
+                },
+            ],
+            "profile": {},
+        },
+    )
+
+    assert reply == (
+        "Why do bankers love balance? Because it always checks out.\n"
+        + render_message("conversational.out_of_scope_followup", "en")
+    )
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_stops_generating_after_casual_spam_threshold() -> None:
+    llm = _FakeLLM("This should never be used.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "Another one",
+        {
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Tell me a joke"},
+                {
+                    "role": "assistant",
+                    "content": "Bank joke one.\n" + render_message("conversational.out_of_scope", "en"),
+                },
+                {"role": "user", "content": "Another one"},
+                {
+                    "role": "assistant",
+                    "content": "Bank joke two.\n" + render_message("conversational.out_of_scope_followup", "en"),
+                },
+                {"role": "user", "content": "Again"},
+                {
+                    "role": "assistant",
+                    "content": "Bank joke three.\n" + render_message("conversational.out_of_scope_firm", "en"),
+                },
+            ],
+            "profile": {},
+        },
+    )
+
+    assert reply == render_message("conversational.out_of_scope_firm", "en")
+    assert llm.messages is None

@@ -20,6 +20,7 @@ _LANGUAGE_LABELS = {
 }
 _MAX_REPLY_CHARS = 220
 _MAX_REPLY_LINES = 3
+_MAX_CASUAL_REPLY_STREAK = 3
 _WHITESPACE_RE = re.compile(r"[ \t]+")
 _MULTILINE_RE = re.compile(r"\n{3,}")
 _BLOCKED_PATTERN_RE = re.compile(
@@ -39,6 +40,15 @@ _BANKING_REFUSAL_PATTERN_RE = re.compile(
     re.IGNORECASE,
 )
 _JOKE_PATTERN_RE = re.compile(r"\b(?:joke|funny|laugh|another one)\b", re.IGNORECASE)
+_JOKE_FOLLOWUP_PATTERN_RE = re.compile(
+    r"\b(?:another one|one more|again|another joke|small joke|small one|more)\b",
+    re.IGNORECASE,
+)
+_BANKING_JOKE_FALLBACKS = (
+    "Why did the banker bring a ladder? To reach the next interest level.",
+    "Why do bankers love balance? Because it always checks out.",
+    "Why was the debit card calm? It knew how to keep its balance.",
+)
 
 
 def _locale_to_language_label(raw_locale: str | None) -> str:
@@ -104,6 +114,28 @@ class ConversationResponder:
             break
         return streak
 
+    def _recent_history_text(self, history: list[Any], *, limit: int = 4) -> str:
+        lines: list[str] = []
+        for turn in history[-limit:]:
+            if not isinstance(turn, dict):
+                continue
+            role = str(turn.get("role", "user")).strip().lower() or "user"
+            content = str(turn.get("content", "")).strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines)
+
+    def _is_joke_turn(self, text: str, history: list[Any]) -> bool:
+        if _JOKE_PATTERN_RE.search(text):
+            return True
+        if not _JOKE_FOLLOWUP_PATTERN_RE.search(text):
+            return False
+        history_text = self._recent_history_text(history)
+        return bool(_JOKE_PATTERN_RE.search(history_text))
+
+    def _deterministic_joke_fallback(self, *, casual_streak: int) -> str:
+        return _BANKING_JOKE_FALLBACKS[min(casual_streak, len(_BANKING_JOKE_FALLBACKS) - 1)]
+
     def _sanitize_preface(self, raw_text: str | None, *, locale: str) -> str | None:
         if not raw_text:
             return None
@@ -139,18 +171,12 @@ class ConversationResponder:
         casual_streak = self._count_trailing_casual_replies(history, locale=locale)
         redirect_text = self._redirect_text(locale, casual_streak=casual_streak)
         prefers_banking_humor = bool(_JOKE_PATTERN_RE.search(text))
+        if casual_streak >= _MAX_CASUAL_REPLY_STREAK:
+            return redirect_text
 
-        history_text = ""
-        if history:
-            trimmed_history = history[-4:]
-            history_lines = []
-            for turn in trimmed_history:
-                role = str(turn.get("role", "user")).strip().lower() or "user"
-                content = str(turn.get("content", "")).strip()
-                if content:
-                    history_lines.append(f"{role}: {content}")
-            if history_lines:
-                history_text = "\nRecent turns:\n" + "\n".join(history_lines)
+        history_text = self._recent_history_text(history)
+        history_block = f"\nRecent turns:\n{history_text}" if history_text else ""
+        is_joke_turn = self._is_joke_turn(text, history)
 
         system = (
             "You are Narya, a banking assistant on WhatsApp.\n"
@@ -178,12 +204,12 @@ class ConversationResponder:
             f"User message: {text.strip()}",
             f"Recent casual streak: {casual_streak}",
         ]
-        if prefers_banking_humor:
+        if prefers_banking_humor or is_joke_turn:
             user_parts.append("Use a banking-related joke or money-themed playful line if you answer with humor.")
         if name:
             user_parts.append(f"User name: {name}")
-        if history_text:
-            user_parts.append(history_text)
+        if history_block:
+            user_parts.append(history_block)
 
         reply = await self.llm.ainvoke(
             [
@@ -201,6 +227,8 @@ class ConversationResponder:
 
         preface = self._sanitize_preface(raw_content, locale=locale)
         if not preface:
+            if is_joke_turn:
+                return f"{self._deterministic_joke_fallback(casual_streak=casual_streak)}\n{redirect_text}"
             return redirect_text
         if preface == redirect_text:
             return redirect_text
