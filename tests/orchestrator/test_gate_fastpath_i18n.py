@@ -2204,6 +2204,58 @@ async def test_gate_semantic_router_generic_banking_refusal_out_of_scope_uses_co
     assert responder.calls
 
 
+async def test_gate_contextual_casual_followup_bypasses_semantic_router_to_responder() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.61,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="ambiguous follow-up",
+        )
+    )
+    responder = _FakeConversationResponder(
+        render_message("conversational.out_of_scope_firm", "en")
+    )
+    state = OrchestratorState(
+        user_id="u_gate_oos_conv_followup_1",
+        phone_number="23480000000061",
+        channel="whatsapp",
+        last_message_text="One more",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Tell me a joke"},
+                {
+                    "role": "assistant",
+                    "content": "Why did the savings account blush? Because it saw its balance growing.\n"
+                    + render_message("conversational.out_of_scope", "en"),
+                },
+                {"role": "user", "content": "Another one"},
+                {
+                    "role": "assistant",
+                    "content": "Sure — my wallet is on a strict budget.\n"
+                    + render_message("conversational.out_of_scope_followup", "en"),
+                },
+            ],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "contextual_casual_followup"
+    assert updates["final_response"] == responder.reply
+    assert responder.calls
+
+
 async def test_gate_semantic_router_passes_expected_executors_without_direct_path() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

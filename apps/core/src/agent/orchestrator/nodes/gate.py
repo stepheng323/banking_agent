@@ -32,7 +32,10 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
 )
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.services.async_completion import get_recent_batch_reference
-from shared.services.conversation_responder import is_banking_refusal_reply
+from shared.services.conversation_responder import (
+    is_banking_refusal_reply,
+    is_contextual_casual_followup_turn,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -1395,6 +1398,18 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
     has_active_query_session = bool(
         isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active")
     )
+    contextual_casual_followup = (
+        not live_pending_interrupt
+        and not state.has_quote
+        and not has_active_query_session
+        and not state.session_stack
+        and not state.waves
+        and state.pending_interrupt is None
+        and is_contextual_casual_followup_turn(
+            message_text,
+            (state.loaded_context or {}).get("history") if isinstance(state.loaded_context, dict) else None,
+        )
+    )
     has_query_session_stack = bool(session and session.domain == "query")
     logger.info(
         "gate_query_routing_breadcrumb",
@@ -1403,6 +1418,22 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         query_session_source=query_session_source,
         query_session_stack=has_query_session_stack,
     )
+
+    if contextual_casual_followup:
+        responder_reply = await _build_bounded_conversational_reply(current_locale)
+        if responder_reply:
+            logger.info("gate_contextual_casual_followup_responder")
+            return {
+                **gate_updates,
+                **summary_updates,
+                "direct_path_triggered": True,
+                "final_response": responder_reply,
+                "semantic_path_shape": "contextual_casual_followup",
+                **_route_observability_updates(
+                    owner="guardrail",
+                    decision="contextual_casual_followup",
+                ),
+            }
 
     if not live_pending_interrupt and not state.has_quote and _is_direct_context_recap_request(message_text):
         response = _build_direct_context_recap_response(turn_summary)

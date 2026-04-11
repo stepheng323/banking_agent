@@ -51,6 +51,18 @@ _BANKING_JOKE_FALLBACKS = (
 )
 
 
+def _recent_history_text(history: list[Any], *, limit: int = 4) -> str:
+    lines: list[str] = []
+    for turn in history[-limit:]:
+        if not isinstance(turn, dict):
+            continue
+        role = str(turn.get("role", "user")).strip().lower() or "user"
+        content = str(turn.get("content", "")).strip()
+        if content:
+            lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
 def _locale_to_language_label(raw_locale: str | None) -> str:
     locale = LocaleManager.normalize(raw_locale).value
     return _LANGUAGE_LABELS.get(locale, "English")
@@ -74,6 +86,17 @@ def is_banking_refusal_reply(raw_text: str | None, *, locale: str) -> bool:
     if localized.endswith(f"\n{redirect_text}") or localized.endswith(f" {redirect_text}"):
         return True
     return bool(_BANKING_REFUSAL_PATTERN_RE.search(localized))
+
+
+def is_contextual_casual_followup_turn(text: str | None, history: list[Any] | None) -> bool:
+    if not text:
+        return False
+    if not _JOKE_FOLLOWUP_PATTERN_RE.search(text):
+        return False
+    history_text = _recent_history_text(history or [])
+    if not history_text:
+        return False
+    return bool(_JOKE_PATTERN_RE.search(history_text))
 
 
 class ConversationResponder:
@@ -115,15 +138,7 @@ class ConversationResponder:
         return streak
 
     def _recent_history_text(self, history: list[Any], *, limit: int = 4) -> str:
-        lines: list[str] = []
-        for turn in history[-limit:]:
-            if not isinstance(turn, dict):
-                continue
-            role = str(turn.get("role", "user")).strip().lower() or "user"
-            content = str(turn.get("content", "")).strip()
-            if content:
-                lines.append(f"{role}: {content}")
-        return "\n".join(lines)
+        return _recent_history_text(history, limit=limit)
 
     def _is_joke_turn(self, text: str, history: list[Any]) -> bool:
         if _JOKE_PATTERN_RE.search(text):
