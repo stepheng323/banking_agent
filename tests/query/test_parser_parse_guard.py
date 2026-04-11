@@ -226,6 +226,30 @@ async def test_fact_query_shape_does_not_get_upgraded_to_beneficiary_summary_by_
 
 
 @pytest.mark.asyncio
+async def test_unscoped_latest_recipient_fact_query_stays_single_transaction() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="who did I send money to last",
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "who did I send money to last",
+        today=date(2026, 3, 30),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["answer_fact_field"] == "counterparty"
+    assert result.query_contract["result_reference"] == "latest"
+    assert result.query_contract["filters"]["transaction_type"] == "debit"
+    assert result.query_contract["filters"]["counterparty"] is None
+
+
+@pytest.mark.asyncio
 async def test_time_vague_matching_transaction_shape_clarifies_without_llm_latest_item_shape() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.SPENDING_TOTAL,

@@ -234,6 +234,8 @@ def resolve_effective_intent(
     raw_lower = (raw_query or "").strip().lower()
     if request_shape == QueryRequestShape.FACT:
         return ExtractionIntent.SINGLE_TRANSACTION
+    if intent == ExtractionIntent.BENEFICIARY_SUMMARY and is_single_transaction_fact_query(raw_lower):
+        return ExtractionIntent.SINGLE_TRANSACTION
     if request_shape in {
         QueryRequestShape.ANALYTICS,
         QueryRequestShape.GROUPED_SUMMARY,
@@ -249,8 +251,6 @@ def resolve_effective_intent(
         "bank",
     }:
         return ExtractionIntent.SINGLE_TRANSACTION
-    if intent == ExtractionIntent.BENEFICIARY_SUMMARY and is_single_transaction_fact_query(raw_lower):
-        return ExtractionIntent.SINGLE_TRANSACTION
     if intent == ExtractionIntent.TRANSACTION_LIST and is_aggregate_total_query(raw_lower):
         return ExtractionIntent.SPENDING_TOTAL
     return intent
@@ -259,12 +259,40 @@ def resolve_effective_intent(
 def is_single_transaction_fact_query(raw_query: str) -> bool:
     if not raw_query:
         return False
-    normalized = f" {' '.join(raw_query.split())} "
+    normalized_compact = " ".join(raw_query.split())
+    normalized = f" {normalized_compact} "
+    has_transaction_verb = any(
+        phrase in normalized
+        for phrase in (
+            " pay ",
+            " paid ",
+            " send ",
+            " sent ",
+            " transfer ",
+            " transferred ",
+            " receive ",
+            " received ",
+        )
+    )
+    if (
+        has_transaction_verb
+        and (
+            normalized.startswith(" who did i ")
+            or normalized.startswith(" who do i ")
+        )
+        and (
+            normalized_compact.endswith(" last")
+            or normalized_compact.endswith(" latest")
+            or normalized_compact.endswith(" most recent")
+            or normalized_compact.endswith(" last transaction")
+            or normalized_compact.endswith(" latest transaction")
+        )
+    ):
+        return True
+
     if any(
         phrase in normalized
         for phrase in (
-            " who did i ",
-            " who do i ",
             " top ",
             " most ",
             " people ",
@@ -286,19 +314,7 @@ def is_single_transaction_fact_query(raw_query: str) -> bool:
     if not has_fact_cue:
         return False
 
-    return any(
-        phrase in normalized
-        for phrase in (
-            " pay ",
-            " paid ",
-            " send ",
-            " sent ",
-            " transfer ",
-            " transferred ",
-            " receive ",
-            " received ",
-        )
-    )
+    return has_transaction_verb
 
 
 def intent_from_query_operation(query_operation: QueryOperation) -> QueryIntent:

@@ -210,6 +210,36 @@ def _recipient_summary_candidate(
     )
 
 
+def _latest_counterparty_fact_candidate(raw_query: str) -> bool:
+    normalized = " ".join((raw_query or "").strip().lower().split())
+    if not normalized:
+        return False
+    padded = f" {normalized} "
+    if not (padded.startswith(" who did i ") or padded.startswith(" who do i ")):
+        return False
+    if not any(
+        phrase in padded
+        for phrase in (
+            " pay ",
+            " paid ",
+            " send ",
+            " sent ",
+            " transfer ",
+            " transferred ",
+            " receive ",
+            " received ",
+        )
+    ):
+        return False
+    return (
+        normalized.endswith(" last")
+        or normalized.endswith(" latest")
+        or normalized.endswith(" most recent")
+        or normalized.endswith(" last transaction")
+        or normalized.endswith(" latest transaction")
+    )
+
+
 def month_token(period: str | None) -> int | None:
     if not period:
         return None
@@ -367,6 +397,8 @@ def recover_known_fragile_query_shapes(
     # backstop only repairs weak grouped-recipient outputs; it should never be
     # the primary intent router or override explicit fact/comparison shapes.
     if extraction.request_shape == QueryRequestShape.FACT or extraction.fact_query_kind is not None:
+        return extraction
+    if _latest_counterparty_fact_candidate(raw_query):
         return extraction
     amount_bounds = extract_beneficiary_query_amount_bounds(raw_query)
     if extraction.answer_fact_field in {"date", "counterparty", "amount", "bank"}:

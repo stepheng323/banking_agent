@@ -543,6 +543,31 @@ def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:
     assert query_ir.answer_fact_field == "counterparty"
 
 
+def test_who_did_i_send_money_to_last_compiles_to_latest_counterparty_fact() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 28)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="who did I send money to last",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
+    assert query_ir.answer_fact_field == "counterparty"
+    assert query_ir.result_reference == "latest"
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"
+    assert query_ir.filters.counterparty is None
+    assert query_ir.time_range.start == date(2025, 9, 29)
+    assert query_ir.time_range.end == today
+    assert contract.intent == QueryIntent.TRANSACTION_SEARCH
+    assert contract.answer_fact_field == "counterparty"
+    assert contract.result_reference == "latest"
+
+
 def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
