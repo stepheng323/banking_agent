@@ -3,7 +3,11 @@ from datetime import date
 import pytest
 
 from apps.core.src.agent.graphs.query.models import Filters, QueryExecutionContract, QueryIntent, QueryResultItem
-from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier, is_next_fact_followup
+from apps.core.src.agent.graphs.query.services.continuity import (
+    ContinuationClassifier,
+    is_current_item_fact_followup,
+    is_next_fact_followup,
+)
 from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 
 
@@ -240,3 +244,17 @@ def test_next_fact_followup_does_not_match_non_latest_fact_query() -> None:
     )
 
     assert is_next_fact_followup("Then who next?", query_contract=query_contract) is False
+
+
+def test_current_fact_followup_matches_amount_question_for_fact_query() -> None:
+    query_contract = QueryExecutionContract(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_start=date(2026, 4, 1),
+        time_end=date(2026, 4, 10),
+        filters=Filters(transaction_type="debit"),
+        result_limit=1,
+        result_reference="latest",
+        answer_fact_field="amount",
+    )
+
+    assert is_current_item_fact_followup("How much?", query_contract=query_contract) is True

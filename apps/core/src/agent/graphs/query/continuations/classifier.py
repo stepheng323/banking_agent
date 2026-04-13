@@ -106,6 +106,22 @@ _NEXT_FACT_GENERIC_PATTERNS = (
     re.compile(r"^(?:then|and|so)\s+what\s+about\s+(?:the\s+)?next(?:\s+one)?(?:\?|!|\.)?$", re.IGNORECASE),
     re.compile(r"^what\s+about\s+(?:the\s+)?next(?:\s+one)?(?:\?|!|\.)?$", re.IGNORECASE),
 )
+_CURRENT_FACT_FOLLOWUP_FIELD_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "counterparty": (
+        re.compile(r"^(?:who|who was it|who was that|who did i (?:send|pay) to)(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+    "amount": (
+        re.compile(r"^(?:how much|what(?:'s| is)? the amount|amount)(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+    "bank": (
+        re.compile(r"^(?:which|what)\s+bank(?:\?|!|\.)?$", re.IGNORECASE),
+        re.compile(r"^bank(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+    "date": (
+        re.compile(r"^(?:when|what\s+date)(?:\?|!|\.)?$", re.IGNORECASE),
+        re.compile(r"^date(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+}
 
 
 def is_next_fact_followup(
@@ -130,6 +146,26 @@ def is_next_fact_followup(
     if any(pattern.match(normalized) for pattern in field_patterns):
         return True
     return any(pattern.match(normalized) for pattern in _NEXT_FACT_GENERIC_PATTERNS)
+
+
+def is_current_item_fact_followup(
+    message: str,
+    *,
+    query_contract: QueryExecutionContract | None,
+) -> bool:
+    """Return whether the turn asks a terse fact about the current selected result."""
+    if query_contract is None:
+        return False
+    fact_field = query_contract.answer_fact_field
+    if fact_field not in {"date", "counterparty", "amount", "bank"}:
+        return False
+
+    normalized = " ".join(message.strip().split())
+    if not normalized:
+        return False
+
+    field_patterns = _CURRENT_FACT_FOLLOWUP_FIELD_PATTERNS.get(fact_field, ())
+    return any(pattern.match(normalized) for pattern in field_patterns)
 
 
 class ContinuationClassifier:

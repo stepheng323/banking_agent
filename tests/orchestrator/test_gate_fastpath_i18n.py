@@ -1647,6 +1647,41 @@ async def test_gate_semantic_router_locale_switch_persists_language_in_redis(mon
     assert redis_client.set_calls[0][1] == "ha"
 
 
+async def test_gate_ignores_semantic_router_locale_switch_hallucination_for_query_turn() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.87,
+            detected_language="English",
+            requested_language="Pidgin",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="hallucinated locale switch",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_locale_guard_1",
+        phone_number="2348000000011",
+        channel="whatsapp",
+        last_message_text="Show my recent transactions",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Show my recent transactions"
+    assert updates.get("final_response") is None
+
+
 async def test_gate_handles_explicit_language_switch_deterministically_before_semantic_router(monkeypatch) -> None:
     redis_client = _TrackingLocaleRedis()
     from shared.cache.redis_client import RedisClient

@@ -24,7 +24,10 @@ from apps.core.src.agent.graphs.query.models import (
 from apps.core.src.agent.graphs.query.presentation.selection_resolver import find_selection_payload
 from apps.core.src.agent.graphs.query.presentation.surface_builder import apply_selection_payload_to_query
 from apps.core.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
-from apps.core.src.agent.graphs.query.services.continuity import is_next_fact_followup
+from apps.core.src.agent.graphs.query.services.continuity import (
+    is_current_item_fact_followup,
+    is_next_fact_followup,
+)
 from apps.core.src.agent.graphs.query.services.fetch import apply_filters, apply_time_window, parse_date
 from apps.core.src.agent.graphs.query.services.grounding import (
     build_grounded_query_contract,
@@ -168,6 +171,47 @@ def _maybe_build_next_fact_followup_response(
         "show_expanded": bool(session.get("show_expanded", False)),
         "current_page": session.get("current_page", 0),
         "selected_item_index": next_index,
+        "_query_session_transition": "answer_fact_active_result",
+    }
+
+
+def _maybe_build_current_fact_followup_response(
+    *,
+    message: str,
+    session: dict[str, Any],
+    restored_query_result: QueryResult | None,
+    session_query_contract: QueryExecutionContract | None,
+    language: str,
+) -> dict[str, Any] | None:
+    if not is_current_item_fact_followup(message, query_contract=session_query_contract):
+        return None
+    if restored_query_result is None or not restored_query_result.items:
+        return None
+    if session_query_contract is None:
+        return None
+
+    selected_index_raw = session.get("selected_item_index")
+    selected_index = int(selected_index_raw) if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else 0
+    selected_index = max(0, min(selected_index, len(restored_query_result.items) - 1))
+    item = restored_query_result.items[selected_index]
+    answer_context = build_direct_fact_answer(
+        item,
+        query_contract=session_query_contract,
+        fact_field=session_query_contract.answer_fact_field or "date",
+        locale=language,
+    )
+    lines = [answer_context.primary_text]
+    if answer_context.secondary_text:
+        lines.extend(["", answer_context.secondary_text])
+    return {
+        "transaction_outcome": TransactionOutcome.OK,
+        "response": "\n".join(lines),
+        "session_active": True,
+        "flow_state": "complete",
+        "resolver_message": None,
+        "show_expanded": bool(session.get("show_expanded", False)),
+        "current_page": session.get("current_page", 0),
+        "selected_item_index": selected_index,
         "_query_session_transition": "answer_fact_active_result",
     }
 
@@ -1113,6 +1157,22 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             continuation_type="next_fact_followup",
         )
         return deterministic_next_updates
+
+    deterministic_current_fact_updates = _maybe_build_current_fact_followup_response(
+        message=message,
+        session=session,
+        restored_query_result=restored_query_result,
+        session_query_contract=session_query_contract,
+        language=locale,
+    )
+    if deterministic_current_fact_updates is not None:
+        logger.info(
+            "query_continuation_resolution",
+            path="deterministic_current_fact_followup",
+            semantic_decision="continuation",
+            continuation_type="current_fact_followup",
+        )
+        return deterministic_current_fact_updates
 
     decision = await step.reasoner.reason(
         step._build_reasoner_context(

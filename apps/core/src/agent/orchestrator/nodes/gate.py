@@ -11,7 +11,10 @@ from typing import Any, Literal
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.graphs.query.models import QueryExecutionContract
-from apps.core.src.agent.graphs.query.services.continuity import is_next_fact_followup
+from apps.core.src.agent.graphs.query.services.continuity import (
+    is_current_item_fact_followup,
+    is_next_fact_followup,
+)
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
 from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut_with_reason
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
@@ -552,6 +555,32 @@ def _resolve_explicit_language_switch(message_text: str) -> str | None:
     return None
 
 
+def _looks_like_language_switch_request(message_text: str, requested_locale: str | None = None) -> bool:
+    if _resolve_explicit_language_switch(message_text) is not None:
+        return True
+
+    normalized = _normalize_user_text(message_text)
+    if not normalized:
+        return False
+
+    locale_aliases = {
+        "en": ("english",),
+        "pcm": ("pidgin", "naija"),
+        "yo": ("yoruba",),
+        "ha": ("hausa",),
+        "ig": ("igbo", "ibo"),
+    }
+    target_aliases = locale_aliases.get(requested_locale or "", ())
+    if not target_aliases:
+        target_aliases = tuple(alias for aliases in locale_aliases.values() for alias in aliases)
+
+    has_locale_name = any(re.search(rf"\b{re.escape(alias)}\b", normalized) for alias in target_aliases)
+    if not has_locale_name:
+        return False
+
+    return bool(re.search(r"\b(?:switch|speak|reply|continue|use|talk|chat|yarn|answer)\b", normalized))
+
+
 async def _effective_response_locale(
     *,
     state: OrchestratorState,
@@ -1027,6 +1056,8 @@ def _query_followup_bypass_reason(
 
     if is_next_fact_followup(message_text, query_contract=query_contract):
         return "latest_fact_next_followup", query_contract.answer_fact_field if query_contract is not None else None
+    if is_current_item_fact_followup(message_text, query_contract=query_contract):
+        return "active_result_fact_followup", query_contract.answer_fact_field if query_contract is not None else None
 
     if query_session_snapshot.get("pending_clarification"):
         parsed_time_range = QueryParser.parse_clarification_time_range(message_text, today=lagos_today())
@@ -1731,7 +1762,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             canonical_decision = _semantic_route_decision(route)
             canonical_mode = _semantic_route_mode(route)
             requested_locale = getattr(route, "requested_language", None)
-            if requested_locale:
+            if requested_locale and _looks_like_language_switch_request(message_text, requested_locale):
                 resolved_locale = LocaleManager.parse_locale_name(requested_locale)
                 if resolved_locale is None:
                     logger.info("gate_semantic_router_locale_switch_invalid", requested_locale=requested_locale)
@@ -1756,6 +1787,12 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                             mode=canonical_mode,
                         ),
                     }
+            elif requested_locale:
+                logger.info(
+                    "gate_semantic_router_locale_switch_ignored",
+                    requested_locale=requested_locale,
+                    reason="message_missing_language_switch_cues",
+                )
 
             expected_executors = [
                 str(item)
