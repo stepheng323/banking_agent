@@ -2,7 +2,6 @@
 
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
 from apps.gateway.adapters.sender import send_text
-from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.adapter import QueuePublisher
@@ -10,6 +9,17 @@ from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_ALLOWED_WHATSAPP_NUMBER = "08162511023"
+
+
+def _normalize_whatsapp_number(value: str | None) -> str:
+    if not value:
+        return ""
+
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if digits.startswith("234") and len(digits) == 13:
+        return f"0{digits[3:]}"
+    return digits
 
 
 class WhatsAppWebhookService:
@@ -47,16 +57,16 @@ class WhatsAppWebhookService:
     async def _process_message(self, msg: ParsedMessage) -> bool:
         """Process a single message. Returns True if processed."""
         from_id = msg.from_number
+        normalized_from_id = _normalize_whatsapp_number(from_id)
         msg_type = msg.type or "text"
         flow_data = msg.flow_data
 
-        # Optional whitelist check (only enforced when configured).
-        allowed_numbers = settings.whatsapp_allowed_numbers
-        if allowed_numbers and from_id not in allowed_numbers:
+        if normalized_from_id != _ALLOWED_WHATSAPP_NUMBER:
             logger.info(
-                "webhook_message_filtered_by_whitelist",
+                "webhook_message_filtered_by_number_gate",
                 from_id=from_id,
-                configured_allowlist_size=len(allowed_numbers),
+                normalized_from_id=normalized_from_id,
+                allowed_number=_ALLOWED_WHATSAPP_NUMBER,
             )
             return False
 
