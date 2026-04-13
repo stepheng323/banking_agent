@@ -185,6 +185,28 @@
         "generic": "E pass through {bank_name}.",
         "unavailable": "I see the transaction, but the bank name no dey."
       },
+      "latest": {
+        "date": {
+          "debit_named": "The last time you pay {counterparty} na {date}.",
+          "credit_named": "The last time you get money from {counterparty} na {date}.",
+          "generic": "The last one na {date}."
+        },
+        "counterparty": {
+          "debit_named": "The last person wey you send money to na {counterparty}.",
+          "credit_named": "The last person wey send you money na {counterparty}.",
+          "generic": "The last one na with {counterparty}."
+        },
+        "amount": {
+          "debit_named": "The last transfer to {counterparty} na {amount}.",
+          "credit_named": "The last payment from {counterparty} na {amount}.",
+          "generic": "The last one na {amount}."
+        },
+        "bank": {
+          "debit_named": "That last transfer to {counterparty} pass through {bank_name}.",
+          "credit_named": "That last payment from {counterparty} come through {bank_name}.",
+          "generic": "The last one pass through {bank_name}."
+        }
+      },
       "aggregate": {
         "scope": "That total na only for {scope_label}{period_suffix}.{total_suffix}",
         "scope_hint": "E add up {count} {transaction_label} for that scope.",

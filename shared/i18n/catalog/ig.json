@@ -185,6 +185,28 @@
         "generic": "O gara site na {bank_name}.",
         "unavailable": "Achọpụtara m transaction ahụ, mana aha bank adịghị."
       },
+      "latest": {
+        "date": {
+          "debit_named": "Oge ikpeazụ ị kwụrụ {counterparty} bụ na {date}.",
+          "credit_named": "Oge ikpeazụ ị natara ego n'aka {counterparty} bụ na {date}.",
+          "generic": "Nke ikpeazụ mere na {date}."
+        },
+        "counterparty": {
+          "debit_named": "Onye ikpeazụ i zigara ego bụ {counterparty}.",
+          "credit_named": "Onye ikpeazụ zigara gị ego bụ {counterparty}.",
+          "generic": "Nke ikpeazụ bụ na {counterparty}."
+        },
+        "amount": {
+          "debit_named": "Transfer ikpeazụ gara {counterparty} bụ {amount}.",
+          "credit_named": "Ịkwụ ụgwọ ikpeazụ sitere na {counterparty} bụ {amount}.",
+          "generic": "Nke ikpeazụ bụ {amount}."
+        },
+        "bank": {
+          "debit_named": "Transfer ikpeazụ gara {counterparty} sitere na {bank_name}.",
+          "credit_named": "Ịkwụ ụgwọ ikpeazụ sitere na {counterparty} bịara site na {bank_name}.",
+          "generic": "Nke ikpeazụ gara site na {bank_name}."
+        }
+      },
       "aggregate": {
         "scope": "Ngụkọta ahụ bụ naanị maka {scope_label}{period_suffix}.{total_suffix}",
         "scope_hint": "Ọ bụ mkpokọta nke {count} {transaction_label} n’ime scope ahụ.",

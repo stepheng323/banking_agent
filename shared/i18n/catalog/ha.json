@@ -185,6 +185,28 @@
         "generic": "Ya bi ta {bank_name}.",
         "unavailable": "Na gano transaction ɗin, amma sunan banki bai samu ba."
       },
+      "latest": {
+        "date": {
+          "debit_named": "Lokaci na ƙarshe da ka biya {counterparty} shi ne {date}.",
+          "credit_named": "Lokaci na ƙarshe da ka karɓi kuɗi daga {counterparty} shi ne {date}.",
+          "generic": "Na ƙarshe ya faru ne a {date}."
+        },
+        "counterparty": {
+          "debit_named": "Mutumin ƙarshe da ka aika wa kuɗi shi ne {counterparty}.",
+          "credit_named": "Mutumin ƙarshe da ya aiko maka kuɗi shi ne {counterparty}.",
+          "generic": "Na ƙarshe ya kasance tare da {counterparty}."
+        },
+        "amount": {
+          "debit_named": "Canjin kuɗi na ƙarshe zuwa {counterparty} shi ne {amount}.",
+          "credit_named": "Biyan kuɗi na ƙarshe daga {counterparty} shi ne {amount}.",
+          "generic": "Na ƙarshe shi ne {amount}."
+        },
+        "bank": {
+          "debit_named": "Canjin kuɗi na ƙarshe zuwa {counterparty} ya bi ta {bank_name}.",
+          "credit_named": "Biyan kuɗi na ƙarshe daga {counterparty} ya zo ta {bank_name}.",
+          "generic": "Na ƙarshe ya bi ta {bank_name}."
+        }
+      },
       "aggregate": {
         "scope": "Wannan jimillar ta shafi {scope_label} kawai{period_suffix}.{total_suffix}",
         "scope_hint": "Ta haɗa {count} {transaction_label} a cikin wannan scope.",

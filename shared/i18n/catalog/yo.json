@@ -185,6 +185,28 @@
         "generic": "Ó kọja nipasẹ {bank_name}.",
         "unavailable": "Mo ri transaction naa, ṣugbọn orukọ banki ko si."
       },
+      "latest": {
+        "date": {
+          "debit_named": "Ìgbà tó kẹ́yìn tí o san {counterparty} ni {date}.",
+          "credit_named": "Ìgbà tó kẹ́yìn tí o gba owo lati ọdọ {counterparty} ni {date}.",
+          "generic": "Èyí tó kẹ́yìn ṣẹlẹ ni {date}."
+        },
+        "counterparty": {
+          "debit_named": "Ẹni tó kẹ́yìn tí o fi owo sí ni {counterparty}.",
+          "credit_named": "Ẹni tó kẹ́yìn tó fi owo ránṣẹ́ sí ọ ni {counterparty}.",
+          "generic": "Èyí tó kẹ́yìn jẹ́ pẹlu {counterparty}."
+        },
+        "amount": {
+          "debit_named": "Transfer tó kẹ́yìn sí {counterparty} jẹ́ {amount}.",
+          "credit_named": "Ìsanwó tó kẹ́yìn láti ọdọ {counterparty} jẹ́ {amount}.",
+          "generic": "Èyí tó kẹ́yìn jẹ́ {amount}."
+        },
+        "bank": {
+          "debit_named": "Transfer tó kẹ́yìn sí {counterparty} gba {bank_name} kọjá.",
+          "credit_named": "Ìsanwó tó kẹ́yìn láti ọdọ {counterparty} wá nipasẹ {bank_name}.",
+          "generic": "Èyí tó kẹ́yìn gba {bank_name} kọjá."
+        }
+      },
       "aggregate": {
         "scope": "Apapọ yẹn jẹ́ fún {scope_label} nìkan{period_suffix}.{total_suffix}",
         "scope_hint": "Ó jẹ́ apapọ {count} {transaction_label} nínú scope yẹn.",
