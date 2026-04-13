@@ -142,6 +142,7 @@ class QuerySessionManager:
                 "filters",
                 "pending_clarification",
                 "query_frames",
+                "selected_item_index",
                 "timestamp",
             )
             for k, v in state.items():

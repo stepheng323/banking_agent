@@ -23,6 +23,9 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.presentation.selection_resolver import find_selection_payload
 from apps.core.src.agent.graphs.query.presentation.surface_builder import apply_selection_payload_to_query
+from apps.core.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
+from apps.core.src.agent.graphs.query.services.continuity import is_next_fact_followup
+from apps.core.src.agent.graphs.query.services.fetch import apply_filters, apply_time_window, parse_date
 from apps.core.src.agent.graphs.query.services.grounding import (
     build_grounded_query_contract,
     build_memory_answer,
@@ -50,6 +53,123 @@ def _looks_like_explicit_fresh_query_interrupt(message: str) -> bool:
     if not normalized:
         return False
     return bool(_FRESH_QUERY_INTERRUPT_HEAD_RE.match(normalized))
+
+
+def _coerce_cached_transactions(session: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_transactions = session.get("cached_transactions")
+    if not isinstance(raw_transactions, list):
+        return []
+    return [item for item in raw_transactions if isinstance(item, dict)]
+
+
+def _transaction_sort_key(transaction: dict[str, Any]) -> tuple[str, str]:
+    return (str(transaction.get("date", "")), str(transaction.get("id", "")))
+
+
+def _query_result_item_from_transaction(
+    transaction: dict[str, Any],
+    *,
+    fallback_id: str,
+    language: str,
+) -> QueryResultItem:
+    return QueryResultItem(
+        id=str(transaction.get("id") or fallback_id)[:8],
+        description=str(transaction.get("narration") or render_message("query.format.narration.transaction", language)),
+        amount=abs(float(transaction.get("amount") or 0.0)),
+        date=parse_date(str(transaction.get("date") or "")),
+        metadata={
+            "type": transaction.get("type"),
+            "bank_name": transaction.get("bank_name", ""),
+            "transaction_type": transaction.get("transaction_type"),
+            "status": transaction.get("status", ""),
+            "transaction_id": transaction.get("transaction_id") or transaction.get("id"),
+            "counterparty": transaction.get("counterparty"),
+            "counterparty_role": transaction.get("counterparty_role"),
+            "recipient_name": transaction.get("recipient_name") or transaction.get("counterparty"),
+            "recipient_account": transaction.get("recipient_account"),
+            "recipient_account_number": transaction.get("recipient_account_number"),
+            "recipient_bank_name": transaction.get("recipient_bank_name"),
+            "recipient_bank_code": transaction.get("recipient_bank_code"),
+            "source_account_id": transaction.get("source_account_id"),
+            "source_account_label": transaction.get("source_account_label"),
+        },
+    )
+
+
+def _maybe_build_next_fact_followup_response(
+    *,
+    message: str,
+    session: dict[str, Any],
+    session_query_contract: QueryExecutionContract | None,
+    language: str,
+) -> dict[str, Any] | None:
+    if not is_next_fact_followup(message, query_contract=session_query_contract):
+        return None
+    if session_query_contract is None or session_query_contract.filters is None:
+        return None
+
+    cached_transactions = _coerce_cached_transactions(session)
+    if not cached_transactions:
+        return None
+
+    current_window_start = session_query_contract.time_range.start.isoformat() if session_query_contract.time_range else None
+    current_window_end = session_query_contract.time_range.end.isoformat() if session_query_contract.time_range else None
+    scoped_transactions = apply_time_window(
+        cached_transactions,
+        window_start=current_window_start,
+        window_end=current_window_end,
+    )
+    filtered_transactions = (
+        apply_filters(scoped_transactions, session_query_contract.filters)
+        if session_query_contract.filters
+        else list(scoped_transactions)
+    )
+    reverse_sort = session_query_contract.result_reference != "oldest"
+    ranked_transactions = sorted(filtered_transactions, key=_transaction_sort_key, reverse=reverse_sort)
+    if not ranked_transactions:
+        return None
+
+    current_index_raw = session.get("selected_item_index")
+    current_index = int(current_index_raw) if isinstance(current_index_raw, int) and current_index_raw >= 0 else 0
+    next_index = current_index + 1
+    if next_index >= len(ranked_transactions):
+        return {
+            "transaction_outcome": TransactionOutcome.OK,
+            "response": render_message("query.clarify.unsure_rephrase", language),
+            "session_active": True,
+            "flow_state": "complete",
+            "resolver_message": None,
+            "show_expanded": bool(session.get("show_expanded", False)),
+            "current_page": session.get("current_page", 0),
+            "selected_item_index": current_index,
+        }
+
+    item = _query_result_item_from_transaction(
+        ranked_transactions[next_index],
+        fallback_id=f"tx-{next_index}",
+        language=language,
+    )
+    neutral_contract = session_query_contract.model_copy(update={"result_reference": None})
+    answer_context = build_direct_fact_answer(
+        item,
+        query_contract=neutral_contract,
+        fact_field=session_query_contract.answer_fact_field or "date",
+        locale=language,
+    )
+    lines = [answer_context.primary_text]
+    if answer_context.secondary_text:
+        lines.extend(["", answer_context.secondary_text])
+    return {
+        "transaction_outcome": TransactionOutcome.OK,
+        "response": "\n".join(lines),
+        "session_active": True,
+        "flow_state": "complete",
+        "resolver_message": None,
+        "show_expanded": bool(session.get("show_expanded", False)),
+        "current_page": session.get("current_page", 0),
+        "selected_item_index": next_index,
+        "_query_session_transition": "answer_fact_active_result",
+    }
 
 
 def _has_specific_scope_filters(filters: Any | None) -> bool:
@@ -978,6 +1098,21 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         surface_type=surface_view.mode.value if surface_view is not None else None,
     )
     query_frames = step._load_query_frames(session)
+
+    deterministic_next_updates = _maybe_build_next_fact_followup_response(
+        message=message,
+        session=session,
+        session_query_contract=session_query_contract,
+        language=locale,
+    )
+    if deterministic_next_updates is not None:
+        logger.info(
+            "query_continuation_resolution",
+            path="deterministic_next_fact_followup",
+            semantic_decision="continuation",
+            continuation_type="next_fact_followup",
+        )
+        return deterministic_next_updates
 
     decision = await step.reasoner.reason(
         step._build_reasoner_context(

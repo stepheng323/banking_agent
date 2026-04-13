@@ -77,6 +77,59 @@ _BENEFICIARY_FACT_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bwhich bank\b|\bwhat bank\b", "bank"),
     (r"\bhow much\b|\bwhat(?:'s| is)? the amount\b|\bamount\b", "amount"),
 )
+_NEXT_FACT_FOLLOWUP_FIELD_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "counterparty": (
+        re.compile(r"^(?:then|and|so)\s+who\s+(?:was\s+)?next(?:\?|!|\.)?$", re.IGNORECASE),
+        re.compile(r"^who\s+(?:was\s+)?next(?:\?|!|\.)?$", re.IGNORECASE),
+        re.compile(r"^(?:then|and|so)\s+who'?s\s+next(?:\?|!|\.)?$", re.IGNORECASE),
+        re.compile(r"^who'?s\s+next(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+    "amount": (
+        re.compile(r"^(?:then|and|so)\s+how\s+much\s+(?:was\s+)?next(?:\?|!|\.)?$", re.IGNORECASE),
+        re.compile(r"^how\s+much\s+(?:was\s+)?next(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+    "bank": (
+        re.compile(
+            r"^(?:then|and|so)\s+(?:which|what)\s+bank\s+(?:was\s+)?next(?:\?|!|\.)?$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^(?:which|what)\s+bank\s+(?:was\s+)?next(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+    "date": (
+        re.compile(r"^(?:then|and|so)\s+(?:when|what\s+date)\s+(?:was\s+)?next(?:\?|!|\.)?$", re.IGNORECASE),
+        re.compile(r"^(?:when|what\s+date)\s+(?:was\s+)?next(?:\?|!|\.)?$", re.IGNORECASE),
+    ),
+}
+_NEXT_FACT_GENERIC_PATTERNS = (
+    re.compile(r"^(?:then|and|so)\s+(?:the\s+)?next(?:\s+one)?(?:\?|!|\.)?$", re.IGNORECASE),
+    re.compile(r"^(?:the\s+)?next(?:\s+one)?(?:\?|!|\.)?$", re.IGNORECASE),
+    re.compile(r"^(?:then|and|so)\s+what\s+about\s+(?:the\s+)?next(?:\s+one)?(?:\?|!|\.)?$", re.IGNORECASE),
+    re.compile(r"^what\s+about\s+(?:the\s+)?next(?:\s+one)?(?:\?|!|\.)?$", re.IGNORECASE),
+)
+
+
+def is_next_fact_followup(
+    message: str,
+    *,
+    query_contract: QueryExecutionContract | None,
+) -> bool:
+    """Return whether the turn asks for the next matching latest fact result."""
+    if query_contract is None:
+        return False
+    if query_contract.result_reference != "latest":
+        return False
+    fact_field = query_contract.answer_fact_field
+    if fact_field not in {"date", "counterparty", "amount", "bank"}:
+        return False
+
+    normalized = " ".join(message.strip().split())
+    if not normalized:
+        return False
+
+    field_patterns = _NEXT_FACT_FOLLOWUP_FIELD_PATTERNS.get(fact_field, ())
+    if any(pattern.match(normalized) for pattern in field_patterns):
+        return True
+    return any(pattern.match(normalized) for pattern in _NEXT_FACT_GENERIC_PATTERNS)
 
 
 class ContinuationClassifier:

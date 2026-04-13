@@ -2495,6 +2495,81 @@ async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_resco
 
 
 @pytest.mark.asyncio
+async def test_single_item_next_fact_followup_answers_from_cached_transactions_without_reasoner() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 4, 13)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 4, 1), end=date(2026, 4, 10)),
+        filters=Filters(transaction_type="debit"),
+        result_limit=1,
+        result_reference="latest",
+        answer_fact_field="counterparty",
+    )
+    session_contract = _contract(session_query)
+
+    async def _unexpected_reason(_: object) -> QuerySemanticDecision:
+        raise AssertionError("reasoner should not run for deterministic next-fact followup")
+
+    step.reasoner.reason = _unexpected_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Then who next?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "The last person you sent money to was Mum.",
+                "items": [
+                    QueryResultItem(
+                        id="txn_last",
+                        description="Transfer to Mum",
+                        amount=50000.0,
+                        date=date(2026, 4, 10),
+                        metadata={"type": "debit", "recipient_name": "Mum", "bank_name": "Zenith Bank"},
+                    ).model_dump(mode="json")
+                ],
+                "surface_view": {
+                    "mode": "direct_answer",
+                    "context": {"type": "single_transaction"},
+                },
+            },
+            "cached_transactions": [
+                {
+                    "id": "txn_last",
+                    "narration": "Transfer to Mum",
+                    "amount": 50000.0,
+                    "date": "2026-04-10",
+                    "type": "debit",
+                    "transaction_type": "debit",
+                    "recipient_name": "Mum",
+                    "recipient_bank_name": "Zenith Bank",
+                    "counterparty": "Mum",
+                },
+                {
+                    "id": "txn_prev",
+                    "narration": "Transfer to Tolu",
+                    "amount": 25000.0,
+                    "date": "2026-04-08",
+                    "type": "debit",
+                    "transaction_type": "debit",
+                    "recipient_name": "Tolu",
+                    "recipient_bank_name": "First Bank",
+                    "counterparty": "Tolu",
+                },
+            ],
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.OK
+    assert "Tolu" in updates["response"]
+    assert updates["selected_item_index"] == 1
+    assert updates["_query_session_transition"] == "answer_fact_active_result"
+
+
+@pytest.mark.asyncio
 async def test_summary_last_month_only_replaces_scope_and_preserves_debit_filter() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)

@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract
+from apps.core.src.agent.graphs.query.services.continuity import is_next_fact_followup
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
 from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut_with_reason
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
@@ -1010,6 +1012,21 @@ def _query_followup_bypass_reason(
     shortcut, miss_reason = resolve_query_shortcut_with_reason(message_text, locale)
     if shortcut is not None:
         return "query_shortcut", shortcut.action
+
+    raw_contract = query_session_snapshot.get("query_contract")
+    try:
+        query_contract = (
+            raw_contract
+            if isinstance(raw_contract, QueryExecutionContract)
+            else QueryExecutionContract.model_validate(raw_contract)
+            if raw_contract
+            else None
+        )
+    except Exception:
+        query_contract = None
+
+    if is_next_fact_followup(message_text, query_contract=query_contract):
+        return "latest_fact_next_followup", query_contract.answer_fact_field if query_contract is not None else None
 
     if query_session_snapshot.get("pending_clarification"):
         parsed_time_range = QueryParser.parse_clarification_time_range(message_text, today=lagos_today())

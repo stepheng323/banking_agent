@@ -417,6 +417,7 @@ class QueryWorker:
             "cache_window_end": query_session.get("cache_window_end"),
             "pending_clarification": query_session.get("pending_clarification"),
             "query_frames": query_session.get("query_frames"),
+            "selected_item_index": query_session.get("selected_item_index"),
         }
 
         # 2. Build Initial State

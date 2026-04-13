@@ -579,6 +579,57 @@ async def test_gate_query_shortcut_followup_bypasses_semantic_router_without_pen
     assert updates.get("waves") == [["direct_query"]]
 
 
+async def test_gate_latest_fact_next_followup_bypasses_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.99,
+            detected_language="English",
+            requested_language="Pidgin",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_next_fact_1",
+        phone_number="2348999999910",
+        channel="whatsapp",
+        last_message_text="Then who next?",
+        loaded_context={"language": "en"},
+        stashed_query_session={
+            "session_active": True,
+            "query_contract": {
+                "intent": "transaction_search",
+                "time_start": "2026-04-01",
+                "time_end": "2026-04-10",
+                "timezone": "Africa/Lagos",
+                "filters": {"transaction_type": "debit"},
+                "result_limit": 1,
+                "result_reference": "latest",
+                "answer_fact_field": "counterparty",
+            },
+            "query_result": {
+                "summary_text": "The last person you sent money to was Mum.",
+                "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
+            },
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_followup_bypass"
+    assert updates["routing_decision"] == "query_followup_bypass"
+    assert updates["routing_mode"] == "continuation"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Then who next?"
+
+
 async def test_gate_bypasses_planner_for_pure_query_detail_turn() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
