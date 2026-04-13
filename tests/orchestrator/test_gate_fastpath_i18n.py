@@ -135,6 +135,83 @@ async def test_gate_routes_recent_batch_receipt_followup_to_support_without_plan
     assert task.payload["recent_batch_followup"] is True
 
 
+async def test_gate_routes_active_receipt_thread_followup_to_support_without_receipt_keyword() -> None:
+    redis_client = _TrackingLocaleRedis()
+    redis_client.store["support_context:u_gate_receipt_thread_1"] = json.dumps(
+        {
+            "receipt_thread_state": {
+                "async_group_id": "group-1",
+                "candidates": [
+                    {
+                        "transaction_id": "tx-1",
+                        "ordinal": 1,
+                        "task_type": "transfer",
+                        "amount": 10000,
+                        "recipient_name": "Mum",
+                        "recipient_resolved_name": "Mercy Johnson",
+                        "recipient_label": "Mercy Johnson",
+                        "bank_display": "Opay",
+                        "account_display": "8162511023",
+                        "final_status": "success",
+                        "receipt_allowed": True,
+                    },
+                    {
+                        "transaction_id": "tx-2",
+                        "ordinal": 2,
+                        "task_type": "transfer",
+                        "amount": 10000,
+                        "recipient_name": "Tolu",
+                        "recipient_resolved_name": "Tolu Adedayo",
+                        "recipient_label": "Tolu Adedayo",
+                        "bank_display": "First Bank",
+                        "account_display": "0760505261",
+                        "final_status": "success",
+                        "receipt_allowed": True,
+                    },
+                ],
+                "served_transaction_ids": ["tx-1"],
+                "remaining_transaction_ids": ["tx-2"],
+                "last_selector_result_ids": ["tx-1"],
+                "last_served_transaction_ids": ["tx-1"],
+                "reminder": "Reply with 1 or 2.",
+            }
+        }
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.55,
+            detected_language="English",
+            response_key="conversational.clarify",
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run for active receipt-thread follow-up",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_receipt_thread_1",
+        phone_number="2348162511023",
+        channel="telegram",
+        channel_identity="927331985",
+        last_message_text="Also for the other one",
+        loaded_context={"language": "en", "user_id": "u_gate_receipt_thread_1"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["routing_decision"] == "receipt_thread_support"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+    assert task.payload["intent"] == "receipt_request"
+    assert task.payload["receipt_thread_followup"] is True
+
+
 async def test_gate_handles_capitalized_greeting_meta_before_query_routing() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -1004,6 +1081,108 @@ async def test_gate_deterministic_data_bypasses_semantic_router() -> None:
     assert updates["semantic_path_shape"] == "deterministic_data_domain"
     task = updates["tasks"]["direct_data"]
     assert task.type == "data"
+
+
+async def test_gate_banking_coded_transfer_ambiguity_clarifies_before_casual_chat() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.82,
+            detected_language="English",
+            response_key="conversational.casual_chat",
+            response="",
+            expected_transaction_executors=[],
+            reason="should not win against banking ambiguity guard",
+        )
+    )
+    responder = _FakeConversationResponder("This should not be used.")
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_ambiguous_1",
+        phone_number="23489999999174",
+        channel="whatsapp",
+        last_message_text="Pay me tithe",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert updates["final_response"] == "Do you want to send money? If yes, who is the recipient?"
+    assert updates["routing_decision"] == "banking_coded_ambiguity_transfer"
+    assert not responder.calls
+
+
+async def test_gate_banking_coded_data_ambiguity_clarifies_before_direct_data_route() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_data",
+            mode="new",
+            target_intent="data",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["data"],
+            reason="should not run for malformed banking-coded data ask",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_data_ambiguous_1",
+        phone_number="23489999999175",
+        channel="whatsapp",
+        last_message_text="Buy me data",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert updates["final_response"] == "Do you want to buy data? If yes, whose line is it for?"
+    assert updates["routing_decision"] == "banking_coded_ambiguity_data"
+
+
+async def test_gate_banking_coded_support_ambiguity_clarifies_before_casual_chat() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.79,
+            detected_language="English",
+            response_key="conversational.out_of_scope",
+            response="I can't help with that.",
+            expected_transaction_executors=[],
+            reason="should not win against banking ambiguity guard",
+        )
+    )
+    responder = _FakeConversationResponder("This should not be used.")
+    state = OrchestratorState(
+        user_id="u_gate_router_support_ambiguous_1",
+        phone_number="23489999999176",
+        channel="whatsapp",
+        last_message_text="Reverse me that payment",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert updates["final_response"] == "Which transaction do you want me to check?"
+    assert updates["routing_decision"] == "banking_coded_ambiguity_support"
+    assert not responder.calls
 
 
 async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner() -> None:

@@ -671,6 +671,84 @@ async def test_conversational_casual_chat_uses_conversation_responder_when_avail
 
 
 @pytest.mark.asyncio
+async def test_conversational_banking_coded_transfer_ambiguity_prefers_clarify_over_responder() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.casual_chat",
+        confidence=0.78,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="pay me tithe",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder("This should not be used.")
+    state = OrchestratorState(
+        user_id="u_meta_banking_ambiguity_transfer_1",
+        phone_number="23489999999881",
+        channel="whatsapp",
+        last_message_text="Pay me tithe",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == "Do you want to send money? If yes, who is the recipient?"
+    assert not responder.calls
+
+
+@pytest.mark.asyncio
+async def test_conversational_banking_coded_data_ambiguity_prefers_clarify_over_responder() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="I can't help with that.",
+        response_key="conversational.out_of_scope",
+        confidence=0.78,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="buy me data",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder("This should not be used.")
+    state = OrchestratorState(
+        user_id="u_meta_banking_ambiguity_data_1",
+        phone_number="23489999999882",
+        channel="whatsapp",
+        last_message_text="Buy me data",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == "Do you want to buy data? If yes, whose line is it for?"
+    assert not responder.calls
+
+
+@pytest.mark.asyncio
 async def test_conversational_generic_banking_refusal_out_of_scope_uses_conversation_responder() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",

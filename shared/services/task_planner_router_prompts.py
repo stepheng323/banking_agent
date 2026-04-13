@@ -119,6 +119,9 @@ Rules:
     - response_key=conversational.casual_chat
     - response optional (can be null)
     - Never use conversational.out_of_scope for this case.
+    - If the message contains banking-action cues (for example send, transfer, pay, tithe, buy, recharge,
+      data, airtime, receipt, reversal, balance, transaction) but the wording is malformed or under-specified,
+      this is NOT casual chat.
 2c) For unsupported product asks or broad non-banking requests, set:
     - response_key=conversational.out_of_scope
     - response as one short empathy sentence (optional) or null
@@ -195,6 +198,11 @@ Rules:
 8) Use decision=planner_mixed for explicit multi-domain asks.
    Example: "send 10k to mum and show my last 3 credits" -> planner_mixed.
 9) Use decision=planner_ambiguous when meaning is genuinely unclear or requires deeper orchestration.
+   This includes malformed or under-specified messages with clear banking-domain cues.
+   Examples:
+   - "pay me tithe" -> planner_ambiguous
+   - "buy me data" -> planner_ambiguous
+   - "reverse me that payment" -> planner_ambiguous
 10) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
 10b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.
     Example: "send 10k to mum and buy 5k airtime" -> ["transfer","airtime"].

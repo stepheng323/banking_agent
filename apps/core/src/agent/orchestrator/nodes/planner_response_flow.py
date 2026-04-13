@@ -2,6 +2,10 @@
 
 from typing import Any, cast
 
+from apps.core.src.agent.orchestrator.banking_ambiguity import (
+    classify_banking_coded_ambiguity,
+    render_banking_coded_ambiguity_prompt,
+)
 from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.cancellation import (
@@ -113,6 +117,26 @@ async def _build_non_task_response(
 
     if planner_output and planner_output.primary_intent == "conversational":
         conversational_locale, conversational_locale_updates = await _resolved_locale_with_precedence()
+        ambiguous_banking_domain = classify_banking_coded_ambiguity(text)
+        if (
+            ambiguous_banking_domain is not None
+            and state.pending_interrupt is None
+            and not state.session_stack
+            and not state.waves
+        ):
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="banking_ambiguity_clarify",
+                route_reason=f"banking_coded_ambiguity:{ambiguous_banking_domain}",
+                policy_blocked=False,
+                fallback_path="planner_non_task",
+            )
+            return {
+                "final_response": render_banking_coded_ambiguity_prompt(text, locale=conversational_locale),
+                **conversational_locale_updates,
+                **context_read_updates,
+            }
         contextual_casual_followup = (
             state.pending_interrupt is None
             and not state.session_stack

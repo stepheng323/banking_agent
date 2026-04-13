@@ -13,6 +13,12 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
 from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut_with_reason
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
+from apps.core.src.agent.graphs.support.context_manager import SupportContextManager
+from apps.core.src.agent.graphs.support.models import ReceiptBatchThreadState
+from apps.core.src.agent.orchestrator.banking_ambiguity import (
+    classify_banking_coded_ambiguity,
+    render_banking_coded_ambiguity_prompt,
+)
 from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
@@ -264,6 +270,13 @@ _RECEIPT_REQUEST_RE = re.compile(
     r"\b(?:receipt|proof\s+of\s+payment|payment\s+receipt|show\s+receipt|send\s+receipt)\b",
     re.IGNORECASE,
 )
+_RECEIPT_SELECTOR_FOLLOWUP_RE = re.compile(
+    r"\b(?:both|all|every|except|excluding|only|just|other(?:\s+one)?|remaining|rest|"
+    r"first|second|third|fourth|fifth|last)\b|"
+    r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?\b|"
+    r"\bone\s+for\b",
+    re.IGNORECASE,
+)
 EXPLICIT_CANCEL_PATTERNS = (
     r"\bcancel\b",
     r"\babort\b",
@@ -492,8 +505,20 @@ def _recent_batch_identity_for_state(state: OrchestratorState) -> str | None:
     return None
 
 
+def _support_user_id_for_state(state: OrchestratorState) -> str:
+    loaded_user_id = (state.loaded_context or {}).get("user_id") if isinstance(state.loaded_context, dict) else None
+    for value in (loaded_user_id, state.user_id, state.phone_number):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def _looks_like_receipt_request(message_text: str) -> bool:
     return bool(_RECEIPT_REQUEST_RE.search(message_text or ""))
+
+
+def _looks_like_receipt_selector_followup(message_text: str) -> bool:
+    return bool(_RECEIPT_SELECTOR_FOLLOWUP_RE.search(message_text or ""))
 
 
 def _normalize_user_text(message_text: str) -> str:
@@ -1096,6 +1121,35 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
 
+    if not live_pending_interrupt and redis_client and _looks_like_receipt_selector_followup(message_text):
+        support_ctx = await SupportContextManager(redis_client).get(_support_user_id_for_state(state))
+        receipt_thread_state = getattr(support_ctx, "receipt_thread_state", None)
+        if isinstance(receipt_thread_state, ReceiptBatchThreadState) and receipt_thread_state.candidates:
+            task_id, spec = _build_direct_domain_task(state=state, domain="support")
+            spec.payload["intent"] = "receipt_request"
+            spec.payload["recent_batch_followup"] = True
+            spec.payload["receipt_thread_followup"] = True
+            logger.info(
+                "gate_receipt_thread_support_handoff",
+                task_id=task_id,
+                async_group_id=receipt_thread_state.async_group_id,
+            )
+            return {
+                **gate_updates,
+                "tasks": {task_id: spec},
+                "waves": [[task_id]],
+                "current_wave_index": 0,
+                "planner_output": None,
+                "pending_interrupt": None,
+                "direct_path_triggered": True,
+                "semantic_path_shape": "support_receipt_thread_direct",
+                **_route_observability_updates(
+                    owner="guardrail",
+                    decision="receipt_thread_support",
+                    target_domain="support",
+                ),
+            }
+
     if not live_pending_interrupt and redis_client and _looks_like_receipt_request(message_text):
         recent_batch_identity = _recent_batch_identity_for_state(state)
         recent_batch = await get_recent_batch_reference(redis_client, identity=recent_batch_identity)
@@ -1192,6 +1246,30 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 logger.warning("beneficiary_suggestion_dismiss_delete_failed", error=str(exc))
             else:
                 logger.info("beneficiary_suggestion_dismissed", reason=decision.reason)
+
+    ambiguous_banking_domain = classify_banking_coded_ambiguity(message_text)
+    if (
+        ambiguous_banking_domain is not None
+        and not live_pending_interrupt
+        and not state.has_quote
+        and not state.session_stack
+        and not state.waves
+        and state.pending_interrupt is None
+    ):
+        logger.info(
+            "gate_banking_coded_ambiguity_clarify",
+            domain=ambiguous_banking_domain,
+        )
+        return {
+            **gate_updates,
+            "direct_path_triggered": True,
+            "final_response": render_banking_coded_ambiguity_prompt(message_text, locale=current_locale),
+            "semantic_path_shape": "banking_coded_ambiguity_clarify",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision=f"banking_coded_ambiguity_{ambiguous_banking_domain}",
+            ),
+        }
 
     if not live_pending_interrupt and phrase_heavy_fastpath_allowed and _is_account_balance_request(message_text):
         cleanup_updates: dict[str, Any] = {}
@@ -1703,6 +1781,30 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                     detected_language=getattr(route, "detected_language", None),
                 )
                 updates.update(detected_locale_updates)
+                if (
+                    ambiguous_banking_domain is not None
+                    and not state.session_stack
+                    and not state.waves
+                    and state.pending_interrupt is None
+                    and route.response_key in {"conversational.casual_chat", "conversational.out_of_scope"}
+                ):
+                    logger.info(
+                        "gate_semantic_router_banking_coded_ambiguity_override",
+                        domain=ambiguous_banking_domain,
+                        response_key=route.response_key,
+                    )
+                    return {
+                        **gate_updates,
+                        **summary_updates,
+                        "direct_path_triggered": True,
+                        "final_response": render_banking_coded_ambiguity_prompt(message_text, locale=locale),
+                        "semantic_path_shape": "banking_coded_ambiguity_clarify",
+                        **_route_observability_updates(
+                            owner="guardrail",
+                            decision=f"banking_coded_ambiguity_{ambiguous_banking_domain}",
+                        ),
+                        **updates,
+                    }
                 if route.response_key:
                     if route.response_key == "conversational.casual_chat":
                         text = await _build_bounded_conversational_reply(locale) or render_message(
