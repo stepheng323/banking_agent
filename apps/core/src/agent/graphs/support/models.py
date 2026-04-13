@@ -77,6 +77,36 @@ class PendingReferenceState(BaseModel):
     reminder: str | None = None
 
 
+class ReceiptBatchSelectionRef(BaseModel):
+    """Deterministic selector atom for recent-batch receipt grounding."""
+
+    kind: Literal["ordinal", "recipient", "amount"] = "recipient"
+    ordinal: int | None = None
+    recipient_label: str | None = None
+    amount: float | None = None
+
+
+class ReceiptBatchSelection(BaseModel):
+    """Internal recent-batch receipt selection contract."""
+
+    selection_mode: Literal["all", "subset", "remainder"] = "subset"
+    include_refs: list[ReceiptBatchSelectionRef] = Field(default_factory=list)
+    exclude_refs: list[ReceiptBatchSelectionRef] = Field(default_factory=list)
+    wants_remaining: bool = False
+
+
+class ReceiptBatchThreadState(BaseModel):
+    """Short-lived recent-batch receipt follow-up state."""
+
+    async_group_id: str
+    candidates: list[SupportReferenceCandidate] = Field(default_factory=list)
+    served_transaction_ids: list[str] = Field(default_factory=list)
+    remaining_transaction_ids: list[str] = Field(default_factory=list)
+    last_selector_result_ids: list[str] = Field(default_factory=list)
+    last_served_transaction_ids: list[str] = Field(default_factory=list)
+    reminder: str | None = None
+
+
 class SupportContext(BaseModel):
     """Session context for support continuity."""
 
@@ -86,6 +116,7 @@ class SupportContext(BaseModel):
     last_support_step: str | None = Field(default=None, description="collect_ref, explained_status, etc")
     attempts: int = Field(default=0, description="Resolution attempts in this session")
     pending_reference: PendingReferenceState | None = Field(default=None)
+    receipt_thread_state: ReceiptBatchThreadState | None = Field(default=None)
 
 
 class SupportExtractionResult(BaseModel):

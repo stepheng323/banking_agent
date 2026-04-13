@@ -11,7 +11,7 @@ INTENTS:
 - retry_transfer: Wants to resend ("Send again", "Retry this")
 - wrong_debit: Debited incorrectly ("I was debited twice", "Money left but didn't go")
 - fraud_suspected: Unauthorized transaction ("I didn't authorize this", "This wasn't me")
-- receipt_request: Wants proof of payment ("Send receipt", "Proof of payment")
+- receipt_request: Wants proof of payment ("Send receipt", "Proof of payment", "all except the last one", "only the one for Tolu")
 - support_escalation: Wants human help ("I want to talk to support", "This is unacceptable")
 
 RULES:

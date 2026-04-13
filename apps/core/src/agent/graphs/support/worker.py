@@ -29,6 +29,9 @@ from apps.core.src.agent.graphs.support.micro_resolver import (
 )
 from apps.core.src.agent.graphs.support.models import (
     PendingReferenceState,
+    ReceiptBatchSelection,
+    ReceiptBatchSelectionRef,
+    ReceiptBatchThreadState,
     SupportExtractionResult,
     SupportIntent,
     SupportReferenceCandidate,
@@ -48,6 +51,11 @@ _ACK_ONLY_RE = re.compile(r"^(ok(?:ay)?|alright|yes|yeah|yep|sure)\.?$", re.IGNO
 _ORDINAL_RE = re.compile(r"\b(?:(first|second|third|fourth|fifth|last)|([1-5])(?:st|nd|rd|th)?)\b", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)")
 _ALL_RECEIPTS_RE = re.compile(r"\b(?:all|every)\b.*\breceipts?\b|\breceipts?\b.*\b(?:all|every)\b", re.IGNORECASE)
+_BOTH_RECEIPTS_RE = re.compile(r"\b(?:both|the two(?:\s+of\s+them)?|two of them)\b", re.IGNORECASE)
+_OTHER_ONE_RE = re.compile(r"\b(?:the other one|other one|the other)\b", re.IGNORECASE)
+_REMAINING_RE = re.compile(r"\b(?:the remaining ones?|remaining ones?|the rest|rest of them)\b", re.IGNORECASE)
+_ALL_EXCEPT_RE = re.compile(r"\b(?:all|every|both)\b.*?\b(?:except|excluding|but not|apart from)\b(?P<tail>.+)$", re.IGNORECASE)
+_ONLY_SELECTION_RE = re.compile(r"\b(?:only|just)\b(?P<tail>.+)$", re.IGNORECASE)
 
 
 def _support_identity(context: dict[str, Any]) -> str | None:
@@ -91,6 +99,41 @@ def _ordinal_from_message(message: str) -> int | None:
         return {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}[word]
     digit = str(match.group(2) or "").strip()
     return int(digit) if digit.isdigit() else None
+
+
+def _ordinals_from_message(message: str) -> list[int]:
+    ordinals: list[int] = []
+    for match in _ORDINAL_RE.finditer(message):
+        word = str(match.group(1) or "").strip().lower()
+        if word == "last":
+            value = -1
+        elif word in {"first", "second", "third", "fourth", "fifth"}:
+            value = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}[word]
+        else:
+            digit = str(match.group(2) or "").strip()
+            if not digit.isdigit():
+                continue
+            value = int(digit)
+        if value not in ordinals:
+            ordinals.append(value)
+    return ordinals
+
+
+def _amounts_from_message(message: str) -> list[float]:
+    amounts: list[float] = []
+    for match in _AMOUNT_RE.finditer(message):
+        try:
+            amount = float(match.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        suffix = (match.group(2) or "").lower()
+        if suffix == "k":
+            amount *= 1000.0
+        elif suffix == "h":
+            amount *= 100.0
+        if amount > 0 and amount not in amounts:
+            amounts.append(amount)
+    return amounts
 
 
 def _candidate_label(candidate: SupportReferenceCandidate) -> str:
@@ -145,6 +188,10 @@ def _is_all_receipts_request(message: str) -> bool:
     return bool(_ALL_RECEIPTS_RE.search(message))
 
 
+def _is_both_receipts_request(message: str) -> bool:
+    return bool(_BOTH_RECEIPTS_RE.search(message))
+
+
 def _build_batch_receipt_ack(
     *,
     total_jobs: int,
@@ -164,6 +211,10 @@ def _build_batch_receipt_ack(
         return base
     skipped_text = ", ".join(skipped_parts)
     return f"{base} I skipped {skipped_text} item{'s' if sum((skipped_failed, skipped_processing, skipped_non_transfer)) != 1 else ''}."
+
+
+def _batch_receipt_exhausted_message() -> str:
+    return "I've already sent the available receipts for that batch."
 
 
 class SupportWorker:
@@ -273,6 +324,96 @@ class SupportWorker:
             return None
         return self.resolver.transaction_to_dict(tx)
 
+    def _eligible_receipt_candidates(
+        self, candidates: list[SupportReferenceCandidate]
+    ) -> list[SupportReferenceCandidate]:
+        return [
+            candidate
+            for candidate in candidates
+            if candidate.task_type == "transfer" and candidate.receipt_allowed
+        ]
+
+    def _candidate_by_id(
+        self,
+        candidates: list[SupportReferenceCandidate],
+        transaction_id: str,
+    ) -> SupportReferenceCandidate | None:
+        for candidate in candidates:
+            if candidate.transaction_id == transaction_id:
+                return candidate
+        return None
+
+    def _build_receipt_thread_state(
+        self,
+        *,
+        async_group_id: str,
+        candidates: list[SupportReferenceCandidate],
+        served_transaction_ids: list[str] | None = None,
+        last_selector_result_ids: list[str] | None = None,
+        last_served_transaction_ids: list[str] | None = None,
+    ) -> ReceiptBatchThreadState:
+        served_ids = list(dict.fromkeys(served_transaction_ids or []))
+        eligible_ids = [candidate.transaction_id for candidate in self._eligible_receipt_candidates(candidates)]
+        remaining_ids = [transaction_id for transaction_id in eligible_ids if transaction_id not in served_ids]
+        return ReceiptBatchThreadState(
+            async_group_id=async_group_id,
+            candidates=candidates,
+            served_transaction_ids=served_ids,
+            remaining_transaction_ids=remaining_ids,
+            last_selector_result_ids=list(dict.fromkeys(last_selector_result_ids or [])),
+            last_served_transaction_ids=list(dict.fromkeys(last_served_transaction_ids or [])),
+            reminder=_build_reference_reminder(self._eligible_receipt_candidates(candidates)),
+        )
+
+    async def _save_receipt_thread_state(
+        self,
+        *,
+        user_id: str,
+        support_ctx: Any,
+        thread_state: ReceiptBatchThreadState,
+    ) -> None:
+        support_ctx.receipt_thread_state = thread_state
+        await self.context_manager.save(user_id, support_ctx)
+
+    async def _clear_receipt_thread_state(self, *, user_id: str, support_ctx: Any) -> None:
+        if support_ctx.receipt_thread_state is None:
+            return
+        support_ctx.receipt_thread_state = None
+        await self.context_manager.save(user_id, support_ctx)
+
+    def _selector_from_refs(
+        self,
+        *,
+        message: str,
+        include_candidates: list[SupportReferenceCandidate],
+        exclude_candidates: list[SupportReferenceCandidate] | None = None,
+        selection_mode: str = "subset",
+        wants_remaining: bool = False,
+    ) -> ReceiptBatchSelection:
+        include_refs: list[ReceiptBatchSelectionRef] = []
+        exclude_refs: list[ReceiptBatchSelectionRef] = []
+        for candidate in include_candidates:
+            include_refs.append(
+                ReceiptBatchSelectionRef(
+                    kind="ordinal",
+                    ordinal=candidate.ordinal,
+                    recipient_label=_candidate_label(candidate),
+                    amount=candidate.amount,
+                )
+            )
+        for candidate in exclude_candidates or []:
+            exclude_refs.append(
+                ReceiptBatchSelectionRef(
+                    kind="ordinal",
+                    ordinal=candidate.ordinal,
+                    recipient_label=_candidate_label(candidate),
+                    amount=candidate.amount,
+                )
+            )
+        return ReceiptBatchSelection(
+            selection_mode=selection_mode, include_refs=include_refs, exclude_refs=exclude_refs, wants_remaining=wants_remaining
+        )
+
     def _match_reference_candidates(
         self,
         *,
@@ -281,36 +422,37 @@ class SupportWorker:
     ) -> list[SupportReferenceCandidate]:
         if not message.strip():
             return []
-
-        ordinal = _ordinal_from_message(message)
-        if ordinal is not None:
-            if ordinal == -1:
-                return [max(candidates, key=lambda candidate: candidate.ordinal)] if candidates else []
-            return [candidate for candidate in candidates if candidate.ordinal == ordinal]
-
+        matches: dict[str, SupportReferenceCandidate] = {}
+        ordinals = _ordinals_from_message(message)
+        if ordinals:
+            if -1 in ordinals and candidates:
+                matches[max(candidates, key=lambda candidate: candidate.ordinal).transaction_id] = max(
+                    candidates, key=lambda candidate: candidate.ordinal
+                )
+            for ordinal in ordinals:
+                if ordinal == -1:
+                    continue
+                for candidate in candidates:
+                    if candidate.ordinal == ordinal:
+                        matches[candidate.transaction_id] = candidate
         normalized_message = _normalize_match_text(message)
-        if not normalized_message:
-            return []
+        for amount in _amounts_from_message(message):
+            for candidate in candidates:
+                if candidate.amount is not None and abs(candidate.amount - amount) < 1:
+                    matches[candidate.transaction_id] = candidate
 
-        amount = _parse_amount_reference(message)
-        if amount is not None:
-            amount_matches = [
-                candidate for candidate in candidates if candidate.amount is not None and abs(candidate.amount - amount) < 1
-            ]
-            if amount_matches:
-                return amount_matches
+        if normalized_message:
+            for candidate in candidates:
+                labels = {
+                    _normalize_match_text(candidate.recipient_label),
+                    _normalize_match_text(candidate.recipient_name),
+                    _normalize_match_text(candidate.recipient_resolved_name),
+                }
+                labels = {label for label in labels if label}
+                if any(label in normalized_message or normalized_message in label for label in labels):
+                    matches[candidate.transaction_id] = candidate
 
-        recipient_matches = []
-        for candidate in candidates:
-            labels = {
-                _normalize_match_text(candidate.recipient_label),
-                _normalize_match_text(candidate.recipient_name),
-                _normalize_match_text(candidate.recipient_resolved_name),
-            }
-            labels = {label for label in labels if label}
-            if any(label in normalized_message or normalized_message in label for label in labels):
-                recipient_matches.append(candidate)
-        return recipient_matches
+        return sorted(matches.values(), key=lambda candidate: candidate.ordinal)
 
     async def _save_pending_reference(
         self,
@@ -327,6 +469,155 @@ class SupportWorker:
             reminder=reminder if locale == "en" else reminder,
         )
         await self.context_manager.save(user_id, support_ctx)
+
+    def _select_recent_batch_candidates(
+        self,
+        *,
+        message: str,
+        candidates: list[SupportReferenceCandidate],
+        thread_state: ReceiptBatchThreadState | None,
+    ) -> tuple[list[SupportReferenceCandidate], ReceiptBatchSelection | None, str | None, list[SupportReferenceCandidate] | None]:
+        eligible_candidates = self._eligible_receipt_candidates(candidates)
+        remaining_candidates = [
+            candidate
+            for candidate in eligible_candidates
+            if not thread_state or candidate.transaction_id in thread_state.remaining_transaction_ids
+        ]
+        normalized_message = message.strip()
+        all_except_match = _ALL_EXCEPT_RE.search(normalized_message)
+
+        if _OTHER_ONE_RE.search(normalized_message):
+            if len(remaining_candidates) == 1:
+                return (
+                    remaining_candidates,
+                    self._selector_from_refs(
+                        message=message,
+                        include_candidates=remaining_candidates,
+                        selection_mode="remainder",
+                        wants_remaining=True,
+                    ),
+                    None,
+                    None,
+                )
+            if remaining_candidates:
+                return [], None, None, remaining_candidates
+            return [], None, _batch_receipt_exhausted_message(), None
+
+        if _REMAINING_RE.search(normalized_message):
+            if remaining_candidates:
+                return (
+                    remaining_candidates,
+                    self._selector_from_refs(
+                        message=message,
+                        include_candidates=remaining_candidates,
+                        selection_mode="remainder",
+                        wants_remaining=True,
+                    ),
+                    None,
+                    None,
+                )
+            return [], None, _batch_receipt_exhausted_message(), None
+
+        if all_except_match:
+            base_candidates = candidates
+            if _is_both_receipts_request(normalized_message):
+                if len(eligible_candidates) != 2:
+                    return [], None, None, eligible_candidates
+            excluded = self._match_reference_candidates(
+                message=str(all_except_match.group("tail") or "").strip(),
+                candidates=base_candidates,
+            )
+            if not excluded:
+                return [], None, None, eligible_candidates
+            selected = [candidate for candidate in base_candidates if candidate not in excluded]
+            if not selected and excluded:
+                return [], None, _batch_receipt_exhausted_message(), None
+            return (
+                selected,
+                self._selector_from_refs(
+                    message=message,
+                    include_candidates=selected,
+                    exclude_candidates=excluded,
+                    selection_mode="all",
+                ),
+                None,
+                None,
+            )
+
+        if _is_all_receipts_request(normalized_message):
+            selected = list(candidates)
+            return (
+                selected,
+                self._selector_from_refs(
+                    message=message,
+                    include_candidates=selected,
+                    selection_mode="all",
+                ),
+                None,
+                None,
+            )
+
+        if _is_both_receipts_request(normalized_message):
+            if len(eligible_candidates) == 2:
+                selected = list(candidates)
+                return (
+                    selected,
+                    self._selector_from_refs(
+                        message=message,
+                        include_candidates=selected,
+                        selection_mode="all",
+                    ),
+                    None,
+                    None,
+                )
+            return [], None, None, eligible_candidates
+
+        only_match = _ONLY_SELECTION_RE.search(normalized_message)
+        reference_message = str(only_match.group("tail") or "").strip() if only_match else normalized_message
+        matched = self._match_reference_candidates(message=reference_message, candidates=eligible_candidates)
+        if matched:
+            return (
+                matched,
+                self._selector_from_refs(message=message, include_candidates=matched, selection_mode="subset"),
+                None,
+                None,
+            )
+
+        if only_match:
+            return [], None, None, eligible_candidates
+        return [], None, None, None
+
+    async def _build_receipt_jobs_for_candidates(
+        self,
+        *,
+        selected: list[SupportReferenceCandidate],
+        candidates: list[SupportReferenceCandidate],
+        context: dict[str, Any],
+        locale: str,
+    ) -> tuple[list[dict[str, Any]], int, int, int]:
+        selected_ids = {candidate.transaction_id for candidate in selected}
+        jobs: list[dict[str, Any]] = []
+        skipped_failed = 0
+        skipped_processing = 0
+        skipped_non_transfer = 0
+        for candidate in sorted(candidates, key=lambda item: item.ordinal):
+            if candidate.transaction_id not in selected_ids:
+                continue
+            if candidate.task_type != "transfer":
+                skipped_non_transfer += 1
+                continue
+            if not candidate.receipt_allowed:
+                if candidate.final_status == "failed":
+                    skipped_failed += 1
+                else:
+                    skipped_processing += 1
+                continue
+            transaction = await self._load_transaction_dict(candidate.transaction_id)
+            if transaction is None:
+                skipped_failed += 1
+                continue
+            jobs.append(self._build_receipt_job(transaction=transaction, context=context, locale=locale))
+        return jobs, skipped_failed, skipped_processing, skipped_non_transfer
 
     async def _clear_pending_reference(self, *, user_id: str, support_ctx: Any) -> None:
         if support_ctx.pending_reference is None:
@@ -362,6 +653,16 @@ class SupportWorker:
 
         support_ctx.pending_reference = None
         support_ctx.last_transaction_ref = str(resolved.get("id") or resolved.get("transaction_id") or "")
+        thread_state = support_ctx.receipt_thread_state
+        if isinstance(thread_state, ReceiptBatchThreadState):
+            updated_thread = self._build_receipt_thread_state(
+                async_group_id=thread_state.async_group_id,
+                candidates=thread_state.candidates,
+                served_transaction_ids=thread_state.served_transaction_ids + [matches[0].transaction_id],
+                last_selector_result_ids=[matches[0].transaction_id],
+                last_served_transaction_ids=[matches[0].transaction_id],
+            )
+            support_ctx.receipt_thread_state = updated_thread
         await self.context_manager.save(user_id, support_ctx)
         return resolved, None
 
@@ -376,35 +677,60 @@ class SupportWorker:
     ) -> tuple[dict[str, Any] | None, SupportResult | None]:
         identity = _support_identity(context)
         recent_batch = await get_recent_batch_reference(self.context_manager.redis, identity=identity)
-        if recent_batch is None:
-            return None, None
+        thread_state = support_ctx.receipt_thread_state
 
-        candidates = [candidate for leg in recent_batch["legs"] if (candidate := _leg_to_candidate(leg)) is not None]
+        candidates: list[SupportReferenceCandidate] = []
+        async_group_id: str | None = None
+        if recent_batch is not None:
+            async_group_id = str(recent_batch.get("async_group_id") or "")
+            candidates = [candidate for leg in recent_batch["legs"] if (candidate := _leg_to_candidate(leg)) is not None]
+            if (
+                isinstance(thread_state, ReceiptBatchThreadState)
+                and async_group_id
+                and thread_state.async_group_id != async_group_id
+            ):
+                support_ctx.receipt_thread_state = None
+                thread_state = None
+
+        if not candidates and isinstance(thread_state, ReceiptBatchThreadState):
+            candidates = list(thread_state.candidates)
+            async_group_id = thread_state.async_group_id
+
         if not candidates:
             return None, None
 
-        if _is_all_receipts_request(message):
-            ordered_candidates = sorted(candidates, key=lambda candidate: candidate.ordinal)
-            jobs: list[dict[str, Any]] = []
-            skipped_failed = 0
-            skipped_processing = 0
-            skipped_non_transfer = 0
-            for candidate in ordered_candidates:
-                if candidate.task_type != "transfer":
-                    skipped_non_transfer += 1
-                    continue
-                if not candidate.receipt_allowed:
-                    if candidate.final_status == "failed":
-                        skipped_failed += 1
-                    else:
-                        skipped_processing += 1
-                    continue
-                transaction = await self._load_transaction_dict(candidate.transaction_id)
-                if transaction is None:
-                    skipped_failed += 1
-                    continue
-                jobs.append(self._build_receipt_job(transaction=transaction, context=context, locale=locale))
+        selected, selection, exhausted_message, prompt_candidates = self._select_recent_batch_candidates(
+            message=message,
+            candidates=candidates,
+            thread_state=thread_state if isinstance(thread_state, ReceiptBatchThreadState) else None,
+        )
+        if exhausted_message is not None:
+            if async_group_id:
+                support_ctx.receipt_thread_state = self._build_receipt_thread_state(
+                    async_group_id=async_group_id,
+                    candidates=candidates,
+                    served_transaction_ids=(
+                        thread_state.served_transaction_ids
+                        if isinstance(thread_state, ReceiptBatchThreadState)
+                        else [candidate.transaction_id for candidate in self._eligible_receipt_candidates(candidates)]
+                    ),
+                    last_selector_result_ids=[],
+                    last_served_transaction_ids=[],
+                )
+                await self.context_manager.save(user_id, support_ctx)
+            return None, SupportResult(
+                outcome=SupportOutcome.OK,
+                response=exhausted_message,
+                final_message=exhausted_message,
+            )
 
+        if selected:
+            jobs, skipped_failed, skipped_processing, skipped_non_transfer = await self._build_receipt_jobs_for_candidates(
+                selected=selected,
+                candidates=candidates,
+                context=context,
+                locale=locale,
+            )
             if not jobs:
                 response = "I can't send receipts for that batch yet because none of those transfer legs completed successfully."
                 return None, SupportResult(
@@ -414,12 +740,40 @@ class SupportWorker:
                 )
 
             await self._clear_pending_reference(user_id=user_id, support_ctx=support_ctx)
+            selected_ids = [candidate.transaction_id for candidate in selected]
+            served_ids = (
+                list(thread_state.served_transaction_ids)
+                if isinstance(thread_state, ReceiptBatchThreadState)
+                else []
+            )
+            if async_group_id:
+                updated_thread = self._build_receipt_thread_state(
+                    async_group_id=async_group_id,
+                    candidates=candidates,
+                    served_transaction_ids=served_ids + selected_ids,
+                    last_selector_result_ids=selected_ids,
+                    last_served_transaction_ids=selected_ids,
+                )
+                await self._save_receipt_thread_state(
+                    user_id=user_id,
+                    support_ctx=support_ctx,
+                    thread_state=updated_thread,
+                )
+
             response = _build_batch_receipt_ack(
                 total_jobs=len(jobs),
                 skipped_failed=skipped_failed,
                 skipped_processing=skipped_processing,
                 skipped_non_transfer=skipped_non_transfer,
             )
+            if len(selected) == 1 and selection and selection.selection_mode == "subset":
+                resolved = await self._load_transaction_dict(selected[0].transaction_id)
+                if resolved is not None:
+                    support_ctx.last_transaction_ref = str(
+                        resolved.get("id") or resolved.get("transaction_id") or ""
+                    )
+                    await self.context_manager.save(user_id, support_ctx)
+                    return resolved, None
             return None, SupportResult(
                 outcome=SupportOutcome.OK,
                 response=response,
@@ -428,17 +782,9 @@ class SupportWorker:
             )
 
         matches = self._match_reference_candidates(message=message, candidates=candidates)
-        if len(matches) == 1:
-            resolved = await self._load_transaction_dict(matches[0].transaction_id)
-            if resolved is not None:
-                support_ctx.pending_reference = None
-                support_ctx.last_transaction_ref = str(resolved.get("id") or resolved.get("transaction_id") or "")
-                await self.context_manager.save(user_id, support_ctx)
-                return resolved, None
-
         if len(matches) > 1:
             prompt_candidates = sorted(matches, key=lambda candidate: candidate.ordinal)
-        else:
+        elif prompt_candidates is None:
             prompt_candidates = sorted(candidates, key=lambda candidate: candidate.ordinal)
 
         await self._save_pending_reference(
@@ -447,6 +793,23 @@ class SupportWorker:
             candidates=prompt_candidates,
             locale=locale,
         )
+        if async_group_id:
+            existing_served = (
+                list(thread_state.served_transaction_ids)
+                if isinstance(thread_state, ReceiptBatchThreadState)
+                else []
+            )
+            await self._save_receipt_thread_state(
+                user_id=user_id,
+                support_ctx=support_ctx,
+                thread_state=self._build_receipt_thread_state(
+                    async_group_id=async_group_id,
+                    candidates=candidates,
+                    served_transaction_ids=existing_served,
+                    last_selector_result_ids=[],
+                    last_served_transaction_ids=[],
+                ),
+            )
         return None, SupportResult(
             outcome=SupportOutcome.NEEDS_INPUT,
             response=_build_reference_prompt(prompt_candidates),

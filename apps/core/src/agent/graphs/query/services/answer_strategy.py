@@ -33,6 +33,7 @@ class DirectAnswerFact:
     bank_name: str | None
     date_text: str
     fallback_description: str
+    result_reference: Literal["latest", "oldest"] | None
 
 
 def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryResult:
@@ -81,6 +82,7 @@ def build_direct_fact_answer(
         amount_text=f"₦{abs(float(item.amount)):,.0f}",
         date_text=item.date.strftime("%B %d, %Y"),
         fallback_description=item.description,
+        result_reference=query_contract.result_reference if query_contract is not None else None,
     )
     primary, used_fields = _compose_direct_reply(fact, locale=locale)
     secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields)
@@ -155,6 +157,11 @@ def _normalize_direction(raw_value: str) -> FactDirection:
 
 
 def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, set[str]]:
+    if locale == "en" and fact.result_reference == "latest":
+        latest_reply = _compose_latest_direct_reply(fact, locale=locale)
+        if latest_reply is not None:
+            return latest_reply
+
     if fact.fact_kind == "date":
         if fact.counterparty and fact.direction == "debit":
             return (
@@ -265,6 +272,111 @@ def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, 
             {"bank"},
         )
     return (render_message("query.reply.bank.unavailable", locale), set())
+
+
+def _compose_latest_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, set[str]] | None:
+    if fact.fact_kind == "date":
+        if fact.counterparty and fact.direction == "debit":
+            return (
+                render_message(
+                    "query.reply.latest.date.debit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "date": fact.date_text},
+                ),
+                {"date", "counterparty"},
+            )
+        if fact.counterparty and fact.direction == "credit":
+            return (
+                render_message(
+                    "query.reply.latest.date.credit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "date": fact.date_text},
+                ),
+                {"date", "counterparty"},
+            )
+        return (
+            render_message("query.reply.latest.date.generic", locale, {"date": fact.date_text}),
+            {"date"},
+        )
+
+    if fact.fact_kind == "counterparty":
+        if fact.counterparty and fact.direction == "credit":
+            return (
+                render_message(
+                    "query.reply.latest.counterparty.credit_named",
+                    locale,
+                    {"counterparty": fact.counterparty},
+                ),
+                {"counterparty"},
+            )
+        if fact.counterparty and fact.direction == "debit":
+            return (
+                render_message(
+                    "query.reply.latest.counterparty.debit_named",
+                    locale,
+                    {"counterparty": fact.counterparty},
+                ),
+                {"counterparty"},
+            )
+        if fact.counterparty:
+            return (
+                render_message(
+                    "query.reply.latest.counterparty.generic",
+                    locale,
+                    {"counterparty": fact.counterparty},
+                ),
+                {"counterparty"},
+            )
+        return (render_message("query.reply.counterparty.unavailable", locale), set())
+
+    if fact.fact_kind == "amount":
+        if fact.counterparty and fact.direction == "debit":
+            return (
+                render_message(
+                    "query.reply.latest.amount.debit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "amount": fact.amount_text},
+                ),
+                {"counterparty", "amount"},
+            )
+        if fact.counterparty and fact.direction == "credit":
+            return (
+                render_message(
+                    "query.reply.latest.amount.credit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "amount": fact.amount_text},
+                ),
+                {"counterparty", "amount"},
+            )
+        return (
+            render_message("query.reply.latest.amount.generic", locale, {"amount": fact.amount_text}),
+            {"amount"},
+        )
+
+    if fact.bank_name and fact.counterparty and fact.direction == "debit":
+        return (
+            render_message(
+                "query.reply.latest.bank.debit_named",
+                locale,
+                {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
+            ),
+            {"counterparty", "bank"},
+        )
+    if fact.bank_name and fact.counterparty and fact.direction == "credit":
+        return (
+            render_message(
+                "query.reply.latest.bank.credit_named",
+                locale,
+                {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
+            ),
+            {"counterparty", "bank"},
+        )
+    if fact.bank_name:
+        return (
+            render_message("query.reply.latest.bank.generic", locale, {"bank_name": fact.bank_name}),
+            {"bank"},
+        )
+    return None
 
 
 def _build_evidence_line(

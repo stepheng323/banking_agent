@@ -164,26 +164,48 @@
     },
     "reply": {
       "date": {
-        "debit_named": "You paid {counterparty} on {date}.",
-        "credit_named": "You got money from {counterparty} on {date}.",
-        "generic": "It was on {date}."
+        "debit_named": "Looks like you paid {counterparty} on {date}.",
+        "credit_named": "Looks like you got money from {counterparty} on {date}.",
+        "generic": "Looks like that was on {date}."
       },
       "counterparty": {
-        "debit_named": "You paid {amount} to {counterparty} on {date}.",
-        "credit_named": "You received {amount} from {counterparty} on {date}.",
-        "generic": "It was with {counterparty}.",
+        "debit_named": "Looks like that went to {counterparty}.",
+        "credit_named": "Looks like that came from {counterparty}.",
+        "generic": "Looks like that was with {counterparty}.",
         "unavailable": "I found the transaction, but I couldn't confirm the counterparty."
       },
       "amount": {
-        "debit_named": "You paid {amount} to {counterparty}.",
-        "credit_named": "You received {amount} from {counterparty}.",
-        "generic": "It was {amount}."
+        "debit_named": "Looks like you sent {amount} to {counterparty}.",
+        "credit_named": "Looks like you received {amount} from {counterparty}.",
+        "generic": "Looks like it was {amount}."
       },
       "bank": {
-        "debit_named": "You sent it to {counterparty} through {bank_name}.",
-        "credit_named": "You got it from {counterparty} through {bank_name}.",
-        "generic": "It went through {bank_name}.",
+        "debit_named": "Looks like it went to {counterparty} through {bank_name}.",
+        "credit_named": "Looks like it came from {counterparty} through {bank_name}.",
+        "generic": "Looks like it went through {bank_name}.",
         "unavailable": "I found the transaction, but the bank name isn't available."
+      },
+      "latest": {
+        "date": {
+          "debit_named": "The last time you paid {counterparty} was on {date}.",
+          "credit_named": "The last time you got money from {counterparty} was on {date}.",
+          "generic": "The last one was on {date}."
+        },
+        "counterparty": {
+          "debit_named": "The last person you sent money to was {counterparty}.",
+          "credit_named": "The last person who sent you money was {counterparty}.",
+          "generic": "The last one was with {counterparty}."
+        },
+        "amount": {
+          "debit_named": "The last transfer to {counterparty} was {amount}.",
+          "credit_named": "The last payment from {counterparty} was {amount}.",
+          "generic": "The last one was {amount}."
+        },
+        "bank": {
+          "debit_named": "That last transfer to {counterparty} went through {bank_name}.",
+          "credit_named": "That last payment from {counterparty} came through {bank_name}.",
+          "generic": "The last one went through {bank_name}."
+        }
       },
       "aggregate": {
         "scope": "That total only covers {scope_label}{period_suffix}.{total_suffix}",

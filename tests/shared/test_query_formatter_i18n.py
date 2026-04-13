@@ -20,6 +20,7 @@ from apps.core.src.agent.graphs.query.models import (
     build_query_execution_plan_from_fields,
     derive_query_intent_spec_from_fields,
 )
+from apps.core.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.shared.query_contracts import (
@@ -705,11 +706,11 @@ def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
         ),
     )
 
-    response = QueryFormatter.format(result, locale="en")
+    response = QueryFormatter.format(select_answer_strategy(result, locale="en"), locale="en")
     lines = response.splitlines()
 
-    assert lines[0] == "You paid Netflix on March 21, 2026."
-    assert "Your last debit transaction was:" in response
+    assert lines[0] == "The last time you paid Netflix was on March 21, 2026."
+    assert "Your last debit transaction was:" not in response
 
 
 def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
@@ -730,6 +731,7 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
                 filters=Filters(transaction_type="credit"),
                 time_range=TimeRange(start=date(2026, 3, 15), end=date(2026, 3, 21)),
                 answer_fact_field="counterparty",
+                result_reference="latest",
             )
         ),
         surface_view=SurfaceView(
@@ -738,9 +740,11 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
         ),
     )
 
-    response = QueryFormatter.format(result, locale="en")
+    response = QueryFormatter.format(select_answer_strategy(result, locale="en"), locale="en")
+    lines = response.splitlines()
 
-    assert response.splitlines()[0] == "You received ₦35,000 from Johnson Mary on March 21, 2026."
+    assert lines[0] == "The last person who sent you money was Johnson Mary."
+    assert lines[2] == "₦35,000 • Mar 21 • Zenith Bank"
 
 
 def test_formatter_uses_shared_plan_for_single_transfer_detail_surface() -> None:
