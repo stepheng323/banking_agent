@@ -14,7 +14,6 @@ from apps.core.src.agent.graphs.query.services.parser import QueryParser
 from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut_with_reason
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.graphs.support.context_manager import SupportContextManager
-from apps.core.src.agent.graphs.support.models import ReceiptBatchThreadState
 from apps.core.src.agent.orchestrator.banking_ambiguity import (
     classify_banking_coded_ambiguity,
     render_banking_coded_ambiguity_prompt,
@@ -511,6 +510,13 @@ def _support_user_id_for_state(state: OrchestratorState) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def _has_receipt_thread_candidates(receipt_thread_state: Any) -> bool:
+    if receipt_thread_state is None:
+        return False
+    candidates = getattr(receipt_thread_state, "candidates", None)
+    return isinstance(candidates, list) and bool(candidates)
 
 
 def _looks_like_receipt_request(message_text: str) -> bool:
@@ -1124,7 +1130,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
     if not live_pending_interrupt and redis_client and _looks_like_receipt_selector_followup(message_text):
         support_ctx = await SupportContextManager(redis_client).get(_support_user_id_for_state(state))
         receipt_thread_state = getattr(support_ctx, "receipt_thread_state", None)
-        if isinstance(receipt_thread_state, ReceiptBatchThreadState) and receipt_thread_state.candidates:
+        if _has_receipt_thread_candidates(receipt_thread_state):
             task_id, spec = _build_direct_domain_task(state=state, domain="support")
             spec.payload["intent"] = "receipt_request"
             spec.payload["recent_batch_followup"] = True
