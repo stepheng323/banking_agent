@@ -31,9 +31,23 @@ def _load_json_payload(path: str) -> dict[str, Any]:
     return payload
 
 
+def _apply_brand_overrides(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.format(
+            app_name=settings.app_name,
+            app_name_short=settings.app_name_short,
+            app_creator=settings.app_creator,
+        )
+    if isinstance(value, list):
+        return [_apply_brand_overrides(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _apply_brand_overrides(item) for key, item in value.items()}
+    return value
+
+
 def load_assistant_profile(path: str | None = None) -> AssistantProfile:
     effective_path = _resolve_profile_path(path)
-    payload = _load_json_payload(effective_path)
+    payload = cast(dict[str, Any], _apply_brand_overrides(_load_json_payload(effective_path)))
     return cast(AssistantProfile, AssistantProfile.model_validate(payload))
 
 

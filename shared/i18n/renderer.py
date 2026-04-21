@@ -84,6 +84,16 @@ def _render_template(template: str, params: dict[str, object] | None) -> str:
         return template
 
 
+def _default_template_params() -> dict[str, object]:
+    from shared.config.settings import settings
+
+    return {
+        "app_name": settings.app_name,
+        "app_name_short": settings.app_name_short,
+        "app_creator": settings.app_creator,
+    }
+
+
 def render_message(
     message_key: MessageKey,
     locale: str | LocaleCode,
@@ -95,11 +105,15 @@ def render_message(
 
     resolved_locale = LocaleManager.normalize(locale)
 
+    merged_params = _default_template_params()
+    if params:
+        merged_params.update(params)
+
     locale_catalog = _read_catalog(resolved_locale)
     template = _get_by_dotted_key(locale_catalog, message_key)
 
     if template is not None:
-        return _render_template(template, params)
+        return _render_template(template, merged_params)
 
     logger.warning("i18n_key_missing", locale=resolved_locale.value, key=message_key)
 
@@ -107,11 +121,11 @@ def render_message(
     en_template = _get_by_dotted_key(en_catalog, message_key)
     if en_template is not None:
         logger.info("i18n_fallback_en_used", locale=resolved_locale.value, key=message_key)
-        return _render_template(en_template, params)
+        return _render_template(en_template, merged_params)
 
     if fallback_en is not None:
         logger.info("i18n_fallback_en_used", locale=resolved_locale.value, key=message_key, source="inline")
-        return _render_template(fallback_en, params)
+        return _render_template(fallback_en, merged_params)
 
     return message_key
 

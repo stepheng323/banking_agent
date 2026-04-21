@@ -27,11 +27,11 @@
     "limits_fallback": "Mi o le ṣe {unsupported} nibi. Mo le ran ọ lọwọ pẹlu {supported}."
   },
   "conversational": {
-    "greeting": "Pẹlẹ o. Emi ni Narya AI. Kini o fẹ ki n ṣe fun ọ loni?",
+    "greeting": "Pẹlẹ o. Emi ni {app_name}. Kini o fẹ ki n ṣe fun ọ loni?",
     "appreciation": "Ko to nnkan. Iṣẹ wo ni a o ṣe lẹ́yìn eyi?",
     "checkin": "Mo wa nibi. Iṣẹ owo wo ni o fẹ ki a ṣe?",
-    "identity": "Emi ni Narya AI. Mo n ṣiṣẹ awọn iṣẹ banking gidi ni kiakia ati pẹkipẹki.",
-    "brand_origin": "Orukọ Narya AI wa lati ìmísí kindler. Ẹgbẹ Fusepay ni wọn kọ mi fun iṣẹ banking to dakẹ, to dájú.",
+    "identity": "Emi ni {app_name}. Mo n ṣiṣẹ awọn iṣẹ banking gidi ni kiakia ati pẹkipẹki.",
+    "brand_origin": "Orukọ {app_name} wa lati ìmísí kindler. Ẹgbẹ {app_creator} ni wọn kọ mi fun iṣẹ banking to dakẹ, to dájú.",
     "capability_question": "Mo le ran ọ lọwọ pẹlu gbigbe owo, rira airtime/data, ayẹwo balance, ati ibeere transaction.",
     "out_of_scope": "Mo n dojukọ iṣẹ banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "out_of_scope_followup": "Ti o ba fẹ, mo tun le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
@@ -749,11 +749,11 @@
     }
   },
   "onboarding": {
-    "fallback_text": "Welcome to Fusepay! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
+    "fallback_text": "Welcome to {app_name}! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
     "flow": {
       "cta": "Start Onboarding",
-      "header": "Welcome to Fusepay",
-      "body": "Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
+      "header": "Welcome to {app_name}",
+      "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
   "transaction_copy": {

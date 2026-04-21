@@ -27,11 +27,11 @@
     "limits_fallback": "I can't help with {unsupported} here. I can help with {supported}."
   },
   "conversational": {
-    "greeting": "Hi. I'm Narya AI. What would you like to do?",
+    "greeting": "Hi. I'm {app_name}. What would you like to do?",
     "appreciation": "Anytime. What should we handle next?",
     "checkin": "I'm here. What money move are we handling?",
-    "identity": "I'm Narya AI. I execute real banking tasks fast and carefully.",
-    "brand_origin": "Narya AI is named after a kindler archetype, built by Fusepay for calm, reliable banking execution.",
+    "identity": "I'm {app_name}. I execute real banking tasks fast and carefully.",
+    "brand_origin": "{app_name} is named after a kindler archetype, built by {app_creator} for calm, reliable banking execution.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
     "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",
     "out_of_scope_followup": "If you want, I can also help with transfers, airtime/data, balances, and transaction queries.",
@@ -783,11 +783,11 @@
     }
   },
   "onboarding": {
-    "fallback_text": "Welcome to Fusepay! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
+    "fallback_text": "Welcome to {app_name}! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
     "flow": {
       "cta": "Start Onboarding",
-      "header": "Welcome to Fusepay",
-      "body": "Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
+      "header": "Welcome to {app_name}",
+      "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
   "transaction_copy": {

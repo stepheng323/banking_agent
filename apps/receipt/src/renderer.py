@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment, FileSystemLoader
 from playwright.async_api import Browser, Playwright, async_playwright
 
+from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -140,6 +141,7 @@ class ReceiptRenderer:
             session_id = transfer_data.get("session_id") or transaction_reference
 
             template_data = {
+                "app_name": settings.app_name,
                 "status": "Successful",
                 "amount": self._format_amount(amount),
                 "amount_decimal": ".00",

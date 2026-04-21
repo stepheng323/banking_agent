@@ -160,13 +160,13 @@ class TelegramWebhookService:
 
             cta_result = await self.telegram_client._call(
                 "sendMessage",
-                {
-                    "chat_id": msg.chat_id,
-                    "text": (
-                        "Welcome to Fusepay! 🚀\n\n"
-                        "We couldn't find an existing account matching your phone number.\n"
-                        "Please click the button below to securely create your new account."
-                    ),
+                    {
+                        "chat_id": msg.chat_id,
+                        "text": (
+                            f"Welcome to {settings.app_name}! 🚀\n\n"
+                            "We couldn't find an existing account matching your phone number.\n"
+                            "Please click the button below to securely create your new account."
+                        ),
                     "reply_markup": {
                         "inline_keyboard": [
                             [
@@ -195,7 +195,7 @@ class TelegramWebhookService:
             {
                 "chat_id": chat_id,
                 "text": (
-                    "Welcome to your Banking Agent! 🏦\n\n"
+                    f"Welcome to {settings.app_name}! 🏦\n\n"
                     "To access your account, we first need to verify your phone number. "
                     "Please tap the button below to share your contact securely."
                 ),

@@ -27,11 +27,11 @@
     "limits_fallback": "I no fit do {unsupported} here. I fit help with {supported}."
   },
   "conversational": {
-    "greeting": "How far. Na Narya AI here. Wetin you wan run?",
+    "greeting": "How far. Na {app_name} here. Wetin you wan run?",
     "appreciation": "No wahala. Wetin we go handle next?",
     "checkin": "I dey here. Which money move we dey do?",
-    "identity": "I be Narya AI. I dey run real banking tasks fast and sharp.",
-    "brand_origin": "Narya AI name come from kindler inspiration. Na Fusepay team build me for calm, reliable banking execution.",
+    "identity": "I be {app_name}. I dey run real banking tasks fast and sharp.",
+    "brand_origin": "{app_name} name come from kindler inspiration. Na {app_creator} team build me for calm, reliable banking execution.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_followup": "If you want, I still fit help with transfer, airtime/data buy, balance check, and transaction query.",
@@ -749,11 +749,11 @@
     }
   },
   "onboarding": {
-    "fallback_text": "Welcome to Fusepay! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
+    "fallback_text": "Welcome to {app_name}! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
     "flow": {
       "cta": "Start Onboarding",
-      "header": "Welcome to Fusepay",
-      "body": "Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
+      "header": "Welcome to {app_name}",
+      "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
   "transaction_copy": {

@@ -27,11 +27,11 @@
     "limits_fallback": "Ba zan iya yin {unsupported} a nan ba. Zan iya taimakawa da {supported}."
   },
   "conversational": {
-    "greeting": "Sannu. Ni ne Narya AI. Me kake so mu yi yau?",
+    "greeting": "Sannu. Ni ne {app_name}. Me kake so mu yi yau?",
     "appreciation": "Babu komai. Wane aiki za mu yi na gaba?",
     "checkin": "Ina nan. Wane aikin kudi za mu fara?",
-    "identity": "Ni ne Narya AI. Ina gudanar da ainihin ayyukan banking da sauri kuma cikin kulawa.",
-    "brand_origin": "Sunan Narya AI ya zo daga wahayin kindler. Kungiyar Fusepay ce ta gina ni domin nutsattsen kuma amintaccen banking execution.",
+    "identity": "Ni ne {app_name}. Ina gudanar da ainihin ayyukan banking da sauri kuma cikin kulawa.",
+    "brand_origin": "Sunan {app_name} ya zo daga wahayin kindler. Kungiyar {app_creator} ce ta gina ni domin nutsattsen kuma amintaccen banking execution.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "out_of_scope_followup": "Idan kana so, zan kuma iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
@@ -749,11 +749,11 @@
     }
   },
   "onboarding": {
-    "fallback_text": "Welcome to Fusepay! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
+    "fallback_text": "Welcome to {app_name}! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
     "flow": {
       "cta": "Start Onboarding",
-      "header": "Welcome to Fusepay",
-      "body": "Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
+      "header": "Welcome to {app_name}",
+      "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
   "transaction_copy": {

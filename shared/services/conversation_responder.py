@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from langchain_openai import ChatOpenAI
 
+from shared.config.settings import settings
 from shared.i18n import LocaleManager, render_message, render_text
 
 _LANGUAGE_LABELS = {
@@ -194,7 +195,7 @@ class ConversationResponder:
         is_joke_turn = self._is_joke_turn(text, history)
 
         system = (
-            "You are Narya, a banking assistant on WhatsApp.\n"
+            f"You are {settings.app_name_short}, a banking assistant on WhatsApp.\n"
             f"Reply in {language}.\n"
             "The user's message is non-banking or casual chat.\n"
             "Write ONLY a short conversational preface, not the banking redirect.\n"

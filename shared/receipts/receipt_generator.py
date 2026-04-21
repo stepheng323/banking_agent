@@ -6,6 +6,7 @@ from pathlib import Path
 
 from playwright.async_api import Browser, Playwright, async_playwright
 
+from shared.config.settings import settings
 from shared.database.models import Transaction
 from shared.utils.logging import get_logger
 
@@ -31,7 +32,7 @@ RECEIPT_HTML_TEMPLATE = """<!DOCTYPE html>
   <head>
     <meta charset='UTF-8' />
     <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-    <title>Transaction Receipt - Fusepay</title>
+    <title>Transaction Receipt - {{appName}}</title>
     <style>
       @font-face {
         font-family: 'InterReceipt';
@@ -259,7 +260,7 @@ RECEIPT_HTML_TEMPLATE = """<!DOCTYPE html>
         <div class='logo-section'>
           <div class='logo'>
             <div class='logo-icon'></div>
-            <div class='logo-text'>Fusepay</div>
+            <div class='logo-text'>{{appName}}</div>
           </div>
           <div class='tagline'>your money, just a wish away</div>
         </div>
@@ -267,7 +268,7 @@ RECEIPT_HTML_TEMPLATE = """<!DOCTYPE html>
         <div class='receipt-title'>Transaction Receipt</div>
         <div class='generated-info'>
           Generated from
-          <strong>Fusepay</strong>
+          <strong>{{appName}}</strong>
           on
           {{generationDate}}
         </div>
@@ -331,11 +332,11 @@ RECEIPT_HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <div class='thank-you'>
-          Thank you for choosing Fusepay.
+          Thank you for choosing {{appName}}.
         </div>
 
         <div class='banking-options'>
-          Banking with Fusepay: Branch | ATM | Online | Mobile | Contact centre
+          Banking with {{appName}}: Branch | ATM | Online | Mobile | Contact centre
         </div>
       </div>
     </div>
@@ -457,6 +458,7 @@ class ReceiptGenerator:
         html = html.replace("{{reference}}", reference)
         html = html.replace("{{status}}", status)
         html = html.replace("{{generationDate}}", generation_date)
+        html = html.replace("{{appName}}", settings.app_name)
         html = html.replace("{{interRegularFontUrl}}", self._font_file_url("Inter-Regular.ttf"))
         html = html.replace("{{interSemiBoldFontUrl}}", self._font_file_url("Inter-SemiBold.ttf"))
         html = html.replace("{{interBoldFontUrl}}", self._font_file_url("Inter-Bold.ttf"))

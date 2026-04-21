@@ -40,6 +40,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     build_router_context_from_summary,
     get_or_build_turn_context_summary,
 )
+from shared.config.settings import settings
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.services.async_completion import get_recent_batch_reference
 from shared.services.conversation_responder import (
@@ -106,12 +107,16 @@ DETERMINISTIC_IDENTITY_EXACT = {
     "what s your name",
     "what's your name",
 }
+_APP_NAME_LOWER = settings.app_name.lower()
+_APP_NAME_SHORT_LOWER = settings.app_name_short.lower()
 DETERMINISTIC_BRAND_ORIGIN_EXACT = {
     "who created you",
     "who built you",
     "who made you",
-    "what does narya mean",
-    "what is narya",
+    f"what does {_APP_NAME_LOWER} mean",
+    f"what is {_APP_NAME_LOWER}",
+    f"what does {_APP_NAME_SHORT_LOWER} mean",
+    f"what is {_APP_NAME_SHORT_LOWER}",
 }
 DETERMINISTIC_CAPABILITY_EXACT = {
     "what can you do",

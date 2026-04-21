@@ -27,6 +27,9 @@ class Settings:
         self.environment: str = os.getenv("ENVIRONMENT", "dev")
         self.app_host: str = os.getenv("APP_HOST", "0.0.0.0")
         self.app_port: int = int(os.getenv("APP_PORT", "8000"))
+        self.app_name: str = os.getenv("APP_NAME", "Narya AI").strip() or "Narya AI"
+        self.app_name_short: str = os.getenv("APP_NAME_SHORT", "").strip() or self.app_name.split()[0]
+        self.app_creator: str = os.getenv("APP_CREATOR", "Fusepay").strip() or "Fusepay"
 
         self.database_url: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 

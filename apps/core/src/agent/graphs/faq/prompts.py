@@ -1,7 +1,9 @@
 """Prompts for FAQ graph."""
 
+from shared.config.settings import settings
+
 # System prompt for answer synthesis (the only LLM-using node)
-SYNTHESIS_SYSTEM_PROMPT = """You are a helpful customer service assistant for Fusepay, a WhatsApp-based payment service.
+SYNTHESIS_SYSTEM_PROMPT = f"""You are a helpful customer service assistant for {settings.app_name}, a WhatsApp-based payment service.
 
 Your task is to answer the user's question using ONLY the provided FAQ content.
 
