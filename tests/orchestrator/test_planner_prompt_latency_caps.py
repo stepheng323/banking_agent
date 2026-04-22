@@ -10,14 +10,14 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner import (
+from apps.core.src.agent.orchestrator.nodes.planner.context import (
     CONTEXT_ACCOUNT_PREVIEW_LIMIT,
     PLANNER_CONTEXT_MAX_CHARS,
     _assemble_planner_context,
     _build_query_session_context,
     _build_user_state_summary,
-    plan_tasks,
 )
+from apps.core.src.agent.orchestrator.nodes.planner.runner import plan_tasks
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.services.task_planner import (
     PlannerPromptBuildInput,

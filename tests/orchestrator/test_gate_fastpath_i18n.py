@@ -2,6 +2,7 @@
 
 import json
 
+from apps.core.src.agent.orchestrator.nodes.gate.runner import session_gate_direct_path
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import (
@@ -14,7 +15,6 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.core.src.agent.orchestrator.nodes.gate import session_gate_direct_path
 from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
 from shared.types.planner import SemanticRouteDecision
 
@@ -1964,7 +1964,8 @@ async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_bac
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.logger.info", _capture)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
 
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -3010,7 +3011,9 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.logger.info", _capture)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.pipeline.domain_stages.logger.info", _capture)
 
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

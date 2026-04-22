@@ -545,7 +545,7 @@ async def test_conversational_out_of_scope_logs_policy_blocked_breadcrumb(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.planner_response_flow.logger.info", _capture)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.planner.response_flow.logger.info", _capture)
 
     planner_output = PlannerOutput(
         primary_intent="conversational",

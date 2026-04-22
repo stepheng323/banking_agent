@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -5,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
+from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 
 
 class _CheckpointerStub:
@@ -17,13 +19,46 @@ class _CheckpointerStub:
 
 
 class _GraphStub:
-    async def ainvoke(self, inputs: dict, config: dict) -> dict:
+    async def ainvoke(self, inputs: dict[str, object], config: dict[str, object]) -> dict[str, object]:
         del inputs, config
         return {"outbox": [], "final_response": None, "loaded_context": {"language": "en"}}
 
 
+class _ConcurrentGraphStub:
+    def __init__(self, *, delay: float = 0.05) -> None:
+        self.delay = delay
+        self.active_calls = 0
+        self.max_active_calls = 0
+        self.thread_ids: list[str] = []
+
+    async def ainvoke(self, inputs: dict[str, object], config: dict[str, object]) -> dict[str, object]:
+        del inputs
+        configurable = config.get("configurable")
+        if isinstance(configurable, dict):
+            thread_id = configurable.get("thread_id")
+            if isinstance(thread_id, str):
+                self.thread_ids.append(thread_id)
+        self.active_calls += 1
+        self.max_active_calls = max(self.max_active_calls, self.active_calls)
+        try:
+            await asyncio.sleep(self.delay)
+            return {"outbox": [], "final_response": None, "loaded_context": {"language": "en"}}
+        finally:
+            self.active_calls -= 1
+
+
 class _ContextManagerStub:
-    async def load_context_parallel(self, phone_number: str):
+    async def load_context_parallel(
+        self,
+        phone_number: str,
+        *,
+        path_label: str = "planner_path",
+        user: object | None = None,
+        profile_mode: str = "full",
+        account_mode: str = "full",
+        beneficiary_mode: str = "full",
+    ) -> tuple[dict[str, object], None, None, None]:
+        del path_label, user, profile_mode, account_mode, beneficiary_mode
         del phone_number
         return (
             {
@@ -71,14 +106,20 @@ class _RedisStub:
         return pipe
 
 
-def _build_handler(monkeypatch: pytest.MonkeyPatch, redis_client: object) -> OrchestratorGraphHandler:
+def _build_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    redis_client: object,
+    *,
+    graph: object | None = None,
+) -> OrchestratorGraphHandler:
+    graph_stub = graph or _GraphStub()
     monkeypatch.setattr(
         "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
         "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
-        lambda checkpointer: _GraphStub(),
+        lambda checkpointer: graph_stub,
     )
     return OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -144,3 +185,65 @@ async def test_maybe_apply_session_ttl_only_refreshes_chat_history_inline(
     assert ok is True
     handler._apply_chat_history_ttl.assert_awaited_once()
     handler._apply_session_ttl.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invoke_allows_different_threads_to_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
+    graph = _ConcurrentGraphStub()
+    handler = _build_handler(monkeypatch, _RedisStub(), graph=graph)
+    handler._run_housekeeping = AsyncMock(return_value=None)
+
+    await asyncio.gather(
+        handler.invoke(
+            MessageContext(
+                phone_number="2348000000001",
+                text="show balance",
+                message_id="msg-1",
+                channel="telegram",
+            )
+        ),
+        handler.invoke(
+            MessageContext(
+                phone_number="2348000000002",
+                text="show balance",
+                message_id="msg-2",
+                channel="telegram",
+            )
+        ),
+    )
+
+    assert graph.max_active_calls == 2
+    assert sorted(graph.thread_ids) == ["telegram:2348000000001", "telegram:2348000000002"]
+    assert handler._thread_locks == {}
+    assert handler._thread_lock_refcounts == {}
+
+
+@pytest.mark.asyncio
+async def test_invoke_serializes_same_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    graph = _ConcurrentGraphStub(delay=0.01)
+    handler = _build_handler(monkeypatch, _RedisStub(), graph=graph)
+    handler._run_housekeeping = AsyncMock(return_value=None)
+
+    await asyncio.gather(
+        handler.invoke(
+            MessageContext(
+                phone_number="2348000000001",
+                text="show balance",
+                message_id="msg-1",
+                channel="telegram",
+            )
+        ),
+        handler.invoke(
+            MessageContext(
+                phone_number="2348000000001",
+                text="show transactions",
+                message_id="msg-2",
+                channel="telegram",
+            )
+        ),
+    )
+
+    assert graph.max_active_calls == 1
+    assert graph.thread_ids == ["telegram:2348000000001", "telegram:2348000000001"]
+    assert handler._thread_locks == {}
+    assert handler._thread_lock_refcounts == {}

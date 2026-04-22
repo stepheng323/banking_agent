@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner_context import (
+from apps.core.src.agent.orchestrator.nodes.planner.context import (
     _compact_payload_for_prompt,
     build_quoted_replay_context_from_summary,
     get_or_build_turn_context_summary,

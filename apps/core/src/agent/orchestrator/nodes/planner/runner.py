@@ -3,33 +3,33 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner_context import (
+from apps.core.src.agent.orchestrator.nodes.planner.context import (
     CONTEXT_ACCOUNT_PREVIEW_LIMIT,
     PLANNER_CONTEXT_MAX_CHARS,
     _assemble_planner_context,
     _build_query_session_context,
     _build_user_state_summary,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_context_flow import _build_planner_context
-from apps.core.src.agent.orchestrator.nodes.planner_execution_flow import _execute_planner_with_context
-from apps.core.src.agent.orchestrator.nodes.planner_guardrails import (
+from apps.core.src.agent.orchestrator.nodes.planner.context_flow import _build_planner_context
+from apps.core.src.agent.orchestrator.nodes.planner.execution_flow import _execute_planner_with_context
+from apps.core.src.agent.orchestrator.nodes.planner.guardrails import (
     _deescalate_mandate_acknowledgement,
     _filter_spurious_affirmation_tasks,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_policy import (
+from apps.core.src.agent.orchestrator.nodes.planner.policy import (
     _build_locale_update,
     _build_policy_aware_greeting,
     _build_policy_notice,
     _detected_locale_value,
     _meta_intent_from_response_key,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_postprocess import _should_replan_active_wave
-from apps.core.src.agent.orchestrator.nodes.planner_quoted_flow import _handle_quoted_replay_shortcut
-from apps.core.src.agent.orchestrator.nodes.planner_quoted_replay import (
+from apps.core.src.agent.orchestrator.nodes.planner.postprocess import _should_replan_active_wave
+from apps.core.src.agent.orchestrator.nodes.planner.quoted_flow import _handle_quoted_replay_shortcut
+from apps.core.src.agent.orchestrator.nodes.planner.quoted_replay import (
     QUOTED_REPLAY_MIN_CONFIDENCE as _QUOTED_REPLAY_MIN_CONFIDENCE,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_response_flow import _build_non_task_response
-from apps.core.src.agent.orchestrator.nodes.planner_task_flow import _build_planner_task_updates
+from apps.core.src.agent.orchestrator.nodes.planner.response_flow import _build_non_task_response
+from apps.core.src.agent.orchestrator.nodes.planner.task_flow import _build_planner_task_updates
 from shared.i18n import LocaleManager, render_safe_capability_fallback
 from shared.types.planner import PlannedTask, TaskParameters
 from shared.utils.logging import get_logger

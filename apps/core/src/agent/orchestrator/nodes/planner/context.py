@@ -327,7 +327,7 @@ def build_turn_context_summary(
                         state.pending_interrupt.fields_by_task.get(active_task.id, []) or []
                     )
 
-    from apps.core.src.agent.orchestrator.nodes.planner_context_read import _infer_recent_domain_focus
+    from apps.core.src.agent.orchestrator.nodes.planner.context_read import _infer_recent_domain_focus
     from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 
     return TurnContextSummary(

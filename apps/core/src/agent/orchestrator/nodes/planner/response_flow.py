@@ -14,7 +14,7 @@ from apps.core.src.agent.orchestrator.nodes.cancellation import (
     clarify_message,
     has_cancelable_state,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_policy import (
+from apps.core.src.agent.orchestrator.nodes.planner.policy import (
     _build_locale_update,
     _build_policy_aware_greeting,
     _detected_locale_value,

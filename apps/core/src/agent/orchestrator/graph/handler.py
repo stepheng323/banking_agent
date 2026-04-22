@@ -7,6 +7,8 @@ import asyncio
 import random
 import time
 from collections import deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 import redis.asyncio as redis
@@ -18,7 +20,7 @@ from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.nodes.cancellation import cancel_match_kind, is_obvious_cancel_message
-from apps.core.src.agent.orchestrator.nodes.gate import (
+from apps.core.src.agent.orchestrator.nodes.gate.runner import (
     classify_deterministic_meta_response,
     classify_obvious_transfer_request,
 )
@@ -106,7 +108,10 @@ class OrchestratorGraphHandler:
 
         self.checkpointer = AsyncRedisSaver(redis_client=redis_client)
         self._checkpointer_setup = False
-        self._invoke_lock = asyncio.Lock()
+        self._checkpointer_setup_lock = asyncio.Lock()
+        self._thread_locks_guard = asyncio.Lock()
+        self._thread_locks: dict[str, asyncio.Lock] = {}
+        self._thread_lock_refcounts: dict[str, int] = {}
         self._housekeeping_semaphore = asyncio.Semaphore(max(1, settings.async_housekeeping_max_concurrency))
         self._error_window: deque[int] = deque(maxlen=200)
 
@@ -160,13 +165,52 @@ class OrchestratorGraphHandler:
 
     async def _ensure_checkpointer(self) -> None:
         """Ensure checkpointer is initialized."""
-        if not self._checkpointer_setup:
+        if self._checkpointer_setup:
+            return
+        async with self._checkpointer_setup_lock:
+            if self._checkpointer_setup:
+                return
             await self.checkpointer.asetup()
             self._checkpointer_setup = True
 
+    @staticmethod
+    def _thread_id(phone_number: str, channel: str) -> str:
+        return f"{channel}:{phone_number}"
+
+    async def _reserve_thread_lock(self, thread_id: str) -> asyncio.Lock:
+        async with self._thread_locks_guard:
+            lock = self._thread_locks.get(thread_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._thread_locks[thread_id] = lock
+            self._thread_lock_refcounts[thread_id] = self._thread_lock_refcounts.get(thread_id, 0) + 1
+            return lock
+
+    async def _drop_thread_lock_reservation(self, thread_id: str, lock: asyncio.Lock) -> None:
+        async with self._thread_locks_guard:
+            remaining = self._thread_lock_refcounts.get(thread_id, 0) - 1
+            if remaining <= 0:
+                self._thread_lock_refcounts.pop(thread_id, None)
+                if self._thread_locks.get(thread_id) is lock and not lock.locked():
+                    self._thread_locks.pop(thread_id, None)
+                return
+            self._thread_lock_refcounts[thread_id] = remaining
+
+    @asynccontextmanager
+    async def _thread_invocation_lock(self, thread_id: str) -> AsyncIterator[None]:
+        lock = await self._reserve_thread_lock(thread_id)
+        try:
+            await lock.acquire()
+            try:
+                yield
+            finally:
+                lock.release()
+        finally:
+            await self._drop_thread_lock_reservation(thread_id, lock)
+
     def _get_config(self, phone_number: str, channel: str) -> RunnableConfig:
         """Create LangGraph configuration."""
-        thread_id = f"{channel}:{phone_number}"
+        thread_id = self._thread_id(phone_number, channel)
         return {
             "configurable": {
                 "thread_id": thread_id,
@@ -420,8 +464,9 @@ class OrchestratorGraphHandler:
             str: Response message if any
             None: If no response generated
         """
-        async with self._invoke_lock:
-            await self._ensure_checkpointer()
+        await self._ensure_checkpointer()
+        thread_id = self._thread_id(context.phone_number, context.channel)
+        async with self._thread_invocation_lock(thread_id):
             turn_start = time.perf_counter()
 
             phone_number = context.phone_number
@@ -829,8 +874,9 @@ class OrchestratorGraphHandler:
     async def resume_flow(self, phone_number: str, payload: dict[str, Any], channel: str) -> dict[str, Any]:
         """Resume flow externally (e.g. from auth callback)."""
 
-        async with self._invoke_lock:
-            await self._ensure_checkpointer()
+        await self._ensure_checkpointer()
+        thread_id = self._thread_id(phone_number, channel)
+        async with self._thread_invocation_lock(thread_id):
             inputs = {
                 "user_id": phone_number,
                 "phone_number": phone_number,
@@ -849,7 +895,6 @@ class OrchestratorGraphHandler:
                     (final_state.get("loaded_context") or {}).get("language")
                 ).value
 
-                thread_id = config["configurable"]["thread_id"]
                 await self._run_housekeeping(
                     thread_id=thread_id,
                     state=final_state,
