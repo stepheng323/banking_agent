@@ -294,6 +294,7 @@ async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpr
                             "recipient_account": "2010000003",
                             "recipient_bank_name": "First Bank",
                             "source_account_id": "acct-1",
+                            "source_account_number": "6000000001",
                         },
                     },
                     {
@@ -304,6 +305,7 @@ async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpr
                             "recipient_phone": "08162511023",
                             "network": "MTN",
                             "source_account_id": "acct-1",
+                            "source_account_number": "6000000001",
                         },
                     },
                 ],
@@ -338,6 +340,7 @@ async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpr
                             "recipient_account": "2010000003",
                             "recipient_bank_name": "First Bank",
                             "source_account_id": "acct-1",
+                            "source_account_number": "6000000001",
                         },
                         {
                             "task_id": "t_airtime",
@@ -347,6 +350,7 @@ async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpr
                             "recipient_phone": "08162511023",
                             "network": "MTN",
                             "source_account_id": "acct-1",
+                            "source_account_number": "6000000001",
                         },
                     ],
                 }
@@ -364,6 +368,7 @@ async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpr
     assert "buy_airtime" in planner.last_quoted_context
     assert {task.type for task in updates["tasks"].values()} == {"transfer", "airtime"}
     assert updates["waves"] == [list(updates["tasks"].keys())]
+    assert {task.payload["source_account_number"] for task in updates["tasks"].values()} == {"6000000001"}
     airtime_task = next(task for task in updates["tasks"].values() if task.type == "airtime")
     assert airtime_task.payload["recipient_phone"] == "08162511023"
     assert airtime_task.payload["skip_extraction"] is True

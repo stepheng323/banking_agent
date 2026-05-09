@@ -94,6 +94,9 @@ class AirtimeExecutor:
                     "amount": amount,
                     "recipient_phone": recipient_phone,
                     "network": network,
+                    "source_account_id": airtime_data.get("source_account_id"),
+                    "source_account_number": airtime_data.get("source_account_number"),
+                    "source_bank_name": airtime_data.get("source_bank_name"),
                     "final_status": "success",
                 }
                 batch_summary = await record_group_leg_and_maybe_build_summary(
@@ -151,6 +154,9 @@ class AirtimeExecutor:
                     "amount": amount,
                     "recipient_phone": recipient_phone,
                     "network": network,
+                    "source_account_id": airtime_data.get("source_account_id"),
+                    "source_account_number": airtime_data.get("source_account_number"),
+                    "source_bank_name": airtime_data.get("source_bank_name"),
                     "final_status": "failed",
                     "error_message": error_msg,
                 }

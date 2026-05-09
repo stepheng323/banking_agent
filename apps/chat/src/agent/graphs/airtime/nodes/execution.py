@@ -75,6 +75,7 @@ class ExecutionStep(AirtimeStep):
                 "network": data.network,
                 "source_account_number": data.source_account_number,
                 "source_account_id": data.source_account_id,
+                "source_bank_name": data.source_bank_name,
             }
             async_group = None
             if data.async_group_id and data.async_group_size and data.async_group_kind and data.async_group_index:

@@ -547,6 +547,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
     }
     _stamp_async_group_metadata(task, ctx)
+    if task.payload.get("source_affinity_mode") is None:
+        task.payload.pop("source_affinity_mode", None)
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
     result = await worker.run(

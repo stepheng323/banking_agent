@@ -36,6 +36,7 @@ class ReplayTaskPayload(_StrictModel):
     source_bank_name: str | None = None
     resolved_from_saved_beneficiary: bool | None = None
     source_account_id: str | None = None
+    source_account_number: str | None = None
     source_account_index: int | None = None
     narration: str | None = None
     network: str | None = None

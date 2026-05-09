@@ -1,4 +1,5 @@
 import time
+from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -207,6 +208,68 @@ def _source_account_patch(*, source_bank_name: Any = None, source_account_index:
             patch["source_account_index"] = index
             patch["source_bank_name"] = None
     return patch
+
+
+def _normalize_account_reference(value: Any) -> str:
+    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+
+
+def _resolve_source_bank_name_from_account_reference(
+    *,
+    state: OrchestratorState,
+    decision: Any,
+    text: str,
+) -> str | None:
+    loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
+    accounts = loaded_context.get("accounts")
+    if not isinstance(accounts, list):
+        return None
+
+    references = [
+        text,
+        *(str(item or "") for item in getattr(decision, "target_texts", []) or []),
+        str(getattr(decision, "reason", None) or ""),
+    ]
+    normalized_references = [_normalize_account_reference(item) for item in references if item]
+    if not normalized_references:
+        return None
+
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        bank_name = str(account.get("bank_name") or account.get("bank") or "").strip()
+        normalized_bank_name = _normalize_account_reference(bank_name)
+        if normalized_bank_name and any(normalized_bank_name in reference for reference in normalized_references):
+            return bank_name
+    return None
+
+
+def _account_switch_source_overrides(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    decision: Any,
+    text: str,
+) -> dict[str, dict[str, Any]]:
+    source_bank_name = _resolve_source_bank_name_from_account_reference(
+        state=state,
+        decision=decision,
+        text=text,
+    )
+    if not source_bank_name:
+        return {}
+
+    target = SimpleNamespace(
+        target_task_ids=[],
+        target_texts=[],
+        target_types=list(TRANSACTION_INTENTS),
+    )
+    return _pending_edit_payload_overrides_from_fields(
+        state=state,
+        interrupt=interrupt,
+        target=target,
+        fields={"source_bank_name": source_bank_name},
+    )
 
 
 def _phone_patch(task_type: str, value: Any) -> dict[str, Any] | None:
@@ -515,6 +578,30 @@ async def _resolve_semantic_pending_action_edit_updates(
     if decision.operation == "switch_intent":
         target_intent = str(decision.target_intent or "").strip().lower()
         if target_intent in KNOWN_SWITCH_INTENTS:
+            if target_intent == "account" and current_task_types.intersection(TRANSACTION_INTENTS):
+                overrides = _account_switch_source_overrides(
+                    state=state,
+                    interrupt=interrupt,
+                    decision=decision,
+                    text=text,
+                )
+                if overrides:
+                    logger.info(
+                        "pending_action_account_switch_as_source_edit",
+                        task_ids=list(overrides.keys()),
+                    )
+                    return _continue_flow_updates(
+                        state,
+                        interrupt,
+                        precomputed_payload_overrides=overrides,
+                    )
+                logger.info(
+                    "pending_action_account_switch_blocked",
+                    reason="transaction_confirmation_active",
+                    task_ids=getattr(interrupt, "task_ids", None),
+                )
+                return _confirmation_edit_clarification_updates(state, interrupt)
+
             route = InterruptRouteDecision(
                 decision="switch_intent",
                 confidence=decision.confidence,

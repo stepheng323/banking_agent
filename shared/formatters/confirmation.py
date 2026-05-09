@@ -76,14 +76,18 @@ def build_source_account_info(
     account_number = (
         snapshot.get("sourceAccount") or snapshot.get("source_account") or task_payload.get("source_account_number")
     )
-    if not bank or not account_number:
-        return None
-
     source_account = _resolve_source_account(
         accounts=accounts,
         source_account_id=str(task_payload.get("source_account_id")) if task_payload.get("source_account_id") else None,
-        source_account_number=str(account_number),
+        source_account_number=str(account_number) if account_number else None,
     )
+    if source_account:
+        bank = bank or source_account.get("bank_name") or source_account.get("bank")
+        account_number = account_number or source_account.get("account_number") or source_account.get("number")
+
+    if not bank or not account_number:
+        return None
+
     balance = _extract_cached_balance(source_account)
     return cast(
         str,

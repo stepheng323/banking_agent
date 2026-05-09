@@ -1,5 +1,6 @@
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.formatters.airtime import format_airtime_summary
+from shared.formatters.confirmation import build_source_account_info
 from shared.formatters.transfer import format_multi_source_transfer_summary, format_transfer_summary
 
 
@@ -11,6 +12,23 @@ def test_source_account_info_from_number_with_balance() -> None:
         balance=30000,
     )
     assert line == "From: First Bank (···7890) • Bal: ₦30,000.00"
+
+
+def test_source_account_info_resolves_number_from_source_account_id() -> None:
+    line = build_source_account_info(
+        task_payload={"source_account_id": "acct-access", "source_bank_name": "Access Bank"},
+        snapshot={},
+        accounts=[
+            {
+                "id": "acct-access",
+                "bank_name": "Access Bank",
+                "account_number": "1234500003",
+            }
+        ],
+        locale="en",
+    )
+
+    assert line == "From: Access Bank (···0003)"
 
 
 def test_transfer_summary_uses_shared_source_line_formatter() -> None:

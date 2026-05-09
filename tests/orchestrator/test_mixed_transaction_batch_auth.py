@@ -1967,6 +1967,86 @@ async def test_semantic_pending_action_edit_updates_batch_source_account_by_bank
 
 
 @pytest.mark.asyncio
+async def test_pending_account_switch_with_bank_reference_updates_confirmation_source() -> None:
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_semantic_source_switch_guard",
+        phone_number="2348000000939",
+        channel="telegram",
+        last_message_text="Change source account to first bank",
+        waves=[["t_transfer", "t_airtime"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"id": "acct-access", "bank_name": "Access Bank", "account_number": "0000000003"},
+                {"id": "acct-first", "bank_name": "First Bank", "account_number": "0000000001"},
+            ],
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 10000}},
+                    "idempotency_key": "idem-transfer",
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "mtn",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm airtime", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-airtime",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="switch_intent",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_intent="account",
+                    target_texts=["First Bank"],
+                    reason="user wants to use First Bank for the pending confirmation",
+                )
+            ),
+            "services": {
+                "transfer": _TransferNeedsConfirmationWorker(),
+                "airtime": _AirtimeNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_transfer"].payload["source_account_id"] is None
+    assert updates["tasks"]["t_transfer"].payload["source_bank_name"] == "First Bank"
+    assert updates["tasks"]["t_airtime"].payload["source_account_id"] is None
+    assert updates["tasks"]["t_airtime"].payload["source_bank_name"] == "First Bank"
+    assert "idempotency_key" not in updates["tasks"]["t_transfer"].payload
+    assert "idempotency_key" not in updates["tasks"]["t_airtime"].payload
+
+
+@pytest.mark.asyncio
 async def test_semantic_confirmation_edit_invalidates_previous_pin_before_reconfirming() -> None:
     state = OrchestratorState(
         user_id="u_confirm_edit_pin_invalidated",

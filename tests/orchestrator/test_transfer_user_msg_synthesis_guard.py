@@ -20,6 +20,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 
 class _CaptureTransferWorker:
     def __init__(self) -> None:
+        self.last_payload: dict[str, Any] | None = None
         self.last_user_message: str | None = None
         self.last_context: dict[str, Any] | None = None
 
@@ -30,7 +31,8 @@ class _CaptureTransferWorker:
         user_message: str | None = None,
         pin_verified: bool = False,
     ) -> TransactionResult:
-        del payload, pin_verified
+        del pin_verified
+        self.last_payload = payload
         self.last_user_message = user_message
         self.last_context = context
         return TransactionResult(outcome=TransactionOutcome.OK, patch={})
@@ -102,6 +104,45 @@ async def test_transfer_handler_synthesizes_when_message_missing() -> None:
 async def test_transfer_handler_synthesizes_when_message_is_whitespace_only() -> None:
     user_message = await _run_transfer_with_message("   ")
     assert user_message == "Send 5000 to Mum"
+
+
+@pytest.mark.asyncio
+async def test_transfer_handler_drops_null_source_affinity_mode_before_worker() -> None:
+    worker = _CaptureTransferWorker()
+    task = TaskSpec(
+        id="t1",
+        type="transfer",
+        stage=TaskStage.EXTRACTED,
+        payload={
+            "recipient_name": "Mum",
+            "amount": 5000,
+            "source_account_id": "acc_1",
+            "source_affinity_mode": None,
+        },
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_guard",
+        phone_number="2348000000123",
+        channel="whatsapp",
+        last_message_text="Send again",
+        loaded_context={"language": "en", "user_id": "u_transfer_guard", "accounts": [], "beneficiaries": []},
+        tasks={"t1": task},
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+    ctx = ExecutionContext(
+        state=state,
+        config=config,
+        services={"transfer": worker},
+        current_wave_len=1,
+        agg=ExecutionAggregation(state.tasks),
+    )
+
+    await handle_transfer_task(task, "t1", ctx)
+
+    assert worker.last_payload is not None
+    assert "source_affinity_mode" not in worker.last_payload
 
 
 @pytest.mark.asyncio

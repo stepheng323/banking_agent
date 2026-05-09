@@ -77,6 +77,8 @@ def test_pending_action_edit_contract_present() -> None:
     assert "target_task_ids" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
     assert "target_types: transfer | airtime | data" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
     assert "deterministic code will re-render confirmation and require PIN" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    assert "which account/bank to pay from" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    assert "default-account update while a confirmation is pending" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
 
 
 def test_interrupt_compact_prompt_is_shorter_but_keeps_core_contract() -> None:

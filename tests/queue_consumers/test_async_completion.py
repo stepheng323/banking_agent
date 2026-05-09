@@ -56,6 +56,9 @@ def _transfer_payload(*, amount: int, recipient: str, final_status: str) -> dict
         "recipient_resolved_name": recipient,
         "recipient_bank_name": "Opay",
         "recipient_account": "8162511023",
+        "source_account_id": "acct-access",
+        "source_account_number": "1234500003",
+        "source_bank_name": "Access Bank",
         "final_status": final_status,
     }
 
@@ -65,6 +68,9 @@ def _airtime_payload(*, amount: int, phone: str, final_status: str, error_messag
         "amount": amount,
         "phone_number": phone,
         "network": "MTN",
+        "source_account_id": "acct-access",
+        "source_account_number": "1234500003",
+        "source_bank_name": "Access Bank",
         "final_status": final_status,
     }
     if error_message:
@@ -194,6 +200,7 @@ async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None
     airtime_payload = next(item for item in actionable_payload["tasks"] if item["task_type"] == "airtime")
     assert airtime_payload["recipient_phone"] == "08031234567"
     assert airtime_payload["action"] == "buy_airtime"
+    assert {item["source_account_number"] for item in actionable_payload["tasks"]} == {"1234500003"}
 
 async def test_async_completion_transfer_summary_sends_initial_then_final_update() -> None:
     redis_client = _RedisStub()

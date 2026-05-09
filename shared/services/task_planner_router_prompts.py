@@ -315,6 +315,9 @@ Semantic operations:
    A user adding a purpose, reason, memo, note, description, or "what it is for" to an existing transfer is
    update_fields with narration set to the note text. Do not classify that as add_tasks unless they are adding
    a separate new transaction.
+   A user changing which account/bank to pay from, use, debit, fund with, or make the source for the pending
+   confirmation is update_fields with source_bank_name or source_account_index. Do not classify this as
+   account management or default-account update while a confirmation is pending.
 4) add_tasks: user wants to add a new transfer, airtime, or data purchase to the pending batch.
    Set target_types to the exact new transaction type(s). If the user asks to recharge, top up, buy airtime,
    buy mobile credit, or buy phone credit, target_types must contain airtime, not transfer, even if the
@@ -338,6 +341,8 @@ Rules:
   both source and target references in target_texts/reason; deterministic code will validate it.
 - If user asks to update "both transfers" or "all transfers" with the same field values, target_types should
   contain transfer.
+- If the message can reasonably edit the pending confirmation, prefer update_fields over switch_intent.
+  Use switch_intent only for a clearly separate task outside the pending confirmation.
 - If one message gives different edits for different pending tasks, use updates instead of flattening the edit.
   Example: "mum is allowance and tolu is transport, make tolu 5k" should return updates for mum narration and
   tolu narration+amount.

@@ -100,6 +100,13 @@ class TransferPayload(BaseModel):
             return False
         return bool(value)
 
+    @field_validator("source_affinity_mode", mode="before")
+    @classmethod
+    def normalize_source_affinity_mode(cls, value: Any) -> str:
+        if value is None:
+            return "auto"
+        return value
+
     @field_validator("confirmation", mode="before")
     @classmethod
     def normalize_confirmation(cls, value: Any) -> TransferConfirmation:

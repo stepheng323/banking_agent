@@ -91,6 +91,9 @@ class DataExecutor:
                     "phone_number": recipient_phone,
                     "plan_name": plan_name,
                     "network": network,
+                    "source_account_id": data_purchase.get("source_account_id"),
+                    "source_account_number": data_purchase.get("source_account_number") or data_purchase.get("source"),
+                    "source_bank_name": data_purchase.get("source_bank_name"),
                     "final_status": "success",
                 }
                 batch_summary = await record_group_leg_and_maybe_build_summary(
@@ -147,6 +150,9 @@ class DataExecutor:
                     "phone_number": recipient_phone,
                     "plan_name": plan_name,
                     "network": network,
+                    "source_account_id": data_purchase.get("source_account_id"),
+                    "source_account_number": data_purchase.get("source_account_number") or data_purchase.get("source"),
+                    "source_bank_name": data_purchase.get("source_bank_name"),
                     "final_status": "failed",
                     "error_message": error_msg,
                 }

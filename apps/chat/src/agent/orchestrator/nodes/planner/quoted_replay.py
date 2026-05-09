@@ -148,7 +148,7 @@ def _is_replay_payload_sufficient(task_type: str, payload: dict[str, Any]) -> bo
 
 
 def _sanitize_replay_task_payload(*, task_type: str, payload: dict[str, Any], text: str) -> dict[str, Any] | None:
-    next_payload = dict(payload)
+    next_payload = {key: value for key, value in payload.items() if value is not None}
     for metadata_key in ("task_id", "task_ids", "task_type", "task_types", "tasks"):
         next_payload.pop(metadata_key, None)
     if "action" not in next_payload:
