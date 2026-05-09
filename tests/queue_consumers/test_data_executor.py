@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.executors.data import DataExecutor
 from shared.database.enums import TransactionStatusEnum
+from shared.transaction_runtime.executors.data import DataExecutor
 
 
 class _RedisStub:
@@ -103,3 +103,48 @@ async def test_data_executor_grouped_failure_waits_for_batch_summary() -> None:
 
     assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.FAILED.value)
     delivery_service.deliver_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_data_executor_failure_uses_provider_error_field() -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": False, "error": "Invalid data bundle"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    payload = _payload()
+    payload.pop("async_group")
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_data(payload)
+
+    assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.FAILED.value)
+    assert transaction_repo.update_status.await_args_list[1].kwargs["error_message"] == "Invalid data bundle"
+    assert "Invalid data bundle" in delivery_service.deliver_text.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_data_executor_exception_uses_safe_user_error() -> None:
+    provider = SimpleNamespace(purchase_data=AsyncMock(side_effect=RuntimeError("raw provider token leaked")))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    payload = _payload()
+    payload.pop("async_group")
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_data(payload)
+
+    assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.FAILED.value)
+    error_message = transaction_repo.update_status.await_args_list[1].kwargs["error_message"]
+    assert error_message == "Data purchase could not be completed. Please try again."
+    assert "raw provider token leaked" not in error_message

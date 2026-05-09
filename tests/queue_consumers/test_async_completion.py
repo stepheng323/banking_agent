@@ -60,13 +60,16 @@ def _transfer_payload(*, amount: int, recipient: str, final_status: str) -> dict
     }
 
 
-def _airtime_payload(*, amount: int, phone: str, final_status: str) -> dict[str, object]:
-    return {
+def _airtime_payload(*, amount: int, phone: str, final_status: str, error_message: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {
         "amount": amount,
         "phone_number": phone,
         "network": "MTN",
         "final_status": final_status,
     }
+    if error_message:
+        payload["error_message"] = error_message
+    return payload
 
 
 async def test_async_completion_latest_terminal_state_wins_before_finalization() -> None:
@@ -168,7 +171,12 @@ async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None
         redis_client,
         message=airtime_leg,
         task_type="airtime",
-        payload=_airtime_payload(amount=2000, phone="08031234567", final_status="failed"),
+        payload=_airtime_payload(
+            amount=2000,
+            phone="08031234567",
+            final_status="failed",
+            error_message="Provider down",
+        ),
         locale="en",
     )
 
@@ -178,7 +186,14 @@ async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None
     assert "Transaction Summary" in summary["text"]
     assert "Mum" in summary["text"]
     assert "08031234567" in summary["text"]
+    assert "Reason: Provider down" in summary["text"]
     assert "Some transactions completed, but others failed." in summary["text"]
+    actionable_payload = summary["actionable_payload"]
+    assert actionable_payload["task_type"] == "batch"
+    assert {item["task_type"] for item in actionable_payload["tasks"]} == {"transfer", "airtime"}
+    airtime_payload = next(item for item in actionable_payload["tasks"] if item["task_type"] == "airtime")
+    assert airtime_payload["recipient_phone"] == "08031234567"
+    assert airtime_payload["action"] == "buy_airtime"
 
 async def test_async_completion_transfer_summary_sends_initial_then_final_update() -> None:
     redis_client = _RedisStub()

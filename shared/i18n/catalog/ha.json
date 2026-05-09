@@ -661,6 +661,7 @@
       "failed": "Execution failed: {error}"
     },
     "error": {
+      "execution_failed": "Transfer could not be completed. Please try again.",
       "pipeline_failed": "Pipeline failed: {error}",
       "provider_failed": "Transfer failed at provider"
     }
@@ -692,6 +693,7 @@
       "system_error": "System error during execution."
     },
     "error": {
+      "execution_failed": "Airtime purchase could not be completed. Please try again.",
       "pipeline_failed": "Pipeline failed: {error}",
       "provider_failed": "Airtime purchase failed at provider"
     },
@@ -716,6 +718,7 @@
       "receipt_description_network": "{network} data for {target_phone}"
     },
     "error": {
+      "execution_failed": "Data purchase could not be completed. Please try again.",
       "pipeline_failed": "Pipeline failed: {error}",
       "system_processing": "System error during transaction processing.",
       "pipeline_no_result": "Pipeline completed without definitive result.",
@@ -805,6 +808,7 @@
       "airtime_line": "*Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
       "data_line": "*Data:* {plan} - {amount} for {phone}",
+      "failure_reason": "  Reason: {reason}",
       "other_completed_line": "* {task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
       "success_footer": "_All transactions completed successfully_"

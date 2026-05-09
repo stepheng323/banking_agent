@@ -1,5 +1,6 @@
 """Quoted replay planner helper functions."""
 
+import json
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -7,7 +8,6 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.planner.context import (
-    _compact_payload_for_prompt,
     build_quoted_replay_context_from_summary,
     get_or_build_turn_context_summary,
 )
@@ -18,6 +18,56 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 QUOTED_REPLAY_MIN_CONFIDENCE = 0.75
+QUOTED_REPLAY_PAYLOAD_PREVIEW_MAX_CHARS = 1200
+QUOTED_REPLAY_TASK_PREVIEW_LIMIT = 5
+QUOTED_REPLAY_PAYLOAD_KEYS = (
+    "task_type",
+    "action",
+    "amount",
+    "beneficiary_id",
+    "recipient_name",
+    "recipient_resolved_name",
+    "recipient_phone",
+    "target_phone",
+    "recipient_account",
+    "recipient_bank_code",
+    "recipient_bank_name",
+    "source_bank_name",
+    "source_account_id",
+    "source_account_number",
+    "narration",
+    "network",
+    "plan_code",
+    "plan_name",
+)
+
+
+def _compact_quoted_task_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key in QUOTED_REPLAY_PAYLOAD_KEYS if (value := payload.get(key)) not in (None, "")}
+
+
+def _compact_quoted_payload_for_prompt(payload: dict[str, Any]) -> str:
+    if not payload:
+        return "{}"
+
+    if isinstance(payload.get("tasks"), list):
+        raw_tasks = [task for task in payload["tasks"] if isinstance(task, dict)]
+        compact_payload: dict[str, Any] = {
+            "task_type": payload.get("task_type"),
+            "task_ids": payload.get("task_ids"),
+            "task_types": payload.get("task_types"),
+            "tasks": [_compact_quoted_task_payload(task) for task in raw_tasks[:QUOTED_REPLAY_TASK_PREVIEW_LIMIT]],
+        }
+        overflow = len(raw_tasks) - QUOTED_REPLAY_TASK_PREVIEW_LIMIT
+        if overflow > 0:
+            compact_payload["more_tasks"] = overflow
+    else:
+        compact_payload = _compact_quoted_task_payload(payload)
+
+    serialized = json.dumps(compact_payload, ensure_ascii=True)
+    if len(serialized) <= QUOTED_REPLAY_PAYLOAD_PREVIEW_MAX_CHARS:
+        return serialized
+    return serialized[: QUOTED_REPLAY_PAYLOAD_PREVIEW_MAX_CHARS - 3] + "..."
 
 
 def _build_quoted_replay_context(state: OrchestratorState) -> str:
@@ -30,7 +80,7 @@ def _build_quoted_replay_context(state: OrchestratorState) -> str:
 
 
 def _build_quoted_replay_context_with_payload(state: OrchestratorState, quoted_payload: dict[str, Any]) -> str:
-    payload_preview = _compact_payload_for_prompt(quoted_payload)
+    payload_preview = _compact_quoted_payload_for_prompt(quoted_payload)
     summary, _ = get_or_build_turn_context_summary(state, path_label="planner_path")
     return build_quoted_replay_context_from_summary(
         summary,

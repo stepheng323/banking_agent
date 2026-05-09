@@ -358,6 +358,10 @@ async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpr
 
     assert planner.quoted_called is True
     assert planner.plan_called is False
+    assert planner.last_quoted_context is not None
+    assert "recipient_phone" in planner.last_quoted_context
+    assert "08162511023" in planner.last_quoted_context
+    assert "buy_airtime" in planner.last_quoted_context
     assert {task.type for task in updates["tasks"].values()} == {"transfer", "airtime"}
     assert updates["waves"] == [list(updates["tasks"].keys())]
     airtime_task = next(task for task in updates["tasks"].values() if task.type == "airtime")

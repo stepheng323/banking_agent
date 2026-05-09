@@ -256,9 +256,12 @@ async def _build_planner_context(
                         expected_transaction_executors=(),
                     ),
                     shortcut_updates={
-                        "final_response": frame_followup.response,
                         "semantic_path_shape": frame_followup.semantic_path_shape,
                         "context_frames": frame_followup.context_frames or state.context_frames,
+                        **({"final_response": frame_followup.response} if frame_followup.response else {}),
+                        **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
+                        **({"waves": frame_followup.waves} if frame_followup.waves else {}),
+                        **({"current_wave_index": 0} if frame_followup.waves else {}),
                         **locale_updates,
                     },
                 )

@@ -24,6 +24,18 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _provider_error_message(result: dict[str, Any], fallback: str) -> str:
+    for key in ("message", "error", "reason"):
+        value = result.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return fallback
+
+
+def _execution_error_message(locale: str) -> str:
+    return render_message("airtime.error.execution_failed", locale)
+
+
 class AirtimeExecutor:
     """Executor for Airtime transactions."""
 
@@ -126,7 +138,10 @@ class AirtimeExecutor:
                 else:
                     logger.warning("airtime_delivery_target_missing", transaction_id=transaction_id, channel=channel)
             else:
-                error_msg = result.get("message") or render_message("airtime.error.provider_failed", locale)
+                error_msg = _provider_error_message(
+                    result,
+                    render_message("airtime.error.provider_failed", locale),
+                )
                 await self.transaction_repo.update_status(
                     transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
                 )
@@ -181,6 +196,7 @@ class AirtimeExecutor:
 
         except Exception as e:
             logger.error("airtime_execution_exception", transaction_id=transaction_id, error=str(e))
+            error_msg = _execution_error_message(locale)
             await self.transaction_repo.update_status(
-                transaction_id, TransactionStatusEnum.FAILED.value, error_message=str(e)
+                transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
             )

@@ -368,6 +368,7 @@ class MonoWebhookService:
                 phone_number=delivery_target,
                 channel=channel,
                 text=summary["text"],
+                actionable_payload=summary.get("actionable_payload"),
                 metadata={
                     "source": "mono_webhook",
                     "transaction_id": str(getattr(tx, "id", "")),

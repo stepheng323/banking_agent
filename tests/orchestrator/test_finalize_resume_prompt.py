@@ -309,6 +309,62 @@ async def test_finalize_queued_transfer_batch_does_not_emit_completed_summary() 
 
 
 @pytest.mark.asyncio
+async def test_finalize_completed_transaction_summary_carries_quote_replay_payload() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_12",
+        phone_number="2348000000022",
+        channel="telegram",
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "action": "send_money",
+                    "idempotency_key": "transfer-idem-1",
+                    "transaction_id": "tx-transfer-1",
+                    "amount": 2000,
+                    "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_account": "2010000001",
+                    "source_account_id": "acct-1",
+                    "source_bank_name": "Access Bank",
+                    "receipt": {"status": "success"},
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "action": "buy_airtime",
+                    "idempotency_key": "airtime-idem-1",
+                    "transaction_id": "tx-airtime-1",
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "source_account_id": "acct-1",
+                    "source_bank_name": "Access Bank",
+                    "receipt": {"status": "success"},
+                },
+            ),
+        },
+    )
+
+    updates = await finalize(state, _config())
+
+    summary = next(entry for entry in updates["outbox"] if entry.get("type") == "say")
+    assert "Transaction Summary" in summary["text"]
+    actionable_payload = summary["actionable_payload"]
+    assert actionable_payload["task_type"] == "batch"
+    assert {item["task_type"] for item in actionable_payload["tasks"]} == {"transfer", "airtime"}
+    airtime_payload = next(item for item in actionable_payload["tasks"] if item["task_type"] == "airtime")
+    assert airtime_payload["recipient_phone"] == "08162511023"
+
+
+@pytest.mark.asyncio
 async def test_finalize_completed_transfer_clears_interrupt_state() -> None:
     state = OrchestratorState(
         user_id="u_resume_10",

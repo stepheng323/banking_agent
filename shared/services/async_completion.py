@@ -6,7 +6,7 @@ import json
 import re
 import time
 from types import SimpleNamespace
-from typing import Any, Literal, Protocol, TypedDict, cast
+from typing import Any, Literal, NotRequired, Protocol, TypedDict, cast
 
 from shared.formatters.transaction_summary import format_multi_action_summary
 from shared.queue.models import AsyncGroupMeta
@@ -18,11 +18,39 @@ ASYNC_GROUP_TRANSACTION_META_PREFIX = "async-group:transaction-meta"
 ASYNC_GROUP_LEGS_PREFIX = "async-group"
 ASYNC_GROUP_TARGET_PREFIX = "async-group:target"
 ASYNC_GROUP_RECENT_BATCH_PREFIX = "async-group:recent-batch"
+ASYNC_GROUP_ACTION_BY_TYPE = {
+    "transfer": "send_money",
+    "airtime": "buy_airtime",
+    "data": "buy_data",
+}
+ASYNC_GROUP_ACTIONABLE_PAYLOAD_KEYS = (
+    "amount",
+    "beneficiary_id",
+    "recipient_name",
+    "recipient_resolved_name",
+    "recipient_phone",
+    "target_phone",
+    "phone_number",
+    "recipient_account",
+    "recipient_account_number",
+    "recipient_bank_code",
+    "recipient_bank_name",
+    "resolved_from_saved_beneficiary",
+    "source_bank_name",
+    "source_account_id",
+    "source_account_index",
+    "source_account_number",
+    "narration",
+    "network",
+    "plan_code",
+    "plan_name",
+)
 
 
 class AsyncGroupSummaryResult(TypedDict):
     text: str
     stage: Literal["initial", "final"]
+    actionable_payload: NotRequired[dict[str, Any]]
 
 
 class RecentBatchLeg(TypedDict):
@@ -427,10 +455,17 @@ async def record_group_leg_and_maybe_build_summary(
     initial_sent = await redis_client.set(initial_key, "1", ex=ASYNC_GROUP_TTL_SECONDS, nx=True)
     if initial_sent:
         await _store_recent_batch_reference(redis_client, group_id=group_id, ordered=ordered, message=message)
+        actionable_payload = build_group_actionable_payload(ordered)
         if all_terminal:
             await redis_client.set(finalized_key, "1", ex=ASYNC_GROUP_TTL_SECONDS)
-            return {"text": build_group_summary(ordered, locale=locale), "stage": "final"}
-        return {"text": build_group_summary(ordered, locale=locale), "stage": "initial"}
+            result: AsyncGroupSummaryResult = {"text": build_group_summary(ordered, locale=locale), "stage": "final"}
+            if actionable_payload:
+                result["actionable_payload"] = actionable_payload
+            return result
+        result = {"text": build_group_summary(ordered, locale=locale), "stage": "initial"}
+        if actionable_payload:
+            result["actionable_payload"] = actionable_payload
+        return result
 
     if not all_terminal:
         return None
@@ -439,7 +474,10 @@ async def record_group_leg_and_maybe_build_summary(
     if not finalized:
         return None
     await _store_recent_batch_reference(redis_client, group_id=group_id, ordered=ordered, message=message)
-    return {"text": build_group_summary(ordered, locale=locale), "stage": "final"}
+    result = {"text": build_group_summary(ordered, locale=locale), "stage": "final"}
+    if actionable_payload := build_group_actionable_payload(ordered):
+        result["actionable_payload"] = actionable_payload
+    return result
 
 
 def build_group_summary(legs: list[dict[str, Any]], *, locale: str) -> str:
@@ -451,6 +489,53 @@ def build_group_summary(legs: list[dict[str, Any]], *, locale: str) -> str:
             continue
         pseudo_tasks.append(SimpleNamespace(type=task_type, payload=payload))
     return format_multi_action_summary(pseudo_tasks, locale=locale)
+
+
+def build_group_actionable_payload(legs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    payloads: list[dict[str, Any]] = []
+    for leg in legs:
+        task_type = str(leg.get("type") or "").strip().lower()
+        action = ASYNC_GROUP_ACTION_BY_TYPE.get(task_type)
+        payload = leg.get("payload")
+        if not action or not isinstance(payload, dict):
+            continue
+
+        task_payload: dict[str, Any] = {
+            "task_id": f"async_group_{leg.get('index') or len(payloads) + 1}",
+            "task_type": task_type,
+            "action": action,
+        }
+        transaction_id = leg.get("transaction_id")
+        if transaction_id:
+            task_payload["transaction_id"] = str(transaction_id)
+
+        for key in ASYNC_GROUP_ACTIONABLE_PAYLOAD_KEYS:
+            value = payload.get(key)
+            if value is not None and value != "":
+                task_payload[key] = value
+
+        if task_type == "airtime" and not task_payload.get("recipient_phone"):
+            phone = task_payload.get("target_phone") or task_payload.get("phone_number")
+            if phone:
+                task_payload["recipient_phone"] = phone
+        if task_type == "data" and not task_payload.get("target_phone"):
+            phone = task_payload.get("recipient_phone") or task_payload.get("phone_number")
+            if phone:
+                task_payload["target_phone"] = phone
+
+        task_payload.pop("phone_number", None)
+        payloads.append(task_payload)
+
+    if not payloads:
+        return None
+    if len(payloads) == 1:
+        return payloads[0]
+    return {
+        "task_type": "batch",
+        "task_ids": [payload["task_id"] for payload in payloads],
+        "task_types": [payload["task_type"] for payload in payloads],
+        "tasks": payloads,
+    }
 
 
 def _normalize_final_status(status: str) -> str:

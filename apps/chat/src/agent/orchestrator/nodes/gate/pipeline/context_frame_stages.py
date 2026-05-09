@@ -84,9 +84,12 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
     return {
         **ctx.gate_updates,
         "direct_path_triggered": True,
-        "final_response": frame_followup.response,
         "semantic_path_shape": frame_followup.semantic_path_shape,
         "context_frames": frame_followup.context_frames or ctx.state.context_frames,
+        **({"final_response": frame_followup.response} if frame_followup.response else {}),
+        **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
+        **({"waves": frame_followup.waves} if frame_followup.waves else {}),
+        **({"current_wave_index": 0} if frame_followup.waves else {}),
         **_route_observability_updates(
             owner="guardrail",
             decision="context_frame_followup",

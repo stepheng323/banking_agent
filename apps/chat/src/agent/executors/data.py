@@ -23,6 +23,18 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _provider_error_message(result: dict[str, Any], fallback: str) -> str:
+    for key in ("message", "error", "reason"):
+        value = result.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return fallback
+
+
+def _execution_error_message(locale: str) -> str:
+    return render_message("data.error.execution_failed", locale)
+
+
 class DataExecutor:
     """Executor for Data transactions."""
 
@@ -121,7 +133,10 @@ class DataExecutor:
                         dedupe_key=f"data:success:{transaction_id}",
                     )
             else:
-                error_msg = result.get("message") or render_message("data.error.provider_failed", locale)
+                error_msg = _provider_error_message(
+                    result,
+                    render_message("data.error.provider_failed", locale),
+                )
                 await self.transaction_repo.update_status(
                     transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
                 )
@@ -169,6 +184,7 @@ class DataExecutor:
 
         except Exception as e:
             logger.error("data_execution_exception", transaction_id=transaction_id, error=str(e))
+            error_msg = _execution_error_message(locale)
             await self.transaction_repo.update_status(
-                transaction_id, TransactionStatusEnum.FAILED.value, error_message=str(e)
+                transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
             )

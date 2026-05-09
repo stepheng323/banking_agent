@@ -3,9 +3,10 @@
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.types.planner import ContextFrameFollowupDecision
@@ -82,10 +83,12 @@ _SEARCHABLE_DATA_KEYS = (
 
 @dataclass(frozen=True, slots=True)
 class ContextFrameFollowupResponse:
-    response: str
+    response: str | None = None
     semantic_path_shape: str = "context_frame_followup"
     recent_domain_focus: str | None = None
     context_frames: list[ContextFrame] | None = None
+    tasks: dict[str, TaskSpec] | None = None
+    waves: list[list[str]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,6 +357,7 @@ def _canonical_decision(decision: str) -> str:
         "entity_lookup": "lookup_entity",
         "detail_request": "show_details",
         "selection": "select_item",
+        "replay": "replay_tasks",
         "new_task": "start_new_task",
     }
     return aliases.get(decision, decision)
@@ -433,6 +437,9 @@ def _format_semantic_decision_response(
     if semantic_decision == "start_new_task":
         return None
 
+    if semantic_decision == "replay_tasks":
+        return None
+
     if semantic_decision == "answer_completeness":
         return _format_completeness_response(frame)
 
@@ -471,6 +478,204 @@ def _format_semantic_decision_response(
     return None
 
 
+def _transaction_task_type(entity: ContextEntity) -> str:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    payload_type = ""
+    if entity.selection_payload is not None:
+        payload_type = str(entity.selection_payload.entity_type or "")
+    raw_type = data.get("task_type") or data.get("transaction_type") or data.get("type") or payload_type
+    return str(raw_type).strip().lower()
+
+
+def _replay_action(task_type: str) -> str:
+    return {"transfer": "send_money", "airtime": "buy_airtime", "data": "buy_data"}[task_type]
+
+
+def _new_replay_task_id(state: OrchestratorState, task_type: str, allocated_ids: set[str]) -> str:
+    seen = set(state.tasks.keys()) | allocated_ids
+    idx = 1
+    task_id = f"context_replay_{task_type}_{idx}"
+    while task_id in seen:
+        idx += 1
+        task_id = f"context_replay_{task_type}_{idx}"
+    return task_id
+
+
+def _payload_value(entity: ContextEntity, *keys: str) -> Any:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    handoff = entity.selection_payload.handoff_payload if entity.selection_payload is not None else None
+    sources = [handoff if isinstance(handoff, dict) else {}, data]
+    for source in sources:
+        for key in keys:
+            value = source.get(key)
+            if value is not None and value != "":
+                return value
+    return None
+
+
+def _base_replay_payload(entity: ContextEntity, *, task_type: str, text: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "action": _replay_action(task_type),
+        "instruction": text,
+        "message": text,
+        "skip_extraction": True,
+        "confirmation": {"confirmed": False},
+        "idempotency_key": None,
+        "transaction_id": None,
+    }
+    amount = _payload_value(entity, "amount")
+    if amount is not None:
+        payload["amount"] = amount
+
+    for key in ("source_account_id", "source_bank_name", "source_account_number", "source_account_index"):
+        value = _payload_value(entity, key)
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def _replay_payload_for_entity(entity: ContextEntity, *, text: str) -> tuple[str, dict[str, Any]] | None:
+    task_type = _transaction_task_type(entity)
+    if task_type not in {"transfer", "airtime", "data"}:
+        return None
+
+    payload = _base_replay_payload(entity, task_type=task_type, text=text)
+    if task_type == "transfer":
+        for key in (
+            "beneficiary_id",
+            "recipient_name",
+            "recipient_resolved_name",
+            "recipient_account",
+            "recipient_bank_name",
+            "recipient_bank_code",
+            "narration",
+        ):
+            value = _payload_value(entity, key)
+            if value is not None:
+                payload[key] = value
+        if payload.get("amount") is None:
+            return None
+        if not any(payload.get(key) for key in ("beneficiary_id", "recipient_account", "recipient_name")):
+            return None
+        return task_type, payload
+
+    if task_type == "airtime":
+        phone = _payload_value(entity, "recipient_phone", "phone_number", "phone", "target_phone")
+        network = _payload_value(entity, "network")
+        if payload.get("amount") is None or not phone:
+            return None
+        payload["recipient_phone"] = phone
+        payload["phone_number"] = phone
+        if network:
+            payload["network"] = network
+        return task_type, payload
+
+    phone = _payload_value(entity, "target_phone", "recipient_phone", "phone_number", "phone")
+    if not phone:
+        return None
+    payload["target_phone"] = phone
+    for key in ("network", "plan_code", "plan_name"):
+        value = _payload_value(entity, key)
+        if value is not None:
+            payload[key] = value
+    if payload.get("amount") is None and not (payload.get("plan_code") or payload.get("plan_name")):
+        return None
+    return task_type, payload
+
+
+def _enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorState) -> None:
+    if payload.get("source_account_number"):
+        return
+
+    accounts = (state.loaded_context or {}).get("accounts") or []
+    if not isinstance(accounts, list):
+        return
+
+    source_account_id = str(payload.get("source_account_id") or "").strip()
+    source_bank_name = str(payload.get("source_bank_name") or "").strip().casefold()
+    matched_account: dict[str, Any] | None = None
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        account_id = str(account.get("id") or account.get("account_id") or "").strip()
+        bank_name = str(account.get("bank_name") or account.get("bank") or "").strip().casefold()
+        if source_account_id and account_id == source_account_id:
+            matched_account = account
+            break
+        if source_bank_name and bank_name == source_bank_name:
+            matched_account = account
+            break
+
+    if not matched_account:
+        return
+
+    if not payload.get("source_account_id"):
+        source_id = matched_account.get("id") or matched_account.get("account_id")
+        if source_id:
+            payload["source_account_id"] = source_id
+    if not payload.get("source_bank_name"):
+        bank_name = matched_account.get("bank_name") or matched_account.get("bank")
+        if bank_name:
+            payload["source_bank_name"] = bank_name
+    account_number = matched_account.get("account_number") or matched_account.get("source_account_number")
+    if account_number:
+        payload["source_account_number"] = account_number
+
+
+def _replay_target_entities(frame: ContextFrame, decision: ContextFrameFollowupDecision) -> list[ContextEntity]:
+    if decision.selection_index is not None:
+        idx = decision.selection_index - 1
+        if 0 <= idx < len(frame.items):
+            return [frame.items[idx]]
+        return []
+
+    reference_text = (decision.reference_text or "").strip()
+    if reference_text:
+        return _find_matching_entities(frame, reference_text)
+
+    return list(frame.items)
+
+
+def _build_replay_response(
+    state: OrchestratorState,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+    text: str,
+) -> ContextFrameFollowupResponse | None:
+    if frame.frame_type not in {
+        ContextFrameType.TRANSACTION_LIST,
+        ContextFrameType.TRANSACTION_DETAIL,
+        ContextFrameType.RECEIPT,
+    }:
+        return None
+
+    entities = _replay_target_entities(frame, decision)
+    tasks: dict[str, TaskSpec] = {}
+    wave_ids: list[str] = []
+    allocated_ids: set[str] = set()
+    for entity in entities:
+        replay_payload = _replay_payload_for_entity(entity, text=text)
+        if replay_payload is None:
+            continue
+        task_type, payload = replay_payload
+        _enrich_replay_source_account(payload, state)
+        task_id = _new_replay_task_id(state, task_type, allocated_ids)
+        allocated_ids.add(task_id)
+        tasks[task_id] = TaskSpec(id=task_id, type=cast(Any, task_type), stage=TaskStage.DRAFT, payload=payload)
+        wave_ids.append(task_id)
+
+    if not wave_ids:
+        return None
+
+    return ContextFrameFollowupResponse(
+        semantic_path_shape="context_frame_replay",
+        recent_domain_focus="transaction",
+        context_frames=_refresh_context_frame(state, frame),
+        tasks=tasks,
+        waves=[wave_ids],
+    )
+
+
 def _refresh_context_frame(state: OrchestratorState, active_frame: ContextFrame) -> list[ContextFrame]:
     now = int(time.time())
     refreshed: list[ContextFrame] = []
@@ -507,6 +712,11 @@ class SurfaceAnswerEngine:
         frame = OrchestratorContextManager().latest_active_frame(request.state)
         if frame is None or not frame.items or request.decision is None:
             return None
+
+        if _canonical_decision(request.decision.decision) == "replay_tasks":
+            if request.decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
+                return None
+            return _build_replay_response(request.state, frame, request.decision, request.text)
 
         response = _format_semantic_decision_response(frame, request.decision)
         if not response:

@@ -214,6 +214,34 @@ async def test_transfer_executor_failed_debit_persists_response_code() -> None:
 
 
 @pytest.mark.asyncio
+async def test_transfer_executor_exception_uses_safe_user_error() -> None:
+    dd_provider = SimpleNamespace(
+        initiate_debit_to_beneficiary=AsyncMock(side_effect=RuntimeError("raw provider token leaked"))
+    )
+    account_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=SimpleNamespace(mandate_id="mandate-1")))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    executor = TransferExecutor(
+        direct_debit_provider=dd_provider,
+        account_repo=account_repo,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_transfer(_payload())
+
+    assert transaction_repo.update_status.await_args_list[1].args == (
+        "tx-1",
+        TransactionStatusEnum.FAILED.value,
+    )
+    error_message = transaction_repo.update_status.await_args_list[1].kwargs["error_message"]
+    assert error_message == "Transfer could not be completed. Please try again."
+    assert "raw provider token leaked" not in error_message
+    assert "raw provider token leaked" not in delivery_service.deliver_text.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
 async def test_transfer_executor_grouped_legs_emit_one_summary_on_last_completion() -> None:
     dd_provider = SimpleNamespace(
         initiate_debit_to_beneficiary=AsyncMock(

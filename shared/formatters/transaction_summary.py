@@ -180,6 +180,8 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                         },
                     )
                 )
+                if status == "failed" and (reason := _failure_reason(task.payload)):
+                    lines.append(_format_failure_reason(reason, locale))
 
         lines.append("")
 
@@ -207,6 +209,8 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                 {"amount": format_amount_compact(amount), "phone": phone, "network": network},
             )
             lines.append(f"{icon} {airtime_line}")
+            if status == "failed" and (reason := _failure_reason(task.payload)):
+                lines.append(_format_failure_reason(reason, locale))
         lines.append("")
 
     # Handle data purchases
@@ -231,6 +235,8 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                 {"plan": plan, "amount": format_amount_compact(amount), "phone": phone},
             )
             lines.append(f"{icon} {data_line}")
+            if status == "failed" and (reason := _failure_reason(task.payload)):
+                lines.append(_format_failure_reason(reason, locale))
         lines.append("")
 
     # Handle other task types
@@ -294,6 +300,18 @@ def _normalize_final_status(status: str) -> str:
     if normalized in {"failed", "error"}:
         return "failed"
     return normalized or "success"
+
+
+def _failure_reason(payload: dict[str, Any]) -> str | None:
+    for key in ("error_message", "reason", "error"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _format_failure_reason(reason: str, locale: str) -> str:
+    return render_message("transaction_summary.multi.failure_reason", locale, {"reason": reason})
 
 
 def _status_icon(status: str) -> str:

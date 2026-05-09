@@ -46,6 +46,10 @@ def _transaction_provider_reference(transaction: Any) -> str:
     ).strip()
 
 
+def _execution_error_message(locale: str) -> str:
+    return render_message("transfer.error.execution_failed", locale)
+
+
 class TransferExecutor:
     """Executor for Transfer transactions."""
 
@@ -477,20 +481,21 @@ class TransferExecutor:
 
         except Exception as e:
             logger.error("transfer_execution_exception", transaction_id=transaction_id, error=str(e))
+            error_msg = _execution_error_message(locale)
             await self.transaction_repo.update_status(
-                transaction_id, TransactionStatusEnum.FAILED.value, error_message=str(e)
+                transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
             )
             if schedule_run_id:
                 await self._update_scheduled_run(
                     schedule_run_id,
                     status="failed",
                     transaction_id=transaction_id,
-                    error_message=str(e),
+                    error_message=error_msg,
                 )
             completion_payload = self._completion_payload(
                 transfer_data=transfer_data,
                 final_status="failed",
-                error_message=str(e),
+                error_message=error_msg,
             )
             batch_summary = await record_group_leg_and_maybe_build_summary(
                 self.redis_client,
@@ -506,11 +511,11 @@ class TransferExecutor:
                     summary_result=batch_summary,
                 )
             if is_scheduled:
-                await self._notify_scheduled_failure(data=data, error_message=str(e))
+                await self._notify_scheduled_failure(data=data, error_message=error_msg)
             elif not is_grouped_async_message(data):
                 await self._deliver_text(
                     data=data,
-                    text=render_message("transfer.execution.failed", locale, {"error": str(e)}),
+                    text=render_message("transfer.execution.failed", locale, {"error": error_msg}),
                     dedupe_key=f"transfer:failed:{transaction_id}",
                     metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                 )

@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
 from apps.chat.src.agent.shared.query_contracts import SelectionPayload
 from shared.formatters.transaction_copy import format_amount_compact
 from shared.formatters.transaction_summary import format_multi_action_summary
@@ -163,6 +164,11 @@ def _completed_transfer_recipient_payload(task: TaskSpec, recipient: dict[str, A
         recipient.get("bank_name"),
         payload.get("recipient_bank_name"),
     )
+    recipient_bank_code = _first_non_empty(
+        recipient.get("recipient_bank_code"),
+        recipient.get("bank_code"),
+        payload.get("recipient_bank_code"),
+    )
     recipient_account = _first_non_empty(
         recipient.get("recipient_account"),
         recipient.get("account"),
@@ -179,11 +185,15 @@ def _completed_transfer_recipient_payload(task: TaskSpec, recipient: dict[str, A
         "recipient_resolved_name": resolved_name,
         "counterparty": resolved_name or recipient_name,
         "recipient_bank_name": recipient_bank,
+        "recipient_bank_code": recipient_bank_code,
         "bank_name": recipient_bank,
+        "bank_code": recipient_bank_code,
         "bank": recipient_bank,
         "recipient_account": recipient_account,
         "account": recipient_account,
+        "source_account_id": payload.get("source_account_id"),
         "source_bank_name": payload.get("source_bank_name"),
+        "source_account_number": payload.get("source_account_number"),
         "source_account_last4": _string(payload.get("source_account_number"))[-4:],
         "narration": recipient.get("narration") or payload.get("narration"),
         "reference": payload.get("transaction_id") or payload.get("idempotency_key"),
@@ -224,6 +234,9 @@ def _completed_transaction_entity_payloads(task: TaskSpec) -> list[dict[str, Any
                 "recipient_phone": phone,
                 "counterparty": phone,
                 "network": _first_non_empty(payload.get("network"), receipt.get("network")),
+                "source_account_id": payload.get("source_account_id"),
+                "source_bank_name": payload.get("source_bank_name"),
+                "source_account_number": payload.get("source_account_number"),
                 "reference": _completed_transaction_reference(task, payload, receipt),
                 "date": _first_non_empty(payload.get("date"), receipt.get("date")),
                 "description": _first_non_empty(receipt.get("message"), receipt.get("description")),
@@ -245,6 +258,9 @@ def _completed_transaction_entity_payloads(task: TaskSpec) -> list[dict[str, Any
                 "counterparty": phone,
                 "network": payload.get("network"),
                 "plan_name": payload.get("plan_name"),
+                "source_account_id": payload.get("source_account_id"),
+                "source_bank_name": payload.get("source_bank_name"),
+                "source_account_number": payload.get("source_account_number"),
                 "reference": _completed_transaction_reference(task, payload, receipt),
                 "date": _first_non_empty(payload.get("date"), receipt.get("date")),
                 "description": _first_non_empty(receipt.get("message"), receipt.get("description")),
@@ -280,8 +296,12 @@ def _selection_payload_for_completed_transaction(data: dict[str, Any]) -> Select
             "recipient_resolved_name": data.get("recipient_resolved_name"),
             "recipient_account": data.get("recipient_account"),
             "recipient_bank_name": data.get("recipient_bank_name"),
+            "recipient_bank_code": data.get("recipient_bank_code"),
             "amount": data.get("amount"),
             "narration": data.get("narration"),
+            "source_account_id": data.get("source_account_id"),
+            "source_bank_name": data.get("source_bank_name"),
+            "source_account_number": data.get("source_account_number"),
         }
     return SelectionPayload(
         selection_kind="transaction",
@@ -611,4 +631,7 @@ async def _handle_completed_tasks(
     else:
         summary_source = transaction_visible_tasks or visible_tasks
         summary_text = format_multi_action_summary(summary_source, locale=locale)
-        outbox.append({"type": "say", "text": summary_text})
+        summary_outbox: dict[str, Any] = {"type": "say", "text": summary_text}
+        if actionable_payload := build_actionable_payload_for_tasks(summary_source):
+            summary_outbox["actionable_payload"] = actionable_payload
+        outbox.append(summary_outbox)

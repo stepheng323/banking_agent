@@ -236,6 +236,195 @@ async def test_completed_mixed_transaction_followup_answers_airtime_number_from_
 
 
 @pytest.mark.asyncio
+async def test_completed_mixed_transaction_replay_rebuilds_all_tasks_from_frame() -> None:
+    finalize_state = OrchestratorState(
+        user_id="u_surface_mixed_replay",
+        phone_number="2348000000014",
+        channel="telegram",
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 2000,
+                    "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "recipient_account": "2010000001",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                    "receipt": {"status": "processing"},
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                    "receipt": {"status": "queued"},
+                },
+            ),
+        },
+    )
+    finalize_updates = await finalize(finalize_state, _config(_SurfaceFollowupPlanner(ContextFrameFollowupDecision())))
+    frame = finalize_updates["context_frames"][-1]
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="replay_tasks", confidence=0.96, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_mixed_replay",
+        phone_number="2348000000014",
+        channel="telegram",
+        last_message_text="Do again",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert "final_response" not in updates
+    assert updates.get("semantic_path_shape") == "context_frame_replay"
+    assert {task.type for task in updates["tasks"].values()} == {"transfer", "airtime"}
+    assert updates["waves"] == [list(updates["tasks"].keys())]
+    transfer_task = next(task for task in updates["tasks"].values() if task.type == "transfer")
+    airtime_task = next(task for task in updates["tasks"].values() if task.type == "airtime")
+    assert transfer_task.payload["amount"] == 2000
+    assert transfer_task.payload["recipient_account"] == "2010000001"
+    assert transfer_task.payload["recipient_bank_code"] == "044"
+    assert transfer_task.payload["source_account_id"] == "acct-access"
+    assert transfer_task.payload["source_account_number"] == "9000000003"
+    assert transfer_task.payload["skip_extraction"] is True
+    assert airtime_task.payload["amount"] == 1000
+    assert airtime_task.payload["recipient_phone"] == "08162511023"
+    assert airtime_task.payload["network"] == "MTN"
+    assert airtime_task.payload["source_account_id"] == "acct-access"
+    assert airtime_task.payload["skip_extraction"] is True
+
+
+@pytest.mark.asyncio
+async def test_completed_transaction_replay_restores_source_account_number_from_loaded_accounts() -> None:
+    finalize_state = OrchestratorState(
+        user_id="u_surface_replay_source",
+        phone_number="2348000000016",
+        channel="telegram",
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "recipient_account": "2010000001",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "receipt": {"status": "success"},
+                },
+            ),
+        },
+    )
+    finalize_updates = await finalize(finalize_state, _config(_SurfaceFollowupPlanner(ContextFrameFollowupDecision())))
+    frame = finalize_updates["context_frames"][-1]
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="replay_tasks", confidence=0.96, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_source",
+        phone_number="2348000000016",
+        channel="telegram",
+        last_message_text="Send again",
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                }
+            ]
+        },
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(task for task in updates["tasks"].values() if task.type == "transfer")
+    assert transfer_task.payload["recipient_bank_code"] == "044"
+    assert transfer_task.payload["source_account_id"] == "acct-access"
+    assert transfer_task.payload["source_account_number"] == "9000000003"
+
+
+@pytest.mark.asyncio
+async def test_completed_mixed_transaction_replay_can_target_airtime_only() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_recent",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦2,000 transfer to Tolu",
+                data={
+                    "task_type": "transfer",
+                    "amount": 2000,
+                    "recipient_name": "Tolu",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-airtime",
+                label="₦1,000 airtime for 08162511023",
+                data={
+                    "task_type": "airtime",
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                },
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="English",
+            reference_text="airtime",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_airtime_replay",
+        phone_number="2348000000015",
+        channel="telegram",
+        last_message_text="do the airtime again",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert {task.type for task in updates["tasks"].values()} == {"airtime"}
+    airtime_task = next(iter(updates["tasks"].values()))
+    assert airtime_task.payload["recipient_phone"] == "08162511023"
+
+
+@pytest.mark.asyncio
 async def test_fresh_request_after_surface_frame_routes_to_normal_planner() -> None:
     planner_output = PlannerOutput(
         primary_intent="transfer",

@@ -116,12 +116,13 @@ class DeliveryService:
         metadata: dict[str, Any] | None = None,
         dedupe_key: str | None = None,
         strict_actionable: bool = False,
+        actionable_payload: dict[str, Any] | None = None,
     ) -> DeliveryAttemptResult:
         """Deliver plain text using the same pipeline as intent delivery."""
         return await self.deliver_intents(
             phone_number=phone_number,
             channel=channel,
-            intents=[Say(text=text)],
+            intents=[Say(text=text, actionable_payload=actionable_payload)],
             metadata=metadata,
             dedupe_key=dedupe_key,
             strict_actionable=strict_actionable,

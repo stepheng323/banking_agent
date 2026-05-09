@@ -116,6 +116,12 @@ class ExecutionStep(TransferStep):
                     await uow.commit()
                 except Exception as e:
                     logger.error("failed_to_persist_transaction", error=str(e))
+                    await uow.rollback()
+                    return TransactionResult(
+                        outcome=TransactionOutcome.FAILED,
+                        error=render_message("transfer.error.execution_failed", locale),
+                        retryable=True,
+                    )
 
             publisher = getattr(worker_context, "publisher", None)
             if not publisher:
@@ -197,8 +203,9 @@ class ExecutionStep(TransferStep):
             )
 
         except Exception as e:
+            logger.error("transfer_execution_failed", error=str(e))
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
-                error=render_message("transfer.execution.failed", locale, {"error": str(e)}),
+                error=render_message("transfer.error.execution_failed", locale),
                 retryable=True,
             )

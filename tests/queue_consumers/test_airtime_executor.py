@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.executors.airtime import AirtimeExecutor
 from shared.database.enums import TransactionStatusEnum
+from shared.transaction_runtime.executors.airtime import AirtimeExecutor
 
 
 class _RedisStub:
@@ -93,6 +93,55 @@ async def test_airtime_executor_failure_delivers_to_originating_user() -> None:
     )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
     assert "Provider down" in delivery_service.deliver_text.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_failure_uses_provider_error_field() -> None:
+    provider = SimpleNamespace(
+        purchase_airtime=AsyncMock(return_value={"success": False, "error": "Unsupported network"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_airtime(_payload())
+
+    assert transaction_repo.update_status.await_args_list[1].args == (
+        "tx-1",
+        TransactionStatusEnum.FAILED.value,
+    )
+    assert transaction_repo.update_status.await_args_list[1].kwargs["error_message"] == "Unsupported network"
+    assert "Unsupported network" in delivery_service.deliver_text.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_exception_uses_safe_user_error() -> None:
+    provider = SimpleNamespace(purchase_airtime=AsyncMock(side_effect=RuntimeError("dsn password leaked")))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_airtime(_payload())
+
+    assert transaction_repo.update_status.await_args_list[1].args == (
+        "tx-1",
+        TransactionStatusEnum.FAILED.value,
+    )
+    error_message = transaction_repo.update_status.await_args_list[1].kwargs["error_message"]
+    assert error_message == "Airtime purchase could not be completed. Please try again."
+    assert "dsn password leaked" not in error_message
 
 
 @pytest.mark.asyncio

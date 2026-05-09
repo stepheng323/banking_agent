@@ -228,7 +228,7 @@ to the latest displayed assistant result frame.
 
 Return ONLY JSON for this schema:
 - decision: answer_completeness | lookup_entity | show_details | filter_items | compare_items | select_item |
-  explain_result | start_new_task | unclear
+  explain_result | replay_tasks | start_new_task | unclear
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - reference_text: string or null
@@ -249,8 +249,11 @@ Semantic operations:
 6) select_item: user selects an item from the displayed result by number, ordinal, label, or reference.
 7) explain_result: user asks what the displayed result means, why it looks that way, or asks a conversational question
    about the displayed result as a whole.
-8) start_new_task: user is starting a fresh banking/conversation task, not following up on the displayed frame.
-9) unclear: not enough signal.
+8) replay_tasks: user asks to repeat, replay, redo, resend, or run again one or more transaction items from the
+   displayed frame. This is only valid for transaction/receipt frames. If no specific item is referenced, it means
+   every replayable transaction item in the displayed frame.
+9) start_new_task: user is starting a fresh banking/conversation task, not following up on the displayed frame.
+10) unclear: not enough signal.
 
 Rules:
 - Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
@@ -259,7 +262,9 @@ Rules:
   entity/filter/attribute in reference_text, not the full sentence.
 - For numeric/ordinal selection, set selection_index when clear.
 - Do not classify money movement or mutations as frame follow-ups unless the user is only selecting from the
-  displayed frame.
+  displayed frame or asking to replay displayed transaction item(s).
+- For replay_tasks, set reference_text only when the user targets a subset such as a recipient, "airtime", amount,
+  ordinal, bank, or label. Set selection_index for clear numeric/ordinal references.
 - When a displayed frame exists, prefer one of the frame operations for comments/questions that can plausibly refer
   to that frame. Use start_new_task only when the user clearly asks for a fresh action or fresh read.
 - If the user challenges, doubts, remembers, expects, or asks about a missing item from the displayed result,

@@ -208,11 +208,13 @@ ContextFrameFollowupAction: TypeAlias = Literal[
     "compare_items",
     "select_item",
     "explain_result",
+    "replay_tasks",
     "start_new_task",
     "completeness_check",
     "entity_lookup",
     "detail_request",
     "selection",
+    "replay",
     "new_task",
     "unclear",
 ]
