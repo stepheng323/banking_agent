@@ -1,7 +1,8 @@
 {
   "common": {
     "safe_capability_fallback": "I can't handle that yet. I can help with transfers, airtime/data purchase, balances, and transaction queries.",
-    "cancelled_prompt": "Transaction cancelled, how else can I help you today?"
+    "cancelled_prompt": "Transaction cancelled, how else can I help you today?",
+    "gibberish_prompt": "I didn't catch that. What banking task can I help with?"
   },
   "capability": {
     "blocked_with_alternative": "{action} isn't available yet. I can help with {alternative}. Reply with what you want me to continue with.",
@@ -29,14 +30,14 @@
   "conversational": {
     "greeting": "Hi. I'm {app_name}. What would you like to do?",
     "appreciation": "Anytime. What should we handle next?",
-    "checkin": "I'm here. What money move are we handling?",
+    "checkin": "I'm here. What would you like to do?",
     "identity": "I'm {app_name}. I execute real banking tasks fast and carefully.",
     "brand_origin": "{app_name} is named after a kindler archetype, built by {app_creator} for calm, reliable banking execution.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
     "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",
     "out_of_scope_followup": "If you want, I can also help with transfers, airtime/data, balances, and transaction queries.",
     "out_of_scope_firm": "Let's switch back to banking. I can help with transfers, airtime/data, balances, and transaction queries.",
-    "clarify": "Say exactly what you want me to do with your money."
+    "clarify": "I didn't quite catch the banking request. Tell me what you'd like to do, like send money, buy airtime, or check transactions."
   },
   "support": {
     "ask_reference": "Which transaction are you asking about?",
@@ -481,6 +482,7 @@
       "recipient_resolved_with_bank": "✓ {label} resolved: {resolved} ({bank} • {account})",
       "recipient_resolved": "✓ {label} resolved: {resolved}",
       "recipient_resolved_generic": "✓ {label} resolved",
+      "input_attempts_exhausted": "I couldn't understand the details I need, so I cleared that transaction. Let's start fresh. What would you like to do?",
       "pin_prompt_default": "Please enter your PIN.",
       "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
@@ -490,7 +492,7 @@
       "need_account_details_for": "I need account details for {focused_name}.",
       "found_many_need_details": "I found {found_names}. I need account details for {focused_name}.",
       "found_names": "I found {found_names}.",
-      "queued_next_notice": "Still pending in this batch:\n{queued_intents}",
+      "queued_next_notice": "Also in this batch:\n{queued_intents}",
       "need_some_details": "I need some details.",
       "auth_reason_transfer": "Transfer Authorization",
       "auth_reason_airtime": "Airtime Purchase",
@@ -834,7 +836,7 @@
       "bank_fallback": "Bank",
       "account_fallback": "N/A",
       "phone_fallback": "N/A",
-      "airtime_line": "✓ *Airtime:* {amount} for {phone} ({network})",
+      "airtime_line": "*Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
       "data_line": "*Data:* {plan} - {amount} for {phone}",
       "other_completed_line": "* {task_type}:* Completed",
@@ -845,8 +847,8 @@
       "transfer_recipient_fallback": "Recipient",
       "phone_fallback": "your line",
       "data_plan_fallback": "Data",
-      "transfer": "{amount} → {recipient}",
-      "airtime": "{amount} airtime recharge on {phone}",
+      "transfer": "Send {amount} to {recipient}",
+      "airtime": "Buy {amount} airtime for {phone}",
       "data": "Buy {plan} for {phone}",
       "generic": "{task_type} transaction"
     }
@@ -989,7 +991,7 @@
       "ask_recipient_no_name": "Who would you like to send money to? You can provide their name, account number, or both.",
       "ask_bank": "Which bank is that for?",
       "ask_account_number": "What's the account number for {recipient_name}?",
-      "ask_account_number_and_bank": "What's {recipient_name}'s account number and bank?",
+      "ask_account_number_and_bank": "Please share the account number and bank for {recipient_name}.",
       "ask_phone_number": "What phone number should I send to?",
       "ask_network": "Which network is {phone_masked}?",
       "ask_data_plan": "Which data plan would you like?",

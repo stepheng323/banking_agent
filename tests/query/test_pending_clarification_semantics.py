@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
@@ -17,9 +17,9 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
     TimeReference,
 )
-from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
-from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.graphs.query.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

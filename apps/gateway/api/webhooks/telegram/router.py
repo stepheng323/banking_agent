@@ -421,10 +421,10 @@ async def telegram_pin_submit(
         event_type=FlowEventType.PIN_VERIFIED,
         phone_number=safe_phone_number,
         flow_type=resolved_flow_type,
-        idempotency_key=token_remainder,
+        idempotency_key=idem_key or token_remainder,
         success=True,
         channel="telegram",
-        extra_data={"pin": data.pin, "source": "telegram_mini_app_rest", "chat_id": data.chat_id},
+        extra_data={"source": "telegram_mini_app_rest", "chat_id": data.chat_id},
     )
 
     try:

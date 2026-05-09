@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
-from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.i18n import render_message
 from shared.types.planner import PlannerOutput
 
@@ -90,7 +90,7 @@ async def test_planner_non_meta_response_key_uses_deterministic_message() -> Non
         user_id="u_meta_r_2",
         phone_number="2348000001002",
         channel="whatsapp",
-        last_message_text="how far",
+        last_message_text="are you there",
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "services": {}, "redis_client": None}}
 

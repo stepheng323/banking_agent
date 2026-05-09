@@ -1,4 +1,4 @@
-from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
+from apps.chat.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from shared.database.models import Beneficiary
 
 

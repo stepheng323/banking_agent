@@ -44,42 +44,33 @@ In this mode:
 
 ## Runtime Flags
 
-These environment flags now control ownership explicitly:
+The stack now uses only transport/runtime envs that affect actual infrastructure behavior:
 
-- `RUNTIME_STACK_ROLE`
 - `ASYNC_TRANSPORT`
 - `CHAT_TRANSPORT`
-- `ENABLE_WEBHOOK_INGRESS`
-- `ENABLE_CHAT_CONSUMERS`
-- `ENABLE_TRANSACTION_WORKER`
-- `ENABLE_FUNDING_WORKER`
-- `ENABLE_PAYOUT_WORKER`
-- `ENABLE_REFUND_WORKER`
-- `ENABLE_RECEIPT_WORKER`
-- `ENABLE_OUTBOUND_SENDER`
 
 ## Bring-Up
 
 1. Start the VPS stack:
 
 ```bash
-docker compose -f docker-compose.vps.yml up -d --build
+./deploy-stack.sh remote
 ```
 
-This compose file does not start local Postgres or Redis.
+This canonical path syncs the stack assets, pulls the pinned runtime images, and restarts the VPS stack.
+The compose file does not start local Postgres or Redis.
 It uses the managed `DATABASE_URL` and `REDIS_URL` from `.env`.
 It expects `APP_DOMAIN` and `ACME_EMAIL` so Caddy can provision TLS automatically.
 
-2. Confirm passive ownership:
+2. Confirm stack health:
 
 ```bash
 curl http://<host>/health
-curl http://<host>/core/health
 curl http://<host>/receipt/health
 curl http://<host>/transaction/health
 ```
 
-3. Confirm logs show passive mode:
+3. Confirm logs show service startup:
 
 - `gateway_service_starting`
 - `transaction_worker_service_starting`
@@ -91,13 +82,14 @@ The repo now supports VPS deploys through [deploy-vps.yml](/home/abiodun/dev/per
 
 Required GitHub repository secrets:
 
-- `VPS_HOST`
-- `VPS_SSH_USER`
 - `VPS_SSH_PRIVATE_KEY`
-- `VPS_SSH_KNOWN_HOSTS`
+- `GHCR_PULL_USERNAME`
+- `GHCR_PULL_TOKEN`
 
 Optional GitHub repository variables:
 
+- `VPS_HOST`
+- `VPS_SSH_USER`
 - `VPS_APP_DIR` (defaults to `/srv/banking_agent`)
 - `VPS_SSH_PORT` (defaults to `22`)
 
@@ -105,10 +97,10 @@ Workflow behavior:
 
 - runs lint, mypy, pytest
 - runs VPS runtime image smoke checks
-- syncs the checked-out repo to the VPS over SSH
-- does not overwrite the VPS `.env`
-- runs `docker compose -f docker-compose.vps.yml up -d --build`
-- verifies `/health`, `/core/health`, `/transaction/health`, and `/receipt/health`
+- builds and pushes the VPS runtime images
+- invokes `./deploy-stack.sh remote`
+- does not overwrite the VPS `.env` unless a local `.env` is present for the caller
+- verifies `/health`, `/transaction/health`, and `/receipt/health`
 
 Because the workflow syncs the checked-out workspace directly, the VPS does not need GitHub deploy credentials or `git pull` access.
 
@@ -116,21 +108,13 @@ Because the workflow syncs the checked-out workspace directly, the VPS does not 
 
 ### Final VPS Mode
 
-- `ENABLE_WEBHOOK_INGRESS=true`
-- `ENABLE_CHAT_CONSUMERS=true`
-- `ENABLE_TRANSACTION_WORKER=true`
-- `ENABLE_FUNDING_WORKER=true`
-- `ENABLE_PAYOUT_WORKER=true`
-- `ENABLE_REFUND_WORKER=true`
-- `ENABLE_RECEIPT_WORKER=true`
-- `ENABLE_OUTBOUND_SENDER=true`
 - `ASYNC_TRANSPORT=aws`
 
-After DNS/webhook cutover, disable the corresponding AWS runtimes.
+After DNS/webhook cutover, disable the corresponding AWS runtimes and only keep the VPS services running.
 
 ## Rollback
 
-1. Disable the affected VPS ownership flag.
+1. Stop the affected VPS service.
 2. Re-enable the same ownership on AWS if you still keep AWS available.
 3. Confirm only one side is consuming queues or sending replies.
 

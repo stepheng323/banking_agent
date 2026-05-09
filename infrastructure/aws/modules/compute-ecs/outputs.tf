@@ -8,7 +8,7 @@ output "core_service_name" {
   value       = aws_ecs_service.core.name
 }
 
-output "core_chat_worker_service_name" {
-  description = "Core chat worker service name"
+output "chat_worker_service_name" {
+  description = "Chat worker service name"
   value       = aws_ecs_service.core.name
 }

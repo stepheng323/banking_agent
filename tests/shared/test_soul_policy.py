@@ -7,18 +7,18 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.account.worker import AccountWorker
-from apps.core.src.agent.graphs.airtime.worker import AirtimeWorker
-from apps.core.src.agent.graphs.data.worker import DataWorker
-from apps.core.src.agent.graphs.query import capabilities as query_capabilities
-from apps.core.src.agent.graphs.transfer.worker import TransferWorker
-from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
-from apps.core.src.agent.orchestrator.nodes.planner import _build_policy_notice
+from apps.chat.src.agent.graphs.account.worker import AccountWorker
+from apps.chat.src.agent.graphs.airtime.worker import AirtimeWorker
+from apps.chat.src.agent.graphs.data.worker import DataWorker
+from apps.chat.src.agent.graphs.query import capabilities as query_capabilities
+from apps.chat.src.agent.graphs.transfer.worker import TransferWorker
+from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
+from apps.chat.src.agent.orchestrator.nodes.planner.policy import _build_policy_notice
 from shared.assistant_profile.adapters import build_planner_profile_summary
 from shared.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
 from shared.guardrails.loader import get_cached_guardrails, load_guardrails
 from shared.policy.adapters import resolve_capability_message, resolve_capability_rule
-from shared.policy.loader import get_cached_policy, load_policy, load_soul_policy
+from shared.policy.loader import get_cached_policy, load_policy
 from shared.policy.validation import validate_policy_coverage
 
 ASSISTANT_PROFILE_PATH = "config/assistant_profile.json"
@@ -93,17 +93,6 @@ def test_assistant_profile_raises_when_json_invalid(tmp_path: Path) -> None:
 
     with pytest.raises(Exception):
         load_assistant_profile(str(bad_path))
-
-
-def test_policy_loader_does_not_parse_markdown_legacy_format(tmp_path: Path) -> None:
-    legacy_path = tmp_path / "legacy_soul.md"
-    legacy_path.write_text(
-        "<!-- SOUL_POLICY_JSON_START -->\n```json\n{}\n```\n<!-- SOUL_POLICY_JSON_END -->\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(Exception):
-        load_soul_policy(str(legacy_path))
 
 
 def test_planner_profile_summary_is_compact_and_grounded() -> None:
@@ -275,6 +264,10 @@ def test_split_config_files_exist_and_parse() -> None:
         assert config_file.exists(), f"Missing canonical config file: {path}"
         payload = json.loads(config_file.read_text(encoding="utf-8"))
         assert isinstance(payload, dict)
+
+
+def test_legacy_soul_policy_json_removed() -> None:
+    assert not Path("config/soul_policy.json").exists()
 
 
 def test_soul_markdown_has_no_legacy_policy_markers() -> None:

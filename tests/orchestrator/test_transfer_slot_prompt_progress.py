@@ -4,17 +4,17 @@ import time
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.core.src.agent.orchestrator.models.domain import (
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
     TaskStage,
     TransactionOutcome,
     TransactionResult,
 )
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.core.src.agent.orchestrator.nodes.finalize import finalize
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
 from shared.config.settings import settings
 
 
@@ -500,7 +500,7 @@ async def test_unsafe_recipient_name_falls_back_to_generic_prompt_label() -> Non
     text = updates["outbox"][0]["text"].lower()
 
     assert "send's account number and bank" not in text
-    assert "what's recipient's account number and bank?" in text
+    assert "please share the account number and bank for recipient." in text
 
 
 async def test_transfer_handler_passes_recent_beneficiary_context_to_worker() -> None:

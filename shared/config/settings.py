@@ -59,17 +59,8 @@ class Settings:
         self.aws_account_id: str = os.getenv("AWS_ACCOUNT_ID", "000000000000")
         self.s3_region: str = self.aws_region
         self.s3_receipt_prefix: str = "receipts"
-        self.runtime_stack_role: str = os.getenv("RUNTIME_STACK_ROLE", "aws-primary").strip() or "aws-primary"
         self.chat_transport: str = os.getenv("CHAT_TRANSPORT", "redis").strip() or "redis"
         self.async_transport: str = os.getenv("ASYNC_TRANSPORT", "aws").strip() or "aws"
-        self.enable_webhook_ingress: bool = os.getenv("ENABLE_WEBHOOK_INGRESS", "true").lower() == "true"
-        self.enable_chat_consumers: bool = os.getenv("ENABLE_CHAT_CONSUMERS", "true").lower() == "true"
-        self.enable_transaction_worker: bool = os.getenv("ENABLE_TRANSACTION_WORKER", "false").lower() == "true"
-        self.enable_funding_worker: bool = os.getenv("ENABLE_FUNDING_WORKER", "false").lower() == "true"
-        self.enable_payout_worker: bool = os.getenv("ENABLE_PAYOUT_WORKER", "false").lower() == "true"
-        self.enable_refund_worker: bool = os.getenv("ENABLE_REFUND_WORKER", "false").lower() == "true"
-        self.enable_receipt_worker: bool = os.getenv("ENABLE_RECEIPT_WORKER", "false").lower() == "true"
-        self.enable_outbound_sender: bool = os.getenv("ENABLE_OUTBOUND_SENDER", "true").lower() == "true"
         self.chat_message_max_age_seconds: int = int(os.getenv("CHAT_MESSAGE_MAX_AGE_SECONDS", "120"))
         self.sqs_wait_time_seconds: int = int(os.getenv("SQS_WAIT_TIME_SECONDS", "10"))
         self.sqs_visibility_timeout_seconds: int = int(os.getenv("SQS_VISIBILITY_TIMEOUT_SECONDS", "90"))
@@ -80,6 +71,7 @@ class Settings:
         self.telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.telegram_mini_app_base_url: str = os.getenv("TELEGRAM_MINI_APP_BASE_URL", "")
         self.telegram_webhook_secret_token: str = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "")
+        self.telegram_init_data_max_age_seconds: int = int(os.getenv("TELEGRAM_INIT_DATA_MAX_AGE_SECONDS", "600"))
         self.telegram_enable_message_draft: bool = os.getenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", "true").lower() == "true"
         self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "650"))
         self.receipt_verification_base_url: str = os.getenv("RECEIPT_VERIFICATION_BASE_URL", "").strip()
@@ -92,7 +84,6 @@ class Settings:
         self.assistant_profile_path: str = os.getenv("ASSISTANT_PROFILE_PATH", "config/assistant_profile.json")
         self.capability_policy_path: str = os.getenv("CAPABILITY_POLICY_PATH", "config/capability_policy.json")
         self.domain_guardrails_path: str = os.getenv("DOMAIN_GUARDRAILS_PATH", "config/domain_guardrails.json")
-        self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
         self.enable_transfer_scheduling: bool = os.getenv("ENABLE_TRANSFER_SCHEDULING", "true").lower() == "true"
         self.schedule_dispatcher_batch_size: int = int(os.getenv("SCHEDULE_DISPATCHER_BATCH_SIZE", "25"))
@@ -190,22 +181,6 @@ class Settings:
     def uses_aws_async_transport(self) -> bool:
         """Return whether async queue publishing/consumption should use AWS SNS/SQS."""
         return self.async_transport.lower() == "aws"
-
-    @property
-    def is_passive_runtime(self) -> bool:
-        """Return whether this runtime is configured as a passive standby."""
-        return not any(
-            (
-                self.enable_webhook_ingress,
-                self.enable_chat_consumers,
-                self.enable_transaction_worker,
-                self.enable_funding_worker,
-                self.enable_payout_worker,
-                self.enable_refund_worker,
-                self.enable_receipt_worker,
-                self.enable_outbound_sender,
-            )
-        )
 
 
 settings = Settings()

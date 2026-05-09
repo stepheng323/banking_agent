@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from apps.gateway.api.webhooks import flows_router, message_router, mono_router, telegram_router
-from shared.config.settings import settings
 from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
 
@@ -38,22 +37,22 @@ if _static_dir.exists():
 
 @app.get("/health")
 async def health() -> dict[str, object]:
-    """Health endpoint exposing ownership configuration."""
+    """Health endpoint exposing runtime metadata."""
     return {
         "status": "healthy",
         "service": "gateway",
-        "ownership": build_runtime_status("gateway"),
+        "runtime": build_runtime_status("gateway"),
     }
 
 
 @app.get("/ready")
 async def readiness() -> dict[str, object]:
-    """Readiness endpoint exposing ingress ownership."""
+    """Readiness endpoint exposing service and transport state."""
     return {
         "status": "ready",
         "service": "gateway",
-        "ingress_enabled": settings.enable_webhook_ingress,
-        "ownership": build_runtime_status("gateway"),
+        "ingress_enabled": True,
+        "runtime": build_runtime_status("gateway"),
     }
 
 if __name__ == "__main__":

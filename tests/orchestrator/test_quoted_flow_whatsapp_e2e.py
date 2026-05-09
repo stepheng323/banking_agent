@@ -7,9 +7,9 @@ from uuid import uuid4
 
 import pytest
 
-from apps.core.src.agent.graphs.support.resolver import TransactionResolver
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.graphs.support.resolver import TransactionResolver
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
 from shared.types.quoted_replay import QuotedReplayInterpretation

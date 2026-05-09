@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.core.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.core.src.agent.graphs.airtime.nodes.execution import ExecutionStep
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from apps.chat.src.agent.graphs.airtime.nodes.execution import ExecutionStep
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 
 
 class _TransactionRepoStub:

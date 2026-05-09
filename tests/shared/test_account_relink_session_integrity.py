@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.account.worker import AccountWorker
+from apps.chat.src.agent.graphs.account.worker import AccountWorker
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.config.settings import settings
 from shared.services.onboarding.bvn_verification import BvnVerificationService
@@ -67,7 +67,7 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
 
     flow = await worker._build_link_account_flow(
         {
@@ -103,7 +103,7 @@ async def test_build_link_account_flow_returns_retryable_error_when_session_stor
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
 
     flow = await worker._build_link_account_flow(
         {

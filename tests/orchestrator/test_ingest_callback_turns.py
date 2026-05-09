@@ -2,9 +2,9 @@
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
 
 
 @pytest.mark.asyncio
@@ -62,7 +62,7 @@ async def test_non_callback_turn_does_not_clear_text_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_day_rollover_clears_stale_session_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.ingest._current_session_date", lambda: "2026-03-10")
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.ingest._current_session_date", lambda: "2026-03-10")
     state = OrchestratorState(
         user_id="u_ingest_4",
         phone_number="2348000000004",
@@ -98,7 +98,7 @@ async def test_day_rollover_clears_stale_session_state(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_same_day_keeps_existing_session_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.ingest._current_session_date", lambda: "2026-03-10")
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.ingest._current_session_date", lambda: "2026-03-10")
     state = OrchestratorState(
         user_id="u_ingest_5",
         phone_number="2348000000005",

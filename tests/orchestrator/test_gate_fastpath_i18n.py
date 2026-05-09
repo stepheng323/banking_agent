@@ -1,11 +1,12 @@
 """Direct-path gate tests for conversational i18n behavior."""
 
 import json
+import time
 
-from apps.core.src.agent.orchestrator.nodes.gate.runner import session_gate_direct_path
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import (
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.models.domain import (
     ActiveSession,
     PendingInterrupt,
     TaskSpec,
@@ -13,10 +14,11 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.chat.src.agent.orchestrator.nodes.gate.runner import session_gate_direct_path
 from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
-from shared.types.planner import SemanticRouteDecision
+from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 
 def _apply_updates(state: OrchestratorState, updates: dict[str, object]) -> OrchestratorState:
@@ -60,6 +62,193 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_decision"] == "meta_direct"
+
+
+async def test_gate_handles_pidgin_social_greeting_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            confidence=0.4,
+            detected_language="English",
+            target_intent=None,
+            expected_transaction_executors=[],
+            reason="should not run for social greeting",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_pidgin_social_greeting",
+        phone_number="2348777777777",
+        channel="telegram",
+        last_message_text="How far my guy",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.greeting", "pcm")
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_handles_prefixed_pidgin_social_greeting_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            confidence=0.7,
+            detected_language="English",
+            target_intent="transfer",
+            expected_transaction_executors=["transfer"],
+            reason="should not run for prefixed social greeting",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_prefixed_pidgin_social_greeting",
+        phone_number="2348777777777",
+        channel="telegram",
+        last_message_text="My g, how far?",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.greeting", "pcm")
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_handles_presence_checkin_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            confidence=0.7,
+            detected_language="English",
+            target_intent="transfer",
+            expected_transaction_executors=["transfer"],
+            reason="should not run for presence checkin",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_presence_checkin",
+        phone_number="2348777777777",
+        channel="telegram",
+        last_message_text="Are you there?",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.checkin", "en")
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_handles_pidgin_presence_checkin_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            confidence=0.7,
+            detected_language="English",
+            target_intent="transfer",
+            expected_transaction_executors=["transfer"],
+            reason="should not run for pidgin presence checkin",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_pidgin_presence_checkin",
+        phone_number="2348777777777",
+        channel="telegram",
+        last_message_text="You dey?",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.checkin", "pcm")
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_handles_prefixed_pidgin_presence_checkin_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            confidence=0.7,
+            detected_language="English",
+            target_intent="transfer",
+            expected_transaction_executors=["transfer"],
+            reason="should not run for prefixed pidgin presence checkin",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_prefixed_pidgin_presence_checkin",
+        phone_number="2348777777777",
+        channel="telegram",
+        last_message_text="My guy, how you dey",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.checkin", "pcm")
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_filters_gibberish_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            confidence=0.4,
+            detected_language="English",
+            target_intent=None,
+            expected_transaction_executors=[],
+            reason="should not run for gibberish",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_gibberish",
+        phone_number="2348000001111",
+        channel="whatsapp",
+        last_message_text="🔥🔥🔥🔥🔥",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "gibberish_direct"
+    assert updates["final_response"] == render_message("common.gibberish_prompt", "en")
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_decision"] == "gibberish_filtered"
 
 
 async def test_gate_routes_recent_batch_receipt_followup_to_support_without_planner() -> None:
@@ -579,7 +768,7 @@ async def test_gate_query_shortcut_followup_bypasses_semantic_router_without_pen
     assert updates.get("waves") == [["direct_query"]]
 
 
-async def test_gate_latest_fact_next_followup_bypasses_semantic_router() -> None:
+async def test_gate_latest_fact_next_followup_stays_in_active_query_session() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="direct_reply",
@@ -620,7 +809,7 @@ async def test_gate_latest_fact_next_followup_bypasses_semantic_router() -> None
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "query_followup_bypass"
     assert updates["routing_decision"] == "query_followup_bypass"
@@ -1068,6 +1257,495 @@ async def test_gate_deterministic_beneficiary_list_bypasses_semantic_router() ->
     assert task.payload["action"] == "list_beneficiaries"
     assert task.payload["intent"] == "list_beneficiaries"
     assert task.payload["list_intent"] is True
+
+
+async def test_gate_context_frame_completeness_preempts_beneficiary_reroute() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_beneficiary",
+            mode="new",
+            target_intent="beneficiary",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="would repeat list if frame follow-up did not preempt",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="completeness_check",
+            confidence=0.96,
+            detected_language="English",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_1",
+        phone_number="23489999999174",
+        channel="whatsapp",
+        last_message_text="Is that all?",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_gate",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Tolu GTB",
+                        data={"alias": "Tolu GTB", "account_name": "Tolu Adeyemi"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-3",
+                        label="Tolu First",
+                        data={"alias": "Tolu First", "account_name": "Tolulope Johnson"},
+                    ),
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["final_response"] == "Yes. Those are the 3 saved beneficiaries I found."
+    assert "tasks" not in updates
+
+
+async def test_gate_context_frame_lookup_preempts_beneficiary_reroute() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_beneficiary",
+            mode="new",
+            target_intent="beneficiary",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="would repeat list if frame follow-up did not preempt",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="entity_lookup",
+            confidence=0.96,
+            detected_language="English",
+            reference_text="gaines",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_2",
+        phone_number="23489999999175",
+        channel="whatsapp",
+        last_message_text="What about gaines",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_gate_lookup",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Tolu GTB",
+                        data={"alias": "Tolu GTB", "account_name": "Tolu Adeyemi"},
+                    ),
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert "Frame type: beneficiary_list" in (planner.last_frame_context or "")
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["final_response"] == "I don't see Gaines in the saved beneficiaries I showed."
+    assert "tasks" not in updates
+
+
+async def test_gate_context_frame_expected_missing_entity_preempts_beneficiary_reroute() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_beneficiary",
+            mode="new",
+            target_intent="beneficiary",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="would repeat list if expected missing entity follow-up did not preempt",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="lookup_entity",
+            confidence=0.96,
+            detected_language="English",
+            reference_text="gaines",
+            reason="user expected a named beneficiary in the displayed list",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_expected_missing",
+        phone_number="23489999999176",
+        channel="whatsapp",
+        last_message_text="I thought I had gaines too",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_gate_expected_missing",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Tolu GTB",
+                        data={"alias": "Tolu GTB", "account_name": "Tolu Adeyemi"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-3",
+                        label="Tolu First",
+                        data={"alias": "Tolu First", "account_name": "Tolulope Johnson"},
+                    ),
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["final_response"] == "I don't see Gaines in the saved beneficiaries I showed."
+    assert updates["context_frames"]
+    assert "tasks" not in updates
+
+
+async def test_gate_context_frame_start_new_task_falls_through_to_fresh_beneficiary_read() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_beneficiary",
+            mode="new",
+            target_intent="beneficiary",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="would repeat list if uncertain frame decision fell through",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="start_new_task",
+            confidence=0.78,
+            detected_language="English",
+            reason="user is asking for a fresh beneficiary read",
+        ),
+    )
+    created_at = int(time.time()) - 300
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_uncertain_fresh_task",
+        phone_number="23489999999180",
+        channel="whatsapp",
+        last_message_text="Show my beneficiaries",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_gate_uncertain_fresh_task",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    )
+                ],
+                created_at_ts=created_at,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_beneficiary_domain"
+    task = updates["tasks"]["direct_beneficiary"]
+    assert task.type == "beneficiary"
+    assert task.payload["action"] == "list_beneficiaries"
+    assert task.payload["list_intent"] is True
+
+
+async def test_gate_context_frame_does_not_steal_fresh_transfer_request() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_beneficiary",
+            mode="new",
+            target_intent="beneficiary",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="would show beneficiary details if frame follow-up stole the transfer",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="lookup_entity",
+            confidence=0.98,
+            detected_language="English",
+            reference_text="tolu adebayo",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_transfer_fresh",
+        phone_number="23489999999181",
+        channel="whatsapp",
+        last_message_text="Send 10k to tolu adebayo",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_gate_transfer_fresh",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={
+                            "alias": "Tolu Access",
+                            "account_name": "Tolu Adebayo",
+                            "bank_name": "Access Bank",
+                            "account_number": "2010000001",
+                        },
+                    )
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "fresh_transfer_command"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["message"] == "Send 10k to tolu adebayo"
+
+
+async def test_gate_context_frame_unclear_followup_returns_frame_specific_clarification() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            confidence=0.4,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="would produce generic fallback if frame stage did not clarify",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="unclear",
+            confidence=0.72,
+            detected_language="English",
+            reason="ambiguous but likely related to visible frame",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_unclear_beneficiary",
+        phone_number="23489999999179",
+        channel="whatsapp",
+        last_message_text="I thought I had something else too",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_gate_unclear",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    )
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["final_response"] == "Are you asking about the saved beneficiaries I just showed?"
+    assert "tasks" not in updates
+
+
+async def test_gate_context_frame_filter_operation_preempts_account_reroute() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="would route to account domain if frame filter did not preempt",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="filter_items",
+            confidence=0.94,
+            detected_language="English",
+            reference_text="gtbank",
+            reason="user wants only the GTBank item from the displayed frame",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_filter_account",
+        phone_number="23489999999177",
+        channel="whatsapp",
+        last_message_text="Which one is GTBank?",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="accounts_recent_gate_filter",
+                frame_type=ContextFrameType.ACCOUNT_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.ACCOUNT,
+                        entity_id="acct-1",
+                        label="First Bank (...0001)",
+                        data={"bank_name": "First Bank", "account_number": "6000000001"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.ACCOUNT,
+                        entity_id="acct-2",
+                        label="GTBank (...0002)",
+                        data={"bank_name": "GTBank", "account_number": "6000000002"},
+                    ),
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert "GTBank (...0002)" in updates["final_response"]
+    assert "First Bank (...0001)" not in updates["final_response"]
+    assert "tasks" not in updates
+
+
+async def test_gate_context_frame_compare_operation_answers_from_frame() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            confidence=0.4,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="would be ambiguous without frame comparison",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="compare_items",
+            confidence=0.92,
+            detected_language="English",
+            reason="user wants to compare the displayed account items",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_frame_followup_compare_account",
+        phone_number="23489999999178",
+        channel="whatsapp",
+        last_message_text="Compare them",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="accounts_recent_gate_compare",
+                frame_type=ContextFrameType.ACCOUNT_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.ACCOUNT,
+                        entity_id="acct-1",
+                        label="First Bank (...0001)",
+                        data={"bank_name": "First Bank", "account_number": "6000000001", "balance": 20000},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.ACCOUNT,
+                        entity_id="acct-2",
+                        label="GTBank (...0002)",
+                        data={"bank_name": "GTBank", "account_number": "6000000002", "balance": 30000},
+                    ),
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert "Comparison" in updates["final_response"]
+    assert "First Bank (...0001)" in updates["final_response"]
+    assert "GTBank (...0002)" in updates["final_response"]
+    assert "Balance: 30000" in updates["final_response"]
+    assert "tasks" not in updates
 
 
 async def test_gate_deterministic_airtime_bypasses_semantic_router() -> None:
@@ -1816,17 +2494,40 @@ async def test_gate_semantic_router_direct_reply_does_not_override_explicit_loca
 
 
 class _RouteTurnPlanner:
-    def __init__(self, decision: SemanticRouteDecision) -> None:
+    def __init__(
+        self,
+        decision: SemanticRouteDecision,
+        *,
+        frame_followup_decision: ContextFrameFollowupDecision | None = None,
+    ) -> None:
         self._decision = decision
+        self._frame_followup_decision = frame_followup_decision
         self.route_calls = 0
+        self.frame_followup_calls = 0
         self.plan_calls = 0
         self.last_context: str | None = None
+        self.last_frame_context: str | None = None
 
     async def route_semantic_turn(self, phone_number: str, text: str, context: str = "None") -> SemanticRouteDecision:
         del phone_number, text
         self.route_calls += 1
         self.last_context = context
         return self._decision
+
+    async def interpret_context_frame_followup(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "direct_path",
+    ) -> ContextFrameFollowupDecision:
+        del phone_number, text, path_label
+        self.frame_followup_calls += 1
+        self.last_frame_context = context
+        if self._frame_followup_decision is None:
+            return ContextFrameFollowupDecision(decision="new_task", confidence=0.99)
+        return self._frame_followup_decision
 
     async def plan_tasks(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -1964,8 +2665,8 @@ async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_bac
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
 
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -3011,9 +3712,9 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.pipeline.domain_stages.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.pipeline.domain_stages.logger.info", _capture)
 
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

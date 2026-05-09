@@ -40,11 +40,6 @@ def load_policy(path: str | None = None) -> CapabilityPolicy:
     return cast(CapabilityPolicy, CapabilityPolicy.model_validate(payload))
 
 
-def load_soul_policy(path: str | None = None) -> CapabilityPolicy:
-    """Backward-compatible alias for runtime capability policy."""
-    return load_policy(path=path)
-
-
 def get_cached_policy(path: str | None = None, force_reload: bool = False) -> CapabilityPolicy:
     """Get cached capability policy and fail fast when JSON is invalid/missing."""
     global _POLICY_CACHE

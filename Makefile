@@ -1,6 +1,6 @@
 .PHONY: help lint type-check format test clean clean-runtime-artifacts check-all fix \
       lint-fix format-check test-file test-coverage test-watch \
-      run-gateway run-core run-all run-receipt \
+      run-gateway run-chat-worker run-transaction-worker run-receipt run-all local-stack local-stack-migrate \
       docker-build docker-up docker-down docker-logs docker-restart docker-clean \
       db-migrate db-upgrade db-rollback db-reset db-shell \
       install install-dev install-all deps-check setup rebuild-venv \
@@ -15,6 +15,19 @@ RED := \033[31m
 RESET := \033[0m
 DOCKER_COMPOSE ?= docker compose
 COMPOSE_FILE ?= docker-compose.yml
+DEPLOY_STACK ?= ./deploy-stack.sh
+GHCR_REGISTRY ?= ghcr.io
+GHCR_OWNER ?= stepheng323
+GHCR_IMAGE_PREFIX ?= banking-agent-vps
+IMAGE_TAG ?= latest
+STACK_GATEWAY_IMAGE ?= $(GHCR_REGISTRY)/$(GHCR_OWNER)/$(GHCR_IMAGE_PREFIX)-gateway:$(IMAGE_TAG)
+STACK_CHAT_WORKER_IMAGE ?= $(GHCR_REGISTRY)/$(GHCR_OWNER)/$(GHCR_IMAGE_PREFIX)-chat-worker:$(IMAGE_TAG)
+STACK_TRANSACTION_WORKER_IMAGE ?= $(GHCR_REGISTRY)/$(GHCR_OWNER)/$(GHCR_IMAGE_PREFIX)-transaction-worker:$(IMAGE_TAG)
+STACK_RECEIPT_WORKER_IMAGE ?= $(GHCR_REGISTRY)/$(GHCR_OWNER)/$(GHCR_IMAGE_PREFIX)-receipt-worker:$(IMAGE_TAG)
+AWS_HOST_DIR ?= $(HOME)/.aws
+export COMPOSE_FILE GHCR_REGISTRY GHCR_OWNER GHCR_IMAGE_PREFIX IMAGE_TAG
+export STACK_GATEWAY_IMAGE STACK_CHAT_WORKER_IMAGE STACK_TRANSACTION_WORKER_IMAGE STACK_RECEIPT_WORKER_IMAGE
+export AWS_HOST_DIR
 
 help:
 	@echo '$(BLUE)Banking Agent - Makefile Commands$(RESET)'
@@ -28,8 +41,8 @@ help:
 	@echo '  make check-all              # Run all quality checks'
 	@echo '  make fix                    # Auto-fix lint issues and format code'
 	@echo '  make test                   # Run all tests'
-	@echo '  make run-all                # Run gateway and core services'
-	@echo '  make docker-up              # Start all services with Docker'
+	@echo '  make run-all                # Run gateway and worker processes'
+	@echo '  make docker-up              # Start the canonical stack locally'
 	@echo ''
 
 
@@ -84,29 +97,39 @@ run-gateway: ## Run gateway service (port 8000)
 	@echo "$(GREEN)🚀 Starting Gateway service on port 8000...$(RESET)"
 	@PYTHONPATH="$$(pwd)" uv run uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps --reload-dir shared --reload-exclude "*__pycache__*" --reload-exclude "*.git*"
 
-run-core: ## Run core agent service (port 8001)
-	@echo "$(GREEN)🚀 Starting Core agent service on port 8001...$(RESET)"
-	@PYTHONPATH="$$(pwd)" uv run uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir apps --reload-dir shared --reload-exclude "*__pycache__*" --reload-exclude "*.git*"
+run-chat-worker: ## Run chat worker process
+	@echo "$(GREEN)💬 Starting chat worker...$(RESET)"
+	@PYTHONPATH="$$(pwd)" uv run python -m apps.chat.src.worker_main
+
+run-transaction-worker: ## Run transaction worker service (port 8003)
+	@echo "$(GREEN)💸 Starting transaction worker service on port 8003...$(RESET)"
+	@PYTHONPATH="$$(pwd)" uv run uvicorn apps.transaction.main:app --host 0.0.0.0 --port 8003 --reload --reload-dir apps --reload-dir shared --reload-exclude "*__pycache__*" --reload-exclude "*.git*"
 
 run-receipt: ## Run receipt worker service (port 8002)
 	@echo "$(GREEN)🧾 Starting Receipt service on port 8002...$(RESET)"
 	@PYTHONPATH="$$(pwd)" uv run uvicorn apps.receipt.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared --reload-exclude "*__pycache__*" --reload-exclude "*.git*"
 
-run-all: ## Run all services (gateway + core + receipt)
-	@echo "$(GREEN)🚀 Starting all services...$(RESET)"
+run-all: ## Run gateway plus worker processes
+	@echo "$(GREEN)🚀 Starting gateway and worker processes...$(RESET)"
 	@echo "$(YELLOW)Note: Run in separate terminals or use docker-up instead$(RESET)"
-	@make run-gateway & make run-core & make run-receipt
+	@make run-gateway & make run-chat-worker & make run-transaction-worker & make run-receipt
+
+local-stack: ## Run full local stack against existing DATABASE_URL/REDIS_URL
+	@bash scripts/run_local_stack.sh
+
+local-stack-migrate: ## Run migrations, then start full local stack
+	@bash scripts/run_local_stack.sh --migrate
 
 # Docker
 docker-build: ## Build Docker images
-	@echo "$(BLUE)🐳 Building Docker images...$(RESET)"
-	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) build
+	@echo "$(BLUE)🐳 Building local stack images...$(RESET)"
+	@TAG="$(IMAGE_TAG)" bash scripts/build_local.sh --build-only
 
 docker-up: ## Start services with Docker Compose
-	@echo "$(GREEN)🐳 Starting services with Docker Compose...$(RESET)"
-	@$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d
+	@echo "$(GREEN)🐳 Starting canonical stack locally...$(RESET)"
+	@IMAGE_TAG="$(IMAGE_TAG)" $(DEPLOY_STACK) local
 	@echo "$(GREEN)✅ Services started!$(RESET)"
-	@echo "$(YELLOW)View logs: $(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs -f$(RESET)"
+	@echo "$(YELLOW)View logs: make docker-logs$(RESET)"
 
 docker-down: ## Stop Docker services
 	@echo "$(RED)🐳 Stopping Docker services...$(RESET)"
@@ -172,8 +195,9 @@ setup: ## Initial project setup
 	@echo "$(GREEN)✅ Environment ready!$(RESET)"
 	@echo ""
 	@echo "$(YELLOW)Quick start:$(RESET)"
-	@echo "  make run-core     # Start core service"
 	@echo "  make run-gateway  # Start gateway service"
+	@echo "  make run-chat-worker  # Start chat worker"
+	@echo "  make run-transaction-worker  # Start transaction worker"
 
 deps-check: ## Check for outdated dependencies
 	@echo "$(BLUE)🔍 Checking for outdated dependencies...$(RESET)"
@@ -242,14 +266,14 @@ format-file: ## Format specific file (usage: make format-file FILE=path)
 
 check-orchestrator: ## Check orchestrator files
 	@echo "$(BLUE)🔍 Checking orchestrator...$(RESET)"
-	@uv run ruff check apps/core/src/agent/orchestrator/
-	@uv run mypy apps/core/src/agent/orchestrator/ || true
+	@uv run ruff check apps/chat/src/agent/orchestrator/
+	@uv run mypy apps/chat/src/agent/orchestrator/ || true
 	@echo "$(GREEN)✅ Orchestrator check complete!$(RESET)"
 
 check-agent: ## Check all agent files
 	@echo "$(BLUE)🔍 Checking all agent files...$(RESET)"
-	@uv run ruff check apps/core/src/agent/
-	@uv run mypy apps/core/src/agent/ || true
+	@uv run ruff check apps/chat/src/agent/
+	@uv run mypy apps/chat/src/agent/ || true
 	@echo "$(GREEN)✅ Agent check complete!$(RESET)"
 
 # Info & debugging
@@ -262,12 +286,13 @@ info:
 	@echo ""
 	@echo "$(BLUE)Services:$(RESET)"
 	@echo "  Gateway: http://localhost:8000"
-	@echo "  Core:    http://localhost:8001"
 	@echo "  Receipt: http://localhost:8002"
+	@echo "  Transaction: http://localhost:8003"
 	@echo ""
 	@echo "$(BLUE)Quick Commands:$(RESET)"
-	@echo "  make run-core     - Start core service"
 	@echo "  make run-gateway  - Start gateway service"
+	@echo "  make run-chat-worker - Start chat worker"
+	@echo "  make run-transaction-worker - Start transaction worker"
 	@echo "  make check-all    - Run all quality checks"
 	@echo "  make test         - Run tests"
 

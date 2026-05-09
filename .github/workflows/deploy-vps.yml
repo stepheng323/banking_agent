@@ -54,18 +54,15 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - name: core-vps
-            dockerfile: apps/core/Dockerfile
-            validate_expr: import importlib; m = importlib.import_module('apps.core.src.main'); getattr(m, 'app')
           - name: gateway-vps
             dockerfile: apps/gateway/Dockerfile
             validate_expr: import importlib; m = importlib.import_module('apps.gateway.main'); getattr(m, 'app')
-          - name: core-chat-worker-vps
-            dockerfile: apps/core/Dockerfile.worker
-            validate_expr: import importlib; importlib.import_module('apps.core.src.worker_main')
+          - name: chat-worker-vps
+            dockerfile: apps/chat/Dockerfile
+            validate_expr: import importlib; importlib.import_module('apps.chat.src.worker_main')
           - name: transaction-worker-vps
-            dockerfile: apps/core/Dockerfile.transaction_worker
-            validate_expr: import importlib; m = importlib.import_module('apps.core.src.transaction_worker_app'); getattr(m, 'app')
+            dockerfile: apps/transaction/Dockerfile
+            validate_expr: import importlib; m = importlib.import_module('apps.transaction.main'); getattr(m, 'app')
           - name: receipt-worker-vps
             dockerfile: apps/receipt/Dockerfile.local
             validate_expr: import importlib; m = importlib.import_module('apps.receipt.main'); getattr(m, 'app')
@@ -130,14 +127,11 @@ jobs:
           - name: gateway
             dockerfile: apps/gateway/Dockerfile
             image_suffix: gateway
-          - name: core
-            dockerfile: apps/core/Dockerfile
-            image_suffix: core
-          - name: core-chat-worker
-            dockerfile: apps/core/Dockerfile.worker
-            image_suffix: core-chat-worker
+          - name: chat-worker
+            dockerfile: apps/chat/Dockerfile
+            image_suffix: chat-worker
           - name: transaction-worker
-            dockerfile: apps/core/Dockerfile.transaction_worker
+            dockerfile: apps/transaction/Dockerfile
             image_suffix: transaction-worker
           - name: receipt-worker
             dockerfile: apps/receipt/Dockerfile.local
@@ -234,8 +228,7 @@ jobs:
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           base="${GHCR_REGISTRY}/${owner}/${GHCR_IMAGE_PREFIX}"
           echo "gateway=${base}-gateway:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          echo "core=${base}-core:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          echo "core_chat_worker=${base}-core-chat-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "chat_worker=${base}-chat-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "transaction_worker=${base}-transaction-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "receipt_worker=${base}-receipt-worker:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
@@ -244,137 +237,37 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
 
-      - name: Configure SSH known_hosts
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan -H -p "$VPS_SSH_PORT" -T 10 "$VPS_HOST" > ~/.ssh/known_hosts
-          test -s ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-
-      - name: Configure SSH client options
-        run: |
-          set -euo pipefail
-          cat > "$HOME/.ssh/config" <<EOF
-          Host vps-deploy
-            HostName ${VPS_HOST}
-            User ${VPS_SSH_USER}
-            Port ${VPS_SSH_PORT}
-            StrictHostKeyChecking no
-            UserKnownHostsFile /dev/null
-          EOF
-          chmod 600 "$HOME/.ssh/config"
-
-      - name: Ensure remote app directory exists
-        run: |
-          set -euo pipefail
-          ssh -F "$HOME/.ssh/config" vps-deploy "mkdir -p '$VPS_APP_DIR/deploy'"
-
-      - name: Sync deploy assets to VPS
-        run: |
-          set -euo pipefail
-          rsync -az \
-            -e "ssh -F $HOME/.ssh/config" \
-            docker-compose.vps.yml \
-            deploy/ \
-            "vps-deploy:$VPS_APP_DIR/"
-
-      - name: Pull and restart VPS stack
+      - name: Deploy VPS stack via canonical script
         env:
           GITHUB_SHA: ${{ github.sha }}
           GHCR_PULL_USERNAME: ${{ secrets.GHCR_PULL_USERNAME }}
           GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
-          VPS_GATEWAY_IMAGE: ${{ steps.image_refs.outputs.gateway }}
-          VPS_CORE_IMAGE: ${{ steps.image_refs.outputs.core }}
-          VPS_CORE_CHAT_WORKER_IMAGE: ${{ steps.image_refs.outputs.core_chat_worker }}
-          VPS_TRANSACTION_WORKER_IMAGE: ${{ steps.image_refs.outputs.transaction_worker }}
-          VPS_RECEIPT_WORKER_IMAGE: ${{ steps.image_refs.outputs.receipt_worker }}
+          STACK_GATEWAY_IMAGE: ${{ steps.image_refs.outputs.gateway }}
+          STACK_CHAT_WORKER_IMAGE: ${{ steps.image_refs.outputs.chat_worker }}
+          STACK_TRANSACTION_WORKER_IMAGE: ${{ steps.image_refs.outputs.transaction_worker }}
+          STACK_RECEIPT_WORKER_IMAGE: ${{ steps.image_refs.outputs.receipt_worker }}
         run: |
           set -euo pipefail
-
-          ssh -F "$HOME/.ssh/config" vps-deploy \
-            "APP_DIR='$VPS_APP_DIR' \
-            GITHUB_SHA='$GITHUB_SHA' \
-            GHCR_PULL_USERNAME='$GHCR_PULL_USERNAME' \
-            GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' \
-            VPS_GATEWAY_IMAGE='$VPS_GATEWAY_IMAGE' \
-            VPS_CORE_IMAGE='$VPS_CORE_IMAGE' \
-            VPS_CORE_CHAT_WORKER_IMAGE='$VPS_CORE_CHAT_WORKER_IMAGE' \
-            VPS_TRANSACTION_WORKER_IMAGE='$VPS_TRANSACTION_WORKER_IMAGE' \
-            VPS_RECEIPT_WORKER_IMAGE='$VPS_RECEIPT_WORKER_IMAGE' \
-            bash -s" <<'EOF'
-          set -euo pipefail
-          cd "$APP_DIR"
-
           echo "Deploying commit $GITHUB_SHA"
-          export DOCKER_CONFIG
-          DOCKER_CONFIG="$(mktemp -d)"
-          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
-          printf '%s' "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_PULL_USERNAME" --password-stdin
-
-          pull_service() {
-            local service="$1"
-            local attempt=1
-            until [ "$attempt" -gt 3 ]; do
-              if docker compose -f docker-compose.vps.yml pull "$service"; then
-                return 0
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "Pull failed for $service after $attempt attempts"
-                return 1
-              fi
-              echo "Pull failed for $service on attempt $attempt, retrying..."
-              attempt=$((attempt + 1))
-              sleep 20
-            done
-          }
-
-          docker compose -f docker-compose.vps.yml config >/dev/null
-          pull_service gateway
-          pull_service core
-          pull_service core-chat-worker
-          pull_service transaction-worker
-          pull_service receipt-worker
-          docker compose -f docker-compose.vps.yml up -d --remove-orphans gateway core core-chat-worker transaction-worker receipt-worker caddy
-          docker compose -f docker-compose.vps.yml ps
-
-          check_health() {
-            local name="$1"
-            local url="$2"
-            local attempt
-            for attempt in $(seq 1 20); do
-              if curl -fsS "$url" >/tmp/health.out 2>/dev/null; then
-                echo "✓ $name: $(cat /tmp/health.out)"
-                return 0
-              fi
-              sleep 5
-            done
-            echo "Health check failed for $name ($url)"
-            return 1
-          }
-
-          check_health gateway "http://localhost/health"
-          check_health core "http://localhost/core/health"
-          check_health transaction "http://localhost/transaction/health"
-          check_health receipt "http://localhost/receipt/health"
-          EOF
+          ./deploy-stack.sh remote
 
       - name: Capture VPS logs on failure
         if: failure()
         env:
-          VPS_GATEWAY_IMAGE: ${{ steps.image_refs.outputs.gateway }}
-          VPS_CORE_IMAGE: ${{ steps.image_refs.outputs.core }}
-          VPS_CORE_CHAT_WORKER_IMAGE: ${{ steps.image_refs.outputs.core_chat_worker }}
-          VPS_TRANSACTION_WORKER_IMAGE: ${{ steps.image_refs.outputs.transaction_worker }}
-          VPS_RECEIPT_WORKER_IMAGE: ${{ steps.image_refs.outputs.receipt_worker }}
+          STACK_GATEWAY_IMAGE: ${{ steps.image_refs.outputs.gateway }}
+          STACK_CHAT_WORKER_IMAGE: ${{ steps.image_refs.outputs.chat_worker }}
+          STACK_TRANSACTION_WORKER_IMAGE: ${{ steps.image_refs.outputs.transaction_worker }}
+          STACK_RECEIPT_WORKER_IMAGE: ${{ steps.image_refs.outputs.receipt_worker }}
         run: |
           set -euo pipefail
-          ssh -F "$HOME/.ssh/config" vps-deploy \
+          ssh \
+            -p "$VPS_SSH_PORT" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "${VPS_SSH_USER}@${VPS_HOST}" \
             "cd '$VPS_APP_DIR' \
-            && VPS_GATEWAY_IMAGE='$VPS_GATEWAY_IMAGE' \
-            VPS_CORE_IMAGE='$VPS_CORE_IMAGE' \
-            VPS_CORE_CHAT_WORKER_IMAGE='$VPS_CORE_CHAT_WORKER_IMAGE' \
-            VPS_TRANSACTION_WORKER_IMAGE='$VPS_TRANSACTION_WORKER_IMAGE' \
-            VPS_RECEIPT_WORKER_IMAGE='$VPS_RECEIPT_WORKER_IMAGE' \
-            docker compose -f docker-compose.vps.yml logs --tail=120 gateway core core-chat-worker transaction-worker receipt-worker caddy"
+            && STACK_GATEWAY_IMAGE='$STACK_GATEWAY_IMAGE' \
+            STACK_CHAT_WORKER_IMAGE='$STACK_CHAT_WORKER_IMAGE' \
+            STACK_TRANSACTION_WORKER_IMAGE='$STACK_TRANSACTION_WORKER_IMAGE' \
+            STACK_RECEIPT_WORKER_IMAGE='$STACK_RECEIPT_WORKER_IMAGE' \
+            docker compose -f docker-compose.yml logs --tail=120 gateway chat-worker transaction-worker receipt-worker caddy"

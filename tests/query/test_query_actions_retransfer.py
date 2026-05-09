@@ -2,10 +2,10 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.actions import handle_drill_down
-from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.core.src.agent.shared.query_contracts import SelectionPayload
+from apps.chat.src.agent.graphs.query.actions import handle_drill_down
+from apps.chat.src.agent.graphs.query.models import QueryResult, QueryResultItem
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.shared.query_contracts import SelectionPayload
 
 
 @pytest.mark.asyncio

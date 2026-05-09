@@ -1,4 +1,4 @@
-from apps.core.src.agent.graphs.account.formatter import AccountFormatter
+from apps.chat.src.agent.graphs.account.formatter import AccountFormatter
 
 
 def test_format_balance_response_single_account_natural_sentence() -> None:

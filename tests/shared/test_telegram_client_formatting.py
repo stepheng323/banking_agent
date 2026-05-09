@@ -39,6 +39,45 @@ def test_telegram_message_draft_respects_false_env_override(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_telegram_client_reuses_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    created_clients: list[object] = []
+
+    class _FakeAsyncClient:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+            self.is_closed = False
+            self.posts: list[str] = []
+            self.gets: list[str] = []
+            created_clients.append(self)
+
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            del kwargs
+            self.posts.append(url)
+            return httpx.Response(200, request=httpx.Request("POST", url), json={"ok": True, "result": True})
+
+        async def get(self, url: str) -> httpx.Response:
+            self.gets.append(url)
+            return httpx.Response(200, request=httpx.Request("GET", url), content=b"media")
+
+        async def aclose(self) -> None:
+            self.is_closed = True
+
+    monkeypatch.setattr(telegram_client_module.httpx, "AsyncClient", _FakeAsyncClient)
+    client = TelegramClient()
+
+    await client._call("sendMessage", {"chat_id": "12345", "text": "Hi"})
+    await client._call("sendChatAction", {"chat_id": "12345", "action": "typing"})
+    content = await client.download_media("https://api.telegram.org/file/bottest/media.jpg")
+
+    assert content == b"media"
+    assert len(created_clients) == 1
+    await client.aclose()
+    await client._call("sendMessage", {"chat_id": "12345", "text": "Again"})
+    assert len(created_clients) == 2
+
+
+@pytest.mark.asyncio
 async def test_send_message_draft_calls_telegram_draft_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
     monkeypatch.setattr(settings, "telegram_enable_message_draft", True)

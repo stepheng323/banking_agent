@@ -26,7 +26,20 @@ class WhatsAppClient(MessagingClient):
     def __init__(self):
         self.access_token = settings.meta_access_token
         self.phone_number_id = settings.meta_phone_number_id
+        self._http_client: httpx.AsyncClient | None = None
         self._validate_config()
+
+    def _client(self) -> httpx.AsyncClient:
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                timeout=60,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return self._http_client
+
+    async def aclose(self) -> None:
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
 
     async def _send(self, url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
         headers = self._get_headers()
@@ -34,12 +47,11 @@ class WhatsAppClient(MessagingClient):
 
         for attempt in range(1, max_retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.post(url, headers=headers, json=payload)
-                    resp.raise_for_status()
-                    result: dict[str, Any] = resp.json()
-                    print(f"✓ Request successful (attempt {attempt})")
-                    return result
+                resp = await self._client().post(url, headers=headers, json=payload, timeout=10)
+                resp.raise_for_status()
+                result: dict[str, Any] = resp.json()
+                print(f"✓ Request successful (attempt {attempt})")
+                return result
 
             except httpx.HTTPStatusError as e:
                 last_error = e
@@ -441,15 +453,14 @@ class WhatsAppClient(MessagingClient):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(upload_url, headers=headers, json=payload)
-                resp.raise_for_status()
-                result = resp.json()
-                media_id: str | None = result.get("id")
-                if not media_id:
-                    raise ValueError("No media ID returned from WhatsApp")
-                print(f"✓ Media uploaded to WhatsApp: {media_id}")
-                return media_id
+            resp = await self._client().post(upload_url, headers=headers, json=payload, timeout=30)
+            resp.raise_for_status()
+            result = resp.json()
+            media_id: str | None = result.get("id")
+            if not media_id:
+                raise ValueError("No media ID returned from WhatsApp")
+            print(f"✓ Media uploaded to WhatsApp: {media_id}")
+            return media_id
         except Exception as e:
             print(f"❌ Failed to upload media to WhatsApp: {e}")
             raise
@@ -571,14 +582,13 @@ class WhatsAppClient(MessagingClient):
         headers = self._get_headers()
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                result = resp.json()
-                media_url: str | None = result.get("url")
-                if not media_url:
-                    raise ValueError("No URL returned for media")
-                return media_url
+            resp = await self._client().get(url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            result = resp.json()
+            media_url: str | None = result.get("url")
+            if not media_url:
+                raise ValueError("No URL returned for media")
+            return media_url
         except Exception as e:
             print(f"❌ Failed to get media URL: {e}")
             raise
@@ -595,10 +605,9 @@ class WhatsAppClient(MessagingClient):
         """
         headers = self._get_headers()
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(media_url, headers=headers)
-                resp.raise_for_status()
-                return resp.content
+            resp = await self._client().get(media_url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            return resp.content
         except Exception as e:
             print(f"❌ Failed to download media: {e}")
             raise
@@ -623,22 +632,21 @@ class WhatsAppClient(MessagingClient):
         upload_url = f"{GRAPH_API_BASE}/{self.phone_number_id}/media"
 
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                files: dict[str, tuple[str | None, bytes | str, str] | tuple[str | None, str]] = {
-                    "file": (filename, data, mime_type),
-                    "messaging_product": (None, "whatsapp"),
-                    "type": (None, mime_type),
-                }
-                headers = {"Authorization": f"Bearer {self.access_token}"}
+            files: dict[str, tuple[str | None, bytes | str, str] | tuple[str | None, str]] = {
+                "file": (filename, data, mime_type),
+                "messaging_product": (None, "whatsapp"),
+                "type": (None, mime_type),
+            }
+            headers = {"Authorization": f"Bearer {self.access_token}"}
 
-                resp = await client.post(upload_url, headers=headers, files=files)
-                resp.raise_for_status()
-                result = resp.json()
-                media_id: str | None = result.get("id")
-                if not media_id:
-                    raise ValueError("No media ID returned from WhatsApp")
-                print(f"✓ Buffer uploaded to WhatsApp: {media_id}")
-                return media_id
+            resp = await self._client().post(upload_url, headers=headers, files=files, timeout=60)
+            resp.raise_for_status()
+            result = resp.json()
+            media_id: str | None = result.get("id")
+            if not media_id:
+                raise ValueError("No media ID returned from WhatsApp")
+            print(f"✓ Buffer uploaded to WhatsApp: {media_id}")
+            return media_id
         except Exception as e:
             print(f"❌ Failed to upload buffer to WhatsApp: {e}")
             raise

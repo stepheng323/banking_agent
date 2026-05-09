@@ -8,8 +8,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from apps.core.src.lambda_handlers.receipt_worker_handler import _handler as receipt_lambda_handler
-from apps.core.src.runtime.receipt_worker_dependencies import setup_receipt_worker_consumers
+from apps.receipt.dependencies import setup_receipt_worker_consumers
+from apps.receipt.lambda_handler import _handler as receipt_lambda_handler
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.queue.contracts import get_contract_by_topic
@@ -81,7 +81,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     RedisClient.get_client()
 
     _stop_event = asyncio.Event()
-    worker_enabled = settings.enable_receipt_worker and settings.async_transport.lower() in {"aws", "redis"}
+    worker_enabled = settings.async_transport.lower() in {"aws", "redis"}
     if worker_enabled:
         if settings.async_transport.lower() == "redis":
             _worker_task = asyncio.create_task(_run_receipt_stream_worker(_stop_event), name="receipt-redis-worker")
@@ -89,12 +89,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             _worker_task = asyncio.create_task(_run_receipt_worker(_stop_event), name="receipt-sqs-worker")
     else:
         logger.info(
-            "receipt_worker_passive_mode",
-            reason=(
-                "receipt_worker_disabled"
-                if not settings.enable_receipt_worker
-                else f"async_transport={settings.async_transport}"
-            ),
+            "receipt_worker_inactive",
+            reason=f"async_transport={settings.async_transport}",
             **build_runtime_status("receipt-worker"),
         )
 
@@ -125,13 +121,13 @@ async def health_check() -> dict[str, object]:
 
 @app.get("/ready")
 async def readiness_check() -> dict[str, object]:
-    """Readiness endpoint exposing active ownership state."""
+    """Readiness endpoint exposing worker and transport state."""
     return {
         "status": "ready",
         "service": "receipt-worker",
-        "worker_enabled": settings.enable_receipt_worker,
+        "worker_enabled": settings.async_transport.lower() in {"aws", "redis"},
         "async_transport": settings.async_transport,
-        "ownership": build_runtime_status("receipt-worker"),
+        "runtime": build_runtime_status("receipt-worker"),
     }
 
 

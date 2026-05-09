@@ -3,7 +3,7 @@
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import (
+from apps.chat.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
     ActiveSession,
@@ -13,12 +13,15 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
-from shared.i18n import render_cancelled_prompt
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.chat.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
+from shared.i18n import render_cancelled_prompt, render_message
 from shared.types.planner import (
     InterruptRouteDecision,
+    PendingActionEditDecision,
+    PendingActionFieldUpdates,
+    PendingActionTargetedUpdate,
     PlannedTask,
     PlannerOutput,
     SemanticRouteDecision,
@@ -153,6 +156,22 @@ class _FailIfRouterCalledPlanner:
     ) -> SemanticRouteDecision:
         del phone_number, text, context, path_label
         raise AssertionError("route_semantic_turn should not be called for callback auto-approve")
+
+
+class _PendingEditOnlyPlanner(_FailIfRouterCalledPlanner):
+    def __init__(self, decision: PendingActionEditDecision) -> None:
+        self._decision = decision
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return self._decision
 
 
 class _AccountBalanceWorker:
@@ -375,6 +394,59 @@ async def test_interrupt_input_with_pending_beneficiary_clarification_blocks_int
     assert updates["tasks"]["t1"].stage == TaskStage.RESOLVED
     assert updates["tasks"]["t1"].payload["idempotency_key"] == "old-key"
     assert "stashed_sessions" not in updates
+
+
+@pytest.mark.asyncio
+async def test_interrupt_input_with_beneficiary_bank_label_continues_flow_without_router() -> None:
+    second_id = "bene-gtb"
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.94,
+            detected_language="English",
+            target_intent="account",
+            target_mode="new",
+            reason="should not be called",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_interrupt_beneficiary_bank_label",
+        phone_number="2348022222299",
+        channel="telegram",
+        last_message_text="the GTB",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["beneficiary_id"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.RESOLVED,
+                payload={
+                    "recipient_name": "Tolu",
+                    "amount": 10000,
+                    "idempotency_key": "old-key",
+                    "beneficiary_candidates": [
+                        {"index": 1, "beneficiary_id": "bene-access", "label": "Tolu Adebayo • Access Bank • ****0001"},
+                        {"index": 2, "beneficiary_id": second_id, "label": "Tolu Adeyemi • GTBank • ****0002"},
+                    ],
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
 
 
 @pytest.mark.asyncio
@@ -733,7 +805,16 @@ async def test_confirmation_amount_shortcut_skips_interrupt_router() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _FailIfRouterCalledPlanner(),
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    amount=20000,
+                    reason="scoped multi-transfer edit",
+                )
+            ),
         },
         "recursion_limit": 50,
     }
@@ -742,7 +823,8 @@ async def test_confirmation_amount_shortcut_skips_interrupt_router() -> None:
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
-    assert updates["tasks"]["t1"].payload["confirmation"] == {}
+    assert updates["tasks"]["t1"].payload["amount"] == 20000
+    assert updates["tasks"]["t1"].payload["confirmation"] == {"confirmed": False}
     assert updates["tasks"]["t1"].payload["previous_confirmation_snapshot"] == {
         "amount": 10000,
         "recipient_name": "Mum",
@@ -777,7 +859,15 @@ async def test_confirmation_exact_repeat_shortcut_skips_interrupt_router() -> No
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _FailIfRouterCalledPlanner(),
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    reason="scoped multi-transfer edit",
+                )
+            ),
         },
         "recursion_limit": 50,
     }
@@ -820,7 +910,71 @@ async def test_input_numeric_source_selection_shortcut_skips_interrupt_router() 
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _FailIfRouterCalledPlanner(),
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    reason="scoped multi-transfer edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload["confirmation"] == {}
+
+
+@pytest.mark.asyncio
+async def test_input_source_account_reference_shortcut_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_shortcut_input_source_ref",
+        phone_number="2348066666699",
+        channel="telegram",
+        last_message_text="my GTB",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["source_account_id"]},
+            prompt="Which account should I use?",
+        ),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"id": "acc-access", "bank_name": "Access Bank", "account_number": "2010000001"},
+                {"id": "acc-gtb", "bank_name": "GTBank", "account_number": "2010000002"},
+            ],
+        },
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "confirmation": {
+                        "summary": "Confirm transfer to Mum",
+                        "snapshot": {"amount": 30000, "recipient_name": "Mum"},
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    reason="scoped multi-transfer edit",
+                )
+            ),
         },
         "recursion_limit": 50,
     }
@@ -1100,16 +1254,15 @@ async def test_confirmation_continue_flow_collective_update_resets_all_tasks() -
     state = _build_multi_transfer_confirmation_state("add narration for both as monthly allowance")
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _MockPlanner(
-                PlannerOutput(primary_intent="transfer"),
-                route=InterruptRouteDecision(
-                    decision="continue_flow",
-                    confidence=0.9,
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
                     detected_language="English",
-                    target_intent=None,
-                    target_mode=None,
+                    target_types=["transfer"],
+                    narration="monthly allowance",
                     reason="collective update",
-                ),
+                )
             )
         },
         "recursion_limit": 50,
@@ -1119,10 +1272,14 @@ async def test_confirmation_continue_flow_collective_update_resets_all_tasks() -
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t_mum"].stage == TaskStage.EXTRACTED
-    assert updates["tasks"]["t_mum"].payload["confirmation"] == {}
+    assert updates["tasks"]["t_mum"].payload["confirmation"] == {"confirmed": False}
+    assert updates["tasks"]["t_mum"].payload["narration"] == "monthly allowance"
+    assert updates["tasks"]["t_mum"].payload["authored_narration"] == "monthly allowance"
     assert "idempotency_key" not in updates["tasks"]["t_mum"].payload
     assert updates["tasks"]["t_gaines"].stage == TaskStage.EXTRACTED
-    assert updates["tasks"]["t_gaines"].payload["confirmation"] == {}
+    assert updates["tasks"]["t_gaines"].payload["confirmation"] == {"confirmed": False}
+    assert updates["tasks"]["t_gaines"].payload["narration"] == "monthly allowance"
+    assert updates["tasks"]["t_gaines"].payload["authored_narration"] == "monthly allowance"
     assert "idempotency_key" not in updates["tasks"]["t_gaines"].payload
     assert set(updates["last_interrupt"].task_ids) == {"t_mum", "t_gaines"}
 
@@ -1160,16 +1317,23 @@ async def test_confirmation_continue_flow_scopes_multi_recipient_narration_updat
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _MockPlanner(
-                PlannerOutput(primary_intent="transfer"),
-                route=InterruptRouteDecision(
-                    decision="continue_flow",
-                    confidence=0.9,
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
                     detected_language="English",
-                    target_intent=None,
-                    target_mode=None,
+                    updates=[
+                        PendingActionTargetedUpdate(
+                            target_texts=["mum"],
+                            fields=PendingActionFieldUpdates(narration="allowance"),
+                        ),
+                        PendingActionTargetedUpdate(
+                            target_texts=["tolu"],
+                            fields=PendingActionFieldUpdates(narration="transport"),
+                        ),
+                    ],
                     reason="recipient-scoped narration update",
-                ),
+                )
             )
         },
         "recursion_limit": 50,
@@ -1232,7 +1396,24 @@ async def test_confirmation_continue_flow_scopes_multi_recipient_amount_and_narr
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _FailIfRouterCalledPlanner(),
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    updates=[
+                        PendingActionTargetedUpdate(
+                            target_texts=["mum"],
+                            fields=PendingActionFieldUpdates(narration="allowance"),
+                        ),
+                        PendingActionTargetedUpdate(
+                            target_texts=["tolu"],
+                            fields=PendingActionFieldUpdates(narration="transport", amount=5000),
+                        ),
+                    ],
+                    reason="scoped multi-transfer edit",
+                )
+            ),
         },
         "recursion_limit": 50,
     }
@@ -1246,6 +1427,82 @@ async def test_confirmation_continue_flow_scopes_multi_recipient_amount_and_narr
     assert updates["tasks"]["t_tolu"].payload["amount"] == 5000
     assert updates["tasks"]["t_tolu"].payload["user_note"] == "transport"
     assert updates["tasks"]["t_tolu"].payload["narration"] != "transport also make tolu 5k"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_continue_flow_scopes_same_as_amount_to_target_recipient_only() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_multi_confirm_same_as",
+        phone_number="2348066666790",
+        channel="whatsapp",
+        last_message_text="Change the amount for tolu to same as gaines",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_gaines", "t_tolu", "t_airtime"]),
+        tasks={
+            "t_gaines": TaskSpec(
+                id="t_gaines",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Gaines",
+                    "recipient_resolved_name": "Fatima Zahra Musa",
+                    "amount": 10000,
+                    "idempotency_key": "idem-gaines",
+                    "confirmation": {"summary": "Confirm Gaines", "snapshot": {"amount": 10000, "recipient_name": "Gaines"}},
+                },
+            ),
+            "t_tolu": TaskSpec(
+                id="t_tolu",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "amount": 5000,
+                    "idempotency_key": "idem-tolu",
+                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 5000, "recipient_name": "Tolu Adebayo"}},
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "idempotency_key": "idem-airtime",
+                    "confirmation": {"summary": "Confirm airtime", "snapshot": {"amount": 1000}},
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    target_texts=["tolu"],
+                    amount=10000,
+                    reason="same-as amount resolved by semantic edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_gaines"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["tasks"]["t_gaines"].payload["amount"] == 10000
+    assert updates["tasks"]["t_gaines"].payload["confirmation"]["summary"] == "Confirm Gaines"
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["tasks"]["t_tolu"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_tolu"].payload["amount"] == 10000
+    assert updates["tasks"]["t_tolu"].payload["pending_user_message"] == "Send 10000 to Tolu Adebayo"
+    assert updates["last_interrupt"].task_ids == ["t_tolu"]
 
 
 @pytest.mark.asyncio
@@ -1304,7 +1561,26 @@ async def test_confirmation_continue_flow_rerenders_multi_transfer_summary_from_
     interrupt_updates = await handle_pending_interrupt(
         state,
         {
-            "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+            "configurable": {
+                "task_planner": _PendingEditOnlyPlanner(
+                    PendingActionEditDecision(
+                        operation="update_fields",
+                        confidence=0.95,
+                        detected_language="English",
+                        updates=[
+                            PendingActionTargetedUpdate(
+                                target_texts=["mum"],
+                                fields=PendingActionFieldUpdates(narration="allowance"),
+                            ),
+                            PendingActionTargetedUpdate(
+                                target_texts=["tolu"],
+                                fields=PendingActionFieldUpdates(narration="transport", amount=5000),
+                            ),
+                        ],
+                        reason="scoped multi-transfer edit",
+                    )
+                )
+            },
             "recursion_limit": 50,
         },
     )
@@ -1361,7 +1637,16 @@ async def test_confirmation_continue_flow_clarifies_ambiguous_scoped_multi_recip
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _FailIfRouterCalledPlanner(),
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    amount=5000,
+                    narration="allowance",
+                    reason="ambiguous scoped multi-transfer edit",
+                )
+            ),
         },
         "recursion_limit": 50,
     }
@@ -1812,6 +2097,58 @@ async def test_input_obvious_cancel_shortcut_resets_for_fresh_start() -> None:
 
 
 @pytest.mark.asyncio
+async def test_input_interrupt_exhaustion_resets_after_three_failed_attempts() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_retry_budget",
+        phone_number="2348010101199",
+        channel="whatsapp",
+        last_message_text="the blue one",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["source_account_id"]},
+            prompt="Which account would you like to use?",
+            attempts=2,
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mum", "amount": 5000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="unclear",
+            confidence=0.51,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="reply did not resolve the requested input",
+        )
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["session_stack"] == []
+    assert updates["final_response"] == render_message("orchestrator.execution.input_attempts_exhausted", "en")
+    assert updates["outbox"][0]["type"] == "say"
+    assert updates["outbox"][0]["text"] == render_message("orchestrator.execution.input_attempts_exhausted", "en")
+
+
+@pytest.mark.asyncio
 async def test_confirmation_obvious_cancel_shortcut_skips_interrupt_router() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_cancel_confirmation",
@@ -2141,5 +2478,5 @@ async def test_transfer_input_unclear_reprompt_uses_short_account_bank_reminder(
 
     assert updates["pending_interrupt"] is not None
     assert updates["outbox"][0]["type"] == "say"
-    assert updates["outbox"][0]["text"] == "What's Tolu (TOLU ADEDAYO)'s account number and bank?"
+    assert updates["outbox"][0]["text"] == "Please share the account number and bank for Tolu (TOLU ADEDAYO)."
     assert "I found" not in updates["outbox"][0]["text"]

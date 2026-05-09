@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.core.src.schedulers.transfer_schedule_dispatcher import TransferScheduleDispatcher
+from apps.chat.src.schedulers.transfer_schedule_dispatcher import TransferScheduleDispatcher
 
 
 class _FakeScheduledInstructionRepo:
@@ -77,7 +77,7 @@ async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch)
     )
     fake_uow = _FakeUow(schedule)
     monkeypatch.setattr(
-        "apps.core.src.schedulers.transfer_schedule_dispatcher.UnitOfWork",
+        "apps.chat.src.schedulers.transfer_schedule_dispatcher.UnitOfWork",
         lambda: fake_uow,
     )
 

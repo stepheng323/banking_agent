@@ -1,5 +1,5 @@
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload
 
 
 def _task(payload: dict) -> TaskSpec:

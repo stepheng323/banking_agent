@@ -13,7 +13,7 @@ This guide explains how to write and validate the split runtime policy for the b
   - `DOMAIN_GUARDRAILS_PATH` (defaults to `config/domain_guardrails.json`)
 - Runtime behavior: JSON only, fail-fast on missing or invalid config
 - `soul.md` is narrative only and is not parsed at runtime
-- `SOUL_POLICY_PATH` is legacy compatibility only and is no longer the runtime source of truth
+- `config/soul_policy.json` and `SOUL_POLICY_PATH` were removed; use the split files above
 
 ## File Responsibilities
 

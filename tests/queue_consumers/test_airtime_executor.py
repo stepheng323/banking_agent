@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.core.src.agent.executors.airtime import AirtimeExecutor
+from apps.chat.src.agent.executors.airtime import AirtimeExecutor
 from shared.database.enums import TransactionStatusEnum
 
 

@@ -5,17 +5,17 @@ from time import time
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
     PendingClarificationState,
     QueryExtractionResult,
 )
-from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner.context import (
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.planner.context import (
     INTERRUPT_CONTEXT_MAX_CHARS,
     QUOTED_REPLAY_CONTEXT_MAX_CHARS,
     _load_query_session_snapshot,
@@ -104,7 +104,7 @@ async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytes
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.planner.context.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.planner.context.logger.info", _capture)
 
     class _Redis:
         async def get(self, key: str) -> str:
@@ -154,7 +154,7 @@ async def test_load_query_session_snapshot_logs_typed_surface_shape_without_lega
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.planner.context.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.planner.context.logger.info", _capture)
 
     class _Redis:
         async def get(self, key: str) -> str:
@@ -448,7 +448,7 @@ def test_get_or_build_turn_context_summary_reuses_cached_state_payload(monkeypat
         raise AssertionError("summary should be reused from state")
 
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.nodes.planner.context.build_turn_context_summary",
+        "apps.chat.src.agent.orchestrator.nodes.planner.context.build_turn_context_summary",
         _should_not_build,
     )
 

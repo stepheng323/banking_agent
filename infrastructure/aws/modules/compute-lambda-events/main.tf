@@ -1,17 +1,17 @@
 locals {
   workers = {
     "transaction-worker" = {
-      handler = "apps.core.src.lambda_handlers.transaction_worker_handler.handler"
+      handler = "apps.transaction.lambda_handler.handler"
       timeout = 120
       memory  = 1024
     }
     "receipt-worker" = {
-      handler = "apps.core.src.lambda_handlers.receipt_worker_handler.handler"
+      handler = "apps.receipt.lambda_handler.handler"
       timeout = 90
       memory  = 2048
     }
     "scheduler-dispatcher" = {
-      handler = "apps.core.src.lambda_handlers.scheduler_dispatcher_handler.handler"
+      handler = "apps.chat.src.lambda_handlers.scheduler_dispatcher_handler.handler"
       timeout = 60
       memory  = 1024
     }

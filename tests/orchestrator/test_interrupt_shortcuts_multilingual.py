@@ -2,7 +2,7 @@
 
 import pytest
 
-from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
+from apps.chat.src.agent.orchestrator.services.interrupt_shortcuts import (
     resolve_interrupt_shortcut,
     resolve_shortcut_locale,
 )
@@ -87,35 +87,32 @@ def test_unknown_or_unsupported_locale_falls_back() -> None:
     assert resolve_interrupt_shortcut(text="proceed", interrupt_kind="confirmation", locale=None) is None
 
 
-def test_confirmation_correction_phrase_stays_in_flow() -> None:
+def test_confirmation_correction_phrase_falls_through_to_semantic_edit() -> None:
     route = resolve_interrupt_shortcut(
         text="No, I mean split btw them",
         interrupt_kind="confirmation",
         locale=LocaleCode.EN,
     )
-    assert route is not None
-    assert route.decision == "continue_flow"
+    assert route is None
 
 
 @pytest.mark.parametrize("text", ["make it 20k", "change amount to 5000", "send all", "half"])
-def test_confirmation_simple_amount_edits_stay_in_flow(text: str) -> None:
+def test_confirmation_simple_amount_edits_fall_through_to_semantic_edit(text: str) -> None:
     route = resolve_interrupt_shortcut(
         text=text,
         interrupt_kind="confirmation",
         locale=LocaleCode.EN,
     )
-    assert route is not None
-    assert route.decision == "continue_flow"
+    assert route is None
 
 
-def test_confirmation_bank_switch_stays_in_flow() -> None:
+def test_confirmation_bank_switch_falls_through_to_semantic_edit() -> None:
     route = resolve_interrupt_shortcut(
         text="use first bank instead",
         interrupt_kind="confirmation",
         locale=LocaleCode.EN,
     )
-    assert route is not None
-    assert route.decision == "continue_flow"
+    assert route is None
 
 
 @pytest.mark.parametrize(
@@ -126,14 +123,13 @@ def test_confirmation_bank_switch_stays_in_flow() -> None:
         "narration should be school fees",
     ],
 )
-def test_confirmation_narration_edits_stay_in_flow(text: str) -> None:
+def test_confirmation_narration_edits_fall_through_to_semantic_edit(text: str) -> None:
     route = resolve_interrupt_shortcut(
         text=text,
         interrupt_kind="confirmation",
         locale=LocaleCode.EN,
     )
-    assert route is not None
-    assert route.decision == "continue_flow"
+    assert route is None
 
 
 @pytest.mark.parametrize("text", ["repeat that", "show it again", "what do you need again"])

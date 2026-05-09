@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ContextReference(BaseModel):
@@ -199,6 +199,184 @@ InterruptRoutingDecision: TypeAlias = Literal[
     "reject_flow",
     "status_query",
 ]
+
+ContextFrameFollowupAction: TypeAlias = Literal[
+    "answer_completeness",
+    "lookup_entity",
+    "show_details",
+    "filter_items",
+    "compare_items",
+    "select_item",
+    "explain_result",
+    "start_new_task",
+    "completeness_check",
+    "entity_lookup",
+    "detail_request",
+    "selection",
+    "new_task",
+    "unclear",
+]
+
+PendingActionEditOperation: TypeAlias = Literal[
+    "remove_tasks",
+    "restore_tasks",
+    "update_fields",
+    "add_tasks",
+    "approve_flow",
+    "cancel_all",
+    "status_query",
+    "switch_intent",
+    "unclear",
+]
+
+
+class PendingActionFieldUpdates(BaseModel):
+    """Allowed pending confirmation field updates from semantic classification.
+
+    This model is intentionally closed for OpenAI structured-output compatibility.
+    The LLM may classify requested edits into these slots; deterministic code still
+    validates whether each slot is applicable to the targeted task(s).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: float | None = Field(default=None, description="Updated transaction amount")
+    narration: str | None = Field(default=None, description="Updated transfer narration")
+    recipient_name: str | None = Field(default=None, description="Updated recipient/beneficiary reference")
+    recipient_account: str | None = Field(default=None, description="Updated recipient account number")
+    recipient_bank_name: str | None = Field(default=None, description="Updated recipient bank name")
+    source_bank_name: str | None = Field(default=None, description="Updated source account bank reference")
+    source_account_index: int | None = Field(default=None, description="1-based source account selection index")
+    phone: str | None = Field(default=None, description="Updated airtime/data phone number")
+    network: str | None = Field(default=None, description="Updated airtime/data network")
+
+
+class PendingActionTargetedUpdate(BaseModel):
+    """One scoped edit against pending confirmation task(s)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_task_ids: list[str] = Field(
+        default_factory=list,
+        description="Task ids explicitly inferred from context for this scoped edit",
+    )
+    target_types: list[Literal["transfer", "airtime", "data"]] = Field(
+        default_factory=list,
+        description="Transaction task types targeted by this scoped edit",
+    )
+    target_texts: list[str] = Field(
+        default_factory=list,
+        description="Natural-language target references for this scoped edit",
+    )
+    fields: PendingActionFieldUpdates = Field(
+        default_factory=PendingActionFieldUpdates,
+        description="Field updates to apply to the resolved target task(s)",
+    )
+
+
+class PendingActionEditDecision(BaseModel):
+    """LLM interpretation of a user turn relative to pending confirmation tasks.
+
+    The model only classifies the semantic edit request. Deterministic code must
+    still resolve task ids, validate ambiguity, and apply any state mutation.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_fields_object(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        fields = data.pop("fields", None)
+        if fields is None:
+            return data
+        if hasattr(fields, "model_dump"):
+            fields = fields.model_dump(exclude_none=True)
+        if isinstance(fields, dict):
+            for key, value in fields.items():
+                if value is not None and key not in data:
+                    data[key] = value
+        return data
+
+    operation: PendingActionEditOperation = Field(
+        default="unclear",
+        description="Semantic operation requested against the pending confirmation batch",
+    )
+    confidence: float = Field(default=0.0, description="Confidence in the pending-action edit interpretation")
+    detected_language: str | None = Field(default=None, description="Detected language for the user turn")
+    target_task_ids: list[str] = Field(
+        default_factory=list,
+        description="Task ids explicitly inferred from the pending task context; suggestions only",
+    )
+    target_types: list[Literal["transfer", "airtime", "data"]] = Field(
+        default_factory=list,
+        description="Transaction task types targeted by the edit",
+    )
+    target_texts: list[str] = Field(
+        default_factory=list,
+        description="Natural-language target references such as recipient, amount, bank, phone, or 'both transfers'",
+    )
+    updates: list[PendingActionTargetedUpdate] = Field(
+        default_factory=list,
+        description="Scoped field updates when one message edits multiple targets differently",
+    )
+    amount: float | None = Field(default=None, description="Updated transaction amount")
+    narration: str | None = Field(default=None, description="Updated transfer narration")
+    recipient_name: str | None = Field(default=None, description="Updated recipient/beneficiary reference")
+    recipient_account: str | None = Field(default=None, description="Updated recipient account number")
+    recipient_bank_name: str | None = Field(default=None, description="Updated recipient bank name")
+    source_bank_name: str | None = Field(default=None, description="Updated source account bank reference")
+    source_account_index: int | None = Field(default=None, description="1-based source account selection index")
+    phone: str | None = Field(default=None, description="Updated airtime/data phone number")
+    network: str | None = Field(default=None, description="Updated airtime/data network")
+    add_instruction: str | None = Field(
+        default=None,
+        description="Fresh user instruction to route when operation=add_tasks",
+    )
+    status_query_type: Literal["recap", "requirements"] | None = Field(
+        default=None,
+        description="Subtype when operation=status_query",
+    )
+    target_intent: str | None = Field(
+        default=None,
+        description="Intent to switch to when operation=switch_intent",
+    )
+    reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+
+    @property
+    def fields(self) -> PendingActionFieldUpdates:
+        return PendingActionFieldUpdates(
+            amount=self.amount,
+            narration=self.narration,
+            recipient_name=self.recipient_name,
+            recipient_account=self.recipient_account,
+            recipient_bank_name=self.recipient_bank_name,
+            source_bank_name=self.source_bank_name,
+            source_account_index=self.source_account_index,
+            phone=self.phone,
+            network=self.network,
+        )
+
+
+class ContextFrameFollowupDecision(BaseModel):
+    """LLM interpretation of a user turn relative to the latest displayed response frame."""
+
+    decision: ContextFrameFollowupAction = Field(
+        default="unclear",
+        description="Semantic action relative to the latest displayed frame",
+    )
+    confidence: float = Field(default=0.0, description="Confidence in the frame-follow-up interpretation")
+    detected_language: str | None = Field(default=None, description="Detected language for the user turn")
+    reference_text: str | None = Field(
+        default=None,
+        description="User's referenced entity/filter text when decision needs a target",
+    )
+    selection_index: int | None = Field(
+        default=None,
+        description="1-based selected item index when the user chooses an item by number or ordinal",
+    )
+    reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
 
 class InterruptRouteDecision(BaseModel):

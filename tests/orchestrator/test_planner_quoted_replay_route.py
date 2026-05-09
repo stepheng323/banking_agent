@@ -2,8 +2,8 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.types.planner import PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
@@ -88,7 +88,7 @@ async def test_quoted_replay_hit_skips_main_planner_and_creates_transfer_task() 
 
     updates = await plan_tasks(state, config)
 
-    assert planner.quoted_called is False
+    assert planner.quoted_called is True
     assert planner.plan_called is False
     task = updates["tasks"][next(iter(updates["tasks"]))]
     assert task.type == "transfer"
@@ -224,13 +224,22 @@ async def test_quoted_replay_clarify_returns_final_response_without_support_task
 
 
 @pytest.mark.asyncio
-async def test_simple_quoted_replay_again_skips_replay_llm_and_planner() -> None:
+async def test_simple_quoted_replay_again_uses_replay_interpreter_and_skips_main_planner() -> None:
     planner = _QuotedPlannerStub(
         QuotedReplayInterpretation.model_validate(
             {
-                "decision": "clarify",
-                "confidence": 0.5,
-                "tasks": [],
+                "decision": "execute",
+                "confidence": 0.95,
+                "tasks": [
+                    {
+                        "task_type": "transfer",
+                        "payload": {
+                            "amount": 5000,
+                            "recipient_name": "Ada",
+                            "recipient_account": "0123456789",
+                        },
+                    }
+                ],
             }
         )
     )
@@ -260,12 +269,100 @@ async def test_simple_quoted_replay_again_skips_replay_llm_and_planner() -> None
 
     updates = await plan_tasks(state, config)
 
-    assert planner.quoted_called is False
+    assert planner.quoted_called is True
     assert planner.plan_called is False
     task = updates["tasks"][next(iter(updates["tasks"]))]
     assert task.type == "transfer"
     assert task.payload["amount"] == 5000
     assert task.payload["skip_extraction"] is True
+
+
+@pytest.mark.asyncio
+async def test_simple_quoted_replay_batch_payload_replays_all_tasks_from_interpreter() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "execute",
+                "confidence": 0.95,
+                "tasks": [
+                    {
+                        "task_type": "transfer",
+                        "payload": {
+                            "action": "send_money",
+                            "amount": 5000,
+                            "recipient_name": "Tolu",
+                            "recipient_account": "2010000003",
+                            "recipient_bank_name": "First Bank",
+                            "source_account_id": "acct-1",
+                        },
+                    },
+                    {
+                        "task_type": "airtime",
+                        "payload": {
+                            "action": "buy_airtime",
+                            "amount": 500,
+                            "recipient_phone": "08162511023",
+                            "network": "MTN",
+                            "source_account_id": "acct-1",
+                        },
+                    },
+                ],
+            }
+        )
+    )
+    state = OrchestratorState(
+        user_id="u3batch",
+        phone_number="2348000010013",
+        channel="telegram",
+        has_quote=True,
+        quoted_message_id="2954",
+        last_message_text="Resend this",
+        loaded_context={"language": "en", "user_id": "user-13"},
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub(
+                {
+                    "task_type": "batch",
+                    "task_ids": ["t_transfer", "t_airtime"],
+                    "task_types": ["transfer", "airtime"],
+                    "tasks": [
+                        {
+                            "task_id": "t_transfer",
+                            "task_type": "transfer",
+                            "action": "send_money",
+                            "amount": 5000,
+                            "recipient_name": "Tolu",
+                            "recipient_account": "2010000003",
+                            "recipient_bank_name": "First Bank",
+                            "source_account_id": "acct-1",
+                        },
+                        {
+                            "task_id": "t_airtime",
+                            "task_type": "airtime",
+                            "action": "buy_airtime",
+                            "amount": 500,
+                            "recipient_phone": "08162511023",
+                            "network": "MTN",
+                            "source_account_id": "acct-1",
+                        },
+                    ],
+                }
+            ),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.quoted_called is True
+    assert planner.plan_called is False
+    assert {task.type for task in updates["tasks"].values()} == {"transfer", "airtime"}
+    assert updates["waves"] == [list(updates["tasks"].keys())]
+    airtime_task = next(task for task in updates["tasks"].values() if task.type == "airtime")
+    assert airtime_task.payload["recipient_phone"] == "08162511023"
+    assert airtime_task.payload["skip_extraction"] is True
 
 
 @pytest.mark.asyncio

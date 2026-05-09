@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.core.src.agent.graphs.support.worker import SupportWorker
-from apps.core.src.agent.orchestrator.models.domain import SupportOutcome
+from apps.chat.src.agent.graphs.support.worker import SupportWorker
+from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
 from shared.services.async_completion import record_group_leg_and_maybe_build_summary
 
 

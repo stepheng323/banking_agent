@@ -1,4 +1,4 @@
-from apps.core.src.agent.graphs.query.prompts.main import (
+from apps.chat.src.agent.graphs.query.prompts.main import (
     QUERY_PARSER_PROMPT,
     QUERY_SEMANTIC_REASONER_CONTEXT,
     QUERY_SEMANTIC_REASONER_SYSTEM,

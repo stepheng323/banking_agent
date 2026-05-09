@@ -1,7 +1,9 @@
 from typing import Any
 
+import httpx
 import pytest
 
+from shared.clients.whatsapp import client as whatsapp_client_module
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
 
@@ -121,3 +123,51 @@ async def test_whatsapp_client_send_text_waits_briefly_after_typing(monkeypatch:
 
     assert result["messages"][0]["id"] == "wa-msg-3"
     assert events == ["typing:wamid.125", "sleep:0.65", "send:Hello"]
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_client_reuses_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "meta_access_token", "token")
+    monkeypatch.setattr(settings, "meta_phone_number_id", "phone-id")
+    created_clients: list[object] = []
+
+    class _FakeAsyncClient:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+            self.is_closed = False
+            self.posts: list[str] = []
+            self.gets: list[str] = []
+            created_clients.append(self)
+
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            del kwargs
+            self.posts.append(url)
+            body: dict[str, object]
+            if url.endswith("/media"):
+                body = {"id": "media-id"}
+            else:
+                body = {"messages": [{"id": "wa-msg"}]}
+            return httpx.Response(200, request=httpx.Request("POST", url), json=body)
+
+        async def get(self, url: str, **kwargs: object) -> httpx.Response:
+            del kwargs
+            self.gets.append(url)
+            if url.endswith("/media-id"):
+                return httpx.Response(200, request=httpx.Request("GET", url), json={"url": "https://media.example/file"})
+            return httpx.Response(200, request=httpx.Request("GET", url), content=b"media")
+
+        async def aclose(self) -> None:
+            self.is_closed = True
+
+    monkeypatch.setattr(whatsapp_client_module.httpx, "AsyncClient", _FakeAsyncClient)
+    client = WhatsAppClient()
+
+    await client._send(client._get_url(), {"messaging_product": "whatsapp"})
+    assert await client._upload_buffer(b"image", "image.png", "image/png") == "media-id"
+    assert await client.get_media_url("media-id") == "https://media.example/file"
+    assert await client.download_media("https://media.example/file") == b"media"
+
+    assert len(created_clients) == 1
+    await client.aclose()
+    await client._send(client._get_url(), {"messaging_product": "whatsapp"})
+    assert len(created_clients) == 2

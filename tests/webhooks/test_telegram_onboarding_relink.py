@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.account.worker import AccountWorker
+from apps.chat.src.agent.graphs.account.worker import AccountWorker
 from apps.gateway.api.webhooks.telegram.router import (
     AccountInput,
     LinkingAccountInput,
@@ -251,7 +251,7 @@ async def test_account_worker_link_token_bootstraps_telegram_relink_session(
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
     monkeypatch.setattr(
         "apps.gateway.api.webhooks.telegram.router.bvn_service",
         BvnVerificationService(session_manager),

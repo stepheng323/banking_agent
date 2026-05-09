@@ -59,11 +59,11 @@ jobs:
         include:
           - name: receipt-runtime
             extra: runtime-worker-receipt
-            module: apps.core.src.lambda_handlers.receipt_worker_handler
+            module: apps.receipt.lambda_handler
             symbol: handler
           - name: transaction-runtime
             extra: runtime-worker-transaction
-            module: apps.core.src.lambda_handlers.transaction_worker_handler
+            module: apps.transaction.lambda_handler
             symbol: handler
           - name: gateway-runtime
             extra: runtime-gateway
@@ -93,17 +93,17 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - name: core-vps
-            dockerfile: apps/core/Dockerfile
-            module: apps.core.src.main
-            symbol: app
+          - name: chat-worker-vps
+            dockerfile: apps/chat/Dockerfile
+            module: apps.chat.src.worker_main
+            symbol: main
           - name: gateway-vps
             dockerfile: apps/gateway/Dockerfile
             module: apps.gateway.main
             symbol: app
           - name: transaction-worker-vps
-            dockerfile: apps/core/Dockerfile.transaction_worker
-            module: apps.core.src.transaction_worker_app
+            dockerfile: apps/transaction/Dockerfile
+            module: apps.transaction.main
             symbol: app
           - name: receipt-worker-vps
             dockerfile: apps/receipt/Dockerfile.local

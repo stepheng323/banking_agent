@@ -3,19 +3,19 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.execution.handlers import (
+from apps.chat.src.agent.orchestrator.execution.handlers import (
     ExecutionAggregation,
     ExecutionContext,
     handle_transfer_task,
 )
-from apps.core.src.agent.orchestrator.models.domain import (
+from apps.chat.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
     TaskStage,
     TransactionOutcome,
     TransactionResult,
 )
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 
 
 class _CaptureTransferWorker:
@@ -198,6 +198,62 @@ async def test_transfer_handler_uses_targeted_beneficiary_reload_for_cache_only_
     assert repo.full_calls == []
     assert worker.last_context is not None
     assert worker.last_context["beneficiaries"][0]["alias"] == "Mum"
+
+
+@pytest.mark.asyncio
+async def test_transfer_handler_reloads_beneficiaries_before_fresh_direct_extraction() -> None:
+    worker = _CaptureTransferWorker()
+    repo = _BeneficiaryRepoStub(
+        full_rows=[
+            {
+                "id": "bene-1",
+                "alias": "Tolu Access",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+                "beneficiary_type": "transfer",
+            }
+        ],
+    )
+    task = TaskSpec(
+        id="t1",
+        type="transfer",
+        stage=TaskStage.EXTRACTED,
+        payload={"amount": 10000},
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_guard",
+        phone_number="2348000000123",
+        channel="whatsapp",
+        last_message_text="Send 10k to tolu adebayo",
+        loaded_context={
+            "language": "en",
+            "user_id": "u_transfer_guard",
+            "accounts": [],
+            "beneficiaries": [],
+            "beneficiary_context_mode": "cache_only",
+        },
+        tasks={"t1": task},
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"beneficiary_repo": repo}, "recursion_limit": 50}
+    ctx = ExecutionContext(
+        state=state,
+        config=config,
+        services={"transfer": worker},
+        current_wave_len=1,
+        agg=ExecutionAggregation(state.tasks),
+    )
+
+    await handle_transfer_task(task, "t1", ctx)
+
+    assert repo.search_calls == []
+    assert repo.full_calls == [("u_transfer_guard", "transfer")]
+    assert worker.last_context is not None
+    assert worker.last_context["beneficiaries"][0]["account_name"] == "Tolu Adebayo"
+    assert state.loaded_context["beneficiaries"][0]["account_number"] == "2010000001"
 
 
 @pytest.mark.asyncio

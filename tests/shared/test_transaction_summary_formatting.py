@@ -1,4 +1,4 @@
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_multi_action_summary
 
 
@@ -129,13 +129,14 @@ def test_multi_action_summary_resolved_only_line_is_title_cased() -> None:
     assert "✓ ₦10,000 → Grace Ngozi Adebayo • Access Bank • 0762511023" in summary
 
 
-def test_multi_action_summary_airtime_line_uses_checkmark() -> None:
+def test_multi_action_summary_airtime_line_uses_single_checkmark() -> None:
     tasks = [_airtime_task(task_id="a1", amount=1000, phone_number="08162511023", network="MTN")]
 
     summary = format_multi_action_summary(tasks, locale="en")
 
     assert "*Airtime Purchase Complete*" in summary
     assert "\u2713 *Airtime:*" in summary
+    assert "\u2713 \u2713 *Airtime:*" not in summary
     assert "for 08162511023 (MTN)" in summary
 
 

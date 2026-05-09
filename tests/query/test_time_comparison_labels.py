@@ -2,11 +2,11 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.handlers.time_comparison import (
+from apps.chat.src.agent.graphs.query.handlers.time_comparison import (
     _format_period_label,
     handle_time_comparison,
 )
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
@@ -61,7 +61,7 @@ async def test_time_comparison_uses_naira_amounts_without_kobo_division(
         return [{"id": "previous", "amount": 3000, "type": "debit"}]
 
     monkeypatch.setattr(
-        "apps.core.src.agent.graphs.query.handlers.time_comparison.fetch_and_filter",
+        "apps.chat.src.agent.graphs.query.handlers.time_comparison.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 

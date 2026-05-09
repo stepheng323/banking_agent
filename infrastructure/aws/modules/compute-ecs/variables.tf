@@ -28,8 +28,8 @@ variable "ecs_security_group_id" {
   type        = string
 }
 
-variable "core_chat_worker_image_url" {
-  description = "ECR URL for the core chat worker image"
+variable "chat_worker_image_url" {
+  description = "ECR URL for the chat worker image"
   type        = string
 }
 

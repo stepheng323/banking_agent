@@ -32,7 +32,6 @@ This document defines the banking agent's identity, boundaries, and deterministi
 - Financial advice
 - Investments
 - International transfers
-- Scheduled or recurring transfers
 - All-time transaction history
 - PDF exports
 - CSV exports

@@ -1,13 +1,13 @@
 from typing import Any
 
-from apps.core.src.agent.graphs.transfer.models.types import (
+from apps.chat.src.agent.graphs.transfer.models.types import (
     TransferConfirmation,
     TransferContext,
     TransferGates,
     TransferPayload,
 )
-from apps.core.src.agent.graphs.transfer.pipeline.base import TransferPipeline, TransferStep
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferPipeline, TransferStep
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 
 
 class _PatchRecipientAccountStep(TransferStep):

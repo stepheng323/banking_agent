@@ -5,13 +5,12 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.core.src.agent.orchestrator.nodes.finalize import finalize
-from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
-from apps.core.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
-from shared.assistant_profile.loader import get_cached_assistant_profile
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
+from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
 from shared.i18n import render_message
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
@@ -79,7 +78,7 @@ class _MockAccountWorker:
         pin_verified: bool = False,
     ) -> Any:
         del payload, context, user_message, pin_verified
-        from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, AccountResult
+        from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, AccountResult
 
         return AccountResult(outcome=AccountOutcome.OK, response="Balance is available.")
 
@@ -144,16 +143,7 @@ def _apply(state: OrchestratorState, updates: dict) -> OrchestratorState:
 
 
 def _expected_policy_greeting(locale: str) -> str:
-    profile = get_cached_assistant_profile()
-    return render_message(
-        "meta.fallback",
-        locale,
-        {
-            "name": profile.identity.name,
-            "description": profile.identity.description,
-            "supported": ", ".join(profile.supported_domains),
-        },
-    )
+    return render_message("conversational.greeting", locale)
 
 
 @pytest.mark.asyncio
@@ -545,7 +535,7 @@ async def test_conversational_out_of_scope_logs_policy_blocked_breadcrumb(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.planner.response_flow.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.planner.response_flow.logger.info", _capture)
 
     planner_output = PlannerOutput(
         primary_intent="conversational",

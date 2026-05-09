@@ -2,9 +2,9 @@ from typing import Any, cast
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.intents import RequestConfirmation
-from apps.core.src.messaging.presenters.base import PresentationContext
-from apps.core.src.messaging.presenters.whatsapp import WhatsAppPresenter
+from apps.chat.src.agent.orchestrator.models.intents import RequestConfirmation
+from apps.chat.src.messaging.presenters.base import PresentationContext
+from apps.chat.src.messaging.presenters.whatsapp import WhatsAppPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 
 

@@ -42,7 +42,6 @@ class QueuePublisherFactory:
             logger.info(
                 "creating_redis_async_queue_publisher",
                 async_transport=settings.async_transport,
-                stack_role=settings.runtime_stack_role,
             )
             return RedisStreamPublisher()
 
@@ -50,7 +49,6 @@ class QueuePublisherFactory:
             logger.info(
                 "creating_noop_async_queue_publisher",
                 async_transport=settings.async_transport,
-                stack_role=settings.runtime_stack_role,
             )
             return NoOpQueuePublisher(reason=f"async_transport={settings.async_transport}")
 

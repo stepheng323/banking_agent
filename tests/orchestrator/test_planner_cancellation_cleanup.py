@@ -3,9 +3,9 @@
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.i18n import render_cancelled_prompt, render_message
 from shared.types.planner import PlannerOutput
 

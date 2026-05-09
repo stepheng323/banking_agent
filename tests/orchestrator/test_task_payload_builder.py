@@ -1,4 +1,4 @@
-from apps.core.src.agent.orchestrator.utils.task_payload import (
+from apps.chat.src.agent.orchestrator.utils.task_payload import (
     _derive_recipient_from_user_text,
     _derive_recipients_from_user_text,
     _derive_transfer_schedule_fields,

@@ -50,7 +50,7 @@ PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
 )
 
 PLANNER_RULE_ATOMS: dict[str, str] = {
-    "R01_CONVERSATIONAL": "greet|thanks|checkin->conversational,tasks=[]",
+    "R01_CONVERSATIONAL": "greet(howfar)|thanks|checkin(youdey)->conversational,tasks=[]",
     "R02_BANKING_TASKS": "banking->task+",
     "R03_MISSING_SLOTS": "slots_missing->task+",
     "R04_DEPENDENCIES": "explicit_order->depends_on",
@@ -198,6 +198,8 @@ PLANNER_RUNTIME_MIXED_TX_EXAMPLES = (
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Save-beneficiary prompt + "Hi" -> conversational.
+- Recent surface + short follow-up -> ground against RECENT_CONTEXT before new task.
+- Recent list + "is that all/any more/show details/the first one" -> answer/select from list.
 - Active transfer flow + "send it to her" -> send_money with selector reference.
 - Resume prompt + "continue" -> stay on current transactional flow."""
 

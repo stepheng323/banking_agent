@@ -65,11 +65,13 @@ migrations = [
 ]
 
 # Runtime-specific bundles for deploy targets
-runtime-core-chat = [
+runtime-chat-worker = [
     "banking-agent[core]",
 ]
 
-runtime-worker-transaction = []
+runtime-worker-transaction = [
+    "banking-agent[web]",
+]
 
 runtime-worker-messaging = [
     "banking-agent[receipt]",
@@ -85,7 +87,7 @@ runtime-gateway = [
 
 # All apps combined (for local dev)
 all = [
-    "banking-agent[core,receipt,gateway,migrations,runtime-core-chat,runtime-worker-transaction,runtime-worker-messaging,runtime-worker-receipt,runtime-gateway]",
+    "banking-agent[core,receipt,gateway,migrations,runtime-chat-worker,runtime-worker-transaction,runtime-worker-messaging,runtime-worker-receipt,runtime-gateway]",
 ]
 
 # Development dependencies
@@ -170,8 +172,8 @@ ignore = [
 "__init__.py" = ["F401", "F403"]  # Allow unused/star imports in __init__.py files
 "shared/services/task_planner.py" = ["E501"]  # Long LLM prompts
 "shared/services/funding/planner.py" = ["E501"]  # Long error messages
-"apps/core/src/agent/graphs/**" = ["E501"]  # Long nodes/prompts
-"apps/core/src/agent/orchestrator/models/**" = ["E501"]  # Long field descriptions
+"apps/chat/src/agent/graphs/**" = ["E501"]  # Long nodes/prompts
+"apps/chat/src/agent/orchestrator/models/**" = ["E501"]  # Long field descriptions
 "scripts/**" = ["E402"]  # Allow sys.path modifications before imports
 "**/tests/**" = ["B", "SIM", "E501"]  # Ignore some rules and line length in tests
 
@@ -203,7 +205,7 @@ module = ["alembic.*", "tests.*", "scripts.*"]
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "apps.core.src.agent.*"
+module = "apps.chat.src.agent.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
@@ -220,25 +222,27 @@ module = [
     "shared.services.affirmation.*",
     "shared.repositories.*",
     "shared.receipts.*",
+    "shared.messaging.*",
     "shared.formatters.*",
     "shared.cache.*",
     "shared.clients.factories.*",
     "shared.clients.providers.flutterwave.*",
+    "shared.transaction_runtime.*",
     "apps.gateway.api.webhooks.*",
-    "apps.core.src.agent.executors.*",
-    "apps.core.src.agent.graphs.transfer.*",
-    "apps.core.src.agent.graphs.airtime.*",
-    "apps.core.src.agent.graphs.data.*",
-    "apps.core.src.agent.graphs.faq.*",
-    "apps.core.src.agent.graphs.account.*",
-    "apps.core.src.agent.graphs.support.*",
-    "apps.core.src.agent.graphs.beneficiary.*",
-    "apps.core.src.agent.graphs.__shared__.*",
-    "apps.core.src.agent.orchestrator.*",
-    "apps.core.src.queue_consumers.*",
-    "apps.core.src.messaging.*",
-    "apps.core.src.runtime_bootstrap",
-    "apps.core.src.worker_main",
+    "apps.chat.src.agent.executors.*",
+    "apps.chat.src.agent.graphs.transfer.*",
+    "apps.chat.src.agent.graphs.airtime.*",
+    "apps.chat.src.agent.graphs.data.*",
+    "apps.chat.src.agent.graphs.faq.*",
+    "apps.chat.src.agent.graphs.account.*",
+    "apps.chat.src.agent.graphs.support.*",
+    "apps.chat.src.agent.graphs.beneficiary.*",
+    "apps.chat.src.agent.graphs.__shared__.*",
+    "apps.chat.src.agent.orchestrator.*",
+    "apps.chat.src.queue_consumers.*",
+    "apps.chat.src.messaging.*",
+    "apps.chat.src.runtime_bootstrap",
+    "apps.chat.src.worker_main",
 ]
 ignore_errors = true
 

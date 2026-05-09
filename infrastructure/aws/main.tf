@@ -196,7 +196,7 @@ module "compute" {
   aws_account_id             = data.aws_caller_identity.current.account_id
   public_subnet_ids          = module.networking.public_subnet_ids
   ecs_security_group_id      = module.networking.ecs_security_group_id
-  core_chat_worker_image_url = "${module.ecr.core_repository_url}:chat-worker-latest"
+  chat_worker_image_url      = "${module.ecr.core_repository_url}:chat-worker-latest"
   non_secret_env_vars        = local.non_secret_env_vars
   secret_parameter_arns      = module.config_ssm.secret_parameter_arns
   all_parameter_arns         = module.config_ssm.all_parameter_arns

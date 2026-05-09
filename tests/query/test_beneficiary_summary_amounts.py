@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.handlers.beneficiary import handle_beneficiary_summary
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.handlers.beneficiary import handle_beneficiary_summary
+from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
     QueryExecutionContract,

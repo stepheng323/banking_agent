@@ -6,7 +6,7 @@ from shared.policy.adapters import (
     resolve_capability_message,
     resolve_capability_rule,
 )
-from shared.policy.loader import get_cached_policy, load_policy, load_soul_policy
+from shared.policy.loader import get_cached_policy, load_policy
 from shared.policy.models import (
     CapabilityPolicy,
     CapabilityRule,
@@ -22,7 +22,6 @@ __all__ = [
     "capability_block_message",
     "check_unsupported_actions",
     "load_policy",
-    "load_soul_policy",
     "get_cached_policy",
     "resolve_capability_rule",
     "resolve_capability_message",

@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
     ExtractionIntent,
     Filters,
@@ -21,14 +21,14 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
     TimeReference,
 )
-from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
-from apps.core.src.agent.graphs.query.services.reasoner import (
+from apps.chat.src.agent.graphs.query.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.query.services.reasoner import (
     QuerySemanticDecision,
     QuerySemanticReasoner,
     SemanticReasonerContext,
 )
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.core.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -483,7 +483,7 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.reasoner.logger.info", _capture)
 
     reasoner = QuerySemanticReasoner(_FailingLLM())
     surface_view = _direct_answer_surface_view(type="single_transaction")
@@ -531,7 +531,7 @@ async def test_reasoner_logs_llm_fact_answer_decision(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -598,7 +598,7 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -1119,7 +1119,7 @@ async def test_reasoner_logs_single_llm_trace_metadata(monkeypatch: pytest.Monke
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -1172,7 +1172,7 @@ async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(

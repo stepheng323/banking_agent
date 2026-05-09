@@ -26,8 +26,8 @@ output "webhook_api_endpoint" {
   value = module.api_gateway_webhooks.api_endpoint
 }
 
-output "core_chat_worker_service_name" {
-  value = module.compute.core_chat_worker_service_name
+output "chat_worker_service_name" {
+  value = module.compute.chat_worker_service_name
 }
 
 output "ssm_secret_parameter_names" {

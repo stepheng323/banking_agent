@@ -6,10 +6,10 @@ import uuid
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.finalize import finalize
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
 
 
 def _config() -> RunnableConfig:
@@ -150,7 +150,9 @@ async def test_finalize_stashed_and_completed_transfer_does_not_prompt_resume() 
 
     assert updates["outbox"], "Completed transfer should emit processing text."
     assert "Would you like to resume your" not in updates["outbox"][-1]["text"]
-    assert "context_frames" not in updates
+    assert updates["context_frames"][-1].frame_type == ContextFrameType.TRANSACTION_DETAIL
+    assert updates["context_frames"][-1].items[0].data["amount"] == 5000
+    assert updates["context_frames"][-1].items[0].data["recipient_name"] == "Fatima"
 
 
 @pytest.mark.asyncio
@@ -259,6 +261,9 @@ async def test_finalize_mixed_transaction_batch_emits_processing_only() -> None:
     say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
     assert len(say_entries) == 1
     assert say_entries[0]["text"] == "Your transactions are being processed."
+    assert updates["context_frames"][-1].frame_type == ContextFrameType.TRANSACTION_LIST
+    assert [item.data["transaction_type"] for item in updates["context_frames"][-1].items] == ["transfer", "airtime"]
+    assert updates["context_frames"][-1].items[1].data["phone"] == "08162511023"
 
 
 @pytest.mark.asyncio

@@ -15,17 +15,27 @@ from shared.services.task_planner_prompts import (
     refresh_planner_system_prompt,
 )
 from shared.services.task_planner_router_prompts import (
+    CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT,
+    CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE,
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
     INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT,
     INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
     INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE,
+    PENDING_ACTION_EDIT_SYSTEM_PROMPT,
+    PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE,
     QUOTED_REPLAY_SYSTEM_PROMPT,
     QUOTED_REPLAY_USER_PROMPT_TEMPLATE,
     SEMANTIC_ROUTER_SYSTEM_PROMPT,
     SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE,
 )
 from shared.services.task_queue.service import TaskQueueService
-from shared.types.planner import InterruptRouteDecision, PlannerOutput, SemanticRouteDecision
+from shared.types.planner import (
+    ContextFrameFollowupDecision,
+    InterruptRouteDecision,
+    PendingActionEditDecision,
+    PlannerOutput,
+    SemanticRouteDecision,
+)
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
@@ -85,6 +95,14 @@ class TaskPlanner:
         self.structured_quoted_replay = _with_structured_output(
             planner_llm,
             QuotedReplayInterpretation,
+        )
+        self.structured_context_frame_followup = _with_structured_output(
+            self.semantic_router_llm,
+            ContextFrameFollowupDecision,
+        )
+        self.structured_pending_action_edit = _with_structured_output(
+            self.interrupt_llm,
+            PendingActionEditDecision,
         )
         self.task_queue_service = task_queue_service
         if not self.uses_dedicated_interrupt_model:
@@ -238,6 +256,80 @@ class TaskPlanner:
         if isinstance(result, InterruptRouteDecision):
             return result
         return cast(InterruptRouteDecision, InterruptRouteDecision.model_validate(result))
+
+    async def interpret_context_frame_followup(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "planner_path",
+    ) -> ContextFrameFollowupDecision:
+        """Classify whether a user turn is a semantic follow-up to the latest displayed frame."""
+        user_prompt = CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+            context=context,
+        )
+        system_prompt = CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT
+        start = time.perf_counter()
+        result = await self.structured_context_frame_followup.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "context_frame_followup_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.semantic_router_llm),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
+            context_chars=len(context),
+            context_mode="compact" if context == "None" else "full",
+        )
+        self._log_latency_span(span="context_frame_followup_llm", duration_ms=duration_ms, path_label=path_label)
+        if isinstance(result, ContextFrameFollowupDecision):
+            return result
+        return cast(ContextFrameFollowupDecision, ContextFrameFollowupDecision.model_validate(result))
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        """Classify a user turn as a semantic edit to pending confirmation tasks."""
+        user_prompt = PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+            context=context,
+        )
+        system_prompt = PENDING_ACTION_EDIT_SYSTEM_PROMPT
+        start = time.perf_counter()
+        result = await self.structured_pending_action_edit.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "pending_action_edit_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.interrupt_llm),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
+            context_chars=len(context),
+            context_mode="compact" if context == "None" else "full",
+        )
+        self._log_latency_span(span="pending_action_edit_llm", duration_ms=duration_ms, path_label=path_label)
+        if isinstance(result, PendingActionEditDecision):
+            return result
+        return cast(PendingActionEditDecision, PendingActionEditDecision.model_validate(result))
 
     async def interpret_quoted_replay(
         self, phone_number: str, text: str, context: str = "None"

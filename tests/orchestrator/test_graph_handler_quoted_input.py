@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 
-from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
-from apps.core.src.agent.orchestrator.models.message_context import MessageContext
-from apps.core.src.agent.orchestrator.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
+from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
+from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
 from shared.config.settings import settings
 from shared.services.delivery_service import DeliveryAttemptResult
 
@@ -105,11 +105,11 @@ class _ProgressTrackerStub:
 async def test_graph_handler_invoke_passes_quoted_message_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
 
@@ -156,11 +156,11 @@ async def test_graph_handler_invoke_passes_quoted_message_fields(monkeypatch: py
 async def test_graph_handler_resume_flow_clears_quoted_message_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
 
@@ -213,11 +213,11 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
 
     graph = _SemanticGraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
 
@@ -226,7 +226,7 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
     def _capture(event: str, **kwargs) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.logger.info", _capture)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -268,11 +268,11 @@ async def test_graph_handler_uses_lightweight_hydration_for_fresh_transfer(monke
     graph = _GraphStub()
     context_manager = _ContextManagerStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
 
@@ -338,11 +338,11 @@ async def test_graph_handler_cancel_prefastpath_uses_cache_only_hydration(monkey
     graph = _CancelGraphStub()
     context_manager = _ContextManagerStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
 
@@ -398,15 +398,15 @@ async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_t
     context_manager = _ContextManagerStub()
     typing_mock = AsyncMock()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing",
+        "apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing",
         typing_mock,
     )
 
@@ -476,11 +476,11 @@ async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.Monk
 
     graph = _RouteMetricsGraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
 
@@ -489,7 +489,7 @@ async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.Monk
     def _capture(event: str, **kwargs) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.logger.info", _capture)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -548,15 +548,15 @@ async def test_graph_handler_keeps_delivery_metadata_empty_after_visible_progres
 ) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.TurnProgressTracker",
+        "apps.chat.src.agent.orchestrator.graph.handler.TurnProgressTracker",
         lambda locale: _ProgressTrackerStub(progress_count=1, last_progress_sent_at=asyncio.get_running_loop().time()),
     )
 
@@ -601,15 +601,15 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
 ) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.TurnProgressTracker",
+        "apps.chat.src.agent.orchestrator.graph.handler.TurnProgressTracker",
         lambda locale: _ProgressTrackerStub(progress_count=0, last_progress_sent_at=None),
     )
 
@@ -618,7 +618,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
     def _capture(event: str, **kwargs) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.logger.info", _capture)
     monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 650)
 
     handler = OrchestratorGraphHandler(
@@ -670,17 +670,17 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
 async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -696,8 +696,8 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -747,17 +747,17 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
 ) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -771,8 +771,8 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -867,17 +867,17 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
 ) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -891,8 +891,8 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -965,17 +965,17 @@ async def test_deduped_progress_attempt_does_not_advance_progress_or_attach_deli
 ) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -1008,8 +1008,8 @@ async def test_deduped_progress_attempt_does_not_advance_progress_or_attach_deli
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),

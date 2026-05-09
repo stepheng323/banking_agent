@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.transfer.validators.account_validator import AccountValidator
+from apps.chat.src.agent.graphs.transfer.validators.account_validator import AccountValidator
 
 
 class _ValidationServiceStub:

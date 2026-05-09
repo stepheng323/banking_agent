@@ -2,8 +2,8 @@ from datetime import date, timedelta
 
 import pytest
 
-from apps.core.src.agent.graphs.query.compiler import finalize
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.compiler import finalize
+from apps.chat.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
@@ -16,7 +16,7 @@ from apps.core.src.agent.graphs.query.models import (
     ResolverOutcome,
     TimeReference,
 )
-from apps.core.src.agent.graphs.query.services.parser import QueryParser
+from apps.chat.src.agent.graphs.query.services.parser import QueryParser
 from shared.i18n import render_message
 
 
@@ -80,7 +80,7 @@ async def test_parser_logs_llm_call_metadata(monkeypatch: pytest.MonkeyPatch) ->
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.compiler.finalize.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.compiler.finalize.logger.info", _capture)
 
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.TRANSACTION_LIST,

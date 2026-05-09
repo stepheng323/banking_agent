@@ -2,14 +2,14 @@ from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import (
+from apps.chat.src.agent.orchestrator.models.domain import (
     TaskSpec,
     TaskStage,
     TransactionOutcome,
     TransactionResult,
 )
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
 from shared.clients.abstractions.direct_debit import BalanceResult
 
 

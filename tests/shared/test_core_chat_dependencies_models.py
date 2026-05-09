@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.core.src.runtime import core_chat_dependencies
+from apps.chat.src.runtime import core_chat_dependencies
 
 
 def test_resolve_role_model_warns_when_query_matches_planner(monkeypatch: pytest.MonkeyPatch) -> None:

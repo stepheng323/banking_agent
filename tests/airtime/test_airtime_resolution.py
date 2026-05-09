@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.core.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.core.src.agent.graphs.airtime.nodes.resolution import ResolutionStep
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from apps.chat.src.agent.graphs.airtime.nodes.resolution import ResolutionStep
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 
 
 @pytest.mark.asyncio

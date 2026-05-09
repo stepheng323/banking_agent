@@ -120,12 +120,12 @@ resource "aws_iam_role_policy" "ecs_task_sns_publish" {
 }
 
 resource "aws_cloudwatch_log_group" "core" {
-  name              = "/ecs/${var.project_name}-core-chat-worker"
+  name              = "/ecs/${var.project_name}-chat-worker"
   retention_in_days = 7
 }
 
 resource "aws_ecs_task_definition" "core" {
-  family                   = "${var.project_name}-core-chat-worker"
+  family                   = "${var.project_name}-chat-worker"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "1024" # 1 vCPU
@@ -136,11 +136,11 @@ resource "aws_ecs_task_definition" "core" {
   container_definitions = jsonencode([
     {
       name  = "core"
-      image = var.core_chat_worker_image_url
+      image = var.chat_worker_image_url
       command = [
         "python",
         "-m",
-        "apps.core.src.worker_main"
+        "apps.chat.src.worker_main"
       ]
 
       environment = concat(
@@ -177,7 +177,7 @@ resource "aws_ecs_task_definition" "core" {
 }
 
 resource "aws_ecs_service" "core" {
-  name            = "${var.project_name}-core-chat-worker"
+  name            = "${var.project_name}-chat-worker"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.core.arn
   desired_count   = 1

@@ -5,11 +5,11 @@ import time
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
-from shared.types.planner import PlannerOutput
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from shared.types.planner import ContextFrameFollowupDecision, PlannerOutput
 
 
 class _MockPlanner:
@@ -36,6 +36,24 @@ class _FailingPlanner:
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         raise AssertionError("planner should not be called for grounded beneficiary detail follow-up")
+
+
+class _FrameFollowupPlanner(_FailingPlanner):
+    def __init__(self, decision: ContextFrameFollowupDecision) -> None:
+        self.decision = decision
+        self.last_context: str | None = None
+
+    async def interpret_context_frame_followup(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "planner_path",
+    ) -> ContextFrameFollowupDecision:
+        del phone_number, text, path_label
+        self.last_context = context
+        return self.decision
 
 
 @pytest.mark.asyncio
@@ -723,7 +741,13 @@ async def test_beneficiary_detail_followup_answers_directly_from_recent_frame() 
         ],
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": _FailingPlanner(), "services": {}, "redis_client": None},
+        "configurable": {
+            "task_planner": _FrameFollowupPlanner(
+                ContextFrameFollowupDecision(decision="detail_request", confidence=0.96)
+            ),
+            "services": {},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 
@@ -735,6 +759,278 @@ async def test_beneficiary_detail_followup_answers_directly_from_recent_frame() 
     assert "Account Name: MERCY JOHNSON" in response
     assert "Account Number: 8162511023" in response
     assert "2. Gaines" in response
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_completeness_followup_answers_from_recent_frame() -> None:
+    now = int(time.time())
+    state = OrchestratorState(
+        user_id="u_bene_complete_1",
+        phone_number="2348111000004",
+        channel="telegram",
+        last_message_text="Is that all?",
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Tolu GTB",
+                        data={"alias": "Tolu GTB", "account_name": "Tolu Adeyemi"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-3",
+                        label="Tolu First",
+                        data={"alias": "Tolu First", "account_name": "Tolulope Johnson"},
+                    ),
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FrameFollowupPlanner(
+                ContextFrameFollowupDecision(decision="completeness_check", confidence=0.94)
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates.get("final_response") == "Yes. Those are the 3 saved beneficiaries I found."
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_account_completeness_followup_answers_from_recent_frame() -> None:
+    now = int(time.time())
+    state = OrchestratorState(
+        user_id="u_account_complete_1",
+        phone_number="2348111000005",
+        channel="telegram",
+        last_message_text="Any other one?",
+        context_frames=[
+            ContextFrame(
+                frame_id="accounts_recent",
+                frame_type=ContextFrameType.ACCOUNT_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.ACCOUNT,
+                        entity_id="acct-1",
+                        label="First Bank",
+                        data={"bank_name": "First Bank", "account_number": "6000000001"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.ACCOUNT,
+                        entity_id="acct-2",
+                        label="GTBank",
+                        data={"bank_name": "GTBank", "account_number": "2000000002"},
+                    ),
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FrameFollowupPlanner(
+                ContextFrameFollowupDecision(decision="completeness_check", confidence=0.93)
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates.get("final_response") == "Yes. Those are the 2 linked accounts I found."
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_lookup_followup_answers_no_match_from_recent_frame() -> None:
+    now = int(time.time())
+    state = OrchestratorState(
+        user_id="u_bene_lookup_1",
+        phone_number="2348111000006",
+        channel="telegram",
+        last_message_text="What about gaines",
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_lookup",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Tolu GTB",
+                        data={"alias": "Tolu GTB", "account_name": "Tolu Adeyemi"},
+                    ),
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FrameFollowupPlanner(
+                ContextFrameFollowupDecision(
+                    decision="entity_lookup",
+                    confidence=0.95,
+                    detected_language="English",
+                    reference_text="gaines",
+                )
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates.get("final_response") == "I don't see Gaines in the saved beneficiaries I showed."
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_lookup_followup_returns_matching_entities_from_recent_frame() -> None:
+    now = int(time.time())
+    state = OrchestratorState(
+        user_id="u_bene_lookup_2",
+        phone_number="2348111000007",
+        channel="telegram",
+        last_message_text="What about tolu",
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_lookup_match",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={
+                            "alias": "Tolu Access",
+                            "account_name": "Tolu Adebayo",
+                            "bank_name": "Access Bank",
+                            "account_number": "2010000001",
+                        },
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Tolu GTB",
+                        data={
+                            "alias": "Tolu GTB",
+                            "account_name": "Tolu Adeyemi",
+                            "bank_name": "GTBank",
+                            "account_number": "2010000002",
+                        },
+                    ),
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FrameFollowupPlanner(
+                ContextFrameFollowupDecision(
+                    decision="entity_lookup",
+                    confidence=0.95,
+                    detected_language="English",
+                    reference_text="tolu",
+                )
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    response = updates.get("final_response")
+    assert response is not None
+    assert "I found 2 matches in the saved beneficiaries I showed." in response
+    assert "Tolu Access" in response
+    assert "Tolu GTB" in response
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_multilingual_frame_followup_uses_semantic_decision_not_english_phrase_match() -> None:
+    now = int(time.time())
+    planner = _FrameFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="entity_lookup",
+            confidence=0.92,
+            detected_language="Yoruba",
+            reference_text="gaines",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_bene_lookup_3",
+        phone_number="2348111000008",
+        channel="telegram",
+        last_message_text="Gaines nko?",
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_recent_lookup_yoruba",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    )
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert "Frame type: beneficiary_list" in (planner.last_context or "")
+    assert updates.get("final_response") == "I don't see Gaines in the saved beneficiaries I showed."
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
     assert "tasks" not in updates
 
 
@@ -769,7 +1065,13 @@ async def test_single_beneficiary_detail_followup_returns_single_block() -> None
         ],
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": _FailingPlanner(), "services": {}, "redis_client": None},
+        "configurable": {
+            "task_planner": _FrameFollowupPlanner(
+                ContextFrameFollowupDecision(decision="detail_request", confidence=0.96)
+            ),
+            "services": {},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 

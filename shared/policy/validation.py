@@ -86,4 +86,4 @@ def validate_policy_coverage(policy: CapabilityPolicy) -> None:
                 )
 
     if errors:
-        raise ValueError("Invalid soul policy: " + " | ".join(errors))
+        raise ValueError("Invalid capability policy: " + " | ".join(errors))

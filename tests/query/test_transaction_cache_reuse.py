@@ -5,15 +5,15 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.handlers.transactions import handle_transaction_list
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.handlers.transactions import handle_transaction_list
+from apps.chat.src.agent.graphs.query.models import (
     Filters,
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
     TimeRange,
 )
-from apps.core.src.agent.graphs.query.services.fetch import (
+from apps.chat.src.agent.graphs.query.services.fetch import (
     apply_time_window,
     build_cache_fingerprint,
     build_cache_scope_fingerprint,

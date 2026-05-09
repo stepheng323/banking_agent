@@ -3,13 +3,13 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.execution.handlers import (
+from apps.chat.src.agent.orchestrator.execution.handlers import (
     ExecutionAggregation,
     ExecutionContext,
     handle_query_task,
 )
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 
 
 class _QueryWorkerCapturingContext:

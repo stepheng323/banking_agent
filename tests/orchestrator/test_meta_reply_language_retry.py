@@ -4,9 +4,9 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
-from apps.core.src.agent.orchestrator.models.domain import MetaIntent
-from apps.core.src.agent.orchestrator.system_profile import SystemProfile
+from apps.chat.src.agent.orchestrator.meta_reply import generate_meta_reply
+from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
+from apps.chat.src.agent.orchestrator.system_profile import SystemProfile
 
 
 class _FakeMetaLLM:

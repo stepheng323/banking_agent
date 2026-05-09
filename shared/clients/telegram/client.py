@@ -47,6 +47,7 @@ class TelegramClient(MessagingClient):
         self.bot_token = settings.telegram_bot_token
         self.mini_app_base_url = settings.telegram_mini_app_base_url
         self._draft_supported: bool = settings.telegram_enable_message_draft
+        self._http_client: httpx.AsyncClient | None = None
         self._validate_config()
 
     def _validate_config(self) -> None:
@@ -56,6 +57,18 @@ class TelegramClient(MessagingClient):
 
     def _api_url(self, method: str) -> str:
         return f"{TELEGRAM_API_BASE}/bot{self.bot_token}/{method}"
+
+    def _client(self) -> httpx.AsyncClient:
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                timeout=30,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return self._http_client
+
+    async def aclose(self) -> None:
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
 
     async def _call(
         self,
@@ -70,22 +83,22 @@ class TelegramClient(MessagingClient):
 
         for attempt in range(1, max_retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=30) as client:
-                    if files:
-                        # multipart upload (photos / documents from bytes)
-                        data: dict[str, Any] = payload or {}
-                        resp = await client.post(url, data=data, files=files)
-                    else:
-                        resp = await client.post(url, json=payload)
-                    resp.raise_for_status()
-                    result: dict[str, Any] = resp.json()
+                client = self._client()
+                if files:
+                    # multipart upload (photos / documents from bytes)
+                    data: dict[str, Any] = payload or {}
+                    resp = await client.post(url, data=data, files=files)
+                else:
+                    resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                result: dict[str, Any] = resp.json()
 
-                    if not result.get("ok"):
-                        desc = result.get("description", "Unknown error")
-                        raise ValueError(f"Telegram API error: {desc}")
+                if not result.get("ok"):
+                    desc = result.get("description", "Unknown error")
+                    raise ValueError(f"Telegram API error: {desc}")
 
-                    print(f"✓ Telegram API {method} successful (attempt {attempt})")
-                    return result
+                print(f"✓ Telegram API {method} successful (attempt {attempt})")
+                return result
 
             except httpx.HTTPStatusError as e:
                 last_error = e
@@ -500,10 +513,9 @@ class TelegramClient(MessagingClient):
     async def download_media(self, media_url: str) -> bytes:
         """Download media bytes from Telegram."""
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(media_url)
-                resp.raise_for_status()
-                return resp.content
+            resp = await self._client().get(media_url)
+            resp.raise_for_status()
+            return resp.content
         except Exception as e:
             print(f"❌ Failed downloading Telegram media: {e}")
             raise

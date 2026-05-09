@@ -14,6 +14,7 @@ from shared.services.task_planner import (
     PlannerPromptSignals,
     build_planner_system_prompt,
 )
+from shared.services.task_planner_router_prompts import PENDING_ACTION_EDIT_SYSTEM_PROMPT
 from shared.types.planner import ContextReadSubtype
 
 
@@ -67,6 +68,17 @@ def test_interrupt_status_query_contract_present() -> None:
     assert "target_intent=null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
 
 
+def test_pending_action_edit_contract_present() -> None:
+    """Pending edit prompt should classify edits without authorizing money movement."""
+    assert (
+        "operation: remove_tasks | restore_tasks | update_fields | add_tasks | approve_flow | cancel_all |"
+        in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    )
+    assert "target_task_ids" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    assert "target_types: transfer | airtime | data" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    assert "deterministic code will re-render confirmation and require PIN" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+
+
 def test_interrupt_compact_prompt_is_shorter_but_keeps_core_contract() -> None:
     assert len(INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT) < len(INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL)
     assert "decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query" in (
@@ -107,6 +119,18 @@ def test_follow_up_referent_binding_rules_present() -> None:
     assert "TARGETED EXAMPLES (QUERY)" not in runtime_prompt
     assert 'Active transfer flow + "Where did we stop?" -> flow_recap.' not in runtime_prompt
     assert "query" not in bundles
+
+
+def test_recent_surface_memory_enables_context_followup_rules() -> None:
+    runtime_prompt, _, bundles = _build_prompt(
+        "Is that all?",
+        "RECENT_CONTEXT:\n- beneficiary_list: [1] Tolu Access (Access), [2] Tolu GTB (GTBank)",
+        PlannerPromptSignals(has_short_term_memory=True),
+    )
+
+    assert "context" in bundles
+    assert "Recent surface + short follow-up" in runtime_prompt
+    assert "R14_REFERENCE_BINDING" in runtime_prompt
 
 
 def test_transfer_pronoun_reference_continuity_rules_present() -> None:

@@ -43,6 +43,23 @@ def test_airtime_summary_uses_shared_source_line_formatter() -> None:
     assert "From: First Bank (···7890)" in summary
 
 
+def test_airtime_summary_ignores_recipient_name_for_display() -> None:
+    summary = format_airtime_summary(
+        {
+            "amount": 500,
+            "recipientPhone": "08162511023",
+            "recipientName": "Tolu",
+            "network": "MTN",
+            "sourceBank": "Access Bank",
+            "sourceAccount": "1234500003",
+        },
+        locale="en",
+    )
+
+    assert "Airtime → 08162511023" in summary
+    assert "Tolu" not in summary
+
+
 def test_transfer_summary_narration_is_plain_text_without_markdown_italics() -> None:
     summary = format_transfer_summary(
         {

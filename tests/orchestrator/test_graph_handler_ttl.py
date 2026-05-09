@@ -1,12 +1,14 @@
 import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
-from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
-from apps.core.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType
+from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
+from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 
 
 class _CheckpointerStub:
@@ -114,11 +116,11 @@ def _build_handler(
 ) -> OrchestratorGraphHandler:
     graph_stub = graph or _GraphStub()
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
     )
     monkeypatch.setattr(
-        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph_stub,
     )
     return OrchestratorGraphHandler(
@@ -185,6 +187,37 @@ async def test_maybe_apply_session_ttl_only_refreshes_chat_history_inline(
     assert ok is True
     handler._apply_chat_history_ttl.assert_awaited_once()
     handler._apply_session_ttl.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_retains_idle_thread_with_fresh_context_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    handler = _build_handler(monkeypatch, _RedisStub())
+    handler._apply_session_ttl = AsyncMock(return_value=True)
+    handler.checkpointer.adelete_thread = AsyncMock()
+    now = int(time.time())
+    state = {
+        "tasks": {},
+        "waves": [],
+        "pending_interrupt": None,
+        "stashed_sessions": [],
+        "context_frames": [
+            ContextFrame(
+                frame_id="beneficiaries_recent",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    }
+
+    ok = await handler._cleanup_if_idle("telegram:2348000000001", state)
+
+    assert ok is True
+    handler._apply_session_ttl.assert_awaited_once()
+    ttl = handler._apply_session_ttl.await_args.kwargs["ttl"]
+    assert 1 <= ttl <= 600
+    handler.checkpointer.adelete_thread.assert_not_awaited()
 
 
 @pytest.mark.asyncio

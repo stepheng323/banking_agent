@@ -3,13 +3,13 @@
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
 from apps.gateway.adapters.sender import send_text
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.adapter import QueuePublisher
 from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-_ALLOWED_WHATSAPP_NUMBER = "08162511023"
 
 
 def _normalize_whatsapp_number(value: str | None) -> str:
@@ -61,12 +61,17 @@ class WhatsAppWebhookService:
         msg_type = msg.type or "text"
         flow_data = msg.flow_data
 
-        if normalized_from_id != _ALLOWED_WHATSAPP_NUMBER:
+        allowed_numbers = {
+            _normalize_whatsapp_number(number)
+            for number in settings.whatsapp_allowed_numbers
+            if _normalize_whatsapp_number(number)
+        }
+        if allowed_numbers and normalized_from_id not in allowed_numbers:
             logger.info(
                 "webhook_message_filtered_by_number_gate",
                 from_id=from_id,
                 normalized_from_id=normalized_from_id,
-                allowed_number=_ALLOWED_WHATSAPP_NUMBER,
+                allowed_numbers=sorted(allowed_numbers),
             )
             return False
 

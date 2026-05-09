@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from apps.gateway.adapters.telegram import ParsedTelegramMessage, parse_update
+from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
 from shared.clients.telegram.client import TelegramClient
 from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
@@ -16,6 +17,7 @@ from shared.services.onboarding import session_manager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_TELEGRAM_CHANNEL = "telegram"
 
 
 class TelegramWebhookService:
@@ -65,7 +67,7 @@ class TelegramWebhookService:
         if msg.type == "contact" and msg.contact_phone_number:
             return await self._handle_contact_share(msg)
 
-        user = await self.user_repository.get_by_channel_identity("telegram", msg.chat_id)
+        user = await self._resolve_linked_user(msg.chat_id)
         if not user:
             # Check if they are currently in the middle of onboarding
             from shared.services.onboarding import session_manager
@@ -117,7 +119,7 @@ class TelegramWebhookService:
 
     async def _handle_contact_share(self, msg: ParsedTelegramMessage) -> bool:
         """Link a shared contact to a core user profile."""
-        existing_user = await self.user_repository.get_by_channel_identity("telegram", msg.chat_id)
+        existing_user = await self._resolve_linked_user(msg.chat_id)
         if existing_user:
             await self.telegram_client._call(
                 "sendMessage",
@@ -134,7 +136,8 @@ class TelegramWebhookService:
 
         if user:
             logger.info("linking_telegram_identity", user_id=user.id, chat_id=msg.chat_id)
-            await self.user_repository.link_channel_identity(str(user.id), "telegram", msg.chat_id)
+            await self.user_repository.link_channel_identity(str(user.id), _TELEGRAM_CHANNEL, msg.chat_id)
+            await store_channel_identity_user(_TELEGRAM_CHANNEL, msg.chat_id, user)
             await self.telegram_client._call(
                 "sendMessage",
                 {
@@ -215,7 +218,7 @@ class TelegramWebhookService:
                 await self.telegram_client.answer_callback_query(msg.callback_query_id)
             return True
 
-        user = await self.user_repository.get_by_channel_identity("telegram", msg.chat_id)
+        user = await self._resolve_linked_user(msg.chat_id)
         if not user:
             logger.info("telegram_unlinked_user_blocked_callback", chat_id=msg.chat_id)
             await self._request_contact(msg.chat_id)
@@ -224,6 +227,15 @@ class TelegramWebhookService:
         message = self._build_message(msg)
         message.priority = MessagePriority.HIGH
         return await self._enqueue(message, msg.chat_id, "interactive")
+
+    async def _resolve_linked_user(self, chat_id: str) -> Any | None:
+        user = await load_channel_identity_user(_TELEGRAM_CHANNEL, chat_id)
+        if user is not None:
+            return user
+        user = await self.user_repository.get_by_channel_identity(_TELEGRAM_CHANNEL, chat_id)
+        if user is not None:
+            await store_channel_identity_user(_TELEGRAM_CHANNEL, chat_id, user)
+        return user
 
     async def _handle_web_app_data(self, msg: ParsedTelegramMessage) -> bool:
         """Process data from a Mini App (e.g. PIN entry).

@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
     ExtractionIntent,
     Filters,
@@ -18,11 +18,11 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
     TimeReference,
 )
-from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
-from apps.core.src.agent.graphs.query.session import QuerySessionManager, _session_has_surface_view
-from apps.core.src.agent.graphs.query.worker import QueryWorker
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
+from apps.chat.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
+from apps.chat.src.agent.graphs.query.session import QuerySessionManager, _session_has_surface_view
+from apps.chat.src.agent.graphs.query.worker import QueryWorker
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -416,7 +416,7 @@ async def test_worker_logs_query_turn_summary(monkeypatch: pytest.MonkeyPatch) -
     def _capture(event: str, **kwargs: Any) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.worker.logger.info", _capture)
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del state, worker_context
@@ -478,7 +478,7 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
     def _capture(event: str, **kwargs: Any) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.worker.logger.info", _capture)
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context
@@ -560,7 +560,7 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
     def _capture(event: str, **kwargs: Any) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.worker.logger.info", _capture)
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context
@@ -635,7 +635,7 @@ async def test_worker_logs_query_turn_summary_from_surface_view(
     def _capture(event: str, **kwargs: Any) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.worker.logger.info", _capture)
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del state, worker_context
@@ -699,7 +699,7 @@ async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pyt
     def _capture(event: str, **kwargs: Any) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.worker.logger.info", _capture)
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del state, worker_context
@@ -771,7 +771,7 @@ async def test_worker_warns_when_loaded_active_session_is_missing_query_contract
     def _capture_warning(event: str, **kwargs: Any) -> None:
         warnings.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.warning", _capture_warning)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.worker.logger.warning", _capture_warning)
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
         del worker_context
@@ -1145,7 +1145,7 @@ async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_foll
 async def test_worker_restores_persisted_analytics_followup_for_time_delta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
 
     redis = _RedisStoreStub()
     session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]

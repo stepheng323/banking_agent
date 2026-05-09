@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.core.src.agent.executors.payout import PayoutExecutor
+from apps.chat.src.agent.executors.payout import PayoutExecutor
 
 
 class _PayoutProvider:

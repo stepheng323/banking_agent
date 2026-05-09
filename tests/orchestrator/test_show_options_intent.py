@@ -1,12 +1,12 @@
 """Show-options intent mapping tests."""
 
-from apps.core.src.agent.orchestrator.models.intents import (
+from apps.chat.src.agent.orchestrator.models.intents import (
     RequestConfirmation,
     ShowFlow,
     ShowOptions,
     reconstruct_intent,
 )
-from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
+from apps.chat.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 
 
 def test_reconstruct_intent_handles_show_options() -> None:

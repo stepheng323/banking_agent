@@ -1,6 +1,6 @@
 from datetime import date
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     ExtractionIntent,
     QueryAggregation,
     QueryExtractionResult,
@@ -8,7 +8,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryTimeRange,
     TimeReference,
 )
-from apps.core.src.agent.graphs.query.services.parser import QueryParser
+from apps.chat.src.agent.graphs.query.services.parser import QueryParser
 
 
 class _DummyLLM:

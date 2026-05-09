@@ -1,7 +1,7 @@
 from typing import Any
 
-from apps.core.src.agent.graphs.account.worker import AccountWorker
-from apps.core.src.agent.orchestrator.models.domain import AccountOutcome
+from apps.chat.src.agent.graphs.account.worker import AccountWorker
+from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome
 
 
 class _StructuredLLM:

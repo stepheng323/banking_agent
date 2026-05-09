@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.intents import Say, ShowFlow
-from apps.core.src.queue_consumers.message_consumer import MessageConsumer
+from apps.chat.src.agent.orchestrator.models.intents import Say, ShowFlow
+from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import ChannelMessage, MessageType
@@ -214,9 +214,9 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
         del kwargs
         enqueue_calls.append(list(args))
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -248,9 +248,9 @@ async def test_message_consumer_passes_resolved_user_to_orchestrator(monkeypatch
     async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
         del args, kwargs
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -285,10 +285,10 @@ async def test_message_consumer_uses_cached_telegram_identity(monkeypatch: pytes
     async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
         del args, kwargs
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.RedisClient.get_client", lambda: redis_stub)
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("shared.cache.channel_identity_cache.RedisClient.get_client", lambda: redis_stub)
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -310,7 +310,7 @@ async def test_claim_is_released_when_processing_fails(monkeypatch: pytest.Monke
         orchestrator=orchestrator,
     )
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
 
     with pytest.raises(RuntimeError, match="invoke failed"):
         await consumer._handle_message(_message("wamid-fail"))
@@ -340,7 +340,7 @@ async def test_message_consumer_does_not_append_say_for_show_flow(monkeypatch: p
         orchestrator=orchestrator,
     )
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     sent_payloads: list[list[Any]] = []
 
     async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
@@ -348,7 +348,7 @@ async def test_message_consumer_does_not_append_say_for_show_flow(monkeypatch: p
         sent_payloads.append(list(args))
 
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -381,7 +381,7 @@ async def test_message_consumer_falls_back_to_raw_outbox_when_intents_are_empty(
         orchestrator=orchestrator,
     )
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     sent_payloads: list[list[Any]] = []
 
     async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
@@ -389,7 +389,7 @@ async def test_message_consumer_falls_back_to_raw_outbox_when_intents_are_empty(
         sent_payloads.append(list(args))
 
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -418,7 +418,7 @@ async def test_non_transaction_pin_verified_flow_is_ignored(monkeypatch: pytest.
         enqueue_calls.append(list(args))
 
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -457,9 +457,9 @@ async def test_message_consumer_passes_delivery_metadata_to_outbox(monkeypatch: 
         del args
         captured_kwargs.append(kwargs)
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -500,9 +500,9 @@ async def test_process_message_uses_runtime_bundle_without_outer_db_session(
         del kwargs
         enqueue_calls.append(list(args))
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
@@ -537,9 +537,9 @@ async def test_process_message_does_not_use_outer_db_session_even_when_present(
         del kwargs
         enqueue_calls.append(list(args))
 
-    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(
-        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 

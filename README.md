@@ -81,7 +81,8 @@ User (WhatsApp / Telegram)
 | Service | Responsibility |
 |---------|---------------|
 | `apps/gateway/` | Ingress endpoints, webhook routing, channel adapters (WhatsApp, Telegram) |
-| `apps/core/` | Orchestration, agent graphs, financial execution, task planning |
+| `apps/chat/` | Orchestration, agent graphs, task planning, shared financial logic |
+| `apps/transaction/` | Transaction worker runtime, async financial worker entrypoints |
 | `apps/receipt/` | Receipt rendering and async worker entrypoints |
 | `shared/` | Contracts, provider clients, database models, i18n, runtime config |
 
@@ -132,15 +133,15 @@ The main engineering work is around making LLM-driven financial flows behave pre
 banking_agent/
 ├── apps/
 │   ├── gateway/         # ingress, webhooks, channel adapters
-│   ├── core/            # orchestration, domain graphs, execution runtime
+│   ├── core/            # orchestration, domain graphs, shared financial logic
+│   ├── transaction/     # transaction worker runtime app
 │   └── receipt/         # receipt rendering and worker entrypoints
 ├── shared/              # shared contracts, config, clients, repositories
 ├── tests/               # 1,000+ regression and integration tests
 ├── docs/                # runtime ownership, configuration, policy docs
 ├── infrastructure/      # AWS / deployment configuration
-├── docker-compose.yml
-├── docker-compose.dev.yml
-├── docker-compose.vps.yml
+├── docker-compose.yml   # canonical runtime stack for VPS and local parity
+├── deploy-stack.sh      # canonical stack entrypoint for local + VPS runtime shape
 └── pyproject.toml
 ```
 
@@ -148,17 +149,29 @@ banking_agent/
 
 ```bash
 bash scripts/setup.sh
-make docker-up
+make local-stack-migrate
 ```
 
-Create `.env` from your local secrets/template before starting the stack.
+Create `.env` from your local secrets/template before starting the stack. For local testing with your existing Postgres and Redis containers, set `DATABASE_URL`, `REDIS_URL`, and `ASYNC_TRANSPORT=redis`, then run `make local-stack-migrate`. Later runs can use `make local-stack`.
+
+For the production-shaped stack locally, use the same entrypoint as VPS:
+
+```bash
+IMAGE_TAG=latest ./deploy-stack.sh local
+```
+
+If you already built/tagged the VPS images locally, skip registry pulls:
+
+```bash
+SKIP_PULL=1 IMAGE_TAG=local ./deploy-stack.sh local
+```
 
 | Endpoint | URL |
 |----------|-----|
-| Gateway | `http://localhost:8000` |
-| Core API | `http://localhost:8001` |
-| PostgreSQL | `localhost:5432` |
-| Redis | `localhost:6379` |
+| Gateway (direct) | `http://localhost:8000` |
+| Transaction worker health | `http://localhost:8003/health` |
+| Receipt worker health | `http://localhost:8002/health` |
+| Caddy Front Door | `http://localhost` |
 
 See [docs/runtime_ownership.md](docs/runtime_ownership.md) and [docs/configuration_matrix.md](docs/configuration_matrix.md) for deployment configuration.
 
@@ -175,9 +188,9 @@ If you are evaluating this repository for hiring or technical partnership, the s
 
 | Area | Path |
 |------|------|
-| Query orchestration | `apps/core/src/agent/graphs/query/` |
-| Transfer engine | `apps/core/src/agent/graphs/transfer/` |
-| Task planner + guardrails | `apps/core/src/agent/orchestrator/` |
+| Query orchestration | `apps/chat/src/agent/graphs/query/` |
+| Transfer engine | `apps/chat/src/agent/graphs/transfer/` |
+| Task planner + guardrails | `apps/chat/src/agent/orchestrator/` |
 | Account linking | `shared/services/onboarding/` |
 | Query regression tests | `tests/query/` |
 | Orchestrator tests | `tests/orchestrator/` |

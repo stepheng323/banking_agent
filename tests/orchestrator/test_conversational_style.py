@@ -1,6 +1,6 @@
 """Tests for shared conversational style formatting helpers."""
 
-from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
+from apps.chat.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
 from shared.i18n import render_message
 
 

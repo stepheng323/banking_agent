@@ -32,7 +32,7 @@ class RedisStreamConsumer:
     def __init__(
         self,
         stream_names: list[str],
-        group_name: str = "core-chat-worker",
+        group_name: str = "chat-worker",
         consumer_name: str | None = None,
     ) -> None:
         self.redis = RedisClient.get_client()

@@ -109,6 +109,8 @@ Rules:
 1) This router is authoritative for first-pass semantic routing. Use planner only for explicit mixed asks,
    genuine ambiguity, or orchestration-heavy requests.
 2) Use decision=direct_reply only for obvious conversational/meta responses.
+   - Social openers like "hi", "how far", "my g, how far" are conversational.greeting.
+   - Presence/state asks like "how are you", "are you there", "you dey" are conversational.checkin.
 2a) If user asks to switch language (for example, "Can you switch to Pidgin?", "speak Yoruba now"), set:
     - decision=direct_reply
     - requested_language to the requested locale
@@ -218,6 +220,128 @@ Rules:
 
 SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
 Pre-planner context: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
+CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT = """You classify a multilingual user message as a semantic operation relative
+to the latest displayed assistant result frame.
+
+Return ONLY JSON for this schema:
+- decision: answer_completeness | lookup_entity | show_details | filter_items | compare_items | select_item |
+  explain_result | start_new_task | unclear
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- reference_text: string or null
+- selection_index: integer or null
+- reason: short reason
+
+Semantic operations:
+1) answer_completeness: user asks whether the displayed result is exhaustive, complete, missing more items, or whether
+   that is all.
+2) lookup_entity: user asks whether a named entity, expected item, remembered item, alternative, or missing item is
+   part of the displayed result.
+3) show_details: user asks for more details, full details, specific fields, or explanation of one or more displayed
+   items.
+4) filter_items: user asks to narrow the displayed result by an attribute, entity name, bank, amount, status, type, or
+   other visible frame field.
+5) compare_items: user asks to compare displayed items, groups, periods, balances, amounts, statuses, or which one is
+   higher/lower/newer/older.
+6) select_item: user selects an item from the displayed result by number, ordinal, label, or reference.
+7) explain_result: user asks what the displayed result means, why it looks that way, or asks a conversational question
+   about the displayed result as a whole.
+8) start_new_task: user is starting a fresh banking/conversation task, not following up on the displayed frame.
+9) unclear: not enough signal.
+
+Rules:
+- Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+- Use the frame summary only as displayed surface context. Do not invent records or facts.
+- For lookup_entity, filter_items, show_details, compare_items, or select_item, put only the user-referenced
+  entity/filter/attribute in reference_text, not the full sentence.
+- For numeric/ordinal selection, set selection_index when clear.
+- Do not classify money movement or mutations as frame follow-ups unless the user is only selecting from the
+  displayed frame.
+- When a displayed frame exists, prefer one of the frame operations for comments/questions that can plausibly refer
+  to that frame. Use start_new_task only when the user clearly asks for a fresh action or fresh read.
+- If the user challenges, doubts, remembers, expects, or asks about a missing item from the displayed result,
+  classify it as lookup_entity and set reference_text to the missing or expected item.
+- If the message is plausibly about the displayed frame but the operation is uncertain, use unclear instead of
+  start_new_task.
+- If the user asks to send, transfer, buy airtime/data, check balance, view transactions, create/update/delete
+  something, or otherwise starts a fresh task, use start_new_task.
+"""
+
+CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Displayed frame: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
+PENDING_ACTION_EDIT_SYSTEM_PROMPT = """You classify a multilingual user message as a semantic operation relative
+to a pending, not-yet-authorized banking confirmation batch.
+
+Return ONLY JSON for this schema:
+- operation: remove_tasks | restore_tasks | update_fields | add_tasks | approve_flow | cancel_all |
+  status_query | switch_intent | unclear
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- target_task_ids: list of task ids from the pending/removed context when the target is clear, else []
+- target_types: transfer | airtime | data values when the edit targets a class of tasks, else []
+- target_texts: user references to targets such as recipient, amount, bank, phone, "both transfers", "the airtime"
+- updates: scoped edits when one message updates multiple targets differently. Each item has:
+  {target_task_ids, target_types, target_texts, fields}. Put per-target fields inside fields.
+- amount: updated transaction amount, else null
+- narration: updated transfer narration, else null
+- recipient_name: updated recipient/beneficiary reference, else null
+- recipient_account: updated recipient account number, else null
+- recipient_bank_name: updated recipient bank name, else null
+- source_bank_name: updated source account bank reference, else null
+- source_account_index: 1-based source account selection index, else null
+- phone: updated airtime/data phone number, else null
+- network: updated airtime/data network, else null
+- add_instruction: fresh transaction instruction when operation=add_tasks, else null
+- status_query_type: recap | requirements | null
+- target_intent: target domain when operation=add_tasks or switch_intent, else null
+- reason: short reason
+
+Semantic operations:
+1) remove_tasks: user wants one or more pending tasks removed from the confirmation batch.
+2) restore_tasks: user wants previously removed pending task(s) added back to the same batch.
+3) update_fields: user wants to edit fields on existing pending task(s), such as amount, narration, recipient,
+   source account/bank, phone, network, or data plan.
+   A user adding a purpose, reason, memo, note, description, or "what it is for" to an existing transfer is
+   update_fields with narration set to the note text. Do not classify that as add_tasks unless they are adding
+   a separate new transaction.
+4) add_tasks: user wants to add a new transfer, airtime, or data purchase to the pending batch.
+   Set target_types to the exact new transaction type(s). If the user asks to recharge, top up, buy airtime,
+   buy mobile credit, or buy phone credit, target_types must contain airtime, not transfer, even if the
+   pending context contains a transfer recipient.
+5) approve_flow: user is explicitly approving the pending confirmation. Do not use for casual agreement unless clear.
+6) cancel_all: user wants to cancel the whole pending transaction flow.
+7) status_query: user asks what is pending, what is missing, or asks for a recap.
+8) switch_intent: user starts a different non-edit banking task.
+9) unclear: not enough signal.
+
+Rules:
+- Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+- Use only the supplied pending/removed task context. Do not invent accounts, beneficiaries, balances, or records.
+- The batch is not authorized yet. You only classify; deterministic code will re-render confirmation and require PIN.
+- If user says "add it back", "restore that", or similar, operation=restore_tasks and target the best removed task.
+- If user says "add airtime too", "send 2k to X also", or similar, operation=add_tasks with add_instruction as
+  the user's fresh task instruction.
+- For add_tasks, target_types is authoritative. Do not use the existing pending task type as the target for
+  the newly added instruction unless the new instruction itself requests that type.
+- If user says "same as" another pending task, put the requested edit in the matching top-level field and include
+  both source and target references in target_texts/reason; deterministic code will validate it.
+- If user asks to update "both transfers" or "all transfers" with the same field values, target_types should
+  contain transfer.
+- If one message gives different edits for different pending tasks, use updates instead of flattening the edit.
+  Example: "mum is allowance and tolu is transport, make tolu 5k" should return updates for mum narration and
+  tolu narration+amount.
+- Never classify free-text approval as sufficient for money movement unless the text is explicit approval; PIN rules
+  are enforced elsewhere.
+"""
+
+PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Pending confirmation context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 

@@ -1,7 +1,8 @@
 {
   "common": {
     "safe_capability_fallback": "I never fit do that yet. I fit help with transfer, airtime/data buy, balance, and transaction query.",
-    "cancelled_prompt": "Transaction don cancel, wetin else you want make I help you do?"
+    "cancelled_prompt": "Transaction don cancel, wetin else you want make I help you do?",
+    "gibberish_prompt": "I no really catch that. Wetin banking task you want make I help with?"
   },
   "capability": {
     "blocked_with_alternative": "I no fit do {action} here. I fit help with {alternative}. Reply wetin you want make I continue with.",
@@ -27,16 +28,16 @@
     "limits_fallback": "I no fit do {unsupported} here. I fit help with {supported}."
   },
   "conversational": {
-    "greeting": "How far. Na {app_name} here. Wetin you wan run?",
+    "greeting": "How far. I dey here. Wetin you wan make I help you do today?",
     "appreciation": "No wahala. Wetin we go handle next?",
-    "checkin": "I dey here. Which money move we dey do?",
+    "checkin": "I dey here. Wetin you wan make I help you do?",
     "identity": "I be {app_name}. I dey run real banking tasks fast and sharp.",
     "brand_origin": "{app_name} name come from kindler inspiration. Na {app_creator} team build me for calm, reliable banking execution.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_followup": "If you want, I still fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_firm": "Make we switch back to banking. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
-    "clarify": "Talk am straight. Wetin exactly you want make I do with your money?"
+    "clarify": "I no catch the banking request well. Tell me wetin you wan do, like transfer, buy airtime, or check transactions."
   },
   "support": {
     "ask_reference": "Which transaction you dey ask about?",
@@ -481,6 +482,7 @@
       "recipient_resolved_with_bank": "✓ {label} resolved: {resolved} ({bank} • {account})",
       "recipient_resolved": "✓ {label} resolved: {resolved}",
       "recipient_resolved_generic": "✓ {label} resolved",
+      "input_attempts_exhausted": "I no fit understand the details wey I need, so I clear that transaction. Make we start fresh. Wetin you want do?",
       "pin_prompt_default": "Please enter your PIN.",
       "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
@@ -490,7 +492,7 @@
       "need_account_details_for": "I need account details for {focused_name}.",
       "found_many_need_details": "I found {found_names}. I need account details for {focused_name}.",
       "found_names": "I found {found_names}.",
-      "queued_next_notice": "Still dey pending for this batch:\n{queued_intents}",
+      "queued_next_notice": "Also for this batch:\n{queued_intents}",
       "need_some_details": "I need some details.",
       "auth_reason_transfer": "Transfer Authorization",
       "auth_reason_airtime": "Airtime Purchase",
@@ -800,7 +802,7 @@
       "bank_fallback": "Bank",
       "account_fallback": "N/A",
       "phone_fallback": "N/A",
-      "airtime_line": "✓ *Airtime:* {amount} for {phone} ({network})",
+      "airtime_line": "*Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
       "data_line": "*Data:* {plan} - {amount} for {phone}",
       "other_completed_line": "*{task_type}:* Completed",
@@ -811,8 +813,8 @@
       "transfer_recipient_fallback": "Recipient",
       "phone_fallback": "your line",
       "data_plan_fallback": "Data",
-      "transfer": "{amount} → {recipient}",
-      "airtime": "{amount} airtime recharge on {phone}",
+      "transfer": "Send {amount} to {recipient}",
+      "airtime": "Buy {amount} airtime for {phone}",
       "data": "Buy {plan} for {phone}",
       "generic": "{task_type} transaction"
     }

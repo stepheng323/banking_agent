@@ -14,17 +14,16 @@ from typing import Any, Literal, TypeVar, cast
 
 from sqlalchemy.exc import IntegrityError
 
-from apps.core.src.agent.orchestrator.models.intents import Say, UiIntent, reconstruct_intent
-from apps.core.src.messaging.presenters.base import PresentationContext
-from apps.core.src.messaging.presenters.factory import PresenterFactory
 from shared.cache.redis_client import RedisClient
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.clients.disabled_messaging import DisabledMessagingClient
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.config.settings import settings
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
+from shared.messaging.intents import Say, UiIntent, reconstruct_intent
+from shared.messaging.presenters.base import PresentationContext
+from shared.messaging.presenters.factory import PresenterFactory
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
@@ -32,6 +31,22 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 _T = TypeVar("_T")
 DeliveryAttemptStatus = Literal["delivered", "deduped_completed", "deduped_resumed", "failed"]
+
+
+def _build_default_messaging_clients() -> dict[str, MessagingClient]:
+    clients: dict[str, MessagingClient] = {}
+
+    try:
+        clients["whatsapp"] = WhatsAppClient()
+    except ValueError:
+        clients["whatsapp"] = DisabledMessagingClient("whatsapp")
+
+    try:
+        clients["telegram"] = TelegramClient()
+    except ValueError:
+        clients["telegram"] = DisabledMessagingClient("telegram")
+
+    return clients
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,16 +85,8 @@ class DeliveryService:
     ) -> None:
         if messaging_clients is not None:
             self.messaging_clients = messaging_clients
-        elif settings.enable_outbound_sender:
-            self.messaging_clients = {
-                "whatsapp": WhatsAppClient(),
-                "telegram": TelegramClient(),
-            }
         else:
-            self.messaging_clients = {
-                "whatsapp": DisabledMessagingClient("whatsapp"),
-                "telegram": DisabledMessagingClient("telegram"),
-            }
+            self.messaging_clients = _build_default_messaging_clients()
         self.redis = RedisClient.get_client()
         self._background_tasks: set[asyncio.Task[None]] = set()
 

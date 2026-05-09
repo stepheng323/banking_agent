@@ -1,67 +1,54 @@
 # Runtime Ownership
 
-## Production/Staging Runtime Split
+## Active Production Shape
 
-1. `gateway-lambda` (API Gateway ingress)
+The supported deployment model is now VPS-only.
+
+Active services in the runtime stack:
+
+1. `gateway`
 
 - Owns webhook ingress endpoints.
-- Publishes inbound events to SNS/SQS via queue publisher.
+- Publishes inbound work into the configured chat/async transports.
 
-2. `core-chat-worker` (ECS service)
+2. `chat-worker`
 
 - Owns chat-critical queue consumption:
   - `message.received`
   - `flow_event.process`
 
-3. `transaction-worker` (Lambda)
+3. `transaction-worker`
 
 - Owns async financial queues:
   - `transaction.execute`
   - `funding.process`
   - `payout.process`
   - `refund.process`
-  - ``
 
-4. `receipt-worker` (Lambda)
+4. `receipt-worker`
 
-- Owns async messaging queues:
+- Owns async messaging and receipt queues:
   - `notification.send`
   - `actionable_message.send`
   - `receipt.process`
 
 ## Guardrails
 
-- Chat-critical queues are consumed only by ECS chat worker.
-- Async queues are consumed only by lambda workers.
-- Webhook ingress is owned only by gateway lambda/API Gateway.
-- During VPS migration, parallel infrastructure is allowed but active ownership must still be single-writer/single-consumer.
-- When `ASYNC_TRANSPORT=aws`, receipt jobs can move independently but transaction, funding, payout, and refund share one SQS queue and therefore cut over as one ownership unit.
-- When `ASYNC_TRANSPORT=redis`, async topics are split by Redis Stream and can be owned independently per worker domain.
+- Webhook ingress is owned only by `gateway`.
+- Chat-critical queues are consumed only by `chat-worker`.
+- Financial async queues are consumed only by `transaction-worker`.
+- Receipt and outbound messaging queues are consumed only by `receipt-worker`.
+- Do not run multiple stacks against the same logical queue ownership.
 
-## Migration Flags
+## Runtime Switching
 
-The repo now supports explicit runtime ownership via environment flags:
+Service presence is the ownership switch. If a role should not run, stop that service.
 
-- `RUNTIME_STACK_ROLE`
-- `ENABLE_WEBHOOK_INGRESS`
-- `ENABLE_CHAT_CONSUMERS`
-- `ENABLE_TRANSACTION_WORKER`
-- `ENABLE_FUNDING_WORKER`
-- `ENABLE_PAYOUT_WORKER`
-- `ENABLE_REFUND_WORKER`
-- `ENABLE_RECEIPT_WORKER`
-- `ENABLE_OUTBOUND_SENDER`
-- `ASYNC_TRANSPORT`
-- `CHAT_TRANSPORT`
-
-See [vps_parallel_migration.md](/home/abiodun/dev/personal/banking_agent/docs/vps_parallel_migration.md) for cutover and rollback.
+See [vps_parallel_migration.md](/home/abiodun/dev/personal/banking_agent/docs/vps_parallel_migration.md) for stack bring-up and cutover notes.
 
 ## Configuration Ownership
 
-- Runtime configuration is delivered from SSM Parameter Store with prefix `/banking-agent/<env>/`.
-- `config-ssm` Terraform module is the canonical source for parameter creation.
-- ECS `core-chat-worker` reads secrets via task definition `secrets` (SSM ARN references).
-- Lambda workers (`transaction-worker`, `receipt-worker`, `gateway-lambda`) receive env values from SSM at deploy time.
-- SSM and KMS IAM permissions are scoped to Terraform-managed parameter ARNs.
-- `core-chat-worker` may omit `INTERRUPT_ROUTER_MODEL`; runtime defaults it to `PLANNER_MODEL`.
-- Supplying a dedicated `INTERRUPT_ROUTER_MODEL` is recommended for latency and routing isolation.
+- Runtime configuration is delivered through the VPS `.env`.
+- The compose stack mounts AWS credentials from the host only when the configured transport/providers still require AWS access.
+- `chat-worker` may omit `INTERRUPT_ROUTER_MODEL`; runtime defaults it to `PLANNER_MODEL`.
+- Supplying a dedicated `INTERRUPT_ROUTER_MODEL` is still recommended for latency and routing isolation.

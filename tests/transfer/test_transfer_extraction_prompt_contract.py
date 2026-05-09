@@ -1,6 +1,6 @@
 """Contract tests for transfer extraction prompt guidance."""
 
-from apps.core.src.agent.graphs.transfer.prompt.transfer_extraction import TRANSFER_EXTRACTION_PROMPT
+from apps.chat.src.agent.graphs.transfer.prompt.transfer_extraction import TRANSFER_EXTRACTION_PROMPT
 
 
 def test_required_fields_slot_fill_rules_include_spaced_digits() -> None:

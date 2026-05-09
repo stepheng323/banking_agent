@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.core.src.agent.executors.transfer import TransferExecutor
+from apps.chat.src.agent.executors.transfer import TransferExecutor
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import TransactionStatusEnum
 
@@ -348,3 +348,61 @@ async def test_transfer_executor_grouped_processing_leg_still_emits_summary() ->
 
     stored = json.loads(redis_client.hashes["async-group:group-3:legs"]["2"])
     assert stored["payload"]["final_status"] == "processing"
+
+
+@pytest.mark.asyncio
+async def test_transfer_executor_suppresses_duplicate_terminal_transaction() -> None:
+    dd_provider = SimpleNamespace(initiate_debit_to_beneficiary=AsyncMock())
+    account_repo = SimpleNamespace(get_by_id=AsyncMock())
+    transaction_repo = SimpleNamespace(
+        get_by_id=AsyncMock(
+            return_value=SimpleNamespace(
+                status=TransactionStatusEnum.SUCCESSFUL.value,
+                transaction_id="debit-1",
+            )
+        ),
+        update_status=AsyncMock(),
+    )
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    executor = TransferExecutor(
+        direct_debit_provider=dd_provider,
+        account_repo=account_repo,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_transfer(_payload())
+
+    dd_provider.initiate_debit_to_beneficiary.assert_not_awaited()
+    transaction_repo.update_status.assert_not_awaited()
+    delivery_service.deliver_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_transfer_executor_suppresses_duplicate_processing_with_provider_reference() -> None:
+    dd_provider = SimpleNamespace(initiate_debit_to_beneficiary=AsyncMock())
+    account_repo = SimpleNamespace(get_by_id=AsyncMock())
+    transaction_repo = SimpleNamespace(
+        get_by_id=AsyncMock(
+            return_value=SimpleNamespace(
+                status=TransactionStatusEnum.PROCESSING.value,
+                transaction_id="debit-processing-1",
+            )
+        ),
+        update_status=AsyncMock(),
+    )
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    executor = TransferExecutor(
+        direct_debit_provider=dd_provider,
+        account_repo=account_repo,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_transfer(_payload())
+
+    dd_provider.initiate_debit_to_beneficiary.assert_not_awaited()
+    transaction_repo.update_status.assert_not_awaited()
+    delivery_service.deliver_text.assert_not_awaited()

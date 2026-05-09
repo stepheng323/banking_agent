@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     ExtractionIntent,
     FactQueryKind,
     QueryAggregation,
@@ -15,7 +15,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryTimeRange,
     TimeReference,
 )
-from apps.core.src.agent.graphs.query.services.parser import QueryParser
+from apps.chat.src.agent.graphs.query.services.parser import QueryParser
 
 
 class _DummyLLM:

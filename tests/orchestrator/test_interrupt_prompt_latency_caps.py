@@ -2,9 +2,9 @@
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.interrupt import (
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.interrupt import (
     INTERRUPT_CONTEXT_MAX_CHARS,
     _build_interrupt_context,
 )
@@ -135,7 +135,7 @@ def test_interrupt_context_logs_raw_and_clipped_component_sizes(monkeypatch: pyt
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.interrupt.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.interrupt.logger.info", _capture)
 
     state = OrchestratorState(
         user_id="u_interrupt_cap_4",

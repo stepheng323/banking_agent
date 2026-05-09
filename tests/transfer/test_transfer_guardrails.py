@@ -2,9 +2,9 @@
 
 from types import SimpleNamespace
 
-from apps.core.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
-from apps.core.src.agent.graphs.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
-from apps.core.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
+from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
+from apps.chat.src.agent.graphs.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
+from apps.chat.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
 
 
 class _MockBankingProvider:
@@ -64,6 +64,19 @@ async def test_resolver_relational_alias_exempts_name_mismatch_warning() -> None
     assert result.patch["recipient_resolved_name"] == "John Doe"
     assert result.patch["name_mismatch"] is False
     assert result.patch["name_mismatch_warning"] is None
+
+
+async def test_resolver_relationship_prompt_uses_second_person_label() -> None:
+    payload = TransferPayload(amount=10000, recipient_name="my sister")
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_account", "recipient_bank_name"]
+    assert result.prompt is not None
+    assert "your sister" in result.prompt
+    assert "my sister" not in result.prompt
 
 
 async def test_confirmation_summary_includes_name_mismatch_warning() -> None:

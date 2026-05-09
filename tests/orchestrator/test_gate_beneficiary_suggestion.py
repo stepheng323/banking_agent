@@ -1,13 +1,13 @@
 import json
 from typing import Any
 
-from apps.core.src.agent.orchestrator.nodes.gate.runner import (
+from langchain_core.runnables import RunnableConfig
+
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _resolve_beneficiary_suggestion_reply,
     session_gate_direct_path,
 )
-from langchain_core.runnables import RunnableConfig
-
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.types.planner import SemanticRouteDecision
 
 

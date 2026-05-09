@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from apps.core.src.agent.graphs.support.handlers.failure import handle_failure_reason
-from apps.core.src.agent.graphs.support.handlers.retry import handle_retry
-from apps.core.src.agent.graphs.support.handlers.status import handle_pending, handle_transfer_status
+from apps.chat.src.agent.graphs.support.handlers.failure import handle_failure_reason
+from apps.chat.src.agent.graphs.support.handlers.retry import handle_retry
+from apps.chat.src.agent.graphs.support.handlers.status import handle_pending, handle_transfer_status
 
 
 @pytest.mark.asyncio

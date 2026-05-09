@@ -7,8 +7,8 @@ from typing import Any, cast
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.intents import Say
-from apps.core.src.messaging.presenters.base import PresentationResult
+from apps.chat.src.agent.orchestrator.models.intents import Say
+from apps.chat.src.messaging.presenters.base import PresentationResult
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.services.delivery_service import DeliveryAttemptResult, DeliveryService
 

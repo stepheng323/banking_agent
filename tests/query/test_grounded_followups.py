@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
     QueryExecutionContract,
@@ -12,10 +12,10 @@ from apps.core.src.agent.graphs.query.models import (
     QueryIR,
     TimeRange,
 )
-from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
-from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.core.src.agent.shared.query_contracts import SurfaceViewMode
+from apps.chat.src.agent.graphs.query.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.shared.query_contracts import SurfaceViewMode
 from shared.i18n import render_message
 
 

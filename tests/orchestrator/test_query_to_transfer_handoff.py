@@ -3,16 +3,22 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.graphs.query.models import QueryResult
-from apps.core.src.agent.orchestrator.context.models import ContextFrameType
-from apps.core.src.agent.orchestrator.execution.handlers import (
+from apps.chat.src.agent.graphs.query.models import QueryResult
+from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
+from apps.chat.src.agent.orchestrator.execution.handlers import (
     ExecutionAggregation,
     ExecutionContext,
     handle_query_task,
 )
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.shared.query_contracts import FocusedReferent
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.shared.query_contracts import (
+    FocusedReferent,
+    SelectionPayload,
+    SurfaceItemView,
+    SurfaceView,
+    SurfaceViewMode,
+)
 
 
 class _DummyQueryWorker:
@@ -50,6 +56,42 @@ class _DummyQueryReferentWorker:
                         recipient_bank_name="Opay",
                         recipient_bank_code="999992",
                         recipient_resolved_name="Mercy Johnson",
+                    ),
+                )
+            },
+        )
+
+
+class _DummyQuerySurfaceWorker:
+    async def run(self, payload: dict[str, Any], context: dict[str, Any]) -> TransactionResult:
+        del payload, context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="Recent transactions\n\n1. Credit from Ada",
+            patch={
+                "query_result": QueryResult(
+                    summary_text="accounts:1|showing:1-1|total:1",
+                    surface_view=SurfaceView(
+                        mode=SurfaceViewMode.TRANSACTION_LIST,
+                        items=[
+                            SurfaceItemView(
+                                id="tx-surface-1",
+                                label="Credit from Ada",
+                                amount=5000.0,
+                                payload=SelectionPayload(
+                                    selection_kind="transaction",
+                                    entity_type="transaction",
+                                    entity_id="tx-surface-1",
+                                    label="Credit from Ada",
+                                ),
+                                metadata={
+                                    "bank_name": "GTBank",
+                                    "transaction_type": "credit",
+                                    "status": "successful",
+                                },
+                            )
+                        ],
+                        context={"type": "transaction_list"},
                     ),
                 )
             },
@@ -141,3 +183,43 @@ async def test_query_direct_answer_pushes_focused_beneficiary_context_frame() ->
     assert pushed_frame.items[0].focused_referent.recipient_resolved_name == "Mercy Johnson"
     assert pushed_frame.items[0].selection_payload is not None
     assert pushed_frame.items[0].selection_payload.selection_kind == "transaction"
+
+
+@pytest.mark.asyncio
+async def test_query_result_surface_view_pushes_transaction_context_frame() -> None:
+    query_task = TaskSpec(
+        id="t1",
+        type="query",
+        stage=TaskStage.DRAFT,
+        payload={"action": "transaction_list", "message": "show my recent transactions"},
+    )
+    state = OrchestratorState(
+        user_id="u_surface_query_1",
+        phone_number="2348000000003",
+        channel="telegram",
+        last_message_text="show my recent transactions",
+        last_message_id="msg-surface-1",
+        loaded_context={"language": "en", "user_id": "u_surface_query_1", "accounts": []},
+        tasks={"t1": query_task},
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+    agg = ExecutionAggregation(state.tasks)
+    ctx = ExecutionContext(
+        state=state,
+        config=config,
+        services={"query": _DummyQuerySurfaceWorker()},
+        current_wave_len=1,
+        agg=agg,
+    )
+
+    await handle_query_task(query_task, "t1", ctx)
+
+    assert query_task.stage == TaskStage.COMPLETED
+    pushed_frame = agg.updates["context_frames"][-1]
+    assert pushed_frame.frame_type == ContextFrameType.TRANSACTION_LIST
+    assert pushed_frame.source_message_id == "msg-surface-1"
+    assert pushed_frame.items[0].label == "Credit from Ada"
+    assert pushed_frame.items[0].data["bank_name"] == "GTBank"
+    assert pushed_frame.items[0].selection_payload is not None

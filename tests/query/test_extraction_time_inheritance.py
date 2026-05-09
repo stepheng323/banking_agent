@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.actions import handle_drill_down
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.actions import handle_drill_down
+from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
     ExtractionIntent,
     Filters,
@@ -23,10 +23,10 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
     TimeReference,
 )
-from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
-from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.core.src.agent.shared.query_contracts import (
+from apps.chat.src.agent.graphs.query.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.shared.query_contracts import (
     SelectionPayload,
     SurfaceItemView,
     SurfaceView,
@@ -1195,7 +1195,7 @@ async def test_summary_contrastive_last_week_logs_semantic_reasoner_resolution(m
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
 
     async def _fake_reason(_: object) -> QuerySemanticDecision:
         return QuerySemanticDecision(
@@ -1251,7 +1251,7 @@ async def test_low_confidence_unclear_last_week_recovers_via_time_rescope_recove
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
 
     async def _fake_reason(_: object) -> QuerySemanticDecision:
         return QuerySemanticDecision(
@@ -2184,7 +2184,7 @@ async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatc
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
 
     async def _fake_reason(context: object) -> QuerySemanticDecision:
         del context
@@ -2428,7 +2428,7 @@ async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_resco
     def _capture(event: str, **kwargs: Any) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
     session_query = _query_ir(
         intent=QueryIntent.TRANSACTION_SEARCH,
         time_range=TimeRange(start=date(2026, 3, 16), end=today),
@@ -2495,7 +2495,7 @@ async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_resco
 
 
 @pytest.mark.asyncio
-async def test_single_item_next_fact_followup_answers_from_cached_transactions_without_reasoner() -> None:
+async def test_single_item_next_fact_followup_answers_from_semantic_decision() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 4, 13)
     session_query = _query_ir(
@@ -2508,10 +2508,19 @@ async def test_single_item_next_fact_followup_answers_from_cached_transactions_w
     )
     session_contract = _contract(session_query)
 
-    async def _unexpected_reason(_: object) -> QuerySemanticDecision:
-        raise AssertionError("reasoner should not run for deterministic next-fact followup")
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            drill_down_action="answer_fact",
+            drill_down_index=1,
+            fact_field="recipient",
+            confidence=0.94,
+            reason="semantic_next_fact_followup",
+        )
 
-    step.reasoner.reason = _unexpected_reason  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "Then who next?", "today": today, "language": "en"},
@@ -2570,7 +2579,7 @@ async def test_single_item_next_fact_followup_answers_from_cached_transactions_w
 
 
 @pytest.mark.asyncio
-async def test_single_item_current_fact_followup_answers_selected_item_without_reasoner() -> None:
+async def test_single_item_current_fact_followup_answers_selected_item_from_semantic_decision() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 4, 13)
     session_query = _query_ir(
@@ -2583,10 +2592,19 @@ async def test_single_item_current_fact_followup_answers_selected_item_without_r
     )
     session_contract = _contract(session_query)
 
-    async def _unexpected_reason(_: object) -> QuerySemanticDecision:
-        raise AssertionError("reasoner should not run for deterministic current-fact followup")
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            drill_down_action="answer_fact",
+            drill_down_index=1,
+            fact_field="amount",
+            confidence=0.94,
+            reason="semantic_current_fact_followup",
+        )
 
-    step.reasoner.reason = _unexpected_reason  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "How much?", "today": today, "language": "en"},

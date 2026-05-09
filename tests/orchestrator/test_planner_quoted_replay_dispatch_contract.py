@@ -2,8 +2,8 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.types.planner import PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
@@ -162,8 +162,8 @@ async def test_dispatch_clarifies_when_actionable_seed_missing() -> None:
         },
     )
 
-    assert planner.plan_called is True
-    assert updates["final_response"] == "fallback planner"
+    assert planner.plan_called is False
+    assert updates["final_response"]
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ from time import time
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.models import (
     QueryExecutionContract,
     QueryFrame,
     QueryFrameFacts,
@@ -14,7 +14,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryResultItem,
     TimeRange,
 )
-from apps.core.src.agent.graphs.query.session import SESSION_TTL, QuerySessionManager
+from apps.chat.src.agent.graphs.query.session import SESSION_TTL, QuerySessionManager
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

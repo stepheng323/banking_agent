@@ -3,11 +3,11 @@
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.graphs.transfer.models.entities import TransferEntities
-from apps.core.src.agent.graphs.transfer.models.extraction import TransferExtractionResult
-from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
-from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
+from apps.chat.src.agent.graphs.transfer.models.entities import TransferEntities
+from apps.chat.src.agent.graphs.transfer.models.extraction import TransferExtractionResult
+from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
 from shared.i18n import render_cancelled_prompt
 from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
 

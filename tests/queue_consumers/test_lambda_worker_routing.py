@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.core.src.lambda_handlers.receipt_worker_handler import ReceiptWorkerLambdaHandler
-from apps.core.src.lambda_handlers.transaction_worker_handler import TransactionWorkerLambdaHandler
+from apps.receipt.lambda_handler import ReceiptWorkerLambdaHandler
+from apps.transaction.lambda_handler import TransactionWorkerLambdaHandler
 
 
 def _queue_arn(queue_name: str) -> str:

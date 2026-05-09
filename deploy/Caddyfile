@@ -11,10 +11,6 @@
         reverse_proxy gateway:8000
     }
 
-    handle_path /core/* {
-        reverse_proxy core:8001
-    }
-
     handle_path /receipt/* {
         reverse_proxy receipt-worker:8002
     }

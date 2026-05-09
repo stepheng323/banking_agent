@@ -2,11 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.core.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
-from apps.core.src.agent.graphs.data.models_extraction import DataExtractionResult, DataPurchaseEntities
-from apps.core.src.agent.graphs.data.nodes.extraction import ExtractionStep
-from apps.core.src.agent.graphs.data.nodes.resolution import ResolutionStep
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
+from apps.chat.src.agent.graphs.data.models_extraction import DataExtractionResult, DataPurchaseEntities
+from apps.chat.src.agent.graphs.data.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.data.nodes.resolution import ResolutionStep
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 
 
 class _ExtractorStub:

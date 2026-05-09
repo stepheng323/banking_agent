@@ -1,65 +1,85 @@
 services:
-  redis:
-    image: redis:8-alpine
-    command: redis-server --appendonly yes
+  caddy:
+    image: caddy:2-alpine
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
-      - redis_data:/data
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      gateway:
+        condition: service_started
+      receipt-worker:
+        condition: service_started
+      transaction-worker:
+        condition: service_started
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - banking_network
 
   gateway:
-    build:
-      context: .
-      dockerfile: apps/gateway/Dockerfile
-    ports:
-      - "8000:8000"
+    image: ${STACK_GATEWAY_IMAGE:?set STACK_GATEWAY_IMAGE}
     env_file: .env
     environment:
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
     restart: unless-stopped
+    volumes:
+      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
     networks:
       - banking_network
 
-  core:
-    build:
-      context: .
-      dockerfile: apps/core/Dockerfile
+  chat-worker:
+    image: ${STACK_CHAT_WORKER_IMAGE:?set STACK_CHAT_WORKER_IMAGE}
     env_file: .env
     environment:
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
     restart: unless-stopped
+    volumes:
+      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
+    networks:
+      - banking_network
+
+  transaction-worker:
+    image: ${STACK_TRANSACTION_WORKER_IMAGE:?set STACK_TRANSACTION_WORKER_IMAGE}
+    env_file: .env
+    environment:
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
+    restart: unless-stopped
+    volumes:
+      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
     networks:
       - banking_network
 
   receipt-worker:
-    build:
-      context: .
-      dockerfile: apps/receipt/Dockerfile.local
+    image: ${STACK_RECEIPT_WORKER_IMAGE:?set STACK_RECEIPT_WORKER_IMAGE}
     env_file: .env
     environment:
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_CONFIG_FILE: /root/.aws/config
     restart: unless-stopped
+    volumes:
+      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
     networks:
       - banking_network
-
-volumes:
-  redis_data:
 
 networks:
   banking_network:
     driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -355,7 +355,7 @@ receipt = [
     { name = "playwright" },
     { name = "segno" },
 ]
-runtime-core-chat = [
+runtime-chat-worker = [
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-openai" },
@@ -379,6 +379,11 @@ runtime-worker-receipt = [
     { name = "playwright" },
     { name = "segno" },
 ]
+runtime-worker-transaction = [
+    { name = "fastapi" },
+    { name = "python-multipart" },
+    { name = "uvicorn", extra = ["standard"] },
+]
 web = [
     { name = "fastapi" },
     { name = "python-multipart" },
@@ -400,12 +405,13 @@ requires-dist = [
     { name = "aioboto3", specifier = ">=15.5.0" },
     { name = "alembic", marker = "extra == 'migrations'", specifier = ">=1.17.2" },
     { name = "asyncpg", specifier = ">=0.30.0" },
-    { name = "banking-agent", extras = ["core"], marker = "extra == 'runtime-core-chat'" },
-    { name = "banking-agent", extras = ["core", "receipt", "gateway", "migrations", "runtime-core-chat", "runtime-worker-transaction", "runtime-worker-messaging", "runtime-worker-receipt", "runtime-gateway"], marker = "extra == 'all'" },
+    { name = "banking-agent", extras = ["core"], marker = "extra == 'runtime-chat-worker'" },
+    { name = "banking-agent", extras = ["core", "receipt", "gateway", "migrations", "runtime-chat-worker", "runtime-worker-transaction", "runtime-worker-messaging", "runtime-worker-receipt", "runtime-gateway"], marker = "extra == 'all'" },
     { name = "banking-agent", extras = ["gateway"], marker = "extra == 'runtime-gateway'" },
     { name = "banking-agent", extras = ["receipt"], marker = "extra == 'runtime-worker-messaging'" },
     { name = "banking-agent", extras = ["receipt"], marker = "extra == 'runtime-worker-receipt'" },
     { name = "banking-agent", extras = ["web"], marker = "extra == 'gateway'" },
+    { name = "banking-agent", extras = ["web"], marker = "extra == 'runtime-worker-transaction'" },
     { name = "bcrypt", specifier = "==4.0.1" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.121.1" },
     { name = "greenlet", specifier = ">=3.1.1" },
@@ -431,7 +437,7 @@ requires-dist = [
     { name = "structlog", specifier = ">=25.5.0" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.38.0" },
 ]
-provides-extras = ["web", "core", "receipt", "gateway", "migrations", "runtime-core-chat", "runtime-worker-transaction", "runtime-worker-messaging", "runtime-worker-receipt", "runtime-gateway", "all"]
+provides-extras = ["web", "core", "receipt", "gateway", "migrations", "runtime-chat-worker", "runtime-worker-transaction", "runtime-worker-messaging", "runtime-worker-receipt", "runtime-gateway", "all"]
 
 [package.metadata.requires-dev]
 dev = [

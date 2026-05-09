@@ -19,7 +19,11 @@ class _WhatsAppClientStub:
 
 
 @pytest.mark.asyncio
-async def test_process_message_allows_hardcoded_local_number() -> None:
+async def test_process_message_allows_configured_local_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "apps.gateway.api.webhooks.whatsapp.message.service.settings.whatsapp_allowed_numbers",
+        {"08162511023"},
+    )
     publisher = _PublisherStub()
     service = WhatsAppWebhookService(
         publisher=publisher,  # type: ignore[arg-type]
@@ -42,7 +46,11 @@ async def test_process_message_allows_hardcoded_local_number() -> None:
 
 
 @pytest.mark.asyncio
-async def test_process_message_allows_hardcoded_number_in_meta_format() -> None:
+async def test_process_message_allows_configured_number_in_meta_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "apps.gateway.api.webhooks.whatsapp.message.service.settings.whatsapp_allowed_numbers",
+        {"08162511023"},
+    )
     publisher = _PublisherStub()
     service = WhatsAppWebhookService(
         publisher=publisher,  # type: ignore[arg-type]
@@ -65,7 +73,11 @@ async def test_process_message_allows_hardcoded_number_in_meta_format() -> None:
 
 
 @pytest.mark.asyncio
-async def test_process_message_blocks_non_allowed_number() -> None:
+async def test_process_message_blocks_non_allowed_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "apps.gateway.api.webhooks.whatsapp.message.service.settings.whatsapp_allowed_numbers",
+        {"08162511023"},
+    )
     publisher = _PublisherStub()
     service = WhatsAppWebhookService(
         publisher=publisher,  # type: ignore[arg-type]
@@ -85,3 +97,30 @@ async def test_process_message_blocks_non_allowed_number() -> None:
 
     assert handled is False
     assert publisher.published == []
+
+
+@pytest.mark.asyncio
+async def test_process_message_allows_all_when_no_allowlist_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "apps.gateway.api.webhooks.whatsapp.message.service.settings.whatsapp_allowed_numbers",
+        set(),
+    )
+    publisher = _PublisherStub()
+    service = WhatsAppWebhookService(
+        publisher=publisher,  # type: ignore[arg-type]
+        whatsapp_client=_WhatsAppClientStub(),  # type: ignore[arg-type]
+    )
+
+    handled = await service._process_message(
+        ParsedMessage.model_validate(
+            {
+                "id": "wamid-1",
+                "from": "08000000000",
+                "type": "text",
+                "text": "hi",
+            }
+        )
+    )
+
+    assert handled is True
+    assert len(publisher.published) == 1

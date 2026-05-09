@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.handlers.analytics import handle_analytics
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.handlers.analytics import handle_analytics
+from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
     QueryExecutionContract,
@@ -12,8 +12,8 @@ from apps.core.src.agent.graphs.query.models import (
     QueryIR,
     TimeRange,
 )
-from apps.core.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
-from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
+from apps.chat.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
+from apps.chat.src.agent.graphs.query.services.formatter import QueryFormatter
 
 
 class _Provider:
@@ -46,10 +46,10 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
         ]
 
     monkeypatch.setattr(
-        "apps.core.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
@@ -76,10 +76,10 @@ async def test_analytics_sum_no_spending_today_is_humanized(monkeypatch: pytest.
         return []
 
     monkeypatch.setattr(
-        "apps.core.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
@@ -109,7 +109,7 @@ async def test_analytics_transaction_type_breakdown_uses_human_label(monkeypatch
         ]
 
     monkeypatch.setattr(
-        "apps.core.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 
@@ -191,7 +191,7 @@ async def test_single_largest_debit_renders_detail_not_heading_only(monkeypatch:
         ]
 
     monkeypatch.setattr(
-        "apps.core.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 

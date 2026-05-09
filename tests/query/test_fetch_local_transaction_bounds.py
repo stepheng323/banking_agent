@@ -3,15 +3,15 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.handlers.transactions import handle_transaction_list
-from apps.core.src.agent.graphs.query.models import (
+from apps.chat.src.agent.graphs.query.handlers.transactions import handle_transaction_list
+from apps.chat.src.agent.graphs.query.models import (
     Filters,
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
     TimeRange,
 )
-from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
+from apps.chat.src.agent.graphs.query.services.formatter import QueryFormatter
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -71,7 +71,7 @@ async def test_today_query_with_no_bank_feed_rows_returns_no_results_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     query_day = date(2026, 3, 6)
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.contracts.lagos_today", lambda: query_day)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.contracts.lagos_today", lambda: query_day)
 
     query = _query_for_today(query_day)
     result = await handle_transaction_list(

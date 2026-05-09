@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from apps.core.src.agent.orchestrator.nodes.planner import _filter_spurious_affirmation_tasks
+from apps.chat.src.agent.orchestrator.nodes.planner import _filter_spurious_affirmation_tasks
 
 
 def test_affirmation_filter_removes_support_when_resume_present() -> None:

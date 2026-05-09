@@ -45,6 +45,8 @@ def _include_money_move_bundle(signals: PlannerPromptSignals) -> bool:
     return False
 
 def _include_context_bundle(signals: PlannerPromptSignals) -> bool:
+    if signals.has_short_term_memory:
+        return True
     if signals.has_beneficiary_suggestion:
         return True
     if signals.active_flow_type is not None and signals.active_flow_type not in _TRANSACTIONAL_EXECUTORS:

@@ -192,7 +192,7 @@ def seed_faq():
     # Generate embeddings for all entries
     logger.info("Generating embeddings...")
     try:
-        from apps.core.src.agent.sub_agents.faq.retrieval.embeddings import EmbeddingService
+        from apps.chat.src.agent.sub_agents.faq.retrieval.embeddings import EmbeddingService
 
         embedding_service = EmbeddingService()
 
