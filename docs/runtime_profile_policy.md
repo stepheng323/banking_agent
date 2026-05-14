@@ -1,4 +1,4 @@
-# Runtime Policy Authoring Guide
+# Runtime Profile And Policy Authoring Guide
 
 This guide explains how to write and validate the split runtime policy for the banking agent.
 
@@ -24,12 +24,14 @@ This guide explains how to write and validate the split runtime policy for the b
 - `identity`: object
 - `tone`: object
 - `safety_rules`: string array
+- Runtime responsibility: assistant identity and voice only.
 
 ### `config/capability_policy.json`
 
 - `version`: string
 - `last_updated`: string or `null`
 - `capability_matrix`: object mapping domain name to domain capability policy
+- Runtime responsibility: executable support/unsupported action rules only.
 
 ### `config/domain_guardrails.json`
 
@@ -43,6 +45,7 @@ This guide explains how to write and validate the split runtime policy for the b
   - `dynamic_risk.percentile`: float percentile used for per-user threshold
 - `query`: object for query/runtime limits
 - `support`: object for support/runtime thresholds
+- Runtime responsibility: deterministic thresholds, aliases, and limits only.
 
 ## Capability Matrix Contract
 
@@ -90,7 +93,7 @@ uv run python -c "from shared.assistant_profile import load_assistant_profile; f
 3. Run policy tests:
 
 ```bash
-uv run pytest tests/shared/test_soul_policy.py
+uv run pytest tests/shared/test_runtime_profile_policy.py
 ```
 
 ## Common Failure Cases

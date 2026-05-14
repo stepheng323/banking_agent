@@ -14,8 +14,8 @@ from apps.chat.src.agent.graphs.query import capabilities as query_capabilities
 from apps.chat.src.agent.graphs.transfer.worker import TransferWorker
 from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
 from apps.chat.src.agent.orchestrator.nodes.planner.policy import _build_policy_notice
-from shared.assistant_profile.adapters import build_planner_profile_summary
 from shared.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
+from shared.assistant_profile.voice import build_planner_voice_block, get_runtime_voice
 from shared.guardrails.loader import get_cached_guardrails, load_guardrails
 from shared.policy.adapters import resolve_capability_message, resolve_capability_rule
 from shared.policy.loader import get_cached_policy, load_policy
@@ -97,7 +97,7 @@ def test_assistant_profile_raises_when_json_invalid(tmp_path: Path) -> None:
 
 def test_planner_profile_summary_is_compact_and_grounded() -> None:
     profile = get_cached_assistant_profile(path=ASSISTANT_PROFILE_PATH, force_reload=True)
-    summary = build_planner_profile_summary(profile)
+    summary = build_planner_voice_block(profile)
     assert "Supported(profile): Send money" in summary
     assert "Unsupported(profile): Financial advice" in summary
     assert "conversational.out_of_scope" in summary
@@ -113,11 +113,24 @@ def test_planner_profile_summary_uses_input_profile_values() -> None:
     profile.tone.response_rules = ["State limits directly"]
     profile.safety_rules = ["Banking tasks only"]
 
-    summary = build_planner_profile_summary(profile)
+    summary = build_planner_voice_block(profile)
     assert "Supported(profile): Card freeze(+1)" in summary
     assert "Unsupported(profile): Crypto staking(+1)" in summary
     assert "State limits directly" in summary
     assert "Banking tasks only" in summary
+
+
+def test_runtime_voice_uses_assistant_profile_as_single_voice_source() -> None:
+    profile = load_assistant_profile(ASSISTANT_PROFILE_PATH)
+    voice = get_runtime_voice(profile=profile)
+
+    assert voice.name == profile.identity.name
+    assert voice.description == profile.identity.description
+    assert voice.tone_style == profile.tone.style
+    assert voice.brevity == profile.tone.brevity
+    assert voice.response_rules == tuple(profile.tone.response_rules)
+    assert voice.safety_rules == tuple(profile.safety_rules)
+    assert voice.as_meta_payload()["supported_domains"] == profile.supported_domains
 
 
 def test_planner_prompt_refresh_reloads_profile_summary_block(tmp_path: Path) -> None:
