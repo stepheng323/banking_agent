@@ -261,6 +261,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     task_updates = await _build_planner_task_updates(
         planner_output=planner_output,
         text=text,
+        locale=current_locale,
         query_session_source=query_session_source,
         query_session_snapshot=query_session_snapshot,
     )
@@ -268,8 +269,31 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     new_tasks = task_updates["new_tasks"]
     waves = task_updates["waves"]
     stashed_query_session_update = task_updates["stashed_query_session_update"]
+    if task_updates.get("capability_block_response"):
+        return {
+            "final_response": task_updates["capability_block_response"],
+            "normalized_instruction": text,
+            "planner_output": planner_output,
+            "semantic_path_shape": "planner_capability_blocked",
+            **_planner_route_updates(decision="capability_blocked", planner_output=planner_output),
+            **locale_updates,
+        }
+    if task_updates.get("batch_limit_response"):
+        return {
+            "final_response": task_updates["batch_limit_response"],
+            "normalized_instruction": text,
+            "planner_output": planner_output,
+            "semantic_path_shape": "planner",
+            **_planner_route_updates(decision="transaction_batch_limit", planner_output=planner_output),
+            **locale_updates,
+        }
 
     policy_notice = _build_policy_notice(text, planner_output, current_locale)
+    capability_policy_notice = task_updates.get("capability_policy_notice")
+    if policy_notice and capability_policy_notice:
+        policy_notice = f"{capability_policy_notice}\n\n{policy_notice}"
+    elif capability_policy_notice:
+        policy_notice = capability_policy_notice
     if policy_notice:
         logger.info("policy_notice_created")
 

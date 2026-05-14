@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.nodes.cancellation import build_cancellati
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _build_direct_domain_task,
+    _direct_domain_capability_block_message,
     _has_explicit_cancel,
     _is_account_balance_request,
     _is_account_domain_request,
@@ -209,6 +210,20 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_obvious_airtime_request(ctx.message_text)
     ):
         return None
+    if block_message := _direct_domain_capability_block_message(ctx.state, "airtime"):
+        logger.info("gate_deterministic_airtime_domain_policy_blocked")
+        return {
+            **ctx.gate_updates,
+            "final_response": block_message,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "deterministic_airtime_domain_policy_blocked",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="capability_blocked",
+                target_domain="airtime",
+                mode="new",
+            ),
+        }
     task_id, spec = _build_direct_domain_task(state=ctx.state, domain="airtime", mode="new")
     logger.info("gate_deterministic_airtime_domain", task_id=task_id)
     return {
@@ -238,6 +253,20 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_obvious_data_request(ctx.message_text)
     ):
         return None
+    if block_message := _direct_domain_capability_block_message(ctx.state, "data"):
+        logger.info("gate_deterministic_data_domain_policy_blocked")
+        return {
+            **ctx.gate_updates,
+            "final_response": block_message,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "deterministic_data_domain_policy_blocked",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="capability_blocked",
+                target_domain="data",
+                mode="new",
+            ),
+        }
     task_id, spec = _build_direct_domain_task(state=ctx.state, domain="data", mode="new")
     logger.info("gate_deterministic_data_domain", task_id=task_id)
     return {

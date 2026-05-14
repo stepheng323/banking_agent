@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from shared.i18n import render_capability_limitation
 from shared.policy.adapters import (
+    is_capability_supported,
     resolve_capability_alternative,
     resolve_capability_message,
-    resolve_capability_rule,
 )
+from shared.policy.models import CapabilityPolicy
 
 
 def capability_block_message(
@@ -16,17 +17,17 @@ def capability_block_message(
     *,
     locale: str = "en",
     action_label: str | None = None,
+    policy: CapabilityPolicy | None = None,
 ) -> str | None:
     """Return a user-facing limitation message when an action is unsupported."""
-    rule = resolve_capability_rule(domain=domain, action=action)
-    if rule is not None and rule.supported:
+    if is_capability_supported(domain=domain, action=action, policy=policy):
         return None
 
-    explicit_message = resolve_capability_message(domain=domain, action=action)
+    explicit_message = resolve_capability_message(domain=domain, action=action, policy=policy)
     if explicit_message:
         return explicit_message
 
-    alternative = resolve_capability_alternative(domain=domain, action=action)
+    alternative = resolve_capability_alternative(domain=domain, action=action, policy=policy)
     resolved_action_label = action_label or action.replace("_", " ")
     alternative_labels = [alternative.replace("_", " ")] if alternative else []
     return render_capability_limitation(

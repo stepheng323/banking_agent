@@ -15,6 +15,8 @@ class DomainCapabilityPolicy(BaseModel):
     """Per-domain capability map."""
 
     domain: str
+    enabled: bool = True
+    limitation_message: str | None = None
     actions: dict[str, CapabilityRule] = Field(default_factory=dict)
 
 

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
 from apps.chat.src.agent.graphs.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
 from apps.chat.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
+from shared.formatters.confirmation import build_confirmation_summary
 
 
 class _MockBankingProvider:
@@ -97,6 +98,58 @@ async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     assert "You asked to send to David" in result.confirmation_summary
     assert "₦5,000 → David (Mercy Johnson)" in result.confirmation_summary
     assert "Mercy Johnson" in result.confirmation_summary
+
+
+async def test_multi_source_funding_confirmation_does_not_duplicate_plain_summary() -> None:
+    payload = TransferPayload(
+        amount=35000,
+        recipient_name="Tolu Adebayo",
+        recipient_resolved_name="Tolu Adebayo",
+        recipient_account="2010000001",
+        recipient_bank_name="Access Bank",
+        source_bank_name="Access Bank",
+        source_account_number="6000000003",
+        funding_plan={
+            "is_single_source": False,
+            "transfer_amount": 35000,
+            "primary_bank_name": "Access Bank",
+            "primary_available_balance": 30000,
+            "steps": [
+                {"account_id": "access", "amount": 30000, "bank_name": "Access Bank", "sequence": 1},
+                {"account_id": "first", "amount": 5000, "bank_name": "First Bank", "sequence": 2},
+            ],
+        },
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.confirmation_summary is not None
+    assert "Your Access Bank has *₦30,000*" in result.confirmation_summary
+    assert "Suggested breakdown:" in result.confirmation_summary
+    assert result.confirmation_summary.count("₦35,000 → Tolu Adebayo") == 1
+    assert "Access Bank • 2010000001" not in result.confirmation_summary
+
+
+def test_multi_source_confirmation_summary_does_not_append_single_from_line() -> None:
+    summary = (
+        "₦35,000 → Tolu Adebayo (Access Bank)\n"
+        "Account: 2010000001\n\n"
+        "Your Access Bank has ₦30,000 — not enough for this transfer."
+    )
+    rendered = build_confirmation_summary(
+        task_payload={
+            "source_bank_name": "Access Bank",
+            "source_account_number": "6000000003",
+            "funding_plan": {"is_single_source": False},
+            "confirmation": {"summary": summary},
+        },
+        locale="en",
+        accounts=[],
+    )
+
+    assert rendered == summary
+    assert "From:" not in (rendered or "")
 
 
 async def test_confirmation_update_message_uses_specific_dynamic_ack() -> None:

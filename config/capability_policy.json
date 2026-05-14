@@ -4,20 +4,9 @@
   "capability_matrix": {
     "transfer": {
       "domain": "transfer",
+      "enabled": true,
       "actions": {
         "send_money": {
-          "supported": true
-        },
-        "schedule_transfer": {
-          "supported": true
-        },
-        "recurring_transfer": {
-          "supported": true
-        },
-        "list_scheduled_transfers": {
-          "supported": true
-        },
-        "cancel_scheduled_transfer": {
           "supported": true
         },
         "international_transfer": {
@@ -27,8 +16,28 @@
         }
       }
     },
+    "schedule": {
+      "domain": "schedule",
+      "enabled": true,
+      "limitation_message": "Scheduled payments are temporarily unavailable. I can still help with immediate transfers, airtime/data purchase, balances, and transaction queries.",
+      "actions": {
+        "schedule_transfer": {
+          "supported": true
+        },
+        "recurring_transfer": {
+          "supported": true
+        },
+        "cancel_scheduled_transfer": {
+          "supported": true
+        },
+        "list_scheduled_transfers": {
+          "supported": true
+        }
+      }
+    },
     "airtime": {
       "domain": "airtime",
+      "enabled": true,
       "actions": {
         "buy_airtime": {
           "supported": true
@@ -37,6 +46,8 @@
     },
     "data": {
       "domain": "data",
+      "enabled": true,
+      "limitation_message": "Data purchase is temporarily unavailable. I can still help with transfers, airtime, balances, and transaction queries.",
       "actions": {
         "buy_data": {
           "supported": true
@@ -45,6 +56,7 @@
     },
     "query": {
       "domain": "query",
+      "enabled": true,
       "actions": {
         "filter_recipient": {
           "supported": true
@@ -98,6 +110,7 @@
     },
     "account": {
       "domain": "account",
+      "enabled": true,
       "actions": {
         "list_accounts": {
           "supported": true
@@ -129,8 +142,13 @@
     },
     "support": {
       "domain": "support",
+      "enabled": true,
+      "limitation_message": "Support help is temporarily unavailable. I can still help with transfers, airtime/data purchase, balances, and transaction queries.",
       "actions": {
         "lookup_transaction": {
+          "supported": true
+        },
+        "lookup_ticket": {
           "supported": true
         },
         "explain_status": {
@@ -159,6 +177,16 @@
           "supported": false,
           "limitation_message": "I can't *submit refund request* directly yet, but I can *create support ticket*. Want me to proceed?",
           "alternative": "create_ticket"
+        }
+      }
+    },
+    "faq": {
+      "domain": "faq",
+      "enabled": true,
+      "limitation_message": "Banking help is temporarily unavailable. I can still help with transfers, airtime/data purchase, balances, and transaction queries.",
+      "actions": {
+        "answer_question": {
+          "supported": true
         }
       }
     }

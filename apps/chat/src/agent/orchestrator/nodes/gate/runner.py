@@ -21,11 +21,19 @@ from apps.chat.src.agent.orchestrator.nodes.planner.context import (
 )
 from shared.config.settings import settings
 from shared.i18n import LocaleManager
+from shared.policy.service import capability_block_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
+DIRECT_DOMAIN_ACTIONS = {
+    "transfer": "send_money",
+    "airtime": "buy_airtime",
+    "data": "buy_data",
+    "support": "collect_details",
+    "faq": "answer_question",
+}
 SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
 _TRANSFER_DIRECT_PREFIX_RE = re.compile(
     r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
@@ -499,6 +507,16 @@ def _build_direct_domain_task(
         payload=payload,
     )
     return task_id, spec
+
+
+def _direct_domain_capability_block_message(
+    state: OrchestratorState,
+    domain: str,
+) -> str | None:
+    action = DIRECT_DOMAIN_ACTIONS.get(domain)
+    if not action:
+        return None
+    return capability_block_message(domain=domain, action=action, locale=_current_locale(state))
 
 
 def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
@@ -1047,9 +1065,14 @@ def _query_followup_bypass_reason(
     message_text: str,
     locale: str,
     query_session_snapshot: dict[str, Any] | None,
+    has_context_frames: bool = False,
 ) -> tuple[str | None, str | None]:
     if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
         return None, None
+
+    transfer_request_reason = _classify_obvious_transfer_request(message_text)
+    if transfer_request_reason or _is_obvious_airtime_request(message_text) or _is_obvious_data_request(message_text):
+        return None, "fresh_transaction_request"
 
     shortcut, miss_reason = resolve_query_shortcut_with_reason(message_text, locale)
     if shortcut is not None:
@@ -1061,6 +1084,8 @@ def _query_followup_bypass_reason(
             return "pending_clarification", parsed_time_range.period or "days_back"
         return None, miss_reason
 
+    if has_context_frames:
+        return "active_query_session", miss_reason or "query_session_active"
     return None, miss_reason
 
 
