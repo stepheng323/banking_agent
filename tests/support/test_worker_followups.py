@@ -10,6 +10,15 @@ from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
 from shared.services.async_completion import record_group_leg_and_maybe_build_summary
 
 
+class _SupportLLMStub:
+    def __init__(self, content: str = "{}") -> None:
+        self.content = content
+
+    async def ainvoke(self, prompt: str):
+        del prompt
+        return SimpleNamespace(content=self.content)
+
+
 class _RedisStub:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
@@ -60,8 +69,8 @@ class _TxRepoStub:
         return []
 
     async def get_by_status(self, user_id: str, status: str):
-        del user_id, status
-        return []
+        del user_id
+        return [tx for tx in self.transactions.values() if getattr(tx, "status", None) == status]
 
 
 class _ActionableRepoStub:
@@ -78,6 +87,8 @@ def _tx(
     bank_name: str,
     account_number: str,
     status: str = "successful",
+    error_message: str | None = None,
+    failure_category: str | None = None,
 ):
     return SimpleNamespace(
         id=transaction_id,
@@ -92,7 +103,8 @@ def _tx(
         recipient_bank_name=bank_name,
         source_bank_name="Zenith Bank",
         narration=None,
-        error_message=None,
+        error_message=error_message,
+        failure_category=failure_category,
         provider_response={},
         provider_status=status,
         provider_error_code="00" if status == "successful" else None,
@@ -101,13 +113,32 @@ def _tx(
     )
 
 
-def _worker(redis_client: _RedisStub, transactions: dict[str, object]) -> SupportWorker:
+def _worker(redis_client: _RedisStub, transactions: dict[str, object], ticket_service: object | None = None) -> SupportWorker:
     return SupportWorker(
-        llm=SimpleNamespace(),
+        llm=_SupportLLMStub(),
         transaction_repo=_TxRepoStub(transactions),
         actionable_message_repo=_ActionableRepoStub(),
         redis_client=redis_client,
+        ticket_service=ticket_service,
     )
+
+
+class _TicketServiceStub:
+    def __init__(self, ticket: object | None = None) -> None:
+        self.ticket = ticket
+
+    async def get_ticket(self, ticket_code: str):
+        if self.ticket and getattr(self.ticket, "ticket_code", None) == ticket_code:
+            return self.ticket
+        return None
+
+    async def get_latest_ticket(self, user_id: str):
+        del user_id
+        return self.ticket
+
+    async def get_user_open_tickets(self, user_id: str):
+        del user_id
+        return [self.ticket] if self.ticket else []
 
 
 @pytest.mark.asyncio
@@ -150,6 +181,129 @@ async def test_support_worker_enqueues_single_transfer_receipt_for_successful_tr
     assert result.receipt_jobs[0]["transaction_reference"] == "tx-1"
 
 
+@pytest.mark.asyncio
+async def test_support_worker_handles_last_transaction_failed_when_llm_returns_alias() -> None:
+    worker = SupportWorker(
+        llm=_SupportLLMStub(
+            '{"intent":"transfer_failure_reason","confidence":0.92,'
+            '"transaction_ref":{"amount":null,"recipient_name":null,"date_hint":null}}'
+        ),
+        transaction_repo=_TxRepoStub(
+            {
+                "tx-1": _tx(
+                    "tx-1",
+                    amount=10000,
+                    recipient_name="Mercy Johnson",
+                    bank_name="Opay",
+                    account_number="8162511023",
+                    status="failed",
+                    error_message="Provider down",
+                    failure_category="provider_unavailable",
+                )
+            }
+        ),
+        actionable_message_repo=_ActionableRepoStub(),
+        redis_client=_RedisStub(),
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="My last transaction failed",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "Provider down" in (result.response or "")
+    assert "retry now" in (result.response or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_support_worker_blocks_retry_when_policy_disables_retry_payout() -> None:
+    worker = _worker(
+        _RedisStub(),
+        {
+            "tx-1": _tx(
+                "tx-1",
+                amount=10000,
+                recipient_name="Mercy Johnson",
+                bank_name="Opay",
+                account_number="8162511023",
+                status="failed",
+                error_message="Provider down",
+                failure_category="provider_unavailable",
+            )
+        },
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="Retry my last transaction",
+    )
+
+    assert result.handoff is None
+    assert "can't *retry the transfer*" in (result.response or "")
+
+
+@pytest.mark.asyncio
+async def test_support_worker_returns_retry_handoff_when_policy_allows_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.support.capabilities.check_unsupported_actions",
+        lambda domain, requested_actions: [],
+    )
+    worker = _worker(
+        _RedisStub(),
+        {
+            "tx-1": _tx(
+                "tx-1",
+                amount=10000,
+                recipient_name="Mercy Johnson",
+                bank_name="Opay",
+                account_number="8162511023",
+                status="failed",
+                error_message="Provider down",
+                failure_category="provider_unavailable",
+            )
+        },
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="Retry my last transaction",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert result.handoff is not None
+    assert result.handoff["type"] == "retry_transfer"
+    assert result.handoff["requires_confirmation"] is True
+    assert result.handoff["payload"]["amount"] == 10000
+    assert result.handoff["payload"]["recipient_name"] == "Mercy Johnson"
+
+
+@pytest.mark.asyncio
+async def test_support_worker_handles_ticket_status_with_latest_ticket() -> None:
+    ticket = SimpleNamespace(
+        ticket_code="SUP-20260513-0001",
+        status="open",
+        created_at=datetime(2026, 5, 13, 10, 30),
+        resolved_at=None,
+    )
+    worker = _worker(_RedisStub(), {}, ticket_service=_TicketServiceStub(ticket))
+
+    result = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="What is the status of my ticket?",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "SUP-20260513-0001" in (result.response or "")
+    assert "open" in (result.response or "").lower()
+
+
 def _group_message(tx_id: str, index: int) -> dict[str, object]:
     return {
         "transaction_id": tx_id,
@@ -189,6 +343,29 @@ def _leg_payload(*, amount: int, recipient_name: str, resolved_name: str, accoun
         "recipient_bank_name": bank,
         "final_status": "success",
     }
+
+
+def _failed_leg_payload(
+    *,
+    amount: int,
+    recipient_name: str,
+    resolved_name: str,
+    account: str,
+    bank: str,
+    error_message: str,
+    failure_category: str,
+) -> dict[str, object]:
+    payload = _leg_payload(
+        amount=amount,
+        recipient_name=recipient_name,
+        resolved_name=resolved_name,
+        account=account,
+        bank=bank,
+    )
+    payload["final_status"] = "failed"
+    payload["error_message"] = error_message
+    payload["failure_category"] = failure_category
+    return payload
 
 
 @pytest.mark.asyncio
@@ -748,3 +925,126 @@ async def test_support_worker_all_receipts_skips_non_successful_and_non_transfer
     assert "skipped" in (result.response or "").lower()
     assert "pending" in (result.response or "").lower()
     assert "non-transfer" in (result.response or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_support_worker_answers_recent_failed_batch_reason_from_failure_category() -> None:
+    redis_client = _RedisStub()
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-1", 1),
+        task_type="transfer",
+        payload=_failed_leg_payload(
+            amount=10000,
+            recipient_name="Mum",
+            resolved_name="Mercy Johnson",
+            account="8162511023",
+            bank="Opay",
+            error_message="Provider down",
+            failure_category="provider_unavailable",
+        ),
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-2", 2),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=5000,
+            recipient_name="Tolu",
+            resolved_name="Tolu Adedayo",
+            account="0760505261",
+            bank="First Bank",
+        ),
+        locale="en",
+    )
+
+    worker = _worker(
+        redis_client,
+        {
+            "tx-1": _tx(
+                "tx-1",
+                amount=10000,
+                recipient_name="Mercy Johnson",
+                bank_name="Opay",
+                account_number="8162511023",
+                status="failed",
+                error_message="Provider down",
+            ),
+            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+        },
+    )
+
+    result = await worker.run(
+        payload={"intent": "failed_transfer"},
+        context={"phone_number": "2348162511023", "channel_identity": "927331985", "language": "en"},
+        user_message="why did it fail?",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "Provider down" in (result.response or "")
+    assert "retry now" in (result.response or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_support_worker_recent_failed_retry_uses_category_repair_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.support.capabilities.check_unsupported_actions",
+        lambda domain, requested_actions: [],
+    )
+    redis_client = _RedisStub()
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-1", 1),
+        task_type="transfer",
+        payload=_failed_leg_payload(
+            amount=10000,
+            recipient_name="Mum",
+            resolved_name="Mercy Johnson",
+            account="8162511023",
+            bank="Opay",
+            error_message="Insufficient funds",
+            failure_category="insufficient_funds",
+        ),
+        locale="en",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-2", 2),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=5000,
+            recipient_name="Tolu",
+            resolved_name="Tolu Adedayo",
+            account="0760505261",
+            bank="First Bank",
+        ),
+        locale="en",
+    )
+
+    worker = _worker(
+        redis_client,
+        {
+            "tx-1": _tx(
+                "tx-1",
+                amount=10000,
+                recipient_name="Mercy Johnson",
+                bank_name="Opay",
+                account_number="8162511023",
+                status="failed",
+                error_message="Insufficient funds",
+            ),
+            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+        },
+    )
+
+    result = await worker.run(
+        payload={"intent": "retry_transfer"},
+        context={"phone_number": "2348162511023", "channel_identity": "927331985", "language": "en"},
+        user_message="retry failed one",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "another source account" in (result.response or "").lower()

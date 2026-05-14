@@ -5,12 +5,14 @@ from enum import Enum
 from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import render_capability_limitation
 from shared.policy.adapters import check_unsupported_actions, resolve_capability_alternative
+from shared.policy.service import capability_block_message
 
 
 class SupportAction(str, Enum):
     """Actions Support can take."""
 
     LOOKUP_TRANSACTION = "lookup_transaction"
+    LOOKUP_TICKET = "lookup_ticket"
     EXPLAIN_STATUS = "explain_status"
     RETRY_PAYOUT = "retry_payout"
     INITIATE_REFUND = "initiate_refund"
@@ -24,6 +26,7 @@ SUPPORT_LIMITS = get_cached_guardrails().support.model_dump()
 
 ACTION_LABELS: dict[SupportAction, str] = {
     SupportAction.LOOKUP_TRANSACTION: "look up transaction",
+    SupportAction.LOOKUP_TICKET: "look up support ticket",
     SupportAction.EXPLAIN_STATUS: "explain what happened",
     SupportAction.RETRY_PAYOUT: "retry the transfer",
     SupportAction.INITIATE_REFUND: "process refund immediately",
@@ -60,6 +63,10 @@ def generate_limitation_message(missing: list[SupportAction], *, locale: str = "
         return ""
 
     action = missing[0]
+
+    explicit = capability_block_message(domain="support", action=action.value, locale=locale)
+    if explicit:
+        return explicit
 
     alt = get_alternative(action)
     label = ACTION_LABELS.get(action, action.value)

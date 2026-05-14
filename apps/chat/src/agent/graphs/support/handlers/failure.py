@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.graphs.support.models import EscalationResult, SupportResponse
 from shared.i18n import render_message
+from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,6 +15,48 @@ def _normalize_status(status: str) -> str:
     if status == "success":
         return "successful"
     return status
+
+
+def _provider_error_code(provider_response: dict[str, Any], transaction: dict[str, Any]) -> str | None:
+    for key in ("provider_error_code", "response_code", "responseCode", "error_code", "code"):
+        value = transaction.get(key) if key == "provider_error_code" else provider_response.get(key)
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _failure_category(transaction: dict[str, Any], reason: str) -> str:
+    category = transaction.get("failure_category")
+    if isinstance(category, str) and category.strip():
+        return category.strip()
+    provider_response = transaction.get("provider_response", {})
+    if not isinstance(provider_response, dict):
+        provider_response = {}
+    return classify_failure_category(
+        message=reason or str(transaction.get("error_message") or ""),
+        code=_provider_error_code(provider_response, transaction),
+        context="provider",
+    )
+
+
+def _category_guidance(category: str, *, locale: str) -> str | None:
+    if locale != "en":
+        return None
+    return {
+        "provider_unavailable": "You can retry now, or wait a bit if the provider is still unstable.",
+        "provider_declined": "The provider declined it. You can retry, but if it repeats, contact support.",
+        "insufficient_funds": "Use another source account or reduce the amount before retrying.",
+        "validation_error": "Check the recipient account and bank details before retrying.",
+        "source_account": "Choose another source account or fix the mandate before retrying.",
+        "execution_error": "This looks like a processing error. You can retry, and contact support if it repeats.",
+    }.get(category)
+
+
+def _append_category_guidance(message: str, category: str, *, locale: str) -> str:
+    guidance = _category_guidance(category, locale=locale)
+    if not guidance:
+        return message
+    return f"{message}\n\n{guidance}"
 
 
 async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
@@ -50,6 +93,7 @@ async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "e
             reason = provider_error
         else:
             reason = render_message("support.failure.reason_not_provided", locale)
+        category = _failure_category(transaction, reason)
 
         # Check if money was debited
         was_debited = provider_response.get("debited", False)
@@ -61,7 +105,7 @@ async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "e
                 {"amount": f"{amount:,.0f}", "reason": reason},
             )
             return SupportResponse(
-                message=message,
+                message=_append_category_guidance(message, category, locale=locale),
                 transaction_data=transaction,
             )
         else:
@@ -71,7 +115,7 @@ async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "e
                 {"amount": f"{amount:,.0f}", "reason": reason},
             )
             return SupportResponse(
-                message=message,
+                message=_append_category_guidance(message, category, locale=locale),
                 offer_retry=True,
                 transaction_data=transaction,
             )

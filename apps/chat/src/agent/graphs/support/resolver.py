@@ -49,6 +49,12 @@ class TransactionResolver:
                 logger.info("transaction_resolved", method="quoted", tx_id=str(tx.id))
                 return tx, "quoted"
 
+        if tx_ref and tx_ref.transaction_id:
+            tx = await self.tx_repo.get_by_id(tx_ref.transaction_id)
+            if tx:
+                logger.info("transaction_resolved", method="transaction_id", tx_id=str(tx.id))
+                return tx, "transaction_id"
+
         if tx_ref and self._has_explicit_ref(tx_ref):
             tx = await self._resolve_from_explicit(user_id, tx_ref)
             if tx:
@@ -195,6 +201,7 @@ class TransactionResolver:
             "source_bank_name": tx.source_bank_name,
             "narration": tx.narration,
             "error_message": tx.error_message,
+            "failure_category": getattr(tx, "failure_category", None),
             "provider_response": tx.provider_response or {},
             "provider_status": getattr(tx, "provider_status", None),
             "provider_error_code": getattr(tx, "provider_error_code", None),

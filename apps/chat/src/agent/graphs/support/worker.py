@@ -7,6 +7,7 @@ import re
 import uuid
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.capabilities import SUPPORT_LIMITS
 from apps.chat.src.agent.graphs.support.classifier import SupportClassifier
 from apps.chat.src.agent.graphs.support.context_manager import SupportContextManager
 from apps.chat.src.agent.graphs.support.handlers import (
@@ -21,6 +22,7 @@ from apps.chat.src.agent.graphs.support.handlers import (
     handle_wrong_debit,
 )
 from apps.chat.src.agent.graphs.support.handlers.escalation import handle_escalation
+from apps.chat.src.agent.graphs.support.handlers.retry import build_retry_quoted_data
 from apps.chat.src.agent.graphs.support.micro_resolver import (
     NextStep,
 )
@@ -41,6 +43,7 @@ from apps.chat.src.agent.graphs.support.models import (
 from apps.chat.src.agent.graphs.support.resolver import TransactionResolver
 from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from shared.i18n import LocaleManager, render_message
+from shared.policy.service import capability_block_message
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
 from shared.services.async_completion import RecentBatchLeg, get_recent_batch_reference
 from shared.services.ticket_service import TicketService
@@ -56,6 +59,7 @@ _OTHER_ONE_RE = re.compile(r"\b(?:the other one|other one|the other)\b", re.IGNO
 _REMAINING_RE = re.compile(r"\b(?:the remaining ones?|remaining ones?|the rest|rest of them)\b", re.IGNORECASE)
 _ALL_EXCEPT_RE = re.compile(r"\b(?:all|every|both)\b.*?\b(?:except|excluding|but not|apart from)\b(?P<tail>.+)$", re.IGNORECASE)
 _ONLY_SELECTION_RE = re.compile(r"\b(?:only|just)\b(?P<tail>.+)$", re.IGNORECASE)
+_TICKET_CODE_RE = re.compile(r"\b(SUP-\d{8}-\d{4})\b", re.IGNORECASE)
 
 
 def _support_identity(context: dict[str, Any]) -> str | None:
@@ -64,6 +68,13 @@ def _support_identity(context: dict[str, Any]) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _ticket_code_from_message(message: str) -> str | None:
+    match = _TICKET_CODE_RE.search(message)
+    if match is None:
+        return None
+    return match.group(1).upper()
 
 
 def _normalize_match_text(value: str | None) -> str:
@@ -180,6 +191,8 @@ def _leg_to_candidate(leg: RecentBatchLeg) -> SupportReferenceCandidate | None:
         bank_display=leg.get("bank_display"),
         account_display=leg.get("account_display"),
         final_status=str(leg.get("final_status") or "success"),
+        error_message=leg.get("error_message"),
+        failure_category=leg.get("failure_category"),
         receipt_allowed=bool(leg.get("receipt_allowed")),
     )
 
@@ -233,6 +246,36 @@ class SupportWorker:
         self.resolver = TransactionResolver(transaction_repo, actionable_message_repo)
         self.context_manager = SupportContextManager(redis_client)
         self._ticket_service = ticket_service
+
+    def _build_retry_handoff(self, response: SupportResponse, intent: SupportIntent) -> dict[str, Any] | None:
+        if intent != SupportIntent.RETRY_TRANSFER or not response.offer_retry:
+            return response.handoff
+        transaction = response.transaction_data
+        if not isinstance(transaction, dict):
+            return response.handoff
+        quoted_data = build_retry_quoted_data(transaction)
+        return {
+            "type": "retry_transfer",
+            "payload": quoted_data.get("data", {}),
+            "quoted_data": quoted_data,
+            "requires_confirmation": True,
+        }
+
+    def _result_from_support_response(
+        self,
+        response: SupportResponse | None,
+        *,
+        intent: SupportIntent,
+        locale: str,
+    ) -> SupportResult:
+        final_msg = response.message if response else render_message("support.unable_to_process", locale)
+        handoff = self._build_retry_handoff(response, intent) if response else None
+        return SupportResult(
+            outcome=SupportOutcome.OK,
+            response=final_msg,
+            final_message=final_msg,
+            handoff=handoff,
+        )
 
     def _build_receipt_transfer_data(self, transaction: dict[str, Any], *, locale: str) -> ReceiptTransferData:
         return {
@@ -461,12 +504,14 @@ class SupportWorker:
         support_ctx: Any,
         candidates: list[SupportReferenceCandidate],
         locale: str,
+        intent: SupportIntent | None = None,
     ) -> None:
         reminder = _build_reference_reminder(candidates)
         support_ctx.pending_reference = PendingReferenceState(
             source="recent_batch",
             candidates=candidates,
             reminder=reminder if locale == "en" else reminder,
+            intent=intent.value if intent is not None else None,
         )
         await self.context_manager.save(user_id, support_ctx)
 
@@ -633,7 +678,6 @@ class SupportWorker:
         message: str,
         locale: str,
     ) -> tuple[dict[str, Any] | None, SupportResult | None]:
-        del locale
         pending = support_ctx.pending_reference
         if pending is None or not pending.candidates:
             return None, None
@@ -664,7 +708,81 @@ class SupportWorker:
             )
             support_ctx.receipt_thread_state = updated_thread
         await self.context_manager.save(user_id, support_ctx)
+        if pending.intent:
+            try:
+                intent = SupportIntent(pending.intent)
+            except ValueError:
+                intent = None
+            if intent is not None:
+                if policy_message := capability_block_message(domain="support", action="retry_payout", locale=locale):
+                    if intent == SupportIntent.RETRY_TRANSFER:
+                        return None, SupportResult(
+                            outcome=SupportOutcome.OK,
+                            response=policy_message,
+                            final_message=policy_message,
+                        )
+                response = await self._dispatch_handler(intent, resolved, user_id=user_id, locale=locale)
+                return None, self._result_from_support_response(response, intent=intent, locale=locale)
         return resolved, None
+
+    async def _load_recent_candidate_transaction(
+        self,
+        candidate: SupportReferenceCandidate,
+    ) -> dict[str, Any] | None:
+        resolved = await self._load_transaction_dict(candidate.transaction_id)
+        if resolved is None:
+            return None
+        if candidate.error_message and not resolved.get("error_message"):
+            resolved["error_message"] = candidate.error_message
+        if candidate.failure_category and not resolved.get("failure_category"):
+            resolved["failure_category"] = candidate.failure_category
+        if candidate.final_status:
+            resolved["status"] = candidate.final_status
+        return resolved
+
+    async def _resolve_recent_batch_support_reference(
+        self,
+        *,
+        user_id: str,
+        support_ctx: Any,
+        context: dict[str, Any],
+        message: str,
+        locale: str,
+        intent: SupportIntent,
+    ) -> tuple[dict[str, Any] | None, SupportResult | None]:
+        if intent not in {SupportIntent.FAILED_TRANSFER, SupportIntent.RETRY_TRANSFER}:
+            return None, None
+        identity = _support_identity(context)
+        recent_batch = await get_recent_batch_reference(self.context_manager.redis, identity=identity)
+        if recent_batch is None:
+            return None, None
+        candidates = [candidate for leg in recent_batch["legs"] if (candidate := _leg_to_candidate(leg)) is not None]
+        failed_candidates = [candidate for candidate in candidates if candidate.final_status == "failed"]
+        if not failed_candidates:
+            return None, None
+
+        matches = self._match_reference_candidates(message=message, candidates=failed_candidates)
+        selected = matches if matches else failed_candidates if len(failed_candidates) == 1 else []
+        if len(selected) == 1:
+            resolved = await self._load_recent_candidate_transaction(selected[0])
+            if resolved is None:
+                return None, None
+            support_ctx.last_transaction_ref = str(resolved.get("id") or resolved.get("transaction_id") or "")
+            support_ctx.pending_reference = None
+            await self.context_manager.save(user_id, support_ctx)
+            return resolved, None
+
+        await self._save_pending_reference(
+            user_id=user_id,
+            support_ctx=support_ctx,
+            candidates=failed_candidates,
+            locale=locale,
+            intent=intent,
+        )
+        return None, SupportResult(
+            outcome=SupportOutcome.NEEDS_INPUT,
+            response=_build_reference_prompt(failed_candidates),
+        )
 
     async def _resolve_recent_batch_receipt_reference(
         self,
@@ -828,6 +946,13 @@ class SupportWorker:
         user_id = context.get("user_id") or phone_number
         locale = LocaleManager.normalize(context.get("language")).value
         message = (user_message or "").strip()
+        if policy_message := capability_block_message(domain="support", action="collect_details", locale=locale):
+            logger.info("support_worker_capability_blocked")
+            return SupportResult(
+                outcome=SupportOutcome.OK,
+                response=policy_message,
+                final_message=policy_message,
+            )
 
         # Extract inputs from payload
         quoted_message_id = payload.get("quoted_message_id")
@@ -876,9 +1001,12 @@ class SupportWorker:
             tx_ref = None
             if classification and classification.transaction_ref:
                 tx_ref = TransactionReference(
+                    transaction_id=classification.transaction_ref.transaction_id,
                     amount=classification.transaction_ref.amount,
                     recipient_name=classification.transaction_ref.recipient_name,
                     date_hint=classification.transaction_ref.date_hint,
+                    use_quoted=classification.transaction_ref.use_quoted,
+                    use_recent=classification.transaction_ref.use_recent,
                 )
             if quoted_message_id:
                 tx_ref = tx_ref or TransactionReference()
@@ -908,6 +1036,27 @@ class SupportWorker:
                 )
                 if receipt_followup is not None:
                     return receipt_followup
+
+            if (
+                resolved_tx is None
+                and intent in {SupportIntent.FAILED_TRANSFER, SupportIntent.RETRY_TRANSFER}
+                and not quoted_message_id
+                and not has_explicit_tx_ref
+            ):
+                resolved_tx, recent_support_followup = await self._resolve_recent_batch_support_reference(
+                    user_id=user_id,
+                    support_ctx=support_ctx,
+                    context=context,
+                    message=message,
+                    locale=locale,
+                    intent=intent,
+                )
+                if recent_support_followup is not None:
+                    return recent_support_followup
+                if resolved_tx is not None:
+                    tx_ref = tx_ref or TransactionReference()
+                    tx_ref.use_recent = True
+                    extraction.transaction_ref.use_recent = True
 
             if resolved_tx is not None and intent == SupportIntent.RECEIPT_REQUEST:
                 return self._build_receipt_result(
@@ -944,20 +1093,29 @@ class SupportWorker:
                     response=prompt,
                 )
 
+            if next_step == NextStep.LOOKUP_TICKET:
+                response = await self._dispatch_handler(
+                    intent,
+                    resolved_tx,
+                    user_id=user_id,
+                    locale=locale,
+                    ticket_code=_ticket_code_from_message(message),
+                )
+                return self._result_from_support_response(response, intent=intent, locale=locale)
+
             # 5. Transaction Resolution
             if not resolved_tx and next_step in (
                 NextStep.LOOKUP_TRANSACTION,
                 NextStep.EXPLAIN_STATUS,
-                NextStep.RESOLVE_TRANSACTION,
             ):
                 tx_obj, method = await self.resolver.resolve(user_id, tx_ref, quoted_message_id)
                 if tx_obj:
                     resolved_tx = self.resolver.transaction_to_dict(tx_obj)
 
                 if not tx_obj and method == "not_found":
-                    await self.context_manager.increment_attempts(user_id)
+                    updated_context = await self.context_manager.increment_attempts(user_id)
                     # Start linear escalation after max attempts -> handled next time or via escalation logic
-                    if decision.context.attempts >= 3:
+                    if updated_context.attempts >= SUPPORT_LIMITS["max_escalation_attempts"]:
                         return await self._create_ticket_response(
                             user_id,
                             intent,
@@ -1001,12 +1159,7 @@ class SupportWorker:
                     )
                     await self.context_manager.save(user_id, support_ctx)
 
-                final_msg = response.message if response else render_message("support.unable_to_process", locale)
-                return SupportResult(
-                    outcome=SupportOutcome.OK,
-                    response=final_msg,
-                    final_message=final_msg,
-                )
+                return self._result_from_support_response(response, intent=intent, locale=locale)
 
             return SupportResult(
                 outcome=SupportOutcome.OK,
@@ -1026,6 +1179,13 @@ class SupportWorker:
         *,
         locale: str = "en",
     ) -> SupportResult:
+        if policy_message := capability_block_message(domain="support", action="create_ticket", locale=locale):
+            return SupportResult(
+                outcome=SupportOutcome.OK,
+                response=policy_message,
+                final_message=policy_message,
+            )
+
         if not self._ticket_service:
             return SupportResult(
                 outcome=SupportOutcome.OK,
@@ -1052,7 +1212,11 @@ class SupportWorker:
         )
 
         return SupportResult(
-            outcome=SupportOutcome.OK, response=resp.message, ticket_code=ticket_code, escalation=resp.escalation
+            outcome=SupportOutcome.OK,
+            response=resp.message,
+            final_message=resp.message,
+            ticket_code=ticket_code,
+            escalation=resp.escalation,
         )
 
     async def _dispatch_handler(
@@ -1062,6 +1226,7 @@ class SupportWorker:
         *,
         user_id: str,
         locale: str,
+        ticket_code: str | None = None,
     ) -> SupportResponse:
         """Dispatch to handlers."""
         # Reuse the logic from SupportFlowGraph._dispatch_handler
@@ -1074,6 +1239,7 @@ class SupportWorker:
             return await handle_ticket_status(
                 user_id=user_id,
                 ticket_service=self._ticket_service,
+                ticket_code=ticket_code,
                 last_ticket_id=ctx.last_ticket_id,
                 locale=locale,
             )

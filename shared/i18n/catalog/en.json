@@ -28,7 +28,7 @@
     "limits_fallback": "I can't help with {unsupported} here. I can help with {supported}."
   },
   "conversational": {
-    "greeting": "Hi. I'm {app_name}. What would you like to do?",
+    "greeting": "Hi, I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "appreciation": "Anytime. What should we handle next?",
     "checkin": "I'm here. What would you like to do?",
     "identity": "I'm {app_name}. I execute real banking tasks fast and carefully.",
@@ -242,7 +242,6 @@
       "which_one": "I'm not sure which one you mean{context_suffix}.",
       "are_you_referring": "Are you referring to:",
       "reply_number_or_rephrase": "Reply with the number or rephrase.",
-      "recovery_options": "I'm having trouble understanding, and I don't want to waste your time.\n\nYou can:\n• Rephrase what you want to do\n• Start a new request\n• Talk to support",
       "context_suffix": " ({context})",
       "option_line": "{index}️⃣ {amount} — {description}"
     },
@@ -344,6 +343,7 @@
       "no_spending": "You didn't spend anything{timeframe}.",
       "no_income": "You didn't receive any inflow{timeframe}.",
       "target_merchant": " on {merchant}",
+      "target_account": " with {account}",
       "summary_spent": "You spent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_average": "Your average transaction is *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' to see details_",
       "summary_count": "You made *{count}* transaction(s){timeframe}.",
@@ -474,7 +474,8 @@
       "no_stashed": "No session to resume.",
       "default_intent": "transaction",
       "resume_declined": "Okay, I won't resume that request.",
-      "resuming": "Resuming {intent}..."
+      "resuming": "Resuming {intent}...",
+      "transaction_expired": "That transaction session has expired, so I can't continue it. Please start the transaction again."
     },
     "execution": {
       "source_account_info": "From: {bank} (···{last4})",
