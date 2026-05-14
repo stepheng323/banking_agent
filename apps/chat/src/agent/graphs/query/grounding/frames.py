@@ -70,6 +70,7 @@ def build_query_frame(
         interpretation=result.interpretation,
         surface_type=surface_view.mode if surface_view else None,
         surface_context=surface_view.context if surface_view else {},
+        visible_items=_visible_item_snapshots(surface_view),
         facts=facts,
     )
 
@@ -81,6 +82,31 @@ def resolve_query_frames(query_frames: list[QueryFrame], frame_ids: list[str] | 
 
     frame_map = {frame.frame_id: frame for frame in query_frames}
     return [frame_map[frame_id] for frame_id in frame_ids if frame_id in frame_map]
+
+
+def _visible_item_snapshots(surface_view: SurfaceView | None) -> list[dict[str, Any]]:
+    if surface_view is None:
+        return []
+
+    snapshots: list[dict[str, Any]] = []
+    page_start = surface_view.context.get("start_index") if isinstance(surface_view.context, dict) else None
+    for idx, item in enumerate(surface_view.items, 1):
+        metadata = item.metadata if isinstance(item.metadata, dict) else {}
+        snapshots.append(
+            {
+                "id": item.id,
+                "label": item.label,
+                "amount": item.amount,
+                "date": metadata.get("date"),
+                "bank": metadata.get("bank_name") or metadata.get("recipient_bank_name"),
+                "counterparty": metadata.get("counterparty") or metadata.get("recipient_name"),
+                "status": metadata.get("status"),
+                "direction": metadata.get("direction") or metadata.get("transaction_type") or metadata.get("type"),
+                "page_position": idx,
+                "absolute_position": (int(page_start) + idx - 1) if isinstance(page_start, int) else None,
+            }
+        )
+    return snapshots
 
 
 def build_grounded_query_contract(

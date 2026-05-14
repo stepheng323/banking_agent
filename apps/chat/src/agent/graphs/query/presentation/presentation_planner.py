@@ -453,7 +453,7 @@ def _build_single_item_detail_presentation_plan(result: QueryResult, *, locale: 
 
     selection_payloads = [surface_item.payload for surface_item in result.surface_view.items] if result.surface_view else []
     return PresentationPlan(
-        mode=PresentationMode.TRANSACTION_LIST,
+        mode=PresentationMode.DIRECT_ANSWER,
         heading=primary_text or f"*{title}*",
         lead_text=f"*{title}*" if primary_text else None,
         items=items,

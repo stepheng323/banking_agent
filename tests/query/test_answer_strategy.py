@@ -218,3 +218,96 @@ def test_select_answer_strategy_uses_clarify_for_ambiguous_fact_match() -> None:
     assert selected.answer_strategy == QueryAnswerStrategy.CLARIFY
     assert selected.answer_context is not None
     assert "I'm not sure which one you mean" in selected.answer_context.primary_text
+
+
+def test_select_answer_strategy_answers_reference_fact_directly() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={
+                    "type": "debit",
+                    "recipient_name": "Mum",
+                    "recipient_bank_name": "Opay",
+                    "transaction_id": "ref_123",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="reference",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "The reference is ref_123."
+    assert selected.answer_context.secondary_text == "₦50,000 • Mar 24 • Mum"
+
+
+def test_select_answer_strategy_answers_existence_yes_with_total() -> None:
+    result = QueryResult(
+        summary_text="You spent *₦70,000* in that period, across 2 transactions.",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={"type": "debit", "recipient_name": "Mum"},
+            ),
+            QueryResultItem(
+                id="tx2",
+                description="Transfer to Mum",
+                amount=20000,
+                date=date(2026, 3, 20),
+                metadata={"type": "debit", "recipient_name": "Mum"},
+            ),
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                request_shape="existence",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "Yes. I found 2 payments to Mum in that period, totaling ₦70,000."
+
+
+def test_select_answer_strategy_answers_existence_no_without_coverage_disclaimer() -> None:
+    result = QueryResult(
+        summary_text="You didn't spend anything in that period.",
+        items=[],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                request_shape="existence",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "No. I don't see any payment to Mum in that period."
+    assert "local" not in selected.answer_context.primary_text.lower()

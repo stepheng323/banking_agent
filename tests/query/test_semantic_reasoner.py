@@ -119,8 +119,18 @@ async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_deterministic_show_more_details_without_llm() -> None:
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+async def test_reasoner_uses_llm_for_show_more_details() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_view_details",
+            continuation_type="drill_down",
+            drill_down_index=0,
+            drill_down_action="view_details",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     surface_view = _direct_answer_surface_view(type="single_transaction")
 
     decision = await reasoner.reason(
@@ -141,11 +151,19 @@ async def test_reasoner_uses_deterministic_show_more_details_without_llm() -> No
     assert decision.decision == "continuation"
     assert decision.continuation_type == "drill_down"
     assert decision.drill_down_action == "view_details"
+    assert llm.structured.calls == 1
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_deterministic_new_query_for_recent_transaction_reset() -> None:
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+async def test_reasoner_uses_llm_new_query_for_recent_transaction_reset() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.94,
+            reason="llm_fresh_list_reset",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     surface_view = _direct_answer_surface_view(type="single_transaction")
 
     decision = await reasoner.reason(
@@ -164,12 +182,20 @@ async def test_reasoner_uses_deterministic_new_query_for_recent_transaction_rese
     )
 
     assert decision.decision == "new_query"
-    assert decision.reason == "deterministic_fresh_list_reset"
+    assert decision.reason == "llm_fresh_list_reset"
+    assert llm.structured.calls == 1
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_deterministic_new_query_for_recent_transaction_reset_with_explicit_period() -> None:
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+async def test_reasoner_uses_llm_new_query_for_recent_transaction_reset_with_explicit_period() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.94,
+            reason="llm_fresh_list_reset",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     surface_view = _direct_answer_surface_view(type="single_transaction")
 
     decision = await reasoner.reason(
@@ -188,12 +214,20 @@ async def test_reasoner_uses_deterministic_new_query_for_recent_transaction_rese
     )
 
     assert decision.decision == "new_query"
-    assert decision.reason == "deterministic_fresh_list_reset"
+    assert decision.reason == "llm_fresh_list_reset"
+    assert llm.structured.calls == 1
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_deterministic_new_query_for_day_scoped_singular_list_reset() -> None:
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+async def test_reasoner_uses_llm_new_query_for_day_scoped_singular_list_reset() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.94,
+            reason="llm_fresh_list_reset",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     surface_view = _direct_answer_surface_view(type="single_transaction")
 
     decision = await reasoner.reason(
@@ -212,12 +246,23 @@ async def test_reasoner_uses_deterministic_new_query_for_day_scoped_singular_lis
     )
 
     assert decision.decision == "new_query"
-    assert decision.reason == "deterministic_fresh_list_reset"
+    assert decision.reason == "llm_fresh_list_reset"
+    assert llm.structured.calls == 1
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_deterministic_scoped_recipient_delta_without_llm() -> None:
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+async def test_reasoner_uses_llm_scoped_recipient_delta() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_scoped_recipient_delta",
+            continuation_type="recipient_drill_down",
+            followup_intent="none",
+            recipient_name="tolu",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     surface_view = _direct_answer_surface_view(type="single_transaction")
 
     decision = await reasoner.reason(
@@ -240,8 +285,9 @@ async def test_reasoner_uses_deterministic_scoped_recipient_delta_without_llm() 
 
     assert decision.decision == "continuation"
     assert decision.continuation_type == "recipient_drill_down"
-    assert decision.reason == "deterministic_scoped_recipient_delta"
+    assert decision.reason == "llm_scoped_recipient_delta"
     assert decision.recipient_name == "tolu"
+    assert llm.structured.calls == 1
 
 
 @pytest.mark.asyncio
@@ -424,8 +470,18 @@ async def test_reasoner_ends_active_result_session_for_thank_you_with_emoji_with
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_surface_view_for_beneficiary_summary_guardrail_without_surface_fallbacks() -> None:
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+async def test_reasoner_uses_llm_for_beneficiary_summary_followup() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_beneficiary_fact_followup",
+            continuation_type="recipient_drill_down",
+            recipient_name="Adesanya Kunle",
+            fact_field="date",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     item = QueryResultItem(
         id="bene_1",
         description="Adesanya Kunle",
@@ -472,6 +528,7 @@ async def test_reasoner_uses_surface_view_for_beneficiary_summary_guardrail_with
     assert decision.continuation_type == "recipient_drill_down"
     assert decision.recipient_name == "Adesanya Kunle"
     assert decision.fact_field == "date"
+    assert llm.structured.calls == 1
 
 
 @pytest.mark.asyncio
@@ -939,7 +996,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_with_
 
 
 @pytest.mark.asyncio
-async def test_reasoner_passes_through_continue_pagination_followup_intent() -> None:
+async def test_reasoner_uses_deterministic_continue_pagination_without_llm() -> None:
     llm = _TrackingLLM(
         QuerySemanticDecision(
             decision="continuation",
@@ -968,7 +1025,40 @@ async def test_reasoner_passes_through_continue_pagination_followup_intent() -> 
 
     assert decision.continuation_type == "show_more"
     assert decision.followup_intent == "continue_pagination"
-    assert llm.structured.calls == 1
+    assert llm.structured.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_reasoner_uses_deterministic_previous_pagination_without_llm() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.95,
+            reason="llm_previous_pagination",
+            continuation_type="show_more",
+            followup_intent="previous_pagination",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="previous page",
+            today=date(2026, 3, 14),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14)),
+                )
+            ),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
+        )
+    )
+
+    assert decision.continuation_type == "show_more"
+    assert decision.followup_intent == "previous_pagination"
+    assert llm.structured.calls == 0
 
 
 @pytest.mark.asyncio
@@ -1235,7 +1325,7 @@ async def test_reasoner_bounds_prompt_items_and_frames() -> None:
             date=date(2026, 3, 13),
             metadata={"status": "success", "bank_name": "Zenith"},
         )
-        for index in range(5)
+        for index in range(6)
     ]
     query_frames = [
         QueryFrame(
@@ -1273,8 +1363,8 @@ async def test_reasoner_bounds_prompt_items_and_frames() -> None:
     assert llm.structured.prompts
     prompt_str = str(llm.structured.prompts[0])
     assert "Payment 0" in prompt_str
-    assert "Payment 2" in prompt_str
-    assert "Payment 3" not in prompt_str
+    assert "Payment 4" in prompt_str
+    assert "Payment 5" not in prompt_str
     assert "summary 4" in prompt_str
     assert "summary 2" in prompt_str
     assert "summary 1" not in prompt_str

@@ -33,7 +33,7 @@ from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewM
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-_MAX_PROMPT_ITEMS = 3
+_MAX_PROMPT_ITEMS = 5
 _MAX_PROMPT_QUERY_FRAMES = 3
 _SURFACE_CONTEXT_KEYS = ("type", "view", "count", "total_results", "has_more", "group_by")
 _ITEM_METADATA_KEYS = ("status", "bank_name", "recipient_name", "recipient_bank_name", "type", "transaction_type")
@@ -57,6 +57,7 @@ ContinuationType = Literal[
     "filter_delta",
     "expand",
     "conversational",
+    "coverage",
     "explain_aggregate_scope",
     "drill_down",
     "recipient_drill_down",
@@ -64,7 +65,7 @@ ContinuationType = Literal[
     "unclear",
 ]
 
-FollowupIntentType = Literal["refine_existing", "replace_scope", "continue_pagination", "none"]
+FollowupIntentType = Literal["refine_existing", "replace_scope", "continue_pagination", "previous_pagination", "none"]
 
 AnswerModeType = Literal["memory_answer", "grounded_query", "ask_clarify"]
 
@@ -78,7 +79,22 @@ DrillDownActionType = Literal["view_details", "get_receipt", "report_issue", "re
 
 EndSessionKindType = Literal["courtesy", "dismissive", "generic"]
 
-FactFieldType = Literal["status", "amount", "recipient", "bank", "date"]
+FactFieldType = Literal[
+    "status",
+    "amount",
+    "recipient",
+    "counterparty",
+    "bank",
+    "date",
+    "description",
+    "reference",
+    "account",
+    "direction",
+    "category",
+]
+QueryTargetFieldType = FactFieldType
+QueryRankType = Literal["largest", "smallest", "newest", "oldest"]
+PageDirectionType = Literal["next", "previous"]
 
 SemanticContextModeType = Literal["none", "pending_clarification", "active_result"]
 
@@ -106,6 +122,12 @@ class QuerySemanticDecision(BaseModel):
     filters: Filters | None = Field(default=None)
     result_limit: int | None = Field(default=None)
     result_reference: ResultReferenceType | None = Field(default=None)
+    target_text: str | None = Field(default=None)
+    target_amount: float | None = Field(default=None)
+    target_index: int | None = Field(default=None)
+    requested_field: QueryTargetFieldType | None = Field(default=None)
+    rank: QueryRankType | None = Field(default=None)
+    page_direction: PageDirectionType | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
     drill_down_action: DrillDownActionType | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
@@ -141,6 +163,12 @@ class ActiveContinuationDecision(BaseModel):
     filters: Filters | None = Field(default=None)
     result_limit: int | None = Field(default=None)
     result_reference: ResultReferenceType | None = Field(default=None)
+    target_text: str | None = Field(default=None)
+    target_amount: float | None = Field(default=None)
+    target_index: int | None = Field(default=None)
+    requested_field: QueryTargetFieldType | None = Field(default=None)
+    rank: QueryRankType | None = Field(default=None)
+    page_direction: PageDirectionType | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
     drill_down_action: DrillDownActionType | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
@@ -169,6 +197,12 @@ class ActiveContinuationDecision(BaseModel):
             filters=self.filters,
             result_limit=self.result_limit,
             result_reference=self.result_reference,
+            target_text=self.target_text,
+            target_amount=self.target_amount,
+            target_index=self.target_index,
+            requested_field=self.requested_field,
+            rank=self.rank,
+            page_direction=self.page_direction,
             drill_down_index=self.drill_down_index,
             drill_down_action=self.drill_down_action,
             recipient_name=self.recipient_name,
@@ -457,6 +491,7 @@ class QuerySemanticReasoner:
                 "summary_text": frame.summary_text,
                 "surface_type": frame.surface_type.value if frame.surface_type else None,
                 "facts": frame.facts.model_dump(exclude_none=True),
+                "visible_items": frame.visible_items[:5],
             }
             for frame in bounded_frames
         ]
@@ -474,10 +509,20 @@ class QuerySemanticReasoner:
         if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
             return None
         shortcut = resolve_query_shortcut(message, language)
-        if shortcut is None or shortcut.kind not in {"actionable", "detail"}:
+        if shortcut is None or shortcut.kind not in {"actionable", "pagination"}:
             return None
+        if shortcut.kind == "pagination":
+            followup_intent: FollowupIntentType = (
+                "previous_pagination" if shortcut.action == "show_previous" else "continue_pagination"
+            )
+            return QuerySemanticDecision(
+                decision="continuation",
+                confidence=1.0,
+                reason=f"deterministic_{shortcut.action}",
+                continuation_type="show_more",
+                followup_intent=followup_intent,
+            )
         action_map = {
-            "show_details": ("deterministic_view_details", "view_details"),
             "get_receipt": ("deterministic_receipt", "get_receipt"),
             "report_issue": ("deterministic_report_issue", "report_issue"),
         }
@@ -668,6 +713,17 @@ class QuerySemanticReasoner:
             )
         elif context.session_mode == "active_result":
             started_at = perf_counter()
+            guardrail_end = self._guardrail_end_session(message=context.message, language=context.language)
+            if guardrail_end is not None:
+                return await self._return_annotated_decision(
+                    context=context,
+                    decision=guardrail_end,
+                    llm_used=False,
+                    latency_ms=(perf_counter() - started_at) * 1000.0,
+                    phase="active_result_session_end_guardrail",
+                    reasoner_schema="active_continuation",
+                )
+
             deterministic_surface = self._deterministic_surface_action(
                 message=context.message,
                 language=context.language,
@@ -690,92 +746,6 @@ class QuerySemanticReasoner:
                     reason=deterministic_surface.reason,
                 )
                 return deterministic_surface
-
-            guarded = self._continuation_classifier._guardrail_classify(
-                message=context.message,
-                items=context.items,
-                surface_view=context.surface_view,
-                language=context.language,
-                query_contract=context.query_contract,
-            )
-            if guarded is not None:
-                continuation_type, data = guarded
-                if continuation_type == "end_session":
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="end_session",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                        end_session_response=data.get("end_session_response"),
-                    )
-                elif continuation_type == "recipient_drill_down":
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="continuation",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                        continuation_type="recipient_drill_down",
-                        followup_intent="none",
-                        delta_type=cast(Any, data.get("delta_type")),
-                        recipient_name=data.get("recipient_name"),
-                        fact_field=cast(Any, data.get("fact_field")),
-                    )
-                elif continuation_type == "time_delta":
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="continuation",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                        continuation_type="time_delta",
-                        followup_intent="replace_scope",
-                        time_period=data.get("time_period"),
-                    )
-                elif continuation_type == "aggregate":
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="continuation",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                        continuation_type="aggregate",
-                        followup_intent="refine_existing",
-                    )
-                elif continuation_type == "grouped_total_followup":
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="continuation",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                        continuation_type="grouped_total_followup",
-                        followup_intent="refine_existing",
-                    )
-                elif continuation_type == "filter_delta":
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="continuation",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                        continuation_type="filter_delta",
-                        followup_intent="refine_existing",
-                        delta_type=cast(Any, "filter"),
-                    )
-                elif continuation_type == "fresh_query_reset":
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="new_query",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                    )
-                else:
-                    guardrail_decision = QuerySemanticDecision(
-                        decision="continuation",
-                        confidence=data.get("confidence"),
-                        reason=data.get("reason"),
-                        continuation_type="drill_down",
-                        followup_intent="none",
-                        drill_down_index=data.get("drill_down_index"),
-                        drill_down_action=data.get("drill_down_action"),
-                    )
-                return await self._return_annotated_decision(
-                    context=context,
-                    decision=guardrail_decision,
-                    llm_used=False,
-                    latency_ms=(perf_counter() - started_at) * 1000.0,
-                    phase="active_result_guardrail",
-                    reasoner_schema="active_continuation",
-                )
 
         try:
             decision = await self._invoke_llm(context)

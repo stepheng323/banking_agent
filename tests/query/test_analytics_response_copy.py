@@ -70,6 +70,53 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_analytics_sum_response_names_retained_account_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        del args, kwargs
+        return [
+            {
+                "id": "tx_1",
+                "amount": 50000,
+                "narration": "Transfer to Cowrywise",
+                "date": "2026-05-05",
+                "type": "debit",
+                "bank_name": "First Bank",
+            },
+            {
+                "id": "tx_2",
+                "amount": 46200,
+                "narration": "Transfer to Dad",
+                "date": "2026-05-06",
+                "type": "debit",
+                "bank_name": "First Bank",
+            },
+        ]
+
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        _fake_fetch_and_filter,
+    )
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 5, 11))
+
+    result = await handle_analytics(
+        _Provider(),  # type: ignore[arg-type]
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="sum"),
+                filters=Filters(transaction_type="debit", account_filter="First Bank"),
+                time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 11)),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1", "acc_2"],
+        language="en",
+    )
+
+    assert result.summary_text == "You spent *₦96,200* with First Bank from May 01 to May 11, across 2 transactions."
+
+
+@pytest.mark.asyncio
 async def test_analytics_sum_no_spending_today_is_humanized(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         del args, kwargs
@@ -165,6 +212,114 @@ async def test_analytics_account_breakdown_groups_by_source_account_label() -> N
     assert result.summary_text == "Breakdown by account"
     assert [item.description for item in result.items or []] == ["First Bank", "Access Bank"]
     assert [item.amount for item in result.items or []] == [32000, 18000]
+
+
+@pytest.mark.asyncio
+async def test_analytics_account_breakdown_includes_safe_account_suffix_when_available() -> None:
+    provider = _MultiAccountProvider(
+        {
+            "acc_1": [
+                {"id": "tx_1", "amount": 32000, "narration": "Transfer to Mum", "date": "2026-03-05", "type": "debit"}
+            ],
+        }
+    )
+
+    result = await handle_analytics(
+        provider,  # type: ignore[arg-type]
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="breakdown", group_by="account"),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        accounts_info=[{"account_id": "acc_1", "bank_name": "First Bank", "account_number": "6000000001"}],
+        language="en",
+    )
+
+    assert [item.description for item in result.items or []] == ["First Bank (···0001)"]
+    assert (result.items or [])[0].metadata["account_suffix"] == "···0001"
+
+
+@pytest.mark.asyncio
+async def test_category_breakdown_marks_provider_category_as_provider_confidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        del args, kwargs
+        return [
+            {
+                "id": "tx_food",
+                "amount": 4500,
+                "narration": "Lunch",
+                "date": "2026-03-05",
+                "type": "debit",
+                "category": "food",
+                "resolved_category": "food",
+                "category_source": "provider",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        _fake_fetch_and_filter,
+    )
+
+    result = await handle_analytics(
+        _Provider(),  # type: ignore[arg-type]
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="breakdown", group_by="category"),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        language="en",
+    )
+
+    assert (result.items or [])[0].description == "food"
+    assert (result.items or [])[0].metadata["category_confidence"] == "provider"
+
+
+@pytest.mark.asyncio
+async def test_category_breakdown_marks_narration_category_as_inferred(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        del args, kwargs
+        return [
+            {
+                "id": "tx_glovo",
+                "amount": 4500,
+                "narration": "GLOVO Food Delivery",
+                "date": "2026-03-05",
+                "type": "debit",
+                "resolved_category": "food",
+                "category_source": "narration_rule",
+            }
+        ]
+
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        _fake_fetch_and_filter,
+    )
+
+    result = await handle_analytics(
+        _Provider(),  # type: ignore[arg-type]
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="breakdown", group_by="category"),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        language="en",
+    )
+
+    assert (result.items or [])[0].description == "food"
+    assert (result.items or [])[0].metadata["category_confidence"] == "inferred"
 
 
 @pytest.mark.asyncio

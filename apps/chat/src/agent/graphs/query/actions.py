@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.graphs.query.models import QueryExecutionContract, QueryResult
+from apps.chat.src.agent.graphs.query.models import QueryExecutionContract, QueryResult, QueryResultItem
 from apps.chat.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
 from apps.chat.src.agent.graphs.query.services.contracts import build_query_transfer_handoff_payload
 from apps.chat.src.agent.graphs.query.services.formatter import QueryFormatter
@@ -63,6 +63,15 @@ def _coerce_selection_payload(raw_payload: Any) -> SelectionPayload | None:
 
 
 def _resolve_selected_item(query_result: QueryResult, state: dict[str, Any]) -> Any | None:
+    selected_query_item = state.get("selected_query_item")
+    if isinstance(selected_query_item, QueryResultItem):
+        return selected_query_item
+    if isinstance(selected_query_item, dict):
+        try:
+            return QueryResultItem.model_validate(selected_query_item)
+        except Exception:
+            pass
+
     items = query_result.items or []
     if not items:
         return None
@@ -82,10 +91,22 @@ def _resolve_selected_item(query_result: QueryResult, state: dict[str, Any]) -> 
                 recipient_name = str(metadata.get("recipient_name") or "").strip().lower()
                 if recipient_name and recipient_name == normalized_label:
                     return item
+        return None
 
-    drill_down_index = state.get("selected_item_index", 0)
-    index = max(0, min(drill_down_index, len(items) - 1))
-    return items[index]
+    selected_item_id = state.get("selected_item_id")
+    if isinstance(selected_item_id, str) and selected_item_id.strip():
+        for item in items:
+            if item.id == selected_item_id:
+                return item
+        return None
+
+    if "selected_item_index" in state:
+        drill_down_index = state.get("selected_item_index")
+        if isinstance(drill_down_index, int) and 0 <= drill_down_index < len(items):
+            return items[drill_down_index]
+        return None
+
+    return items[0] if len(items) == 1 else None
 
 
 def _resolve_selected_payload(query_result: QueryResult, state: dict[str, Any], item: Any) -> SelectionPayload | None:
@@ -132,7 +153,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
         response = None
 
-        if fact_field in {"amount", "bank", "date", "recipient"}:
+        if fact_field in {"amount", "bank", "date", "recipient", "counterparty"}:
             query_contract = _query_contract_from_state(state)
             answer_context = build_direct_fact_answer(
                 item,
@@ -153,6 +174,30 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
                     else render_message("query.format.status_pending_generic", locale, {"status": status.title()})
                 )
                 response = render_message("query.format.field_status", locale, {"status": status_display})
+        elif fact_field == "description":
+            response = f"Description: {item.description}"
+        elif fact_field == "reference":
+            reference = str(metadata.get("transaction_id") or metadata.get("reference") or item.id or "").strip()
+            if reference:
+                response = f"Reference: {reference}"
+        elif fact_field == "account":
+            account = str(
+                metadata.get("source_account_number")
+                or metadata.get("account_number")
+                or metadata.get("account")
+                or metadata.get("bank_name")
+                or ""
+            ).strip()
+            if account:
+                response = f"Account: {account}"
+        elif fact_field == "direction":
+            direction = str(metadata.get("direction") or metadata.get("transaction_type") or metadata.get("type") or "").strip()
+            if direction:
+                response = f"Direction: {direction.title()}"
+        elif fact_field == "category":
+            category = str(metadata.get("resolved_category") or metadata.get("category") or "").strip()
+            if category:
+                response = f"Category: {category.replace('_', ' ').title()}"
         if response:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
@@ -304,5 +349,9 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
     return TransactionResult(
         outcome=TransactionOutcome.OK,
         response=formatted,
-        patch={"session_active": True},
+        patch={
+            "session_active": True,
+            "query_result": detail_result,
+            "selected_item_id": item.id,
+        },
     )

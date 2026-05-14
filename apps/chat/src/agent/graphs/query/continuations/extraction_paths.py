@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from time import perf_counter
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
@@ -13,6 +13,7 @@ from apps.chat.src.agent.graphs.query.models import (
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFactField,
     QueryIntent,
     QueryRequestShape,
     QueryResult,
@@ -24,6 +25,8 @@ from apps.chat.src.agent.graphs.query.models import (
 from apps.chat.src.agent.graphs.query.presentation.selection_resolver import find_selection_payload
 from apps.chat.src.agent.graphs.query.presentation.surface_builder import apply_selection_payload_to_query
 from apps.chat.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
+from apps.chat.src.agent.graphs.query.services.conversation_resolver import build_query_conversation_updates
+from apps.chat.src.agent.graphs.query.services.coverage import build_query_coverage_answer
 from apps.chat.src.agent.graphs.query.services.fetch import apply_filters, apply_time_window, parse_date
 from apps.chat.src.agent.graphs.query.services.grounding import (
     build_grounded_query_contract,
@@ -115,13 +118,30 @@ def _maybe_build_fact_answer_from_decision(
     raw_fact_field = getattr(decision, "fact_field", None) or session_query_contract.answer_fact_field
     if raw_fact_field == "recipient":
         raw_fact_field = "counterparty"
-    if raw_fact_field not in {"date", "counterparty", "amount", "bank"}:
+    if raw_fact_field not in {
+        "date",
+        "counterparty",
+        "amount",
+        "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
+    }:
         return None
 
     selected_index_raw = session.get("selected_item_index")
-    selected_index = int(selected_index_raw) if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else 0
+    selected_index = int(selected_index_raw) if isinstance(selected_index_raw, int) and selected_index_raw >= 0 else None
     raw_drill_index = getattr(decision, "drill_down_index", None)
     drill_index = raw_drill_index if isinstance(raw_drill_index, int) and raw_drill_index >= 0 else selected_index
+
+    if drill_index is None:
+        restored_items = restored_query_result.items if restored_query_result is not None else None
+        if not restored_items or len(restored_items) != 1:
+            return None
+        drill_index = 0
 
     item: QueryResultItem | None = None
     if restored_query_result is not None and restored_query_result.items:
@@ -146,7 +166,7 @@ def _maybe_build_fact_answer_from_decision(
             )
             reverse_sort = session_query_contract.result_reference != "oldest"
             ranked_transactions = sorted(filtered_transactions, key=_transaction_sort_key, reverse=reverse_sort)
-            if 0 <= drill_index < len(ranked_transactions):
+            if drill_index is not None and 0 <= drill_index < len(ranked_transactions):
                 item = _query_result_item_from_transaction(
                     ranked_transactions[drill_index],
                     fallback_id=f"tx-{drill_index}",
@@ -158,7 +178,7 @@ def _maybe_build_fact_answer_from_decision(
 
     answer_contract = (
         session_query_contract.model_copy(update={"result_reference": None})
-        if drill_index != selected_index
+        if selected_index is None or drill_index != selected_index
         else session_query_contract
     )
     answer_context = build_direct_fact_answer(
@@ -1187,6 +1207,24 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         logger.info("query_continuation_resolution", path="fallback_clarify_active_session", semantic_decision=decision.decision)
         return step._ambiguous_followup_updates(locale=locale, session=session)
 
+    conversation_updates = build_query_conversation_updates(
+        surface_view=surface_view,
+        query_result=restored_query_result,
+        query_frames=query_frames,
+        decision=decision,
+        text=message,
+    )
+    if conversation_updates is not None:
+        logger.info(
+            "query_continuation_resolution",
+            path="query_conversation_resolver",
+            semantic_decision=decision.decision,
+            continuation_type=cont_type,
+            followup_intent=decision.followup_intent,
+        )
+        conversation_updates.update(step._semantic_trace_updates(decision))
+        return conversation_updates
+
     semantic_fact_updates = _maybe_build_fact_answer_from_decision(
         decision=decision,
         session=session,
@@ -1255,7 +1293,13 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         return grounded_updates
 
     followup_intent = decision.followup_intent or "none"
-    if followup_intent not in ("refine_existing", "replace_scope", "continue_pagination", "none"):
+    if followup_intent not in (
+        "refine_existing",
+        "replace_scope",
+        "continue_pagination",
+        "previous_pagination",
+        "none",
+    ):
         followup_intent = "none"
 
     if decision.confidence is not None and decision.confidence < step._LOW_CONFIDENCE_THRESHOLD:
@@ -1311,10 +1355,14 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     if cont_type == "show_more":
         if session_query_contract is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
-        if followup_intent == "continue_pagination":
+        if followup_intent in {"continue_pagination", "previous_pagination"}:
             if session_query_contract.intent != QueryIntent.TRANSACTION_LIST:
                 return step._ambiguous_followup_updates(locale=locale, session=session)
-            updates["current_page"] = session.get("current_page", 0) + 1
+            current_page = int(session.get("current_page", 0) or 0)
+            if followup_intent == "previous_pagination":
+                updates["current_page"] = max(current_page - 1, 0)
+            else:
+                updates["current_page"] = current_page + 1
         elif followup_intent == "refine_existing":
             updates["query_contract"] = rebuild_query_contract(
                 session_query_contract,
@@ -1411,7 +1459,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 decision=decision.decision,
             )
             return step._ambiguous_followup_updates(locale=locale, session=session)
-        if followup_intent == "continue_pagination":
+        if followup_intent in {"continue_pagination", "previous_pagination"}:
             return step._ambiguous_followup_updates(locale=locale, session=session)
         if followup_intent == "none":
             recovered_updates = await maybe_recover_time_rescope_continuation(
@@ -1500,6 +1548,27 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             "exit_query_session_conversational",
         )
 
+    elif cont_type == "coverage":
+        accounts_raw = state.get("accounts")
+        accounts_info = [account for account in accounts_raw if isinstance(account, dict)] if isinstance(accounts_raw, list) else []
+        response = await build_query_coverage_answer(
+            accounts_info=accounts_info,
+            query_contract=session_query_contract,
+            session=session,
+            target_text=getattr(decision, "target_text", None),
+            locale=locale,
+        )
+        return {
+            "transaction_outcome": TransactionOutcome.OK,
+            "response": response,
+            "session_active": True,
+            "flow_state": "complete",
+            "resolver_message": None,
+            "show_expanded": bool(session.get("show_expanded", False)),
+            "current_page": session.get("current_page", 0),
+            **step._semantic_trace_updates(decision),
+        }
+
     elif cont_type == "explain_aggregate_scope":
         response_text = (getattr(decision, "response_text", None) or "").strip()
         contextual_hint = (getattr(decision, "contextual_hint", None) or "").strip()
@@ -1522,15 +1591,27 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         }
 
     elif cont_type == "drill_down":
-        drill_idx = decision.drill_down_index if decision.drill_down_index is not None else 0
-        answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
-        if decision.fact_field in {"date", "amount", "bank", "counterparty"}:
-            answer_fact_field = cast(Literal["date", "counterparty", "amount", "bank"], decision.fact_field)
+        raw_drill_idx = decision.drill_down_index
+        drill_idx = raw_drill_idx if isinstance(raw_drill_idx, int) and raw_drill_idx >= 0 else None
+        answer_fact_field: QueryFactField | None = None
+        if decision.fact_field in {
+            "date",
+            "amount",
+            "bank",
+            "counterparty",
+            "status",
+            "description",
+            "reference",
+            "account",
+            "direction",
+            "category",
+        }:
+            answer_fact_field = cast(QueryFactField, decision.fact_field)
 
         selection_payload = None
         if surface_view is not None and message:
             selection_payload = find_selection_payload(surface_view, label=message)
-        if selection_payload is None:
+        if selection_payload is None and drill_idx is not None:
             selection_payload = find_selection_payload(surface_view, index=drill_idx)
         if (
             session_query_contract is not None
@@ -1552,7 +1633,7 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             updates["show_expanded"] = False
             return updates
 
-        if items and 0 <= drill_idx < len(items):
+        if drill_idx is not None and items and 0 <= drill_idx < len(items):
             updates["selected_item_index"] = drill_idx
             if selection_payload is not None:
                 updates["selected_payload"] = selection_payload
@@ -1565,9 +1646,19 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
     elif cont_type == "recipient_drill_down":
         recipient_name = decision.recipient_name
         if recipient_name and session_query_contract is not None:
-            recipient_answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
-            if decision.fact_field in {"date", "amount", "bank"}:
-                recipient_answer_fact_field = cast(Literal["date", "amount", "bank"], decision.fact_field)
+            recipient_answer_fact_field: QueryFactField | None = None
+            if decision.fact_field in {
+                "date",
+                "amount",
+                "bank",
+                "status",
+                "description",
+                "reference",
+                "account",
+                "direction",
+                "category",
+            }:
+                recipient_answer_fact_field = cast(QueryFactField, decision.fact_field)
             selection_payload = find_selection_payload(surface_view, label=recipient_name)
             if selection_payload is not None and session_query_contract is not None:
                 updates["query_contract"] = apply_selection_payload_to_query(

@@ -7,10 +7,12 @@ from apps.chat.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
+    FactQueryKind,
     ParserQueryExtraction,
     QueryAggregation,
     QueryExtractionResult,
     QueryFilters,
+    QueryRequestShape,
     QueryTimeRange,
     RequestedCapability,
     ResolverOutcome,
@@ -205,6 +207,8 @@ async def test_multilingual_recipient_summary_recovery_stays_grouped_and_clears_
 async def test_fact_query_shape_does_not_get_upgraded_to_beneficiary_summary_by_locale_recovery() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.TRANSACTION_LIST,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.DATE,
         filters=QueryFilters(recipient="mum"),
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="when last did I send mum money",
@@ -229,8 +233,11 @@ async def test_fact_query_shape_does_not_get_upgraded_to_beneficiary_summary_by_
 async def test_unscoped_latest_recipient_fact_query_stays_single_transaction() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.COUNTERPARTY,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="who did I send money to last",
+        result_reference="latest",
     )
     parser = QueryParser(_DummyLLM(extraction))
 
@@ -296,12 +303,18 @@ async def test_latest_transaction_query_drops_spurious_narration_negotiation_wit
 
 
 @pytest.mark.asyncio
-async def test_latest_received_amount_query_normalizes_to_latest_credit_fact_lookup() -> None:
+async def test_typed_latest_received_amount_query_compiles_to_latest_credit_fact_lookup() -> None:
     parser = QueryParser(
         _DummyLLM(
             QueryExtractionResult(
-                intent=ExtractionIntent.SPENDING_TOTAL,
+                intent=ExtractionIntent.SINGLE_TRANSACTION,
+                request_shape=QueryRequestShape.FACT,
+                fact_query_kind=FactQueryKind.AMOUNT,
+                answer_fact_field="amount",
+                filters=QueryFilters(transaction_type="credit"),
+                time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
                 raw_query="fallback should not be used",
+                result_reference="latest",
             )
         )
     )

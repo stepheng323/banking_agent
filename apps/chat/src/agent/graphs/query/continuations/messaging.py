@@ -30,13 +30,3 @@ def build_soft_clarification(items: list[QueryResultItem], context: str = "", lo
     lines.append(render_message("query.clarify.reply_number_or_rephrase", locale))
 
     return "\n".join(lines)
-
-
-def get_recovery_message(locale: str = "en") -> str:
-    """Get the recovery message for total failure scenario."""
-    return render_message("query.clarify.recovery_options", locale)
-
-
-def should_offer_recovery(clarification_attempts: int, max_attempts: int = 3) -> bool:
-    """Check if we should offer recovery options based on attempt count."""
-    return clarification_attempts >= max_attempts

@@ -148,6 +148,27 @@ def test_multi_action_summary_airtime_uses_recipient_phone_fallback() -> None:
     assert "for 08162511023 (MTN)" in summary
 
 
+def test_multi_action_summary_redacts_technical_failure_reason() -> None:
+    task = _airtime_task(task_id="a1", amount=2000, recipient_phone="08162511023", network="MTN")
+    task.payload.update(
+        {
+            "final_status": "failed",
+            "error_message": (
+                "Execution failed: This Session's transaction has been rolled back. "
+                "[SQL: INSERT INTO transactions ...] password=secret"
+            ),
+        }
+    )
+
+    summary = format_multi_action_summary([task], locale="en")
+
+    assert "Reason: Airtime purchase could not be completed. Please try again." in summary
+    assert "Session's transaction" not in summary
+    assert "[SQL:" not in summary
+    assert "password" not in summary
+    assert "secret" not in summary
+
+
 def test_multi_action_summary_mixed_batch_keeps_neutral_wrapper_copy() -> None:
     tasks = [
         _transfer_task(

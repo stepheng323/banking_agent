@@ -512,6 +512,42 @@ async def test_continue_pagination_only_advances_page_without_scope_mutation() -
 
 
 @pytest.mark.asyncio
+async def test_previous_pagination_only_moves_back_without_scope_mutation() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 14)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 8), end=today),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_more",
+            followup_intent="previous_pagination",
+            confidence=0.97,
+            reason="llm_previous_pagination",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "back", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 2,
+        },
+    )
+
+    assert updates["current_page"] == 1
+    assert "query_contract" not in updates
+
+
+@pytest.mark.asyncio
 async def test_invalid_time_delta_and_continue_pagination_combo_requests_clarification() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 14)

@@ -53,3 +53,31 @@ async def test_account_worker_answers_count_question() -> None:
 
     assert result.outcome == AccountOutcome.OK
     assert result.response == "You have 3 linked accounts."
+
+
+def test_account_worker_serializes_dict_accounts_for_context_frames() -> None:
+    serialized = AccountWorker._serialize_accounts(
+        [
+            {
+                "id": "a1",
+                "bank_name": "Zenith Bank",
+                "account_number": "1234509384",
+                "mandate_status": "pending",
+                "is_default": False,
+            },
+            {
+                "id": "a2",
+                "bank_name": "GTBank",
+                "account_number": "6000000002",
+                "mandate_status": "ready",
+                "is_default": True,
+            },
+        ]
+    )
+
+    assert serialized[0]["bank_name"] == "Zenith Bank"
+    assert serialized[0]["account_number"] == "1234509384"
+    assert serialized[0]["mandate_status"] == "pending"
+    assert serialized[1]["bank_name"] == "GTBank"
+    assert serialized[1]["account_number"] == "6000000002"
+    assert serialized[1]["is_default"] is True

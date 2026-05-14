@@ -26,6 +26,17 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 _MULTI_ACCOUNT_FETCH_CONCURRENCY = 4
+_MIRROR_SCHEMA_AVAILABLE = True
+_MIRROR_MISSING_TABLE_MARKERS = (
+    'relation "bank_transaction_coverage" does not exist',
+    'relation "bank_transactions" does not exist',
+    "UndefinedTableError",
+)
+
+
+def _is_missing_mirror_table_error(exc: Exception) -> bool:
+    message = str(exc)
+    return any(marker in message for marker in _MIRROR_MISSING_TABLE_MARKERS)
 
 
 @dataclass(frozen=True)
@@ -64,6 +75,7 @@ def _attach_source_account_metadata(
     *,
     account_id: str | None,
     account_label: str | None,
+    account_number: str | None = None,
 ) -> dict[str, Any]:
     """Attach source-account metadata while preserving any existing fields."""
     resolved_account_id = str(account_id or transaction.get("source_account_id") or "").strip()
@@ -75,6 +87,9 @@ def _attach_source_account_metadata(
         transaction["source_account_label"] = resolved_label
     if resolved_label and not transaction.get("bank_name"):
         transaction["bank_name"] = resolved_label
+    resolved_account_number = str(account_number or transaction.get("source_account_number") or "").strip()
+    if resolved_account_number:
+        transaction["source_account_number"] = resolved_account_number
 
     return transaction
 
@@ -367,6 +382,7 @@ async def fetch_transactions_base(
 
     bank_map: dict[str, str] = {}
     account_label_map: dict[str, str] = {}
+    account_number_map: dict[str, str] = {}
     if accounts_info:
         for acc in accounts_info:
             acc_id = acc.get("account_id") or acc.get("mono_account_id", "")
@@ -374,6 +390,9 @@ async def fetch_transactions_base(
             if acc_id and label:
                 bank_map[acc_id] = str(acc.get("bank_name") or label)
                 account_label_map[acc_id] = label
+            account_number = str(acc.get("account_number") or "").strip()
+            if acc_id and account_number:
+                account_number_map[acc_id] = account_number
 
     def to_dict(t: Any) -> dict[str, Any]:
         if hasattr(t, "model_dump"):
@@ -400,7 +419,8 @@ async def fetch_transactions_base(
         accounts_info=accounts_info,
         user_id=user_id,
     )
-    use_mirror = bool(mirrored_accounts)
+    global _MIRROR_SCHEMA_AVAILABLE
+    use_mirror = bool(mirrored_accounts) and _MIRROR_SCHEMA_AVAILABLE
 
     if use_mirror:
         try:
@@ -423,9 +443,18 @@ async def fetch_transactions_base(
                     transaction,
                     account_id=source_account_id or None,
                     account_label=source_account_label or transaction.get("bank_name") or None,
+                    account_number=account_number_map.get(source_account_id),
                 )
         except Exception as e:
-            logger.warning("bank_transaction_mirror_fallback", error=str(e))
+            if _is_missing_mirror_table_error(e):
+                _MIRROR_SCHEMA_AVAILABLE = False
+                logger.info(
+                    "bank_transaction_mirror_disabled_missing_schema",
+                    fallback="provider_fetch",
+                    migration_hint="uv run alembic upgrade head",
+                )
+            else:
+                logger.warning("bank_transaction_mirror_fallback", error=str(e))
             use_mirror = False
 
     if not use_mirror:
@@ -451,6 +480,7 @@ async def fetch_transactions_base(
                         td,
                         account_id=acc_id,
                         account_label=account_label_map.get(acc_id) or bank_map.get(acc_id) or None,
+                        account_number=account_number_map.get(acc_id),
                     )
                     account_transactions.append(td)
                 return account_transactions
@@ -476,6 +506,7 @@ async def fetch_transactions_base(
                     to_dict(t),
                     account_id=account_id,
                     account_label=account_label_map.get(account_id) or bank_map.get(account_id) or None,
+                    account_number=account_number_map.get(account_id),
                 )
                 for t in txns
             ]

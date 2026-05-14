@@ -201,24 +201,19 @@ def derive_request_shape(extraction: QueryExtractionResult) -> QueryRequestShape
 def derive_fact_query_kind(extraction: QueryExtractionResult) -> FactQueryKind | None:
     if extraction.fact_query_kind is not None:
         return extraction.fact_query_kind
-    if extraction.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
+    if extraction.answer_fact_field in {
+        "date",
+        "counterparty",
+        "amount",
+        "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
+    }:
         return FactQueryKind(extraction.answer_fact_field)
-
-    raw_query = f" {' '.join((extraction.raw_query or '').strip().lower().split())} "
-    if raw_query == "  ":
-        return None
-    if raw_query.startswith(" when ") or " when did " in raw_query or " when last did " in raw_query:
-        return FactQueryKind.DATE
-    if raw_query.startswith(" who ") or " who sent " in raw_query or " who paid " in raw_query:
-        return FactQueryKind.COUNTERPARTY
-    if raw_query.startswith(" which bank ") or raw_query.startswith(" what bank "):
-        return FactQueryKind.BANK
-    if (
-        raw_query.startswith(" how much was ")
-        or raw_query.startswith(" what was the amount ")
-        or raw_query.startswith(" what amount was ")
-    ):
-        return FactQueryKind.AMOUNT
     return None
 
 
@@ -406,23 +401,6 @@ def parse_deterministic(
             time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
             result_limit=limit,
             result_reference="latest",
-        )
-        return parser._finalize_extraction(extraction, today=today, language=language)
-
-    match = re.fullmatch(
-        r"how\s+much\s+(?:did|have)\s+i\s+(receive|received|get|got)\s+last",
-        normalized,
-    )
-    if match:
-        extraction = QueryExtractionResult(
-            intent=ExtractionIntent.SINGLE_TRANSACTION,
-            query_operation=QueryOperation.SEARCH_SINGLE_TRANSACTION,
-            raw_query=question,
-            time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
-            filters=QueryFilters(transaction_type="credit"),
-            result_limit=1,
-            result_reference="latest",
-            answer_fact_field="amount",
         )
         return parser._finalize_extraction(extraction, today=today, language=language)
 

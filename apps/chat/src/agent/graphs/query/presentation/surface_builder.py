@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from apps.chat.src.agent.graphs.query.models import (
     Filters,
     QueryAnswerStrategy,
     QueryExecutionContract,
+    QueryFactField,
     QueryIntent,
     QueryIR,
     QueryOperation,
@@ -212,7 +213,7 @@ def apply_selection_payload_to_query(
     query_contract: QueryExecutionContract,
     payload: SelectionPayload,
     *,
-    fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None,
+    fact_field: QueryFactField | None = None,
     continuation_type: str | None = None,
     continuation_delta_type: str | None = None,
 ) -> QueryExecutionContract:

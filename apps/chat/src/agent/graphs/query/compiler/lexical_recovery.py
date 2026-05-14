@@ -9,7 +9,6 @@ from datetime import date
 
 from apps.chat.src.agent.graphs.query.models import (
     ExtractionIntent,
-    FactQueryKind,
     QueryAggregation,
     QueryExtractionResult,
     QueryRequestShape,
@@ -396,18 +395,18 @@ def recover_known_fragile_query_shapes(
     # Parser precedence is typed extraction first, semantic hints second. This
     # backstop only repairs weak grouped-recipient outputs; it should never be
     # the primary intent router or override explicit fact/comparison shapes.
-    if extraction.request_shape == QueryRequestShape.FACT or extraction.fact_query_kind is not None:
+    if extraction.request_shape in {QueryRequestShape.FACT, QueryRequestShape.EXISTENCE} or extraction.fact_query_kind is not None:
         return extraction
     if _latest_counterparty_fact_candidate(raw_query):
         return extraction
     amount_bounds = extract_beneficiary_query_amount_bounds(raw_query)
-    if extraction.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
+    if extraction.answer_fact_field is not None:
         return extraction
     if extraction.intent not in {ExtractionIntent.TRANSACTION_LIST, ExtractionIntent.BENEFICIARY_SUMMARY}:
         return extraction
     if (
         extraction.request_shape in {QueryRequestShape.ANALYTICS, QueryRequestShape.COMPARISON, QueryRequestShape.AFFORDABILITY}
-        or extraction.fact_query_kind in {FactQueryKind.DATE, FactQueryKind.COUNTERPARTY, FactQueryKind.AMOUNT, FactQueryKind.BANK}
+        or extraction.fact_query_kind is not None
     ):
         return extraction
     if extraction.filters.recipient and not _is_placeholder_group_noun(extraction.filters.recipient, language=language):
