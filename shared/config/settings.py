@@ -85,6 +85,9 @@ class Settings:
         self.capability_policy_path: str = os.getenv("CAPABILITY_POLICY_PATH", "config/capability_policy.json")
         self.domain_guardrails_path: str = os.getenv("DOMAIN_GUARDRAILS_PATH", "config/domain_guardrails.json")
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
+        self.enable_support_diagnostic_agent: bool = (
+            os.getenv("ENABLE_SUPPORT_DIAGNOSTIC_AGENT", "false").lower() == "true"
+        )
         self.enable_transfer_scheduling: bool = os.getenv("ENABLE_TRANSFER_SCHEDULING", "true").lower() == "true"
         self.schedule_dispatcher_batch_size: int = int(os.getenv("SCHEDULE_DISPATCHER_BATCH_SIZE", "25"))
         self.schedule_max_due_per_tick: int = int(os.getenv("SCHEDULE_MAX_DUE_PER_TICK", "25"))

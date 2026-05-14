@@ -44,6 +44,22 @@ class RequestedAction(str, Enum):
     ESCALATE = "ESCALATE"
 
 
+class SupportDiagnosticAction(str, Enum):
+    """Bounded diagnostic actions support may route through."""
+
+    ASK_REFERENCE = "ask_reference"
+    ASK_CLARIFICATION = "ask_clarification"
+    LOOKUP_TRANSACTION = "lookup_transaction"
+    EXPLAIN_TRANSACTION = "explain_transaction"
+    LOOKUP_TICKET = "lookup_ticket"
+    CREATE_TICKET = "create_ticket"
+    ESCALATE_TICKET = "escalate_ticket"
+    PREPARE_RETRY_HANDOFF = "prepare_retry_handoff"
+    POLICY_BLOCKED = "policy_blocked"
+    NOT_SUPPORTED = "not_supported"
+    FALLBACK_MICRO_RESOLVER = "fallback_micro_resolver"
+
+
 class TransactionReference(BaseModel):
     """Reference to identify a transaction."""
 
@@ -142,6 +158,19 @@ class SupportExtractionResult(BaseModel):
     )
 
     raw_issue: str | None = Field(default=None, description="User's description of issue")
+
+
+class SupportDiagnosticDecision(BaseModel):
+    """Structured output from the bounded support diagnostic agent."""
+
+    intent: SupportIntent
+    next_action: SupportDiagnosticAction
+    transaction_ref: TransactionReference | None = None
+    ticket_code: str | None = None
+    required_actions: list[str] = Field(default_factory=list)
+    reason: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    user_message: str | None = None
 
 
 class EscalationResult(BaseModel):
