@@ -224,6 +224,9 @@ class TelegramWebhookService:
             await self._request_contact(msg.chat_id)
             return True
 
+        if msg.callback_query_id:
+            await self.telegram_client.answer_callback_query(msg.callback_query_id)
+
         message = self._build_message(msg)
         message.priority = MessagePriority.HIGH
         return await self._enqueue(message, msg.chat_id, "interactive")

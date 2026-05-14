@@ -16,6 +16,7 @@ from shared.services.async_completion import (
     get_async_group_meta_for_transaction,
     record_group_leg_and_maybe_build_summary,
 )
+from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -328,13 +329,22 @@ class MonoWebhookService:
             "recipient_name": getattr(tx, "recipient_name", None),
             "recipient_resolved_name": getattr(tx, "recipient_name", None),
             "recipient_account": getattr(tx, "recipient_account_number", None),
+            "recipient_bank_code": getattr(tx, "recipient_bank_code", None),
             "recipient_bank_name": getattr(tx, "recipient_bank_name", None),
+            "source_account_id": getattr(tx, "source_account_id", None),
+            "source_account_number": getattr(tx, "source_account_number", None),
             "source_bank_name": getattr(tx, "source_bank_name", None),
             "narration": getattr(tx, "narration", None),
             "final_status": "success" if status == TransactionStatusEnum.SUCCESSFUL.value else "failed",
         }
         if status == TransactionStatusEnum.FAILED.value:
-            payload["error_message"] = getattr(tx, "error_message", None)
+            error_message = getattr(tx, "error_message", None)
+            payload["error_message"] = error_message
+            payload["failure_category"] = classify_failure_category(
+                message=str(error_message or ""),
+                code=str(getattr(tx, "provider_error_code", "") or ""),
+                context="provider",
+            )
         return payload
 
     async def _maybe_notify_grouped_transfer_resolution(self, *, uow: UnitOfWork, tx: Any, locale: str) -> bool:

@@ -44,6 +44,24 @@ class _StubFlowTelegramClient:
         return True
 
 
+class _StubInteractiveTelegramClient:
+    def __init__(self) -> None:
+        self.interactive_calls: list[dict[str, Any]] = []
+        self.send_text_calls: list[dict[str, Any]] = []
+
+    async def send_interactive(self, **kwargs: Any) -> MessageResult:
+        self.interactive_calls.append(kwargs)
+        return MessageResult(success=True, message_id="interactive-msg-1")
+
+    async def send_text(self, **kwargs: Any) -> MessageResult:
+        self.send_text_calls.append(kwargs)
+        return MessageResult(success=True, message_id="plain-msg-1")
+
+    async def send_typing_indicator(self, chat_id: str) -> bool:
+        del chat_id
+        return True
+
+
 class _StubDelayedTelegramClient:
     def __init__(self, *, send_delay_seconds: float = 0.0) -> None:
         self.send_delay_seconds = send_delay_seconds
@@ -87,6 +105,38 @@ async def test_telegram_presenter_say_uses_streamed_send_when_enabled() -> None:
 
     assert message_id == "stream-msg-1"
     assert len(client.stream_calls) == 1
+    assert client.send_text_calls == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_say_uses_inline_buttons_from_actionable_payload() -> None:
+    client = _StubInteractiveTelegramClient()
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = Say(
+        text="Transactions\nShowing 1-5 of 37",
+        actionable_payload={
+            "telegram_inline_buttons": [
+                {"id": "Previous page", "title": "Back"},
+                {"id": "Next page", "title": "Next"},
+            ]
+        },
+    )
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    message_id = await presenter._present_say(intent, context)
+
+    assert message_id == "interactive-msg-1"
+    assert client.interactive_calls == [
+        {
+            "to": "123456789",
+            "body_text": "Transactions\nShowing 1-5 of 37",
+            "options": [
+                {"id": "Previous page", "title": "Back"},
+                {"id": "Next page", "title": "Next"},
+            ],
+            "suppress_typing_indicator": True,
+        }
+    ]
     assert client.send_text_calls == []
 
 

@@ -284,10 +284,7 @@ class TelegramClient(MessagingClient):
         if footer:
             parts.append(f"_{footer}_")
 
-        # Build inline keyboard — one button per row
-        keyboard_rows = [
-            [{"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}] for opt in options
-        ]
+        keyboard_rows = self._build_inline_keyboard_rows(options)
 
         combined_text = "\n\n".join(parts)
         html_text = _format_telegram_html(combined_text)
@@ -307,6 +304,28 @@ class TelegramClient(MessagingClient):
         except Exception as e:
             print(f"❌ Failed to send Telegram interactive: {e}")
             return MessageResult(success=False, error=str(e))
+
+    @staticmethod
+    def _build_inline_keyboard_rows(options: list[dict[str, str]]) -> list[list[dict[str, str]]]:
+        buttons = [
+            {"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}
+            for opt in options
+        ]
+        if len(buttons) <= 1:
+            return [buttons] if buttons else []
+
+        rows: list[list[dict[str, str]]] = []
+        remaining = list(buttons)
+        while remaining:
+            if len(remaining) == 4 or len(remaining) == 2:
+                row_size = 2
+            else:
+                row_size = min(3, len(remaining))
+                if len(remaining) - row_size == 1 and row_size > 2:
+                    row_size -= 1
+            rows.append(remaining[:row_size])
+            remaining = remaining[row_size:]
+        return rows
 
     async def send_image(
         self,

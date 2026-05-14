@@ -11,28 +11,113 @@
     <script src="/static/telegram/miniapp_theme.js?v=3"></script>
     <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=4" />
     <style>
+      body.telegram-pin-page {
+        min-height: 100vh;
+        min-height: 100dvh;
+        background: var(--mini-bg);
+      }
+
+      .telegram-pin-page .mini-page {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding: max(18px, env(safe-area-inset-top)) 18px max(16px, env(safe-area-inset-bottom));
+      }
+
       .pin-shell {
-        min-height: 100%;
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .pin-content {
+        flex: 1;
+        padding-top: 18px;
+      }
+
+      .pin-eyebrow {
+        margin: 0 0 12px;
+        color: var(--mini-text-muted);
+        font-size: 15px;
+        font-weight: 550;
       }
 
       .pin-title {
-        font-size: 36px;
+        margin: 0 0 10px;
+        color: var(--mini-text);
+        font-size: 30px;
+        font-weight: 700;
+        line-height: 1.15;
       }
 
       .pin-subtitle {
-        margin-bottom: 22px;
+        max-width: 32rem;
+        margin: 0 0 28px;
+        color: var(--mini-text-muted);
+        font-size: 16px;
+        line-height: 1.45;
+      }
+
+      .pin-field {
+        margin-top: 8px;
+      }
+
+      .pin-label-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .pin-label-row .mini-section-label {
+        margin: 0;
+        color: var(--mini-text);
+      }
+
+      .pin-label-meta {
+        color: var(--mini-text-muted);
+        font-size: 13px;
       }
 
       .pin-input {
-        font-size: 28px;
-        letter-spacing: 9px;
+        height: 58px;
+        border-width: 1px;
+        border-radius: 14px;
+        background: var(--mini-input-bg);
+        font-size: 30px;
         font-weight: 650;
+        letter-spacing: 12px;
+        text-align: center;
         caret-color: var(--mini-accent);
         -webkit-text-security: disc;
       }
 
+      .pin-input:focus {
+        box-shadow: none;
+      }
+
+      .pin-error {
+        min-height: 20px;
+        margin-top: 12px;
+        font-size: 14px;
+      }
+
+      .pin-footer {
+        position: sticky;
+        bottom: 0;
+        margin-top: 18px;
+        padding-top: 12px;
+        border-top: none;
+        background: var(--mini-bg);
+      }
+
       .pin-submit {
-        font-size: 18px;
+        height: 52px;
+        border-radius: 12px;
+        font-size: 17px;
       }
 
       body.locked-state .pin-input {
@@ -45,12 +130,26 @@
 
       body.success-state .pin-submit {
         background: var(--mini-success);
-        color: #eef6ef;
+        color: #ffffff;
       }
 
       @media (max-width: 420px) {
+        .telegram-pin-page .mini-page {
+          padding-right: 16px;
+          padding-left: 16px;
+        }
+
         .pin-title {
-          font-size: 31px;
+          font-size: 28px;
+        }
+
+        .pin-subtitle {
+          font-size: 15px;
+        }
+
+        .pin-input {
+          font-size: 28px;
+          letter-spacing: 10px;
         }
 
         .pin-submit {
@@ -60,24 +159,21 @@
     </style>
   </head>
 
-  <body>
+  <body class="telegram-pin-page">
     <div class="mini-page">
-      <div class="mini-sheet">
-        <div class="mini-sheet-content pin-shell">
-          <div class="mini-handle"></div>
-          <div class="mini-topbar">
-            <span class="mini-topbar-icon">×</span>
-            <span class="mini-topbar-title" id="headerText">Enter Transaction Pin</span>
-            <span class="mini-topbar-icon">⋮</span>
-          </div>
-
-          <h2 class="mini-title pin-title">Transaction Pin Required</h2>
-          <p class="mini-subtitle pin-subtitle" id="bodyText">
-            Please enter your 4-digit transaction pin to authorize your transaction
+      <div class="pin-shell">
+        <main class="pin-content">
+          <p class="pin-eyebrow" id="headerText">Secure authorization</p>
+          <h1 class="pin-title">Enter PIN</h1>
+          <p class="pin-subtitle" id="bodyText">
+            Use your 4-digit transaction PIN to authorize this transaction.
           </p>
 
-          <div>
-            <label class="mini-section-label" for="pinInput">Enter Pin</label>
+          <div class="pin-field">
+            <div class="pin-label-row">
+              <label class="mini-section-label" for="pinInput">Transaction PIN</label>
+              <span class="pin-label-meta">4 digits</span>
+            </div>
             <input
               type="password"
               id="pinInput"
@@ -85,20 +181,17 @@
               inputmode="numeric"
               pattern="[0-9]*"
               maxlength="4"
-              placeholder="••••"
               autocomplete="off"
             />
-            <p class="mini-hint">Enter your transaction pin</p>
           </div>
 
-          <div class="mini-error" id="errorMsg"></div>
-          <div class="mini-spacer"></div>
+          <div class="mini-error pin-error" id="errorMsg"></div>
+        </main>
 
-          <div class="mini-footer">
-            <button class="mini-btn pin-submit" id="btnSubmit" onclick="submitPin()" disabled>
-              <span id="btnSubmitText">Submit</span>
-            </button>
-          </div>
+        <div class="mini-footer pin-footer">
+          <button class="mini-btn pin-submit" id="btnSubmit" onclick="submitPin()" disabled>
+            <span id="btnSubmitText">Authorize</span>
+          </button>
         </div>
       </div>
     </div>
@@ -235,7 +328,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(serverMsg);
-          updateSubmitButton("Submit", false);
+          updateSubmitButton("Authorize", false);
           btnSubmit.disabled = true;
         } catch (e) {
           tg.HapticFeedback.notificationOccurred("error");
@@ -244,7 +337,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(e.message || "Network error. Please try again.");
-          updateSubmitButton("Submit", false);
+          updateSubmitButton("Authorize", false);
           btnSubmit.disabled = true;
         }
       }

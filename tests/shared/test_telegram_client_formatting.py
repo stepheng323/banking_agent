@@ -344,3 +344,51 @@ async def test_send_interactive_uses_object_reply_markup(monkeypatch: pytest.Mon
     assert captured["reply_markup"] == {
         "inline_keyboard": [[{"text": "First", "callback_data": "1"}]]
     }
+
+
+@pytest.mark.asyncio
+async def test_send_interactive_groups_compact_option_buttons(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    client = TelegramClient()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del files, max_retries
+        assert method == "sendMessage"
+        captured.update(payload or {})
+        return {"ok": True, "result": {"message_id": 78}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.send_interactive(
+        to="12345",
+        body_text="Choose one",
+        options=[
+            {"id": "1", "title": "1"},
+            {"id": "2", "title": "2"},
+            {"id": "3", "title": "3"},
+            {"id": "4", "title": "4"},
+            {"id": "5", "title": "5"},
+        ],
+    )
+
+    assert result.success is True
+    assert captured["reply_markup"] == {
+        "inline_keyboard": [
+            [
+                {"text": "1", "callback_data": "1"},
+                {"text": "2", "callback_data": "2"},
+                {"text": "3", "callback_data": "3"},
+            ],
+            [
+                {"text": "4", "callback_data": "4"},
+                {"text": "5", "callback_data": "5"},
+            ],
+        ]
+    }

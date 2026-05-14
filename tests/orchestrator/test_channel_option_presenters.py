@@ -83,5 +83,10 @@ async def test_telegram_presenter_options_falls_back_to_numbered_text() -> None:
     assert message_id == "tg-text-1"
     assert len(client.interactive_calls) == 1
     assert len(client.text_calls) == 1
+    assert "1. Tolu A • Access Bank • ****1234" in client.interactive_calls[0]["body_text"]
+    assert client.interactive_calls[0]["options"] == [
+        {"id": "bene:111", "title": "1"},
+        {"id": "bene:222", "title": "2"},
+    ]
     assert "1. Tolu A • Access Bank • ****1234" in client.text_calls[0]["text"]
     assert "2. Tolu B • GTBank • ****5678" in client.text_calls[0]["text"]
