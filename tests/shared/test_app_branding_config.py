@@ -13,7 +13,10 @@ def test_render_message_uses_app_brand_defaults(monkeypatch) -> None:
     greeting = render_message("conversational.greeting", "en")
     brand_origin = render_message("conversational.brand_origin", "en")
 
-    assert greeting == "Hi. I'm Fuspay. What would you like to do?"
+    assert greeting == (
+        "Hi, I'm Fuspay. I can help with transfers, airtime/data, balances, and transactions. "
+        "What would you like to do?"
+    )
     assert brand_origin == "Fuspay is named after a kindler archetype, built by Fuse Labs for calm, reliable banking execution."
 
 

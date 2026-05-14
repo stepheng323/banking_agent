@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _build_direct_domain_task,
     _build_query_session_exit_updates,
     _build_semantic_router_context,
+    _direct_domain_capability_block_message,
     _effective_response_locale,
     _is_numeric_input_interrupt_selection,
     _locale_update,
@@ -323,6 +324,27 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
                         **_route_observability_updates(
                             owner="planner",
                             decision="planner_handoff",
+                            mode=canonical_mode,
+                        ),
+                        **updates,
+                    }
+                if block_message := _direct_domain_capability_block_message(ctx.state, domain):
+                    logger.info(
+                        "gate_semantic_router_domain_policy_blocked",
+                        decision=canonical_decision,
+                        domain=domain,
+                        mode=canonical_mode,
+                    )
+                    return {
+                        **ctx.gate_updates,
+                        **(ctx.summary_updates or {}),
+                        "direct_path_triggered": True,
+                        "final_response": block_message,
+                        "semantic_path_shape": "semantic_router_domain_policy_blocked",
+                        **_route_observability_updates(
+                            owner="semantic_router",
+                            decision="capability_blocked",
+                            target_domain=domain,
                             mode=canonical_mode,
                         ),
                         **updates,

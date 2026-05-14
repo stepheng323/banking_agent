@@ -122,16 +122,16 @@ def _pending_edit_target_task_ids(
 
     matched_ids: list[str] = []
     for reference in getattr(decision, "target_texts", []) or []:
-        reference_text = str(reference or "").strip()
-        if not reference_text:
+        target_text = str(reference or "").strip()
+        if not target_text:
             continue
         reference_matches = [
             task_id
             for task_id in active_task_ids
             if (task := state.tasks.get(task_id)) is not None
             and (
-                _message_targets_confirmation_task(reference_text, task)
-                or (task.type == "transfer" and _transfer_task_reference_matches(reference_text, task))
+                _message_targets_confirmation_task(target_text, task)
+                or (task.type == "transfer" and _transfer_task_reference_matches(target_text, task))
             )
         ]
         if len(reference_matches) == 1:
@@ -174,40 +174,199 @@ def _pending_edit_target_task_ids(
 
 
 def _field_can_apply_collectively(field: str) -> bool:
-    return field in {"amount", "narration", "phone", "network"}
+    return field in {"amount", "narration", "phone", "network", "source_accounts", "use_dual_accounts"}
 
 
 def _field_applies_to_task(field: str, task_type: str) -> bool:
     if field in {"amount", "source_bank_name", "source_account_index"}:
         return task_type in TRANSACTION_INTENTS
-    if field in {"narration", "recipient_name", "recipient_account", "recipient_bank_name"}:
+    if field in {
+        "narration",
+        "recipient_name",
+        "recipient_account",
+        "recipient_bank_name",
+        "source_accounts",
+        "use_dual_accounts",
+        "funding_splits",
+    }:
         return task_type == "transfer"
     if field in {"phone", "network"}:
         return task_type in {"airtime", "data"}
     return False
 
 
-def _source_account_patch(*, source_bank_name: Any = None, source_account_index: Any = None) -> dict[str, Any]:
+def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
+    loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
+    accounts = loaded_context.get("accounts")
+    if not isinstance(accounts, list):
+        return []
+    return [account for account in accounts if isinstance(account, dict)]
+
+
+def _account_source_patch(account: dict[str, Any]) -> dict[str, Any]:
+    bank_name = str(account.get("bank_name") or account.get("bank") or "").strip()
+    account_number = str(account.get("account_number") or account.get("number") or "").strip()
+    account_name = str(account.get("account_name") or account.get("name") or "").strip()
+    return {
+        "confirmation": {"confirmed": False},
+        "source_account_id": str(account.get("id") or account.get("account_id") or "").strip() or None,
+        "source_account_name": account_name or None,
+        "source_account_number": account_number or None,
+        "source_bank_name": bank_name or None,
+        "source_account_index": None,
+        "source_affinity_mode": "explicit",
+        "funding_plan": None,
+    }
+
+
+def _resolve_source_account_by_bank(state: OrchestratorState, source_bank_name: Any) -> dict[str, Any] | None:
+    normalized_source_bank = _normalize_account_reference(source_bank_name)
+    if not normalized_source_bank:
+        return None
+    matches = []
+    for account in _loaded_accounts(state):
+        bank_name = account.get("bank_name") or account.get("bank")
+        normalized_bank_name = _normalize_account_reference(bank_name)
+        if not normalized_bank_name:
+            continue
+        if (
+            normalized_bank_name == normalized_source_bank
+            or normalized_bank_name in normalized_source_bank
+            or normalized_source_bank in normalized_bank_name
+        ):
+            matches.append(account)
+    return matches[0] if len(matches) == 1 else None
+
+
+def _resolve_source_account_by_index(state: OrchestratorState, source_account_index: Any) -> dict[str, Any] | None:
+    try:
+        index = int(source_account_index)
+    except (TypeError, ValueError):
+        return None
+    if index <= 0:
+        return None
+    accounts = _loaded_accounts(state)
+    if index > len(accounts):
+        return None
+    return accounts[index - 1]
+
+
+def _source_account_patch(
+    *,
+    state: OrchestratorState,
+    source_bank_name: Any = None,
+    source_account_index: Any = None,
+) -> dict[str, Any]:
     patch: dict[str, Any] = {
         "confirmation": {"confirmed": False},
         "source_account_id": None,
         "source_account_name": None,
         "source_account_number": None,
-        "source_affinity_mode": None,
+        "source_affinity_mode": "explicit",
         "funding_plan": None,
     }
     if source_bank_name not in (None, ""):
+        account = _resolve_source_account_by_bank(state, source_bank_name)
+        if account is not None:
+            return _account_source_patch(account)
         patch["source_bank_name"] = str(source_bank_name).strip()
         patch["source_account_index"] = None
     if source_account_index not in (None, ""):
+        account = _resolve_source_account_by_index(state, source_account_index)
+        if account is not None:
+            return _account_source_patch(account)
         try:
             index = int(source_account_index)
         except (TypeError, ValueError):
             index = 0
         if index > 0:
+            if _loaded_accounts(state):
+                return {}
             patch["source_account_index"] = index
             patch["source_bank_name"] = None
     return patch
+
+
+def _pool_funding_base_patch() -> dict[str, Any]:
+    return {
+        "confirmation": {"confirmed": False},
+        "source_account_id": None,
+        "source_account_name": None,
+        "source_account_number": None,
+        "source_bank_name": None,
+        "source_account_index": None,
+        "source_affinity_mode": "explicit",
+        "funding_plan": None,
+    }
+
+
+def _pending_action_edit_available(task_planner: Any) -> bool:
+    return bool(task_planner and hasattr(task_planner, "interpret_pending_action_edit"))
+
+
+def _source_accounts_patch(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, list):
+        return None
+    accounts = [str(item).strip() for item in value if str(item or "").strip()]
+    if not accounts:
+        return None
+    return {
+        **_pool_funding_base_patch(),
+        "source_accounts": accounts,
+        "use_dual_accounts": len(accounts) > 1,
+        "explicit_split": None,
+    }
+
+
+def _use_dual_accounts_patch(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    enabled = bool(value)
+    patch = _pool_funding_base_patch()
+    patch["use_dual_accounts"] = enabled
+    if not enabled:
+        patch["source_accounts"] = None
+        patch["explicit_split"] = None
+    return patch
+
+
+def _funding_splits_patch(value: Any) -> dict[str, Any] | None:
+    entries = value
+    if hasattr(entries, "model_dump"):
+        entries = entries.model_dump(exclude_none=True)
+    if isinstance(entries, dict):
+        split_items = entries.items()
+    elif isinstance(entries, list):
+        split_items = []
+        for item in entries:
+            raw_item = item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item
+            if not isinstance(raw_item, dict):
+                continue
+            split_items.append((raw_item.get("bank_name"), raw_item.get("amount")))
+    else:
+        return None
+
+    explicit_split: dict[str, float] = {}
+    for raw_bank, raw_amount in split_items:
+        bank = str(raw_bank or "").strip()
+        if not bank:
+            continue
+        try:
+            amount = float(raw_amount)
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue
+        explicit_split[bank] = amount
+
+    if not explicit_split:
+        return None
+    return {
+        **_pool_funding_base_patch(),
+        "source_accounts": list(explicit_split),
+        "use_dual_accounts": True,
+        "explicit_split": explicit_split,
+    }
 
 
 def _normalize_account_reference(value: Any) -> str:
@@ -220,11 +379,6 @@ def _resolve_source_bank_name_from_account_reference(
     decision: Any,
     text: str,
 ) -> str | None:
-    loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
-    accounts = loaded_context.get("accounts")
-    if not isinstance(accounts, list):
-        return None
-
     references = [
         text,
         *(str(item or "") for item in getattr(decision, "target_texts", []) or []),
@@ -234,14 +388,14 @@ def _resolve_source_bank_name_from_account_reference(
     if not normalized_references:
         return None
 
-    for account in accounts:
-        if not isinstance(account, dict):
-            continue
+    matches: list[str] = []
+    for account in _loaded_accounts(state):
         bank_name = str(account.get("bank_name") or account.get("bank") or "").strip()
         normalized_bank_name = _normalize_account_reference(bank_name)
         if normalized_bank_name and any(normalized_bank_name in reference for reference in normalized_references):
-            return bank_name
-    return None
+            matches.append(bank_name)
+    unique_matches = {match for match in matches if match}
+    return next(iter(unique_matches)) if len(matches) == 1 and len(unique_matches) == 1 else None
 
 
 def _account_switch_source_overrides(
@@ -368,9 +522,15 @@ def _pending_edit_payload_overrides_from_fields(
             elif field in {"recipient_name", "recipient_account", "recipient_bank_name"} and task.type == "transfer":
                 patch = _recipient_patch(str(field), value)
             elif field == "source_bank_name" and task.type in TRANSACTION_INTENTS:
-                patch = _source_account_patch(source_bank_name=value)
+                patch = _source_account_patch(state=state, source_bank_name=value)
             elif field == "source_account_index" and task.type in TRANSACTION_INTENTS:
-                patch = _source_account_patch(source_account_index=value)
+                patch = _source_account_patch(state=state, source_account_index=value)
+            elif field == "source_accounts" and task.type == "transfer":
+                patch = _source_accounts_patch(value)
+            elif field == "use_dual_accounts" and task.type == "transfer":
+                patch = _use_dual_accounts_patch(value)
+            elif field == "funding_splits" and task.type == "transfer":
+                patch = _funding_splits_patch(value)
             elif field == "phone" and task.type in {"airtime", "data"}:
                 patch = _phone_patch(task.type, value)
             elif field == "network" and task.type in {"airtime", "data"}:
@@ -427,6 +587,48 @@ def _pending_edit_has_fields(decision: Any) -> bool:
         if any(value not in (None, "") for value in scoped_fields.values()):
             return True
     return False
+
+
+def _restore_fallback_task_ids_for_misclassified_add(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    decision: Any,
+    text: str,
+) -> list[str]:
+    """Recover a recently removed task when the semantic model calls it a fresh add.
+
+    This is a structural undo fallback: it only applies while a confirmation
+    interrupt has removed task memory, before any new money-move task is routed.
+    """
+    if getattr(interrupt, "kind", None) != "confirmation":
+        return []
+    removed = state.removed_confirmation_tasks or {}
+    if len(removed) != 1:
+        return []
+    if getattr(decision, "operation", None) != "add_tasks":
+        return []
+    if _pending_edit_has_fields(decision):
+        return []
+
+    restore_text_parts = [
+        text,
+        getattr(decision, "add_instruction", None),
+        getattr(decision, "reason", None),
+        *(getattr(decision, "target_texts", None) or []),
+    ]
+    restore_text = " ".join(str(part).lower() for part in restore_text_parts if part)
+    if not any(marker in restore_text for marker in ("back", "restore", "revert", "undo")):
+        return []
+
+    matched_task_ids = confirmation_scoped_task_restore_ids(
+        state=state,
+        interrupt=interrupt,
+        decision=decision,
+    )
+    if matched_task_ids:
+        return matched_task_ids
+    return [str(next(iter(removed.keys())))]
 
 
 def _confirmation_edit_clarification_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
@@ -518,6 +720,19 @@ async def _resolve_semantic_pending_action_edit_updates(
         return None
 
     if decision.operation == "add_tasks":
+        restore_task_ids = _restore_fallback_task_ids_for_misclassified_add(
+            state=state,
+            interrupt=interrupt,
+            decision=decision,
+            text=text,
+        )
+        if restore_task_ids:
+            return restore_confirmation_tasks_and_reconfirm_updates(
+                state=state,
+                interrupt=interrupt,
+                task_ids_to_restore=restore_task_ids,
+            )
+
         target_types = [
             str(task_type).strip().lower()
             for task_type in (decision.target_types or [])
@@ -644,22 +859,123 @@ async def _expired_transaction_interrupt_updates(
     interrupt: Any,
     current_task_types: set[str],
     redis_client: Any | None,
+    task_planner: Any,
+    text: str,
 ) -> dict[str, Any] | None:
     expires_at = _pending_transaction_interrupt_expiry(interrupt, current_task_types)
     if expires_at is None or time.time() <= expires_at:
         return None
 
     reset_updates = await build_cancellation_reset_updates(state, redis_client)
+    should_notify = await _expired_transaction_message_targets_stale_session(
+        state=state,
+        interrupt=interrupt,
+        current_task_types=current_task_types,
+        task_planner=task_planner,
+        text=text,
+    )
     logger.info(
         "pending_transaction_interrupt_expired",
         kind=getattr(interrupt, "kind", None),
         task_ids=getattr(interrupt, "task_ids", None),
         expires_at=expires_at,
+        notified=should_notify,
     )
-    return {
+    updates = {
         **reset_updates,
         "last_interrupt": interrupt,
     }
+    if not should_notify:
+        return updates
+
+    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    response_text = render_message(
+        "orchestrator.session.transaction_expired",
+        locale,
+        fallback_en=(
+            "That transaction session has expired, so I can't continue it. "
+            "Please start the transaction again."
+        ),
+    )
+    return {
+        **updates,
+        "outbox": [{"type": "say", "text": response_text}],
+        "final_response": response_text,
+        "direct_path_triggered": True,
+        "semantic_path_shape": "expired_transaction_session",
+        "routing_owner": "guardrail",
+        "routing_decision": "expired_transaction_session",
+        "routing_target_domain": None,
+        "routing_mode": "expired",
+    }
+
+
+async def _expired_transaction_message_targets_stale_session(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    current_task_types: set[str],
+    task_planner: Any,
+    text: str,
+) -> bool:
+    """Return True when the post-expiry turn is trying to continue the expired flow."""
+    if _is_verified_pin_callback(state) and getattr(interrupt, "kind", None) in {"confirmation", "auth"}:
+        return True
+
+    status_shortcut_route = _resolve_deterministic_status_query_route(
+        state=state,
+        interrupt=interrupt,
+        text=text,
+    )
+    if status_shortcut_route is not None:
+        return True
+
+    if _resolve_deterministic_input_selection_route(state=state, interrupt=interrupt, text=text) is not None:
+        return True
+
+    if _resolve_deterministic_input_slot_route(state=state, interrupt=interrupt, text=text) is not None:
+        return True
+
+    if _resolve_deterministic_confirmation_repeat_route(state=state, interrupt=interrupt, text=text) is not None:
+        return True
+
+    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_route, _miss_reason = resolve_interrupt_shortcut_with_reason(
+        text=text,
+        interrupt_kind=getattr(interrupt, "kind", ""),
+        locale=shortcut_locale,
+    )
+    if shortcut_route is not None:
+        return shortcut_route.decision in {"approve_flow", "reject_flow", "cancel", "status_query", "continue_flow"}
+
+    route = await _route_interrupt(
+        task_planner=task_planner,
+        state=state,
+        text=text,
+        kind=getattr(interrupt, "kind", ""),
+        task_ids=getattr(interrupt, "task_ids", []),
+        current_task_types=current_task_types,
+        fields_by_task=getattr(interrupt, "fields_by_task", {}),
+        prompt=getattr(interrupt, "prompt", None),
+    )
+    if route.decision in {"approve_flow", "reject_flow", "cancel", "status_query", "continue_flow"}:
+        return True
+    if route.decision == "switch_intent":
+        if str(route.target_mode or "").strip().lower() == "new":
+            return False
+        return _is_same_flow_transactional_switch(
+            route=route,
+            interrupt=interrupt,
+            active_type=_active_intent(current_task_types),
+        )
+
+    resolution = await PendingActionEditEngine().interpret(
+        state=state,
+        interrupt=interrupt,
+        text=text,
+        task_planner=task_planner,
+    )
+    return resolution is not None
 
 
 async def _reprompt_or_reset_updates(
@@ -715,6 +1031,8 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         interrupt=interrupt,
         current_task_types=current_task_types,
         redis_client=redis_client,
+        task_planner=task_planner,
+        text=text,
     )
     if expired_updates is not None:
         return expired_updates
@@ -971,6 +1289,14 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
 
     if route.decision == "switch_intent":
         if _is_same_flow_transactional_switch(route=route, interrupt=interrupt, active_type=active_type):
+            if _pending_action_edit_available(task_planner):
+                logger.info(
+                    "interrupt_same_flow_switch_blocked_for_pending_action_edit",
+                    kind=interrupt.kind,
+                    active_type=active_type,
+                    target_intent=route.target_intent,
+                )
+                return _confirmation_edit_clarification_updates(state, interrupt)
             logger.info(
                 "interrupt_same_flow_switch_shortcut",
                 kind=interrupt.kind,
@@ -978,6 +1304,30 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 target_intent=route.target_intent,
             )
             return _continue_flow_updates(state, interrupt)
+        if interrupt.kind == "confirmation" and (route.target_intent or "").strip().lower() == "account":
+            if current_task_types.intersection(TRANSACTION_INTENTS):
+                if _pending_action_edit_available(task_planner):
+                    logger.info(
+                        "interrupt_account_switch_blocked_for_pending_action_edit",
+                        task_ids=interrupt.task_ids,
+                    )
+                    return _confirmation_edit_clarification_updates(state, interrupt)
+                overrides = _account_switch_source_overrides(
+                    state=state,
+                    interrupt=interrupt,
+                    decision=route,
+                    text=text,
+                )
+                if overrides:
+                    logger.info(
+                        "interrupt_account_switch_as_source_edit",
+                        task_ids=list(overrides.keys()),
+                    )
+                    return _continue_flow_updates(
+                        state,
+                        interrupt,
+                        precomputed_payload_overrides=overrides,
+                    )
         return await _handle_switch_intent_route(
             state=state,
             interrupt=interrupt,

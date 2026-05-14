@@ -130,6 +130,27 @@ class _PendingActionEditPlanner:
         return SemanticRouteDecision(decision="planner_ambiguous", confidence=0.0)
 
 
+class _PendingActionEditThenRoutePlanner(_PendingActionEditPlanner):
+    def __init__(
+        self,
+        decision: PendingActionEditDecision,
+        route: InterruptRouteDecision,
+    ) -> None:
+        super().__init__(decision)
+        self._route = route
+        self.route_calls = 0
+
+    async def route_pending_input(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+    ) -> InterruptRouteDecision:
+        del phone_number, text, context
+        self.route_calls += 1
+        return self._route
+
+
 class _SequentialPendingActionEditPlanner(_PendingActionEditPlanner):
     def __init__(self, decisions: list[PendingActionEditDecision]) -> None:
         if not decisions:
@@ -660,7 +681,7 @@ def _planner_state() -> OrchestratorState:
 
 
 @pytest.mark.asyncio
-async def test_expired_transaction_confirmation_interrupt_resets_session_and_replans_current_message() -> None:
+async def test_expired_transaction_confirmation_interrupt_resets_session_and_replans_fresh_message() -> None:
     state = _base_state().model_copy(
         update={
             "last_message_text": "Hi",
@@ -710,6 +731,58 @@ async def test_expired_transaction_confirmation_interrupt_resets_session_and_rep
     plan_updates = await plan_tasks(state, config)
 
     assert plan_updates["final_response"] == render_message("conversational.greeting", "en")
+
+
+@pytest.mark.asyncio
+async def test_expired_transaction_confirmation_continuation_gets_standard_response() -> None:
+    state = _base_state().model_copy(
+        update={
+            "last_message_text": "Yes",
+            "pending_interrupt": PendingInterrupt(
+                kind="confirmation",
+                task_ids=["t_transfer", "t_airtime"],
+                created_at_ts=1.0,
+            ),
+            "tasks": {
+                "t_transfer": TaskSpec(
+                    id="t_transfer",
+                    type="transfer",
+                    stage=TaskStage.AWAITING_CONFIRMATION,
+                    payload={"amount": 10000},
+                ),
+                "t_airtime": TaskSpec(
+                    id="t_airtime",
+                    type="airtime",
+                    stage=TaskStage.AWAITING_CONFIRMATION,
+                    payload={"amount": 1000},
+                ),
+            },
+        }
+    )
+    planner = _MockPlanner(
+        PlannerOutput(
+            primary_intent="conversational",
+            response="",
+            response_key="conversational.greeting",
+            confidence=0.9,
+            detected_language="English",
+            tasks=[],
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["final_response"] == (
+        "That transaction session has expired, so I can't continue it. "
+        "Please start the transaction again."
+    )
+    assert updates["semantic_path_shape"] == "expired_transaction_session"
+    assert updates["outbox"] == [{"type": "say", "text": updates["final_response"]}]
+    assert updates["last_interrupt"].kind == "confirmation"
 
 
 @pytest.mark.asyncio
@@ -1960,8 +2033,10 @@ async def test_semantic_pending_action_edit_updates_batch_source_account_by_bank
     assert set(updates["last_interrupt"].task_ids) == {"t_transfer", "t_airtime"}
     assert updates["tasks"]["t_transfer"].payload["source_account_id"] is None
     assert updates["tasks"]["t_transfer"].payload["source_bank_name"] == "GTBank"
+    assert updates["tasks"]["t_transfer"].payload["source_affinity_mode"] == "explicit"
     assert updates["tasks"]["t_airtime"].payload["source_account_id"] is None
     assert updates["tasks"]["t_airtime"].payload["source_bank_name"] == "GTBank"
+    assert updates["tasks"]["t_airtime"].payload["source_affinity_mode"] == "explicit"
     assert "idempotency_key" not in updates["tasks"]["t_transfer"].payload
     assert "idempotency_key" not in updates["tasks"]["t_airtime"].payload
 
@@ -2038,12 +2113,366 @@ async def test_pending_account_switch_with_bank_reference_updates_confirmation_s
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert updates["tasks"]["t_transfer"].payload["source_account_id"] is None
+    assert updates["tasks"]["t_transfer"].payload["source_account_id"] == "acct-first"
     assert updates["tasks"]["t_transfer"].payload["source_bank_name"] == "First Bank"
-    assert updates["tasks"]["t_airtime"].payload["source_account_id"] is None
+    assert updates["tasks"]["t_transfer"].payload["source_account_number"] == "0000000001"
+    assert updates["tasks"]["t_transfer"].payload["source_affinity_mode"] == "explicit"
+    assert updates["tasks"]["t_airtime"].payload["source_account_id"] == "acct-first"
     assert updates["tasks"]["t_airtime"].payload["source_bank_name"] == "First Bank"
+    assert updates["tasks"]["t_airtime"].payload["source_account_number"] == "0000000001"
+    assert updates["tasks"]["t_airtime"].payload["source_affinity_mode"] == "explicit"
     assert "idempotency_key" not in updates["tasks"]["t_transfer"].payload
     assert "idempotency_key" not in updates["tasks"]["t_airtime"].payload
+
+
+@pytest.mark.asyncio
+async def test_router_account_switch_does_not_bypass_pending_action_edit_engine() -> None:
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_account_switch_router_block",
+        phone_number="2348000000941",
+        channel="telegram",
+        last_message_text="Change source account to first bank",
+        waves=[["t_transfer", "t_airtime"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"id": "acct-access", "bank_name": "Access Bank", "account_number": "0000000003"},
+                {"id": "acct-first", "bank_name": "First Bank", "account_number": "0000000001"},
+            ],
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 10000}},
+                    "idempotency_key": "idem-transfer",
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "mtn",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm airtime", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-airtime",
+                },
+            ),
+        },
+    )
+    planner = _PendingActionEditThenRoutePlanner(
+        PendingActionEditDecision(operation="unclear", confidence=0.95),
+        InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.93,
+            detected_language="English",
+            target_intent="account",
+            target_mode="new",
+            reason="old router misclassified source edit as account management",
+        ),
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {
+                "transfer": _TransferNeedsConfirmationWorker(),
+                "airtime": _AirtimeNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert updates["tasks"] == state.tasks
+    assert updates["tasks"]["t_transfer"].payload["source_bank_name"] == "Access Bank"
+    assert updates["tasks"]["t_airtime"].payload["source_bank_name"] == "Access Bank"
+    assert updates["outbox"][0]["type"] == "say"
+    assert "which" in updates["outbox"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_router_same_flow_switch_does_not_bypass_pending_action_edit_engine() -> None:
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_same_flow_router_block",
+        phone_number="2348000000942",
+        channel="telegram",
+        last_message_text="Change it to 20k",
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 10000}},
+                    "idempotency_key": "idem-transfer",
+                },
+            )
+        },
+    )
+    planner = _PendingActionEditThenRoutePlanner(
+        PendingActionEditDecision(operation="unclear", confidence=0.95),
+        InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.93,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="old router misclassified edit as same-flow switch",
+        ),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "services": {}}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert updates["tasks"] == state.tasks
+    assert updates["tasks"]["t_transfer"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["tasks"]["t_transfer"].payload["amount"] == 10000
+    assert updates["tasks"]["t_transfer"].payload["confirmation"] == {"summary": "Confirm transfer", "snapshot": {"amount": 10000}}
+    assert updates["outbox"][0]["type"] == "say"
+    assert "which" in updates["outbox"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_source_edit_can_scope_to_transfer_only() -> None:
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_semantic_source_transfer_only",
+        phone_number="2348000000940",
+        channel="telegram",
+        last_message_text="Use GTBank for the transfer only",
+        waves=[["t_transfer", "t_airtime"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"id": "acct-access", "bank_name": "Access Bank", "account_number": "0000000003"},
+                {"id": "acct-gtb", "bank_name": "GTBank", "account_number": "0000000002"},
+            ],
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 10000}},
+                    "idempotency_key": "idem-transfer",
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "mtn",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm airtime", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-airtime",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    source_bank_name="GTBank",
+                )
+            ),
+            "services": {
+                "transfer": _TransferNeedsConfirmationWorker(),
+                "airtime": _AirtimeNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_transfer"].payload["source_account_id"] == "acct-gtb"
+    assert updates["tasks"]["t_transfer"].payload["source_bank_name"] == "GTBank"
+    assert updates["tasks"]["t_transfer"].payload["source_account_number"] == "0000000002"
+    assert updates["tasks"]["t_transfer"].payload["source_affinity_mode"] == "explicit"
+    assert updates["tasks"]["t_airtime"].payload["source_account_id"] == "acct-access"
+    assert updates["tasks"]["t_airtime"].payload["source_bank_name"] == "Access Bank"
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_edit_updates_pooled_funding_split() -> None:
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_semantic_funding_split",
+        phone_number="2348000000941",
+        channel="telegram",
+        last_message_text="Make it 20k from Access and 15k from First Bank",
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 35000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "6000000003",
+                    "source_affinity_mode": "auto",
+                    "funding_plan": {
+                        "is_single_source": False,
+                        "steps": [
+                            {"account_id": "acct-access", "amount": 30000, "bank_name": "Access Bank"},
+                            {"account_id": "acct-first", "amount": 5000, "bank_name": "First Bank"},
+                        ],
+                    },
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 35000}},
+                    "idempotency_key": "idem-transfer",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.94,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    funding_splits=[
+                        {"bank_name": "Access Bank", "amount": 20000},
+                        {"bank_name": "First Bank", "amount": 15000},
+                    ],
+                )
+            ),
+            "services": {"transfer": _TransferNeedsConfirmationWorker()},
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    payload = updates["tasks"]["t_transfer"].payload
+    assert updates["pending_interrupt"] is None
+    assert payload["explicit_split"] == {"Access Bank": 20000.0, "First Bank": 15000.0}
+    assert payload["source_accounts"] == ["Access Bank", "First Bank"]
+    assert payload["use_dual_accounts"] is True
+    assert payload["funding_plan"] is None
+    assert payload["source_account_id"] is None
+    assert payload["source_bank_name"] is None
+    assert payload["source_affinity_mode"] == "explicit"
+    assert "idempotency_key" not in payload
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_edit_can_disable_pooled_funding() -> None:
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_semantic_funding_single",
+        phone_number="2348000000942",
+        channel="telegram",
+        last_message_text="Don't pool it, use one account",
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 35000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "use_dual_accounts": True,
+                    "source_accounts": ["Access Bank", "First Bank"],
+                    "explicit_split": {"Access Bank": 30000, "First Bank": 5000},
+                    "funding_plan": {
+                        "is_single_source": False,
+                        "steps": [
+                            {"account_id": "acct-access", "amount": 30000, "bank_name": "Access Bank"},
+                            {"account_id": "acct-first", "amount": 5000, "bank_name": "First Bank"},
+                        ],
+                    },
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 35000}},
+                    "idempotency_key": "idem-transfer",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    use_dual_accounts=False,
+                )
+            ),
+            "services": {"transfer": _TransferNeedsConfirmationWorker()},
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    payload = updates["tasks"]["t_transfer"].payload
+    assert updates["pending_interrupt"] is None
+    assert payload["use_dual_accounts"] is False
+    assert payload["source_accounts"] is None
+    assert payload["explicit_split"] is None
+    assert payload["funding_plan"] is None
+    assert "idempotency_key" not in payload
 
 
 @pytest.mark.asyncio
@@ -3255,6 +3684,88 @@ async def test_confirmation_restore_removed_airtime_rejoins_original_batch() -> 
     confirmation_entry = next(entry for entry in wave_updates["outbox"] if entry["type"] == "request_confirmation")
     assert set(confirmation_entry["task_ids"]) == {"t_gaines", "t_tolu", "t_airtime"}
     assert "Confirm airtime task" in confirmation_entry["summary"]
+
+
+@pytest.mark.asyncio
+async def test_confirmation_restore_single_removed_task_when_add_back_is_misclassified_as_add_task() -> None:
+    removed_airtime = TaskSpec(
+        id="t_airtime",
+        type="airtime",
+        stage=TaskStage.AWAITING_CONFIRMATION,
+        payload={
+            "amount": 1000,
+            "recipient_phone": "08162511023",
+            "network": "mtn",
+            "source_account_id": "acct-access",
+            "source_bank_name": "Access Bank",
+            "source_account_number": "0000000003",
+            "confirmation": {"summary": "Confirm airtime task", "snapshot": {"amount": 1000}},
+        },
+    )
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_restore_add_back_misclassified",
+        phone_number="2348000000926",
+        channel="telegram",
+        last_message_text="Sorry add it back",
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        removed_confirmation_tasks={
+            "t_airtime": {
+                "task": removed_airtime,
+                "wave_index": 0,
+                "position": 1,
+                "task_result": {"cached": "airtime"},
+            }
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 2000,
+                    "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "0000000003",
+                    "narration": "Urgent 2k",
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 2000}},
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="add_tasks",
+                    confidence=0.92,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    target_intent="transfer",
+                    add_instruction="Sorry add it back",
+                    reason="misclassified restore as add",
+                )
+            ),
+            "services": {
+                "transfer": _TransferNeedsConfirmationWorker(),
+                "airtime": _AirtimeNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    restore_updates = await handle_pending_interrupt(state, config)
+
+    assert restore_updates["pending_interrupt"] is None
+    assert restore_updates["removed_confirmation_tasks"] == {}
+    assert restore_updates["waves"] == [["t_transfer", "t_airtime"]]
+    assert set(restore_updates["tasks"]) == {"t_transfer", "t_airtime"}
+    assert restore_updates["tasks"]["t_airtime"].payload["skip_extraction"] is True
 
 
 @pytest.mark.asyncio

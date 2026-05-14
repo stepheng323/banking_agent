@@ -22,6 +22,7 @@ from shared.i18n import (
     render_text,
 )
 from shared.utils.logging import get_logger
+from shared.utils.user_error import safe_user_error_message
 
 logger = get_logger(__name__)
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
@@ -464,10 +465,10 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
             message = task.payload.get("error") or render_generic_capability_blocked(locale)
             outbox.append({"type": "say", "text": message})
         elif task.payload.get("is_pending_mandate"):
-            error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
+            error_text = safe_user_error_message(task.payload.get("error"), task_type=task.type, locale=locale)
             outbox.append({"type": "say", "text": error_text})
         else:
-            error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
+            error_text = safe_user_error_message(task.payload.get("error"), task_type=task.type, locale=locale)
             outbox.append(
                 {
                     "type": "say",

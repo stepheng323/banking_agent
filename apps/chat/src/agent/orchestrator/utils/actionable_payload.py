@@ -18,10 +18,14 @@ ACTIONABLE_PAYLOAD_KEYS = (
     "source_account_id",
     "source_account_index",
     "source_account_number",
+    "source_affinity_mode",
     "narration",
     "network",
     "plan_code",
     "plan_name",
+    "final_status",
+    "error_message",
+    "failure_category",
 )
 
 

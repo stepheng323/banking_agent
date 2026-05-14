@@ -65,6 +65,7 @@ async def test_dispatch_enforces_skip_extraction_and_fresh_execution_fields() ->
                             "amount": 2500,
                             "recipient_name": "Ada",
                             "recipient_account": "0123456789",
+                            "recipient_bank_name": "Access Bank",
                             "confirmation": {"confirmed": True},
                             "idempotency_key": "old-key",
                             "transaction_id": "old-id",
@@ -127,7 +128,9 @@ async def test_dispatch_clarifies_when_replay_payload_is_insufficient() -> None:
     )
 
     assert "tasks" not in updates
-    assert updates["final_response"] == "Please tell me who to send to."
+    assert updates["final_response"] == (
+        "I can resend that, but I need the missing recipient account number, and recipient bank first."
+    )
     assert planner.plan_called is False
 
 

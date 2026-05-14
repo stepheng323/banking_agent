@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
+from apps.chat.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.planner.context import (
     PLANNER_CONTEXT_MAX_CHARS,
@@ -16,7 +17,7 @@ from apps.chat.src.agent.orchestrator.nodes.planner.context import (
     get_or_build_turn_context_summary,
 )
 from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup import (
-    build_context_frame_followup_context,
+    build_context_frame_followup_context_for_state,
     build_context_frame_followup_response,
 )
 from apps.chat.src.agent.orchestrator.nodes.planner.context_read import (
@@ -211,60 +212,72 @@ async def _build_planner_context(
 ) -> PlannerContextBuildResult:
     frame = OrchestratorContextManager().latest_active_frame(state)
     if frame and callable(getattr(task_planner, "interpret_context_frame_followup", None)):
-        try:
-            decision = await task_planner.interpret_context_frame_followup(
-                state.phone_number,
-                text,
-                context=build_context_frame_followup_context(frame),
-                path_label="planner_path",
-            )
-        except Exception as exc:
-            logger.warning("context_frame_followup_interpreter_failed", error=str(exc))
-        else:
-            frame_followup = build_context_frame_followup_response(state, text, decision=decision)
+        shortcut = resolve_query_shortcut(text, state.loaded_context.get("language"))
+        if shortcut is not None and shortcut.kind == "pagination":
             logger.info(
-                "context_frame_followup_decision",
-                decision=decision.decision,
-                confidence=decision.confidence,
-                detected_language=decision.detected_language,
-                reason=decision.reason,
-                resolved=bool(frame_followup),
+                "context_frame_followup_skipped_for_query_pagination",
+                action=shortcut.action,
+                frame_type=frame.frame_type.value,
+                item_count=len(frame.items),
             )
-            if frame_followup:
+        else:
+            try:
+                decision = await task_planner.interpret_context_frame_followup(
+                    state.phone_number,
+                    text,
+                    context=build_context_frame_followup_context_for_state(state),
+                    path_label="planner_path",
+                )
+            except Exception as exc:
+                logger.warning("context_frame_followup_interpreter_failed", error=str(exc))
+            else:
+                frame_followup = build_context_frame_followup_response(state, text, decision=decision)
                 logger.info(
-                    "context_frame_followup_hit",
-                    frame_type=frame.frame_type.value,
-                    item_count=len(frame.items),
+                    "context_frame_followup_decision",
+                    decision=decision.decision,
+                    confidence=decision.confidence,
+                    detected_language=decision.detected_language,
+                    requested_field=decision.requested_field,
+                    rank=decision.rank,
+                    has_filters=bool(decision.filters),
+                    reason=decision.reason,
+                    resolved=bool(frame_followup),
                 )
-                return PlannerContextBuildResult(
-                    planner_context="None",
-                    active_intent=None,
-                    query_session_snapshot=None,
-                    query_session_source=None,
-                    prompt_signals=PlannerPromptSignals(
-                        active_flow_type=None,
-                        pending_interrupt_kind=None,
-                        query_session_active=False,
+                if frame_followup:
+                    logger.info(
+                        "context_frame_followup_hit",
+                        frame_type=frame.frame_type.value,
+                        item_count=len(frame.items),
+                    )
+                    return PlannerContextBuildResult(
+                        planner_context="None",
+                        active_intent=None,
+                        query_session_snapshot=None,
                         query_session_source=None,
-                        recent_domain_focus=frame_followup.recent_domain_focus,
-                        has_beneficiary_suggestion=False,
-                        has_user_state_summary=False,
-                        has_short_term_memory=True,
-                        has_quote=False,
-                        has_transaction_intent_hint=False,
-                        forced_domain_owner=None,
-                        expected_transaction_executors=(),
-                    ),
-                    shortcut_updates={
-                        "semantic_path_shape": frame_followup.semantic_path_shape,
-                        "context_frames": frame_followup.context_frames or state.context_frames,
-                        **({"final_response": frame_followup.response} if frame_followup.response else {}),
-                        **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
-                        **({"waves": frame_followup.waves} if frame_followup.waves else {}),
-                        **({"current_wave_index": 0} if frame_followup.waves else {}),
-                        **locale_updates,
-                    },
-                )
+                        prompt_signals=PlannerPromptSignals(
+                            active_flow_type=None,
+                            pending_interrupt_kind=None,
+                            query_session_active=False,
+                            query_session_source=None,
+                            recent_domain_focus=frame_followup.recent_domain_focus,
+                            has_beneficiary_suggestion=False,
+                            has_user_state_summary=False,
+                            has_short_term_memory=True,
+                            has_quote=False,
+                            has_transaction_intent_hint=False,
+                            forced_domain_owner=None,
+                            expected_transaction_executors=(),
+                        ),
+                        shortcut_updates={
+                            "semantic_path_shape": frame_followup.semantic_path_shape,
+                            "context_frames": frame_followup.context_frames or state.context_frames,
+                            **({"final_response": frame_followup.response} if frame_followup.response else {}),
+                            **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
+                            **({"waves": frame_followup.waves} if frame_followup.waves else {}),
+                            **({"current_wave_index": 0} if frame_followup.waves else {}),
+                            **locale_updates,
+                        },
+                    )
 
     planner_context_sections: list[tuple[str, str]] = []
     query_session_snapshot: dict[str, Any] | None = None

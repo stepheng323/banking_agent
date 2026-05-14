@@ -310,6 +310,41 @@ def _push_query_surface_frame(ctx: ExecutionContext, query_result: Any) -> None:
     logger.info("context_frame_pushed", type=frame.frame_type.value, count=len(frame.items))
 
 
+def _query_pagination_actionable_payload(ctx: ExecutionContext, result: Any) -> dict[str, Any] | None:
+    if ctx.state.channel != "telegram" or not isinstance(result.patch, dict):
+        return None
+
+    query_result = result.patch.get("query_result")
+    if query_result is None:
+        return None
+    surface_view = getattr(query_result, "surface_view", None)
+    surface_mode = getattr(surface_view, "mode", None)
+    if getattr(surface_mode, "value", surface_mode) != "transaction_list":
+        return None
+
+    current_page_raw = result.patch.get("current_page", 0)
+    try:
+        current_page = int(current_page_raw or 0)
+    except (TypeError, ValueError):
+        current_page = 0
+
+    has_more = bool(getattr(query_result, "has_more", False))
+    buttons: list[dict[str, str]] = []
+    if current_page > 0:
+        buttons.append({"id": "Previous page", "title": "Back"})
+    if has_more:
+        buttons.append({"id": "Next page", "title": "Next"})
+    if not buttons:
+        return None
+
+    return {
+        "kind": "query_pagination",
+        "current_page": current_page,
+        "has_more": has_more,
+        "telegram_inline_buttons": buttons,
+    }
+
+
 def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
     logger.info(
         "maybe_user_msg_check",
@@ -895,7 +930,17 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
         task.stage = TaskStage.COMPLETED
         if result.response:
             task.payload["result"] = result.response
-            ctx.agg.say(result.response)
+            pagination_payload = _query_pagination_actionable_payload(ctx, result)
+            if pagination_payload:
+                ctx.agg.add_outbox(
+                    {
+                        "type": "say",
+                        "text": result.response,
+                        "actionable_payload": pagination_payload,
+                    }
+                )
+            else:
+                ctx.agg.say(result.response)
 
         if result.patch and isinstance(result.patch, dict):
             _push_query_surface_frame(ctx, result.patch.get("query_result"))

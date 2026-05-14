@@ -20,6 +20,15 @@ class RecipientAllocation(BaseModel):
     amount: float = Field(..., gt=0, description="Allocated amount for this recipient")
 
 
+class FundingSplitUpdate(BaseModel):
+    """Source-side funding split for a pending transfer confirmation edit."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    bank_name: str = Field(..., description="User source bank/account reference for this funding leg")
+    amount: float = Field(..., gt=0, description="Amount to fund from this source account")
+
+
 class TaskParameters(BaseModel):
     """Common parameters for tasks."""
 
@@ -219,6 +228,34 @@ ContextFrameFollowupAction: TypeAlias = Literal[
     "unclear",
 ]
 
+ContextFrameRequestedField: TypeAlias = Literal[
+    "amount",
+    "bank",
+    "counterparty",
+    "date",
+    "network",
+    "phone",
+    "reference",
+    "status",
+]
+
+ContextFrameRank: TypeAlias = Literal["largest", "smallest", "newest", "oldest"]
+
+
+class ContextFrameFollowupFilters(BaseModel):
+    """Structured filters for grounding follow-ups against displayed result frames."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transaction_type: str | None = Field(
+        default=None,
+        description="Visible transaction type or task type filter, for example transfer, airtime, data, credit, debit",
+    )
+    status: str | None = Field(default=None, description="Visible status filter")
+    direction: str | None = Field(default=None, description="Visible transaction direction filter")
+    bank: str | None = Field(default=None, description="Visible bank name/reference filter")
+    counterparty: str | None = Field(default=None, description="Visible counterparty/recipient/merchant filter")
+
 PendingActionEditOperation: TypeAlias = Literal[
     "remove_tasks",
     "restore_tasks",
@@ -249,6 +286,12 @@ class PendingActionFieldUpdates(BaseModel):
     recipient_bank_name: str | None = Field(default=None, description="Updated recipient bank name")
     source_bank_name: str | None = Field(default=None, description="Updated source account bank reference")
     source_account_index: int | None = Field(default=None, description="1-based source account selection index")
+    use_dual_accounts: bool | None = Field(default=None, description="Whether to pool funding across accounts")
+    source_accounts: list[str] | None = Field(default=None, description="Source accounts/banks requested for pooling")
+    funding_splits: list[FundingSplitUpdate] | None = Field(
+        default=None,
+        description="Explicit source-account funding split for a pending transfer",
+    )
     phone: str | None = Field(default=None, description="Updated airtime/data phone number")
     network: str | None = Field(default=None, description="Updated airtime/data network")
 
@@ -330,6 +373,12 @@ class PendingActionEditDecision(BaseModel):
     recipient_bank_name: str | None = Field(default=None, description="Updated recipient bank name")
     source_bank_name: str | None = Field(default=None, description="Updated source account bank reference")
     source_account_index: int | None = Field(default=None, description="1-based source account selection index")
+    use_dual_accounts: bool | None = Field(default=None, description="Whether to pool funding across accounts")
+    source_accounts: list[str] | None = Field(default=None, description="Source accounts/banks requested for pooling")
+    funding_splits: list[FundingSplitUpdate] | None = Field(
+        default=None,
+        description="Explicit source-account funding split for a pending transfer",
+    )
     phone: str | None = Field(default=None, description="Updated airtime/data phone number")
     network: str | None = Field(default=None, description="Updated airtime/data network")
     add_instruction: str | None = Field(
@@ -356,6 +405,9 @@ class PendingActionEditDecision(BaseModel):
             recipient_bank_name=self.recipient_bank_name,
             source_bank_name=self.source_bank_name,
             source_account_index=self.source_account_index,
+            use_dual_accounts=self.use_dual_accounts,
+            source_accounts=self.source_accounts,
+            funding_splits=self.funding_splits,
             phone=self.phone,
             network=self.network,
         )
@@ -364,15 +416,29 @@ class PendingActionEditDecision(BaseModel):
 class ContextFrameFollowupDecision(BaseModel):
     """LLM interpretation of a user turn relative to the latest displayed response frame."""
 
+    model_config = ConfigDict(extra="forbid")
+
     decision: ContextFrameFollowupAction = Field(
         default="unclear",
         description="Semantic action relative to the latest displayed frame",
     )
     confidence: float = Field(default=0.0, description="Confidence in the frame-follow-up interpretation")
     detected_language: str | None = Field(default=None, description="Detected language for the user turn")
-    reference_text: str | None = Field(
+    target_text: str | None = Field(
         default=None,
-        description="User's referenced entity/filter text when decision needs a target",
+        description="User's referenced displayed entity, label, bank, recipient, group, or other visible target",
+    )
+    requested_field: ContextFrameRequestedField | None = Field(
+        default=None,
+        description="Specific safe displayed field the user asks about",
+    )
+    rank: ContextFrameRank | None = Field(
+        default=None,
+        description="Ranking selector when the user asks for largest/smallest/newest/oldest displayed item",
+    )
+    filters: ContextFrameFollowupFilters | None = Field(
+        default=None,
+        description="Structured filters to narrow displayed items",
     )
     selection_index: int | None = Field(
         default=None,

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from shared.assistant_profile.adapters import build_planner_profile_summary
-from shared.assistant_profile.loader import get_cached_assistant_profile
+from shared.assistant_profile.voice import build_planner_voice_block
 from shared.services.task_planner_prompt_atoms import PLANNER_RULE_ATOMS
 from shared.services.task_planner_prompt_compiler import build_planner_system_prompt as _build_compiled_prompt
 from shared.services.task_planner_prompt_models import (
@@ -14,7 +13,7 @@ from shared.services.task_planner_prompt_models import (
 
 
 def _build_planner_policy_block() -> str:
-    return build_planner_profile_summary(get_cached_assistant_profile())
+    return build_planner_voice_block()
 
 
 PLANNER_POLICY_BLOCK = _build_planner_policy_block()

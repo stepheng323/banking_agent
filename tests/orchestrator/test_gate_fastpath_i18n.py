@@ -768,6 +768,65 @@ async def test_gate_query_shortcut_followup_bypasses_semantic_router_without_pen
     assert updates.get("waves") == [["direct_query"]]
 
 
+async def test_gate_active_query_session_preempts_context_frame_followup() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.96),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_surface_preempts_query_shortcut",
+        phone_number="2348999999998",
+        channel="whatsapp",
+        last_message_text="details",
+        loaded_context={"language": "en"},
+        stashed_query_session={"session_active": True, "query_result": {"summary_text": "Showing 1-5 of 8"}},
+        context_frames=[
+            ContextFrame(
+                frame_id="surface_tx_details",
+                frame_type=ContextFrameType.TRANSACTION_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.TRANSACTION,
+                        entity_id="tx-surface-1",
+                        label="Transfer to Tolu",
+                        data={
+                            "amount": 2000,
+                            "bank_name": "GTBank",
+                            "transaction_type": "debit",
+                            "status": "successful",
+                        },
+                    )
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_followup_bypass"
+    assert updates["routing_owner"] == "query_session"
+    assert updates["routing_decision"] == "query_followup_bypass"
+    assert updates["routing_target_domain"] == "query"
+    assert updates["routing_mode"] == "continuation"
+    assert updates.get("waves") == [["direct_query"]]
+
+
 async def test_gate_latest_fact_next_followup_stays_in_active_query_session() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -1342,7 +1401,7 @@ async def test_gate_context_frame_lookup_preempts_beneficiary_reroute() -> None:
             decision="entity_lookup",
             confidence=0.96,
             detected_language="English",
-            reference_text="gaines",
+            target_text="gaines",
         ),
     )
     state = OrchestratorState(
@@ -1404,7 +1463,7 @@ async def test_gate_context_frame_expected_missing_entity_preempts_beneficiary_r
             decision="lookup_entity",
             confidence=0.96,
             detected_language="English",
-            reference_text="gaines",
+            target_text="gaines",
             reason="user expected a named beneficiary in the displayed list",
         ),
     )
@@ -1531,7 +1590,7 @@ async def test_gate_context_frame_does_not_steal_fresh_transfer_request() -> Non
             decision="lookup_entity",
             confidence=0.98,
             detected_language="English",
-            reference_text="tolu adebayo",
+            target_text="tolu adebayo",
         ),
     )
     state = OrchestratorState(
@@ -1644,7 +1703,7 @@ async def test_gate_context_frame_filter_operation_preempts_account_reroute() ->
             decision="filter_items",
             confidence=0.94,
             detected_language="English",
-            reference_text="gtbank",
+            target_text="gtbank",
             reason="user wants only the GTBank item from the displayed frame",
         ),
     )

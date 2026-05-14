@@ -8,7 +8,13 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
 from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
-from shared.types.planner import ContextFrameFollowupDecision, PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    ContextFrameFollowupDecision,
+    ContextFrameFollowupFilters,
+    PlannedTask,
+    PlannerOutput,
+    TaskParameters,
+)
 
 
 class _SurfaceFollowupPlanner:
@@ -98,6 +104,101 @@ def _transaction_list_frame() -> ContextFrame:
     )
 
 
+def _transaction_list_frame_with_three_items() -> ContextFrame:
+    frame = _transaction_list_frame()
+    items = [
+        *frame.items,
+        ContextEntity(
+            entity_type=EntityType.TRANSACTION,
+            entity_id="tx-3",
+            label="Transfer to Dad",
+            data={
+                "amount": 30000,
+                "bank_name": "First Bank",
+                "transaction_type": "debit",
+                "status": "successful",
+                "date": "2026-05-03",
+                "reference": "tx-ref-3",
+            },
+        ),
+    ]
+    return frame.model_copy(update={"items": items})
+
+
+def _transaction_list_frame_with_amount_reference() -> ContextFrame:
+    now = int(time.time())
+    return ContextFrame(
+        frame_id="tx_list_amount_ref",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-interest",
+                label="Bank Interest",
+                data={
+                    "amount": 1250,
+                    "bank_name": "Zenith Bank",
+                    "transaction_type": "credit",
+                    "status": "successful",
+                    "date": "2026-04-12",
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-bakare",
+                label="Transfer from Bakare Femi",
+                data={
+                    "amount": 20000,
+                    "bank_name": "Zenith Bank",
+                    "transaction_type": "credit",
+                    "status": "successful",
+                    "date": "2026-04-11",
+                    "reference": "tx-ref-bakare",
+                },
+            ),
+        ],
+        created_at_ts=now,
+        ttl_seconds=600,
+    )
+
+
+def _transaction_list_frame_with_25k_item() -> ContextFrame:
+    now = int(time.time())
+    return ContextFrame(
+        frame_id="tx_list_25k_ref",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-mum",
+                label="Transfer to Mum",
+                data={
+                    "amount": 50000,
+                    "bank_name": "Zenith Bank",
+                    "transaction_type": "debit",
+                    "status": "successful",
+                    "date": "2026-05-07",
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-adebayo",
+                label="Transfer to Adebayo James",
+                data={
+                    "amount": 25000,
+                    "bank_name": "Zenith Bank",
+                    "transaction_type": "debit",
+                    "status": "successful",
+                    "date": "2026-05-06",
+                    "reference": "tx-ref-adebayo",
+                },
+            ),
+        ],
+        created_at_ts=now,
+        ttl_seconds=600,
+    )
+
+
 @pytest.mark.asyncio
 async def test_transaction_surface_followup_selects_second_visible_item() -> None:
     planner = _SurfaceFollowupPlanner(
@@ -125,6 +226,762 @@ async def test_transaction_surface_followup_selects_second_visible_item() -> Non
     assert "Access Bank" in updates["final_response"]
     assert "tx-ref-2" in updates["final_response"]
     assert "Credit from Ada" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_selection_promotes_detail_frame_for_pronoun_followup() -> None:
+    first_planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="select_item",
+            confidence=0.94,
+            selection_index=2,
+            detected_language="English",
+        )
+    )
+    first_state = OrchestratorState(
+        user_id="u_surface_tx_chained_field",
+        phone_number="2348000000030",
+        channel="telegram",
+        last_message_text="show the second one",
+        context_frames=[_transaction_list_frame()],
+    )
+
+    first_updates = await plan_tasks(first_state, _config(first_planner))
+
+    promoted_frame = first_updates["context_frames"][-1]
+    assert promoted_frame.frame_type == ContextFrameType.TRANSACTION_DETAIL
+    assert len(promoted_frame.items) == 1
+    assert promoted_frame.items[0].label == "Transfer to Tolu"
+
+    second_planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.94,
+            requested_field="bank",
+            detected_language="English",
+        )
+    )
+    second_state = OrchestratorState(
+        user_id="u_surface_tx_chained_field",
+        phone_number="2348000000030",
+        channel="telegram",
+        last_message_text="what bank was that?",
+        context_frames=first_updates["context_frames"],
+    )
+
+    second_updates = await plan_tasks(second_state, _config(second_planner))
+
+    assert second_planner.plan_calls == 0
+    assert second_updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Bank: Access Bank" in second_updates["final_response"]
+    assert "Credit from Ada" not in second_updates["final_response"]
+    assert "Which" not in second_updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_can_reference_older_list_after_detail_focus() -> None:
+    first_planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="select_item",
+            confidence=0.94,
+            selection_index=2,
+            detected_language="English",
+        )
+    )
+    first_state = OrchestratorState(
+        user_id="u_surface_tx_chained_back_to_list",
+        phone_number="2348000000031",
+        channel="telegram",
+        last_message_text="show the second one",
+        context_frames=[_transaction_list_frame_with_three_items()],
+    )
+
+    first_updates = await plan_tasks(first_state, _config(first_planner))
+
+    second_planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="select_item",
+            confidence=0.94,
+            selection_index=3,
+            detected_language="English",
+        )
+    )
+    second_state = OrchestratorState(
+        user_id="u_surface_tx_chained_back_to_list",
+        phone_number="2348000000031",
+        channel="telegram",
+        last_message_text="now show the 3rd transaction",
+        context_frames=first_updates["context_frames"],
+    )
+
+    second_updates = await plan_tasks(second_state, _config(second_planner))
+
+    assert second_planner.plan_calls == 0
+    assert "Current focus:" in (second_planner.last_frame_context or "")
+    assert "Earlier result 1:" in (second_planner.last_frame_context or "")
+    assert second_updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Transfer to Dad" in second_updates["final_response"]
+    assert "First Bank" in second_updates["final_response"]
+    assert "tx-ref-3" in second_updates["final_response"]
+    assert "Transfer to Tolu" not in second_updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_followup_selects_visible_amount_reference() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.94,
+            target_text="20k",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_amount_ref",
+        phone_number="2348000000032",
+        channel="telegram",
+        last_message_text="show the details of the 20k one",
+        context_frames=[_transaction_list_frame_with_amount_reference()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Transaction Details" in updates["final_response"]
+    assert "Transfer from Bakare Femi" in updates["final_response"]
+    assert "Amount: 20000" in updates["final_response"]
+    assert "Bank Interest" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_unclear_transaction_surface_followup_still_grounds_visible_amount_reference() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="unclear",
+            confidence=0.82,
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_unclear_amount_ref",
+        phone_number="2348000000033",
+        channel="telegram",
+        last_message_text="I mean the 25k one",
+        context_frames=[_transaction_list_frame_with_25k_item()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Transaction Details" in updates["final_response"]
+    assert "Transfer to Dad" not in updates["final_response"]
+    assert "Adebayo James" in updates["final_response"]
+    assert "Amount: 25000" in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_unclear_transaction_surface_followup_reports_missing_visible_amount_reference() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="unclear",
+            confidence=0.82,
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_unclear_missing_amount_ref",
+        phone_number="2348000000034",
+        channel="telegram",
+        last_message_text="what is the 24k one for",
+        context_frames=[_transaction_list_frame_with_three_items()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["final_response"] == "I don't see ₦24,000 in the transactions or results I showed."
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_followup_does_not_fallback_when_amount_is_missing() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.94,
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_missing_amount_detail",
+        phone_number="2348000000035",
+        channel="telegram",
+        last_message_text="show the details of the 20k one",
+        context_frames=[_transaction_list_frame_with_25k_item()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert updates["final_response"] == "I don't see ₦20,000 in the transactions or results I showed."
+    assert "Adebayo James" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_followup_answers_selected_field_only() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.94,
+            selection_index=2,
+            requested_field="bank",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_field",
+        phone_number="2348000000017",
+        channel="telegram",
+        last_message_text="what bank was the second one?",
+        context_frames=[_transaction_list_frame()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Transfer to Tolu" in updates["final_response"]
+    assert "Bank: Access Bank" in updates["final_response"]
+    assert "Amount:" not in updates["final_response"]
+    assert "Credit from Ada" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_followup_answers_typed_selected_field_only() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.94,
+            selection_index=2,
+            requested_field="bank",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_typed_field",
+        phone_number="2348000000019",
+        channel="telegram",
+        last_message_text="what bank was the second one?",
+        context_frames=[_transaction_list_frame()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Transfer to Tolu" in updates["final_response"]
+    assert "Bank: Access Bank" in updates["final_response"]
+    assert "Amount:" not in updates["final_response"]
+    assert "Credit from Ada" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_followup_selects_largest_result() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="filter_items",
+            confidence=0.94,
+            rank="largest",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_largest",
+        phone_number="2348000000018",
+        channel="telegram",
+        last_message_text="show the largest",
+        context_frames=[_transaction_list_frame()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Credit from Ada" in updates["final_response"]
+    assert "Amount: 5000" in updates["final_response"]
+    assert "Transfer to Tolu" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_surface_followup_selects_typed_largest_result() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="filter_items",
+            confidence=0.94,
+            rank="largest",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_tx_typed_largest",
+        phone_number="2348000000020",
+        channel="telegram",
+        last_message_text="show the largest",
+        context_frames=[_transaction_list_frame()],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Credit from Ada" in updates["final_response"]
+    assert "Amount: 5000" in updates["final_response"]
+    assert "Transfer to Tolu" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_grouped_surface_followup_filters_by_typed_transaction_type() -> None:
+    frame = ContextFrame(
+        frame_id="grouped_tx_recent",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="group-credit",
+                label="Credits",
+                data={"amount": 25000, "count": 3, "transaction_type": "credit", "bank_name": "GTBank"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="group-debit",
+                label="Debits",
+                data={"amount": 12000, "count": 4, "transaction_type": "debit", "bank_name": "Access Bank"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="filter_items",
+            confidence=0.95,
+            filters=ContextFrameFollowupFilters(transaction_type="credit"),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_grouped_filter",
+        phone_number="2348000000021",
+        channel="telegram",
+        last_message_text="what about credits?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Credits" in updates["final_response"]
+    assert "Amount: 25000" in updates["final_response"]
+    assert "Debits" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_followup_filters_by_typed_bank() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-first",
+                label="First Bank account",
+                data={"bank_name": "First Bank", "account_number": "6000000001", "mandate_status": "pending"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank account",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="filter_items",
+            confidence=0.95,
+            filters=ContextFrameFollowupFilters(bank="GTBank"),
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_bank_filter",
+        phone_number="2348000000022",
+        channel="telegram",
+        last_message_text="which one is GTBank?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "GTBank account" in updates["final_response"]
+    assert "Mandate Status: ready" in updates["final_response"]
+    assert "First Bank account" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_followup_matches_bank_alias_from_target_text() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_alias",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-first",
+                label="First Bank (...0001)",
+                data={"bank_name": "First Bank", "account_number": "6000000001", "mandate_status": "ready"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.95,
+            target_text="the gtb",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_gtb_alias",
+        phone_number="2348000000023",
+        channel="telegram",
+        last_message_text="Show the full details of the Gtb",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "GTBank (...0002)" in updates["final_response"]
+    assert "Account Number: 7000000002" in updates["final_response"]
+    assert "First Bank (...0001)" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_followup_matches_spaced_gt_bank_alias() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_spaced_gt_alias",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-first",
+                label="First Bank (...0001)",
+                data={"bank_name": "First Bank", "account_number": "6000000001", "mandate_status": "ready"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="lookup_entity",
+            confidence=0.95,
+            target_text="gt bank",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_gt_bank_alias",
+        phone_number="2348000000027",
+        channel="telegram",
+        last_message_text="Which one is gtb?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "GTBank (...0002)" in updates["final_response"]
+    assert "First Bank (...0001)" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_followup_matches_pending_status_from_target_text() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_pending",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-zenith",
+                label="Zenith Bank (...9384)",
+                data={"bank_name": "Zenith Bank", "account_number": "1234509384", "mandate_status": "pending"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="lookup_entity",
+            confidence=0.95,
+            target_text="Zenith pending",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_pending",
+        phone_number="2348000000024",
+        channel="telegram",
+        last_message_text="Why is zenith bank pending?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Zenith Bank (...9384)" in updates["final_response"]
+    assert "Mandate Status: pending" in updates["final_response"]
+    assert "I don't see" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_followup_explains_pending_account_status() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_pending_explain",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-zenith",
+                label="Zenith Bank (...9384)",
+                data={"bank_name": "Zenith Bank", "account_number": "1234509384", "mandate_status": "pending"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="explain_result",
+            confidence=0.95,
+            target_text="Zenith Bank",
+            requested_field="status",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_pending_explain",
+        phone_number="2348000000025",
+        channel="telegram",
+        last_message_text="Why is zenith still pending?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Zenith Bank (...9384) is still pending" in updates["final_response"]
+    assert "Mandate Status: pending" in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_followup_explains_how_to_complete_pending_mandate() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_pending_completion",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-zenith",
+                label="Zenith Bank (...9384)",
+                data={
+                    "bank_name": "Zenith Bank",
+                    "account_number": "1234509384",
+                    "mandate_status": "pending",
+                    "extra_data": {
+                        "transfer_destinations": [
+                            {"bank_name": "NIBSS Bank", "account_number": "0001112223"},
+                            {"bank_name": "Test Bank", "account_number": "9998887776"},
+                        ]
+                    },
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="explain_result",
+            confidence=0.95,
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_pending_completion",
+        phone_number="2348000000028",
+        channel="telegram",
+        last_message_text="How do I complete it?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "transfer ₦50 from your Zenith Bank account ending in 9384" in updates["final_response"]
+    assert "NIBSS Bank: 0001112223" in updates["final_response"]
+    assert "Once the bank/NIBSS confirms it" in updates["final_response"]
+
+
+@pytest.mark.parametrize(
+    ("status", "expected", "instruction"),
+    [
+        ("awaiting_authorization", "account authorization is not complete yet", "make the ₦50 authorization transfer"),
+        ("approved", "waiting for final readiness checks", "wait for NIBSS/bank verification"),
+        ("ready", "is ready for transactions", "no action needed"),
+        ("rejected", "authorization was rejected", "contact support or restart account authorization"),
+        ("cancelled", "authorization was cancelled", "reinitiate account authorization"),
+        ("expired", "authorization expired", "restart account authorization"),
+        ("paused", "authorization is paused", "contact support to reinstate"),
+        ("provider_review", "has mandate status: provider_review", ""),
+    ],
+)
+@pytest.mark.asyncio
+async def test_account_surface_followup_explains_known_mandate_statuses(
+    status: str,
+    expected: str,
+    instruction: str,
+) -> None:
+    frame = ContextFrame(
+        frame_id=f"accounts_recent_status_{status}",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-status",
+                label="Zenith Bank (...9384)",
+                data={"bank_name": "Zenith Bank", "account_number": "1234509384", "mandate_status": status},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="explain_result",
+            confidence=0.95,
+            target_text="Zenith",
+            requested_field="status",
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id=f"u_surface_account_status_{status}",
+        phone_number="2348000000029",
+        channel="telegram",
+        last_message_text="what is the status?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert expected in updates["final_response"]
+    assert status in updates["final_response"]
+    if instruction:
+        assert instruction in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_followup_rescues_status_question_misclassified_as_new_task() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_pending_rescue",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-zenith",
+                label="Zenith Bank (...9384)",
+                data={"bank_name": "Zenith Bank", "account_number": "1234509384", "mandate_status": "pending"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="start_new_task",
+            confidence=0.92,
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_pending_rescue",
+        phone_number="2348000000026",
+        channel="telegram",
+        last_message_text="Why is zenith still pending?",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert planner.plan_calls == 0
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "Zenith Bank (...9384) is still pending" in updates["final_response"]
+    assert "Which transaction" not in updates["final_response"]
 
 
 @pytest.mark.asyncio
@@ -214,7 +1071,7 @@ async def test_completed_mixed_transaction_followup_answers_airtime_number_from_
             decision="filter_items",
             confidence=0.94,
             detected_language="English",
-            reference_text="airtime",
+            target_text="airtime",
         )
     )
     state = OrchestratorState(
@@ -406,7 +1263,7 @@ async def test_completed_mixed_transaction_replay_can_target_airtime_only() -> N
             decision="replay_tasks",
             confidence=0.96,
             detected_language="English",
-            reference_text="airtime",
+            target_text="airtime",
         )
     )
     state = OrchestratorState(

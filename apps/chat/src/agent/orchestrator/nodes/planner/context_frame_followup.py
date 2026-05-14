@@ -1,15 +1,17 @@
 """Generic follow-up handling for frame-backed assistant responses."""
 
+import json
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from shared.types.planner import ContextFrameFollowupDecision
+from shared.types.planner import ContextFrameFollowupDecision, ContextFrameFollowupFilters
 
 CONTEXT_READ_LIST_LIMIT = 5
 CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE = 0.55
@@ -46,6 +48,7 @@ _LOOKUP_STOPWORDS = {
     "recipients",
     "saved",
     "show",
+    "still",
     "that",
     "the",
     "then",
@@ -76,9 +79,47 @@ _SEARCHABLE_DATA_KEYS = (
     "recipient_resolved_name",
     "reference",
     "status",
+    "mandate_status",
+    "is_default",
     "transaction_type",
     "type",
 )
+_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "amount": ("amount",),
+    "bank": ("bank_name", "bank", "recipient_bank_name", "source_bank_name"),
+    "counterparty": ("counterparty", "recipient_resolved_name", "recipient_name", "merchant", "name"),
+    "date": ("date", "created_at", "completed_at"),
+    "network": ("network",),
+    "phone": ("recipient_phone", "phone", "phone_number", "target_phone"),
+    "reference": ("reference", "transaction_id", "idempotency_key"),
+    "status": ("status", "provider_status", "final_status", "mandate_status"),
+}
+_RANKING_ALIASES = {
+    "largest": "max",
+    "highest": "max",
+    "biggest": "max",
+    "most": "max",
+    "smallest": "min",
+    "lowest": "min",
+    "least": "min",
+    "newest": "newest",
+    "latest": "newest",
+    "recent": "newest",
+    "oldest": "oldest",
+    "earliest": "oldest",
+}
+_FILTER_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "transaction_type": ("task_type", "transaction_type", "type", "direction"),
+    "status": ("status", "provider_status", "final_status", "mandate_status"),
+    "direction": ("direction", "transaction_type", "type"),
+    "bank": ("bank_name", "bank", "recipient_bank_name", "source_bank_name"),
+    "counterparty": ("counterparty", "recipient_resolved_name", "recipient_name", "merchant", "name", "label"),
+}
+_TOKEN_ALIASES: dict[str, tuple[str, ...]] = {
+    "gt": ("gtbank", "gt bank"),
+    "gtb": ("gtbank",),
+    "gtbank": ("gt bank", "gtb"),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +147,18 @@ def _normalize(text: str) -> str:
 def _lookup_tokens(text: str) -> list[str]:
     tokens = re.findall(r"[a-z0-9]+", text.lower())
     return [token for token in tokens if len(token) > 1 and token not in _LOOKUP_STOPWORDS]
+
+
+def _token_variants(token: str) -> tuple[str, ...]:
+    return (token, *_TOKEN_ALIASES.get(token, ()))
+
+
+def _token_matches_searchable(token: str, searchable: str) -> bool:
+    return any(re.search(rf"\b{re.escape(variant)}\b", searchable) for variant in _token_variants(token))
+
+
+def _semantic_tokens(text: str | None) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(token) > 1}
 
 
 def _frame_noun(frame_type: ContextFrameType, *, plural: bool) -> str:
@@ -216,6 +269,221 @@ def _format_detail_block(entity: ContextEntity, *, ordinal: int | None = None) -
     return "\n".join(lines)
 
 
+def _requested_field_keys(requested_field: str | None) -> tuple[str, tuple[str, ...]] | None:
+    if not requested_field:
+        return None
+    label = requested_field.strip().lower()
+    keys = _FIELD_ALIASES.get(label)
+    return (label, keys) if keys else None
+
+
+def _decision_target_text(decision: ContextFrameFollowupDecision) -> str:
+    return (decision.target_text or "").strip()
+
+
+def _decision_field_text(decision: ContextFrameFollowupDecision) -> str | None:
+    return decision.requested_field
+
+
+def _decision_rank_text(decision: ContextFrameFollowupDecision) -> str | None:
+    return decision.rank
+
+
+def _has_filters(filters: ContextFrameFollowupFilters | None) -> bool:
+    if filters is None:
+        return False
+    return any(
+        bool(value)
+        for value in (
+            filters.transaction_type,
+            filters.status,
+            filters.direction,
+            filters.bank,
+            filters.counterparty,
+        )
+    )
+
+
+def _value_matches_filter(value: Any, expected: str) -> bool:
+    if value is None or value == "":
+        return False
+    expected_tokens = _lookup_tokens(expected) or list(_semantic_tokens(expected))
+    if not expected_tokens:
+        return False
+    haystack = _normalize(str(value))
+    return all(_token_matches_searchable(token, haystack) for token in expected_tokens)
+
+
+def _entity_matches_filter(entity: ContextEntity, filter_name: str, expected: str) -> bool:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    for key in _FILTER_FIELD_ALIASES[filter_name]:
+        value = entity.label if key == "label" else data.get(key)
+        if _value_matches_filter(value, expected):
+            return True
+    return False
+
+
+def _find_filtered_entities(
+    frame: ContextFrame,
+    filters: ContextFrameFollowupFilters | None,
+) -> list[ContextEntity]:
+    if not _has_filters(filters) or filters is None:
+        return []
+
+    active_filters = {
+        "transaction_type": filters.transaction_type,
+        "status": filters.status,
+        "direction": filters.direction,
+        "bank": filters.bank,
+        "counterparty": filters.counterparty,
+    }
+    matches: list[ContextEntity] = []
+    for entity in frame.items:
+        if all(
+            _entity_matches_filter(entity, filter_name, expected)
+            for filter_name, expected in active_filters.items()
+            if expected
+        ):
+            matches.append(entity)
+    return matches
+
+
+def _entity_field_value(entity: ContextEntity, keys: tuple[str, ...]) -> Any:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    for key in keys:
+        value = data.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _format_field_response(
+    frame: ContextFrame,
+    entities: list[ContextEntity],
+    requested_field: str | None,
+) -> str | None:
+    field = _requested_field_keys(requested_field)
+    if field is None or not entities:
+        return None
+
+    label, keys = field
+    lines: list[str] = []
+    for idx, entity in enumerate(entities[:CONTEXT_READ_LIST_LIMIT], 1):
+        value = _entity_field_value(entity, keys)
+        if value is None:
+            continue
+        prefix = f"{idx}. {entity.label}: " if len(entities) > 1 else ""
+        lines.append(f"{prefix}{_display_key(label)}: {value}")
+
+    if not lines:
+        return None
+    header = _detail_header(frame) if len(entities) > 1 else entity.label or _detail_header(frame)
+    return f"{header}\n\n" + "\n".join(lines)
+
+
+def _numeric_rank_value(entity: ContextEntity) -> float | None:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    for key in ("amount", "count", "balance", "available_balance"):
+        value = data.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            cleaned = re.sub(r"[^0-9.\-]", "", value)
+            if cleaned:
+                try:
+                    return float(cleaned)
+                except ValueError:
+                    continue
+    return None
+
+
+def _amount_reference_values(text: str | None) -> set[float]:
+    if not text:
+        return set()
+
+    values: set[float] = set()
+    normalized = text.lower().replace(",", "")
+
+    def _add(raw_number: str, suffix: str | None = None) -> None:
+        try:
+            value = float(raw_number)
+        except ValueError:
+            return
+        if suffix == "k":
+            value *= 1000
+        elif suffix == "m":
+            value *= 1_000_000
+        values.add(value)
+
+    for match in re.finditer(r"(?:₦|ngn|naira)\s*([0-9]+(?:\.[0-9]+)?)\s*([km])?\b", normalized):
+        _add(match.group(1), match.group(2))
+
+    for match in re.finditer(r"\b([0-9]+(?:\.[0-9]+)?)\s*([km])\b", normalized):
+        _add(match.group(1), match.group(2))
+
+    for match in re.finditer(r"\b[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?\b", text.lower()):
+        _add(match.group(0).replace(",", ""))
+
+    for match in re.finditer(r"\b[0-9]{4,}(?:\.[0-9]+)?\b", normalized):
+        _add(match.group(0))
+
+    return values
+
+
+def _entity_matches_amount_reference(entity: ContextEntity, amount_refs: set[float]) -> bool:
+    if not amount_refs:
+        return False
+    value = _numeric_rank_value(entity)
+    if value is None:
+        return False
+    abs_value = abs(value)
+    return any(abs(abs_value - abs(target)) < 0.01 for target in amount_refs)
+
+
+def _format_currency_amount(value: float) -> str:
+    normalized = abs(value)
+    if normalized.is_integer():
+        return f"₦{normalized:,.0f}"
+    return f"₦{normalized:,.2f}"
+
+
+def _date_rank_value(entity: ContextEntity) -> float | None:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    for key in ("date", "completed_at", "created_at"):
+        value = data.get(key)
+        if not value:
+            continue
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            candidate = value.replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(candidate).timestamp()
+            except ValueError:
+                continue
+    return None
+
+
+def _ranked_entity(frame: ContextFrame, rank_text: str | None) -> ContextEntity | None:
+    tokens = _semantic_tokens(rank_text)
+    rank_mode = next((_RANKING_ALIASES[token] for token in tokens if token in _RANKING_ALIASES), None)
+    if rank_mode is None:
+        return None
+
+    if rank_mode in {"newest", "oldest"}:
+        scored = [(entity, value) for entity in frame.items if (value := _date_rank_value(entity)) is not None]
+        if not scored:
+            return None
+        if rank_mode == "newest":
+            return max(scored, key=lambda item: item[1])[0]
+        return min(scored, key=lambda item: item[1])[0]
+
+    scored = [(entity, value) for entity in frame.items if (value := _numeric_rank_value(entity)) is not None]
+    if not scored:
+        return None
+    return max(scored, key=lambda item: item[1])[0] if rank_mode == "max" else min(scored, key=lambda item: item[1])[0]
+
+
 def _searchable_text(entity: ContextEntity) -> str:
     parts = [entity.label or ""]
     data = entity.data if isinstance(entity.data, dict) else {}
@@ -228,13 +496,18 @@ def _searchable_text(entity: ContextEntity) -> str:
 
 def _find_matching_entities(frame: ContextFrame, lookup_query: str) -> list[ContextEntity]:
     query_tokens = _lookup_tokens(lookup_query)
-    if not query_tokens:
+    amount_refs = _amount_reference_values(lookup_query)
+    if not query_tokens and not amount_refs:
         return []
+
+    amount_matches = [entity for entity in frame.items if _entity_matches_amount_reference(entity, amount_refs)]
+    if amount_matches:
+        return amount_matches
 
     matches: list[ContextEntity] = []
     for entity in frame.items:
         searchable = _searchable_text(entity)
-        if all(re.search(rf"\b{re.escape(token)}\b", searchable) for token in query_tokens):
+        if all(_token_matches_searchable(token, searchable) for token in query_tokens):
             matches.append(entity)
     if matches:
         return matches
@@ -243,9 +516,49 @@ def _find_matching_entities(frame: ContextFrame, lookup_query: str) -> list[Cont
     # where the visible labels carry branch qualifiers.
     for entity in frame.items:
         searchable = _searchable_text(entity)
-        if any(re.search(rf"\b{re.escape(token)}\b", searchable) for token in query_tokens):
+        if any(_token_matches_searchable(token, searchable) for token in query_tokens):
             matches.append(entity)
     return matches
+
+
+def _account_status_grounded_entities(frame: ContextFrame, text: str) -> list[ContextEntity]:
+    """Find account entities when text names the account and one of its visible statuses."""
+    if frame.frame_type != ContextFrameType.ACCOUNT_LIST:
+        return []
+
+    tokens = set(_lookup_tokens(text)) | _semantic_tokens(text)
+    if not tokens:
+        return []
+
+    matches: list[ContextEntity] = []
+    for entity in frame.items:
+        data = entity.data if isinstance(entity.data, dict) else {}
+        status = str(data.get("mandate_status") or data.get("status") or "").strip().lower()
+        if not status or not any(_token_matches_searchable(token, status) for token in tokens):
+            continue
+
+        identity_values = [
+            entity.label or "",
+            str(data.get("bank_name") or ""),
+            str(data.get("bank") or ""),
+            str(data.get("account_number") or ""),
+        ]
+        identity = _normalize(" ".join(identity_values))
+        if any(_token_matches_searchable(token, identity) for token in tokens):
+            matches.append(entity)
+    return matches
+
+
+def _pending_account_entities(frame: ContextFrame) -> list[ContextEntity]:
+    if frame.frame_type != ContextFrameType.ACCOUNT_LIST:
+        return []
+    entities: list[ContextEntity] = []
+    for entity in frame.items:
+        data = entity.data if isinstance(entity.data, dict) else {}
+        status = str(data.get("mandate_status") or data.get("status") or "").strip().lower()
+        if status and status != "ready":
+            entities.append(entity)
+    return entities
 
 
 def _detail_header(frame: ContextFrame) -> str:
@@ -253,7 +566,7 @@ def _detail_header(frame: ContextFrame) -> str:
         return "Saved Beneficiary Details" if len(frame.items) > 1 else "Beneficiary Details"
     if frame.frame_type == ContextFrameType.ACCOUNT_LIST:
         return "Linked Account Details" if len(frame.items) > 1 else "Account Details"
-    if frame.frame_type == ContextFrameType.TRANSACTION_LIST:
+    if frame.frame_type in {ContextFrameType.TRANSACTION_LIST, ContextFrameType.TRANSACTION_DETAIL}:
         return "Transaction Details"
     if frame.frame_type == ContextFrameType.RECEIPT:
         return "Receipt Details"
@@ -343,11 +656,15 @@ def _format_selection_response(frame: ContextFrame, decision: ContextFrameFollow
     if decision.selection_index is not None:
         idx = decision.selection_index - 1
         if 0 <= idx < len(frame.items):
-            return _format_entity_details(frame, [frame.items[idx]])
+            field_response = _format_field_response(frame, [frame.items[idx]], _decision_field_text(decision))
+            return field_response or _format_entity_details(frame, [frame.items[idx]])
 
-    reference_text = (decision.reference_text or "").strip()
-    if reference_text:
-        return _format_lookup_response(frame, reference_text, explicit_lookup=True)
+    target_text = _decision_target_text(decision)
+    if target_text:
+        ranked = _ranked_entity(frame, _decision_rank_text(decision))
+        if ranked is not None:
+            return _format_entity_details(frame, [ranked])
+        return _format_lookup_response(frame, target_text, explicit_lookup=True)
     return None
 
 
@@ -363,18 +680,56 @@ def _canonical_decision(decision: str) -> str:
     return aliases.get(decision, decision)
 
 
-def _format_filter_response(frame: ContextFrame, reference_text: str) -> str | None:
-    matches = _find_matching_entities(frame, reference_text)
+def _format_filter_response(
+    frame: ContextFrame,
+    target_text: str,
+    *,
+    rank_text: str | None = None,
+    filters: ContextFrameFollowupFilters | None = None,
+) -> str | None:
+    ranked = _ranked_entity(frame, rank_text)
+    if ranked is not None:
+        return _format_entity_details(frame, [ranked])
+
+    matches = _find_filtered_entities(frame, filters)
+    if matches:
+        return _format_entity_details(frame, matches)
+
+    matches = _find_matching_entities(frame, target_text)
     if not matches:
-        query_label = " ".join(_lookup_tokens(reference_text)).title()
+        query_label = " ".join(_lookup_tokens(target_text)).title()
+        if not query_label and filters is not None:
+            query_label = " ".join(
+                str(value).strip()
+                for value in (
+                    filters.transaction_type,
+                    filters.status,
+                    filters.direction,
+                    filters.bank,
+                    filters.counterparty,
+                )
+                if value
+            ).title()
         if not query_label:
             return None
         return f"I don't see {query_label} in the {_frame_noun(frame.frame_type, plural=True)} I showed."
     return _format_entity_details(frame, matches)
 
 
-def _format_compare_response(frame: ContextFrame, reference_text: str | None) -> str | None:
-    entities = _find_matching_entities(frame, reference_text) if reference_text else frame.items
+def _format_compare_response(
+    frame: ContextFrame,
+    target_text: str | None,
+    *,
+    rank_text: str | None = None,
+    filters: ContextFrameFollowupFilters | None = None,
+) -> str | None:
+    ranked = _ranked_entity(frame, rank_text)
+    if ranked is not None:
+        return _format_entity_details(frame, [ranked])
+
+    entities = _find_filtered_entities(frame, filters)
+    if not entities:
+        entities = _find_matching_entities(frame, target_text) if target_text else frame.items
     if len(entities) < 2:
         entities = frame.items
     if len(entities) < 2:
@@ -398,7 +753,165 @@ def _format_compare_response(frame: ContextFrame, reference_text: str | None) ->
     return "Comparison\n\n" + "\n\n".join(blocks) + suffix
 
 
-def _format_explain_result_response(frame: ContextFrame) -> str | None:
+def _format_account_status_explanation(entity: ContextEntity) -> str | None:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    status = str(data.get("mandate_status") or data.get("status") or "").strip()
+    if not status:
+        return None
+
+    label = entity.label or str(data.get("bank_name") or "This account")
+    normalized_status = status.lower()
+    if normalized_status in {"pending", "awaiting_authorization"}:
+        readable_status = "pending" if normalized_status == "pending" else "awaiting authorization"
+        lines = [
+            f"{label} is still {readable_status} because the account authorization is not complete yet.",
+            "",
+            f"Mandate Status: {status}",
+        ]
+        lines.extend(["", _format_account_status_instruction(normalized_status, data)])
+        return "\n".join(lines)
+    if normalized_status == "approved":
+        return (
+            f"{label} authorization has been approved, but the account is still waiting for final readiness checks.\n\n"
+            f"Mandate Status: {status}\n\n"
+            f"{_format_account_status_instruction(normalized_status, data)}"
+        )
+    if normalized_status == "ready":
+        return (
+            f"{label} is ready for transactions.\n\n"
+            "Mandate Status: ready\n\n"
+            f"{_format_account_status_instruction(normalized_status, data)}"
+        )
+    if normalized_status == "rejected":
+        return (
+            f"{label} authorization was rejected. "
+            "You may need to restart account authorization or relink the account.\n\n"
+            f"Mandate Status: {status}\n\n"
+            f"{_format_account_status_instruction(normalized_status, data)}"
+        )
+    if normalized_status == "cancelled":
+        return (
+            f"{label} authorization was cancelled. Relink or reauthorize the account to use it for transactions.\n\n"
+            f"Mandate Status: {status}\n\n"
+            f"{_format_account_status_instruction(normalized_status, data)}"
+        )
+    if normalized_status == "expired":
+        return (
+            f"{label} authorization expired before completion. Restart account authorization to activate it.\n\n"
+            f"Mandate Status: {status}\n\n"
+            f"{_format_account_status_instruction(normalized_status, data)}"
+        )
+    if normalized_status == "paused":
+        return (
+            f"{label} authorization is paused.\n\n"
+            f"Mandate Status: {status}\n\n"
+            f"{_format_account_status_instruction(normalized_status, data)}"
+        )
+    return f"{label} has mandate status: {status}."
+
+
+def _account_extra_data(data: dict[str, Any]) -> dict[str, Any]:
+    extra_data = data.get("extra_data")
+    if isinstance(extra_data, dict):
+        return extra_data
+    if isinstance(extra_data, str):
+        try:
+            parsed = json.loads(extra_data)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _account_transfer_destinations(data: dict[str, Any]) -> list[dict[str, str]]:
+    raw = data.get("transfer_destinations")
+    if not isinstance(raw, list):
+        raw = _account_extra_data(data).get("transfer_destinations")
+    if not isinstance(raw, list):
+        return []
+
+    destinations: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        bank_name = str(item.get("bank_name") or "").strip()
+        account_number = str(item.get("account_number") or "").strip()
+        if bank_name and account_number:
+            destinations.append({"bank_name": bank_name, "account_number": account_number})
+    return destinations
+
+
+def _format_pending_account_completion_steps(data: dict[str, Any]) -> str:
+    bank_name = str(data.get("bank_name") or data.get("bank") or "the pending account").strip()
+    account_number = str(data.get("account_number") or data.get("number") or "").strip()
+    suffix = f" ending in {account_number[-4:]}" if account_number else ""
+    destinations = _account_transfer_destinations(data)
+
+    if not destinations:
+        return (
+            f"To complete it, make the ₦50 authorization transfer from your {bank_name} account{suffix}. "
+            "Once the bank/NIBSS confirms it, the account becomes ready."
+        )
+
+    lines = [f"To complete it, transfer ₦50 from your {bank_name} account{suffix} to any of these accounts:"]
+    for destination in destinations:
+        lines.append(f"• {destination['bank_name']}: {destination['account_number']}")
+    lines.append("Once the bank/NIBSS confirms it, the account becomes ready.")
+    return "\n".join(lines)
+
+
+def _format_account_status_instruction(normalized_status: str, data: dict[str, Any]) -> str:
+    if normalized_status in {"pending", "awaiting_authorization"}:
+        return _format_pending_account_completion_steps(data)
+    if normalized_status == "approved":
+        return (
+            "Next step: wait for NIBSS/bank verification. "
+            "This usually takes a few minutes but can take up to 24 hours."
+        )
+    if normalized_status == "ready":
+        return "Next step: no action needed. You can use this account for payments."
+    if normalized_status == "rejected":
+        return "Next step: contact support or restart account authorization before using this account for payments."
+    if normalized_status == "cancelled":
+        return "Next step: reinitiate account authorization or relink the account."
+    if normalized_status == "expired":
+        return "Next step: restart account authorization; the previous authorization window has expired."
+    if normalized_status == "paused":
+        return "Next step: contact support to reinstate this account authorization."
+    return ""
+
+
+def _format_explain_result_response(
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision | None = None,
+    *,
+    text: str = "",
+) -> str | None:
+    if decision is not None:
+        entities: list[ContextEntity] = []
+        if decision.selection_index is not None:
+            idx = decision.selection_index - 1
+            if 0 <= idx < len(frame.items):
+                entities = [frame.items[idx]]
+        if not entities and _has_filters(decision.filters):
+            entities = _find_filtered_entities(frame, decision.filters)
+        if not entities and _decision_target_text(decision):
+            entities = _find_matching_entities(frame, _decision_target_text(decision))
+        if not entities and text:
+            entities = _account_status_grounded_entities(frame, text)
+        if not entities and frame.frame_type == ContextFrameType.ACCOUNT_LIST:
+            pending_accounts = _pending_account_entities(frame)
+            if len(pending_accounts) == 1:
+                entities = pending_accounts
+
+        if len(entities) == 1 and frame.frame_type == ContextFrameType.ACCOUNT_LIST:
+            explanation = _format_account_status_explanation(entities[0])
+            if explanation:
+                return explanation
+        if entities:
+            field_response = _format_field_response(frame, entities, _decision_field_text(decision))
+            return field_response or _format_entity_details(frame, entities)
+
     count = len(frame.items)
     if count <= 0:
         return None
@@ -425,9 +938,32 @@ def _format_frame_clarification_response(frame: ContextFrame) -> str | None:
     return "Are you asking about the items I just showed?"
 
 
+def _format_unclear_grounded_target_response(frame: ContextFrame, text: str) -> str | None:
+    amount_refs = _amount_reference_values(text)
+    matches = _find_matching_entities(frame, text)
+    if len(matches) == 1:
+        return _format_entity_details(frame, matches)
+    if len(matches) > 1:
+        return _format_entity_details(frame, matches)
+    if amount_refs:
+        amounts = ", ".join(_format_currency_amount(value) for value in sorted(amount_refs))
+        return f"I don't see {amounts} in the {_frame_noun(frame.frame_type, plural=True)} I showed."
+    return None
+
+
+def _format_missing_amount_reference_response(frame: ContextFrame, text: str | None) -> str | None:
+    amount_refs = _amount_reference_values(text)
+    if not amount_refs:
+        return None
+    amounts = ", ".join(_format_currency_amount(value) for value in sorted(amount_refs))
+    return f"I don't see {amounts} in the {_frame_noun(frame.frame_type, plural=True)} I showed."
+
+
 def _format_semantic_decision_response(
     frame: ContextFrame,
     decision: ContextFrameFollowupDecision,
+    *,
+    text: str = "",
 ) -> str | None:
     if decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
         return None
@@ -435,6 +971,11 @@ def _format_semantic_decision_response(
     semantic_decision = _canonical_decision(decision.decision)
 
     if semantic_decision == "start_new_task":
+        status_matches = _account_status_grounded_entities(frame, text)
+        if len(status_matches) == 1:
+            explanation = _format_account_status_explanation(status_matches[0])
+            if explanation:
+                return explanation
         return None
 
     if semantic_decision == "replay_tasks":
@@ -444,38 +985,147 @@ def _format_semantic_decision_response(
         return _format_completeness_response(frame)
 
     if semantic_decision == "show_details":
-        reference_text = (decision.reference_text or "").strip()
-        if reference_text:
-            matches = _find_matching_entities(frame, reference_text)
+        target_text = _decision_target_text(decision)
+        field_text = _decision_field_text(decision)
+        rank_text = _decision_rank_text(decision)
+        if decision.selection_index is not None:
+            idx = decision.selection_index - 1
+            if 0 <= idx < len(frame.items):
+                field_response = _format_field_response(frame, [frame.items[idx]], field_text)
+                return field_response or _format_entity_details(frame, [frame.items[idx]])
+        if rank_text:
+            ranked = _ranked_entity(frame, rank_text)
+            if ranked is not None:
+                return _format_entity_details(frame, [ranked])
+        if target_text:
+            matches = _find_matching_entities(frame, target_text)
             if matches:
-                return _format_entity_details(frame, matches)
+                field_response = _format_field_response(frame, matches, field_text)
+                return field_response or _format_entity_details(frame, matches)
+            missing_amount_response = _format_missing_amount_reference_response(frame, target_text)
+            if missing_amount_response:
+                return missing_amount_response
+        matches = _find_filtered_entities(frame, decision.filters)
+        if matches:
+            field_response = _format_field_response(frame, matches, field_text)
+            return field_response or _format_entity_details(frame, matches)
+        field_response = _format_field_response(frame, frame.items, field_text)
+        if field_response:
+            return field_response
         return _format_details_response(frame, "details")
 
     if semantic_decision == "lookup_entity":
-        reference_text = (decision.reference_text or "").strip()
-        if not reference_text:
+        target_text = _decision_target_text(decision)
+        if not target_text:
             return _format_frame_clarification_response(frame)
-        return _format_lookup_response(frame, reference_text, explicit_lookup=True)
+        return _format_lookup_response(frame, target_text, explicit_lookup=True)
 
     if semantic_decision == "filter_items":
-        reference_text = (decision.reference_text or "").strip()
-        if not reference_text:
+        target_text = _decision_target_text(decision)
+        if not target_text and not decision.rank and not _has_filters(decision.filters):
             return _format_frame_clarification_response(frame)
-        return _format_filter_response(frame, reference_text)
+        return _format_filter_response(
+            frame,
+            target_text,
+            rank_text=_decision_rank_text(decision),
+            filters=decision.filters,
+        )
 
     if semantic_decision == "compare_items":
-        return _format_compare_response(frame, (decision.reference_text or "").strip() or None)
+        return _format_compare_response(
+            frame,
+            _decision_target_text(decision) or None,
+            rank_text=_decision_rank_text(decision),
+            filters=decision.filters,
+        )
 
     if semantic_decision == "select_item":
         return _format_selection_response(frame, decision)
 
     if semantic_decision == "explain_result":
-        return _format_explain_result_response(frame)
+        return _format_explain_result_response(frame, decision, text=text)
 
     if semantic_decision == "unclear" and decision.confidence >= CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
+        grounded_target = _format_unclear_grounded_target_response(frame, text)
+        if grounded_target:
+            return grounded_target
         return _format_frame_clarification_response(frame)
 
     return None
+
+
+def _active_context_frames(state: OrchestratorState) -> list[ContextFrame]:
+    now = int(time.time())
+    return [
+        frame
+        for frame in state.context_frames
+        if frame.items and (frame.created_at_ts + frame.ttl_seconds) > now
+    ]
+
+
+def _decision_has_entity_match(frame: ContextFrame, decision: ContextFrameFollowupDecision) -> bool:
+    if decision.selection_index is not None:
+        idx = decision.selection_index - 1
+        return 0 <= idx < len(frame.items)
+
+    if _ranked_entity(frame, _decision_rank_text(decision)) is not None:
+        return True
+
+    if _find_filtered_entities(frame, decision.filters):
+        return True
+
+    target_text = _decision_target_text(decision)
+    return bool(target_text and _find_matching_entities(frame, target_text))
+
+
+def _frame_supports_decision(frame: ContextFrame, decision: ContextFrameFollowupDecision) -> bool:
+    semantic_decision = _canonical_decision(decision.decision)
+    if semantic_decision in {"start_new_task", "unclear", "answer_completeness", "compare_items", "replay_tasks"}:
+        return True
+    if semantic_decision in {"show_details", "select_item", "filter_items", "lookup_entity", "explain_result"}:
+        if _decision_has_entity_match(frame, decision):
+            return True
+        if (
+            semantic_decision == "show_details"
+            and decision.requested_field
+            and len(frame.items) == 1
+            and frame.frame_type in {ContextFrameType.TRANSACTION_DETAIL, ContextFrameType.RECEIPT}
+        ):
+            return True
+    return False
+
+
+def _select_frame_for_decision(state: OrchestratorState, decision: ContextFrameFollowupDecision) -> ContextFrame | None:
+    active_frames = _active_context_frames(state)
+    if not active_frames:
+        return None
+
+    latest = active_frames[-1]
+    if _frame_supports_decision(latest, decision):
+        return latest
+
+    latest_domain = _frame_domain(latest.frame_type)
+    for frame in reversed(active_frames[:-1]):
+        if latest_domain and _frame_domain(frame.frame_type) != latest_domain:
+            continue
+        if _frame_supports_decision(frame, decision):
+            return frame
+    return latest
+
+
+def _decision_with_grounding_hints(
+    decision: ContextFrameFollowupDecision,
+    text: str,
+) -> ContextFrameFollowupDecision:
+    """Promote obvious visible references from raw text when the classifier omitted them."""
+    semantic_decision = _canonical_decision(decision.decision)
+    if semantic_decision not in {"show_details", "select_item", "filter_items", "lookup_entity", "explain_result"}:
+        return decision
+    if _decision_target_text(decision):
+        return decision
+    if not _amount_reference_values(text):
+        return decision
+    return decision.model_copy(update={"target_text": text})
 
 
 def _transaction_task_type(entity: ContextEntity) -> str:
@@ -629,9 +1279,13 @@ def _replay_target_entities(frame: ContextFrame, decision: ContextFrameFollowupD
             return [frame.items[idx]]
         return []
 
-    reference_text = (decision.reference_text or "").strip()
-    if reference_text:
-        return _find_matching_entities(frame, reference_text)
+    target_text = _decision_target_text(decision)
+    if target_text:
+        return _find_matching_entities(frame, target_text)
+
+    filtered = _find_filtered_entities(frame, decision.filters)
+    if filtered:
+        return filtered
 
     return list(frame.items)
 
@@ -676,6 +1330,80 @@ def _build_replay_response(
     )
 
 
+def _single_focus_entity_for_decision(
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+) -> ContextEntity | None:
+    semantic_decision = _canonical_decision(decision.decision)
+    if semantic_decision not in {"show_details", "select_item", "filter_items", "lookup_entity", "explain_result"}:
+        return None
+
+    if decision.selection_index is not None:
+        idx = decision.selection_index - 1
+        if 0 <= idx < len(frame.items):
+            return frame.items[idx]
+        return None
+
+    ranked = _ranked_entity(frame, _decision_rank_text(decision))
+    if ranked is not None:
+        return ranked
+
+    matches = _find_filtered_entities(frame, decision.filters)
+    if len(matches) == 1:
+        return matches[0]
+
+    target_text = _decision_target_text(decision)
+    if target_text:
+        matches = _find_matching_entities(frame, target_text)
+        if len(matches) == 1:
+            return matches[0]
+
+    if len(frame.items) == 1:
+        return frame.items[0]
+    return None
+
+
+def _detail_frame_type_for_focus(frame: ContextFrame) -> ContextFrameType | None:
+    if frame.frame_type in {ContextFrameType.TRANSACTION_LIST, ContextFrameType.RECEIPT}:
+        return ContextFrameType.TRANSACTION_DETAIL
+    return None
+
+
+def _append_focus_detail_frame(
+    frames: list[ContextFrame],
+    source_frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+) -> list[ContextFrame]:
+    detail_type = _detail_frame_type_for_focus(source_frame)
+    if detail_type is None:
+        return frames
+
+    entity = _single_focus_entity_for_decision(source_frame, decision)
+    if entity is None:
+        return frames
+
+    now = int(time.time())
+    detail_frame = ContextFrame(
+        frame_id=f"{source_frame.frame_id}:focus:{entity.entity_id or now}",
+        frame_type=detail_type,
+        items=[entity.model_copy(deep=True)],
+        focus_index=0,
+        source_message_id=source_frame.source_message_id,
+        created_at_ts=now,
+        ttl_seconds=source_frame.ttl_seconds,
+    )
+    return [*frames, detail_frame][-OrchestratorContextManager().max_frames :]
+
+
+def _context_frames_after_surface_answer(
+    state: OrchestratorState,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+) -> list[ContextFrame]:
+    refreshed = _refresh_context_frame(state, frame)
+    return _append_focus_detail_frame(refreshed, frame, decision)
+
+
 def _refresh_context_frame(state: OrchestratorState, active_frame: ContextFrame) -> list[ContextFrame]:
     now = int(time.time())
     refreshed: list[ContextFrame] = []
@@ -707,24 +1435,50 @@ class SurfaceAnswerEngine:
             lines.append(f"... {overflow} more item(s) not shown in interpreter context")
         return "\n".join(lines)
 
+    def build_state_context(self, state: OrchestratorState) -> str:
+        """Build LLM context from active frames, preserving current focus and prior lists."""
+        frames = _active_context_frames(state)
+        if not frames:
+            return ""
+        if len(frames) == 1:
+            return self.build_context(frames[-1])
+
+        selected_frames = list(reversed(frames[-3:]))
+        lines = [
+            "Active displayed context, most recent first.",
+            "Use the current focus for pronouns like this/that.",
+            "Use an earlier list when the user refers to a visible item number not present in the current focus.",
+        ]
+        for idx, frame in enumerate(selected_frames):
+            title = "Current focus" if idx == 0 else f"Earlier result {idx}"
+            lines.append("")
+            lines.append(f"{title}:")
+            lines.append(self.build_context(frame))
+        return "\n".join(lines)
+
     def answer(self, request: SurfaceAnswerRequest) -> ContextFrameFollowupResponse | None:
         """Answer a grounded follow-up from current state and a typed decision."""
-        frame = OrchestratorContextManager().latest_active_frame(request.state)
-        if frame is None or not frame.items or request.decision is None:
+        decision = (
+            _decision_with_grounding_hints(request.decision, request.text)
+            if request.decision is not None
+            else None
+        )
+        frame = _select_frame_for_decision(request.state, decision) if decision is not None else None
+        if frame is None or not frame.items or decision is None:
             return None
 
-        if _canonical_decision(request.decision.decision) == "replay_tasks":
-            if request.decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
+        if _canonical_decision(decision.decision) == "replay_tasks":
+            if decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
                 return None
-            return _build_replay_response(request.state, frame, request.decision, request.text)
+            return _build_replay_response(request.state, frame, decision, request.text)
 
-        response = _format_semantic_decision_response(frame, request.decision)
+        response = _format_semantic_decision_response(frame, decision, text=request.text)
         if not response:
             return None
         return ContextFrameFollowupResponse(
             response=response,
             recent_domain_focus=_frame_domain(frame.frame_type),
-            context_frames=_refresh_context_frame(request.state, frame),
+            context_frames=_context_frames_after_surface_answer(request.state, frame, decision),
         )
 
 
@@ -734,6 +1488,11 @@ _SURFACE_ANSWER_ENGINE = SurfaceAnswerEngine()
 def build_context_frame_followup_context(frame: ContextFrame) -> str:
     """Compatibility wrapper for existing frame-follow-up callers."""
     return _SURFACE_ANSWER_ENGINE.build_context(frame)
+
+
+def build_context_frame_followup_context_for_state(state: OrchestratorState) -> str:
+    """Build follow-up interpreter context from current and related active frames."""
+    return _SURFACE_ANSWER_ENGINE.build_state_context(state)
 
 
 def build_context_frame_followup_response(
@@ -751,5 +1510,6 @@ __all__ = [
     "SurfaceAnswerEngine",
     "SurfaceAnswerRequest",
     "build_context_frame_followup_context",
+    "build_context_frame_followup_context_for_state",
     "build_context_frame_followup_response",
 ]

@@ -164,6 +164,7 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
             message_text=ctx.message_text,
             locale=ctx.current_locale,
             query_session_snapshot=ctx.query_session_snapshot if isinstance(ctx.query_session_snapshot, dict) else None,
+            has_context_frames=bool(ctx.state.context_frames),
         )
         if bypass_reason is not None:
             logger.info(

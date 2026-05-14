@@ -4,6 +4,7 @@ from apps.chat.src.agent.graphs.support.context_manager import SupportContextMan
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _build_direct_domain_task,
+    _direct_domain_capability_block_message,
     _has_receipt_thread_candidates,
     _looks_like_receipt_request,
     _looks_like_receipt_selector_followup,
@@ -29,6 +30,19 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
     receipt_thread_state = getattr(support_ctx, "receipt_thread_state", None)
     if not _has_receipt_thread_candidates(receipt_thread_state):
         return None
+    if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
+        logger.info("gate_receipt_thread_support_policy_blocked")
+        return {
+            **ctx.gate_updates,
+            "final_response": block_message,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "support_receipt_thread_policy_blocked",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="capability_blocked",
+                target_domain="support",
+            ),
+        }
     task_id, spec = _build_direct_domain_task(state=ctx.state, domain="support")
     spec.payload["intent"] = "receipt_request"
     spec.payload["recent_batch_followup"] = True
@@ -63,6 +77,19 @@ async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
     recent_batch = await get_recent_batch_reference(ctx.redis_client, identity=recent_batch_identity)
     if recent_batch is None or not recent_batch.get("legs"):
         return None
+    if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
+        logger.info("gate_recent_batch_receipt_support_policy_blocked")
+        return {
+            **ctx.gate_updates,
+            "final_response": block_message,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "support_receipt_policy_blocked",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="capability_blocked",
+                target_domain="support",
+            ),
+        }
     task_id, spec = _build_direct_domain_task(state=ctx.state, domain="support")
     spec.payload["intent"] = "receipt_request"
     spec.payload["recent_batch_followup"] = True

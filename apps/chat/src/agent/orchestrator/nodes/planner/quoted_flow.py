@@ -82,6 +82,7 @@ async def _handle_quoted_replay_shortcut(
                 text=text,
                 interpretation=interpretation,
                 locale_updates=locale_updates,
+                quoted_payload=quoted_payload,
             )
             if replay_updates is not None:
                 return replay_updates

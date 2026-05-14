@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _classify_obvious_transfer_request,
@@ -9,7 +10,7 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup import (
-    build_context_frame_followup_context,
+    build_context_frame_followup_context_for_state,
     build_context_frame_followup_response,
 )
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
@@ -40,8 +41,22 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
     ):
         return None
 
+    await ctx.ensure_query_session()
+    if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
+        logger.info("gate_context_frame_followup_skipped_for_active_query_session")
+        return None
+
     frame = OrchestratorContextManager().latest_active_frame(ctx.state)
     if frame is None or not frame.items:
+        return None
+    shortcut = resolve_query_shortcut(ctx.message_text, ctx.current_locale)
+    if shortcut is not None and shortcut.kind == "pagination":
+        logger.info(
+            "gate_context_frame_followup_skipped_for_query_pagination",
+            action=shortcut.action,
+            frame_type=frame.frame_type.value,
+            item_count=len(frame.items),
+        )
         return None
     if _is_fresh_transaction_command(ctx):
         logger.info(
@@ -55,7 +70,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
         decision = await ctx.task_planner.interpret_context_frame_followup(
             ctx.state.phone_number,
             ctx.message_text,
-            context=build_context_frame_followup_context(frame),
+            context=build_context_frame_followup_context_for_state(ctx.state),
             path_label="direct_path",
         )
     except Exception as exc:
@@ -68,6 +83,9 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
         decision=decision.decision,
         confidence=decision.confidence,
         detected_language=decision.detected_language,
+        requested_field=decision.requested_field,
+        rank=decision.rank,
+        has_filters=bool(decision.filters),
         reason=decision.reason,
         resolved=bool(frame_followup),
         frame_type=frame.frame_type.value,

@@ -251,6 +251,7 @@ class SupportResult(BaseModel):
     outcome: SupportOutcome
     response: str | None = None
     receipt_jobs: list[dict[str, Any]] = Field(default_factory=list)
+    handoff: dict[str, Any] | None = None
     escalation: Any | None = None
     ticket_code: str | None = None
     final_message: str | None = None

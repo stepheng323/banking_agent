@@ -72,7 +72,11 @@ def test_actionable_payload_keeps_recipient_beneficiary_and_source_fields() -> N
             "recipient_bank_code": "999",
             "recipient_bank_name": "Opay",
             "source_bank_name": "Zenith Bank",
+            "source_affinity_mode": "explicit",
             "resolved_from_saved_beneficiary": True,
+            "final_status": "failed",
+            "error_message": "Provider down",
+            "failure_category": "provider_unavailable",
         }
     )
 
@@ -86,4 +90,8 @@ def test_actionable_payload_keeps_recipient_beneficiary_and_source_fields() -> N
     assert payload["recipient_bank_code"] == "999"
     assert payload["recipient_bank_name"] == "Opay"
     assert payload["source_bank_name"] == "Zenith Bank"
+    assert payload["source_affinity_mode"] == "explicit"
     assert payload["resolved_from_saved_beneficiary"] is True
+    assert payload["final_status"] == "failed"
+    assert payload["error_message"] == "Provider down"
+    assert payload["failure_category"] == "provider_unavailable"

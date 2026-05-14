@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
 from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
-from apps.chat.src.agent.orchestrator.system_profile import SYSTEM_PROFILE, SystemProfile
-from shared.assistant_profile.adapters import build_meta_profile_payload
-from shared.assistant_profile.loader import get_cached_assistant_profile
+from shared.assistant_profile.voice import AssistantVoice, get_runtime_voice
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
@@ -29,11 +26,11 @@ class MetaReply(BaseModel):
 
 META_SYSTEM_PROMPT = (
     "You write short WhatsApp replies for a banking assistant.\n"
-    "You MUST follow system_profile and assistant_profile exactly.\n"
-    "- Never claim a feature that is not listed in system_profile.supported_domains.\n"
-    "- For identity/brand-origin answers, only use facts explicitly present in system_profile.\n"
+    "You MUST follow assistant_voice exactly.\n"
+    "- Never claim a feature that is not listed in assistant_voice.supported_domains.\n"
+    "- For identity/brand-origin answers, only use facts explicitly present in assistant_voice.\n"
     "- If asked about something not supported, say it's not available yet and suggest a supported alternative.\n"
-    "- Keep the tone warmly professional, crisp, and context-aware.\n"
+    "- Follow assistant_voice.tone and assistant_voice.response_rules.\n"
     "- Keep unsupported reroutes consultative and actionable.\n"
     "- Keep the reply under 5 lines.\n\n"
     'Return ONLY JSON: {"message":"...", "language":"en|yo|pcm|ha|ig"}'
@@ -45,56 +42,56 @@ def normalize_language_hint(language: str | None) -> str:
     return cast(str, LocaleManager.normalize(language).value)
 
 
-def fallback_meta_message(profile: SystemProfile, *, locale: str = "en") -> str:
-    supported = ", ".join(profile.supported_domains)
+def fallback_meta_message(voice: AssistantVoice, *, locale: str = "en") -> str:
+    supported = ", ".join(voice.supported_domains)
     return cast(
         str,
         render_message(
             "meta.fallback",
             locale,
-            {"name": profile.name, "description": profile.description, "supported": supported},
+            {"name": voice.name, "description": voice.description, "supported": supported},
             fallback_en=(
-                f"I'm {profile.name}. {profile.description}\nI can help with: {supported}.\nWhat would you like to do?"
+                f"I'm {voice.name}. {voice.description}\nI can help with: {supported}.\nWhat would you like to do?"
             ),
         ),
     )
 
 
-def _grounded_identity_message(profile: SystemProfile) -> str:
-    creator_suffix = f" Built by {profile.creator}." if profile.creator else ""
-    return f"I'm {profile.name}. {profile.description}{creator_suffix}"
+def _grounded_identity_message(voice: AssistantVoice) -> str:
+    creator_suffix = f" Built by {voice.creator}." if voice.creator else ""
+    return f"I'm {voice.name}. {voice.description}{creator_suffix}"
 
 
-def _grounded_creator_message(profile: SystemProfile, *, locale: str) -> str:
-    if profile.creator:
+def _grounded_creator_message(voice: AssistantVoice, *, locale: str) -> str:
+    if voice.creator:
         return cast(
             str,
             render_message(
                 "meta.creator_fallback",
                 locale,
-                {"name": profile.name, "creator": profile.creator},
-                fallback_en=f"{profile.name} was built by {profile.creator}.",
+                {"name": voice.name, "creator": voice.creator},
+                fallback_en=f"{voice.name} was built by {voice.creator}.",
             ),
         )
-    return _grounded_identity_message(profile)
+    return _grounded_identity_message(voice)
 
 
-def _grounded_brand_origin_message(profile: SystemProfile, *, locale: str) -> str:
-    if profile.brand_origin:
+def _grounded_brand_origin_message(voice: AssistantVoice, *, locale: str) -> str:
+    if voice.brand_origin:
         return cast(
             str,
             render_message(
                 "meta.brand_origin_fallback",
                 locale,
-                {"brand_origin": profile.brand_origin},
-                fallback_en=profile.brand_origin,
+                {"brand_origin": voice.brand_origin},
+                fallback_en=voice.brand_origin,
             ),
         )
     return cast(str, render_message("conversational.brand_origin", locale))
 
 
-def _grounded_capabilities_message(profile: SystemProfile, *, locale: str) -> str:
-    supported = ", ".join(profile.supported_domains)
+def _grounded_capabilities_message(voice: AssistantVoice, *, locale: str) -> str:
+    supported = ", ".join(voice.supported_domains)
     return cast(
         str,
         render_message(
@@ -106,9 +103,9 @@ def _grounded_capabilities_message(profile: SystemProfile, *, locale: str) -> st
     )
 
 
-def _grounded_limits_message(profile: SystemProfile, *, locale: str) -> str:
-    unsupported = ", ".join(profile.unsupported_capabilities) or "unsupported requests"
-    supported = ", ".join(profile.supported_domains)
+def _grounded_limits_message(voice: AssistantVoice, *, locale: str) -> str:
+    unsupported = ", ".join(voice.unsupported_capabilities) or "unsupported requests"
+    supported = ", ".join(voice.supported_domains)
     return cast(
         str,
         render_message(
@@ -120,21 +117,21 @@ def _grounded_limits_message(profile: SystemProfile, *, locale: str) -> str:
     )
 
 
-def _grounded_meta_fallback(profile: SystemProfile, *, locale: str, meta_intent: MetaIntent | None) -> str:
+def _grounded_meta_fallback(voice: AssistantVoice, *, locale: str, meta_intent: MetaIntent | None) -> str:
     if meta_intent == MetaIntent.IDENTITY:
-        return _grounded_identity_message(profile)
+        return _grounded_identity_message(voice)
     if meta_intent == MetaIntent.CREATOR:
-        return _grounded_creator_message(profile, locale=locale)
+        return _grounded_creator_message(voice, locale=locale)
     if meta_intent == MetaIntent.BRAND_ORIGIN:
-        return _grounded_brand_origin_message(profile, locale=locale)
+        return _grounded_brand_origin_message(voice, locale=locale)
     if meta_intent == MetaIntent.CAPABILITIES:
-        return _grounded_capabilities_message(profile, locale=locale)
+        return _grounded_capabilities_message(voice, locale=locale)
     if meta_intent == MetaIntent.LIMITS:
-        return _grounded_limits_message(profile, locale=locale)
-    return fallback_meta_message(profile, locale=locale)
+        return _grounded_limits_message(voice, locale=locale)
+    return fallback_meta_message(voice, locale=locale)
 
 
-def _violates_branding_grounding(message: str, *, profile: SystemProfile, meta_intent: MetaIntent | None) -> bool:
+def _violates_branding_grounding(message: str, *, voice: AssistantVoice, meta_intent: MetaIntent | None) -> bool:
     if meta_intent not in {
         MetaIntent.IDENTITY,
         MetaIntent.CREATOR,
@@ -145,18 +142,18 @@ def _violates_branding_grounding(message: str, *, profile: SystemProfile, meta_i
         return False
     lowered = message.lower()
     if meta_intent in {MetaIntent.IDENTITY, MetaIntent.CREATOR, MetaIntent.BRAND_ORIGIN}:
-        if profile.name.lower() not in lowered:
+        if voice.name.lower() not in lowered:
             return True
-    if meta_intent == MetaIntent.CREATOR and profile.creator:
-        if profile.creator.lower() not in lowered:
+    if meta_intent == MetaIntent.CREATOR and voice.creator:
+        if voice.creator.lower() not in lowered:
             return True
     if meta_intent == MetaIntent.BRAND_ORIGIN:
-        canonical = (profile.brand_origin or "").lower()
+        canonical = (voice.brand_origin or "").lower()
         for term in STRICT_BRAND_TERMS:
             if term in lowered and term not in canonical:
                 return True
     if meta_intent == MetaIntent.CAPABILITIES:
-        return any(item.lower() in lowered for item in profile.unsupported_capabilities)
+        return any(item.lower() in lowered for item in voice.unsupported_capabilities)
     return False
 
 
@@ -167,11 +164,11 @@ async def generate_meta_reply(
     user_language_hint: str | None,
     meta_intent: MetaIntent | None = None,
     redis_client: Any | None = None,
-    profile: SystemProfile = SYSTEM_PROFILE,
+    voice: AssistantVoice | None = None,
     path_label: str = "planner_path",
 ) -> tuple[str, Literal["meta", "domain"]]:
-    """Generate a meta response grounded in the SystemProfile with Caching."""
-    assistant_profile = get_cached_assistant_profile()
+    """Generate a meta response grounded in AssistantProfile voice with Caching."""
+    runtime_voice = voice or get_runtime_voice()
 
     # 1. Deterministic Cache Key Construction
     language = normalize_language_hint(user_language_hint)
@@ -188,14 +185,14 @@ async def generate_meta_reply(
             pass  # Fallback to generation on cache error
 
     if not llm:
-        return _grounded_meta_fallback(profile, locale=language, meta_intent=meta_intent), "meta"
+        return _grounded_meta_fallback(runtime_voice, locale=language, meta_intent=meta_intent), "meta"
 
     # 2. LLM Generation (Cache Miss)
     payload: dict[str, Any] = {
         "user_message": user_message,
         "language_hint": language,
-        "system_profile": asdict(profile),
-        "assistant_profile": build_meta_profile_payload(assistant_profile),
+        "assistant_voice": runtime_voice.as_meta_payload(),
+        "assistant_profile": runtime_voice.as_meta_payload(),
     }
     if meta_intent:
         payload["intent_context"] = meta_intent.value
@@ -230,14 +227,14 @@ async def generate_meta_reply(
                 expected=language,
                 got=resolved_reply_language,
             )
-            return _grounded_meta_fallback(profile, locale=language, meta_intent=meta_intent), "meta"
+            return _grounded_meta_fallback(runtime_voice, locale=language, meta_intent=meta_intent), "meta"
 
         if meta_reply.handoff != "meta":
             return "", meta_reply.handoff
 
         safe_msg = meta_reply.message
-        if _violates_branding_grounding(safe_msg, profile=profile, meta_intent=meta_intent):
-            safe_msg = _grounded_meta_fallback(profile, locale=language, meta_intent=meta_intent)
+        if _violates_branding_grounding(safe_msg, voice=runtime_voice, meta_intent=meta_intent):
+            safe_msg = _grounded_meta_fallback(runtime_voice, locale=language, meta_intent=meta_intent)
             logger.info(
                 "meta_reply_grounding_fallback",
                 intent=getattr(meta_intent, "value", None),
@@ -255,4 +252,4 @@ async def generate_meta_reply(
         return safe_msg, "meta"
 
     except Exception:
-        return _grounded_meta_fallback(profile, locale=language, meta_intent=meta_intent), "meta"
+        return _grounded_meta_fallback(runtime_voice, locale=language, meta_intent=meta_intent), "meta"

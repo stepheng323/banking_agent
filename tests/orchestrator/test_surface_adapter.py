@@ -125,7 +125,7 @@ def test_surface_answer_filters_transaction_frame_by_visible_metadata() -> None:
         decision=ContextFrameFollowupDecision(
             decision="filter_items",
             confidence=0.92,
-            reference_text="credit",
+            target_text="credit",
         ),
     )
 

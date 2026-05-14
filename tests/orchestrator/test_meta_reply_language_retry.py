@@ -6,7 +6,7 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
-from apps.chat.src.agent.orchestrator.system_profile import SystemProfile
+from shared.assistant_profile.voice import AssistantVoice
 
 
 class _FakeMetaLLM:
@@ -24,6 +24,28 @@ class _FakeMetaLLM:
         current = self._responses[self._idx]
         self._idx += 1
         return current
+
+
+def _voice(
+    *,
+    supported_domains: tuple[str, ...] = ("Send money",),
+    unsupported_capabilities: tuple[str, ...] = ("Investments",),
+    creator: str | None = "Fusepay",
+    brand_origin: str | None = "Narya AI is named after a kindler archetype and built by Fusepay.",
+) -> AssistantVoice:
+    return AssistantVoice(
+        name="Narya AI",
+        description="A calm banking concierge.",
+        positioning="Banking only",
+        creator=creator,
+        brand_origin=brand_origin,
+        supported_domains=supported_domains,
+        unsupported_capabilities=unsupported_capabilities,
+        tone_style="warm",
+        brevity="short",
+        response_rules=("Keep replies grounded",),
+        safety_rules=("Banking tasks only",),
+    )
 
 
 @pytest.mark.asyncio
@@ -77,15 +99,10 @@ async def test_brand_origin_reply_falls_back_when_llm_invents_lotr_claim() -> No
             }
         ]
     )
-    profile = SystemProfile(
-        name="Narya AI",
-        description="A calm banking concierge.",
-        positioning="Banking only",
-        creator="Fusepay",
-        brand_origin="Narya AI is named after a kindler archetype and built by Fusepay for calm, reliable banking execution.",
-        supported_domains=["Send money"],
-        unsupported_capabilities=["Investments"],
-        tone="warm",
+    voice = _voice(
+        brand_origin=(
+            "Narya AI is named after a kindler archetype and built by Fusepay for calm, reliable banking execution."
+        ),
     )
 
     message, handoff = await generate_meta_reply(
@@ -93,32 +110,23 @@ async def test_brand_origin_reply_falls_back_when_llm_invents_lotr_claim() -> No
         user_message="is it from lotr",
         user_language_hint="en",
         meta_intent=MetaIntent.BRAND_ORIGIN,
-        profile=profile,
+        voice=voice,
     )
 
     assert handoff == "meta"
-    assert message == profile.brand_origin
+    assert message == voice.brand_origin
 
 
 @pytest.mark.asyncio
 async def test_identity_no_llm_uses_grounded_identity_message() -> None:
-    profile = SystemProfile(
-        name="Narya AI",
-        description="A calm banking concierge.",
-        positioning="Banking only",
-        creator="Fusepay",
-        brand_origin=None,
-        supported_domains=["Send money"],
-        unsupported_capabilities=["Investments"],
-        tone="warm",
-    )
+    voice = _voice(brand_origin=None)
 
     message, handoff = await generate_meta_reply(
         None,
         user_message="who are you",
         user_language_hint="en",
         meta_intent=MetaIntent.IDENTITY,
-        profile=profile,
+        voice=voice,
     )
 
     assert handoff == "meta"
@@ -136,23 +144,14 @@ async def test_creator_reply_falls_back_to_policy_creator_when_llm_is_incorrect(
             }
         ]
     )
-    profile = SystemProfile(
-        name="Narya AI",
-        description="A calm banking concierge.",
-        positioning="Banking only",
-        creator="Fusepay",
-        brand_origin="Narya AI is named after a kindler archetype and built by Fusepay.",
-        supported_domains=["Send money", "Buy airtime"],
-        unsupported_capabilities=["Investments"],
-        tone="warm",
-    )
+    voice = _voice(supported_domains=("Send money", "Buy airtime"))
 
     message, handoff = await generate_meta_reply(
         llm,
         user_message="who created you",
         user_language_hint="en",
         meta_intent=MetaIntent.CREATOR,
-        profile=profile,
+        voice=voice,
     )
 
     assert handoff == "meta"
@@ -170,23 +169,14 @@ async def test_capabilities_reply_blocks_unsupported_claims() -> None:
             }
         ]
     )
-    profile = SystemProfile(
-        name="Narya AI",
-        description="A calm banking concierge.",
-        positioning="Banking only",
-        creator="Fusepay",
-        brand_origin="Narya AI is named after a kindler archetype and built by Fusepay.",
-        supported_domains=["Send money", "Buy airtime"],
-        unsupported_capabilities=["Investments"],
-        tone="warm",
-    )
+    voice = _voice(supported_domains=("Send money", "Buy airtime"))
 
     message, handoff = await generate_meta_reply(
         llm,
         user_message="what can you do",
         user_language_hint="en",
         meta_intent=MetaIntent.CAPABILITIES,
-        profile=profile,
+        voice=voice,
     )
 
     assert handoff == "meta"
@@ -196,15 +186,9 @@ async def test_capabilities_reply_blocks_unsupported_claims() -> None:
 
 @pytest.mark.asyncio
 async def test_limits_no_llm_uses_grounded_policy_limit_message() -> None:
-    profile = SystemProfile(
-        name="Narya AI",
-        description="A calm banking concierge.",
-        positioning="Banking only",
-        creator="Fusepay",
-        brand_origin="Narya AI is named after a kindler archetype and built by Fusepay.",
-        supported_domains=["Send money", "Buy airtime"],
-        unsupported_capabilities=["Investments", "International transfers"],
-        tone="warm",
+    voice = _voice(
+        supported_domains=("Send money", "Buy airtime"),
+        unsupported_capabilities=("Investments", "International transfers"),
     )
 
     message, handoff = await generate_meta_reply(
@@ -212,7 +196,7 @@ async def test_limits_no_llm_uses_grounded_policy_limit_message() -> None:
         user_message="what can you not do",
         user_language_hint="en",
         meta_intent=MetaIntent.LIMITS,
-        profile=profile,
+        voice=voice,
     )
 
     assert handoff == "meta"
