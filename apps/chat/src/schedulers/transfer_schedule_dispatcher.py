@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from shared.database.enums import ScheduledInstructionStatusEnum, ScheduledRunStatusEnum, TransactionStatusEnum
+from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.scheduling.recurrence import compute_next_run_utc
@@ -37,6 +38,24 @@ class TransferScheduleDispatcher:
             )
             for schedule in due_schedules:
                 payload = schedule.payload_snapshot if isinstance(schedule.payload_snapshot, dict) else {}
+                locale = str(payload.get("language") or "en")
+                policy_block_message = capability_block_message(
+                    domain="schedule",
+                    action="schedule_transfer",
+                    locale=locale,
+                ) or capability_block_message(
+                    domain="transfer",
+                    action="send_money",
+                    locale=locale,
+                )
+                if policy_block_message:
+                    skipped += 1
+                    logger.info(
+                        "schedule_dispatch_skipped_policy_blocked",
+                        schedule_id=str(schedule.id),
+                    )
+                    continue
+
                 amount = float(payload.get("amount") or 0.0)
                 recipient_account = payload.get("recipient_account")
                 recipient_bank_code = payload.get("recipient_bank_code")
@@ -127,7 +146,7 @@ class TransferScheduleDispatcher:
                     "idempotency_key": run_idempotency,
                     "transaction_id": transaction_id,
                     "phone_number": str(schedule.channel_identity or ""),
-                    "language": str(payload.get("language") or "en"),
+                    "language": locale,
                     "channel": str(schedule.channel or "whatsapp"),
                     "channel_identity": schedule.channel_identity,
                     "transfer_data": transfer_data,

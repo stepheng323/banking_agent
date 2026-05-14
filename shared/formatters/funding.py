@@ -42,9 +42,6 @@ def format_insufficient_funds(
 
     lines = []
 
-    # We'll drop the transaction summary header (lines 45-53) and integrate it into the text as per Option B design.
-    # Logic:
-
     lines.append(render_message("funding.format.insufficient.header", locale))
     lines.append("")
 

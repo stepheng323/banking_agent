@@ -19,6 +19,7 @@ from apps.chat.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbo
 from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.database.models import UserOnboardingStatusEnum
+from shared.i18n import render_message
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
 from shared.queue.messages import FlowEventType
@@ -315,17 +316,35 @@ class MessageConsumer:
             )
 
             invoke_start = time.perf_counter()
-            orchestrator_output = await runtime_orchestrator.invoke(
-                phone_number,
-                sanitized_text,
-                str(message.message_id),
-                message_type=message.message_type.value,
-                media_id=message.media_id,
-                quoted_message_id=message.quoted_message_id,
-                channel=message.channel,
-                channel_identity=channel_user_id,
-                user=user,
-            )
+            try:
+                orchestrator_output = await runtime_orchestrator.invoke(
+                    phone_number,
+                    sanitized_text,
+                    str(message.message_id),
+                    message_type=message.message_type.value,
+                    media_id=message.media_id,
+                    quoted_message_id=message.quoted_message_id,
+                    channel=message.channel,
+                    channel_identity=channel_user_id,
+                    user=user,
+                )
+            except Exception as exc:
+                logger.error(
+                    "message_consumer_orchestrator_invoke_failed_safe_fallback",
+                    error=str(exc),
+                    phone_number=phone_number,
+                    message_id=message.message_id,
+                    exc_info=True,
+                )
+                response_text = render_message("orchestrator.fallback.processing_error", "en")
+                await enqueue_outbox_intents(
+                    self.publisher,
+                    channel_user_id,
+                    message.channel,
+                    [Say(text=response_text)],
+                    metadata={"source": "message_consumer", "message_id": message.message_id, "safe_fallback": True},
+                )
+                return {"status": "safe_fallback", "response": response_text}
             self._log_latency_span(
                 span="message_consumer_orchestrator_invoke",
                 duration_ms=(time.perf_counter() - invoke_start) * 1000,

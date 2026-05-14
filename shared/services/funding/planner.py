@@ -17,13 +17,14 @@ from shared.formatters.funding import (
     format_insufficient_funds,
 )
 from shared.i18n import render_message
+from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-MAX_SOURCE_ACCOUNTS = 2
+MAX_SOURCE_ACCOUNTS = MAX_POOLED_SOURCE_ACCOUNTS
 MIN_FUNDING_AMOUNT = 100.0
 
 

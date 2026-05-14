@@ -301,7 +301,7 @@ async def test_message_consumer_uses_cached_telegram_identity(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
-async def test_claim_is_released_when_processing_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_safe_fallback_is_sent_when_orchestrator_invoke_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     context_manager = _ContextManagerStub(should_claim=True)
     orchestrator = _OrchestratorStub(context_manager, should_fail=True)
     consumer = MessageConsumer(
@@ -309,13 +309,39 @@ async def test_claim_is_released_when_processing_fails(monkeypatch: pytest.Monke
         onboarding_executor=_OnboardingStub(),
         orchestrator=orchestrator,
     )
+    sent_payloads: list[list[Any]] = []
+    sent_kwargs: list[dict[str, Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        sent_payloads.append(list(args))
+        sent_kwargs.append(kwargs)
 
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
 
-    with pytest.raises(RuntimeError, match="invoke failed"):
-        await consumer._handle_message(_message("wamid-fail"))
+    response = await consumer._handle_message(_message("wamid-fail"))
 
-    assert context_manager.released == [("2348162511023", "wamid-fail")]
+    assert response is not None
+    assert response["status"] == "safe_fallback"
+    assert response["response"] == "I'm sorry, I'm having trouble processing that right now."
+    assert context_manager.released == []
+    assert len(sent_payloads) == 1
+    intents = sent_payloads[0][3]
+    assert len(intents) == 1
+    assert isinstance(intents[0], Say)
+    assert intents[0].text == "I'm sorry, I'm having trouble processing that right now."
+    assert sent_kwargs == [
+        {
+            "metadata": {
+                "source": "message_consumer",
+                "message_id": "wamid-fail",
+                "safe_fallback": True,
+            }
+        }
+    ]
 
 
 @pytest.mark.asyncio

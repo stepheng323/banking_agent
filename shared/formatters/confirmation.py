@@ -1,6 +1,6 @@
 """Shared confirmation summary formatting helpers."""
 
-from typing import Any, cast
+from typing import Any
 
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.i18n import render_message
@@ -89,25 +89,19 @@ def build_source_account_info(
         return None
 
     balance = _extract_cached_balance(source_account)
-    return cast(
-        str,
-        format_source_account_info_from_account_number(
-            bank=str(bank),
-            account_number=str(account_number),
-            locale=locale,
-            balance=balance,
-        ),
+    return format_source_account_info_from_account_number(
+        bank=str(bank),
+        account_number=str(account_number),
+        locale=locale,
+        balance=balance,
     )
 
 
 def _source_line_prefix(locale: str) -> str:
-    template = cast(
-        str,
-        render_message(
-            "orchestrator.execution.source_account_info",
-            locale,
-            {"bank": "", "last4": ""},
-        ),
+    template = render_message(
+        "orchestrator.execution.source_account_info",
+        locale,
+        {"bank": "", "last4": ""},
     )
     return template.split("(···", maxsplit=1)[0].strip()
 
@@ -163,6 +157,10 @@ def build_confirmation_summary(
     summary = confirmation_payload.get("summary")
     if not isinstance(summary, str) or not summary:
         return None
+
+    funding_plan = task_payload.get("funding_plan")
+    if isinstance(funding_plan, dict) and not funding_plan.get("is_single_source", True):
+        return summary
 
     snapshot = confirmation_payload.get("snapshot")
     snapshot_mapping = snapshot if isinstance(snapshot, dict) else {}

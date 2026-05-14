@@ -49,6 +49,12 @@ from shared.services.scheduling.recurrence import (
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+SCHEDULING_ACTIONS = {
+    "schedule_transfer",
+    "recurring_transfer",
+    "list_scheduled_transfers",
+    "cancel_scheduled_transfer",
+}
 
 
 @dataclass(slots=True)
@@ -139,7 +145,8 @@ class TransferWorker:
 
     @staticmethod
     def _policy_gate_message(action: str, *, locale: str = "en") -> str | None:
-        return cast(str, capability_block_message(domain="transfer", action=action, locale=locale))
+        domain = "schedule" if action in SCHEDULING_ACTIONS else "transfer"
+        return cast(str, capability_block_message(domain=domain, action=action, locale=locale))
 
     @staticmethod
     def _build_pipeline(user_message: str | None, *, include_execution: bool = True) -> TransferPipeline:
@@ -412,13 +419,7 @@ class TransferWorker:
 
         action = str(payload.get("action") or "send_money")
         locale = LocaleManager.normalize(context.get("language")).value
-        scheduling_actions = {
-            "schedule_transfer",
-            "recurring_transfer",
-            "list_scheduled_transfers",
-            "cancel_scheduled_transfer",
-        }
-        if action in scheduling_actions and not settings.enable_transfer_scheduling:
+        if action in SCHEDULING_ACTIONS and not settings.enable_transfer_scheduling:
             message = "Scheduled transfers are currently unavailable. You can send this transfer now."
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
@@ -440,7 +441,7 @@ class TransferWorker:
         gates = self._build_gates(data, pin_verified)
         worker_context = self._build_worker_context(context)
         try:
-            if action in scheduling_actions:
+            if action in SCHEDULING_ACTIONS:
                 return await self._handle_scheduling_action(
                     action=action,
                     data=data,

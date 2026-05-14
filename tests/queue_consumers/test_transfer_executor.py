@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -9,6 +10,13 @@ import pytest
 from apps.chat.src.agent.executors.transfer import TransferExecutor
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import TransactionStatusEnum
+from shared.policy.loader import get_cached_policy, load_policy
+
+CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+SCHEDULE_DISABLED_MESSAGE = (
+    "Scheduled payments are temporarily unavailable. I can still help with immediate transfers, airtime/data purchase, "
+    "balances, and transaction queries."
+)
 
 
 class _RedisStub:
@@ -66,6 +74,19 @@ def _payload() -> dict:
             "async_group_index": 1,
         },
     }
+
+
+def _install_disabled_schedule_policy(tmp_path: Path) -> None:
+    raw = load_policy(CAPABILITY_POLICY_PATH).model_dump()
+    raw["capability_matrix"]["schedule"]["enabled"] = False
+    raw["capability_matrix"]["schedule"]["limitation_message"] = SCHEDULE_DISABLED_MESSAGE
+    policy_path = tmp_path / "capability_policy_schedule_disabled.json"
+    policy_path.write_text(json.dumps(raw, ensure_ascii=True), encoding="utf-8")
+    get_cached_policy(path=str(policy_path), force_reload=True)
+
+
+def _reset_policy_cache() -> None:
+    get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
 
 
 @pytest.mark.asyncio
@@ -434,3 +455,40 @@ async def test_transfer_executor_suppresses_duplicate_processing_with_provider_r
     dd_provider.initiate_debit_to_beneficiary.assert_not_awaited()
     transaction_repo.update_status.assert_not_awaited()
     delivery_service.deliver_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scheduled_transfer_executor_blocks_when_schedule_domain_disabled(tmp_path: Path) -> None:
+    _install_disabled_schedule_policy(tmp_path)
+    try:
+        dd_provider = SimpleNamespace(initiate_debit_to_beneficiary=AsyncMock())
+        account_repo = SimpleNamespace(get_by_id=AsyncMock())
+        transaction_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=None), update_status=AsyncMock())
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        executor = TransferExecutor(
+            direct_debit_provider=dd_provider,
+            account_repo=account_repo,
+            transaction_repo=transaction_repo,
+            delivery_service=delivery_service,
+            redis_client=_RedisStub(),
+        )
+        payload = _payload()
+        payload["scheduled_meta"] = {
+            "schedule_id": "sch-1",
+            "run_source": "scheduled",
+            "attempt": 1,
+        }
+
+        await executor.handle_transfer(payload)
+
+        dd_provider.initiate_debit_to_beneficiary.assert_not_awaited()
+        account_repo.get_by_id.assert_not_awaited()
+        transaction_repo.update_status.assert_awaited_once_with(
+            "tx-1",
+            TransactionStatusEnum.FAILED.value,
+            SCHEDULE_DISABLED_MESSAGE,
+        )
+        delivery_service.deliver_text.assert_awaited_once()
+        assert SCHEDULE_DISABLED_MESSAGE in delivery_service.deliver_text.await_args.kwargs["text"]
+    finally:
+        _reset_policy_cache()

@@ -485,9 +485,16 @@ def build_confirmation(
                 recipient_account=payload.recipient_account or "",
                 locale=ctx.language,
             )
-            summary = (
-                f"{funding_summary}\n\nRecipient will be credited once after all funding debits succeed.\n\n{summary}"
-            )
+            if warning_lines:
+                summary = "\n\n".join(
+                    [
+                        *warning_lines,
+                        funding_summary,
+                        "Recipient will be credited once after all funding debits succeed.",
+                    ]
+                )
+            else:
+                summary = f"{funding_summary}\n\nRecipient will be credited once after all funding debits succeed."
 
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_CONFIRMATION,

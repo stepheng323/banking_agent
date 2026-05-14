@@ -178,6 +178,7 @@ class ExecutionStep(TransferStep):
                                 "bank_name": data.source_bank_name,
                             },
                             "narration": narration,
+                            "source_affinity_mode": data.source_affinity_mode,
                         },
                         "async_group": async_group,
                     },
