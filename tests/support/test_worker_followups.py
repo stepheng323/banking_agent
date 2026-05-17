@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 
+from apps.chat.src.agent.graphs.support.handlers.failure import handle_failure_reason
 from apps.chat.src.agent.graphs.support.worker import SupportWorker
 from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
 from shared.services.async_completion import record_group_leg_and_maybe_build_summary
@@ -65,8 +66,10 @@ class _TxRepoStub:
         return None
 
     async def get_by_user(self, user_id: str, limit: int = 50):
-        del user_id, limit
-        return []
+        del user_id
+        transactions = list(self.transactions.values())
+        transactions.sort(key=lambda tx: getattr(tx, "created_at", datetime.min), reverse=True)
+        return transactions[:limit]
 
     async def get_by_status(self, user_id: str, status: str):
         del user_id
@@ -89,7 +92,9 @@ def _tx(
     status: str = "successful",
     error_message: str | None = None,
     failure_category: str | None = None,
+    created_at: datetime | None = None,
 ):
+    timestamp = created_at or datetime.now(UTC).replace(tzinfo=None)
     return SimpleNamespace(
         id=transaction_id,
         transaction_type="transfer",
@@ -108,8 +113,8 @@ def _tx(
         provider_response={},
         provider_status=status,
         provider_error_code="00" if status == "successful" else None,
-        created_at=datetime.now(UTC).replace(tzinfo=None),
-        completed_at=datetime.now(UTC).replace(tzinfo=None),
+        created_at=timestamp,
+        completed_at=timestamp,
     )
 
 
@@ -215,6 +220,137 @@ async def test_support_worker_handles_last_transaction_failed_when_llm_returns_a
     assert result.outcome == SupportOutcome.OK
     assert "Provider down" in (result.response or "")
     assert "retry now" in (result.response or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_support_worker_last_transaction_failed_checks_latest_transaction_status() -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    worker = SupportWorker(
+        llm=_SupportLLMStub(),
+        transaction_repo=_TxRepoStub(
+            {
+                "tx-processing": _tx(
+                    "tx-processing",
+                    amount=6000,
+                    recipient_name="Tolu Adebayo",
+                    bank_name="Opay",
+                    account_number="8162511023",
+                    status="processing",
+                    created_at=now,
+                ),
+                "tx-failed": _tx(
+                    "tx-failed",
+                    amount=10000,
+                    recipient_name="Mercy Johnson",
+                    bank_name="Opay",
+                    account_number="8162511023",
+                    status="failed",
+                    error_message="Provider down",
+                    failure_category="provider_unavailable",
+                    created_at=now - timedelta(minutes=5),
+                ),
+            }
+        ),
+        actionable_message_repo=_ActionableRepoStub(),
+        redis_client=_RedisStub(),
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="My last transaction failed",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "currently show it as processing, not failed" in (result.response or "")
+    assert "Tolu Adebayo" in (result.response or "")
+    assert "Provider down" not in (result.response or "")
+
+
+@pytest.mark.asyncio
+async def test_support_worker_failed_transaction_phrase_prefers_failed_status() -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    worker = SupportWorker(
+        llm=_SupportLLMStub(),
+        transaction_repo=_TxRepoStub(
+            {
+                "tx-processing": _tx(
+                    "tx-processing",
+                    amount=6000,
+                    recipient_name="Tolu Adebayo",
+                    bank_name="Opay",
+                    account_number="8162511023",
+                    status="processing",
+                    created_at=now,
+                ),
+                "tx-failed": _tx(
+                    "tx-failed",
+                    amount=10000,
+                    recipient_name="Mercy Johnson",
+                    bank_name="Opay",
+                    account_number="8162511023",
+                    status="failed",
+                    error_message="Provider down",
+                    failure_category="provider_unavailable",
+                    created_at=now - timedelta(minutes=5),
+                ),
+            }
+        ),
+        actionable_message_repo=_ActionableRepoStub(),
+        redis_client=_RedisStub(),
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="Why did my failed transaction fail?",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert "Provider down" in (result.response or "")
+    assert "Tolu Adebayo" not in (result.response or "")
+
+
+@pytest.mark.asyncio
+async def test_failure_handler_treats_provider_error_status_as_failed() -> None:
+    response = await handle_failure_reason(
+        {
+            "id": "tx-1",
+            "transaction_id": "tx-1",
+            "transaction_type": "transfer",
+            "status": "error",
+            "amount": 10000,
+            "recipient_name": "Mercy Johnson",
+            "error_message": "Provider timed out",
+            "provider_response": {},
+        },
+        locale="en",
+    )
+
+    assert "Provider timed out" in response.message
+    assert "Unable to determine failure reason" not in response.message
+    assert response.offer_retry is True
+
+
+@pytest.mark.asyncio
+async def test_failure_handler_processing_status_explains_current_state() -> None:
+    response = await handle_failure_reason(
+        {
+            "id": "tx-1",
+            "transaction_id": "tx-1",
+            "transaction_type": "transfer",
+            "status": "queued",
+            "amount": 10000,
+            "recipient_name": "Mercy Johnson",
+            "provider_response": {},
+        },
+        locale="en",
+    )
+
+    assert "currently show it as processing, not failed" in response.message
+    assert "Known reason: not available" in response.message
+    assert "Unable to determine failure reason" not in response.message
+    assert response.offer_retry is False
 
 
 @pytest.mark.asyncio

@@ -2,19 +2,13 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import EscalationResult, SupportResponse
 from shared.i18n import render_message
 from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def _normalize_status(status: str) -> str:
-    status = (status or "unknown").strip().lower()
-    if status == "success":
-        return "successful"
-    return status
 
 
 def _provider_error_code(provider_response: dict[str, Any], transaction: dict[str, Any]) -> str | None:
@@ -64,10 +58,17 @@ async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "e
     Handle transfer_failure_reason intent.
     Explains why a transfer failed using provider data.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
+    recipient = transaction.get("recipient_name", "recipient")
     error = transaction.get("error_message", "")
     provider_response = transaction.get("provider_response", {})
+
+    if transaction.get("needs_review") and transaction.get("bank_status") == "posted":
+        return SupportResponse(
+            message=render_message("query.reply.status.failed_bank_posted", locale),
+            transaction_data=transaction,
+        )
 
     # Extract provider error if available
     provider_error = (
@@ -120,8 +121,28 @@ async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "e
                 transaction_data=transaction,
             )
 
+    if status in {"pending", "processing"}:
+        message = render_message(
+            "support.failure.marked_processing",
+            locale,
+            {"amount": f"{amount:,.0f}", "recipient": recipient, "status": status},
+        )
+        return SupportResponse(
+            message=message,
+            transaction_data=transaction,
+        )
+
+    if status == "reversed":
+        message = render_message("support.reversal.reversed", locale, {"amount": f"{amount:,.0f}"})
+        return SupportResponse(
+            message=message,
+            transaction_data=transaction,
+        )
+
+    status_message = render_message("support.status.raw_status", locale, {"status": status})
+    reason_message = render_message("support.failure.reason_not_provided", locale)
     return SupportResponse(
-        message=render_message("support.failure.unknown_reason_contact", locale),
+        message=f"{status_message}\n{reason_message}",
         escalation=EscalationResult(reason="unknown_error", transaction_id=transaction.get("id")),
         transaction_data=transaction,
     )
@@ -132,7 +153,7 @@ async def handle_wrong_debit(transaction: dict[str, Any], *, locale: str = "en")
     Handle wrong_debit intent.
     Debited but transfer didn't complete.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     provider_response = transaction.get("provider_response", {})
 

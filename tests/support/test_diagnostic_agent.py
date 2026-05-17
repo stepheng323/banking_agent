@@ -72,8 +72,10 @@ class _TxRepoStub:
         return None
 
     async def get_by_user(self, user_id: str, limit: int = 50):
-        del user_id, limit
-        return []
+        del user_id
+        transactions = list(self.transactions.values())
+        transactions.sort(key=lambda tx: getattr(tx, "created_at", datetime.min), reverse=True)
+        return transactions[:limit]
 
     async def get_by_status(self, user_id: str, status: str):
         del user_id

@@ -64,6 +64,16 @@ def _compact_transaction(transaction: dict[str, Any] | None) -> dict[str, Any] |
         "provider_error_code",
         "created_at",
         "completed_at",
+        "unified_source",
+        "local_transaction_id",
+        "bank_transaction_id",
+        "provider_reference",
+        "local_status",
+        "bank_status",
+        "display_status",
+        "match_confidence",
+        "needs_review",
+        "actionable",
     )
     return {key: transaction.get(key) for key in allowed if transaction.get(key) not in (None, "")}
 

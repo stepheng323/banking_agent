@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import SupportResponse
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -9,22 +10,33 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _normalize_status(status: str) -> str:
-    status = (status or "unknown").strip().lower()
-    if status == "success":
-        return "successful"
-    return status
-
-
 async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle transfer_status intent.
     Confirms success or explains current state.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
     created_at = transaction.get("created_at", "")
+
+    if transaction.get("needs_review") and transaction.get("bank_status") == "posted":
+        return SupportResponse(
+            message=render_message("query.reply.status.failed_bank_posted", locale),
+            transaction_data=transaction,
+        )
+
+    if status in {"pending", "processing"} and transaction.get("bank_status") == "posted":
+        return SupportResponse(
+            message=render_message("query.reply.status.processing_bank_posted", locale),
+            transaction_data=transaction,
+        )
+
+    if status == "posted":
+        return SupportResponse(
+            message=render_message("query.reply.status.posted", locale),
+            transaction_data=transaction,
+        )
 
     # Parse timestamp for display
     time_str = ""
@@ -93,7 +105,7 @@ async def handle_pending(transaction: dict[str, Any], *, locale: str = "en") -> 
     Handle pending_transfer intent.
     Explains why transfer is stuck.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
 

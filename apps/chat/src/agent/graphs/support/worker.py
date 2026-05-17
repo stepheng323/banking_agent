@@ -68,6 +68,13 @@ _REMAINING_RE = re.compile(r"\b(?:the remaining ones?|remaining ones?|the rest|r
 _ALL_EXCEPT_RE = re.compile(r"\b(?:all|every|both)\b.*?\b(?:except|excluding|but not|apart from)\b(?P<tail>.+)$", re.IGNORECASE)
 _ONLY_SELECTION_RE = re.compile(r"\b(?:only|just)\b(?P<tail>.+)$", re.IGNORECASE)
 _TICKET_CODE_RE = re.compile(r"\b(SUP-\d{8}-\d{4})\b", re.IGNORECASE)
+_RECENT_TRANSACTION_STATUS_ASSERTION_RE = re.compile(
+    r"\b(?:my|the|this|that)?\s*(?:last|latest|most\s+recent|recent)\s+"
+    r"(?:transaction|transfer|payment)\s+"
+    r"(?:failed|fail(?:ed)?|declined|rejected|is\s+pending|is\s+processing|is\s+stuck|"
+    r"was\s+pending|was\s+processing|was\s+stuck|didn['’]?t\s+go\s+through)\b",
+    re.IGNORECASE,
+)
 
 
 def _support_identity(context: dict[str, Any]) -> str | None:
@@ -248,10 +255,11 @@ class SupportWorker:
         actionable_message_repo: Any,
         redis_client: Any,
         ticket_service: TicketService | None = None,
+        bank_transaction_repo: Any | None = None,
     ) -> None:
         self.llm = llm
         self.classifier = SupportClassifier(llm)
-        self.resolver = TransactionResolver(transaction_repo, actionable_message_repo)
+        self.resolver = TransactionResolver(transaction_repo, actionable_message_repo, bank_transaction_repo)
         self.context_manager = SupportContextManager(redis_client)
         self._ticket_service = ticket_service
         self._diagnostic_agent: SupportDiagnosticAgent | None = None
@@ -745,6 +753,25 @@ class SupportWorker:
                 return message
         return None
 
+    @staticmethod
+    def _recent_status_priority(intent: SupportIntent) -> list[str] | None:
+        if intent in {SupportIntent.FAILED_TRANSFER, SupportIntent.RETRY_TRANSFER}:
+            return ["failed", "processing", "pending"]
+        if intent == SupportIntent.PENDING_TRANSFER:
+            return ["pending", "processing", "failed"]
+        return None
+
+    @staticmethod
+    def _should_verify_latest_transaction_status(intent: SupportIntent, message: str) -> bool:
+        if intent not in {
+            SupportIntent.FAILED_TRANSFER,
+            SupportIntent.PENDING_TRANSFER,
+            SupportIntent.GENERAL_TX_ISSUE,
+            SupportIntent.TRANSFER_STATUS,
+        }:
+            return False
+        return bool(_RECENT_TRANSACTION_STATUS_ASSERTION_RE.search(message))
+
     def _diagnostic_has_transaction_grounding(
         self,
         *,
@@ -1231,6 +1258,9 @@ class SupportWorker:
             if quoted_message_id:
                 tx_ref = tx_ref or TransactionReference()
                 tx_ref.use_quoted = True
+            if self._should_verify_latest_transaction_status(intent, message):
+                tx_ref = tx_ref or TransactionReference()
+                tx_ref.use_recent = True
 
             extraction = SupportExtractionResult(
                 intent=intent,
@@ -1357,7 +1387,13 @@ class SupportWorker:
                 NextStep.LOOKUP_TRANSACTION,
                 NextStep.EXPLAIN_STATUS,
             ):
-                tx_obj, method = await self.resolver.resolve(user_id, tx_ref, quoted_message_id)
+                tx_obj, method = await self.resolver.resolve(
+                    user_id,
+                    tx_ref,
+                    quoted_message_id,
+                    recent_status_priority=self._recent_status_priority(intent),
+                    prefer_latest_recent=self._should_verify_latest_transaction_status(intent, message),
+                )
                 if tx_obj:
                     resolved_tx = self.resolver.transaction_to_dict(tx_obj)
 

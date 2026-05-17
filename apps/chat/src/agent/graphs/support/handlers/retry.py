@@ -2,19 +2,13 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import SupportResponse
 from shared.i18n import render_message
 from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def _normalize_status(status: str) -> str:
-    status = (status or "unknown").strip().lower()
-    if status == "success":
-        return "successful"
-    return status
 
 
 def _provider_error_code(transaction: dict[str, Any]) -> str | None:
@@ -56,9 +50,10 @@ async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> Su
     Handle retry_transfer intent.
     Checks if retryable and prepares for TransferFlowGraph hydration.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
+    actionable = transaction.get("actionable")
 
     if status == "successful":
         message = render_message(
@@ -74,6 +69,18 @@ async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> Su
 
     if status in {"pending", "processing"}:
         message = render_message("support.retry.pending_wait", locale)
+        return SupportResponse(
+            message=message,
+            offer_retry=False,
+            transaction_data=transaction,
+        )
+
+    if isinstance(actionable, dict) and not actionable.get("retry", False):
+        message = (
+            render_message("query.reply.status.failed_bank_posted", locale)
+            if transaction.get("needs_review") and transaction.get("bank_status") == "posted"
+            else render_message("support.retry.not_retryable", locale, {"error": status})
+        )
         return SupportResponse(
             message=message,
             offer_retry=False,

@@ -59,15 +59,6 @@ class SupportClassifier:
 
         Returns ClassificationResult with intent (or None if not support-related).
         """
-        if deterministic := self._rule_based_fallback(message):
-            logger.info(
-                "support_classified",
-                intent=deterministic.intent.value if deterministic.intent else None,
-                confidence=deterministic.confidence,
-                source="deterministic",
-            )
-            return deterministic
-
         prompt = SUPPORT_CLASSIFIER_PROMPT.format(message=message)
 
         try:
@@ -80,12 +71,30 @@ class SupportClassifier:
                 "support_classified",
                 intent=result.intent.value if result.intent else None,
                 confidence=result.confidence,
+                source="llm",
             )
+            if result.intent is not None and result.confidence >= 0.5:
+                return result
+
+            if fallback := self._rule_based_fallback(message):
+                logger.info(
+                    "support_classified",
+                    intent=fallback.intent.value if fallback.intent else None,
+                    confidence=fallback.confidence,
+                    source="deterministic_after_llm_uncertain",
+                )
+                return fallback
             return result
 
         except Exception as e:
             logger.error("support_classification_failed", error=str(e))
             if fallback := self._rule_based_fallback(message):
+                logger.info(
+                    "support_classified",
+                    intent=fallback.intent.value if fallback.intent else None,
+                    confidence=fallback.confidence,
+                    source="deterministic_after_llm_failure",
+                )
                 return fallback
             return ClassificationResult(
                 intent=None,
@@ -123,8 +132,6 @@ class SupportClassifier:
                     use_quoted=bool(tx_ref_data.get("use_quoted", False)),
                     use_recent=bool(tx_ref_data.get("use_recent", False)),
                 )
-            elif FAILED_TRANSACTION_RE.search(original_message):
-                tx_ref = TransactionReference(use_recent=True)
 
             return ClassificationResult(
                 intent=intent,
