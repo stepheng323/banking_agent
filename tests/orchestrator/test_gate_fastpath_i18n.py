@@ -2438,6 +2438,40 @@ async def test_gate_support_issue_hint_vetoes_query_route() -> None:
     assert updates["routing_heuristic_name"] == "support_issue_phrase"
 
 
+async def test_gate_support_hint_preserves_explicit_transaction_list_query() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            confidence=0.9,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="explicit refund transaction list",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_issue_query_list",
+        phone_number="23489999999183",
+        channel="whatsapp",
+        last_message_text="show refund transactions",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.last_context is not None
+    assert "candidate_domain=support" not in planner.last_context
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "query"
+    assert updates["tasks"]["direct_query"].type == "query"
+
+
 async def test_gate_routes_support_reference_followup_before_query() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

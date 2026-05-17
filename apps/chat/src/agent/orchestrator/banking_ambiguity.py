@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from apps.chat.src.agent.shared.routing_signals import looks_like_explicit_transaction_query_shape
+
 AmbiguousBankingDomain = Literal["transfer", "airtime", "data", "support", "account_query"]
 
 _TRANSFER_SELF_DIRECTED_RE = re.compile(
@@ -59,6 +61,8 @@ def classify_banking_coded_ambiguity(text: str | None) -> AmbiguousBankingDomain
     if _SUPPORT_AMBIGUOUS_RE.search(normalized) and (
         _SUPPORT_UNGROUNDED_SELF_RE.search(normalized) or _SUPPORT_REQUEST_VERB_RE.search(normalized)
     ):
+        if looks_like_explicit_transaction_query_shape(normalized):
+            return None
         return "support"
     if (
         _ACCOUNT_QUERY_MIXED_RE.search(normalized)

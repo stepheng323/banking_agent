@@ -13,49 +13,12 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _route_observability_updates,
     _support_user_id_for_state,
 )
+from apps.chat.src.agent.shared.routing_signals import looks_like_support_problem_statement
 from shared.services.async_completion import get_recent_batch_reference
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_SUPPORT_QUERY_PREFIX_RE = re.compile(r"^\s*(?:show|list|view|get)\b", re.IGNORECASE)
-_SUPPORT_TRANSACTION_ISSUE_PATTERNS = (
-    re.compile(
-        r"\b(?:my|the|this|that|last)\s+(?:last\s+)?(?:transaction|transfer|payment)\s+"
-        r"(?:failed|fail(?:ed)?|pending|stuck|processing)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:transaction|transfer|payment)\s+(?:failed|fail(?:ed)?|pending|stuck|processing)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:i\s+(?:was\s+)?debited|money\s+(?:left|deducted)|debit(?:ed)?)\b.*"
-        r"\b(?:didn['’]?t|did\s+not|not|never)\s+(?:receive|reflect|arrive|go\s+through)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:recipient|beneficiary|they|he|she)\s+"
-        r"(?:didn['’]?t|did\s+not|hasn['’]?t|has\s+not|never)\s+"
-        r"(?:receive|get|got)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:retry|try\s+again|resend)\b.*\b(?:failed|transaction|transfer|payment)\b|"
-        r"\b(?:failed|transaction|transfer|payment)\b.*\b(?:retry|try\s+again|resend)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(r"\b(?:refund|reversal|reverse|wrong\s+debit|chargeback)\b", re.IGNORECASE),
-    re.compile(
-        r"\b(?:fraud|fraudulent|unauthori[sz]ed|someone\s+used\s+my\s+account|scam)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:ticket|complaint|case)\b.*\b(?:status|update|happened|progress)\b|"
-        r"\bwhat\s+happened\s+to\s+my\s+(?:complaint|ticket|case)\b",
-        re.IGNORECASE,
-    ),
-)
 _SUPPORT_CONTEXT_REFERENCE_RE = re.compile(
     r"^\s*(?:my|the|this|that)?\s*(?:last|latest|most\s+recent|recent)\s+"
     r"(?:transaction|transfer|payment)\s*$"
@@ -78,16 +41,7 @@ _SUPPORT_CONTEXT_EXPLICIT_LATEST_STATUS_QUERY_RE = re.compile(
 
 
 def _looks_like_support_issue_request(message_text: str) -> bool:
-    normalized = re.sub(r"\s+", " ", (message_text or "").strip())
-    if not normalized:
-        return False
-    if _SUPPORT_QUERY_PREFIX_RE.match(normalized) and not re.search(
-        r"\b(?:ticket|complaint|case|refund|reversal|reverse|retry)\b",
-        normalized,
-        re.IGNORECASE,
-    ):
-        return False
-    return any(pattern.search(normalized) for pattern in _SUPPORT_TRANSACTION_ISSUE_PATTERNS)
+    return looks_like_support_problem_statement(message_text)
 
 
 def _looks_like_support_context_followup(message_text: str, support_ctx: Any) -> bool:
