@@ -1021,6 +1021,24 @@ async def test_gate_keeps_structural_transaction_list_query_direct() -> None:
     assert task.payload["force_new_query"] is True
 
 
+async def test_gate_non_structural_query_phrase_falls_through_without_semantic_router() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_query_phrase_no_router_1",
+        phone_number="2348999999915",
+        channel="whatsapp",
+        last_message_text="How much have I sent to Mum this week",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_handoff"
+
+
 async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -2104,7 +2122,7 @@ async def test_gate_routes_debited_not_received_to_support_through_semantic_rout
     assert task.type == "support"
 
 
-async def test_gate_support_issue_falls_back_to_direct_when_semantic_router_unavailable() -> None:
+async def test_gate_support_issue_falls_through_to_planner_when_semantic_router_unavailable() -> None:
     state = OrchestratorState(
         user_id="u_gate_support_issue_no_router",
         phone_number="23489999999181",
@@ -2116,11 +2134,10 @@ async def test_gate_support_issue_falls_back_to_direct_when_semantic_router_unav
 
     updates = await session_gate_direct_path(state, config)
 
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_issue_direct"
-    assert updates["routing_decision"] == "support_issue_direct"
-    task = updates["tasks"]["direct_support"]
-    assert task.type == "support"
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_handoff"
 
 
 async def test_gate_semantic_v2_support_issue_uses_router_hint() -> None:

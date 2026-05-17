@@ -202,7 +202,10 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
     ):
         semantic_router_available = callable(getattr(ctx.task_planner, "route_semantic_turn", None))
         structural_query_request = _is_structural_query_domain_request(ctx.message_text)
-        if semantic_router_available and not structural_query_request:
+        if not structural_query_request:
+            if not semantic_router_available:
+                logger.info("gate_query_domain_planner_handoff", reason="non_structural_query_phrase")
+                return None
             ctx.add_routing_hint(
                 domain="query",
                 reason="query_domain_phrase",
@@ -212,12 +215,10 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
             return None
 
         task_id, spec = _build_direct_domain_task(state=ctx.state, domain="query", mode="new")
-        heuristic_type = "guardrail_shortcut" if structural_query_request else "routing_heuristic"
-        heuristic_name = "structural_query_domain" if structural_query_request else "query_domain_phrase"
         logger.info(
             "gate_deterministic_query_domain",
             task_id=task_id,
-            structural_query_request=structural_query_request,
+            structural_query_request=True,
             semantic_router_available=semantic_router_available,
         )
         return {
@@ -235,8 +236,8 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                 target_domain="query",
                 mode="new",
                 route_source="query_domain_guard",
-                heuristic_type=heuristic_type,
-                heuristic_name=heuristic_name,
+                heuristic_type="guardrail_shortcut",
+                heuristic_name="structural_query_domain",
             ),
         }
 

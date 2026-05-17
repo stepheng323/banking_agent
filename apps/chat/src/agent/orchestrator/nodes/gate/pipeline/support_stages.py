@@ -187,26 +187,8 @@ async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | Non
         )
         logger.info("gate_support_issue_hint_attached")
         return None
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="support")
-    logger.info("gate_support_issue_handoff", task_id=task_id)
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "support_issue_direct",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="support_issue_direct",
-            target_domain="support",
-            route_source="support_issue_guard",
-            heuristic_type="routing_heuristic",
-            heuristic_name="support_issue_phrase",
-        ),
-    }
+    logger.info("gate_support_issue_planner_handoff")
+    return None
 
 
 async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | None:
