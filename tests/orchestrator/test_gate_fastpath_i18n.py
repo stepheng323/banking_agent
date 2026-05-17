@@ -3,6 +3,7 @@
 import json
 import time
 
+import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
@@ -938,9 +939,11 @@ async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert planner.last_context is not None
+    assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -971,11 +974,50 @@ async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> Non
 
     updates = await session_gate_direct_path(state, config)
 
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert planner.last_context is not None
+    assert "candidate_domain=query" in planner.last_context
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_keeps_structural_transaction_list_query_direct() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="should not own structural query shortcut",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_structural_direct_1",
+        phone_number="2348999999914",
+        channel="whatsapp",
+        last_message_text="Show my transactions",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
     assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert updates["route_source"] == "query_domain_guard"
+    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
+    assert updates["routing_heuristic_name"] == "structural_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
+    assert task.payload["message"] == "Show my transactions"
     assert task.payload["force_new_query"] is True
 
 
@@ -1037,9 +1079,11 @@ async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert planner.last_context is not None
+    assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -1238,10 +1282,12 @@ async def test_gate_semantic_router_routes_income_query_clarification_bypass_to_
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert planner.last_context is not None
+    assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What's my income this month"
@@ -2214,6 +2260,329 @@ async def test_gate_routes_support_detail_followup_before_query() -> None:
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "support_context_direct"
     assert updates["tasks"]["direct_support"].type == "support"
+
+
+async def test_gate_routes_contextual_worker_acknowledgement_before_support_issue() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            mode="new",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run",
+        )
+    )
+    responder = _FakeConversationResponder("No worries. That transfer was successful.")
+    redis = _RedisWithSupportContext(
+        {
+            "last_transaction_ref": "tx-success",
+            "last_issue_intent": "failed_transfer",
+            "last_support_step": "looking_up",
+            "attempts": 0,
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_contextual_worker_ack_1",
+        phone_number="23489999999184",
+        channel="whatsapp",
+        last_message_text="Okay great, i thought it failed",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Show the details"},
+                {
+                    "role": "assistant",
+                    "content": "This transfer of ₦10,000 to Tolu Adebayo was successful on May 17 at 06:49 AM.",
+                },
+            ],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "contextual_worker_followup"
+    assert updates["routing_decision"] == "contextual_worker_followup"
+    assert updates["routing_heuristic_name"] == "worker_acknowledgement"
+    assert updates["final_response"] == "No worries. That transfer was successful."
+    assert "tasks" not in updates
+    assert responder.calls[0]["intent"] == "contextual_worker_followup"
+    assert "contextual_worker_followup" in responder.calls[0]["user_ctx"]
+
+
+async def test_gate_contextual_worker_acknowledgement_uses_fallback_without_responder() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_contextual_worker_ack_2",
+        phone_number="23489999999185",
+        channel="whatsapp",
+        last_message_text="got it",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Buy airtime"},
+                {"role": "assistant", "content": "Your airtime purchase is processing."},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "contextual_worker_followup"
+    assert updates["final_response"] == "Got it."
+
+
+@pytest.mark.parametrize(
+    ("locale", "message_text", "expected"),
+    [
+        ("pcm", "no wahala, i bin think say e fail", "No wahala, that transfer successful."),
+        ("yo", "o dara, mo ro pe o kuna", "Ko si wahala, transfer naa ṣaṣeyọri."),
+        ("ha", "na gane, na dauka ya fadi", "Ba damuwa, wannan transfer ya yi nasara."),
+        ("ig", "o di mma, echere m na o fail", "Enweghị nsogbu, transfer ahụ gara nke ọma."),
+    ],
+)
+async def test_gate_contextual_worker_acknowledgement_handles_multilingual_failure_belief(
+    locale: str,
+    message_text: str,
+    expected: str,
+) -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            mode="new",
+            confidence=0.95,
+            detected_language=locale,
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run",
+        )
+    )
+    state = OrchestratorState(
+        user_id=f"u_gate_contextual_worker_ack_{locale}",
+        phone_number=f"23489999999{410 + len(locale)}",
+        channel="whatsapp",
+        last_message_text=message_text,
+        loaded_context={
+            "language": locale,
+            "detected_language": locale,
+            "history": [
+                {"role": "user", "content": "show the details"},
+                {
+                    "role": "assistant",
+                    "content": "This transfer of ₦10,000 to Tolu Adebayo was successful on May 17.",
+                },
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "contextual_worker_followup"
+    assert updates["final_response"] == expected
+    assert "tasks" not in updates
+
+
+async def test_gate_support_retry_followup_still_routes_to_support_context() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run",
+        )
+    )
+    redis = _RedisWithSupportContext(
+        {
+            "last_transaction_ref": "tx-success",
+            "last_issue_intent": "failed_transfer",
+            "last_support_step": "looking_up",
+            "attempts": 0,
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_context_3",
+        phone_number="23489999999186",
+        channel="whatsapp",
+        last_message_text="retry it",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "support_context_direct"
+    assert updates["tasks"]["direct_support"].type == "support"
+
+
+async def test_gate_explicit_latest_status_query_not_stolen_by_contextual_ack_or_support_context() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="query owns explicit latest status",
+        )
+    )
+    redis = _RedisWithSupportContext(
+        {
+            "last_transaction_ref": "tx-success",
+            "last_issue_intent": "failed_transfer",
+            "last_support_step": "looking_up",
+            "attempts": 0,
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_context_4",
+        phone_number="23489999999187",
+        channel="whatsapp",
+        last_message_text="What is the status of my last transaction?",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Show the details"},
+                {"role": "assistant", "content": "This transfer was successful."},
+            ],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["tasks"]["direct_query"].type == "query"
+
+
+async def test_gate_exact_thanks_still_uses_deterministic_appreciation_with_context() -> None:
+    responder = _FakeConversationResponder("This should not be used.")
+    state = OrchestratorState(
+        user_id="u_gate_contextual_worker_ack_3",
+        phone_number="23489999999188",
+        channel="whatsapp",
+        last_message_text="thanks",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Show my balance"},
+                {"role": "assistant", "content": "Your available balance is ₦20,000."},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"conversation_responder": responder}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert responder.calls == []
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.appreciation", "en")
+
+
+async def test_gate_contextual_worker_acknowledgement_does_not_steal_active_interrupt() -> None:
+    responder = _FakeConversationResponder("This should not be used.")
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="unused for interrupt",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_contextual_worker_ack_4",
+        phone_number="23489999999189",
+        channel="whatsapp",
+        last_message_text="ok great",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Send 10k to Tolu"},
+                {"role": "assistant", "content": "Please confirm the transfer."},
+            ],
+        },
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"amount": 10000, "recipient_name": "Tolu"},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert responder.calls == []
+    assert updates.get("direct_path_triggered") is None
+    assert updates["routing_decision"] == "planner_handoff"
+
+
+async def test_gate_contextual_worker_acknowledgement_handles_cross_worker_history() -> None:
+    for domain, assistant_text in [
+        ("query", "Transactions — Apr 17-May 17\n₦10,000 • Sent — Tolu"),
+        ("account", "Your available balance is ₦20,000."),
+        ("transfer", "Your transfer to Tolu is processing."),
+        ("airtime", "Your airtime purchase is processing."),
+        ("data", "Your data purchase is processing."),
+    ]:
+        state = OrchestratorState(
+            user_id=f"u_gate_contextual_worker_ack_{domain}",
+            phone_number=f"23489999999{190 + len(domain)}",
+            channel="whatsapp",
+            last_message_text="ok great",
+            loaded_context={
+                "language": "en",
+                "history": [
+                    {"role": "user", "content": f"previous {domain} request"},
+                    {"role": "assistant", "content": assistant_text},
+                ],
+            },
+        )
+        config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+        updates = await session_gate_direct_path(state, config)
+
+        assert updates["direct_path_triggered"] is True
+        assert updates["semantic_path_shape"] == "contextual_worker_followup"
+        assert updates["final_response"] == "Got it."
 
 
 async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner() -> None:
@@ -4274,10 +4643,12 @@ async def test_gate_stale_query_interrupt_is_cleared_before_fresh_query_routing(
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["pending_interrupt"] is None
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert planner.last_context is not None
+    assert "candidate_domain=query" in planner.last_context
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What's my income this month"

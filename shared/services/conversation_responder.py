@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -50,6 +51,42 @@ _BANKING_JOKE_FALLBACKS = (
     "Why do bankers love balance? Because it always checks out.",
     "Why was the debit card calm? It knew how to keep its balance.",
 )
+_CONTEXTUAL_WORKER_FOLLOWUP_INTENT = "contextual_worker_followup"
+_CONTEXTUAL_ACTION_PROMISE_RE = re.compile(
+    r"\b(?:i(?:'ll| will)|let me|i can)\s+"
+    r"(?:retry|resend|send|transfer|buy|purchase|create|open|raise|submit|reverse|refund)\b",
+    re.IGNORECASE,
+)
+_CONTEXTUAL_UNGROUNDED_PREFACE_RE = re.compile(
+    r"\b(?:glad\s+it\s+looked|looked\s+better\s+than\s+expected|better\s+than\s+expected)\b",
+    re.IGNORECASE,
+)
+_CONTEXTUAL_FAILURE_BELIEF_RE = re.compile(
+    r"\b(?:"
+    r"(?:thought|assumed|figured|was\s+thinking|was\s+worried|worried)\b"
+    r".*\b(?:fail(?:ed)?|declined|unsuccessful|did(?:n't| not)\s+go)|"
+    r"i\s+(?:bin\s+|been\s+)?think\s+say\b.*\b(?:fail(?:ed)?|no\s+go|not\s+go|decline)|"
+    r"mo\s+(?:ro|lero|ni\s+lokan)\s+pe\b.*\b(?:o\s+)?(?:kuna|fail|ko\s+(?:se|lo|work))|"
+    r"(?:na\s+(?:yi\s+)?zaton|na\s+dauka|ina\s+tunanin)\b.*"
+    r"\b(?:ya\s+)?(?:fadi|kasa|fail|gaza|bai\s+yi\s+nasara)|"
+    r"(?:eche(?:re)?\s+m\s+na|a\s+chere\s+m\s+na)\b.*"
+    r"\b(?:fail|dara\s+ada|gaghi\s+nke\s+oma|agara\s+ghi\s+nke\s+oma)"
+    r")\b",
+    re.IGNORECASE,
+)
+_CONTEXTUAL_SUCCESS_RE = re.compile(
+    r"\b(?:"
+    r"(?:was|is)\s+(?:actually\s+)?successful|"
+    r"successful\s+on|completed|settled|went\s+through|no\s+failure\s+occurred|"
+    r"don\s+go|go\s+well|seyori|a\s+seyori|ya\s+yi\s+nasara|an\s+kammala|"
+    r"gara\s+nke\s+oma|agara\s+nke\s+oma|emechara"
+    r")\b",
+    re.IGNORECASE,
+)
+_CONTEXTUAL_PENDING_RE = re.compile(
+    r"\b(?:pending|processing|still\s+being\s+processed|dey\s+process|ana\s+aiwatar|ka\s+na\s+processing)\b",
+    re.IGNORECASE,
+)
 
 
 def _recent_history_text(history: list[Any], *, limit: int = 4) -> str:
@@ -73,6 +110,99 @@ def _normalize_reply_text(text: str) -> str:
     cleaned_lines = [_WHITESPACE_RE.sub(" ", line).strip() for line in text.splitlines()]
     collapsed = "\n".join(line for line in cleaned_lines if line)
     return _MULTILINE_RE.sub("\n\n", collapsed).strip()
+
+
+def _fold_text(text: str | None) -> str:
+    normalized = unicodedata.normalize("NFKD", text or "")
+    without_marks = "".join(char for char in normalized if not unicodedata.combining(char))
+    return _WHITESPACE_RE.sub(" ", without_marks.casefold()).strip()
+
+
+def _contextual_worker_context_blob(user_ctx: dict[str, Any] | None) -> str:
+    if not isinstance(user_ctx, dict):
+        return ""
+    parts: list[str] = []
+    contextual_summary = user_ctx.get(_CONTEXTUAL_WORKER_FOLLOWUP_INTENT)
+    if isinstance(contextual_summary, str) and contextual_summary.strip():
+        parts.append(contextual_summary.strip())
+    history = user_ctx.get("history")
+    if isinstance(history, list):
+        for turn in history[-4:]:
+            if not isinstance(turn, dict):
+                continue
+            content = str(turn.get("content") or "").strip()
+            if content:
+                parts.append(content)
+    return "\n".join(parts)
+
+
+def _contextual_worker_subject_key(context_blob: str) -> str:
+    lowered = _fold_text(context_blob)
+    if re.search(r"\b(?:transfer|tura\s+kudi|aika\s+kudi|gbe\s+owo|ziga\s+ego|zipu\s+ego)\b", lowered):
+        return "transfer"
+    if re.search(r"\bairtime\b", lowered):
+        return "airtime_purchase"
+    if re.search(r"\bdata\b", lowered):
+        return "data_purchase"
+    if re.search(r"\b(?:transaction|payment)\b", lowered):
+        return "transaction"
+    return "request"
+
+
+def _contextual_worker_subject_label(subject_key: str, locale: str) -> str:
+    return render_message(
+        f"conversational.contextual_worker_followup.subject.{subject_key}",
+        locale,
+        fallback_en=subject_key.replace("_", " "),
+    )
+
+
+def _contextual_worker_message(
+    message_key: str,
+    locale: str,
+    *,
+    subject_key: str | None = None,
+) -> str:
+    params: dict[str, object] | None = None
+    if subject_key:
+        params = {"subject": _contextual_worker_subject_label(subject_key, locale)}
+    return render_message(f"conversational.contextual_worker_followup.{message_key}", locale, params)
+
+
+def _contextual_worker_grounded_reply(
+    text: str | None,
+    user_ctx: dict[str, Any] | None,
+    locale: str,
+) -> str | None:
+    normalized = _fold_text(text)
+    if not _CONTEXTUAL_FAILURE_BELIEF_RE.search(normalized):
+        return None
+    context_blob = _contextual_worker_context_blob(user_ctx)
+    if not context_blob:
+        return None
+    folded_context = _fold_text(context_blob)
+    subject_key = _contextual_worker_subject_key(context_blob)
+    if _CONTEXTUAL_SUCCESS_RE.search(folded_context):
+        return _contextual_worker_message("success", locale, subject_key=subject_key)
+    if _CONTEXTUAL_PENDING_RE.search(folded_context):
+        return _contextual_worker_message("pending", locale, subject_key=subject_key)
+    return None
+
+
+def contextual_worker_fallback_reply(
+    text: str | None,
+    user_ctx: dict[str, Any] | None = None,
+    *,
+    locale: str | None = None,
+) -> str:
+    resolved_locale = LocaleManager.normalize(locale or (user_ctx or {}).get("language")).value
+    grounded_reply = _contextual_worker_grounded_reply(text, user_ctx, resolved_locale)
+    if grounded_reply:
+        return grounded_reply
+    normalized = _fold_text(text)
+    if re.search(r"\b(?:thought|assumed|figured|worried|my bad|mistake|mistaken)\b", normalized):
+        return _contextual_worker_message("settled", resolved_locale)
+    return _contextual_worker_message("generic", resolved_locale)
 
 
 def is_banking_refusal_reply(raw_text: str | None, *, locale: str) -> bool:
@@ -176,43 +306,66 @@ class ConversationResponder:
         intent: str | None = None,
     ) -> str:
         """Generate a short safe reply and append a deterministic banking redirect."""
-        del phone_number, intent
+        del phone_number
         profile = user_ctx.get("profile") or {}
         name = profile.get("full_name") or profile.get("first_name") if isinstance(profile, dict) else None
 
         locale = LocaleManager.normalize(user_ctx.get("language")).value
         language = _locale_to_language_label(locale)
         history = user_ctx.get("history") or []
+        is_contextual_worker_followup = intent == _CONTEXTUAL_WORKER_FOLLOWUP_INTENT
         now = datetime.now(ZoneInfo("Africa/Lagos"))
         casual_streak = self._count_trailing_casual_replies(history, locale=locale)
         redirect_text = self._redirect_text(locale, casual_streak=casual_streak)
         prefers_banking_humor = bool(_JOKE_PATTERN_RE.search(text))
-        if casual_streak >= _MAX_CASUAL_REPLY_STREAK:
+        if not is_contextual_worker_followup and casual_streak >= _MAX_CASUAL_REPLY_STREAK:
             return redirect_text
 
         history_text = self._recent_history_text(history)
         history_block = f"\nRecent turns:\n{history_text}" if history_text else ""
         is_joke_turn = self._is_joke_turn(text, history)
+        if is_contextual_worker_followup:
+            grounded_reply = _contextual_worker_grounded_reply(text, user_ctx, locale)
+            if grounded_reply:
+                return grounded_reply
 
-        system = (
-            build_conversation_voice_block(locale=language, channel="WhatsApp")
-            + f"Reply in {language}.\n"
-            "The user's message is non-banking or casual chat.\n"
-            "Write ONLY a short conversational preface, not the banking redirect.\n"
-            "Rules:\n"
-            "- Answer briefly and harmlessly.\n"
-            "- Keep it to 1 or 2 short sentences.\n"
-            "- For harmless casual asks like jokes, tiny banter, or date/time, answer directly instead of refusing.\n"
-            "- If the user asks for a joke or playful banter, prefer banking-, money-, balance-, savings-, "
-            "or transfer-themed humor.\n"
-            "- No financial, legal, medical, tax, or investment advice.\n"
-            "- No promises about unsupported capabilities.\n"
-            "- No broad topic drift, no markdown, no emojis.\n"
-            "- If asked about the current date or time, use the runtime Lagos timestamp provided.\n"
-            "- Do not say you only handle banking or that you cannot help with harmless casual chat.\n"
-            "- If the ask is unsafe, too broad, or not suitable, return an empty string.\n"
-        )
-        if casual_streak >= 2:
+        if is_contextual_worker_followup:
+            system = (
+                build_conversation_voice_block(locale=language, channel="WhatsApp")
+                + f"Reply in {language}.\n"
+                "The user's message is an acknowledgement or commentary after a banking assistant result.\n"
+                "Write ONLY a short grounded acknowledgement.\n"
+                "Rules:\n"
+                "- Use only the recent context provided.\n"
+                "- Keep it to 1 short sentence.\n"
+                "- Do not ask for a transaction reference.\n"
+                "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
+                "- Do not offer to retry, send money, buy anything, create tickets, refund, or reverse anything.\n"
+                "- No generic banking redirect.\n"
+                "- No markdown, no emojis.\n"
+                "- If no specific grounded acknowledgement is possible, return an empty string.\n"
+            )
+        else:
+            system = (
+                build_conversation_voice_block(locale=language, channel="WhatsApp")
+                + f"Reply in {language}.\n"
+                "The user's message is non-banking or casual chat.\n"
+                "Write ONLY a short conversational preface, not the banking redirect.\n"
+                "Rules:\n"
+                "- Answer briefly and harmlessly.\n"
+                "- Keep it to 1 or 2 short sentences.\n"
+                "- For harmless casual asks like jokes, tiny banter, or date/time, answer directly "
+                "instead of refusing.\n"
+                "- If the user asks for a joke or playful banter, prefer banking-, money-, balance-, savings-, "
+                "or transfer-themed humor.\n"
+                "- No financial, legal, medical, tax, or investment advice.\n"
+                "- No promises about unsupported capabilities.\n"
+                "- No broad topic drift, no markdown, no emojis.\n"
+                "- If asked about the current date or time, use the runtime Lagos timestamp provided.\n"
+                "- Do not say you only handle banking or that you cannot help with harmless casual chat.\n"
+                "- If the ask is unsafe, too broad, or not suitable, return an empty string.\n"
+            )
+        if not is_contextual_worker_followup and casual_streak >= 2:
             system += "- The user has stayed in casual-chat mode for several turns, so keep the reply extra short.\n"
 
         user_parts = [
@@ -220,7 +373,10 @@ class ConversationResponder:
             f"User message: {text.strip()}",
             f"Recent casual streak: {casual_streak}",
         ]
-        if prefers_banking_humor or is_joke_turn:
+        contextual_summary = user_ctx.get(_CONTEXTUAL_WORKER_FOLLOWUP_INTENT)
+        if is_contextual_worker_followup and contextual_summary:
+            user_parts.append(f"Recent banking context: {contextual_summary}")
+        if not is_contextual_worker_followup and (prefers_banking_humor or is_joke_turn):
             user_parts.append("Use a banking-related joke or money-themed playful line if you answer with humor.")
         if name:
             user_parts.append(f"User name: {name}")
@@ -243,9 +399,15 @@ class ConversationResponder:
 
         preface = self._sanitize_preface(raw_content, locale=locale)
         if not preface:
+            if is_contextual_worker_followup:
+                return contextual_worker_fallback_reply(text, user_ctx, locale=locale)
             if is_joke_turn:
                 return f"{self._deterministic_joke_fallback(casual_streak=casual_streak)}\n{redirect_text}"
             return redirect_text
+        if is_contextual_worker_followup:
+            if _CONTEXTUAL_ACTION_PROMISE_RE.search(preface) or _CONTEXTUAL_UNGROUNDED_PREFACE_RE.search(preface):
+                return contextual_worker_fallback_reply(text, user_ctx, locale=locale)
+            return preface
         if preface == redirect_text:
             return redirect_text
         return f"{preface}\n{redirect_text}"

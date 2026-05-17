@@ -69,6 +69,12 @@ _SUPPORT_CONTEXT_ACTION_RE = re.compile(
     r"send\s+again|receipt|proof\s+of\s+payment|payment\s+proof)\b",
     re.IGNORECASE,
 )
+_SUPPORT_CONTEXT_EXPLICIT_LATEST_STATUS_QUERY_RE = re.compile(
+    r"\b(?:what(?:'s| is)|whats|check|show|get|tell\s+me)\b.*\bstatus\s+of\s+"
+    r"(?:my\s+)?(?:last|latest|most\s+recent)\s+(?:transaction|transfer|payment)\b"
+    r"|\b(?:my\s+)?(?:last|latest|most\s+recent)\s+(?:transaction|transfer|payment)\s+status\b",
+    re.IGNORECASE,
+)
 
 
 def _looks_like_support_issue_request(message_text: str) -> bool:
@@ -98,7 +104,11 @@ def _looks_like_support_context_followup(message_text: str, support_ctx: Any) ->
         return True
     if last_support_step == "asked_for_reference" and _SUPPORT_CONTEXT_REFERENCE_RE.search(normalized):
         return True
-    if last_transaction_ref and _SUPPORT_CONTEXT_ACTION_RE.search(normalized):
+    if (
+        last_transaction_ref
+        and _SUPPORT_CONTEXT_ACTION_RE.search(normalized)
+        and not _SUPPORT_CONTEXT_EXPLICIT_LATEST_STATUS_QUERY_RE.search(normalized)
+    ):
         return True
     return False
 

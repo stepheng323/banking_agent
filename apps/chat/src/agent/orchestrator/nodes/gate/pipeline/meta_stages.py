@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _classify_obvious_transfer_request,
     _is_direct_context_recap_request,
     _is_query_domain_request,
+    _is_structural_query_domain_request,
     _locale_update,
     _query_followup_bypass_reason,
     _route_observability_updates,
@@ -199,8 +200,26 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
         and ctx.phrase_heavy_fastpath_allowed
         and _is_query_domain_request(ctx.message_text)
     ):
+        semantic_router_available = callable(getattr(ctx.task_planner, "route_semantic_turn", None))
+        structural_query_request = _is_structural_query_domain_request(ctx.message_text)
+        if semantic_router_available and not structural_query_request:
+            ctx.add_routing_hint(
+                domain="query",
+                reason="query_domain_phrase",
+                source="query_domain_phrase",
+            )
+            logger.info("gate_query_domain_hint_attached")
+            return None
+
         task_id, spec = _build_direct_domain_task(state=ctx.state, domain="query", mode="new")
-        logger.info("gate_deterministic_query_domain", task_id=task_id)
+        heuristic_type = "guardrail_shortcut" if structural_query_request else "routing_heuristic"
+        heuristic_name = "structural_query_domain" if structural_query_request else "query_domain_phrase"
+        logger.info(
+            "gate_deterministic_query_domain",
+            task_id=task_id,
+            structural_query_request=structural_query_request,
+            semantic_router_available=semantic_router_available,
+        )
         return {
             **ctx.gate_updates,
             **(ctx.summary_updates or {}),
@@ -215,6 +234,9 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                 decision="deterministic_query_domain",
                 target_domain="query",
                 mode="new",
+                route_source="query_domain_guard",
+                heuristic_type=heuristic_type,
+                heuristic_name=heuristic_name,
             ),
         }
 

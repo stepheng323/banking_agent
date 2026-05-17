@@ -37,7 +37,20 @@
     "out_of_scope": "Mo n dojukọ iṣẹ banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "out_of_scope_followup": "Ti o ba fẹ, mo tun le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "out_of_scope_firm": "Ẹ jẹ ká pada sí banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
-    "clarify": "Jọwọ ṣalaye ohun ti o fẹ ki n ran ọ lọwọ pẹlu."
+    "clarify": "Jọwọ ṣalaye ohun ti o fẹ ki n ran ọ lọwọ pẹlu.",
+    "contextual_worker_followup": {
+      "generic": "Mo ti ye.",
+      "settled": "Ko si wahala, eyi ti yanju.",
+      "success": "Ko si wahala, {subject} naa ṣaṣeyọri.",
+      "pending": "Mo ti ye, {subject} naa ṣi n ṣiṣẹ.",
+      "subject": {
+        "request": "request",
+        "transaction": "transaction",
+        "transfer": "transfer",
+        "airtime_purchase": "rira airtime",
+        "data_purchase": "rira data"
+      }
+    }
   },
   "support": {
     "ask_reference": "Transaction wo ni o n beere nipa rẹ?",

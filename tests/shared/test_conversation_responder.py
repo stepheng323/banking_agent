@@ -245,3 +245,120 @@ async def test_conversation_responder_stops_generating_after_casual_spam_thresho
 
     assert reply == render_message("conversational.out_of_scope_firm", "en")
     assert llm.messages is None
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_contextual_worker_followup_omits_redirect() -> None:
+    llm = _FakeLLM("Got it, that transfer is settled.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "Ok great",
+        {
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Show the details"},
+                {
+                    "role": "assistant",
+                    "content": "This transfer of ₦10,000 to Tolu Adebayo was successful.",
+                },
+            ],
+            "profile": {},
+            "contextual_worker_followup": "recent_domain_focus=support\nsupport_context={'last_transaction_ref': 'tx-1'}",
+        },
+        intent="contextual_worker_followup",
+    )
+
+    assert reply == "Got it, that transfer is settled."
+    assert render_message("conversational.out_of_scope", "en") not in reply
+    assert llm.messages is not None
+    assert "No generic banking redirect" in llm.messages[0]["content"]
+    assert "Recent banking context:" in llm.messages[1]["content"]
+    assert "last_transaction_ref" in llm.messages[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_contextual_worker_followup_grounded_failure_correction() -> None:
+    llm = _FakeLLM("Glad it looked better than expected.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "nice, nice. I thought it failed",
+        {
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "show the details"},
+                {
+                    "role": "assistant",
+                    "content": "This transfer of ₦10,000 to Tolu Adebayo was successful on May 17.",
+                },
+            ],
+            "profile": {},
+            "contextual_worker_followup": "recent_domain_focus=support",
+        },
+        intent="contextual_worker_followup",
+    )
+
+    assert reply == "No worries, that transfer was successful."
+    assert llm.messages is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("locale", "text", "expected"),
+    [
+        ("pcm", "no wahala, i bin think say e fail", "No wahala, that transfer successful."),
+        ("yo", "o dara, mo ro pe o kuna", "Ko si wahala, transfer naa ṣaṣeyọri."),
+        ("ha", "na gane, na dauka ya fadi", "Ba damuwa, wannan transfer ya yi nasara."),
+        ("ig", "o di mma, echere m na o fail", "Enweghị nsogbu, transfer ahụ gara nke ọma."),
+    ],
+)
+async def test_conversation_responder_contextual_worker_followup_grounded_multilingual(
+    locale: str,
+    text: str,
+    expected: str,
+) -> None:
+    llm = _FakeLLM("This should not be used.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        text,
+        {
+            "language": locale,
+            "history": [
+                {"role": "user", "content": "show the details"},
+                {
+                    "role": "assistant",
+                    "content": "This transfer of ₦10,000 to Tolu Adebayo was successful on May 17.",
+                },
+            ],
+            "profile": {},
+            "contextual_worker_followup": "recent_domain_focus=support",
+        },
+        intent="contextual_worker_followup",
+    )
+
+    assert reply == expected
+    assert llm.messages is None
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_contextual_worker_followup_rejects_action_promises() -> None:
+    responder = ConversationResponder(_FakeLLM("I'll retry it now."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "Okay great, I thought it failed",
+        {
+            "language": "en",
+            "history": [],
+            "profile": {},
+            "contextual_worker_followup": "recent_domain_focus=support",
+        },
+        intent="contextual_worker_followup",
+    )
+
+    assert reply == render_message("conversational.contextual_worker_followup.settled", "en")

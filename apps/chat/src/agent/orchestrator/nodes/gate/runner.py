@@ -288,6 +288,10 @@ _QUERY_DOMAIN_PATTERNS = (
     r"^who\s+did\s+i\s+(?:send|transfer|pay)\s+(?:money\s+)?to",
     r"^(?:top|my)\s+(?:recipients?|beneficiar)",
 )
+_STRUCTURAL_QUERY_DIRECT_PATTERNS = (
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?\b",
+)
 _RECEIPT_REQUEST_RE = re.compile(
     r"\b(?:receipt|proof\s+of\s+payment|payment\s+receipt|show\s+receipt|send\s+receipt)\b",
     re.IGNORECASE,
@@ -688,6 +692,13 @@ def _is_query_domain_request(message_text: str) -> bool:
     if not normalized:
         return False
     return any(re.search(pattern, normalized) for pattern in _QUERY_DOMAIN_PATTERNS)
+
+
+def _is_structural_query_domain_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in _STRUCTURAL_QUERY_DIRECT_PATTERNS)
 
 
 def _is_account_domain_request(message_text: str) -> bool:

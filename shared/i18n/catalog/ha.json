@@ -37,7 +37,20 @@
     "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "out_of_scope_followup": "Idan kana so, zan kuma iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "out_of_scope_firm": "Mu koma ga banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
-    "clarify": "Don Allah ka kara bayyana abin da kake so na taimaka da shi."
+    "clarify": "Don Allah ka kara bayyana abin da kake so na taimaka da shi.",
+    "contextual_worker_followup": {
+      "generic": "Na gane.",
+      "settled": "Ba damuwa, an daidaita.",
+      "success": "Ba damuwa, wannan {subject} ya yi nasara.",
+      "pending": "Na gane, wannan {subject} har yanzu yana processing.",
+      "subject": {
+        "request": "request",
+        "transaction": "transaction",
+        "transfer": "transfer",
+        "airtime_purchase": "siyan airtime",
+        "data_purchase": "siyan data"
+      }
+    }
   },
   "support": {
     "ask_reference": "Wane transaction kake tambaya akai?",

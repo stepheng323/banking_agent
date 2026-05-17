@@ -37,7 +37,20 @@
     "out_of_scope": "Ana m elekwasị anya na ọrụ banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
     "out_of_scope_followup": "Ọ bụrụ na ịchọrọ, enwere m ike inyere gị aka kwa na transfer, airtime/data, balance, na ajụjụ transaction.",
     "out_of_scope_firm": "Ka anyị laghachi na banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
-    "clarify": "Biko kọwaa nke ọma ihe ịchọrọ ka m nyere gị aka na ya."
+    "clarify": "Biko kọwaa nke ọma ihe ịchọrọ ka m nyere gị aka na ya.",
+    "contextual_worker_followup": {
+      "generic": "Aghọtara m.",
+      "settled": "Enweghị nsogbu, nke ahụ edozila.",
+      "success": "Enweghị nsogbu, {subject} ahụ gara nke ọma.",
+      "pending": "Aghọtara m, {subject} ahụ ka na processing.",
+      "subject": {
+        "request": "request",
+        "transaction": "transaction",
+        "transfer": "transfer",
+        "airtime_purchase": "ịzụta airtime",
+        "data_purchase": "ịzụta data"
+      }
+    }
   },
   "support": {
     "ask_reference": "Transaction nke ị na-ajụ bụ nkee?",

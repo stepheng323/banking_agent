@@ -37,7 +37,20 @@
     "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",
     "out_of_scope_followup": "If you want, I can also help with transfers, airtime/data, balances, and transaction queries.",
     "out_of_scope_firm": "Let's switch back to banking. I can help with transfers, airtime/data, balances, and transaction queries.",
-    "clarify": "I didn't quite catch the banking request. Tell me what you'd like to do, like send money, buy airtime, or check transactions."
+    "clarify": "I didn't quite catch the banking request. Tell me what you'd like to do, like send money, buy airtime, or check transactions.",
+    "contextual_worker_followup": {
+      "generic": "Got it.",
+      "settled": "No worries, that's settled.",
+      "success": "No worries, that {subject} was successful.",
+      "pending": "Got it, that {subject} is still being processed.",
+      "subject": {
+        "request": "request",
+        "transaction": "transaction",
+        "transfer": "transfer",
+        "airtime_purchase": "airtime purchase",
+        "data_purchase": "data purchase"
+      }
+    }
   },
   "support": {
     "ask_reference": "Which transaction are you asking about?",

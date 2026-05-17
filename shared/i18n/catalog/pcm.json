@@ -37,7 +37,20 @@
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_followup": "If you want, I still fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_firm": "Make we switch back to banking. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
-    "clarify": "I no catch the banking request well. Tell me wetin you wan do, like transfer, buy airtime, or check transactions."
+    "clarify": "I no catch the banking request well. Tell me wetin you wan do, like transfer, buy airtime, or check transactions.",
+    "contextual_worker_followup": {
+      "generic": "I don get am.",
+      "settled": "No wahala, that one don settle.",
+      "success": "No wahala, that {subject} successful.",
+      "pending": "I don get am, that {subject} still dey process.",
+      "subject": {
+        "request": "request",
+        "transaction": "transaction",
+        "transfer": "transfer",
+        "airtime_purchase": "airtime purchase",
+        "data_purchase": "data purchase"
+      }
+    }
   },
   "support": {
     "ask_reference": "Which transaction you dey ask about?",
