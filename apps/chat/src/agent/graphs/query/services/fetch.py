@@ -20,7 +20,9 @@ from apps.chat.src.agent.graphs.query.services.bank_transaction_mirror import (
 )
 from apps.chat.src.agent.graphs.query.services.narration import analyze_transaction_narration
 from apps.chat.src.agent.graphs.query.utils.timezone import lagos_today
+from apps.chat.src.agent.shared.unified_transactions import UnifiedTransactionService
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.config.settings import settings
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
@@ -284,6 +286,7 @@ def build_cache_fingerprint(
         "start": start,
         "end": end,
         "user_id": str(user_id or ""),
+        "transaction_view": "unified" if settings.enable_unified_transaction_view else "bank",
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -302,6 +305,7 @@ def build_cache_scope_fingerprint(
         "account_id": account_id,
         "account_ids": sorted(str(acc) for acc in account_ids),
         "user_id": str(user_id or ""),
+        "transaction_view": "unified" if settings.enable_unified_transaction_view else "bank",
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -514,6 +518,24 @@ async def fetch_transactions_base(
     transactions = sorted(transactions, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
 
     transactions = [t for t in transactions if start <= t.get("date", "")[:10] <= end]
+
+    if settings.enable_unified_transaction_view and user_id:
+        try:
+            unified_records = await UnifiedTransactionService().list_for_user(
+                user_id,
+                start_date=start_bound,
+                end_date=end_bound,
+                bank_transactions=transactions,
+            )
+            transactions = [record.to_query_dict() for record in unified_records]
+        except Exception as exc:
+            logger.warning(
+                "unified_transaction_fetch_failed",
+                error=str(exc),
+                user_id=user_id,
+                start_date=start,
+                end_date=end,
+            )
 
     _log_query_trace(
         trace_context=trace_context,

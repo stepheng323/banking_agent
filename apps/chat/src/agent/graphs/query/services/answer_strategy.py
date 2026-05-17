@@ -19,7 +19,7 @@ from apps.chat.src.agent.graphs.query.models import (
 from apps.chat.src.agent.graphs.query.services.continuity import build_soft_clarification
 from apps.chat.src.agent.graphs.query.services.contracts import build_focus_referent
 from apps.chat.src.agent.graphs.query.utils.timezone import lagos_today
-from shared.i18n import render_message
+from shared.i18n import MessageKey, render_message
 
 FactKind = QueryFactField
 FactDirection = Literal["debit", "credit", "unknown"]
@@ -35,6 +35,9 @@ class DirectAnswerFact:
     date_text: str
     fallback_description: str
     status_text: str | None
+    local_status_text: str | None
+    bank_status_text: str | None
+    needs_review: bool
     reference_text: str | None
     account_text: str | None
     direction_text: str | None
@@ -102,7 +105,10 @@ def build_direct_fact_answer(
         amount_text=f"₦{abs(float(item.amount)):,.0f}",
         date_text=item.date.strftime("%B %d, %Y"),
         fallback_description=item.description,
-        status_text=_status_label(metadata),
+        status_text=_status_label(metadata) or _implicit_history_status_label(item, metadata),
+        local_status_text=_status_value(metadata.get("local_status")),
+        bank_status_text=_status_value(metadata.get("bank_status")),
+        needs_review=bool(metadata.get("needs_review")),
         reference_text=_reference_label(item),
         account_text=_account_label(metadata),
         direction_text=_direction_label(metadata),
@@ -206,7 +212,7 @@ def _normalize_direction(raw_value: str) -> FactDirection:
 
 
 def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, set[str]]:
-    if locale == "en" and fact.result_reference == "latest":
+    if fact.result_reference == "latest":
         latest_reply = _compose_latest_direct_reply(fact, locale=locale)
         if latest_reply is not None:
             return latest_reply
@@ -325,9 +331,13 @@ def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, 
 
     if fact.fact_kind == "status":
         return (
-            f"That transaction is {fact.status_text}."
-            if fact.status_text
-            else "I found the transaction, but I couldn't confirm the status.",
+            _compose_status_reply(
+                fact.status_text,
+                local_status=fact.local_status_text,
+                bank_status=fact.bank_status_text,
+                needs_review=fact.needs_review,
+                locale=locale,
+            ),
             {"status"} if fact.status_text else set(),
         )
     if fact.fact_kind == "description":
@@ -361,6 +371,47 @@ def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, 
             {"category"} if fact.category_text else set(),
         )
     return (render_message("query.reply.bank.unavailable", locale), set())
+
+
+def _compose_status_reply(
+    status_text: str | None,
+    *,
+    local_status: str | None = None,
+    bank_status: str | None = None,
+    needs_review: bool = False,
+    locale: str,
+) -> str:
+    if not status_text:
+        return render_message("query.reply.status.unavailable", locale)
+
+    normalized = status_text.strip().lower().replace("_", " ")
+    normalized_local = (local_status or "").strip().lower().replace("_", " ")
+    normalized_bank = (bank_status or "").strip().lower().replace("_", " ")
+    if needs_review and normalized_local == "failed" and normalized_bank == "posted":
+        return render_message("query.reply.status.failed_bank_posted", locale)
+    if normalized_local in {"pending", "processing"} and normalized_bank == "posted":
+        return render_message("query.reply.status.processing_bank_posted", locale)
+
+    key_by_status: dict[str, MessageKey] = {
+        "posted": "query.reply.status.posted",
+        "success": "query.reply.status.successful",
+        "successful": "query.reply.status.successful",
+        "complete": "query.reply.status.successful",
+        "completed": "query.reply.status.successful",
+        "confirmed": "query.reply.status.successful",
+        "pending": "query.reply.status.pending",
+        "processing": "query.reply.status.processing",
+        "in progress": "query.reply.status.processing",
+        "failed": "query.reply.status.failed",
+        "failure": "query.reply.status.failed",
+        "declined": "query.reply.status.failed",
+        "reversed": "query.reply.status.reversed",
+        "refunded": "query.reply.status.reversed",
+    }
+    key = key_by_status.get(normalized)
+    if key is not None:
+        return render_message(key, locale)
+    return render_message("query.reply.status.generic", locale, {"status": normalized or status_text})
 
 
 def _compose_latest_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, set[str]] | None:
@@ -590,13 +641,30 @@ def _time_phrase(query_contract: QueryExecutionContract) -> str:
 
 
 def _status_label(metadata: dict[str, object]) -> str | None:
-    status = str(metadata.get("status") or "").strip()
+    for key in ("display_status", "status", "provider_status", "transaction_status", "tx_status", "final_status"):
+        status = _status_value(metadata.get(key))
+        if status:
+            return status
+    return None
+
+
+def _status_value(value: object) -> str | None:
+    status = str(value or "").strip()
     if not status:
         return None
     lowered = status.lower()
     if lowered in {"success", "successful", "completed"}:
         return "successful"
     return status.replace("_", " ").lower()
+
+
+def _implicit_history_status_label(item: QueryResultItem, metadata: dict[str, object]) -> str | None:
+    """Bank-history items without provider status are already posted entries."""
+    if item.description and item.date and item.amount is not None:
+        return "posted"
+    if metadata.get("posted_at") or metadata.get("posted_date"):
+        return "posted"
+    return None
 
 
 def _reference_label(item: QueryResultItem) -> str | None:

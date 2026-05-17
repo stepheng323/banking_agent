@@ -55,6 +55,7 @@
     "failure": {
       "success_no_failure": "• This transfer was actually successful. No failure occurred.",
       "reason_not_provided": "The bank did not provide a specific reason.",
+      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not failed.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
       "debited_failed": "× This ₦{amount} transfer failed after your account was debited.\nReason: {reason}\nA refund is being processed.",
       "not_debited_failed": "× This ₦{amount} transfer failed.\nReason: {reason}\nNo money was debited from your account.",
       "unknown_reason_contact": "Unable to determine failure reason. Please contact support."
@@ -185,6 +186,18 @@
         "credit_named": "Ị natara ya n'aka {counterparty} site na {bank_name}.",
         "generic": "O gara site na {bank_name}.",
         "unavailable": "Achọpụtara m transaction ahụ, mana aha bank adịghị."
+      },
+      "status": {
+        "posted": "Transaction a abiala na history.",
+        "successful": "Transaction a gara nke oma.",
+        "pending": "Transaction a ka di pending.",
+        "processing": "Transaction a ka na processing.",
+        "failed": "Transaction a failed.",
+        "reversed": "Transaction a emeela reverse.",
+        "processing_bank_posted": "Transaction a ka na processing na app anyi, mana debit yiri ya apụtala na bank history gi.",
+        "failed_bank_posted": "App anyi kwuru na transaction a failed, mana debit yiri ya apụtala na bank history gi. Juo support ka ha nyochaa ya.",
+        "generic": "Status transaction a bu {status}.",
+        "unavailable": "Ahuru m transaction ahu, mana enweghi m ike ikwenye status ya."
       },
       "latest": {
         "date": {

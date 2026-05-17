@@ -55,6 +55,7 @@
     "failure": {
       "success_no_failure": "• This transfer was actually successful. No failure occurred.",
       "reason_not_provided": "The bank did not provide a specific reason.",
+      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not failed.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
       "debited_failed": "× This ₦{amount} transfer failed after your account was debited.\nReason: {reason}\nA refund is being processed.",
       "not_debited_failed": "× This ₦{amount} transfer failed.\nReason: {reason}\nNo money was debited from your account.",
       "unknown_reason_contact": "Unable to determine failure reason. Please contact support."
@@ -185,6 +186,18 @@
         "credit_named": "Ka karɓe shi daga {counterparty} ta {bank_name}.",
         "generic": "Ya bi ta {bank_name}.",
         "unavailable": "Na gano transaction ɗin, amma sunan banki bai samu ba."
+      },
+      "status": {
+        "posted": "Transaction din ya shiga history.",
+        "successful": "Transaction din ya yi nasara.",
+        "pending": "Transaction din yana pending.",
+        "processing": "Transaction din yana processing.",
+        "failed": "Transaction din ya failed.",
+        "reversed": "Transaction din an reverse.",
+        "processing_bank_posted": "Transaction din yana processing a app dinmu, amma debit mai kama da shi ya shiga bank history dinka.",
+        "failed_bank_posted": "App dinmu ya nuna transaction din ya failed, amma debit mai kama da shi ya shiga bank history dinka. Ka nemi support su duba.",
+        "generic": "Status din transaction din shi ne {status}.",
+        "unavailable": "Na ga transaction din, amma ban iya tabbatar da status ba."
       },
       "latest": {
         "date": {

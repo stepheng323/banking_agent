@@ -55,6 +55,7 @@
     "failure": {
       "success_no_failure": "• This transfer was actually successful. No failure occurred.",
       "reason_not_provided": "The bank did not provide a specific reason.",
+      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not failed.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
       "debited_failed": "× This ₦{amount} transfer failed after your account was debited.\nReason: {reason}\nA refund is being processed.",
       "not_debited_failed": "× This ₦{amount} transfer failed.\nReason: {reason}\nNo money was debited from your account.",
       "unknown_reason_contact": "Unable to determine failure reason. Please contact support."
@@ -185,6 +186,18 @@
         "credit_named": "O gba a lati ọdọ {counterparty} nipasẹ {bank_name}.",
         "generic": "Ó kọja nipasẹ {bank_name}.",
         "unavailable": "Mo ri transaction naa, ṣugbọn orukọ banki ko si."
+      },
+      "status": {
+        "posted": "Transaction yen ti post.",
+        "successful": "Transaction yen successful.",
+        "pending": "Transaction yen si pending.",
+        "processing": "Transaction yen si n process.",
+        "failed": "Transaction yen failed.",
+        "reversed": "Transaction yen ti reverse.",
+        "processing_bank_posted": "Transaction yen si n process ninu app wa, sugbon debit to baamu ti post ninu bank history re.",
+        "failed_bank_posted": "App wa so pe transaction yen failed, sugbon debit to baamu ti post ninu bank history re. Beere support ki won review e.",
+        "generic": "Ipo transaction yen ni {status}.",
+        "unavailable": "Mo ri transaction naa, sugbon mi o le confirm status e."
       },
       "latest": {
         "date": {

@@ -55,6 +55,7 @@
     "failure": {
       "success_no_failure": "• This transfer was actually successful. No failure occurred.",
       "reason_not_provided": "The bank did not provide a specific reason.",
+      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not failed.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
       "debited_failed": "× This ₦{amount} transfer failed after your account was debited.\nReason: {reason}\nA refund is being processed.",
       "not_debited_failed": "× This ₦{amount} transfer failed.\nReason: {reason}\nNo money was debited from your account.",
       "unknown_reason_contact": "Unable to determine failure reason. Please contact support."
@@ -185,6 +186,18 @@
         "credit_named": "Looks like it came from {counterparty} through {bank_name}.",
         "generic": "Looks like it went through {bank_name}.",
         "unavailable": "I found the transaction, but the bank name isn't available."
+      },
+      "status": {
+        "posted": "That transaction is posted.",
+        "successful": "That transaction is successful.",
+        "pending": "That transaction is pending.",
+        "processing": "That transaction is processing.",
+        "failed": "That transaction failed.",
+        "reversed": "That transaction has been reversed.",
+        "processing_bank_posted": "That transaction is still processing in our app, but a matching debit is posted in your bank history.",
+        "failed_bank_posted": "Our app record says that transaction failed, but a matching debit is posted in your bank history. Please ask support to review it.",
+        "generic": "That transaction status is {status}.",
+        "unavailable": "I found the transaction, but I couldn't confirm the status."
       },
       "latest": {
         "date": {

@@ -19,6 +19,7 @@ from apps.chat.src.agent.graphs.query.services.fetch import (
     build_cache_scope_fingerprint,
     decide_transaction_cache_reuse,
 )
+from shared.config.settings import settings
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -307,6 +308,21 @@ def test_decide_transaction_cache_reuse_rejects_wider_time_window() -> None:
 
     assert decision.can_reuse is False
     assert decision.strategy == "none"
+
+
+def test_cache_fingerprints_change_between_bank_and_unified_views(monkeypatch: pytest.MonkeyPatch) -> None:
+    query = _query(Filters(transaction_type="credit"))
+
+    monkeypatch.setattr(settings, "enable_unified_transaction_view", False)
+    bank_fingerprint = build_cache_fingerprint(query, "acc_1", ["acc_1"], user_id="user_1")
+    bank_scope_fingerprint = build_cache_scope_fingerprint(query, "acc_1", ["acc_1"], user_id="user_1")
+
+    monkeypatch.setattr(settings, "enable_unified_transaction_view", True)
+    unified_fingerprint = build_cache_fingerprint(query, "acc_1", ["acc_1"], user_id="user_1")
+    unified_scope_fingerprint = build_cache_scope_fingerprint(query, "acc_1", ["acc_1"], user_id="user_1")
+
+    assert unified_fingerprint != bank_fingerprint
+    assert unified_scope_fingerprint != bank_scope_fingerprint
 
 
 @pytest.mark.asyncio
