@@ -1276,8 +1276,9 @@ class SupportWorker:
 
             if not intent:
                 result = await self.classifier.classify(message)
-                intent = result.intent
                 classification = result
+                if self.classifier.is_support_intent(result):
+                    intent = result.intent
 
             contextual_intent, contextual_ref = self._contextual_followup_reference(
                 support_ctx=support_ctx,

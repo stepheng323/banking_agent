@@ -2,6 +2,7 @@
 
 import json
 import re
+from dataclasses import dataclass
 
 from langchain_core.runnables import Runnable
 
@@ -54,6 +55,13 @@ TICKET_STATUS_RE = re.compile(
 RECENT_REFERENCE_RE = re.compile(r"\b(?:last|latest|most\s+recent|recent)\b", re.IGNORECASE)
 
 
+@dataclass(frozen=True)
+class _ParseOutcome:
+    result: ClassificationResult
+    usable: bool
+    fallback_reason: str | None = None
+
+
 class SupportClassifier:
     """Classifies user messages into support intents."""
 
@@ -72,15 +80,14 @@ class SupportClassifier:
             response = await self.llm.ainvoke(prompt)
             content = response.content if hasattr(response, "content") else str(response)
 
-            # Parse JSON response
-            result = self._parse_response(content, message)
+            result, should_fallback = self._parse_response(content, message)
             logger.info(
                 "support_classified",
                 intent=result.intent.value if result.intent else None,
                 confidence=result.confidence,
                 source="llm",
             )
-            if result.intent is not None and result.confidence >= 0.5:
+            if not should_fallback:
                 return result
 
             if fallback := self._rule_based_fallback(message):
@@ -88,7 +95,7 @@ class SupportClassifier:
                     "support_classified",
                     intent=fallback.intent.value if fallback.intent else None,
                     confidence=fallback.confidence,
-                    source="deterministic_after_llm_uncertain",
+                    source="deterministic_after_unusable_llm_output",
                 )
                 return fallback
             return result
@@ -109,52 +116,69 @@ class SupportClassifier:
                 raw_message=message,
             )
 
-    def _parse_response(self, content: str, original_message: str) -> ClassificationResult:
+    def _parse_response(self, content: str, original_message: str) -> tuple[ClassificationResult, bool]:
         """Parse LLM response into ClassificationResult."""
+        outcome = self._parse_structured_response(content, original_message)
+        return outcome.result, not outcome.usable
+
+    def _parse_structured_response(self, content: str, original_message: str) -> _ParseOutcome:
+        json_start = content.find("{")
+        json_end = content.rfind("}") + 1
+        if json_start < 0 or json_end <= json_start:
+            return _ParseOutcome(
+                result=ClassificationResult(intent=None, confidence=0.0, raw_message=original_message),
+                usable=False,
+                fallback_reason="missing_json",
+            )
+
         try:
-            # Extract JSON from response
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = content[json_start:json_end]
-                data = json.loads(json_str)
-            else:
-                data = {}
+            data = json.loads(content[json_start:json_end])
+        except json.JSONDecodeError:
+            return _ParseOutcome(
+                result=ClassificationResult(intent=None, confidence=0.0, raw_message=original_message),
+                usable=False,
+                fallback_reason="invalid_json",
+            )
 
-            # Parse intent
-            intent_str = data.get("intent")
-            intent = None
-            if intent_str:
-                intent = self._parse_intent(str(intent_str))
+        if not isinstance(data, dict) or not data:
+            return _ParseOutcome(
+                result=ClassificationResult(intent=None, confidence=0.0, raw_message=original_message),
+                usable=False,
+                fallback_reason="empty_json",
+            )
 
-            # Parse transaction reference
-            tx_ref_data = data.get("transaction_ref", {})
-            tx_ref = None
-            if tx_ref_data and any(tx_ref_data.values()):
-                tx_ref = TransactionReference(
-                    transaction_id=tx_ref_data.get("transaction_id"),
-                    amount=tx_ref_data.get("amount"),
-                    recipient_name=tx_ref_data.get("recipient_name"),
-                    date_hint=tx_ref_data.get("date_hint"),
-                    use_quoted=bool(tx_ref_data.get("use_quoted", False)),
-                    use_recent=bool(tx_ref_data.get("use_recent", False)),
+        intent_str = data.get("intent")
+        intent = None
+        if intent_str not in (None, ""):
+            intent = self._parse_intent(str(intent_str))
+            if intent is None:
+                return _ParseOutcome(
+                    result=ClassificationResult(intent=None, confidence=0.0, raw_message=original_message),
+                    usable=False,
+                    fallback_reason="invalid_intent",
                 )
 
-            return ClassificationResult(
-                intent=intent,
-                confidence=data.get("confidence", 0.5),
-                transaction_ref=tx_ref,
-                raw_message=original_message,
+        tx_ref_data = data.get("transaction_ref", {})
+        tx_ref = None
+        if isinstance(tx_ref_data, dict) and any(tx_ref_data.values()):
+            tx_ref = TransactionReference(
+                transaction_id=tx_ref_data.get("transaction_id"),
+                amount=tx_ref_data.get("amount"),
+                recipient_name=tx_ref_data.get("recipient_name"),
+                date_hint=tx_ref_data.get("date_hint"),
+                use_quoted=bool(tx_ref_data.get("use_quoted", False)),
+                use_recent=bool(tx_ref_data.get("use_recent", False)),
             )
 
-        except json.JSONDecodeError:
-            if fallback := self._rule_based_fallback(original_message):
-                return fallback
-            return ClassificationResult(
-                intent=None,
-                confidence=0.0,
+        return _ParseOutcome(
+            result=ClassificationResult(
+                intent=intent,
+                confidence=self._parse_confidence(data.get("confidence")),
+                transaction_ref=tx_ref,
                 raw_message=original_message,
-            )
+            ),
+            usable=True,
+        )
 
     @staticmethod
     def _parse_intent(intent_str: str) -> SupportIntent | None:
@@ -167,6 +191,16 @@ class SupportClassifier:
             return SupportIntent(normalized)
         except ValueError:
             return None
+
+    @staticmethod
+    def _parse_confidence(value: object) -> float:
+        if value is None:
+            return 0.5
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError):
+            return 0.5
+        return max(0.0, min(1.0, confidence))
 
     @staticmethod
     def _rule_based_fallback(message: str) -> ClassificationResult | None:

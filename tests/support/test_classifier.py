@@ -47,6 +47,48 @@ async def test_support_classifier_falls_back_when_llm_fails() -> None:
 
 
 @pytest.mark.asyncio
+async def test_support_classifier_falls_back_for_empty_llm_output() -> None:
+    classifier = SupportClassifier(_LLMStub("{}"))
+
+    result = await classifier.classify("My last transaction failed")
+
+    assert result.intent == SupportIntent.FAILED_TRANSFER
+    assert result.transaction_ref is not None
+    assert result.transaction_ref.use_recent is True
+
+
+@pytest.mark.asyncio
+async def test_support_classifier_does_not_regex_override_explicit_null_intent() -> None:
+    classifier = SupportClassifier(
+        _LLMStub(
+            '{"intent":null,"confidence":0.93,'
+            '"transaction_ref":{"amount":null,"recipient_name":null,"date_hint":null}}'
+        )
+    )
+
+    result = await classifier.classify("Okay great, I thought it failed")
+
+    assert result.intent is None
+    assert result.confidence == 0.93
+
+
+@pytest.mark.asyncio
+async def test_support_classifier_low_confidence_structured_intent_is_not_support_intent() -> None:
+    classifier = SupportClassifier(
+        _LLMStub(
+            '{"intent":"failed_transfer","confidence":0.2,'
+            '"transaction_ref":{"amount":null,"recipient_name":null,"date_hint":null}}'
+        )
+    )
+
+    result = await classifier.classify("My last transaction failed")
+
+    assert result.intent == SupportIntent.FAILED_TRANSFER
+    assert result.confidence == 0.2
+    assert classifier.is_support_intent(result) is False
+
+
+@pytest.mark.asyncio
 async def test_support_classifier_falls_back_for_debited_recipient_did_not_receive() -> None:
     classifier = SupportClassifier(_LLMStub(error=RuntimeError("model unavailable")))
 
