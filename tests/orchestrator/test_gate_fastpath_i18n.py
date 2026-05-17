@@ -1950,6 +1950,38 @@ async def test_gate_deterministic_data_bypasses_semantic_router() -> None:
     assert task.type == "data"
 
 
+async def test_gate_phone_only_get_does_not_use_direct_data_shortcut() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_data",
+            mode="new",
+            target_intent="data",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["data"],
+            reason="semantic data route",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_data_phone_only",
+        phone_number="23489999999174",
+        channel="whatsapp",
+        last_message_text="Get 08031234567",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "data"
+
+
 async def test_gate_banking_coded_transfer_ambiguity_clarifies_before_casual_chat() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

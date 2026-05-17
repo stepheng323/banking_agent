@@ -251,7 +251,7 @@ _DATA_DIRECT_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _DATA_DIRECT_HINT_RE = re.compile(
-    r"\b(?:data|bundle)\b|\d+\s*(?:mb|gb)\b|(?:\+?234|0)?(?:[\s().-]*\d){10,13}",
+    r"\b(?:data|bundle)\b|\d+\s*(?:mb|gb)\b",
     re.IGNORECASE,
 )
 _DIRECT_CONTEXT_RECAP_EXACT = {
