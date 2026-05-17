@@ -88,6 +88,9 @@ async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | No
                 decision="beneficiary_save",
                 target_domain="beneficiary",
                 mode="new",
+                route_source="beneficiary_suggestion",
+                heuristic_type="guardrail_shortcut",
+                heuristic_name="beneficiary_suggestion_reply",
             ),
         }
 
@@ -130,11 +133,15 @@ async def _stage_balance_direct(ctx: GateContext) -> dict[str, Any] | None:
         "planner_output": None,
         "pending_interrupt": None,
         "direct_path_triggered": True,
+        "semantic_path_shape": "balance_direct",
         **_route_observability_updates(
             owner="guardrail",
             decision="balance_direct",
             target_domain="account",
             mode="new",
+            route_source="account_balance_guard",
+            heuristic_type="guardrail_shortcut",
+            heuristic_name="balance_request",
         ),
     }
 
@@ -168,6 +175,9 @@ async def _stage_account_domain(ctx: GateContext) -> dict[str, Any] | None:
             decision="deterministic_account_domain",
             target_domain="account",
             mode="new",
+            route_source="account_domain_guard",
+            heuristic_type="guardrail_shortcut",
+            heuristic_name="account_domain_request",
         ),
     }
 
@@ -197,6 +207,9 @@ async def _stage_beneficiary_domain(ctx: GateContext) -> dict[str, Any] | None:
             decision="deterministic_beneficiary_domain",
             target_domain="beneficiary",
             mode="new",
+            route_source="beneficiary_domain_guard",
+            heuristic_type="guardrail_shortcut",
+            heuristic_name="beneficiary_list_request",
         ),
     }
 
@@ -222,6 +235,9 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
                 decision="capability_blocked",
                 target_domain="airtime",
                 mode="new",
+                route_source="airtime_domain_guard",
+                heuristic_type="slot_parser",
+                heuristic_name="obvious_airtime_request",
             ),
         }
     task_id, spec = _build_direct_domain_task(state=ctx.state, domain="airtime", mode="new")
@@ -240,6 +256,9 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
             decision="deterministic_airtime_domain",
             target_domain="airtime",
             mode="new",
+            route_source="airtime_domain_guard",
+            heuristic_type="slot_parser",
+            heuristic_name="obvious_airtime_request",
         ),
     }
 
@@ -265,6 +284,9 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
                 decision="capability_blocked",
                 target_domain="data",
                 mode="new",
+                route_source="data_domain_guard",
+                heuristic_type="slot_parser",
+                heuristic_name="obvious_data_request",
             ),
         }
     task_id, spec = _build_direct_domain_task(state=ctx.state, domain="data", mode="new")
@@ -283,5 +305,8 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
             decision="deterministic_data_domain",
             target_domain="data",
             mode="new",
+            route_source="data_domain_guard",
+            heuristic_type="slot_parser",
+            heuristic_name="obvious_data_request",
         ),
     }

@@ -281,6 +281,9 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                     decision=transfer_request_reason,
                     target_domain="transfer",
                     mode="new",
+                    route_source="transfer_domain_guard",
+                    heuristic_type="slot_parser",
+                    heuristic_name=transfer_request_reason,
                 ),
             }
         if transfer_request_reason in {"batch_transfer_command", "account_aware_transfer_command"}:
@@ -313,6 +316,9 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                     decision=transfer_request_reason,
                     target_domain="transfer",
                     mode="new",
+                    route_source="transfer_domain_guard",
+                    heuristic_type="slot_parser",
+                    heuristic_name=transfer_request_reason,
                 ),
             }
 

@@ -1323,6 +1323,9 @@ async def test_gate_deterministic_account_list_bypasses_semantic_router() -> Non
     assert planner.plan_calls == 0
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "deterministic_account_domain"
+    assert updates["route_source"] == "account_domain_guard"
+    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
+    assert updates["routing_heuristic_name"] == "account_domain_request"
     task = updates["tasks"]["direct_account"]
     assert task.type == "account"
     assert task.payload["message"] == "Show my linked accounts"
@@ -1356,6 +1359,9 @@ async def test_gate_deterministic_beneficiary_list_bypasses_semantic_router() ->
     assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "deterministic_beneficiary_domain"
+    assert updates["route_source"] == "beneficiary_domain_guard"
+    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
+    assert updates["routing_heuristic_name"] == "beneficiary_list_request"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["message"] == "Show my beneficiaries"
@@ -1677,6 +1683,9 @@ async def test_gate_context_frame_does_not_steal_fresh_transfer_request() -> Non
     assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "fresh_transfer_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "fresh_transfer_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 10k to tolu adebayo"
@@ -1881,6 +1890,9 @@ async def test_gate_deterministic_airtime_bypasses_semantic_router() -> None:
     assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
+    assert updates["route_source"] == "airtime_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "obvious_airtime_request"
     task = updates["tasks"]["direct_airtime"]
     assert task.type == "airtime"
 
@@ -1913,6 +1925,9 @@ async def test_gate_deterministic_data_bypasses_semantic_router() -> None:
     assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    assert updates["route_source"] == "data_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "obvious_data_request"
     task = updates["tasks"]["direct_data"]
     assert task.type == "data"
 
@@ -2617,6 +2632,9 @@ async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner(
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "fresh_transfer_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "fresh_transfer_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 5k to Mum"
@@ -2655,6 +2673,9 @@ async def test_gate_amount_only_transfer_fastpath_still_routes_to_transfer_worke
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "fresh_transfer_missing_recipient_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "fresh_transfer_missing_recipient_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 10k"
@@ -2692,6 +2713,9 @@ async def test_gate_batch_transfer_turn_falls_through_to_planner() -> None:
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "batch_transfer_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "batch_transfer_command"
 
 
 async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
@@ -2726,6 +2750,9 @@ async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "batch_transfer_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "batch_transfer_command"
 
 
 async def test_gate_multi_amount_transfer_turn_falls_through_to_planner() -> None:
@@ -2759,6 +2786,9 @@ async def test_gate_multi_amount_transfer_turn_falls_through_to_planner() -> Non
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "batch_transfer_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "batch_transfer_command"
 
 
 async def test_gate_multi_recipient_transfer_turn_falls_through_to_planner() -> None:
@@ -2792,6 +2822,9 @@ async def test_gate_multi_recipient_transfer_turn_falls_through_to_planner() -> 
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "batch_transfer_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "batch_transfer_command"
 
 
 async def test_gate_account_aware_transfer_turn_falls_through_to_planner() -> None:
@@ -2826,6 +2859,9 @@ async def test_gate_account_aware_transfer_turn_falls_through_to_planner() -> No
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_target_domain"] == "transfer"
     assert updates["routing_decision"] == "account_aware_transfer_command"
+    assert updates["route_source"] == "transfer_domain_guard"
+    assert updates["routing_heuristic_type"] == "slot_parser"
+    assert updates["routing_heuristic_name"] == "account_aware_transfer_command"
 
 
 async def test_gate_deterministic_transfer_fastpath_still_executes_through_transfer_worker() -> None:
@@ -3086,6 +3122,9 @@ async def test_gate_english_domain_fastpath_still_applies_with_non_english_local
     assert updates["semantic_path_shape"] == "deterministic_account_domain"
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_decision"] == "deterministic_account_domain"
+    assert updates["route_source"] == "account_domain_guard"
+    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
+    assert updates["routing_heuristic_name"] == "account_domain_request"
 
 
 async def test_gate_non_english_domain_phrase_falls_through_safely(monkeypatch) -> None:
@@ -4073,6 +4112,10 @@ async def test_gate_direct_path_routes_balance_request_without_turn_router() -> 
 
     assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "balance_direct"
+    assert updates["route_source"] == "account_balance_guard"
+    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
+    assert updates["routing_heuristic_name"] == "balance_request"
     assert updates["waves"] == [["direct_account_balance"]]
     task = updates["tasks"]["direct_account_balance"]
     assert task.type == "account"
@@ -4675,6 +4718,10 @@ async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance
     updates = await session_gate_direct_path(state, config)
 
     assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "balance_direct"
+    assert updates["route_source"] == "account_balance_guard"
+    assert updates["routing_heuristic_type"] == "guardrail_shortcut"
+    assert updates["routing_heuristic_name"] == "balance_request"
     assert updates["waves"] == [["direct_account_balance"]]
     task = updates["tasks"]["direct_account_balance"]
     assert task.type == "account"
