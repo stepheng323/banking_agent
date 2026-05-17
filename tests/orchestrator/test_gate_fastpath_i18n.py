@@ -2140,7 +2140,7 @@ async def test_gate_support_issue_falls_through_to_planner_when_semantic_router_
     assert updates["routing_decision"] == "planner_handoff"
 
 
-async def test_gate_semantic_v2_support_issue_uses_router_hint() -> None:
+async def test_gate_support_issue_uses_router_hint() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_support",
@@ -2176,7 +2176,7 @@ async def test_gate_semantic_v2_support_issue_uses_router_hint() -> None:
     assert task.type == "support"
 
 
-async def test_gate_semantic_v2_support_issue_vetoes_query_route() -> None:
+async def test_gate_support_issue_hint_vetoes_query_route() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_query",

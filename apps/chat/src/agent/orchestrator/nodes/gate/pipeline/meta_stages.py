@@ -193,27 +193,14 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
             }
 
     # Deterministic query domain
-    if (
+    can_consider_query_domain = (
         not ctx.live_pending_interrupt
         and not ctx.state.has_quote
         and not has_active_query_session
         and ctx.phrase_heavy_fastpath_allowed
-        and _is_query_domain_request(ctx.message_text)
-    ):
+    )
+    if can_consider_query_domain and _is_structural_query_domain_request(ctx.message_text):
         semantic_router_available = callable(getattr(ctx.task_planner, "route_semantic_turn", None))
-        structural_query_request = _is_structural_query_domain_request(ctx.message_text)
-        if not structural_query_request:
-            if not semantic_router_available:
-                logger.info("gate_query_domain_planner_handoff", reason="non_structural_query_phrase")
-                return None
-            ctx.add_routing_hint(
-                domain="query",
-                reason="query_domain_phrase",
-                source="query_domain_phrase",
-            )
-            logger.info("gate_query_domain_hint_attached")
-            return None
-
         task_id, spec = _build_direct_domain_task(state=ctx.state, domain="query", mode="new")
         logger.info(
             "gate_deterministic_query_domain",
@@ -240,6 +227,18 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                 heuristic_name="structural_query_domain",
             ),
         }
+    if (
+        can_consider_query_domain
+        and callable(getattr(ctx.task_planner, "route_semantic_turn", None))
+        and _is_query_domain_request(ctx.message_text)
+    ):
+        ctx.add_routing_hint(
+            domain="query",
+            reason="query_domain_phrase",
+            source="query_domain_phrase",
+        )
+        logger.info("gate_query_domain_hint_attached")
+        return None
 
     # Transfer direct
     if not ctx.live_pending_interrupt and not ctx.state.has_quote:

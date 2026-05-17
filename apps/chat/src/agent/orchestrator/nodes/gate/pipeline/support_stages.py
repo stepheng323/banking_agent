@@ -160,34 +160,20 @@ async def _stage_support_context_followup(ctx: GateContext) -> dict[str, Any] | 
 
 
 async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | None:
-    """Handle common transaction/ticket support issue phrases."""
-    if ctx.live_pending_interrupt or ctx.state.has_quote or not _looks_like_support_issue_request(ctx.message_text):
+    """Attach a non-authoritative support hint for common transaction/ticket issue phrases."""
+    if (
+        ctx.live_pending_interrupt
+        or ctx.state.has_quote
+        or not callable(getattr(ctx.task_planner, "route_semantic_turn", None))
+        or not _looks_like_support_issue_request(ctx.message_text)
+    ):
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
-        logger.info("gate_support_issue_policy_blocked")
-        return {
-            **ctx.gate_updates,
-            "final_response": block_message,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "support_issue_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="capability_blocked",
-                target_domain="support",
-                route_source="support_issue_guard",
-                heuristic_type="routing_heuristic",
-                heuristic_name="support_issue_phrase",
-            ),
-        }
-    if callable(getattr(ctx.task_planner, "route_semantic_turn", None)):
-        ctx.add_routing_hint(
-            domain="support",
-            reason="transaction_or_ticket_issue_phrase",
-            source="support_issue_phrase",
-        )
-        logger.info("gate_support_issue_hint_attached")
-        return None
-    logger.info("gate_support_issue_planner_handoff")
+    ctx.add_routing_hint(
+        domain="support",
+        reason="transaction_or_ticket_issue_phrase",
+        source="support_issue_phrase",
+    )
+    logger.info("gate_support_issue_hint_attached")
     return None
 
 
