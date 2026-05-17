@@ -1915,6 +1915,72 @@ async def test_gate_deterministic_airtime_bypasses_semantic_router() -> None:
     assert task.type == "airtime"
 
 
+async def test_gate_explicit_send_airtime_to_phone_still_uses_direct_airtime() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="should not be needed for explicit airtime",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_airtime_send_explicit",
+        phone_number="234899999991721",
+        channel="whatsapp",
+        last_message_text="Send 2k airtime to 08031234567",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
+    task = updates["tasks"]["direct_airtime"]
+    assert task.type == "airtime"
+
+
+async def test_gate_phone_number_send_uses_semantic_router_not_direct_airtime_or_transfer() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_airtime",
+            mode="new",
+            target_intent="airtime",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["airtime"],
+            reason="semantic phone-number send route",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_airtime_phone_ambiguous",
+        phone_number="234899999991722",
+        channel="whatsapp",
+        last_message_text="Send 2k to 08031234567",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "airtime"
+    task = updates["tasks"]["direct_airtime"]
+    assert task.type == "airtime"
+
+
 async def test_gate_deterministic_data_bypasses_semantic_router() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

@@ -42,6 +42,8 @@ _TRANSFER_DIRECT_PREFIX_RE = re.compile(
 )
 _TRANSFER_DIRECT_RECIPIENT_CUE_RE = re.compile(r"\b(?:to|for|between|btw|si|zuwa)\b", re.IGNORECASE)
 _TRANSFER_DIRECT_AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?\b")
+_NIGERIAN_PHONE_RE_FRAGMENT = r"(?<!\d)(?:\+?234[\s().-]*[789]|0[789])(?:[\s().-]*\d){9}(?!\d)"
+_PHONE_NUMBER_CUE_RE = re.compile(_NIGERIAN_PHONE_RE_FRAGMENT, re.IGNORECASE)
 _TRANSFER_DIRECT_PERCENTAGE_RE = re.compile(
     r"\b(?:half|quarter|tithe|\d{1,3}\s*%|all|everything|max amount|what(?:ever)? i have)\b",
     re.IGNORECASE,
@@ -242,7 +244,15 @@ _AIRTIME_DIRECT_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _AIRTIME_DIRECT_HINT_RE = re.compile(
-    r"\b(?:airtime|mtn|glo|airtel|9mobile)\b|(?:\+?234|0)?(?:[\s().-]*\d){10,13}",
+    rf"\b(?:airtime|mtn|glo|airtel|9mobile)\b|{_NIGERIAN_PHONE_RE_FRAGMENT}",
+    re.IGNORECASE,
+)
+_AIRTIME_DIRECT_EXPLICIT_HINT_RE = re.compile(
+    r"\b(?:airtime|mtn|glo|airtel|9mobile)\b",
+    re.IGNORECASE,
+)
+_AIRTIME_DIRECT_SEND_PREFIX_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*send\b",
     re.IGNORECASE,
 )
 _DATA_DIRECT_PREFIX_RE = re.compile(
@@ -723,6 +733,8 @@ def _is_obvious_airtime_request(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if not normalized or not _AIRTIME_DIRECT_PREFIX_RE.search(normalized):
         return False
+    if _AIRTIME_DIRECT_SEND_PREFIX_RE.match(normalized) and not _AIRTIME_DIRECT_EXPLICIT_HINT_RE.search(normalized):
+        return False
     has_mixed_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
     if has_mixed_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
         return False
@@ -821,6 +833,8 @@ def _classify_obvious_transfer_request(message_text: str) -> str | None:
     if has_multi_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
         return None
     if _is_account_balance_request(normalized) or _is_query_domain_request(normalized):
+        return None
+    if _PHONE_NUMBER_CUE_RE.search(normalized):
         return None
     if _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized) and not _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized):
         return None
