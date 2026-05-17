@@ -2016,6 +2016,106 @@ async def test_gate_deterministic_data_bypasses_semantic_router() -> None:
     assert task.type == "data"
 
 
+async def test_gate_get_sized_data_still_uses_direct_data_shortcut() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be needed for explicit data bundle",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_data_sized_get",
+        phone_number="234899999991731",
+        channel="whatsapp",
+        last_message_text="Get 1gb data for me",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    task = updates["tasks"]["direct_data"]
+    assert task.type == "data"
+
+
+async def test_gate_record_data_request_routes_as_query_not_direct_data() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.94,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="transaction data is a query surface",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_transaction_data_query",
+        phone_number="234899999991732",
+        channel="whatsapp",
+        last_message_text="Get my transaction data",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "query"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+
+
+async def test_gate_data_status_request_uses_semantic_router_not_direct_data() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            mode="new",
+            target_intent="support",
+            confidence=0.92,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="data status is support, not bundle purchase",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_data_status_support",
+        phone_number="234899999991733",
+        channel="whatsapp",
+        last_message_text="Get data status",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "support"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+
+
 async def test_gate_phone_only_get_does_not_use_direct_data_shortcut() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

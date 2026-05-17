@@ -264,6 +264,12 @@ _DATA_DIRECT_HINT_RE = re.compile(
     r"\b(?:data|bundle)\b|\d+\s*(?:mb|gb)\b",
     re.IGNORECASE,
 )
+_DATA_DIRECT_SIZE_RE = re.compile(r"\d+\s*(?:mb|gb)\b", re.IGNORECASE)
+_DATA_DIRECT_NON_PURCHASE_CONTEXT_RE = re.compile(
+    r"\b(?:transaction|transactions|history|statement|records?|details?|account|accounts|balance|"
+    r"status|failed|failure|pending|receipt|proof|refund|reversal|ticket|complaint|support)\b",
+    re.IGNORECASE,
+)
 _DIRECT_CONTEXT_RECAP_EXACT = {
     "where did we stop",
     "what are we doing again",
@@ -747,6 +753,8 @@ def _is_obvious_data_request(message_text: str) -> bool:
         return False
     has_mixed_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
     if has_mixed_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
+        return False
+    if _DATA_DIRECT_NON_PURCHASE_CONTEXT_RE.search(normalized) and not _DATA_DIRECT_SIZE_RE.search(normalized):
         return False
     return bool(_DATA_DIRECT_HINT_RE.search(normalized))
 
