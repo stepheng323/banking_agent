@@ -1,6 +1,6 @@
 """Repository for Transaction model."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from uuid import UUID
 
 from sqlalchemy import select
@@ -35,6 +35,35 @@ class TransactionRepository(BaseRepository[Transaction]):
         result = await self.db.execute(
             select(Transaction)
             .filter(Transaction.user_id == lookup_id)
+            .order_by(Transaction.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_by_user_window(
+        self,
+        user_id: str,
+        *,
+        start_date: date,
+        end_date: date,
+        limit: int = 200,
+    ) -> list[Transaction]:
+        """Get transactions for a user whose local lifecycle touches a date window."""
+        lookup_id: UUID | str = user_id
+        try:
+            lookup_id = UUID(user_id)
+        except ValueError:
+            pass
+
+        window_start = datetime.combine(start_date, time.min)
+        window_end = datetime.combine(end_date, time.max)
+        result = await self.db.execute(
+            select(Transaction)
+            .filter(
+                Transaction.user_id == lookup_id,
+                Transaction.created_at >= window_start,
+                Transaction.created_at <= window_end,
+            )
             .order_by(Transaction.created_at.desc())
             .limit(limit)
         )

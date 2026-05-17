@@ -123,6 +123,30 @@ class BankTransactionRepository(BaseRepository[BankTransaction]):
         )
         return list(result.scalars().all())
 
+    async def list_by_user_window(
+        self,
+        user_id: str | UUID,
+        *,
+        start_date: date,
+        end_date: date,
+        provider: str = "mono",
+        limit: int = 200,
+    ) -> list[BankTransaction]:
+        """Return mirrored bank transactions for a user within a date window."""
+        lookup_id = self._coerce_uuid(user_id)
+        result = await self.db.execute(
+            select(BankTransaction)
+            .filter(
+                BankTransaction.user_id == lookup_id,
+                BankTransaction.provider == provider,
+                BankTransaction.posted_date >= start_date,
+                BankTransaction.posted_date <= end_date,
+            )
+            .order_by(BankTransaction.posted_at.desc(), BankTransaction.provider_transaction_id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def get_latest_posted_at(
         self,
         linked_account_id: str | UUID,

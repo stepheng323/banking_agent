@@ -172,6 +172,16 @@ class SessionScopedTransactionRepository(_SessionScopedRepositoryMixin, Transact
     async def get_by_user(self, user_id: str, limit: int = 20):
         return await self._call_with_session(TransactionRepository, "get_by_user", user_id, limit)
 
+    async def list_by_user_window(self, user_id: str, *, start_date, end_date, limit: int = 200):
+        return await self._call_with_session(
+            TransactionRepository,
+            "list_by_user_window",
+            user_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+        )
+
     async def get_by_id(self, transaction_id: str):
         return await self._call_with_session(TransactionRepository, "get_by_id", transaction_id)
 

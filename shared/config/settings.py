@@ -88,6 +88,9 @@ class Settings:
         self.enable_support_diagnostic_agent: bool = (
             os.getenv("ENABLE_SUPPORT_DIAGNOSTIC_AGENT", "false").lower() == "true"
         )
+        self.enable_unified_transaction_view: bool = bool(
+            self._parse_optional_bool(os.getenv("ENABLE_UNIFIED_TRANSACTION_VIEW"))
+        )
         self.enable_transfer_scheduling: bool = os.getenv("ENABLE_TRANSFER_SCHEDULING", "true").lower() == "true"
         self.schedule_dispatcher_batch_size: int = int(os.getenv("SCHEDULE_DISPATCHER_BATCH_SIZE", "25"))
         self.schedule_max_due_per_tick: int = int(os.getenv("SCHEDULE_MAX_DUE_PER_TICK", "25"))
