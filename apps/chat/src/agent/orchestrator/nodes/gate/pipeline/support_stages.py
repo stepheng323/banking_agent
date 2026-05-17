@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from apps.chat.src.agent.graphs.support.context_manager import SupportContextManager
@@ -16,6 +17,108 @@ from shared.services.async_completion import get_recent_batch_reference
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_SUPPORT_QUERY_PREFIX_RE = re.compile(r"^\s*(?:show|list|view|get)\b", re.IGNORECASE)
+_SUPPORT_TRANSACTION_ISSUE_PATTERNS = (
+    re.compile(
+        r"\b(?:my|the|this|that|last)\s+(?:last\s+)?(?:transaction|transfer|payment)\s+"
+        r"(?:failed|fail(?:ed)?|pending|stuck|processing)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:transaction|transfer|payment)\s+(?:failed|fail(?:ed)?|pending|stuck|processing)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:i\s+(?:was\s+)?debited|money\s+(?:left|deducted)|debit(?:ed)?)\b.*"
+        r"\b(?:didn['’]?t|did\s+not|not|never)\s+(?:receive|reflect|arrive|go\s+through)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:recipient|beneficiary|they|he|she)\s+"
+        r"(?:didn['’]?t|did\s+not|hasn['’]?t|has\s+not|never)\s+"
+        r"(?:receive|get|got)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:retry|try\s+again|resend)\b.*\b(?:failed|transaction|transfer|payment)\b|"
+        r"\b(?:failed|transaction|transfer|payment)\b.*\b(?:retry|try\s+again|resend)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:refund|reversal|reverse|wrong\s+debit|chargeback)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:fraud|fraudulent|unauthori[sz]ed|someone\s+used\s+my\s+account|scam)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:ticket|complaint|case)\b.*\b(?:status|update|happened|progress)\b|"
+        r"\bwhat\s+happened\s+to\s+my\s+(?:complaint|ticket|case)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _looks_like_support_issue_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", (message_text or "").strip())
+    if not normalized:
+        return False
+    if _SUPPORT_QUERY_PREFIX_RE.match(normalized) and not re.search(
+        r"\b(?:ticket|complaint|case|refund|reversal|reverse|retry)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return False
+    return any(pattern.search(normalized) for pattern in _SUPPORT_TRANSACTION_ISSUE_PATTERNS)
+
+
+async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | None:
+    """Handle common transaction/ticket support issue phrases."""
+    if ctx.live_pending_interrupt or ctx.state.has_quote or not _looks_like_support_issue_request(ctx.message_text):
+        return None
+    if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
+        logger.info("gate_support_issue_policy_blocked")
+        return {
+            **ctx.gate_updates,
+            "final_response": block_message,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "support_issue_policy_blocked",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="capability_blocked",
+                target_domain="support",
+                route_source="support_issue_guard",
+                heuristic_type="routing_heuristic",
+                heuristic_name="support_issue_phrase",
+            ),
+        }
+    if callable(getattr(ctx.task_planner, "route_semantic_turn", None)):
+        ctx.add_routing_hint(
+            domain="support",
+            reason="transaction_or_ticket_issue_phrase",
+            source="support_issue_phrase",
+        )
+        logger.info("gate_support_issue_hint_attached")
+        return None
+    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="support")
+    logger.info("gate_support_issue_handoff", task_id=task_id)
+    return {
+        **ctx.gate_updates,
+        "tasks": {task_id: spec},
+        "waves": [[task_id]],
+        "current_wave_index": 0,
+        "planner_output": None,
+        "pending_interrupt": None,
+        "direct_path_triggered": True,
+        "semantic_path_shape": "support_issue_direct",
+        **_route_observability_updates(
+            owner="guardrail",
+            decision="support_issue_direct",
+            target_domain="support",
+            route_source="support_issue_guard",
+            heuristic_type="routing_heuristic",
+            heuristic_name="support_issue_phrase",
+        ),
+    }
 
 
 async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | None:

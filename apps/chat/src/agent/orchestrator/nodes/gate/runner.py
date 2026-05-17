@@ -1005,12 +1005,18 @@ def _route_observability_updates(
     decision: str,
     target_domain: str | None = None,
     mode: str | None = None,
+    route_source: str | None = None,
+    heuristic_type: str | None = None,
+    heuristic_name: str | None = None,
 ) -> dict[str, Any]:
     return {
         "routing_owner": owner,
         "routing_decision": decision,
         "routing_target_domain": target_domain,
         "routing_mode": mode,
+        "route_source": route_source or owner,
+        "routing_heuristic_type": heuristic_type,
+        "routing_heuristic_name": heuristic_name,
     }
 
 

@@ -1973,6 +1973,165 @@ async def test_gate_banking_coded_support_ambiguity_clarifies_before_casual_chat
     assert not responder.calls
 
 
+async def test_gate_routes_failed_last_transaction_to_support_through_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            mode="new",
+            confidence=0.91,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="transaction support issue",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_issue_1",
+        phone_number="23489999999177",
+        channel="whatsapp",
+        last_message_text="My last transaction failed",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.last_context is not None
+    assert "candidate_domain=support" in planner.last_context
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "support"
+    assert updates["routing_decision"] == "domain_support"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+    assert task.payload["message"] == "My last transaction failed"
+
+
+async def test_gate_routes_debited_not_received_to_support_through_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            mode="new",
+            confidence=0.91,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="transaction support issue",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_issue_2",
+        phone_number="23489999999178",
+        channel="whatsapp",
+        last_message_text="I was debited but they didn't receive it",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.last_context is not None
+    assert "candidate_domain=support" in planner.last_context
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+
+
+async def test_gate_support_issue_falls_back_to_direct_when_semantic_router_unavailable() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_support_issue_no_router",
+        phone_number="23489999999181",
+        channel="whatsapp",
+        last_message_text="My last transaction failed",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "support_issue_direct"
+    assert updates["routing_decision"] == "support_issue_direct"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+
+
+async def test_gate_semantic_v2_support_issue_uses_router_hint() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            mode="new",
+            confidence=0.91,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="transaction support issue",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_issue_v2_1",
+        phone_number="23489999999179",
+        channel="whatsapp",
+        last_message_text="My last transaction failed",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.last_context is not None
+    assert "candidate_domain=support" in planner.last_context
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "support"
+    assert updates["routing_decision"] == "domain_support"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+
+
+async def test_gate_semantic_v2_support_issue_vetoes_query_route() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            confidence=0.88,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="incorrect query route",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_issue_v2_2",
+        phone_number="23489999999180",
+        channel="whatsapp",
+        last_message_text="My last transaction failed",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["semantic_path_shape"] == "support_hint_planner_handoff"
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "support_hint_planner_handoff"
+    assert updates["routing_heuristic_type"] == "routing_hint"
+    assert updates["routing_heuristic_name"] == "support_issue_phrase"
+
+
 async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

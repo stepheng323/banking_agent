@@ -36,6 +36,30 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _append_routing_hints(route_context: str, hints: list[dict[str, str]]) -> str:
+    if not hints:
+        return route_context
+    lines = [
+        "",
+        "Routing hints are non-authoritative guardrail hints. Use them only when they match the user intent.",
+    ]
+    for hint in hints:
+        domain = hint.get("domain") or "unknown"
+        reason = hint.get("reason") or "unknown"
+        source = hint.get("source") or "unknown"
+        lines.append(f"- candidate_domain={domain}; reason={reason}; source={source}")
+    return f"{route_context}\n" + "\n".join(lines)
+
+
+def _semantic_route_vetoed_by_support_hint(canonical_decision: str | None) -> bool:
+    return canonical_decision in {
+        "domain_query",
+        "direct_reply",
+        "direct_context_answer",
+        "planner_ambiguous",
+    }
+
+
 async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
     """LLM semantic router dispatch."""
     await ctx.ensure_turn_summary()
@@ -65,6 +89,7 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
                 ctx.state.preplanner_expected_transaction_executors,
                 message_text=ctx.message_text,
             )
+            route_context = _append_routing_hints(route_context, ctx.routing_hints)
             try:
                 route = await ctx.task_planner.route_semantic_turn(
                     ctx.state.phone_number,
@@ -85,6 +110,26 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
         if route is not None:
             canonical_decision = _semantic_route_decision(route)
             canonical_mode = _semantic_route_mode(route)
+            if ctx.has_routing_hint("support") and _semantic_route_vetoed_by_support_hint(canonical_decision):
+                logger.info(
+                    "gate_semantic_router_support_hint_veto",
+                    decision=canonical_decision,
+                    mode=canonical_mode,
+                )
+                return {
+                    **ctx.gate_updates,
+                    **(ctx.summary_updates or {}),
+                    "semantic_path_shape": "support_hint_planner_handoff",
+                    **_route_observability_updates(
+                        owner="planner",
+                        decision="support_hint_planner_handoff",
+                        target_domain=None,
+                        mode=canonical_mode,
+                        route_source="semantic_router_veto",
+                        heuristic_type="routing_hint",
+                        heuristic_name="support_issue_phrase",
+                    ),
+                }
             requested_locale = getattr(route, "requested_language", None)
             if requested_locale and _looks_like_language_switch_request(ctx.message_text, requested_locale):
                 resolved_locale = LocaleManager.parse_locale_name(requested_locale)
