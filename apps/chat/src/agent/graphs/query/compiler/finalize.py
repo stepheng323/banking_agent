@@ -6,6 +6,7 @@ import re
 from time import perf_counter
 from typing import Any, Literal, cast
 
+from apps.chat.src.agent.graphs.query.compiler import lexical_recovery
 from apps.chat.src.agent.graphs.query.models import (
     Ambiguity,
     ExtractionIntent,
@@ -430,6 +431,14 @@ def parse_deterministic(
 
 
 async def parse(parser: Any, question: str, today: Any, language: str = "en") -> QueryParseResult:
+    if lexical_recovery.looks_like_support_problem_statement(question):
+        logger.info("query_parser_support_problem_guarded")
+        return QueryParseResult(
+            outcome=ResolverOutcome.NEEDS_INPUT,
+            extraction=QueryExtractionResult(raw_query=question),
+            resolver_message=render_message("query.clarify.unsure_rephrase", language),
+        )
+
     deterministic = parse_deterministic(parser, question, today=today, language=language)
     if deterministic is not None:
         return deterministic

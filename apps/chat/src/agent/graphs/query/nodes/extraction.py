@@ -167,6 +167,8 @@ class ExtractionStep(QueryStep):
     ) -> tuple[QueryExtractionResult | None, str]:
         if extraction is None:
             return None, "missing_extraction"
+        if self.parser.looks_like_support_problem_statement(extraction.raw_query):
+            return None, "support_problem_signal"
         if confidence is not None and confidence < self._COMPILER_SAFE_CONFIDENCE_THRESHOLD:
             return None, "low_confidence"
         if extraction.ambiguities:

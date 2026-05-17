@@ -1494,6 +1494,50 @@ async def test_extraction_step_fresh_query_falls_back_to_parser_parse_when_not_d
 
 
 @pytest.mark.asyncio
+async def test_extraction_step_does_not_reparse_support_problem_as_query_continuation() -> None:
+    step = ExtractionStep(_FailingLLM())
+    today = date(2026, 3, 13)
+    session_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        )
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.95,
+            reason="misread support issue as query",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                raw_query="I was debited but they didn't receive it",
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today"),
+            ),
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {
+            "message": "I was debited but they didn't receive it",
+            "language": "en",
+            "today": today,
+        },
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["response"] == "I'm not sure what you're referring to. Could you rephrase?"
+    assert "query_contract" not in updates
+
+
+@pytest.mark.asyncio
 async def test_extraction_step_active_result_aggregate_can_reuse_reasoner_extraction() -> None:
     step = ExtractionStep(_FailingLLM())
     session_contract = _contract(

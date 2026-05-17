@@ -7,6 +7,7 @@ from datetime import date
 from time import perf_counter
 from typing import Any, cast
 
+from apps.chat.src.agent.graphs.query.compiler.lexical_recovery import looks_like_support_problem_statement
 from apps.chat.src.agent.graphs.query.models import (
     Aggregation,
     AmbiguityCode,
@@ -374,6 +375,16 @@ async def maybe_recover_supported_followup_query(
     reasoner_extraction: QueryExtractionResult | None = None,
     reasoner_confidence: float | None = None,
 ) -> dict[str, Any] | None:
+    if looks_like_support_problem_statement(str(state.get("message") or "")):
+        logger.info(
+            "query_continuation_resolution",
+            path="fallback_parse_supported_query",
+            recovered=False,
+            skip_reason="support_problem_signal",
+            resolution_source="reasoner_extraction_compile",
+        )
+        return None
+
     compiler_safe_extraction, compiler_safe_reason = step._compiler_safe_extraction_decision(
         extraction=reasoner_extraction,
         confidence=reasoner_confidence,
@@ -1777,6 +1788,22 @@ async def parse_reasoner_extraction_to_updates(
     language: str,
 ) -> dict[str, Any]:
     """Translate semantic reasoner output into compiler-first query updates."""
+    if looks_like_support_problem_statement(str(state.get("message") or "")):
+        logger.info(
+            "query_reasoner_support_problem_guarded",
+            semantic_decision=getattr(decision, "decision", None),
+            continuation_type=getattr(decision, "continuation_type", None),
+        )
+        return {
+            "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+            "response": render_message("query.clarify.unsure_rephrase", language),
+            "flow_state": "parsing",
+            "session_active": True,
+            "pending_clarification": None,
+            "show_expanded": False,
+            "current_page": 0,
+        }
+
     extraction = getattr(decision, "extraction", None)
     confidence = getattr(decision, "confidence", None)
     if extraction is None and getattr(decision, "decision", None) in {"fresh_query", "new_query", "reinterpret_query"}:

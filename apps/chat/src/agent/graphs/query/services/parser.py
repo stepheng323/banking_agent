@@ -170,6 +170,10 @@ class QueryParser:
     def _extract_relative_time_range_from_query(raw_query: str) -> QueryTimeRange | None:
         return lexical_recovery.extract_relative_time_range_from_query(raw_query)
 
+    @staticmethod
+    def looks_like_support_problem_statement(raw_query: str | None) -> bool:
+        return lexical_recovery.looks_like_support_problem_statement(raw_query)
+
     def _recover_known_fragile_query_shapes(
         self,
         extraction: QueryExtractionResult,

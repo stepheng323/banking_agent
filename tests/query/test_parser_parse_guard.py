@@ -105,6 +105,46 @@ async def test_parser_logs_llm_call_metadata(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
+async def test_parser_does_not_parse_support_problem_statement_as_query() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        filters=QueryFilters(transaction_type="debit"),
+    )
+    llm = _TrackingLLM(extraction)
+    parser = QueryParser(llm)
+
+    result = await parser.parse(
+        "I was debited but they didn't receive it",
+        today=date(2026, 3, 13),
+        language="en",
+    )
+
+    assert llm.schema is None
+    assert result.outcome == ResolverOutcome.NEEDS_INPUT
+    assert result.query_contract is None
+    assert result.resolver_message == render_message("query.clarify.unsure_rephrase", "en")
+
+
+@pytest.mark.asyncio
+async def test_parser_keeps_explicit_latest_status_query_in_query_domain() -> None:
+    llm = _TrackingLLM(QueryExtractionResult())
+    parser = QueryParser(llm)
+
+    result = await parser.parse(
+        "What is the status of my last transaction?",
+        today=date(2026, 3, 13),
+        language="en",
+    )
+
+    assert llm.schema is None
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["answer_fact_field"] == "status"
+    assert result.query_contract["result_reference"] == "latest"
+
+
+@pytest.mark.asyncio
 async def test_all_time_query_auto_clamps_without_blocking_message() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.BENEFICIARY_SUMMARY,
