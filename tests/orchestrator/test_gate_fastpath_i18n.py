@@ -2250,6 +2250,36 @@ async def test_gate_banking_coded_support_ambiguity_clarifies_before_casual_chat
     assert not responder.calls
 
 
+async def test_gate_receipt_request_ambiguity_uses_support_prompt_not_account_query() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.79,
+            detected_language="English",
+            response_key="conversational.out_of_scope",
+            response="I can't help with that.",
+            expected_transaction_executors=[],
+            reason="should not win against receipt support ambiguity",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_support_receipt_ambiguous",
+        phone_number="234899999991761",
+        channel="whatsapp",
+        last_message_text="Send data receipt",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert updates["final_response"] == "Which transaction do you want me to check?"
+    assert updates["routing_decision"] == "banking_coded_ambiguity_support"
+
+
 async def test_gate_routes_failed_last_transaction_to_support_through_semantic_router() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
