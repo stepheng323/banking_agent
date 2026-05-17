@@ -36,7 +36,14 @@ PENDING_TRANSACTION_RE = re.compile(r"\b(?:pending|processing|stuck|not\s+comple
 RECEIPT_RE = re.compile(r"\b(?:receipt|proof\s+of\s+payment|payment\s+proof)\b", re.IGNORECASE)
 RETRY_RE = re.compile(r"\b(?:retry|try\s+again|send\s+again|resend)\b", re.IGNORECASE)
 REFUND_RE = re.compile(r"\b(?:refund|reversal|reverse|money\s+back)\b", re.IGNORECASE)
-WRONG_DEBIT_RE = re.compile(r"\b(?:debited\s+twice|double\s+debit|wrong(?:ly)?\s+debited|money\s+left)\b", re.IGNORECASE)
+WRONG_DEBIT_RE = re.compile(
+    r"\b(?:debited\s+twice|double\s+debit|wrong(?:ly)?\s+debited|money\s+left)\b"
+    r"|\b(?:i\s+(?:was\s+)?debited|money\s+(?:left|deducted)|debit(?:ed)?)\b.*"
+    r"\b(?:didn['’]?t|did\s+not|not|never)\s+(?:receive|get|arrive|reflect|go\s+through)\b"
+    r"|\b(?:recipient|beneficiary|they|he|she)\s+"
+    r"(?:didn['’]?t|did\s+not|not|never)\s+(?:receive|get)\b",
+    re.IGNORECASE,
+)
 FRAUD_RE = re.compile(r"\b(?:fraud|unauthori[sz]ed|wasn'?t\s+me|didn'?t\s+authorize|not\s+me)\b", re.IGNORECASE)
 HUMAN_HANDOFF_RE = re.compile(r"\b(?:human|agent|support\s+(?:person|team)|talk\s+to\s+support|complain)\b", re.IGNORECASE)
 TICKET_STATUS_RE = re.compile(
@@ -44,7 +51,7 @@ TICKET_STATUS_RE = re.compile(
     r"|\b(?:status|update|progress)\b.*\b(?:ticket|complaint|case)\b",
     re.IGNORECASE,
 )
-RECENT_REFERENCE_RE = re.compile(r"\b(?:last|latest|recent|this|that|it)\b", re.IGNORECASE)
+RECENT_REFERENCE_RE = re.compile(r"\b(?:last|latest|most\s+recent|recent)\b", re.IGNORECASE)
 
 
 class SupportClassifier:

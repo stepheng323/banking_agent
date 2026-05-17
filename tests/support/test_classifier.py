@@ -44,3 +44,14 @@ async def test_support_classifier_falls_back_when_llm_fails() -> None:
     assert result.intent == SupportIntent.FAILED_TRANSFER
     assert result.transaction_ref is not None
     assert result.transaction_ref.use_recent is True
+
+
+@pytest.mark.asyncio
+async def test_support_classifier_falls_back_for_debited_recipient_did_not_receive() -> None:
+    classifier = SupportClassifier(_LLMStub(error=RuntimeError("model unavailable")))
+
+    result = await classifier.classify("I was debited but they didn't receive it")
+
+    assert result.intent == SupportIntent.WRONG_DEBIT
+    assert result.transaction_ref is not None
+    assert result.transaction_ref.use_recent is False

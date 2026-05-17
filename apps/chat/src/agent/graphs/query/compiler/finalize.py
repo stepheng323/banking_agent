@@ -328,6 +328,28 @@ def parse_deterministic(
         QueryTimeRange,
     )
 
+    latest_status_match = re.fullmatch(
+        r"(?:(?:what(?:'s| is)|whats|tell me|check|show|get)\s+)?"
+        r"(?:the\s+)?status\s+of\s+(?:my\s+)?(?:last|latest|most recent)\s+"
+        r"(?:transaction|transfer|payment)"
+        r"|(?:(?:what(?:'s| is)|whats)\s+)?(?:my\s+)?(?:last|latest|most recent)\s+"
+        r"(?:transaction|transfer|payment)\s+status",
+        normalized,
+    )
+    if latest_status_match:
+        extraction = QueryExtractionResult(
+            intent=ExtractionIntent.SINGLE_TRANSACTION,
+            query_operation=QueryOperation.SEARCH_SINGLE_TRANSACTION,
+            raw_query=question,
+            time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+            request_shape=QueryRequestShape.FACT,
+            fact_query_kind=FactQueryKind.STATUS,
+            result_limit=1,
+            result_reference="latest",
+            answer_fact_field="status",
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
     recent_list_match = re.fullmatch(
         r"(?:(?:show|list|view|get|check|display|see)\s+)?"
         r"(?:(?:my|all my|all)\s+)?recent\s+(transactions?|debits?|credits?|payments?)"

@@ -9,7 +9,7 @@ INTENTS:
 - pending_transfer: Transfer is stuck ("It's stuck", "Still pending")
 - reversal_refund: Asking about refund timing ("When will I get my money back?")
 - retry_transfer: Wants to resend ("Send again", "Retry this")
-- wrong_debit: Debited incorrectly ("I was debited twice", "Money left but didn't go")
+- wrong_debit: Debited incorrectly or recipient did not receive after debit ("I was debited twice", "Money left but didn't go", "I was debited but they didn't receive it")
 - fraud_report: Unauthorized transaction ("I didn't authorize this", "This wasn't me")
 - receipt_request: Wants proof of payment ("Send receipt", "Proof of payment", "all except the last one", "only the one for Tolu")
 - human_handoff: Wants human help ("I want to talk to support", "This is unacceptable")

@@ -2132,6 +2132,90 @@ async def test_gate_semantic_v2_support_issue_vetoes_query_route() -> None:
     assert updates["routing_heuristic_name"] == "support_issue_phrase"
 
 
+async def test_gate_routes_support_reference_followup_before_query() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run",
+        )
+    )
+    redis = _RedisWithSupportContext(
+        {
+            "last_issue_intent": "retry_transfer",
+            "last_support_step": "asked_for_reference",
+            "attempts": 1,
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_context_1",
+        phone_number="23489999999182",
+        channel="whatsapp",
+        last_message_text="the last transaction",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "support_context_direct"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "support"
+    assert updates["routing_decision"] == "support_context_followup"
+    assert updates["tasks"]["direct_support"].type == "support"
+
+
+async def test_gate_routes_support_detail_followup_before_query() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run",
+        )
+    )
+    redis = _RedisWithSupportContext(
+        {
+            "last_transaction_ref": "tx-success",
+            "last_issue_intent": "failed_transfer",
+            "last_support_step": "looking_up",
+            "attempts": 0,
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_context_2",
+        phone_number="23489999999183",
+        channel="whatsapp",
+        last_message_text="show the details",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "support_context_direct"
+    assert updates["tasks"]["direct_support"].type == "support"
+
+
 async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -2785,6 +2869,16 @@ class _TrackingRedisWithSession(_TrackingRedis):
     async def get(self, key: str) -> str | None:
         if "query:session:" in key:
             self.query_session_gets += 1
+            return self.payload
+        return None
+
+
+class _RedisWithSupportContext:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = json.dumps(payload)
+
+    async def get(self, key: str) -> str | None:
+        if key.startswith("support_context:"):
             return self.payload
         return None
 

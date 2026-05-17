@@ -303,6 +303,25 @@ async def test_latest_transaction_query_drops_spurious_narration_negotiation_wit
 
 
 @pytest.mark.asyncio
+async def test_status_of_last_transaction_deterministically_compiles_to_latest_status_fact() -> None:
+    extraction = QueryExtractionResult(intent=ExtractionIntent.TRANSACTION_LIST)
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "What is the status of my last transaction?",
+        today=date(2026, 5, 17),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["answer_fact_field"] == "status"
+    assert result.query_contract["result_limit"] == 1
+    assert result.query_contract["result_reference"] == "latest"
+
+
+@pytest.mark.asyncio
 async def test_typed_latest_received_amount_query_compiles_to_latest_credit_fact_lookup() -> None:
     parser = QueryParser(
         _DummyLLM(

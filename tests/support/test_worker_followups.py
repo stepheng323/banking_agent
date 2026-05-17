@@ -268,6 +268,77 @@ async def test_support_worker_last_transaction_failed_checks_latest_transaction_
 
 
 @pytest.mark.asyncio
+async def test_support_worker_show_details_uses_last_resolved_transaction() -> None:
+    redis = _RedisStub()
+    worker = _worker(
+        redis,
+        {
+            "tx-success": _tx(
+                "tx-success",
+                amount=10000,
+                recipient_name="Tolu Adebayo",
+                bank_name="GTBank",
+                account_number="8162511023",
+                status="successful",
+            ),
+        },
+    )
+
+    first = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="My last transaction failed",
+    )
+    followup = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="show the details",
+    )
+
+    assert first.outcome == SupportOutcome.OK
+    assert "actually successful" in (first.response or "")
+    assert followup.outcome == SupportOutcome.OK
+    assert "₦10,000" in (followup.response or "")
+    assert "Tolu Adebayo" in (followup.response or "")
+    assert "not sure" not in (followup.response or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_support_worker_reference_followup_uses_last_transaction_after_wrong_debit_prompt() -> None:
+    redis = _RedisStub()
+    worker = _worker(
+        redis,
+        {
+            "tx-success": _tx(
+                "tx-success",
+                amount=10000,
+                recipient_name="Tolu Adebayo",
+                bank_name="GTBank",
+                account_number="8162511023",
+                status="successful",
+            ),
+        },
+    )
+
+    first = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="I was debited but they didn't receive it",
+    )
+    followup = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="my last transaction",
+    )
+
+    assert first.outcome == SupportOutcome.NEEDS_INPUT
+    assert "Which transaction" in (first.response or "")
+    assert followup.outcome == SupportOutcome.OK
+    assert "This transfer was successful" in (followup.response or "")
+    assert "not sure" not in (followup.response or "").lower()
+
+
+@pytest.mark.asyncio
 async def test_support_worker_failed_transaction_phrase_prefers_failed_status() -> None:
     now = datetime.now(UTC).replace(tzinfo=None)
     worker = SupportWorker(

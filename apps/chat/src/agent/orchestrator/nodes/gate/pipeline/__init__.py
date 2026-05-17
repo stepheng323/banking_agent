@@ -26,6 +26,7 @@ from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage 
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.support_stages import (
     _stage_receipt_request,
     _stage_receipt_thread_followup,
+    _stage_support_context_followup,
     _stage_support_issue_request,
 )
 
@@ -35,6 +36,7 @@ _GATE_STAGES = (
     _stage_gibberish_filter,
     _stage_context_frame_followup,
     _stage_receipt_thread_followup,
+    _stage_support_context_followup,
     _stage_receipt_request,
     _stage_beneficiary_suggestion,
     _stage_banking_ambiguity,

@@ -75,6 +75,22 @@ _RECENT_TRANSACTION_STATUS_ASSERTION_RE = re.compile(
     r"was\s+pending|was\s+processing|was\s+stuck|didn['’]?t\s+go\s+through)\b",
     re.IGNORECASE,
 )
+_RECENT_TRANSACTION_REFERENCE_RE = re.compile(
+    r"^\s*(?:my|the|this|that)?\s*(?:last|latest|most\s+recent|recent)\s+"
+    r"(?:transaction|transfer|payment)\s*$"
+    r"|^\s*(?:the\s+)?(?:last|latest|recent)\s+one\s*$"
+    r"|^\s*(?:it|this|that|that\s+one)\s*$",
+    re.IGNORECASE,
+)
+_DETAIL_FOLLOWUP_RE = re.compile(
+    r"\b(?:details?|full\s+details?|more\s+info(?:rmation)?|show\s+(?:me\s+)?(?:the\s+)?details?)\b",
+    re.IGNORECASE,
+)
+_STATUS_FOLLOWUP_RE = re.compile(
+    r"\b(?:status|state|what\s+happened|did\s+it\s+(?:go\s+through|fail|succeed))\b",
+    re.IGNORECASE,
+)
+_RETRY_FOLLOWUP_RE = re.compile(r"\b(?:retry|try\s+again|resend|send\s+again)\b", re.IGNORECASE)
 
 
 def _support_identity(context: dict[str, Any]) -> str | None:
@@ -772,6 +788,31 @@ class SupportWorker:
             return False
         return bool(_RECENT_TRANSACTION_STATUS_ASSERTION_RE.search(message))
 
+    @staticmethod
+    def _is_recent_transaction_reference(message: str) -> bool:
+        return bool(_RECENT_TRANSACTION_REFERENCE_RE.search(message or ""))
+
+    def _contextual_followup_reference(
+        self,
+        *,
+        support_ctx: Any,
+        message: str,
+    ) -> tuple[SupportIntent | None, TransactionReference | None]:
+        last_ref = str(getattr(support_ctx, "last_transaction_ref", "") or "").strip()
+        if last_ref:
+            if _RETRY_FOLLOWUP_RE.search(message):
+                return SupportIntent.RETRY_TRANSFER, TransactionReference(transaction_id=last_ref)
+            if _DETAIL_FOLLOWUP_RE.search(message) or _STATUS_FOLLOWUP_RE.search(message):
+                return SupportIntent.TRANSFER_STATUS, TransactionReference(transaction_id=last_ref)
+
+        pending_reference = getattr(support_ctx, "pending_reference", None)
+        asked_for_reference = getattr(support_ctx, "last_support_step", None) == "asked_for_reference"
+        if (pending_reference is not None or asked_for_reference) and self._is_recent_transaction_reference(message):
+            fallback_intent = getattr(support_ctx, "last_issue_intent", None) or SupportIntent.GENERAL_TX_ISSUE
+            return fallback_intent, TransactionReference(use_recent=True)
+
+        return None, None
+
     def _diagnostic_has_transaction_grounding(
         self,
         *,
@@ -1238,6 +1279,13 @@ class SupportWorker:
                 intent = result.intent
                 classification = result
 
+            contextual_intent, contextual_ref = self._contextual_followup_reference(
+                support_ctx=support_ctx,
+                message=message,
+            )
+            if contextual_intent is not None:
+                intent = intent or contextual_intent
+
             if not intent:
                 return SupportResult(
                     outcome=SupportOutcome.OK,
@@ -1258,6 +1306,8 @@ class SupportWorker:
             if quoted_message_id:
                 tx_ref = tx_ref or TransactionReference()
                 tx_ref.use_quoted = True
+            if contextual_ref is not None:
+                tx_ref = contextual_ref
             if self._should_verify_latest_transaction_status(intent, message):
                 tx_ref = tx_ref or TransactionReference()
                 tx_ref.use_recent = True
@@ -1392,7 +1442,10 @@ class SupportWorker:
                     tx_ref,
                     quoted_message_id,
                     recent_status_priority=self._recent_status_priority(intent),
-                    prefer_latest_recent=self._should_verify_latest_transaction_status(intent, message),
+                    prefer_latest_recent=(
+                        self._should_verify_latest_transaction_status(intent, message)
+                        or self._is_recent_transaction_reference(message)
+                    ),
                 )
                 if tx_obj:
                     resolved_tx = self.resolver.transaction_to_dict(tx_obj)
