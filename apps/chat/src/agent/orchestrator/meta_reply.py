@@ -35,7 +35,14 @@ META_SYSTEM_PROMPT = (
     "- Keep the reply under 5 lines.\n\n"
     'Return ONLY JSON: {"message":"...", "language":"en|yo|pcm|ha|ig"}'
 )
-STRICT_BRAND_TERMS = ("lotr", "lord of the rings", "tolkien", "ring of power", "ring of fire")
+STRICT_BRAND_TERM_GROUPS = (("lotr", "lord of the rings", "tolkien"),)
+STRICT_BRAND_TERMS = ("ring of power", "ring of fire")
+
+
+def _canonical_allows_brand_term(term: str, canonical: str) -> bool:
+    if term in canonical:
+        return True
+    return any(term in group and any(alias in canonical for alias in group) for group in STRICT_BRAND_TERM_GROUPS)
 
 
 def normalize_language_hint(language: str | None) -> str:
@@ -149,9 +156,10 @@ def _violates_branding_grounding(message: str, *, voice: AssistantVoice, meta_in
             return True
     if meta_intent == MetaIntent.BRAND_ORIGIN:
         canonical = (voice.brand_origin or "").lower()
-        for term in STRICT_BRAND_TERMS:
+        strict_terms = (*STRICT_BRAND_TERMS, *(term for group in STRICT_BRAND_TERM_GROUPS for term in group))
+        for term in strict_terms:
             if term in lowered and term not in canonical:
-                return True
+                return not _canonical_allows_brand_term(term, canonical)
     if meta_intent == MetaIntent.CAPABILITIES:
         return any(item.lower() in lowered for item in voice.unsupported_capabilities)
     return False

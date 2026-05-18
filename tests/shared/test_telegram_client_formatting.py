@@ -277,7 +277,7 @@ async def test_send_text_streamed_skips_draft_when_feature_disabled(monkeypatch:
 @pytest.mark.asyncio
 async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.fusepay.dev")
+    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.narya.ai")
     client = TelegramClient()
 
     calls: list[dict[str, object]] = []

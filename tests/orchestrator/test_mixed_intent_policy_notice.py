@@ -385,7 +385,7 @@ async def test_conversational_identity_renders_deterministically_even_when_meta_
             "task_planner": _MockPlanner(
                 planner_output,
                 planner_llm=_FakeMetaLLM(
-                    {"handoff": "meta", "language": "en", "message": "I am Narya AI, built by the Fuse team."}
+                    {"handoff": "meta", "language": "en", "message": "I am Narya AI, built by Unknown Labs."}
                 ),
             ),
             "services": {},

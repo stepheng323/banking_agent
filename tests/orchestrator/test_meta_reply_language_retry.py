@@ -30,8 +30,8 @@ def _voice(
     *,
     supported_domains: tuple[str, ...] = ("Send money",),
     unsupported_capabilities: tuple[str, ...] = ("Investments",),
-    creator: str | None = "Fusepay",
-    brand_origin: str | None = "Narya AI is named after a kindler archetype and built by Fusepay.",
+    creator: str | None = "Narya AI team",
+    brand_origin: str | None = "Narya AI is inspired by Narya from The Lord of the Rings.",
 ) -> AssistantVoice:
     return AssistantVoice(
         name="Narya AI",
@@ -89,21 +89,42 @@ async def test_meta_reply_falls_back_when_language_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_brand_origin_reply_falls_back_when_llm_invents_lotr_claim() -> None:
+async def test_brand_origin_reply_allows_grounded_lotr_origin() -> None:
     llm = _FakeMetaLLM(
         [
             {
                 "handoff": "meta",
                 "language": "en",
-                "message": "Narya AI is from LOTR and named after a character from Tolkien lore.",
+                "message": "Narya AI is inspired by Narya from The Lord of the Rings.",
             }
         ]
     )
-    voice = _voice(
-        brand_origin=(
-            "Narya AI is named after a kindler archetype and built by Fusepay for calm, reliable banking execution."
-        ),
+    voice = _voice()
+
+    message, handoff = await generate_meta_reply(
+        llm,
+        user_message="is it from lotr",
+        user_language_hint="en",
+        meta_intent=MetaIntent.BRAND_ORIGIN,
+        voice=voice,
     )
+
+    assert handoff == "meta"
+    assert message == "Narya AI is inspired by Narya from The Lord of the Rings."
+
+
+@pytest.mark.asyncio
+async def test_brand_origin_reply_falls_back_when_llm_over_specifies_lotr_claim() -> None:
+    llm = _FakeMetaLLM(
+        [
+            {
+                "handoff": "meta",
+                "language": "en",
+                "message": "Narya AI is the ring of power from Tolkien lore.",
+            }
+        ]
+    )
+    voice = _voice()
 
     message, handoff = await generate_meta_reply(
         llm,
@@ -130,7 +151,7 @@ async def test_identity_no_llm_uses_grounded_identity_message() -> None:
     )
 
     assert handoff == "meta"
-    assert message == "I'm Narya AI. A calm banking concierge. Built by Fusepay."
+    assert message == "I'm Narya AI. A calm banking concierge. Built by Narya AI team."
 
 
 @pytest.mark.asyncio
@@ -155,7 +176,7 @@ async def test_creator_reply_falls_back_to_policy_creator_when_llm_is_incorrect(
     )
 
     assert handoff == "meta"
-    assert message == "Narya AI was built by Fusepay."
+    assert message == "Narya AI was built by Narya AI team."
 
 
 @pytest.mark.asyncio

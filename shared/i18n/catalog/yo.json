@@ -32,7 +32,7 @@
     "appreciation": "Ko to nnkan. Iṣẹ wo ni a o ṣe lẹ́yìn eyi?",
     "checkin": "Mo wa nibi. Iṣẹ owo wo ni o fẹ ki a ṣe?",
     "identity": "Emi ni {app_name}. Mo n ṣiṣẹ awọn iṣẹ banking gidi ni kiakia ati pẹkipẹki.",
-    "brand_origin": "Orukọ {app_name} wa lati ìmísí kindler. Ẹgbẹ {app_creator} ni wọn kọ mi fun iṣẹ banking to dakẹ, to dájú.",
+    "brand_origin": "{app_name} ni ìmísí lati {app_brand_inspiration}.",
     "capability_question": "Mo le ran ọ lọwọ pẹlu gbigbe owo, rira airtime/data, ayẹwo balance, ati ibeere transaction.",
     "out_of_scope": "Mo n dojukọ iṣẹ banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "out_of_scope_followup": "Ti o ba fẹ, mo tun le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
@@ -155,9 +155,9 @@
   },
   "faq": {
     "info_trouble": "Mo ni iṣoro gbigba alaye yẹn.",
-    "synthesis_failed": "I'm having trouble generating a response right now. Please try again.",
-    "uncertainty_response": "I'm not sure I have the right information to answer that question confidently. Could you try rephrasing, or would you like me to connect you with our support team?",
-    "support_handoff": "Let me connect you with our support team to look into your specific situation. They'll be able to help you with this directly."
+    "synthesis_failed": "Mo ni iṣoro lati pese idahun bayi. Jọwọ gbiyanju lẹẹkansi.",
+    "uncertainty_response": "Mi o da mi loju pe mo ni alaye to pe lati dahun eyi. Jọwọ tun beere ni ọna miiran, tabi ki n gbe e lọ si support?",
+    "support_handoff": "Jẹ ki n gbe eyi lọ si support ki wọn le wo ọran rẹ pato."
   },
   "query": {
     "common": {
@@ -470,7 +470,7 @@
       "unavailable": "Account linking unavailable.",
       "bvn_missing": "BVN not found. Please complete onboarding first.",
       "start_failed": "Failed to start linking.",
-      "fallback_link": "Link account: https://fusepay.io/link/{flow_token}"
+      "fallback_link": "Link account: {app_public_base_url}/link/{flow_token}"
     }
   },
   "orchestrator": {

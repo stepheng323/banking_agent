@@ -32,7 +32,7 @@
     "appreciation": "Nnoo. Kedu ọrụ ọzọ ka anyị ga-eme ugbu a?",
     "checkin": "Anọ m ebe a. Kedu mmegharị ego ka anyị ga-eme?",
     "identity": "Abụ m {app_name}. Ana m arụ ọrụ banking nke ọma, ngwa ngwa, ma nlezianya.",
-    "brand_origin": "Aha {app_name} sitere na mmụọ kindler. Ndị otu {app_creator} wuru m maka banking execution dị jụụ ma bụrụ nke a pụrụ ịdabere na ya.",
+    "brand_origin": "{app_name} sitere n'ike mmụọ nsọ {app_brand_inspiration}.",
     "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
     "out_of_scope": "Ana m elekwasị anya na ọrụ banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
     "out_of_scope_followup": "Ọ bụrụ na ịchọrọ, enwere m ike inyere gị aka kwa na transfer, airtime/data, balance, na ajụjụ transaction.",
@@ -155,9 +155,9 @@
   },
   "faq": {
     "info_trouble": "Enwere m nsogbu n'inweta ozi ahụ.",
-    "synthesis_failed": "I'm having trouble generating a response right now. Please try again.",
-    "uncertainty_response": "I'm not sure I have the right information to answer that question confidently. Could you try rephrasing, or would you like me to connect you with our support team?",
-    "support_handoff": "Let me connect you with our support team to look into your specific situation. They'll be able to help you with this directly."
+    "synthesis_failed": "Enwere m nsogbu ịkwadebe azịza ugbu a. Biko nwaa ọzọ.",
+    "uncertainty_response": "Amaghị m ma ozi m nwere zuru oke iji zaa nke a nke ọma. Biko jụọ ya n'ụzọ ọzọ, ma ọ bụ ka m ziga ya na support?",
+    "support_handoff": "Ka m ziga nke a na support ka ha lelee okwu gị kpọmkwem."
   },
   "query": {
     "common": {
@@ -470,7 +470,7 @@
       "unavailable": "Account linking unavailable.",
       "bvn_missing": "BVN not found. Please complete onboarding first.",
       "start_failed": "Failed to start linking.",
-      "fallback_link": "Link account: https://fusepay.io/link/{flow_token}"
+      "fallback_link": "Link account: {app_public_base_url}/link/{flow_token}"
     }
   },
   "orchestrator": {

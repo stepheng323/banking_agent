@@ -32,7 +32,7 @@
     "appreciation": "Babu komai. Wane aiki za mu yi na gaba?",
     "checkin": "Ina nan. Wane aikin kudi za mu fara?",
     "identity": "Ni ne {app_name}. Ina gudanar da ainihin ayyukan banking da sauri kuma cikin kulawa.",
-    "brand_origin": "Sunan {app_name} ya zo daga wahayin kindler. Kungiyar {app_creator} ce ta gina ni domin nutsattsen kuma amintaccen banking execution.",
+    "brand_origin": "{app_name} ya samo wahayi daga {app_brand_inspiration}.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "out_of_scope_followup": "Idan kana so, zan kuma iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
@@ -155,9 +155,9 @@
   },
   "faq": {
     "info_trouble": "Ina fuskantar matsala wajen samo wannan bayanin.",
-    "synthesis_failed": "I'm having trouble generating a response right now. Please try again.",
-    "uncertainty_response": "I'm not sure I have the right information to answer that question confidently. Could you try rephrasing, or would you like me to connect you with our support team?",
-    "support_handoff": "Let me connect you with our support team to look into your specific situation. They'll be able to help you with this directly."
+    "synthesis_failed": "Ina fuskantar matsala wajen shirya amsa yanzu. Da fatan za a sake gwadawa.",
+    "uncertainty_response": "Ban tabbatar ina da cikakken bayani don amsa wannan da kyau ba. Za ka iya sake tambaya, ko in tura zuwa support?",
+    "support_handoff": "Bari in tura wannan zuwa support domin su duba takamaiman matsalarka."
   },
   "query": {
     "common": {
@@ -470,7 +470,7 @@
       "unavailable": "Account linking unavailable.",
       "bvn_missing": "BVN not found. Please complete onboarding first.",
       "start_failed": "Failed to start linking.",
-      "fallback_link": "Link account: https://fusepay.io/link/{flow_token}"
+      "fallback_link": "Link account: {app_public_base_url}/link/{flow_token}"
     }
   },
   "orchestrator": {

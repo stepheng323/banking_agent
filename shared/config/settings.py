@@ -29,7 +29,14 @@ class Settings:
         self.app_port: int = int(os.getenv("APP_PORT", "8000"))
         self.app_name: str = os.getenv("APP_NAME", "Narya AI").strip() or "Narya AI"
         self.app_name_short: str = os.getenv("APP_NAME_SHORT", "").strip() or self.app_name.split()[0]
-        self.app_creator: str = os.getenv("APP_CREATOR", "Fusepay").strip() or "Fusepay"
+        self.app_creator: str = os.getenv("APP_CREATOR", "Narya AI team").strip() or "Narya AI team"
+        self.app_brand_inspiration: str = (
+            os.getenv("APP_BRAND_INSPIRATION", "Narya from The Lord of the Rings").strip()
+            or "Narya from The Lord of the Rings"
+        )
+        self.app_public_base_url: str = (
+            os.getenv("APP_PUBLIC_BASE_URL", "https://narya.ai").strip().rstrip("/") or "https://narya.ai"
+        )
 
         self.database_url: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 

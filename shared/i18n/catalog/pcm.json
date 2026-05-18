@@ -32,7 +32,7 @@
     "appreciation": "No wahala. Wetin we go handle next?",
     "checkin": "I dey here. Wetin you wan make I help you do?",
     "identity": "I be {app_name}. I dey run real banking tasks fast and sharp.",
-    "brand_origin": "{app_name} name come from kindler inspiration. Na {app_creator} team build me for calm, reliable banking execution.",
+    "brand_origin": "{app_name} get inspiration from {app_brand_inspiration}.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_followup": "If you want, I still fit help with transfer, airtime/data buy, balance check, and transaction query.",
@@ -155,9 +155,9 @@
   },
   "faq": {
     "info_trouble": "I dey get issue to fetch that information.",
-    "synthesis_failed": "I'm having trouble generating a response right now. Please try again.",
-    "uncertainty_response": "I'm not sure I have the right information to answer that question confidently. Could you try rephrasing, or would you like me to connect you with our support team?",
-    "support_handoff": "Let me connect you with our support team to look into your specific situation. They'll be able to help you with this directly."
+    "synthesis_failed": "I dey get issue to prepare answer now. Try again.",
+    "uncertainty_response": "I no sure say I get the correct information to answer that one well. Try ask am another way, or make I pass you go support?",
+    "support_handoff": "Make I pass this one go support make dem check your exact case."
   },
   "query": {
     "common": {
@@ -470,7 +470,7 @@
       "unavailable": "Account linking unavailable.",
       "bvn_missing": "BVN not found. Please complete onboarding first.",
       "start_failed": "Failed to start linking.",
-      "fallback_link": "Link account: https://fusepay.io/link/{flow_token}"
+      "fallback_link": "Link account: {app_public_base_url}/link/{flow_token}"
     }
   },
   "orchestrator": {

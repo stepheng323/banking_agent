@@ -15,7 +15,7 @@ class OnboardingService:
     async def send_onboarding_flow(self, phone_number: str, channel: str = "whatsapp", locale: str = "en") -> None:
         """Send the onboarding flow to the user."""
         try:
-            onboarding_url = "https://fusepay.io/onboard"
+            onboarding_url = f"{settings.app_public_base_url}/onboard"
             fallback_text = render_message(
                 "onboarding.fallback_text",
                 locale,
