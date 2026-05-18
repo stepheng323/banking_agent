@@ -19,6 +19,7 @@ from apps.chat.src.agent.graphs.transfer.models.types import (
 from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
+from shared.formatters.currency import format_naira
 from shared.i18n import render_message
 from shared.services.affirmation.service import AffirmationService
 from shared.utils.logging import get_logger
@@ -348,8 +349,8 @@ def _format_amount_ack(amount: float) -> str:
         integer_amount = int(rounded)
         if integer_amount >= 1000 and integer_amount % 1000 == 0:
             return f"Changing amount to {integer_amount // 1000}k."
-        return f"Changing amount to ₦{integer_amount:,}."
-    return f"Changing amount to ₦{rounded:,.2f}."
+        return f"Changing amount to {format_naira(integer_amount)}."
+    return f"Changing amount to {format_naira(rounded, decimal_places=2)}."
 
 
 def _normalize_note_text(value: str) -> str:

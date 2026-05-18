@@ -6,11 +6,12 @@ from datetime import date, timedelta
 
 from apps.chat.src.agent.graphs.query.models import QueryExecutionContract
 from apps.chat.src.agent.graphs.query.utils.timezone import lagos_today
+from shared.formatters.currency import format_naira as _format_naira
 from shared.i18n import render_message
 
 
 def format_naira(amount: float) -> str:
-    return f"₦{abs(amount):,.0f}"
+    return _format_naira(amount, absolute=True)
 
 
 def period_label(time_range: object, locale: str = "en") -> str | None:

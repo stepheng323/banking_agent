@@ -11,6 +11,7 @@ from apps.chat.src.agent.graphs.transfer.models.types import (
 from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.accounts import format_accounts_list
+from shared.formatters.currency import format_naira
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
@@ -137,6 +138,7 @@ class ValidationStep(TransferStep):
                     )
                     if recent and recent.amount:
                         suggested_amount = float(recent.amount)
+                        suggested_amount_text = format_naira(suggested_amount)
                         return TransactionResult(
                             outcome=TransactionOutcome.NEEDS_INPUT,
                             required_fields=["amount"],
@@ -144,7 +146,7 @@ class ValidationStep(TransferStep):
                                 "transfer.validation.ask_amount_with_suggestion",
                                 context.language,
                                 {
-                                    "amount": f"₦{suggested_amount:,.0f}",
+                                    "amount": suggested_amount_text,
                                     "recipient_name": recipient_hint,
                                 },
                             ),
@@ -152,7 +154,7 @@ class ValidationStep(TransferStep):
                             details={
                                 "option_context": "TRANSFER_AMOUNT_SUGGESTION",
                                 "options": [
-                                    {"id": "1", "title": f"Use ₦{suggested_amount:,.0f}"},
+                                    {"id": "1", "title": f"Use {suggested_amount_text}"},
                                     {"id": "2", "title": "Enter a new amount"},
                                 ],
                             },

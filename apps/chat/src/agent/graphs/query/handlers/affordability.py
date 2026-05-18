@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.graphs.query.models import QueryExecutionContract, QueryResult
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.formatters.currency import format_naira_compact
 from shared.i18n import render_message
 from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 
@@ -171,6 +172,4 @@ def _build_pool_plan(balances: list[tuple[str, str, str, float]], amount: float)
 
 
 def _format_naira(value: float) -> str:
-    if float(value).is_integer():
-        return f"₦{value:,.0f}"
-    return f"₦{value:,.2f}"
+    return format_naira_compact(value)

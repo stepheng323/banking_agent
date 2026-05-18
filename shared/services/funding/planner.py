@@ -13,6 +13,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from shared.clients.abstractions import DirectDebitProvider
+from shared.formatters.currency import format_naira
 from shared.formatters.funding import (
     format_insufficient_funds,
 )
@@ -327,7 +328,7 @@ class FundingPlanner:
                 explicit_split_applied=True,
                 error=(
                     "Your split does not match the transfer amount. "
-                    f"Requested total: ₦{split_total:,.0f}, transfer amount: ₦{transfer_amount:,.0f}. "
+                    f"Requested total: {format_naira(split_total)}, transfer amount: {format_naira(transfer_amount)}. "
                     "Please revise the split."
                 ),
             )
@@ -391,8 +392,8 @@ class FundingPlanner:
                     requested_sources=requested_source_banks,
                     explicit_split_applied=True,
                     error=(
-                        f"Your split is not feasible: {account.bank_name} has ₦{available:,.0f}, "
-                        f"but you requested ₦{requested_amount:,.0f}. Please revise the split."
+                        f"Your split is not feasible: {account.bank_name} has {format_naira(available)}, "
+                        f"but you requested {format_naira(requested_amount)}. Please revise the split."
                     ),
                 )
 

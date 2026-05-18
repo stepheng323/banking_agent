@@ -49,6 +49,7 @@ from apps.chat.src.agent.graphs.support.models import (
 from apps.chat.src.agent.graphs.support.resolver import TransactionResolver
 from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from shared.config.settings import settings
+from shared.formatters.currency import format_naira
 from shared.i18n import LocaleManager, render_message
 from shared.policy.adapters import is_capability_supported
 from shared.policy.service import capability_block_message
@@ -193,7 +194,7 @@ def _build_reference_prompt(candidates: list[SupportReferenceCandidate]) -> str:
         return "Which transaction do you mean?"
     lines = ["I'm not sure which one you mean (Which transaction).", "", "Are you referring to:"]
     for candidate in candidates:
-        amount = f"₦{candidate.amount:,.0f}" if isinstance(candidate.amount, (int, float)) else "This transaction"
+        amount = format_naira(candidate.amount) if isinstance(candidate.amount, (int, float)) else "This transaction"
         lines.append(f"{candidate.ordinal}️⃣ {amount} — {_candidate_label(candidate)}")
     lines.extend(["", "Reply with the number or rephrase."])
     return "\n".join(lines)

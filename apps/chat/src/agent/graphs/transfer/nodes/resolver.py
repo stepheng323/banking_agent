@@ -14,6 +14,7 @@ from apps.chat.src.agent.graphs.transfer.models.types import (
 from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
+from shared.formatters.currency import format_naira_compact
 from shared.formatters.prompts import sanitize_recipient_display_name
 from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import render_message
@@ -628,7 +629,7 @@ async def resolve_beneficiary(
         if payload.amount:
             amt = payload.amount
             if isinstance(amt, (int, float)):
-                amt = f"₦{amt:,.2f}".replace(".00", "")
+                amt = format_naira_compact(amt)
             base = render_message(
                 "transfer.resolve.can_send_amount",
                 locale,

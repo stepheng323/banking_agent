@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from shared.formatters.currency import format_naira_compact
 from shared.types.planner import ContextFrameFollowupDecision, ContextFrameFollowupFilters
 
 CONTEXT_READ_LIST_LIMIT = 5
@@ -441,10 +442,7 @@ def _entity_matches_amount_reference(entity: ContextEntity, amount_refs: set[flo
 
 
 def _format_currency_amount(value: float) -> str:
-    normalized = abs(value)
-    if normalized.is_integer():
-        return f"₦{normalized:,.0f}"
-    return f"₦{normalized:,.2f}"
+    return format_naira_compact(value, absolute=True)
 
 
 def _date_rank_value(entity: ContextEntity) -> float | None:

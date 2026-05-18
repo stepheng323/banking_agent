@@ -26,6 +26,7 @@ from apps.chat.src.agent.shared.query_contracts import (
     SurfaceView,
     SurfaceViewMode,
 )
+from shared.formatters.currency import format_naira
 from shared.formatters.transaction_copy import build_transaction_detail_lines, format_transaction_list_item
 from shared.i18n import render_message
 from shared.i18n.message_keys import MessageKey
@@ -316,7 +317,7 @@ def _build_grouped_summary_presentation_plan(
                 )
                 for item in surface_view.items
             ],
-            hint_text=render_message("query.format.total_line", locale, {"total": f"₦{total_abs:,.0f}"}),
+            hint_text=render_message("query.format.total_line", locale, {"total": format_naira(total_abs)}),
             selection_payloads=selection_payloads,
         )
 
@@ -416,10 +417,7 @@ def _build_single_item_detail_presentation_plan(result: QueryResult, *, locale: 
 
 
 def _format_amount(amount: float) -> str:
-    amount = abs(amount)
-    if amount >= 1000:
-        return f"₦{amount:,.0f}"
-    return f"₦{amount:.0f}"
+    return format_naira(amount, absolute=True)
 
 
 def _format_percentage(amount: float, total_abs: float) -> str:

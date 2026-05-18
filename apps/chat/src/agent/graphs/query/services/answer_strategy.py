@@ -19,6 +19,7 @@ from apps.chat.src.agent.graphs.query.models import (
 from apps.chat.src.agent.graphs.query.services.continuity import build_soft_clarification
 from apps.chat.src.agent.graphs.query.services.contracts import build_focus_referent
 from apps.chat.src.agent.graphs.query.utils.timezone import lagos_today
+from shared.formatters.currency import format_naira
 from shared.formatters.transaction_copy import format_transaction_evidence_line, format_transaction_status_reply
 from shared.i18n import render_message
 
@@ -103,7 +104,7 @@ def build_direct_fact_answer(
         direction=direction,
         counterparty=_counterparty_label(item, query_contract=query_contract),
         bank_name=str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip() or None,
-        amount_text=f"₦{abs(float(item.amount)):,.0f}",
+        amount_text=format_naira(item.amount, absolute=True),
         date_text=item.date.strftime("%B %d, %Y"),
         fallback_description=item.description,
         status_text=_status_label(metadata) or _implicit_history_status_label(item, metadata),
@@ -523,7 +524,7 @@ def build_existence_answer(
         return _build_existence_no_match(tx_type=tx_type, target_phrase=target_phrase, time_phrase=time_phrase)
 
     total = sum(abs(float(item.amount)) for item in items)
-    amount = f"₦{total:,.0f}"
+    amount = format_naira(total)
     if tx_type == "credit":
         if target_phrase:
             if count == 1:

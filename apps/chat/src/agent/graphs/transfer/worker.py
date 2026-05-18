@@ -34,6 +34,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from shared.config.settings import settings
 from shared.database.enums import ScheduledInstructionStatusEnum
+from shared.formatters.currency import format_naira
 from shared.i18n import LocaleManager, render_message
 from shared.policy.service import capability_block_message
 from shared.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
@@ -213,7 +214,9 @@ class TransferWorker:
             recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
             recurrence = str(schedule.recurrence_type).replace("_", " ").title()
             time_local = payload.get("schedule_time_local") or schedule.local_time or DEFAULT_SCHEDULE_TIME_TEXT
-            lines.append(f"{idx}. ₦{amount:,.0f} to {recipient} • {recurrence} at {time_local} (ID: {schedule.id})")
+            lines.append(
+                f"{idx}. {format_naira(amount)} to {recipient} • {recurrence} at {time_local} (ID: {schedule.id})"
+            )
 
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -260,7 +263,7 @@ class TransferWorker:
                     payload = schedule.payload_snapshot if isinstance(schedule.payload_snapshot, dict) else {}
                     recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
                     amount = float(payload.get("amount") or 0.0)
-                    lines.append(f"{idx}. ₦{amount:,.0f} to {recipient}")
+                    lines.append(f"{idx}. {format_naira(amount)} to {recipient}")
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["schedule_selector"],
@@ -351,7 +354,7 @@ class TransferWorker:
             )
             await uow.commit()
 
-        amount = f"₦{float(data.amount or 0.0):,.0f}"
+        amount = format_naira(data.amount)
         recipient = data.recipient_name or data.recipient_resolved_name or "recipient"
         next_run_text = next_run_at.replace(tzinfo=UTC).strftime("%Y-%m-%d %H:%M UTC")
         response = (

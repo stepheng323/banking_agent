@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from shared.formatters.currency import format_naira_compact
+
 from .intent import ResponseIntent
 
 
@@ -51,9 +53,7 @@ class ResponseContext:
         if self.formatted_amount:
             return self.formatted_amount
         if self.amount is not None:
-            if self.amount == int(self.amount):
-                return f"₦{int(self.amount):,}"
-            return f"₦{self.amount:,.2f}"
+            return format_naira_compact(self.amount)
         return ""
 
     def mask_account(self, account: str | None) -> str:

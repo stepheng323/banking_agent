@@ -11,6 +11,7 @@ from typing import Any, Literal, cast
 from apps.chat.src.agent.graphs.query.models import Filters, QueryFrame, QueryResult, QueryResultItem
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+from shared.formatters.currency import format_naira_compact
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -74,10 +75,7 @@ class QuerySurfaceMatch:
 
 
 def _format_naira(value: float) -> str:
-    value = abs(value)
-    if value.is_integer():
-        return f"₦{value:,.0f}"
-    return f"₦{value:,.2f}"
+    return format_naira_compact(value, absolute=True)
 
 
 def _amount_reference_values(text: str | None) -> set[float]:
