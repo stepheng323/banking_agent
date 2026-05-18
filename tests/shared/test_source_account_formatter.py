@@ -1,6 +1,7 @@
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.formatters.airtime import format_airtime_summary
 from shared.formatters.confirmation import build_source_account_info
+from shared.formatters.data import format_data_summary
 from shared.formatters.transfer import format_multi_source_transfer_summary, format_transfer_summary
 
 
@@ -51,6 +52,21 @@ def test_airtime_summary_uses_shared_source_line_formatter() -> None:
     summary = format_airtime_summary(
         {
             "amount": 1000,
+            "recipientPhone": "08012345678",
+            "network": "MTN",
+            "sourceBank": "First Bank",
+            "sourceAccount": "1234567890",
+        },
+        locale="en",
+    )
+    assert "From: First Bank (···7890)" in summary
+
+
+def test_data_summary_uses_shared_source_line_formatter() -> None:
+    summary = format_data_summary(
+        {
+            "planName": "MTN 2GB",
+            "amount": 1500,
             "recipientPhone": "08012345678",
             "network": "MTN",
             "sourceBank": "First Bank",

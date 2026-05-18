@@ -6,6 +6,7 @@ from shared.formatters.beneficiary import format_beneficiary_suggestion
 from shared.formatters.data import (
     format_data_plan_list,
     format_data_plan_suggestion,
+    format_data_summary,
 )
 from shared.formatters.funding import (
     format_funding_plan_message,
@@ -25,6 +26,7 @@ __all__ = [
     "format_accounts_list",
     "format_data_plan_list",
     "format_data_plan_suggestion",
+    "format_data_summary",
     "format_transfer_summary",
     "format_funding_plan_summary",
     "format_transfer_success_message",

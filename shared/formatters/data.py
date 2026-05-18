@@ -1,5 +1,6 @@
 """Data purchase formatting utilities."""
 
+from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.i18n import render_message
 
 
@@ -107,7 +108,10 @@ def format_data_summary(data: dict, locale: str = "en") -> str:
       isSelf: bool
     """
     plan_name = data.get("planName", render_message("data.format.summary.plan_name_fallback", locale))
-    amount = float(data.get("amount", 0))
+    try:
+        amount = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        amount = 0
     recipient_phone = str(data.get("recipientPhone") or "")
     network = str(data.get("network") or "")
     source_bank = str(data.get("sourceBank") or render_message("data.format.summary.source_bank_fallback", locale))
@@ -131,17 +135,10 @@ def format_data_summary(data: dict, locale: str = "en") -> str:
 
     lines.append("")
     lines.append(
-        render_message(
-            "data.format.summary.from_line",
-            locale,
-            {
-                "source_bank": source_bank,
-                "last4": (
-                    source_account[-4:]
-                    if source_account
-                    else render_message("data.format.summary.last4_fallback", locale)
-                ),
-            },
+        format_source_account_info_from_account_number(
+            bank=source_bank,
+            account_number=source_account,
+            locale=locale,
         )
     )
 

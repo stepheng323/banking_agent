@@ -4,6 +4,7 @@ import pytest
 
 from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.graphs.data.models_extraction import DataExtractionResult, DataPurchaseEntities
+from apps.chat.src.agent.graphs.data.nodes.confirmation import ConfirmationStep
 from apps.chat.src.agent.graphs.data.nodes.extraction import ExtractionStep
 from apps.chat.src.agent.graphs.data.nodes.resolution import ResolutionStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
@@ -147,3 +148,39 @@ async def test_data_resolution_normalizes_network_alias() -> None:
 
     assert result is None
     assert payload.network == "AIRTEL"
+
+
+@pytest.mark.asyncio
+async def test_data_confirmation_uses_shared_summary_when_amount_is_known() -> None:
+    step = ConfirmationStep()
+    payload = DataPayload(
+        amount=1500,
+        plan_name="MTN 2GB",
+        network="MTN",
+        target_phone="08162511023",
+        source_bank_name="First Bank",
+        source_account_number="1234567890",
+    )
+    context = DataContext(phone_number="2348000000000", language="en")
+    gates = DataGates()
+
+    result = await step.run(payload, context, gates, SimpleNamespace())
+
+    assert result is not None
+    assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert result.confirmation_summary == "*MTN 2GB → 08162511023*\nNetwork: MTN • Amount: ₦1,500\n\nFrom: First Bank (···7890)"
+    assert result.confirmation_snapshot == payload.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_data_confirmation_keeps_short_prompt_when_amount_is_unknown() -> None:
+    step = ConfirmationStep()
+    payload = DataPayload(network="MTN", target_phone="08162511023")
+    context = DataContext(phone_number="2348000000000", language="en")
+    gates = DataGates()
+
+    result = await step.run(payload, context, gates, SimpleNamespace())
+
+    assert result is not None
+    assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert result.confirmation_summary == "Buy MTN data for 08162511023?"
