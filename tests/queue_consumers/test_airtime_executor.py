@@ -66,6 +66,17 @@ async def test_airtime_executor_success_delivers_to_channel_identity_not_recipie
 
     assert transaction_repo.update_status.await_args_list[0].args == ("tx-1", TransactionStatusEnum.PROCESSING.value)
     assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.SUCCESSFUL.value)
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_transaction_id"] == "ref-1"
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_response"] == {
+        "success": True,
+        "reference": "ref-1",
+    }
+    provider.purchase_airtime.assert_awaited_once_with(
+        amount=2000,
+        recipient_phone="08031234567",
+        network="MTN",
+        reference="idem-1",
+    )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
     assert delivery_service.deliver_text.await_args.kwargs["channel"] == "telegram"
     assert "08031234567" in delivery_service.deliver_text.await_args.kwargs["text"]
@@ -143,6 +154,11 @@ async def test_airtime_executor_provider_pending_stays_processing() -> None:
         "tx-1",
         TransactionStatusEnum.PROCESSING.value,
     )
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_transaction_id"] == "idem-1"
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_response"] == {
+        "success": False,
+        "message": "Bill payment is Pending",
+    }
     assert "error_message" not in transaction_repo.update_status.await_args_list[1].kwargs
     text = delivery_service.deliver_text.await_args.kwargs["text"]
     assert "being processed" in text

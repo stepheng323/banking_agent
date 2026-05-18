@@ -41,6 +41,40 @@ def _provider_error_code(result: dict[str, Any]) -> str | None:
     return None
 
 
+def _provider_reference(result: dict[str, Any]) -> str | None:
+    for key in ("transaction_id", "reference", "ref", "provider_reference"):
+        value = result.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    for nested_key in ("data", "raw_response"):
+        nested = result.get(nested_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in ("transaction_id", "reference", "ref", "provider_reference"):
+            value = nested.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+    return None
+
+
+def _provider_status(result: dict[str, Any]) -> str | None:
+    for key in ("status", "provider_status", "transaction_status", "tx_status"):
+        value = result.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+
+    for nested_key in ("data", "raw_response"):
+        nested = result.get(nested_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in ("status", "provider_status", "transaction_status", "tx_status"):
+            value = nested.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip().lower()
+    return None
+
+
 def _execution_error_message(locale: str) -> str:
     return render_message("data.error.execution_failed", locale)
 
@@ -141,17 +175,26 @@ class DataExecutor:
                 "data.format.summary.plan_name_fallback",
                 locale,
             )
+            request_reference = str(data.get("idempotency_key") or transaction_id)
 
             result = await self.bill_provider.purchase_data(
                 plan_code=str(plan_code or ""),
                 recipient_phone=str(recipient_phone or ""),
                 network=str(network or ""),
-                reference=str(data.get("idempotency_key") or transaction_id),
+                reference=request_reference,
             )
+            provider_reference = _provider_reference(result) or request_reference
+            provider_status = _provider_status(result)
 
             if result.get("success"):
-                await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
-                logger.info("data_success", transaction_id=transaction_id, ref=result.get("transaction_id"))
+                await self.transaction_repo.update_status(
+                    transaction_id,
+                    TransactionStatusEnum.SUCCESSFUL.value,
+                    provider_transaction_id=provider_reference,
+                    provider_status=provider_status,
+                    provider_response=result,
+                )
+                logger.info("data_success", transaction_id=transaction_id, ref=provider_reference)
                 completion_payload = {
                     "amount": amount,
                     "phone_number": recipient_phone,
@@ -197,7 +240,7 @@ class DataExecutor:
                                 "recipient_name": "My Number" if data_purchase.get("is_self") else plan_name,
                                 "recipient_phone": recipient_phone or "",
                                 "network": network or "",
-                                "transaction_id": result.get("transaction_id") or transaction_id,
+                                "transaction_id": provider_reference or transaction_id,
                             },
                         ),
                         metadata={"source": "data_executor", "transaction_id": transaction_id},
@@ -209,7 +252,13 @@ class DataExecutor:
                     render_message("data.error.provider_failed", locale),
                 )
                 await self.transaction_repo.update_status(
-                    transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
+                    transaction_id,
+                    TransactionStatusEnum.FAILED.value,
+                    error_message=error_msg,
+                    provider_transaction_id=_provider_reference(result),
+                    provider_status=provider_status,
+                    provider_response=result,
+                    provider_error_code=_provider_error_code(result),
                 )
                 logger.error("data_failed", transaction_id=transaction_id, error=error_msg)
                 completion_payload = {

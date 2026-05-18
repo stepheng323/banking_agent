@@ -96,6 +96,17 @@ async def test_data_executor_single_success_delivers_to_originating_user() -> No
 
     assert transaction_repo.update_status.await_args_list[0].args == ("tx-1", TransactionStatusEnum.PROCESSING.value)
     assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.SUCCESSFUL.value)
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_transaction_id"] == "provider-1"
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_response"] == {
+        "success": True,
+        "transaction_id": "provider-1",
+    }
+    provider.purchase_data.assert_awaited_once_with(
+        plan_code="mtn-1gb",
+        recipient_phone="08031234567",
+        network="MTN",
+        reference="idem-1",
+    )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
     assert "Data purchase successful" in delivery_service.deliver_text.await_args.kwargs["text"]
 

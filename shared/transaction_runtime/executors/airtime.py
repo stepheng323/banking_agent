@@ -41,6 +41,23 @@ def _provider_error_code(result: dict[str, Any]) -> str | None:
     return None
 
 
+def _provider_reference(result: dict[str, Any]) -> str | None:
+    for key in ("transaction_id", "reference", "ref", "provider_reference"):
+        value = result.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    for nested_key in ("data", "raw_response"):
+        nested = result.get(nested_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in ("transaction_id", "reference", "ref", "provider_reference"):
+            value = nested.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+    return None
+
+
 def _provider_status(result: dict[str, Any]) -> str:
     for key in ("status", "provider_status", "transaction_status", "tx_status"):
         value = result.get(key)
@@ -120,16 +137,26 @@ class AirtimeExecutor:
                 has_channel_identity=bool(data.get("channel_identity")),
                 used_fallback_phone=bool(data.get("phone_number")) and not bool(data.get("channel_identity")),
             )
+            request_reference = str(data.get("idempotency_key") or transaction_id)
 
             result = await self.bill_provider.purchase_airtime(
                 amount=amount,
                 recipient_phone=recipient_phone,
                 network=network,
+                reference=request_reference,
             )
+            provider_reference = _provider_reference(result) or request_reference
+            provider_status = _provider_status(result) or None
 
             if result.get("success"):
-                await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
-                logger.info("airtime_success", transaction_id=transaction_id, ref=result.get("reference"))
+                await self.transaction_repo.update_status(
+                    transaction_id,
+                    TransactionStatusEnum.SUCCESSFUL.value,
+                    provider_transaction_id=provider_reference,
+                    provider_status=provider_status,
+                    provider_response=result,
+                )
+                logger.info("airtime_success", transaction_id=transaction_id, ref=provider_reference)
                 completion_payload = {
                     "amount": amount,
                     "recipient_phone": recipient_phone,
@@ -162,7 +189,7 @@ class AirtimeExecutor:
                         dedupe_key=f"airtime:batch:{batch_summary['stage']}:{transaction_id}",
                     )
                 elif delivery_target and not is_grouped_async_message(data):
-                    ref = result.get("reference") or render_message("airtime.executor.reference_fallback", locale)
+                    ref = provider_reference or render_message("airtime.executor.reference_fallback", locale)
                     message = render_message(
                         "airtime.executor.success_message",
                         locale,
@@ -183,7 +210,13 @@ class AirtimeExecutor:
                 else:
                     logger.warning("airtime_delivery_target_missing", transaction_id=transaction_id, channel=channel)
             elif _provider_status_is_processing(result):
-                await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
+                await self.transaction_repo.update_status(
+                    transaction_id,
+                    TransactionStatusEnum.PROCESSING.value,
+                    provider_transaction_id=provider_reference,
+                    provider_status=provider_status,
+                    provider_response=result,
+                )
                 logger.info("airtime_processing", transaction_id=transaction_id, status=_provider_status(result))
                 completion_payload = {
                     "amount": amount,
@@ -237,7 +270,13 @@ class AirtimeExecutor:
                     render_message("airtime.error.provider_failed", locale),
                 )
                 await self.transaction_repo.update_status(
-                    transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
+                    transaction_id,
+                    TransactionStatusEnum.FAILED.value,
+                    error_message=error_msg,
+                    provider_transaction_id=_provider_reference(result),
+                    provider_status=provider_status,
+                    provider_response=result,
+                    provider_error_code=_provider_error_code(result),
                 )
                 logger.error("airtime_failed", transaction_id=transaction_id, error=error_msg)
                 completion_payload = {
