@@ -3,22 +3,12 @@
 from typing import cast
 
 from shared.formatters.accounts import format_source_account_info_from_account_number
+from shared.formatters.currency import coerce_amount, format_naira
 from shared.i18n import render_message
 
 
-def _format_currency_naira(amount: float) -> str:
-    try:
-        value = float(amount)
-    except Exception:
-        return f"₦{amount}"
-    return f"₦{value:,.0f}"
-
-
 def _calculate_transfer_fee(amount: float) -> float:
-    try:
-        amt = float(amount)
-    except Exception:
-        return 0.0
+    amt = coerce_amount(amount)
     fee = round(amt * 0.005)
     return float(max(fee, 10))
 
@@ -46,7 +36,7 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
       description: Optional[str]
       user_note: Optional[str]
     """
-    amount = float(data.get("amount", 0))
+    amount = coerce_amount(data.get("amount"))
     recipient_name = str(
         data.get("recipientName") or render_message("transfer.format.summary.recipient_fallback", locale)
     )
@@ -59,7 +49,7 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
         render_message(
             "transfer.format.summary.title",
             locale,
-            {"amount": _format_currency_naira(amount), "recipient_name": recipient_name.title()},
+            {"amount": format_naira(amount), "recipient_name": recipient_name.title()},
         ),
         render_message(
             "transfer.format.summary.recipient_line",
@@ -102,7 +92,7 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
       authored_narration: Optional[str]
       narration: Optional[str]
     """
-    amount = float(data.get("amount", 0))
+    amount = coerce_amount(data.get("amount"))
     recipient_name = str(
         data.get("recipientName") or render_message("transfer.format.summary.recipient_fallback", locale)
     )
@@ -118,7 +108,7 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
         render_message(
             "transfer.format.multi_source_summary.field_amount",
             locale,
-            {"amount": _format_currency_naira(amount)},
+            {"amount": format_naira(amount)},
         ),
         render_message(
             "transfer.format.multi_source_summary.field_to",
@@ -155,13 +145,13 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
             render_message("transfer.format.multi_source_summary.bank_fallback", locale),
         )
         account = source.get("account_number", "")
-        source_amount = float(source.get("amount", 0))
+        source_amount = coerce_amount(source.get("amount"))
         last4 = account[-4:] if account else render_message("transfer.format.summary.last4_fallback", locale)
         lines.append(
             render_message(
                 "transfer.format.multi_source_summary.funding_item",
                 locale,
-                {"bank": bank, "last4": last4, "amount": _format_currency_naira(source_amount)},
+                {"bank": bank, "last4": last4, "amount": format_naira(source_amount)},
             )
         )
 
@@ -170,14 +160,14 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
         render_message(
             "transfer.format.multi_source_summary.fee",
             locale,
-            {"fee": _format_currency_naira(fee)},
+            {"fee": format_naira(fee)},
         )
     )
     lines.append(
         render_message(
             "transfer.format.multi_source_summary.total",
             locale,
-            {"total": _format_currency_naira(total)},
+            {"total": format_naira(total)},
         )
     )
     lines.append("")
@@ -198,7 +188,7 @@ def format_multi_source_receipt(data: dict, locale: str = "en") -> str:
       reference: str
       timestamp: Optional[str]
     """
-    amount = float(data.get("amount", 0))
+    amount = coerce_amount(data.get("amount"))
     recipient_name = str(
         data.get("recipientName") or render_message("transfer.format.summary.recipient_fallback", locale)
     )
@@ -214,7 +204,7 @@ def format_multi_source_receipt(data: dict, locale: str = "en") -> str:
         render_message(
             "transfer.format.multi_source_receipt.title",
             locale,
-            {"amount": _format_currency_naira(amount), "recipient_name": recipient_name.title()},
+            {"amount": format_naira(amount), "recipient_name": recipient_name.title()},
         ),
         render_message(
             "transfer.format.multi_source_receipt.location_line",
@@ -232,13 +222,13 @@ def format_multi_source_receipt(data: dict, locale: str = "en") -> str:
                 render_message("transfer.format.multi_source_summary.bank_fallback", locale),
             )
             account = source.get("account_number", "")
-            source_amount = float(source.get("amount", 0))
+            source_amount = coerce_amount(source.get("amount"))
             last4 = account[-4:] if account else render_message("transfer.format.summary.last4_fallback", locale)
             lines.append(
                 render_message(
                     "transfer.format.multi_source_summary.funding_item",
                     locale,
-                    {"bank": bank, "last4": last4, "amount": _format_currency_naira(source_amount)},
+                    {"bank": bank, "last4": last4, "amount": format_naira(source_amount)},
                 )
             )
         lines.append("")
@@ -312,7 +302,7 @@ def format_funding_plan_summary(
                 "bank_name",
                 render_message("transfer.format.funding_plan.secondary_bank_fallback", locale),
             )
-            secondary_amount = float(step.get("amount", 0))
+            secondary_amount = coerce_amount(step.get("amount"))
             break
 
     lines = []
@@ -324,7 +314,7 @@ def format_funding_plan_summary(
                 "transfer.format.funding_plan.recipient_title",
                 locale,
                 {
-                    "amount": _format_currency_naira(amount),
+                    "amount": format_naira(amount),
                     "recipient_display": recipient_display,
                     "recipient_bank": recipient_bank,
                 },
@@ -340,7 +330,7 @@ def format_funding_plan_summary(
             )
         lines.append("")
 
-    balance_str = _format_currency_naira(balance_available)
+    balance_str = format_naira(balance_available)
     lines.append(
         render_message(
             "transfer.format.funding_plan.primary_balance",
@@ -350,7 +340,7 @@ def format_funding_plan_summary(
     )
     lines.append("")
 
-    amount_str = _format_currency_naira(secondary_amount)
+    amount_str = format_naira(secondary_amount)
     lines.append(
         render_message(
             "transfer.format.funding_plan.ask_use_secondary",
@@ -366,12 +356,12 @@ def format_funding_plan_summary(
             "bank_name",
             render_message("transfer.format.funding_plan.bank_fallback", locale),
         )
-        amt = float(step.get("amount", 0))
+        amt = coerce_amount(step.get("amount"))
         lines.append(
             render_message(
                 "transfer.format.funding_plan.suggested_item",
                 locale,
-                {"bank": bank, "amount": _format_currency_naira(amt)},
+                {"bank": bank, "amount": format_naira(amt)},
             )
         )
 
@@ -380,7 +370,7 @@ def format_funding_plan_summary(
         render_message(
             "transfer.format.funding_plan.total_line",
             locale,
-            {"amount": _format_currency_naira(amount)},
+            {"amount": format_naira(amount)},
         )
     )
 
@@ -409,7 +399,7 @@ def format_transfer_success_message(
             "transfer.format.notifications.success",
             locale,
             {
-                "amount": _format_currency_naira(amount),
+                "amount": format_naira(amount),
                 "recipient_name": recipient_name,
                 "transaction_id": transaction_id,
             },
@@ -437,7 +427,7 @@ def format_transfer_pending_message(
             "transfer.format.notifications.pending",
             locale,
             {
-                "amount": _format_currency_naira(amount),
+                "amount": format_naira(amount),
                 "recipient_name": recipient_name,
             },
         ),
@@ -464,6 +454,6 @@ def format_transfer_queued_message(
         render_message(
             "transfer.format.notifications.queued",
             locale,
-            {"amount": _format_currency_naira(amount), "recipient_name": recipient_name},
+            {"amount": format_naira(amount), "recipient_name": recipient_name},
         ),
     )

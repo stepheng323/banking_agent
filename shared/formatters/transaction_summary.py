@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from shared.formatters.currency import format_naira
 from shared.formatters.recipient_display import format_summary_recipient_display_label
 from shared.formatters.transaction_copy import build_completion_frame, derive_task_mix, format_amount_compact
 from shared.i18n import render_message
@@ -10,7 +11,7 @@ from shared.utils.user_error import safe_user_error_message
 
 def format_amount(amount: float | int) -> str:
     """Format currency in Naira."""
-    return f"₦{amount:,.2f}" if amount else "₦0.00"
+    return format_naira(amount, decimal_places=2)
 
 
 def mask_account_number(account: str) -> str:

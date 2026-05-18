@@ -2,16 +2,8 @@
 
 from typing import Any
 
+from shared.formatters.currency import format_naira
 from shared.i18n import render_message
-
-
-def _format_currency_naira(amount: float) -> str:
-    """Format amount as Naira currency."""
-    try:
-        value = float(amount)
-    except Exception:
-        return f"₦{amount}"
-    return f"₦{value:,.0f}"
 
 
 def format_insufficient_funds(
@@ -53,8 +45,8 @@ def format_insufficient_funds(
             locale,
         )
     )
-    transfer_amount_str = _format_currency_naira(transfer_amount)
-    balance_str = _format_currency_naira(available_balance)
+    transfer_amount_str = format_naira(transfer_amount)
+    balance_str = format_naira(available_balance)
 
     lines.append(
         render_message(
@@ -75,7 +67,7 @@ def format_insufficient_funds(
         render_message(
             "funding.format.insufficient.option_send_instead",
             locale,
-            {"amount": _format_currency_naira(max_available)},
+            {"amount": format_naira(max_available)},
         )
     )
     lines.append(render_message("funding.format.insufficient.option_add_funds_retry", locale))
@@ -100,7 +92,7 @@ def format_funding_plan_message(
     """
     if len(steps) == 1:
         step = steps[0]
-        amount_str = _format_currency_naira(transfer_amount)
+        amount_str = format_naira(transfer_amount)
         bank = step.get("bank_name", render_message("funding.format.plan.bank_fallback_lower", locale))
         return render_message(
             "funding.format.plan.single_source_debit",
@@ -112,7 +104,7 @@ def format_funding_plan_message(
         render_message(
             "funding.format.plan.multi_source_header",
             locale,
-            {"amount": _format_currency_naira(transfer_amount)},
+            {"amount": format_naira(transfer_amount)},
         )
     ]
     for step in steps:
@@ -122,7 +114,7 @@ def format_funding_plan_message(
             render_message(
                 "funding.format.plan.multi_source_item",
                 locale,
-                {"amount": _format_currency_naira(amount), "bank": bank},
+                {"amount": format_naira(amount), "bank": bank},
             )
         )
 

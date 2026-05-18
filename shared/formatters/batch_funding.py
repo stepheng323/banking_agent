@@ -2,11 +2,8 @@
 
 from typing import Any
 
+from shared.formatters.currency import format_naira
 from shared.i18n import render_message
-
-
-def _naira(amount: float) -> str:
-    return f"₦{float(amount):,.0f}"
 
 
 def format_batch_funding_shortfall(
@@ -20,7 +17,7 @@ def format_batch_funding_shortfall(
     body = render_message(
         "funding.batch.shortfall_body",
         locale,
-        {"demanded": _naira(total_demanded), "available": _naira(total_available)},
+        {"demanded": format_naira(total_demanded), "available": format_naira(total_available)},
     )
 
     lines: list[str] = [header, "", body, ""]
@@ -38,7 +35,7 @@ def format_batch_funding_shortfall(
                 render_message(
                     "funding.batch.task_covered",
                     locale,
-                    {"task_id": task_id, "amount": _naira(account_available), "bank": account_requested},
+                    {"task_id": task_id, "amount": format_naira(account_available), "bank": account_requested},
                 )
             )
         lines.append(
@@ -47,10 +44,10 @@ def format_batch_funding_shortfall(
                 locale,
                 {
                     "task_id": task_id,
-                    "needed": _naira(amount_needed),
-                    "available": _naira(account_available),
+                    "needed": format_naira(amount_needed),
+                    "available": format_naira(account_available),
                     "bank": account_requested,
-                    "deficit": _naira(deficit),
+                    "deficit": format_naira(deficit),
                 },
             )
         )
@@ -59,7 +56,7 @@ def format_batch_funding_shortfall(
         if alternates:
             top = alternates[0]
             alt_bank = str(top.get("bank_name") or render_message("funding.format.plan.bank_fallback", locale))
-            alt_available = _naira(float(top.get("available", 0.0)))
+            alt_available = format_naira(top.get("available"))
             lines.append(
                 render_message(
                     "funding.batch.alternate_suggestion",

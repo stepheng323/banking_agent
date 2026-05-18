@@ -7,19 +7,14 @@ from collections.abc import Iterable
 from datetime import date, datetime
 from typing import Any
 
+from shared.formatters.currency import format_amount_number, format_naira, format_naira_compact
 from shared.formatters.recipient_display import format_summary_recipient_display_label
 from shared.i18n import MessageKey, render_message
 
 
 def format_amount_compact(amount: float | int | str | None) -> str:
     """Format Naira values without forced trailing decimals."""
-    try:
-        value = float(amount or 0)
-    except (TypeError, ValueError):
-        return "₦0"
-    if value.is_integer():
-        return f"₦{value:,.0f}"
-    return f"₦{value:,.2f}".rstrip("0").rstrip(".")
+    return format_naira_compact(amount)
 
 
 def _normalize_status_for_copy(status: Any) -> str:
@@ -290,21 +285,13 @@ def _metadata(payload: Any) -> dict[str, Any]:
 
 
 def _format_amount_plain(amount: Any, *, detail: bool = False) -> str:
-    try:
-        value = abs(float(amount or 0))
-    except (TypeError, ValueError):
-        value = 0.0
     if detail:
-        return f"₦{value:,.2f}"
-    return format_amount_compact(value)
+        return format_naira(amount, decimal_places=2, absolute=True)
+    return format_naira_compact(amount, absolute=True)
 
 
 def _format_support_amount_value(amount: Any) -> str:
-    try:
-        value = float(amount or 0)
-    except (TypeError, ValueError):
-        value = 0.0
-    return f"{value:,.0f}"
+    return format_amount_number(amount)
 
 
 def _format_short_date(value: Any, *, locale: str) -> str:
