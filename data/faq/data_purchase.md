@@ -2,48 +2,32 @@
 
 ## How do I buy data?
 
-Simply tell me you want to buy data and specify:
-
-- The phone number
-- The amount or data plan size
-
-For example: "Buy 2GB data for 08012345678"
+Tell Narya AI that you want to buy data and include the phone number, network, amount, or plan size when you know it. For example: "Buy 2GB data for 08012345678."
 
 ## Which networks are supported?
 
-We support all major Nigerian mobile networks:
-
-- MTN
-- Airtel
-- Glo
-- 9mobile
+Narya AI supports major Nigerian mobile networks when the configured bill provider has available plans for them. Supported networks can include MTN, Airtel, Glo, and 9mobile.
 
 ## What data plans are available?
 
-Data plans vary by network. Common options include:
-
-- Daily plans (100MB - 1GB)
-- Weekly plans (500MB - 3GB)
-- Monthly plans (1GB - 10GB+)
-
-Just tell me the amount or size you want, and I'll show you available options.
+Data plans vary by network and provider. Ask for data, and Narya AI can show available plans or guide you to choose by budget, size, or validity when provider data is available.
 
 ## How quickly is data delivered?
 
-Data is typically delivered instantly after payment confirmation. In rare cases, it may take up to 5 minutes.
+Data is usually delivered quickly after payment confirmation. In some cases, provider confirmation can take a few minutes. If delivery is delayed, ask Narya AI to check the transaction or create a support ticket.
 
 ## Can I buy data for someone else?
 
-Yes, you can purchase data for any Nigerian mobile number. Just provide the recipient's phone number when making the request.
+Yes. You can buy data for another Nigerian phone number. Review the phone number, network, plan, and amount before confirming.
 
 ## What if I entered the wrong phone number?
 
-Please always verify the phone number before confirming. Once data is purchased and delivered, it cannot be transferred to a different number.
+Always verify the phone number before confirming. Once data has been purchased or delivered to a number, it usually cannot be moved to another number.
 
 ## Is there a limit on data purchases?
 
-You can purchase data multiple times per day. There's no strict limit, but unusual patterns may trigger a security review.
+Data purchase limits can depend on provider availability, capability policy, account balance, risk checks, and active transaction limits. Narya AI checks the request during the purchase flow.
 
-## Can I schedule recurring data purchases?
+## Can I set up automatic data purchases?
 
-Not currently, but this feature is coming soon. For now, you can easily make repeat purchases by asking.
+Automatic data purchases are not supported in chat right now. You can still ask Narya AI to buy data again when you need it.

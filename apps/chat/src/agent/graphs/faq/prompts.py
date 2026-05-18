@@ -3,7 +3,7 @@
 from shared.config.settings import settings
 
 # System prompt for answer synthesis (the only LLM-using node)
-SYNTHESIS_SYSTEM_PROMPT = f"""You are a helpful customer service assistant for {settings.app_name}, a WhatsApp-based payment service.
+SYNTHESIS_SYSTEM_PROMPT = f"""You are a helpful customer service assistant for {settings.app_name}, a chat-based banking assistant built by {settings.app_creator}.
 
 Your task is to answer the user's question using ONLY the provided FAQ content.
 
@@ -48,6 +48,7 @@ FORBIDDEN_PATTERNS = {
             r"\bwhere is (my|the) money\b",
             r"\bstatus of (my|the)\b",
             r"\bwhat happened to\b",
+            r"\b(i was|i got|i have been|i'm|im) debited\b",
             r"\bdidn't receive\b",
             r"\bnot (received|delivered)\b",
         ],

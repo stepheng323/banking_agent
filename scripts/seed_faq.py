@@ -1,20 +1,32 @@
 """Seed FAQ entries from markdown files.
 
-This script parses markdown files in data/faq/ and populates the faq_entries table.
+This script parses markdown files in data/faq/ and replaces the faq_entries
+table contents in one transaction.
 
 Usage:
     python -m scripts.seed_faq
+    python -m scripts.seed_faq --dry-run
+    python -m scripts.seed_faq --no-embeddings
 """
 
+from __future__ import annotations
+
+import argparse
+import asyncio
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-# Add project root to path
+from sqlalchemy import delete
+
+# Allow direct execution as `python scripts/seed_faq.py` from outside repo root.
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from shared.database.connection import get_db
+from apps.chat.src.agent.graphs.faq.retrieval.embeddings import EmbeddingService
+from shared.database.connection import get_db_session
 from shared.database.models import FAQEntry
 from shared.repositories.faq_repository import FAQRepository
 from shared.utils.logging import get_logger
@@ -22,14 +34,67 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 FAQ_DIR = project_root / "data" / "faq"
+FAQEntryPayload = dict[str, Any]
+
+
+class FAQParseError(ValueError):
+    """Raised when FAQ markdown cannot be ingested safely."""
+
+
+def _normalize_category(raw_category: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", raw_category.strip().lower()).strip("_")
+
+
+def _unique_in_order(values: list[str], limit: int | None = None) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        output.append(value)
+        if limit is not None and len(output) >= limit:
+            break
+    return output
 
 
 def extract_keywords(question: str, answer: str) -> list[str]:
-    """Extract keywords from question and answer text.
-
-    Simple extraction: words longer than 3 chars, excluding common words.
-    """
+    """Extract deterministic keywords from question and answer text."""
     stopwords = {
+        "about",
+        "after",
+        "also",
+        "and",
+        "are",
+        "before",
+        "between",
+        "can",
+        "could",
+        "did",
+        "does",
+        "don",
+        "during",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "here",
+        "how",
+        "into",
+        "just",
+        "might",
+        "only",
+        "should",
+        "that",
+        "the",
+        "there",
+        "these",
+        "this",
+        "those",
+        "through",
+        "was",
+        "were",
         "what",
         "when",
         "where",
@@ -38,66 +103,23 @@ def extract_keywords(question: str, answer: str) -> list[str]:
         "whom",
         "whose",
         "why",
-        "how",
-        "this",
-        "that",
-        "these",
-        "those",
-        "there",
-        "here",
-        "have",
-        "has",
-        "had",
         "will",
-        "would",
-        "could",
-        "should",
-        "might",
-        "just",
-        "also",
-        "only",
-        "about",
-        "after",
-        "before",
-        "between",
-        "into",
-        "through",
-        "during",
         "with",
-        "from",
-        "your",
+        "would",
         "you",
-        "are",
-        "the",
-        "and",
-        "for",
-        "can",
-        "does",
-        "don",
-        "did",
-        "was",
-        "were",
+        "your",
     }
 
-    # Combine question and first sentence of answer
-    text = question.lower() + " " + answer.split(".")[0].lower()
-
-    # Extract words (alphanumeric only)
+    first_answer_sentence = answer.split(".")[0].lower()
+    text = f"{question.lower()} {first_answer_sentence}"
     words = re.findall(r"\b[a-z]+\b", text)
-
-    # Filter: length > 3, not a stopword, unique
-    keywords = list({w for w in words if len(w) > 3 and w not in stopwords})
-
-    return keywords[:10]  # Max 10 keywords
+    return _unique_in_order([w for w in words if len(w) > 3 and w not in stopwords], limit=10)
 
 
 def extract_tags(category: str, question: str) -> list[str]:
-    """Extract tags based on category and common patterns."""
+    """Extract deterministic tags from category and question text."""
     tags = [category]
-
-    # Add tags based on question content
     question_lower = question.lower()
-
     tag_patterns = {
         "fee": ["fees", "charges", "cost"],
         "time": ["how long", "when", "duration", "time"],
@@ -112,128 +134,192 @@ def extract_tags(category: str, question: str) -> list[str]:
     }
 
     for tag, patterns in tag_patterns.items():
-        if any(p in question_lower for p in patterns):
+        if any(pattern in question_lower for pattern in patterns):
             tags.append(tag)
 
-    return list(set(tags))
+    return _unique_in_order(tags)
 
 
-def parse_markdown_file(filepath: Path) -> list[dict]:
-    """Parse a markdown FAQ file into entries.
-
-    Expected format:
-    # Category: CategoryName
-
-    ## Question text
-    Answer text (can be multiple paragraphs)
-
-    ## Another question
-    Another answer
-    """
-    entries = []
+def parse_markdown_file(filepath: Path) -> list[FAQEntryPayload]:
+    """Parse one FAQ markdown file into repository payloads."""
     content = filepath.read_text(encoding="utf-8")
 
-    # Extract category from header
     category_match = re.search(r"^# Category:\s*(.+)$", content, re.MULTILINE)
     if not category_match:
-        logger.warning(f"No category found in {filepath}")
-        return []
+        raise FAQParseError(f"{filepath}: missing '# Category:' header")
 
-    category = category_match.group(1).strip().lower().replace(" ", "_")
+    category = _normalize_category(category_match.group(1))
+    if not category:
+        raise FAQParseError(f"{filepath}: empty category header")
 
-    # Split by ## headers (questions)
-    sections = re.split(r"^## ", content, flags=re.MULTILINE)[1:]  # Skip category header
+    sections = re.split(r"^## ", content, flags=re.MULTILINE)[1:]
+    if not sections:
+        raise FAQParseError(f"{filepath}: no FAQ sections found")
 
-    for section in sections:
-        lines = section.strip().split("\n")
-        if not lines:
-            continue
-
-        question = lines[0].strip()
+    entries: list[FAQEntryPayload] = []
+    for index, section in enumerate(sections, start=1):
+        lines = section.strip().splitlines()
+        question = lines[0].strip() if lines else ""
         answer = "\n".join(lines[1:]).strip()
 
-        if not question or not answer:
-            continue
+        if not question:
+            raise FAQParseError(f"{filepath}: section {index} is missing a question")
+        if not answer:
+            raise FAQParseError(f"{filepath}: question '{question}' is missing an answer")
 
-        entry = {
-            "category": category,
-            "question": question,
-            "answer": answer,
-            "keywords": extract_keywords(question, answer),
-            "tags": extract_tags(category, question),
-            "priority": 0,
-            "is_active": True,
-        }
-        entries.append(entry)
+        entries.append(
+            {
+                "category": category,
+                "question": question,
+                "answer": answer,
+                "keywords": extract_keywords(question, answer),
+                "tags": extract_tags(category, question),
+                "priority": 0,
+                "is_active": True,
+            }
+        )
 
     return entries
 
 
-def seed_faq():
-    """Parse all FAQ markdown files and seed the database."""
-    if not FAQ_DIR.exists():
-        logger.error(f"FAQ directory not found: {FAQ_DIR}")
-        return
+def parse_faq_directory(faq_dir: Path) -> list[FAQEntryPayload]:
+    """Parse and validate all markdown files in a FAQ directory."""
+    if not faq_dir.exists():
+        raise FAQParseError(f"FAQ directory not found: {faq_dir}")
+    if not faq_dir.is_dir():
+        raise FAQParseError(f"FAQ path is not a directory: {faq_dir}")
 
-    all_entries = []
+    markdown_files = sorted(faq_dir.glob("*.md"))
+    if not markdown_files:
+        raise FAQParseError(f"No markdown FAQ files found in {faq_dir}")
 
-    for md_file in FAQ_DIR.glob("*.md"):
-        logger.info(f"Parsing {md_file.name}...")
-        entries = parse_markdown_file(md_file)
-        all_entries.extend(entries)
-        logger.info(f"  Found {len(entries)} entries")
+    entries: list[FAQEntryPayload] = []
+    for markdown_file in markdown_files:
+        parsed = parse_markdown_file(markdown_file)
+        logger.info("Parsed %s: %s entries", markdown_file.name, len(parsed))
+        entries.extend(parsed)
 
-    if not all_entries:
-        logger.warning("No FAQ entries found")
-        return
+    if not entries:
+        raise FAQParseError(f"No FAQ entries parsed from {faq_dir}")
 
-    logger.info(f"Total entries: {len(all_entries)}")
+    return entries
 
-    # Generate embeddings for all entries
-    logger.info("Generating embeddings...")
+
+def add_embeddings(
+    entries: list[FAQEntryPayload],
+    *,
+    service_factory: Callable[[], Any] = EmbeddingService,
+) -> bool:
+    """Add embeddings in-place. Return False if embedding generation fails."""
+    if not entries:
+        return True
+
     try:
-        from apps.chat.src.agent.sub_agents.faq.retrieval.embeddings import EmbeddingService
-
-        embedding_service = EmbeddingService()
-
-        # Prepare texts for embedding (combine question + answer for richer context)
-        texts = [f"{e['question']}\n{e['answer']}" for e in all_entries]
-
-        # Batch generate embeddings
+        embedding_service = service_factory()
+        texts = [f"{entry['question']}\n{entry['answer']}" for entry in entries]
         embeddings = embedding_service.get_embeddings_sync(texts)
-
-        # Add embeddings to entries
-        for entry, embedding in zip(all_entries, embeddings, strict=True):
+        if len(embeddings) != len(entries):
+            raise RuntimeError(
+                f"Embedding count mismatch: got {len(embeddings)} for {len(entries)} FAQ entries"
+            )
+        for entry, embedding in zip(entries, embeddings, strict=True):
             entry["embedding"] = embedding
+        logger.info("Generated %s FAQ embeddings", len(embeddings))
+        return True
+    except Exception as exc:  # pragma: no cover - exact provider failures vary
+        logger.warning("Failed to generate FAQ embeddings: %s", exc)
+        logger.info("Continuing with keyword/fuzzy-only FAQ entries")
+        return False
 
-        logger.info(f"Generated {len(embeddings)} embeddings")
 
-    except Exception as e:
-        logger.warning(f"Failed to generate embeddings: {e}")
-        logger.info("Continuing without embeddings - keyword search will still work")
+async def replace_all_faq_entries(entries: list[FAQEntryPayload]) -> list[FAQEntry]:
+    """Replace all FAQ rows in one transaction."""
+    async with get_db_session() as db:
+        async with db.begin():
+            delete_result = await db.execute(delete(FAQEntry))
+            repo = FAQRepository(db)
+            created = await repo.bulk_create(entries)
 
-    # Insert into database
-    with next(get_db()) as db:
-        repo = FAQRepository(db)
+        logger.info("Cleared %s existing FAQ entries", delete_result.rowcount or 0)
+        logger.info("Created %s FAQ entries", len(created))
+        return created
 
-        # Clear existing entries (optional - comment out to append)
-        existing = db.query(FAQEntry).delete()
-        logger.info(f"Cleared {existing} existing entries")
 
-        # Bulk create
-        created = repo.bulk_create(all_entries)
-        db.commit()
+def _category_counts(entries: list[FAQEntryPayload] | list[FAQEntry]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        category = entry.category if isinstance(entry, FAQEntry) else str(entry["category"])
+        counts[category] = counts.get(category, 0) + 1
+    return counts
 
-        logger.info(f"Created {len(created)} FAQ entries")
 
-        # Print summary by category
-        categories = {}
-        for entry in created:
-            categories[entry.category] = categories.get(entry.category, 0) + 1
+def _log_summary(entries: list[FAQEntryPayload] | list[FAQEntry]) -> None:
+    logger.info("FAQ entry summary:")
+    for category, count in sorted(_category_counts(entries).items()):
+        logger.info("  %s: %s", category, count)
 
-        for cat, count in sorted(categories.items()):
-            logger.info(f"  {cat}: {count} entries")
+
+async def seed_faq(
+    *,
+    faq_dir: Path = FAQ_DIR,
+    dry_run: bool = False,
+    no_embeddings: bool = False,
+) -> int:
+    """Parse FAQ markdown and optionally replace the FAQ table."""
+    try:
+        entries = parse_faq_directory(faq_dir)
+    except FAQParseError as exc:
+        logger.error("%s", exc)
+        return 1
+
+    logger.info("Parsed %s FAQ entries from %s", len(entries), faq_dir)
+    _log_summary(entries)
+
+    if dry_run:
+        logger.info("Dry run complete; no embeddings generated and no DB writes performed")
+        return 0
+
+    if no_embeddings:
+        logger.info("Skipping FAQ embedding generation")
+    else:
+        add_embeddings(entries)
+
+    created = await replace_all_faq_entries(entries)
+    _log_summary(created)
+    return 0
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Seed FAQ entries from markdown files")
+    parser.add_argument(
+        "--faq-dir",
+        type=Path,
+        default=FAQ_DIR,
+        help="Directory containing FAQ markdown files",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and summarize markdown without embeddings or DB writes",
+    )
+    parser.add_argument(
+        "--no-embeddings",
+        action="store_true",
+        help="Seed FAQ rows without generating OpenAI embeddings",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    return asyncio.run(
+        seed_faq(
+            faq_dir=args.faq_dir,
+            dry_run=args.dry_run,
+            no_embeddings=args.no_embeddings,
+        )
+    )
 
 
 if __name__ == "__main__":
-    seed_faq()
+    raise SystemExit(main())

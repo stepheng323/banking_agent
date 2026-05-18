@@ -1,51 +1,47 @@
 # Category: General
 
-## What is Fusepay?
+## What is Narya AI?
 
-Fusepay is a WhatsApp-based banking assistant that lets you send money, buy data, and manage your finances through simple conversations. Just chat naturally, and we handle the rest.
+Narya AI is a chat-based banking assistant inspired by Narya from The Lord of the Rings. It helps you send money, buy airtime or data, check balances, review transactions, request receipts, and get support through simple conversation.
 
 ## How does it work?
 
-Simply chat with us on WhatsApp like you would with a friend:
+Chat naturally in WhatsApp or Telegram and tell Narya AI what you want to do. More supported channels may be added over time.
 
 - "Send 5000 to John at GTBank"
 - "Buy 1GB data for my number"
 - "What's my balance?"
 
-We understand natural language and execute your requests securely.
+For money movement, Narya AI shows the details for review and requires the required confirmation before processing.
 
 ## Is this a bank?
 
-No, Fusepay is a payment service, not a bank. We partner with licensed financial institutions to process your transactions. Your funds remain in your own linked bank accounts.
+No. Narya AI is not a bank. It works with licensed financial and payment partners to support account linking, direct debit authorization, and transaction processing. Your money remains in your linked bank account until you authorize a transaction.
 
-## Who can use Fusepay?
+## Who can use Narya AI?
 
-Anyone with:
-
-- A Nigerian phone number
-- A bank account that supports direct debit
-- WhatsApp installed on their phone
+Narya AI is intended for customers with a Nigerian phone number and a supported Nigerian bank account. It currently supports WhatsApp and Telegram, and some features depend on your bank, provider availability, account status, and the channel you are using.
 
 ## Is there an app I need to download?
 
-No separate app is needed! Everything works through WhatsApp. Just save our number and start chatting.
+You do not need a separate banking app to chat with Narya AI on WhatsApp or Telegram. Some secure steps, such as account authorization, may open a verified partner or bank approval flow.
 
 ## What are your operating hours?
 
-Our automated service is available 24/7. Human support is available during business hours (9am - 6pm WAT, Monday to Friday).
+Automated chat help is available whenever the service is online. Bank and bill-provider confirmations may still depend on partner availability, and support tickets are handled through the current support workflow.
 
 ## How do I contact support?
 
-Just say "I need help" or "contact support" in the chat, and we'll connect you with our support team.
+Say "I need help" or describe the issue in chat. Narya AI can check transaction information, ask for the needed reference, and create or escalate a support ticket when the issue needs follow-up.
 
-## Is there a fee to use Fusepay?
+## Is there a fee to use Narya AI?
 
-Creating an account and linking your bank is free. We charge small transaction fees on transfers and purchases. Check our fee schedule for details.
+Creating a chat profile and linking a supported bank account is not charged by Narya AI. Transaction fees, provider charges, or bank charges may apply, and when available they are shown before you confirm a transaction.
 
-## Can I use Fusepay outside Nigeria?
+## Can I use Narya AI outside Nigeria?
 
-Currently, Fusepay is only available for Nigerian bank accounts and phone numbers. International support is coming soon.
+Narya AI currently focuses on Nigerian bank accounts, Nigerian phone numbers, local transfers, airtime, data, balances, and transaction queries. International transfers are not supported in chat.
 
 ## How do I delete my account?
 
-To delete your account and all associated data, contact our support team. Account deletion is permanent and cannot be undone.
+Ask for account deletion or contact support from your registered channel. Account deletion may require identity checks and is permanent once completed.

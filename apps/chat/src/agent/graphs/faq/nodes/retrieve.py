@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.chat.src.agent.graphs.faq.retrieval.hybrid import HybridRetriever
 from apps.chat.src.agent.graphs.faq.state import FAQState
@@ -11,7 +11,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def create_retrieve_node(get_db: Callable[[], Session], embedding_service=None):
+def create_retrieve_node(get_db: Callable[[], AsyncSession], embedding_service=None):
     """Factory to create retrieve node with database and embedding dependencies."""
 
     async def retrieve_node(state: FAQState) -> FAQState:
@@ -19,7 +19,7 @@ def create_retrieve_node(get_db: Callable[[], Session], embedding_service=None):
         message = state.get("message", "")
         category = state.get("detected_category")
 
-        with get_db() as db:
+        async with get_db() as db:
             retriever = HybridRetriever(
                 db=db,
                 embedding_service=embedding_service,

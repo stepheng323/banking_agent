@@ -2,50 +2,36 @@
 
 ## How do I set my transaction PIN?
 
-Your transaction PIN is set during the onboarding process. You'll be prompted to create a 4-digit PIN that you'll use to authorize all transactions.
+Your transaction PIN is created during onboarding or the secure authorization flow. Narya AI uses it only when a transaction requires authorization.
 
 ## What if I forget my PIN?
 
-If you forget your PIN, you can reset it through the app's security settings. You'll need to verify your identity before setting a new PIN.
+Ask Narya AI for help resetting your PIN. You may need to complete identity checks or a secure partner flow before a new PIN can be set.
 
 ## Is my money safe?
 
-Yes. Your funds are held in licensed, regulated financial institutions. We use bank-grade encryption and security protocols to protect your data and transactions.
+Your money remains in your linked bank account until you authorize a transaction. Narya AI works with licensed financial and payment partners for account authorization and transaction processing.
 
 ## What security measures are in place?
 
-We implement multiple layers of security:
-
-- End-to-end encryption for all communications
-- Transaction PIN for every payment
-- Biometric authentication (optional)
-- Fraud detection systems
-- Secure, audited infrastructure
+Security measures include transaction authorization, secure account-linking flows, provider checks, fraud monitoring, and controlled access to transaction records. Some safeguards can vary by bank, provider, and channel.
 
 ## Can someone access my account without my PIN?
 
-No. Every transaction requires your unique PIN. Never share your PIN with anyone, including our support team.
+Do not share your PIN or secure authorization details with anyone. Narya AI and support will not ask you to reveal your full PIN in chat.
 
 ## What should I do if I suspect unauthorized activity?
 
-If you notice any suspicious activity:
-
-1. Change your PIN immediately
-2. Contact our support team
-3. Review your recent transactions
+Tell Narya AI immediately that you suspect fraud or unauthorized activity. The support workflow can collect the relevant transaction details and create or escalate a ticket.
 
 ## How do I change my PIN?
 
-You can change your PIN at any time through the security settings in the app. You'll need to enter your current PIN to set a new one.
+Ask to change or reset your PIN in chat. Narya AI will guide you through the available secure flow and identity checks.
 
-## Does the app store my banking credentials?
+## Does Narya AI store my banking credentials?
 
-We never store your bank login credentials. Account linking is done through secure, bank-approved methods that don't require sharing your banking passwords.
-
-## What is two-factor authentication?
-
-Two-factor authentication adds an extra layer of security by requiring both your PIN and a verification code sent to your phone for sensitive operations.
+Narya AI does not need your bank login password in chat. Account linking is handled through secure, bank-approved or provider-approved authorization methods.
 
 ## How do you protect against fraud?
 
-Our fraud detection systems monitor transactions in real-time for unusual patterns. Suspicious transactions may be temporarily held for verification.
+Transactions may be checked for unusual patterns, account restrictions, provider errors, and other risk signals. Suspicious or unclear cases can be blocked, delayed for verification, or routed to support.
