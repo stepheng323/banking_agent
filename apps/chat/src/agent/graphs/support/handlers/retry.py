@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import SupportResponse
+from shared.formatters.transaction_copy import format_transaction_status_reply
 from shared.i18n import render_message
 from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
@@ -77,7 +78,13 @@ async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> Su
 
     if isinstance(actionable, dict) and not actionable.get("retry", False):
         message = (
-            render_message("query.reply.status.failed_bank_posted", locale)
+            format_transaction_status_reply(
+                status,
+                locale=locale,
+                local_status=transaction.get("local_status") or status,
+                bank_status=transaction.get("bank_status"),
+                needs_review=bool(transaction.get("needs_review")),
+            )
             if transaction.get("needs_review") and transaction.get("bank_status") == "posted"
             else render_message("support.retry.not_retryable", locale, {"error": status})
         )

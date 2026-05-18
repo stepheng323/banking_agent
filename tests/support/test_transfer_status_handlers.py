@@ -19,6 +19,16 @@ async def test_transfer_status_handler_accepts_successful_status() -> None:
 
 
 @pytest.mark.asyncio
+async def test_transfer_status_handler_uses_shared_posted_status_copy() -> None:
+    response = await handle_transfer_status(
+        {"status": "posted", "bank_status": "posted", "amount": 5000, "recipient_name": "Mum"},
+        locale="en",
+    )
+
+    assert response.message == "That transaction is posted."
+
+
+@pytest.mark.asyncio
 async def test_pending_handler_treats_processing_as_pending() -> None:
     response = await handle_pending(
         {"status": "processing", "amount": 5000, "recipient_name": "Mum"},
@@ -26,6 +36,25 @@ async def test_pending_handler_treats_processing_as_pending() -> None:
     )
 
     assert "processed" in response.message.lower() or "processing" in response.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_failure_reason_uses_shared_processing_bank_posted_copy() -> None:
+    response = await handle_failure_reason(
+        {
+            "status": "processing",
+            "local_status": "processing",
+            "bank_status": "posted",
+            "amount": 5000,
+            "recipient_name": "Mum",
+        },
+        locale="en",
+    )
+
+    assert (
+        response.message
+        == "That transaction is still processing in our app, but a matching debit is posted in your bank history."
+    )
 
 
 @pytest.mark.asyncio

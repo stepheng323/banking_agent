@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import OrderedDict
 from datetime import date, datetime
 from typing import cast
@@ -27,6 +26,7 @@ from apps.chat.src.agent.shared.query_contracts import (
     SurfaceView,
     SurfaceViewMode,
 )
+from shared.formatters.transaction_copy import build_transaction_detail_lines, format_transaction_list_item
 from shared.i18n import render_message
 from shared.i18n.message_keys import MessageKey
 
@@ -396,56 +396,9 @@ def _build_single_item_detail_presentation_plan(result: QueryResult, *, locale: 
                 {"transaction_type": tx_filters.transaction_type},
             )
 
-    items: list[str] = [
-        render_message("query.format.field_amount", locale, {"amount": f"₦{float(item.amount):,.2f}"}),
-        render_message("query.format.field_description", locale, {"description": item.description}),
-        render_message(
-            "query.format.field_date",
-            locale,
-            {
-                "date": item.date.strftime("%B %d, %Y")
-                if item.date
-                else render_message("query.format.unknown", locale),
-            },
-        ),
-    ]
-
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
-    tx_type = str(metadata.get("type") or "").strip()
-    if tx_type:
-        direction = (
-            render_message("query.format.type_outgoing_debit", locale)
-            if tx_type == "debit"
-            else render_message("query.format.type_incoming_credit", locale)
-        )
-        items.append(render_message("query.format.field_type", locale, {"type": direction}))
-
-    bank_name = str(metadata.get("bank_name") or "").strip()
-    if bank_name:
-        items.append(render_message("query.format.field_bank", locale, {"bank_name": bank_name}))
-
+    items = build_transaction_detail_lines(item, locale=locale, metadata=metadata)
     transaction_type = str(metadata.get("transaction_type") or "").strip()
-    if transaction_type:
-        items.append(
-            render_message(
-                "query.format.field_category",
-                locale,
-                {"category": transaction_type.title()},
-            )
-        )
-
-    status = str(metadata.get("status") or "").strip()
-    if status:
-        status_display = (
-            render_message("query.format.status_success", locale)
-            if status.lower() in ("success", "completed", "successful")
-            else render_message("query.format.status_pending_generic", locale, {"status": status.title()})
-        )
-        items.append(render_message("query.format.field_status", locale, {"status": status_display}))
-
-    reference = _display_reference(item)
-    if reference:
-        items.append(render_message("query.format.field_ref", locale, {"reference": reference}))
 
     hint_text = None
     if transaction_type == "transfer":
@@ -467,19 +420,6 @@ def _format_amount(amount: float) -> str:
     if amount >= 1000:
         return f"₦{amount:,.0f}"
     return f"₦{amount:.0f}"
-
-
-def _display_reference(item: QueryResultItem) -> str | None:
-    metadata = item.metadata if isinstance(item.metadata, dict) else {}
-    for key in ("transaction_id", "reference", "ref"):
-        value = str(metadata.get(key) or "").strip()
-        if value:
-            return value
-
-    item_id = str(item.id or "").strip()
-    if not item_id or re.fullmatch(r"\d+", item_id):
-        return None
-    return item_id
 
 
 def _format_percentage(amount: float, total_abs: float) -> str:
@@ -583,7 +523,7 @@ def _build_transaction_list_lines(
     for date_str, grouped_items in grouped.items():
         lines.append(f"*{date_str}*")
         for item in grouped_items:
-            lines.append(_format_transaction_list_item(item, locale=locale))
+            lines.append(format_transaction_list_item(item, locale=locale))
         lines.append("")
 
     if remaining_count > 0:
@@ -607,52 +547,6 @@ def _group_items_by_date(
     return grouped
 
 
-def _format_transaction_list_item(item: QueryResultItem, *, locale: str) -> str:
-    metadata = item.metadata if isinstance(item.metadata, dict) else {}
-    counterparty = metadata.get("counterparty")
-    tx_type = str(metadata.get("type") or "").strip().lower()
-    real_type = metadata.get("transaction_type")
-    amount = _format_amount(item.amount)
-
-    if real_type in ("airtime", "data"):
-        recipient = counterparty or _extract_phone_recipient(item.description)
-        narration = render_message(
-            "query.format.narration.type_for_recipient",
-            locale,
-            {"type": str(real_type).title(), "recipient": recipient or render_message("query.format.recipient_fallback", locale)},
-        )
-    elif isinstance(counterparty, str) and counterparty.strip():
-        if "transfer" in item.description.lower():
-            prefix = (
-                render_message("query.format.narration.transfer_from", locale)
-                if tx_type == "credit"
-                else render_message("query.format.narration.transfer_to", locale)
-            )
-            narration = f"{prefix} {counterparty}"
-        else:
-            narration = counterparty
-    else:
-        narration = item.description or render_message("query.format.narration.transaction", locale)
-
-    label = (
-        render_message("query.format.label_received", locale)
-        if tx_type == "credit"
-        else render_message("query.format.label_sent", locale)
-    )
-    bank_name = str(metadata.get("bank_name") or "").strip()
-    if bank_name:
-        return render_message(
-            "query.format.transaction_item_with_bank",
-            locale,
-            {"amount": amount, "label": label, "narration": narration, "bank_name": bank_name},
-        )
-    return render_message(
-        "query.format.transaction_item",
-        locale,
-        {"amount": amount, "label": label, "narration": narration},
-    )
-
-
 def _format_date(value: date | str, *, locale: str) -> str:
     if isinstance(value, str):
         raw_date = value
@@ -661,11 +555,6 @@ def _format_date(value: date | str, *, locale: str) -> str:
         except (TypeError, ValueError):
             return raw_date[:10] if raw_date else render_message("query.format.unknown", locale)
     return value.strftime("%b %d").replace(" 0", " ")
-
-
-def _extract_phone_recipient(description: str) -> str | None:
-    phone_match = re.search(r"(\d{10,11})", description or "")
-    return phone_match.group(1) if phone_match else None
 
 
 def _is_ranked_transaction_surface(result: QueryResult, *, surface_view: SurfaceView) -> bool:

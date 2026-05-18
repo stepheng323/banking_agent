@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import EscalationResult, SupportResponse
+from shared.formatters.transaction_copy import format_transaction_status_reply
 from shared.i18n import render_message
 from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
@@ -53,6 +54,21 @@ def _append_category_guidance(message: str, category: str, *, locale: str) -> st
     return f"{message}\n\n{guidance}"
 
 
+def _has_unified_bank_status_overlay(transaction: dict[str, Any], status: str) -> bool:
+    bank_status = str(transaction.get("bank_status") or "").strip().lower().replace("_", " ")
+    return bank_status == "posted" and (bool(transaction.get("needs_review")) or status in {"pending", "processing"})
+
+
+def _format_unified_status_overlay(transaction: dict[str, Any], status: str, *, locale: str) -> str:
+    return format_transaction_status_reply(
+        status,
+        locale=locale,
+        local_status=transaction.get("local_status") or status,
+        bank_status=transaction.get("bank_status"),
+        needs_review=bool(transaction.get("needs_review")),
+    )
+
+
 async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle transfer_failure_reason intent.
@@ -64,9 +80,9 @@ async def handle_failure_reason(transaction: dict[str, Any], *, locale: str = "e
     error = transaction.get("error_message", "")
     provider_response = transaction.get("provider_response", {})
 
-    if transaction.get("needs_review") and transaction.get("bank_status") == "posted":
+    if _has_unified_bank_status_overlay(transaction, status):
         return SupportResponse(
-            message=render_message("query.reply.status.failed_bank_posted", locale),
+            message=_format_unified_status_overlay(transaction, status, locale=locale),
             transaction_data=transaction,
         )
 

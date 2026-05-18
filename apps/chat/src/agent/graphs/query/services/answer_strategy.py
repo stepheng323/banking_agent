@@ -19,7 +19,8 @@ from apps.chat.src.agent.graphs.query.models import (
 from apps.chat.src.agent.graphs.query.services.continuity import build_soft_clarification
 from apps.chat.src.agent.graphs.query.services.contracts import build_focus_referent
 from apps.chat.src.agent.graphs.query.utils.timezone import lagos_today
-from shared.i18n import MessageKey, render_message
+from shared.formatters.transaction_copy import format_transaction_evidence_line, format_transaction_status_reply
+from shared.i18n import render_message
 
 FactKind = QueryFactField
 FactDirection = Literal["debit", "credit", "unknown"]
@@ -116,7 +117,7 @@ def build_direct_fact_answer(
         result_reference=query_contract.result_reference if query_contract is not None else None,
     )
     primary, used_fields = _compose_direct_reply(fact, locale=locale)
-    secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields)
+    secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields, locale=locale)
     return QueryAnswerContext(primary_text=primary, secondary_text=secondary)
 
 
@@ -331,7 +332,7 @@ def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, 
 
     if fact.fact_kind == "status":
         return (
-            _compose_status_reply(
+            format_transaction_status_reply(
                 fact.status_text,
                 local_status=fact.local_status_text,
                 bank_status=fact.bank_status_text,
@@ -371,47 +372,6 @@ def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, 
             {"category"} if fact.category_text else set(),
         )
     return (render_message("query.reply.bank.unavailable", locale), set())
-
-
-def _compose_status_reply(
-    status_text: str | None,
-    *,
-    local_status: str | None = None,
-    bank_status: str | None = None,
-    needs_review: bool = False,
-    locale: str,
-) -> str:
-    if not status_text:
-        return render_message("query.reply.status.unavailable", locale)
-
-    normalized = status_text.strip().lower().replace("_", " ")
-    normalized_local = (local_status or "").strip().lower().replace("_", " ")
-    normalized_bank = (bank_status or "").strip().lower().replace("_", " ")
-    if needs_review and normalized_local == "failed" and normalized_bank == "posted":
-        return render_message("query.reply.status.failed_bank_posted", locale)
-    if normalized_local in {"pending", "processing"} and normalized_bank == "posted":
-        return render_message("query.reply.status.processing_bank_posted", locale)
-
-    key_by_status: dict[str, MessageKey] = {
-        "posted": "query.reply.status.posted",
-        "success": "query.reply.status.successful",
-        "successful": "query.reply.status.successful",
-        "complete": "query.reply.status.successful",
-        "completed": "query.reply.status.successful",
-        "confirmed": "query.reply.status.successful",
-        "pending": "query.reply.status.pending",
-        "processing": "query.reply.status.processing",
-        "in progress": "query.reply.status.processing",
-        "failed": "query.reply.status.failed",
-        "failure": "query.reply.status.failed",
-        "declined": "query.reply.status.failed",
-        "reversed": "query.reply.status.reversed",
-        "refunded": "query.reply.status.reversed",
-    }
-    key = key_by_status.get(normalized)
-    if key is not None:
-        return render_message(key, locale)
-    return render_message("query.reply.status.generic", locale, {"status": normalized or status_text})
 
 
 def _compose_latest_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, set[str]] | None:
@@ -525,24 +485,19 @@ def _build_evidence_line(
     *,
     query_contract: QueryExecutionContract | None,
     used_fields: set[str],
+    locale: str,
 ) -> str | None:
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     bank_name = str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip()
     counterparty = _counterparty_label(item, query_contract=query_contract)
-    date_text = item.date.strftime("%b %d")
-    amount = f"₦{abs(float(item.amount)):,.0f}"
-
-    parts: list[str] = []
-    if "amount" not in used_fields:
-        parts.append(amount)
-    if "date" not in used_fields:
-        parts.append(date_text)
-    if "counterparty" not in used_fields and counterparty:
-        parts.append(counterparty)
-    if "bank" not in used_fields and bank_name:
-        parts.append(bank_name)
-
-    return " • ".join(parts[:3]) or None
+    return format_transaction_evidence_line(
+        amount=item.amount,
+        date_value=item.date,
+        counterparty=counterparty,
+        bank_name=bank_name or None,
+        used_fields=used_fields,
+        locale=locale,
+    )
 
 
 def build_existence_answer(
