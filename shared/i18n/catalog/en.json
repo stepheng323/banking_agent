@@ -700,11 +700,8 @@
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
-        "recipient_with_phone": "{recipient_name} ({recipient_phone})",
         "title": "*{amount} Airtime → {recipient_display}*",
-        "network_line": "Network: {network}",
-        "source_line": "From: {source_bank} (···{last4})",
-        "last4_fallback": "????"
+        "network_line": "Network: {network}"
       }
     },
     "execution": {
@@ -769,9 +766,7 @@
         "source_bank_fallback": "Account",
         "target_self": "your number",
         "title": "*{plan_name} → {target_display}*",
-        "network_amount": "Network: {network} • Amount: ₦{amount}",
-        "from_line": "From: {source_bank} (···{last4})",
-        "last4_fallback": "????"
+        "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
     },
     "completion": {
