@@ -1,7 +1,6 @@
 """Main router for flow webhook endpoint."""
 
 import json
-import traceback
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
@@ -142,6 +141,7 @@ async def flow_webhook(
                 request_was_encrypted,
                 aes_key_bytes or b"",
                 iv_bytes or b"",
+                authorizing_channel_user_id=authorizing_channel_user_id,
             )
 
         elif screen == "METHOD_SELECTION":
@@ -164,6 +164,7 @@ async def flow_webhook(
                     request_was_encrypted,
                     aes_key_bytes or b"",
                     iv_bytes or b"",
+                    authorizing_channel_user_id=authorizing_channel_user_id,
                 )
 
         elif screen == "OTP_VERIFICATION":
@@ -174,6 +175,7 @@ async def flow_webhook(
                 request_was_encrypted,
                 aes_key_bytes or b"",
                 iv_bytes or b"",
+                authorizing_channel_user_id=authorizing_channel_user_id,
             )
 
         elif screen == "ACCOUNT_SELECTION":
@@ -184,6 +186,7 @@ async def flow_webhook(
                 request_was_encrypted,
                 aes_key_bytes or b"",
                 iv_bytes or b"",
+                authorizing_channel_user_id=authorizing_channel_user_id,
             )
 
         elif screen == "PIN_ENTRY":
@@ -194,6 +197,7 @@ async def flow_webhook(
                 request_was_encrypted,
                 aes_key_bytes or b"",
                 iv_bytes or b"",
+                authorizing_channel_user_id=authorizing_channel_user_id,
             )
 
         elif screen == "Pin":
@@ -204,6 +208,7 @@ async def flow_webhook(
                     request_was_encrypted,
                     aes_key_bytes or b"",
                     iv_bytes or b"",
+                    authorizing_channel_user_id=authorizing_channel_user_id,
                 )
             return await handle_transaction_pin(
                 data,
@@ -213,6 +218,7 @@ async def flow_webhook(
                 iv_bytes or b"",
                 whatsapp_client,
                 publisher=queue_publisher,
+                authorizing_channel_user_id=authorizing_channel_user_id,
             )
 
         logger.warning("whatsapp_flow_unknown_screen", screen=screen, action=action, version=version)
@@ -224,6 +230,5 @@ async def flow_webhook(
         )
 
     except Exception as e:
-        print(f"❌ Error in flow webhook: {e}")
-        traceback.print_exc()
+        logger.error("whatsapp_flow_webhook_error", error_type=type(e).__name__, exc_info=True)
         return JSONResponse(content={"error": "Internal server error"}, status_code=500)

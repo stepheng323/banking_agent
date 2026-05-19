@@ -12,6 +12,7 @@ from starlette.requests import Request
 from apps.gateway.adapters import meta_whatsapp
 from apps.gateway.adapters.meta_whatsapp import WebhookSignatureError, verify_meta_signature
 from apps.gateway.api.webhooks.whatsapp.flows import request_processor
+from apps.gateway.api.webhooks.whatsapp.flows import session_owner as session_owner_module
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 from apps.gateway.api.webhooks.whatsapp.flows.router import flow_webhook
 from apps.gateway.api.webhooks.whatsapp.message.router import whatsapp_webhook
@@ -247,6 +248,46 @@ async def test_process_flow_request_extracts_provider_whatsapp_identity(
 
 
 @pytest.mark.asyncio
+async def test_flow_webhook_channel_link_pin_passes_provider_whatsapp_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
+    monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
+
+    calls: list[dict[str, Any]] = []
+
+    async def _handle_channel_link_pin(*args: Any, **kwargs: Any) -> JSONResponse:
+        calls.append({"args": args, "kwargs": kwargs})
+        return JSONResponse({"ok": True})
+
+    monkeypatch.setattr(flow_router_module, "handle_channel_link_pin", _handle_channel_link_pin)
+
+    response = await flow_webhook(
+        _json_request(
+            {
+                "version": "3.0",
+                "screen": "Pin",
+                "contacts": [{"wa_id": "2348162511023"}],
+                "data": {"pin": "1234"},
+                "flow_token": "channel-link-pin-channel-link-token",
+            }
+        )
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"ok": True}
+    assert len(calls) == 1
+    assert calls[0]["args"][:5] == (
+        {"pin": "1234"},
+        "channel-link-pin-channel-link-token",
+        False,
+        b"",
+        b"",
+    )
+    assert calls[0]["kwargs"] == {"authorizing_channel_user_id": "2348162511023"}
+
+
+@pytest.mark.asyncio
 async def test_process_flow_request_does_not_trust_user_controlled_data_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -279,6 +320,32 @@ def test_is_encrypted_requires_all_meta_flow_fields() -> None:
     assert not is_encrypted({"encrypted_flow_data": "data"})
 
 
+@pytest.mark.asyncio
+async def test_whatsapp_flow_session_owner_rejects_mismatched_provider_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _SessionManagerStub:
+        async def get_session(self, flow_token: str) -> dict[str, Any]:
+            assert flow_token == "onboarding-opaque-token"
+            return {
+                "phone_number": "2348162511023",
+                "channel": "whatsapp",
+                "channel_user_id": "2348162511023",
+            }
+
+    monkeypatch.setattr(session_owner_module.settings.runtime, "app_env", "production")
+    monkeypatch.setattr(session_owner_module, "session_manager", _SessionManagerStub())
+
+    result = await session_owner_module.verify_whatsapp_flow_session_owner(
+        flow_token="onboarding-opaque-token",
+        authorizing_channel_user_id="2348000000000",
+        screen="BVN_ENTRY",
+    )
+
+    assert result.ok is False
+    assert result.reason == "owner_mismatch"
+
+
 def test_settings_require_meta_app_secret_outside_local_env(monkeypatch: pytest.MonkeyPatch) -> None:
     required_env = {
         "APP_ENV": "production",
@@ -286,6 +353,7 @@ def test_settings_require_meta_app_secret_outside_local_env(monkeypatch: pytest.
         "REDIS_URL": "redis://redis:6379",
         "OPENAI_API_KEY": "openai-key",
         "MONO_API_KEY": "mono-key",
+        "MONO_WEBHOOK_SECRET": "mono-webhook-secret",
         "FLUTTERWAVE_SECRET_KEY": "flutterwave-key",
         "META_ACCESS_TOKEN": "meta-access-token",
         "META_VERIFY_TOKEN": "meta-verify-token",

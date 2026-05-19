@@ -8,6 +8,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_error_response,
     format_success_response,
 )
+from apps.gateway.api.webhooks.whatsapp.flows.session_owner import has_required_provider_identity
 from shared.clients.telegram.client import TelegramClient
 from shared.services.channel_linking import complete_channel_link_with_pin
 from shared.utils.logging import get_logger, log_fingerprint
@@ -37,6 +38,15 @@ async def handle_channel_link_pin(
         return format_error_response(
             "Pin",
             "PIN is required",
+            request_was_encrypted,
+            aes_key_bytes,
+            iv_bytes,
+        )
+
+    if not has_required_provider_identity(authorizing_channel_user_id):
+        return format_error_response(
+            "Pin",
+            "This link request is not valid for this account.",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,

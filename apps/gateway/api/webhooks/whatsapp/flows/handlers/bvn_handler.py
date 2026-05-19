@@ -6,10 +6,14 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_error_response,
     format_success_response,
 )
+from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
+    format_owner_error_response,
+    verify_whatsapp_flow_session_owner,
+)
 from shared.database.enums import UserOnboardingStatusEnum
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding import ServiceResult, bvn_service
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -20,6 +24,7 @@ async def handle_bvn_entry(
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
+    authorizing_channel_user_id: str | None = None,
 ) -> Response:
     """Handle BVN_ENTRY screen - validates BVN and initiates verification."""
 
@@ -41,8 +46,16 @@ async def handle_bvn_entry(
             iv_bytes,
         )
 
+    owner_check = await verify_whatsapp_flow_session_owner(
+        flow_token=flow_token,
+        authorizing_channel_user_id=authorizing_channel_user_id,
+        screen="BVN_ENTRY",
+    )
+    if not owner_check.ok:
+        return format_owner_error_response("BVN_ENTRY", request_was_encrypted, aes_key_bytes, iv_bytes)
+
     try:
-        session = await bvn_service.get_session_data(flow_token)
+        session = owner_check.session or await bvn_service.get_session_data(flow_token)
         phone_number = (session or {}).get("phone_number", "")
         if phone_number:
             async with UnitOfWork() as uow:
@@ -55,7 +68,7 @@ async def handle_bvn_entry(
                     ):
                         logger.info(
                             "onboarding_already_completed",
-                            phone=phone_number,
+                            phone_hash=log_fingerprint(phone_number),
                         )
                         return format_error_response(
                             "BVN_ENTRY",

@@ -7,6 +7,10 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_error_response,
     format_success_response,
 )
+from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
+    format_owner_error_response,
+    verify_whatsapp_flow_session_owner,
+)
 from shared.services.onboarding import ServiceResult, bvn_service
 
 
@@ -23,8 +27,16 @@ async def handle_otp_verification(
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
+    authorizing_channel_user_id: str | None = None,
 ) -> Response:
     """Handle OTP_VERIFICATION screen - validates OTP and fetches bank accounts."""
+    owner_check = await verify_whatsapp_flow_session_owner(
+        flow_token=flow_token,
+        authorizing_channel_user_id=authorizing_channel_user_id,
+        screen="OTP_VERIFICATION",
+    )
+    if not owner_check.ok:
+        return format_owner_error_response("OTP_VERIFICATION", request_was_encrypted, aes_key_bytes, iv_bytes)
 
     result = ServiceResult(**await bvn_service.verify_otp(flow_token, data.otp))
 

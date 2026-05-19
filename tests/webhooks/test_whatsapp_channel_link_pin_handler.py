@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from apps.gateway.api.webhooks.whatsapp.flows import session_owner as session_owner_module
 from apps.gateway.api.webhooks.whatsapp.flows.handlers import channel_link_pin_handler as handler_module
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.channel_link_pin_handler import handle_channel_link_pin
 from shared.services.channel_linking import ChannelLinkPinResult
@@ -91,3 +92,28 @@ async def test_whatsapp_channel_link_pin_invalid_pin_stays_on_pin_screen(
             "locked": False,
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_channel_link_pin_requires_provider_identity_outside_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _complete_channel_link_with_pin(**kwargs: Any) -> ChannelLinkPinResult:
+        del kwargs
+        raise AssertionError("missing provider identity must be rejected before PIN verification")
+
+    monkeypatch.setattr(handler_module, "complete_channel_link_with_pin", _complete_channel_link_with_pin)
+    monkeypatch.setattr(session_owner_module.settings.runtime, "app_env", "production")
+
+    response = await handle_channel_link_pin(
+        {"pin": "1234"},
+        "channel-link-pin-channel-link-token",
+        False,
+        b"",
+        b"",
+    )
+
+    body = json.loads(response.body)
+    assert body["screen"] == "Pin"
+    assert body["data"]["show_error"] is True
+    assert body["data"]["error_message"] == "This link request is not valid for this account."

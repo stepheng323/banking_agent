@@ -16,6 +16,11 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_error_response,
     format_success_response,
 )
+from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
+    format_owner_error_response,
+    has_required_provider_identity,
+    whatsapp_identity_matches,
+)
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
@@ -69,6 +74,7 @@ async def handle_transaction_pin(
     iv_bytes: bytes,
     whatsapp_client: WhatsAppClient,
     publisher: QueuePublisher | None = None,
+    authorizing_channel_user_id: str | None = None,
 ) -> Response:
     """
     Unified PIN handler for all transaction types.
@@ -97,6 +103,8 @@ async def handle_transaction_pin(
         parsed_idempotency_key_hash=log_fingerprint(parsed_token.idempotency_key if parsed_token else None),
         parsed_phone_hint_hash=log_fingerprint(parsed_token.phone_hint if parsed_token else None),
         parsed_transaction_type=parsed_token.transaction_type if parsed_token else None,
+        has_authorizing_channel_user_id=bool(authorizing_channel_user_id),
+        authorizing_channel_user_id_hash=log_fingerprint(authorizing_channel_user_id),
     )
 
     if not pin:
@@ -117,6 +125,9 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
+    if not has_required_provider_identity(authorizing_channel_user_id):
+        return format_owner_error_response("Pin", request_was_encrypted, aes_key_bytes, iv_bytes)
+
     transaction_type = parsed_token.transaction_type
     idem_key = parsed_token.idempotency_key
 
@@ -129,6 +140,20 @@ async def handle_transaction_pin(
         phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
     if not phone_number:
         phone_number = await redis_client.get(f"data:token:{idem_key}:phone")
+
+    expected_phone = phone_number or parsed_token.phone_hint
+    if (
+        authorizing_channel_user_id
+        and expected_phone
+        and not whatsapp_identity_matches(authorizing_channel_user_id, expected_phone)
+    ):
+        logger.warning(
+            "transaction_pin_authorizer_mismatch",
+            idempotency_key_hash=log_fingerprint(idem_key),
+            expected_phone_hash=log_fingerprint(expected_phone),
+            authorizer_hash=log_fingerprint(authorizing_channel_user_id),
+        )
+        return format_owner_error_response("Pin", request_was_encrypted, aes_key_bytes, iv_bytes)
 
     if not phone_number:
         phone_number = parsed_token.phone_hint

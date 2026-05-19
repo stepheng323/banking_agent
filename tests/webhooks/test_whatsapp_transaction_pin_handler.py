@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from apps.gateway.api.webhooks.whatsapp.flows import session_owner as session_owner_module
 from apps.gateway.api.webhooks.whatsapp.flows.handlers import transaction_pin_handler as handler_module
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler import (
     handle_transaction_pin,
@@ -142,3 +143,36 @@ async def test_whatsapp_transaction_pin_success_does_not_echo_pin(monkeypatch: p
     assert auth_service.verify_calls == [("2348162511023", "1234", "idem-1", "transfer")]
     assert auth_service.stored == [("idem-1", auth_service.result)]
     assert publisher.published[0]["message"]["event_type"] == "pin_verified"
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_transaction_pin_rejects_mismatched_provider_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = _RedisStub({"transfer:token:idem-1:phone": "2348162511023"})
+    auth_service = _AuthorizationServiceStub(
+        AuthorizationResult(verified=True, user_id="user-1", transaction_type="transfer")
+    )
+    publisher = _PublisherStub()
+
+    monkeypatch.setattr(session_owner_module.settings.runtime, "app_env", "production")
+    monkeypatch.setattr(handler_module.RedisClient, "get_client", staticmethod(lambda: redis))
+    monkeypatch.setattr(handler_module, "AuthorizationService", lambda redis_client=None: auth_service)
+
+    response = await handle_transaction_pin(
+        {"pin": "1234"},
+        "transfer-pin-idem-1-2348162511023",
+        False,
+        b"",
+        b"",
+        _WhatsAppClientStub(),  # type: ignore[arg-type]
+        publisher=publisher,
+        authorizing_channel_user_id="2348000000000",
+    )
+
+    body = json.loads(response.body)
+    assert body["screen"] == "Pin"
+    assert body["data"]["show_error"] is True
+    assert body["data"]["error_message"] == "Invalid or expired session. Please start again."
+    assert auth_service.verify_calls == []
+    assert publisher.published == []

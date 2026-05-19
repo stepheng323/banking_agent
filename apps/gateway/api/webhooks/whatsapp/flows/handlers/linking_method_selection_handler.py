@@ -9,9 +9,10 @@ import hashlib
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
-    format_error_response,
-    format_success_response,
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
+from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
+    format_owner_error_response,
+    verify_whatsapp_flow_session_owner,
 )
 from shared.services.onboarding import ServiceResult, bvn_service
 from shared.utils.logging import get_logger
@@ -38,6 +39,7 @@ async def handle_linking_method_selection(
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
+    authorizing_channel_user_id: str | None = None,
 ) -> Response:
     """Handle METHOD_SELECTION for account linking flow.
 
@@ -47,8 +49,16 @@ async def handle_linking_method_selection(
     flow_token_hash = _token_fingerprint(flow_token)
     logger.info("linking_method_selection_called", flow_token_hash=flow_token_hash, method=data.method)
 
+    owner_check = await verify_whatsapp_flow_session_owner(
+        flow_token=flow_token,
+        authorizing_channel_user_id=authorizing_channel_user_id,
+        screen="METHOD_SELECTION",
+    )
+    if not owner_check.ok:
+        return format_owner_error_response("METHOD_SELECTION", request_was_encrypted, aes_key_bytes, iv_bytes)
+
     if not data.method:
-        session_data = await bvn_service.get_session_data(flow_token)
+        session_data = owner_check.session or await bvn_service.get_session_data(flow_token)
         logger.info(
             "linking_session_data",
             flow_token_hash=flow_token_hash,
