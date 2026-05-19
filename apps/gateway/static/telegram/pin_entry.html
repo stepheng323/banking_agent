@@ -209,14 +209,9 @@
       } catch (e) {}
 
       const params = new URLSearchParams(window.location.search);
-      const flowToken = params.get("flow_token") || "";
-      const chatId = params.get("chat_id") || "";
-
-      const paramHeader = params.get("header");
-      const paramBodyText = params.get("body_text");
-
-      if (paramHeader) document.getElementById("headerText").textContent = paramHeader;
-      if (paramBodyText) document.getElementById("bodyText").textContent = paramBodyText;
+      const bootstrapNonce = params.get("boot") || "";
+      let flowToken = "";
+      let chatId = "";
 
       const PIN_LENGTH = 4;
       const MAX_ATTEMPTS = 3;
@@ -228,8 +223,6 @@
       const btnSubmit = document.getElementById("btnSubmit");
       const btnSubmitText = document.getElementById("btnSubmitText");
       const errorMsg = document.getElementById("errorMsg");
-
-      setTimeout(() => pinInput.focus(), 320);
 
       function checkInput() {
         if (locked || verified) return;
@@ -259,6 +252,37 @@
         btnSubmit.disabled = isLoading;
       }
 
+      async function bootstrapMiniApp() {
+        if (!bootstrapNonce) {
+          return { success: false, error: "Session expired. Please reopen this page from Telegram." };
+        }
+        if (!tg.initData) {
+          return { success: false, error: "Telegram authentication missing. Reopen this page from Telegram." };
+        }
+        try {
+          const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/bootstrap`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Telegram-Init-Data": tg.initData || "",
+            },
+            body: JSON.stringify({ boot: bootstrapNonce, endpoint: "pin" }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.success) {
+            return { success: false, error: payload.error || payload.detail || "Session expired. Please reopen this page from Telegram." };
+          }
+          flowToken = payload.flow_token || "";
+          chatId = payload.chat_id || "";
+          if (payload.header) document.getElementById("headerText").textContent = payload.header;
+          if (payload.body_text) document.getElementById("bodyText").textContent = payload.body_text;
+          return { success: true };
+        } catch (err) {
+          return { success: false, error: "Network error. Please try again." };
+        }
+      }
+
       function lockUI(msg) {
         locked = true;
         showError(msg);
@@ -269,6 +293,20 @@
         btnSubmit.style.background = "var(--mini-danger)";
         btnSubmit.style.color = "#ffffff";
         btnSubmit.onclick = () => tg.close();
+      }
+
+      async function initializePin() {
+        updateSubmitButton("Loading...", true);
+        pinInput.disabled = true;
+        const boot = await bootstrapMiniApp();
+        if (!boot.success) {
+          lockUI(boot.error || "Session expired. Please reopen this page from Telegram.");
+          return;
+        }
+        pinInput.disabled = false;
+        updateSubmitButton("Authorize", false);
+        btnSubmit.disabled = true;
+        setTimeout(() => pinInput.focus(), 320);
       }
 
       async function submitPin() {
@@ -341,6 +379,8 @@
           btnSubmit.disabled = true;
         }
       }
+
+      initializePin();
     </script>
   </body>
 </html>

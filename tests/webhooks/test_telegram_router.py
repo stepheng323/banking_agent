@@ -1,11 +1,20 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 
 from apps.gateway.api.webhooks.telegram import router as router_module
-from apps.gateway.api.webhooks.telegram.router import PinSubmitInput
+from apps.gateway.api.webhooks.telegram.router import (
+    BvnInput,
+    LinkingMethodInput,
+    PinSubmitInput,
+    TelegramBootstrapInput,
+)
+from shared.cache.flow_session_manager import SessionReadResult
 from shared.services.auth.authorization import AuthorizationResult
 from shared.services.channel_linking import ChannelLinkPinResult
+from shared.services.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap
 
 
 class _RequestStub:
@@ -61,6 +70,31 @@ class _RedisStub:
         return None
 
 
+class _BvnServiceStub:
+    def __init__(self, session: dict[str, Any] | None) -> None:
+        self.session = session
+        self.initiate_calls: list[tuple[str, str]] = []
+        self.send_otp_calls: list[tuple[str, str]] = []
+
+    async def get_session_data(self, flow_token: str) -> dict[str, Any] | None:
+        del flow_token
+        return self.session
+
+    async def get_session_status(self, flow_token: str) -> SessionReadResult:
+        del flow_token
+        if self.session is None:
+            return SessionReadResult(status="missing")
+        return SessionReadResult(status="found", data=self.session)
+
+    async def initiate_bvn_verification(self, flow_token: str, bvn: str) -> dict[str, Any]:
+        self.initiate_calls.append((flow_token, bvn))
+        return {"success": True}
+
+    async def send_otp(self, flow_token: str, method: str) -> dict[str, Any]:
+        self.send_otp_calls.append((flow_token, method))
+        return {"success": True}
+
+
 @pytest.mark.asyncio
 async def test_telegram_webhook_acknowledges_failure_without_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {"update_id": 123, "message": {"message_id": 99, "chat": {"id": 12345}, "text": "hi"}}
@@ -75,7 +109,7 @@ async def test_telegram_webhook_acknowledges_failure_without_retry(monkeypatch: 
             assert update == payload
             raise OSError("Temporary failure in name resolution")
 
-    monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "")
+    monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "telegram-secret")
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: _PublisherStub())
     monkeypatch.setattr(router_module, "TelegramWebhookService", _FailingService)
     monkeypatch.setattr(router_module, "logger", logger)
@@ -83,20 +117,23 @@ async def test_telegram_webhook_acknowledges_failure_without_retry(monkeypatch: 
     response = await router_module.telegram_webhook(
         request=_RequestStub(payload),  # type: ignore[arg-type]
         db=db,  # type: ignore[arg-type]
-        x_telegram_bot_api_secret_token=None,
+        x_telegram_bot_api_secret_token="telegram-secret",
     )
 
     assert response.status_code == 200
     assert db.commits == 0
     assert db.rollbacks == 1
-    assert ("telegram_webhook_error_acknowledged", {
-        "error": "Temporary failure in name resolution",
-        "error_type": "OSError",
-        "retry_suppressed": True,
-        "acknowledged": True,
-        "delivery_policy": "drop_on_failure_no_retry",
-        "exc_info": True,
-    }) in logger.events
+    assert (
+        "telegram_webhook_error_acknowledged",
+        {
+            "error": "Temporary failure in name resolution",
+            "error_type": "OSError",
+            "retry_suppressed": True,
+            "acknowledged": True,
+            "delivery_policy": "drop_on_failure_no_retry",
+            "exc_info": True,
+        },
+    ) in logger.events
 
 
 @pytest.mark.asyncio
@@ -113,7 +150,7 @@ async def test_telegram_webhook_commits_on_success(monkeypatch: pytest.MonkeyPat
             assert update == payload
             return True
 
-    monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "")
+    monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "telegram-secret")
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: _PublisherStub())
     monkeypatch.setattr(router_module, "TelegramWebhookService", _SuccessfulService)
     monkeypatch.setattr(router_module, "logger", logger)
@@ -121,13 +158,73 @@ async def test_telegram_webhook_commits_on_success(monkeypatch: pytest.MonkeyPat
     response = await router_module.telegram_webhook(
         request=_RequestStub(payload),  # type: ignore[arg-type]
         db=db,  # type: ignore[arg-type]
-        x_telegram_bot_api_secret_token=None,
+        x_telegram_bot_api_secret_token="telegram-secret",
     )
 
     assert response.status_code == 200
     assert db.commits == 1
     assert db.rollbacks == 0
     assert ("telegram_webhook_processed", {"update_id": 321, "handled": True}) in logger.events
+
+
+@pytest.mark.asyncio
+async def test_telegram_webhook_rejects_invalid_secret_without_logging_raw_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {"update_id": 321, "message": {"message_id": 77, "chat": {"id": 12345}, "text": "hi"}}
+    db = _DbStub()
+    logger = _LoggerStub()
+
+    monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "telegram-secret")
+    monkeypatch.setattr(router_module, "logger", logger)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await router_module.telegram_webhook(
+            request=_RequestStub(payload),  # type: ignore[arg-type]
+            db=db,  # type: ignore[arg-type]
+            x_telegram_bot_api_secret_token="attacker-token",
+        )
+
+    assert exc_info.value.status_code == 401
+    assert db.commits == 0
+    assert db.rollbacks == 0
+    assert len(logger.events) == 1
+    event, fields = logger.events[0]
+    assert event == "telegram_webhook_unauthorized"
+    assert fields["provided_token_present"] is True
+    assert fields["provided_token_hash"] == router_module._token_fingerprint("attacker-token")
+    assert "attacker-token" not in str(fields)
+    assert "telegram-secret" not in str(fields)
+
+
+@pytest.mark.asyncio
+async def test_telegram_webhook_missing_secret_fails_closed_outside_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {"update_id": 321, "message": {"message_id": 77, "chat": {"id": 12345}, "text": "hi"}}
+    db = _DbStub()
+    logger = _LoggerStub()
+
+    monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "")
+    monkeypatch.setattr(router_module.settings.runtime, "app_env", "production")
+    monkeypatch.setattr(router_module, "logger", logger)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await router_module.telegram_webhook(
+            request=_RequestStub(payload),  # type: ignore[arg-type]
+            db=db,  # type: ignore[arg-type]
+            x_telegram_bot_api_secret_token=None,
+        )
+
+    assert exc_info.value.status_code == 401
+    assert db.commits == 0
+    assert db.rollbacks == 0
+    assert len(logger.events) == 1
+    event, fields = logger.events[0]
+    assert event == "telegram_webhook_unauthorized"
+    assert fields["provided_token_present"] is False
+    assert fields["provided_token_hash"] == ""
+    assert fields["expected_token_configured"] is False
 
 
 @pytest.mark.asyncio
@@ -169,7 +266,7 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
 
     result = await router_module.telegram_pin_submit(
         PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="1234", chat_id="927331985"),
-        user_data={},
+        user_data={"user": '{"id": 927331985}'},
         db=_DbStub(),  # type: ignore[arg-type]
     )
 
@@ -180,6 +277,84 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
     assert message["idempotency_key"] == "idem-1"
     assert message["extra_data"] == {"source": "telegram_mini_app_rest", "chat_id": "927331985"}
     assert "pin" not in message["extra_data"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_bootstrap_returns_server_side_token_for_matching_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _consume(**kwargs: Any) -> TelegramMiniAppBootstrap:
+        assert kwargs == {"nonce": "nonce-1", "endpoint": "pin", "init_user_id": "927331985"}
+        return TelegramMiniAppBootstrap(
+            flow_token="transfer-pin-idem-1-927331985",
+            chat_id="927331985",
+            endpoint="pin",
+            extra={"header": "Authorize transfer", "body_text": "Enter PIN"},
+        )
+
+    monkeypatch.setattr(router_module, "consume_telegram_miniapp_bootstrap", _consume)
+
+    result = await router_module.telegram_bootstrap(
+        TelegramBootstrapInput(boot="nonce-1", endpoint="pin"),
+        user_data={"user": '{"id": 927331985}'},
+    )
+
+    assert result == {
+        "success": True,
+        "flow_token": "transfer-pin-idem-1-927331985",
+        "chat_id": "927331985",
+        "header": "Authorize transfer",
+        "body_text": "Enter PIN",
+    }
+
+
+@pytest.mark.asyncio
+async def test_telegram_bootstrap_rejects_missing_or_replayed_nonce(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _consume(**kwargs: Any) -> None:
+        del kwargs
+        return None
+
+    monkeypatch.setattr(router_module, "consume_telegram_miniapp_bootstrap", _consume)
+
+    result = await router_module.telegram_bootstrap(
+        TelegramBootstrapInput(boot="expired", endpoint="onboarding"),
+        user_data={"user": '{"id": 927331985}'},
+    )
+
+    assert result == {"success": False, "error": "Invalid or expired session. Please reopen this page from Telegram."}
+
+
+@pytest.mark.asyncio
+async def test_telegram_pin_submit_requires_init_user_for_transaction_pin() -> None:
+    result = await router_module.telegram_pin_submit(
+        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="1234", chat_id="927331985"),
+        user_data={},
+        db=_DbStub(),  # type: ignore[arg-type]
+    )
+
+    assert result == {"success": False, "error": "Telegram authentication missing. Reopen this page from Telegram."}
+
+
+@pytest.mark.asyncio
+async def test_telegram_pin_submit_rejects_mismatched_chat_id_for_transaction_pin() -> None:
+    result = await router_module.telegram_pin_submit(
+        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="1234", chat_id="attacker-chat"),
+        user_data={"user": '{"id": 927331985}'},
+        db=_DbStub(),  # type: ignore[arg-type]
+    )
+
+    assert result == {"success": False, "error": "This PIN request is not valid for this Telegram account."}
+
+
+@pytest.mark.asyncio
+async def test_telegram_pin_submit_rejects_flow_token_bound_to_other_chat_id() -> None:
+    result = await router_module.telegram_pin_submit(
+        PinSubmitInput(flow_token="transaction-pin-idem-1-111111", pin="1234", chat_id="927331985"),
+        user_data={"user": '{"id": 927331985}'},
+        db=_DbStub(),  # type: ignore[arg-type]
+    )
+
+    assert result == {"success": False, "error": "This PIN request is not valid for this Telegram account."}
 
 
 @pytest.mark.asyncio
@@ -234,3 +409,72 @@ async def test_telegram_pin_submit_completes_channel_link_with_pin(monkeypatch: 
             "suppress_typing_indicator": True,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_telegram_onboarding_bvn_rejects_wrong_session_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    bvn_stub = _BvnServiceStub(
+        {
+            "phone_number": "2348162511023",
+            "channel": "telegram",
+            "channel_user_id": "927331985",
+            "step": "bvn_entry",
+        }
+    )
+    monkeypatch.setattr(router_module, "bvn_service", bvn_stub)
+
+    result = await router_module.telegram_onboarding_bvn(
+        BvnInput(flow_token="onboarding-opaque-token", bvn="12345678901"),
+        user_data={"user": '{"id": 111111}'},
+    )
+
+    assert result == {"success": False, "error": "Invalid or expired session. Please reopen this page from Telegram."}
+    assert bvn_stub.initiate_calls == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_linking_method_rejects_wrong_session_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    bvn_stub = _BvnServiceStub(
+        {
+            "phone_number": "2348162511023",
+            "bvn": "12345678901",
+            "session_id": "mono-session",
+            "methods": [{"id": "sms", "title": "081***1023"}],
+            "is_account_linking": True,
+            "channel": "telegram",
+            "channel_user_id": "927331985",
+            "step": "method_selection",
+        }
+    )
+    monkeypatch.setattr(router_module, "bvn_service", bvn_stub)
+
+    result = await router_module.telegram_linking_method(
+        LinkingMethodInput(flow_token="link-opaque-token", method="sms"),
+        user_data={"user": '{"id": 111111}'},
+    )
+
+    assert result == {"success": False, "error": "Invalid or expired session. Please reopen this page from Telegram."}
+    assert bvn_stub.send_otp_calls == []
+
+
+def test_telegram_mini_apps_do_not_interpolate_provider_rows_with_innerhtml() -> None:
+    root = Path(__file__).resolve().parents[2]
+    for relative_path in (
+        "apps/gateway/static/telegram/onboarding.html",
+        "apps/gateway/static/telegram/linking.html",
+    ):
+        text = (root / relative_path).read_text()
+        assert "label.innerHTML" not in text
+
+
+def test_telegram_mini_apps_bootstrap_without_query_flow_tokens() -> None:
+    root = Path(__file__).resolve().parents[2]
+    for relative_path in (
+        "apps/gateway/static/telegram/onboarding.html",
+        "apps/gateway/static/telegram/linking.html",
+        "apps/gateway/static/telegram/pin_entry.html",
+    ):
+        text = (root / relative_path).read_text()
+        assert 'params.get("flow_token")' not in text
+        assert 'params.get("chat_id")' not in text
+        assert "/webhook/telegram/bootstrap" in text

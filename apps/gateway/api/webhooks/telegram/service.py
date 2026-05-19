@@ -4,6 +4,7 @@ import json
 import secrets
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 from apps.gateway.adapters.telegram import ParsedTelegramMessage, parse_update
 from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
@@ -15,6 +16,7 @@ from shared.queue.adapter import QueuePublisher
 from shared.repositories.user_repository import UserRepository
 from shared.services.channel_linking import build_channel_link_pin_token
 from shared.services.onboarding import OnboardingStep, session_manager
+from shared.services.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -45,6 +47,19 @@ async def _get_telegram_onboarding_token(chat_id: str) -> str:
     if isinstance(token, bytes):
         return token.decode("utf-8")
     return str(token or "")
+
+
+async def _build_telegram_mini_app_url(*, chat_id: str, flow_token: str, endpoint: str) -> str:
+    import time
+
+    nonce = await create_telegram_miniapp_bootstrap(
+        chat_id=chat_id,
+        flow_token=flow_token,
+        endpoint=endpoint,
+    )
+    endpoint_file = "linking.html" if endpoint == "linking" else "onboarding.html"
+    query = urlencode({"boot": nonce, "v": str(int(time.time()))})
+    return f"{settings.telegram_mini_app_base_url}/static/telegram/{endpoint_file}?{query}"
 
 
 def _is_telegram_self_contact(msg: ParsedTelegramMessage) -> bool:
@@ -83,7 +98,7 @@ class TelegramWebhookService:
 
         logger.info(
             "telegram_message_received",
-            chat_id=parsed.chat_id,
+            chat_id_hash=log_fingerprint(parsed.chat_id),
             msg_type=parsed.type,
         )
 
@@ -113,14 +128,11 @@ class TelegramWebhookService:
             session = await session_manager.get_session(flow_token) if flow_token else {}
             if session and session.get("phone_number") and session.get("step") != "complete":
                 # They already shared their contact, they just need to finish the Mini App
-                logger.info("telegram_unlinked_user_onboarding", chat_id=msg.chat_id)
-                import time
-
-                from shared.config.settings import settings
-
-                app_url = (
-                    f"{settings.telegram_mini_app_base_url}/static/telegram/onboarding.html"
-                    f"?flow_token={flow_token}&v={int(time.time())}"
+                logger.info("telegram_unlinked_user_onboarding", chat_id_hash=log_fingerprint(msg.chat_id))
+                app_url = await _build_telegram_mini_app_url(
+                    chat_id=msg.chat_id,
+                    flow_token=flow_token,
+                    endpoint="onboarding",
                 )
                 cta_result = await self.telegram_client._call(
                     "sendMessage",
@@ -141,7 +153,7 @@ class TelegramWebhookService:
                     )
                 return True
 
-            logger.info("telegram_unlinked_user_blocked", chat_id=msg.chat_id)
+            logger.info("telegram_unlinked_user_blocked", chat_id_hash=log_fingerprint(msg.chat_id))
             await self._request_contact(msg.chat_id)
             return True  # Handled (by blocking)
 
@@ -172,9 +184,9 @@ class TelegramWebhookService:
         if not _is_telegram_self_contact(msg):
             logger.warning(
                 "telegram_contact_share_rejected",
-                chat_id=msg.chat_id,
-                from_user_id=msg.from_user_id,
-                contact_user_id=msg.contact_user_id,
+                chat_id_hash=log_fingerprint(msg.chat_id),
+                from_user_id_hash=log_fingerprint(msg.from_user_id),
+                contact_user_id_hash=log_fingerprint(msg.contact_user_id),
             )
             await self.telegram_client._call(
                 "sendMessage",
@@ -256,7 +268,7 @@ class TelegramWebhookService:
                 logger.info(
                     "telegram_identity_link_whatsapp_pin_flow_sent",
                     flow_token_hash=log_fingerprint(flow_token),
-                    message_id=getattr(flow_result, "message_id", None),
+                    message_id_hash=log_fingerprint(getattr(flow_result, "message_id", None)),
                     requested_telegram_hash=log_fingerprint(msg.chat_id),
                 )
             except Exception as e:
@@ -300,11 +312,10 @@ class TelegramWebhookService:
             )
             await _store_telegram_onboarding_token(msg.chat_id, flow_token)
 
-            import time
-
-            app_url = (
-                f"{settings.telegram_mini_app_base_url}/static/telegram/onboarding.html"
-                f"?flow_token={flow_token}&v={int(time.time())}"
+            app_url = await _build_telegram_mini_app_url(
+                chat_id=msg.chat_id,
+                flow_token=flow_token,
+                endpoint="onboarding",
             )
 
             cta_result = await self.telegram_client._call(
@@ -369,7 +380,7 @@ class TelegramWebhookService:
 
         user = await self._resolve_linked_user(msg.chat_id)
         if not user:
-            logger.info("telegram_unlinked_user_blocked_callback", chat_id=msg.chat_id)
+            logger.info("telegram_unlinked_user_blocked_callback", chat_id_hash=log_fingerprint(msg.chat_id))
             await self._request_contact(msg.chat_id)
             return True
 
@@ -423,13 +434,13 @@ class TelegramWebhookService:
         gateway verifies and stores a PIN authorization before core resumes.
         """
         if not msg.web_app_data:
-            logger.warning("telegram_empty_web_app_data", chat_id=msg.chat_id)
+            logger.warning("telegram_empty_web_app_data", chat_id_hash=log_fingerprint(msg.chat_id))
             return False
 
         try:
             data: dict[str, Any] = json.loads(msg.web_app_data)
         except json.JSONDecodeError:
-            logger.warning("telegram_invalid_web_app_data", chat_id=msg.chat_id)
+            logger.warning("telegram_invalid_web_app_data", chat_id_hash=log_fingerprint(msg.chat_id))
             return False
 
         action = data.get("action")
@@ -443,14 +454,14 @@ class TelegramWebhookService:
             return True
 
         if data.get("flow_token") or data.get("pin"):
-            logger.warning("telegram_legacy_web_app_pin_ignored", chat_id=msg.chat_id)
+            logger.warning("telegram_legacy_web_app_pin_ignored", chat_id_hash=log_fingerprint(msg.chat_id))
             await self.telegram_client.send_text(
                 to=msg.chat_id,
                 text="That PIN prompt has expired. Please reopen the secure PIN page and try again.",
             )
             return True
 
-        logger.warning("telegram_web_app_unknown_action", chat_id=msg.chat_id, action=action)
+        logger.warning("telegram_web_app_unknown_action", chat_id_hash=log_fingerprint(msg.chat_id), action=action)
         return False
 
     def _build_message(self, msg: ParsedTelegramMessage) -> ChannelMessage:
@@ -500,7 +511,7 @@ class TelegramWebhookService:
                 topic="message.received",
                 message=message.model_dump(mode="json"),
             )
-            logger.info("telegram_message_enqueued", msg_type=msg_type, chat_id=chat_id)
+            logger.info("telegram_message_enqueued", msg_type=msg_type, chat_id_hash=log_fingerprint(chat_id))
             return True
         except Exception as e:
             logger.error("telegram_message_enqueue_failed", error=str(e), exc_info=True)

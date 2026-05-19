@@ -131,7 +131,8 @@
       } catch (e) {}
 
       const params = new URLSearchParams(window.location.search);
-      const flowToken = params.get("flow_token") || "";
+      const bootstrapNonce = params.get("boot") || "";
+      let flowToken = "";
 
       let currentStep = "method";
       const historyStack = [];
@@ -169,6 +170,34 @@
         btnMainAction.disabled = isLoading || !isActive;
         btnMainLoader.style.display = isLoading ? "inline-flex" : "none";
         btnMainText.style.display = isLoading ? "none" : "inline";
+      }
+
+      async function bootstrapMiniApp() {
+        if (!bootstrapNonce) {
+          return { success: false, error: "Session expired. Please reopen this page from Telegram." };
+        }
+        if (!tg.initData) {
+          return { success: false, error: "Telegram authentication missing. Reopen this page from Telegram." };
+        }
+        try {
+          const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/bootstrap`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Telegram-Init-Data": tg.initData || "",
+            },
+            body: JSON.stringify({ boot: bootstrapNonce, endpoint: "linking" }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.success) {
+            return { success: false, error: payload.error || payload.detail || "Session expired. Please reopen this page from Telegram." };
+          }
+          flowToken = payload.flow_token || "";
+          return { success: true };
+        } catch (err) {
+          return { success: false, error: "Network error. Please try again." };
+        }
       }
 
       function getProgressWidth(step) {
@@ -247,14 +276,39 @@
         }
       }
 
+      function createChoice(name, value, title) {
+        const label = document.createElement("label");
+        label.className = "mini-choice";
+
+        const text = document.createElement("div");
+        text.className = "mini-choice-text";
+
+        const titleEl = document.createElement("span");
+        titleEl.className = "mini-choice-title";
+        titleEl.textContent = title || "";
+        text.appendChild(titleEl);
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = name;
+        input.className = "mini-radio-input";
+        input.value = value || "";
+
+        const radio = document.createElement("span");
+        radio.className = "mini-radio";
+
+        label.appendChild(text);
+        label.appendChild(input);
+        label.appendChild(radio);
+
+        return { label, input };
+      }
+
       function renderMethods(methods) {
         const list = document.getElementById("methodsList");
-        list.innerHTML = "";
+        list.replaceChildren();
 
         methods.forEach((m) => {
-          const label = document.createElement("label");
-          label.className = "mini-choice";
-
           let displayTitle = "";
           if (m.id === "sms") {
             displayTitle = `SMS to ${m.title}`;
@@ -264,15 +318,8 @@
             displayTitle = m.title ? `${m.id} - ${m.title}` : m.id;
           }
 
-          label.innerHTML = `
-            <div class="mini-choice-text">
-              <span class="mini-choice-title">${displayTitle}</span>
-            </div>
-            <input type="radio" name="otp_method" class="mini-radio-input" value="${m.id}" />
-            <span class="mini-radio"></span>
-          `;
-
-          label.querySelector("input").addEventListener("change", () => {
+          const { label, input } = createChoice("otp_method", m.id, displayTitle);
+          input.addEventListener("change", () => {
             selectedMethod = m.id;
             updateMainButton("Send Code", false, true, true);
           });
@@ -283,22 +330,13 @@
 
       function renderAccounts(accounts) {
         const container = document.getElementById("accountsList");
-        container.innerHTML = "";
+        container.replaceChildren();
 
         accounts.forEach((acc) => {
           const title = acc.title || acc.id || "Unknown Account";
+          const { label, input } = createChoice("account_selection", acc.id, title);
 
-          const label = document.createElement("label");
-          label.className = "mini-choice";
-          label.innerHTML = `
-            <div class="mini-choice-text">
-              <span class="mini-choice-title">${title}</span>
-            </div>
-            <input type="radio" name="account_selection" class="mini-radio-input" value="${acc.id}" />
-            <span class="mini-radio"></span>
-          `;
-
-          label.querySelector("input").addEventListener("change", (e) => {
+          input.addEventListener("change", (e) => {
             selectedAccountId = e.target.value;
             updateMainButton("Link Account", false, true, true);
           });
@@ -318,6 +356,13 @@
         methodError.textContent = "";
 
         updateMainButton("Loading...", true, true, false);
+        const boot = await bootstrapMiniApp();
+        if (!boot.success) {
+          updateMainButton("Send Code", false, false, false);
+          methodError.textContent = boot.error || "Session expired. Please reopen this page from Telegram.";
+          return;
+        }
+
         const res = await makeApiCall("method", { flow_token: flowToken });
 
         if (!res.success) {
@@ -427,7 +472,6 @@
             tg.sendData(
               JSON.stringify({
                 action: "onboarding_success",
-                flow_token: flowToken,
                 mode: "relink",
               }),
             );

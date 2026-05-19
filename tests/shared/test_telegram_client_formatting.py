@@ -281,6 +281,11 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
     client = TelegramClient()
 
     calls: list[dict[str, object]] = []
+    bootstraps: list[dict[str, object]] = []
+
+    async def _fake_bootstrap(**kwargs: object) -> str:
+        bootstraps.append(dict(kwargs))
+        return f"boot-{kwargs['endpoint']}"
 
     async def _fake_call(
         method: str,
@@ -294,6 +299,7 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
         return {"ok": True, "result": {"message_id": 55}}
 
     monkeypatch.setattr(client, "_call", _fake_call)
+    monkeypatch.setattr(telegram_client_module, "create_telegram_miniapp_bootstrap", _fake_bootstrap)
 
     await client.send_mini_app(to="12345", flow_token="link-opaque-token")
     await client.send_mini_app(to="12345", flow_token="onboarding-opaque-token")
@@ -304,18 +310,28 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
     first_markup = calls[0]["reply_markup"]
     first_url = first_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/linking.html" in first_url
+    assert "boot=boot-linking" in first_url
+    assert "flow_token=" not in first_url
     assert "chat_id=" not in first_url
 
     second_markup = calls[1]["reply_markup"]
     second_url = second_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/onboarding.html" in second_url
-    assert "flow_token=onboarding-opaque-token" in second_url
+    assert "boot=boot-onboarding" in second_url
+    assert "flow_token=onboarding-opaque-token" not in second_url
     assert "chat_id=" not in second_url
 
     third_markup = calls[2]["reply_markup"]
     third_url = third_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/pin_entry.html" in third_url
-    assert "chat_id=12345" in third_url
+    assert "boot=boot-pin" in third_url
+    assert "flow_token=" not in third_url
+    assert "chat_id=12345" not in third_url
+    assert bootstraps == [
+        {"chat_id": "12345", "flow_token": "link-opaque-token", "endpoint": "linking", "extra": {}},
+        {"chat_id": "12345", "flow_token": "onboarding-opaque-token", "endpoint": "onboarding", "extra": {}},
+        {"chat_id": "12345", "flow_token": "transfer-pin-idem-12345", "endpoint": "pin", "extra": {}},
+    ]
 
 
 @pytest.mark.asyncio

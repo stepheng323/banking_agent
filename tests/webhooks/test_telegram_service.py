@@ -255,6 +255,13 @@ async def test_contact_share_for_new_user_creates_opaque_onboarding_token(
     monkeypatch.setattr(telegram_service_module, "store_channel_identity_user", _store_channel_identity_user)
     monkeypatch.setattr(telegram_service_module.secrets, "token_urlsafe", lambda _: "tg-opaque-token")
     monkeypatch.setattr(telegram_service_module.settings, "telegram_mini_app_base_url", "https://mini.test")
+    bootstrap_calls: list[dict[str, Any]] = []
+
+    async def _create_bootstrap(**kwargs: Any) -> str:
+        bootstrap_calls.append(kwargs)
+        return "boot-new-user"
+
+    monkeypatch.setattr(telegram_service_module, "create_telegram_miniapp_bootstrap", _create_bootstrap)
 
     telegram_client = _TelegramClientStub()
     service = telegram_service_module.TelegramWebhookService(
@@ -289,9 +296,17 @@ async def test_contact_share_for_new_user_creates_opaque_onboarding_token(
     [(method, payload)] = telegram_client.api_calls
     assert method == "sendMessage"
     app_url = payload["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"]
-    assert "flow_token=onboarding-tg-opaque-token" in app_url
+    assert "boot=boot-new-user" in app_url
+    assert "flow_token=onboarding-tg-opaque-token" not in app_url
     assert "12345" not in app_url
     assert "onboarding-12345" not in app_url
+    assert bootstrap_calls == [
+        {
+            "chat_id": "12345",
+            "flow_token": "onboarding-tg-opaque-token",
+            "endpoint": "onboarding",
+        }
+    ]
 
 
 @pytest.mark.asyncio

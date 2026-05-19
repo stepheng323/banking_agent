@@ -516,6 +516,7 @@ class AccountWorker:
 
         methods = [{"id": m["method"], "title": m["hint"]} for m in result.verification_methods]
         flow_token = _new_link_flow_token()
+        channel = context.get("channel", "whatsapp")
         session_payload = {
             "phone_number": canonical_phone_number,
             "bvn": bvn,
@@ -523,8 +524,10 @@ class AccountWorker:
             "methods": methods,
             "step": OnboardingStep.METHOD_SELECTION.value,
             "is_account_linking": True,
-            "channel": context.get("channel", "whatsapp"),
+            "channel": channel,
         }
+        if channel == "telegram":
+            session_payload["channel_user_id"] = str(context.get("channel_user_id") or phone_number or "").strip()
         if not self.session_manager:
             logger.error("account_linking_session_manager_missing", flow_token_hash=_token_fingerprint(flow_token))
             return {"error": render_message("account.linking.start_failed", locale)}
