@@ -293,6 +293,45 @@ Displayed frame: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 
+CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT = """Extract strict replay modifiers from a multilingual banking message.
+
+This is NOT full transaction extraction. A displayed transaction/receipt is already the authoritative base.
+You only identify explicit edits the user made while asking to replay it.
+
+Return ONLY JSON for this schema:
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- amount: replacement transaction amount as a number, else null
+- amount_evidence: exact phrase from the user's latest message supporting amount, else null
+- source_account_reference: explicit source bank/account reference, else null
+- source_account_evidence: exact phrase from the user's latest message supporting source_account_reference, else null
+- narration: transfer narration/memo/note/purpose text, else null
+- narration_evidence: exact phrase from the user's latest message supporting narration, else null
+- reason: short reason
+
+Rules:
+1) Use ONLY the latest user message for modifier fields. Do not copy amount, bank, source, recipient, or narration
+   from the displayed frame.
+2) Extract only these replay edits: amount, source_account_reference, narration.
+3) Never extract or change the recipient, recipient account, recipient bank, transaction type, or PIN/auth fields.
+4) If a field is implied by the displayed transaction but not explicitly edited in the latest message, return null.
+5) Evidence must be a direct phrase from the user's message. If you cannot point to a phrase, leave the field null.
+6) Be semantic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+7) Examples:
+   - "again but 10k" -> amount=10000, amount_evidence="10k"
+   - "again from Zenith" -> source_account_reference="Zenith", source_account_evidence="Zenith"
+   - "again for rent" -> narration="rent", narration_evidence="rent"
+   - "tun se lati Zenith fun rent" -> source_account_reference="Zenith"; narration="rent"
+   - "encore avec dix mille depuis Zenith pour loyer" -> amount=10000; source_account_reference="Zenith";
+     narration="loyer"
+8) If the user is not editing replay fields, return all modifier fields null with low or moderate confidence.
+"""
+
+CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Displayed frame: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
 PENDING_ACTION_EDIT_SYSTEM_PROMPT = """You classify a multilingual user message as a semantic operation relative
 to a pending, not-yet-authorized banking confirmation batch.
 
@@ -436,6 +475,10 @@ __all__ = [
     "INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE",
     "SEMANTIC_ROUTER_SYSTEM_PROMPT",
     "SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE",
+    "CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT",
+    "CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE",
+    "CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT",
+    "CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE",
     "QUOTED_REPLAY_SYSTEM_PROMPT",
     "QUOTED_REPLAY_USER_PROMPT_TEMPLATE",
 ]

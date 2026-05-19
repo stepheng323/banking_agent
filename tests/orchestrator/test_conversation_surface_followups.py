@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameFollowupFilters,
+    ContextFrameReplayModifier,
     PlannedTask,
     PlannerOutput,
     TaskParameters,
@@ -22,10 +23,13 @@ class _SurfaceFollowupPlanner:
         self,
         decision: ContextFrameFollowupDecision,
         planner_output: PlannerOutput | None = None,
+        replay_modifier: ContextFrameReplayModifier | None = None,
     ) -> None:
         self.decision = decision
         self.planner_output = planner_output
+        self.replay_modifier = replay_modifier
         self.last_frame_context: str | None = None
+        self.last_replay_modifier_context: str | None = None
         self.plan_calls = 0
 
     async def interpret_context_frame_followup(
@@ -39,6 +43,18 @@ class _SurfaceFollowupPlanner:
         del phone_number, text, path_label
         self.last_frame_context = context
         return self.decision
+
+    async def extract_context_frame_replay_modifiers(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "planner_path",
+    ) -> ContextFrameReplayModifier | None:
+        del phone_number, text, path_label
+        self.last_replay_modifier_context = context
+        return self.replay_modifier
 
     async def plan_tasks(
         self,
@@ -1223,6 +1239,421 @@ async def test_completed_transaction_replay_restores_source_account_number_from_
     assert transfer_task.payload["recipient_bank_code"] == "044"
     assert transfer_task.payload["source_account_id"] == "acct-access"
     assert transfer_task.payload["source_account_number"] == "9000000003"
+
+
+@pytest.mark.asyncio
+async def test_completed_transfer_replay_applies_amount_override() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_amount_override",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦20,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 20000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="English",
+            target_text="10k",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_override",
+        phone_number="2348000000017",
+        channel="whatsapp",
+        last_message_text="Again, but with 10k",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["amount"] == 10000
+    assert transfer_task.payload["recipient_account"] == "2010000001"
+    assert transfer_task.payload["source_account_id"] == "acct-access"
+    assert transfer_task.payload["skip_extraction"] is True
+
+
+@pytest.mark.asyncio
+async def test_completed_transfer_replay_applies_source_account_override() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_source_override",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦20,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 20000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="English",
+            target_text="Zenith",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_source_override",
+        phone_number="2348000000018",
+        channel="whatsapp",
+        last_message_text="Again, but from Zenith",
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                },
+                {
+                    "id": "acct-zenith",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "8000009384",
+                    "account_name": "Olamide Samuel",
+                    "mandate_status": "ready",
+                },
+            ]
+        },
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["amount"] == 20000
+    assert transfer_task.payload["recipient_account"] == "2010000001"
+    assert transfer_task.payload["source_account_id"] == "acct-zenith"
+    assert transfer_task.payload["source_bank_name"] == "Zenith Bank"
+    assert transfer_task.payload["source_account_number"] == "8000009384"
+    assert transfer_task.payload["source_account_name"] == "Olamide Samuel"
+    assert transfer_task.payload["source_account_index"] is None
+    assert transfer_task.payload["source_affinity_mode"] == "explicit"
+    assert transfer_task.payload["funding_plan"] is None
+    assert transfer_task.payload["skip_extraction"] is True
+
+
+@pytest.mark.asyncio
+async def test_completed_transfer_replay_applies_narration_override() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_narration_override",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦20,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 20000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                    "narration": "old note",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="English",
+            target_text="rent",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_narration_override",
+        phone_number="2348000000019",
+        channel="whatsapp",
+        last_message_text="Again, but for rent",
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["amount"] == 20000
+    assert transfer_task.payload["recipient_account"] == "2010000001"
+    assert transfer_task.payload["narration"] == "rent"
+    assert transfer_task.payload["authored_narration"] == "rent"
+    assert transfer_task.payload["user_note"] == "rent"
+    assert transfer_task.payload["skip_extraction"] is True
+
+
+@pytest.mark.asyncio
+async def test_completed_transfer_replay_accepts_multilingual_source_and_narration_markers() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_multilingual_modifiers",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦20,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 20000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="Yoruba",
+            target_text="rent",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_multilingual_modifiers",
+        phone_number="2348000000020",
+        channel="whatsapp",
+        last_message_text="Again, lati Zenith fun rent",
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                },
+                {
+                    "id": "acct-zenith",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "8000009384",
+                    "account_name": "Olamide Samuel",
+                    "mandate_status": "ready",
+                },
+            ]
+        },
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["source_account_id"] == "acct-zenith"
+    assert transfer_task.payload["source_bank_name"] == "Zenith Bank"
+    assert transfer_task.payload["narration"] == "rent"
+    assert transfer_task.payload["authored_narration"] == "rent"
+    assert transfer_task.payload["user_note"] == "rent"
+
+
+@pytest.mark.asyncio
+async def test_completed_transfer_replay_applies_structured_modifier_extraction() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_structured_modifier",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦20,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 20000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                    "narration": "old note",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    modifier = ContextFrameReplayModifier(
+        confidence=0.91,
+        detected_language="French",
+        amount=10000,
+        amount_evidence="dix mille",
+        source_account_reference="Zenith",
+        source_account_evidence="Zenith",
+        narration="loyer",
+        narration_evidence="loyer",
+        reason="French replay modifiers",
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="French",
+            target_text="loyer",
+        ),
+        replay_modifier=modifier,
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_structured_modifier",
+        phone_number="2348000000021",
+        channel="whatsapp",
+        last_message_text="Encore avec dix mille depuis Zenith pour loyer",
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                },
+                {
+                    "id": "acct-zenith",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "8000009384",
+                    "account_name": "Olamide Samuel",
+                    "mandate_status": "ready",
+                },
+            ]
+        },
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["amount"] == 10000
+    assert transfer_task.payload["source_account_id"] == "acct-zenith"
+    assert transfer_task.payload["source_bank_name"] == "Zenith Bank"
+    assert transfer_task.payload["narration"] == "loyer"
+    assert transfer_task.payload["authored_narration"] == "loyer"
+    assert transfer_task.payload["user_note"] == "loyer"
+    assert transfer_task.payload["recipient_account"] == "2010000001"
+    assert planner.last_replay_modifier_context is not None
+
+
+@pytest.mark.asyncio
+async def test_completed_transfer_replay_ignores_low_confidence_modifier_extraction() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_low_confidence_modifier",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦20,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 20000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="replay_tasks", confidence=0.96, detected_language="English"),
+        replay_modifier=ContextFrameReplayModifier(
+            confidence=0.4,
+            amount=10000,
+            amount_evidence="again",
+            source_account_reference="Zenith",
+            source_account_evidence="again",
+            narration="rent",
+            narration_evidence="again",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_low_confidence_modifier",
+        phone_number="2348000000022",
+        channel="whatsapp",
+        last_message_text="Again",
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                },
+                {
+                    "id": "acct-zenith",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "8000009384",
+                    "mandate_status": "ready",
+                },
+            ]
+        },
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["amount"] == 20000
+    assert transfer_task.payload["source_account_id"] == "acct-access"
+    assert transfer_task.payload.get("narration") != "rent"
 
 
 @pytest.mark.asyncio

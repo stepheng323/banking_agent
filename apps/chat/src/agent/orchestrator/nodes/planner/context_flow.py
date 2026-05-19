@@ -243,6 +243,37 @@ async def _build_planner_context(
                     reason=decision.reason,
                     resolved=bool(frame_followup),
                 )
+                replay_modifier = None
+                if (
+                    decision.decision in {"replay_tasks", "replay"}
+                    and callable(getattr(task_planner, "extract_context_frame_replay_modifiers", None))
+                ):
+                    try:
+                        replay_modifier = await task_planner.extract_context_frame_replay_modifiers(
+                            state.phone_number,
+                            text,
+                            context=build_context_frame_followup_context_for_state(state),
+                            path_label="planner_path",
+                        )
+                    except Exception as exc:
+                        logger.warning("context_frame_replay_modifier_extractor_failed", error=str(exc))
+                    else:
+                        if replay_modifier is not None:
+                            logger.info(
+                                "context_frame_replay_modifier_extracted",
+                                confidence=replay_modifier.confidence,
+                                detected_language=replay_modifier.detected_language,
+                                has_amount=replay_modifier.amount is not None,
+                                has_source=bool(replay_modifier.source_account_reference),
+                                has_narration=bool(replay_modifier.narration),
+                                reason=replay_modifier.reason,
+                            )
+                            frame_followup = build_context_frame_followup_response(
+                                state,
+                                text,
+                                decision=decision,
+                                replay_modifier=replay_modifier,
+                            )
                 if frame_followup:
                     logger.info(
                         "context_frame_followup_hit",

@@ -7,15 +7,21 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
+from apps.chat.src.agent.graphs.__shared__.account_selection.reference import match_source_account_reference
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.formatters.currency import format_naira_compact
-from shared.types.planner import ContextFrameFollowupDecision, ContextFrameFollowupFilters
+from shared.types.planner import (
+    ContextFrameFollowupDecision,
+    ContextFrameFollowupFilters,
+    ContextFrameReplayModifier,
+)
 
 CONTEXT_READ_LIST_LIMIT = 5
 CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE = 0.55
+CONTEXT_FRAME_REPLAY_MODIFIER_MIN_CONFIDENCE = 0.72
 _SENSITIVE_KEYS = {"pin", "otp", "password", "token", "secret"}
 _LOOKUP_STOPWORDS = {
     "a",
@@ -109,6 +115,41 @@ _RANKING_ALIASES = {
     "oldest": "oldest",
     "earliest": "oldest",
 }
+_REPLAY_AMOUNT_TOKEN_RE = re.compile(
+    r"(?P<prefix>₦|ngn|naira)?\s*"
+    r"(?P<amount>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*"
+    r"(?P<suffix>[km])?\b",
+    re.IGNORECASE,
+)
+_REPLAY_AMOUNT_OVERRIDE_RE = re.compile(
+    r"\b(?:but|with|for|at|instead)\b\s+(?:with\s+)?"
+    r"(?P<token>(?:₦|ngn|naira)?\s*\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*[km]?"
+    r"|(?:₦|ngn|naira)?\s*\d+(?:\.\d+)?\s*[km]?)\b|"
+    r"\b(?:make|change|set|update)\s+(?:it|amount|this|that)?\s*(?:to\s+)?"
+    r"(?P<edit_token>(?:₦|ngn|naira)?\s*\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*[km]?"
+    r"|(?:₦|ngn|naira)?\s*\d+(?:\.\d+)?\s*[km]?)\b",
+    re.IGNORECASE,
+)
+_REPLAY_SOURCE_ACCOUNT_RE = re.compile(
+    r"\b(?:from|using|use|debit|charge|switch(?:\s+it)?\s+to|"
+    r"change\s+source(?:\s+account)?\s+to|"
+    r"source(?:\s+account)?(?:\s+as|\s+to|\s+is)?|"
+    r"with(?:\s+my|\s+the)|"
+    r"make\s+(?:e|am|it)\s+(?:from|use)|"
+    r"lati(?:\s+inu)?|lo|daga|(?:yi\s+)?amfani\s+da|ta\s+hanyar|site\s+na|jiri)\s+"
+    r"(?:my\s+|the\s+)?"
+    r"(?P<source>[a-z0-9][a-z0-9 .&'()-]{0,80}?)"
+    r"(?=\s+(?:instead|for|fun|domin|saboda|maka|with|narration|memo|note|"
+    r"description|reason|akosile|bayani|bayanin|nkowa|and|but)\b|[.?!,;]|$)",
+    re.IGNORECASE,
+)
+_REPLAY_NARRATION_RE = re.compile(
+    r"\b(?:with\s+)?(?:narration|memo|note|description|reason|purpose|"
+    r"akosile|bayani|bayanin|nkowa)\b\s*"
+    r"(?:as|to|is|:)?\s*(?P<explicit>[^.?!;\n]{1,120})|"
+    r"\b(?:for|fun|domin|saboda|maka)\s+(?P<for_note>[^.?!;\n]{1,120})",
+    re.IGNORECASE,
+)
 _FILTER_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "transaction_type": ("task_type", "transaction_type", "type", "direction"),
     "status": ("status", "provider_status", "final_status", "mandate_status"),
@@ -138,6 +179,7 @@ class SurfaceAnswerRequest:
     state: OrchestratorState
     text: str
     decision: ContextFrameFollowupDecision | None = None
+    replay_modifier: ContextFrameReplayModifier | None = None
     locale: str = "en"
 
 
@@ -429,6 +471,197 @@ def _amount_reference_values(text: str | None) -> set[float]:
         _add(match.group(0))
 
     return values
+
+
+def _parse_replay_amount_token(token: str | None) -> float | None:
+    if not token:
+        return None
+
+    match = _REPLAY_AMOUNT_TOKEN_RE.search(token)
+    if not match:
+        return None
+
+    try:
+        value = float(match.group("amount").replace(",", ""))
+    except ValueError:
+        return None
+
+    suffix = (match.group("suffix") or "").lower()
+    if suffix == "k":
+        value *= 1000
+    elif suffix == "m":
+        value *= 1_000_000
+
+    if value <= 0:
+        return None
+
+    has_explicit_money_marker = bool(match.group("prefix") or suffix or "," in match.group("amount"))
+    if not has_explicit_money_marker and value > 100_000_000:
+        return None
+
+    return value
+
+
+def _replay_amount_override(text: str | None) -> float | None:
+    if not text:
+        return None
+
+    match = _REPLAY_AMOUNT_OVERRIDE_RE.search(text)
+    if not match:
+        return None
+    token = match.group("token") or match.group("edit_token")
+    return _parse_replay_amount_token(token)
+
+
+def _contains_replay_modifier_evidence(text: str | None, evidence: str | None) -> bool:
+    if not text or not evidence:
+        return False
+
+    normalized_text = re.sub(r"\s+", " ", text).strip().casefold()
+    normalized_evidence = re.sub(r"\s+", " ", evidence).strip().casefold()
+    if not normalized_evidence:
+        return False
+    return normalized_evidence in normalized_text
+
+
+def _trusted_replay_modifier(modifier: ContextFrameReplayModifier | None) -> ContextFrameReplayModifier | None:
+    if modifier is None:
+        return None
+    if modifier.confidence < CONTEXT_FRAME_REPLAY_MODIFIER_MIN_CONFIDENCE:
+        return None
+    return modifier
+
+
+def _modifier_amount_override(text: str | None, modifier: ContextFrameReplayModifier | None) -> float | None:
+    trusted = _trusted_replay_modifier(modifier)
+    if trusted is None or trusted.amount is None:
+        return None
+    if not _contains_replay_modifier_evidence(text, trusted.amount_evidence):
+        return None
+    return trusted.amount if trusted.amount > 0 else None
+
+
+def _modifier_source_account_candidate(
+    text: str | None,
+    modifier: ContextFrameReplayModifier | None,
+) -> str | None:
+    trusted = _trusted_replay_modifier(modifier)
+    if trusted is None or not trusted.source_account_reference:
+        return None
+    if not _contains_replay_modifier_evidence(text, trusted.source_account_evidence):
+        return None
+    return trusted.source_account_reference.strip() or None
+
+
+def _modifier_narration_candidate(
+    text: str | None,
+    modifier: ContextFrameReplayModifier | None,
+) -> str | None:
+    trusted = _trusted_replay_modifier(modifier)
+    if trusted is None or not trusted.narration:
+        return None
+    if not _contains_replay_modifier_evidence(text, trusted.narration_evidence):
+        return None
+    return trusted.narration.strip() or None
+
+
+def _clean_replay_modifier_text(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    cleaned = re.split(
+        r"\b(?:from|using|use|debit|charge|switch(?:\s+it)?\s+to|"
+        r"change\s+source(?:\s+account)?\s+to|with\s+(?:₦|ngn|naira|\d))\b",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    cleaned = re.split(
+        r"\b(?:lati(?:\s+inu)?|lo|daga|(?:yi\s+)?amfani\s+da|ta\s+hanyar|site\s+na|jiri)\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    cleaned = re.split(r"\b(?:instead|please|pls)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" \"'.,;:!?")
+    cleaned = re.sub(r"^(?:as|to|is|be)\s+", "", cleaned, flags=re.IGNORECASE).strip()
+    return cleaned or None
+
+
+def _replay_source_account_candidate(text: str | None) -> str | None:
+    if not text:
+        return None
+
+    for match in _REPLAY_SOURCE_ACCOUNT_RE.finditer(text):
+        candidate = _clean_replay_modifier_text(match.group("source"))
+        if candidate:
+            return candidate
+    return None
+
+
+def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
+    accounts = (state.loaded_context or {}).get("accounts") or []
+    if not isinstance(accounts, list):
+        return []
+    return [account for account in accounts if isinstance(account, dict)]
+
+
+def _source_account_patch(account: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_account_id": account.get("id") or account.get("account_id"),
+        "source_bank_name": account.get("bank_name") or account.get("bank"),
+        "source_account_name": account.get("account_name") or account.get("name"),
+        "source_account_number": account.get("account_number") or account.get("source_account_number"),
+        "source_affinity_mode": "explicit",
+        "source_account_index": None,
+        "funding_plan": None,
+        "suggested_amount": None,
+    }
+
+
+def _replay_source_account_override(
+    text: str | None,
+    state: OrchestratorState,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> tuple[bool, dict[str, Any] | None]:
+    candidate = _replay_source_account_candidate(text)
+    if not candidate:
+        candidate = _modifier_source_account_candidate(text, replay_modifier)
+    if not candidate:
+        return False, None
+
+    matched_account = match_source_account_reference(candidate, _loaded_accounts(state))
+    if not matched_account:
+        return True, None
+
+    return True, _source_account_patch(matched_account)
+
+
+def _text_is_replay_amount_token(value: str) -> bool:
+    return bool(_REPLAY_AMOUNT_TOKEN_RE.fullmatch(value.strip()))
+
+
+def _replay_narration_override(
+    text: str | None,
+    *,
+    accounts: list[dict[str, Any]] | None = None,
+    replay_modifier: ContextFrameReplayModifier | None = None,
+) -> str | None:
+    if not text:
+        return None
+
+    for match in _REPLAY_NARRATION_RE.finditer(text):
+        is_bare_for = match.group("for_note") is not None
+        candidate = _clean_replay_modifier_text(match.group("explicit") or match.group("for_note"))
+        if not candidate:
+            continue
+        if is_bare_for:
+            if _text_is_replay_amount_token(candidate):
+                continue
+            if accounts and match_source_account_reference(candidate, accounts):
+                continue
+        return candidate
+    return _modifier_narration_candidate(text, replay_modifier)
 
 
 def _entity_matches_amount_reference(entity: ContextEntity, amount_refs: set[float]) -> bool:
@@ -1161,7 +1394,13 @@ def _payload_value(entity: ContextEntity, *keys: str) -> Any:
     return None
 
 
-def _base_replay_payload(entity: ContextEntity, *, task_type: str, text: str) -> dict[str, Any]:
+def _base_replay_payload(
+    entity: ContextEntity,
+    *,
+    task_type: str,
+    text: str,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "action": _replay_action(task_type),
         "instruction": text,
@@ -1174,6 +1413,15 @@ def _base_replay_payload(entity: ContextEntity, *, task_type: str, text: str) ->
     amount = _payload_value(entity, "amount")
     if amount is not None:
         payload["amount"] = amount
+    amount_override = _replay_amount_override(text)
+    if amount_override is None:
+        amount_override = _modifier_amount_override(text, replay_modifier)
+    if amount_override is not None:
+        payload["amount"] = amount_override
+        payload["suggested_amount"] = None
+        payload["transfer_percentage"] = None
+        payload["transfer_all"] = False
+        payload["funding_plan"] = None
 
     for key in ("source_account_id", "source_bank_name", "source_account_number", "source_account_index"):
         value = _payload_value(entity, key)
@@ -1182,12 +1430,17 @@ def _base_replay_payload(entity: ContextEntity, *, task_type: str, text: str) ->
     return payload
 
 
-def _replay_payload_for_entity(entity: ContextEntity, *, text: str) -> tuple[str, dict[str, Any]] | None:
+def _replay_payload_for_entity(
+    entity: ContextEntity,
+    *,
+    text: str,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> tuple[str, dict[str, Any]] | None:
     task_type = _transaction_task_type(entity)
     if task_type not in {"transfer", "airtime", "data"}:
         return None
 
-    payload = _base_replay_payload(entity, task_type=task_type, text=text)
+    payload = _base_replay_payload(entity, task_type=task_type, text=text, replay_modifier=replay_modifier)
     if task_type == "transfer":
         for key in (
             "beneficiary_id",
@@ -1270,7 +1523,96 @@ def _enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorSt
         payload["source_account_number"] = account_number
 
 
-def _replay_target_entities(frame: ContextFrame, decision: ContextFrameFollowupDecision) -> list[ContextEntity]:
+def _apply_replay_narration_override(
+    payload: dict[str, Any],
+    text: str,
+    state: OrchestratorState,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> None:
+    narration = _replay_narration_override(
+        text,
+        accounts=_loaded_accounts(state),
+        replay_modifier=replay_modifier,
+    )
+    if not narration:
+        return
+
+    payload["narration"] = narration
+    payload["authored_narration"] = narration
+    payload["user_note"] = narration
+
+
+def _target_text_is_replay_amount_override(
+    decision: ContextFrameFollowupDecision,
+    text: str,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> bool:
+    target_text = _decision_target_text(decision)
+    if not target_text:
+        return False
+
+    override = _replay_amount_override(text)
+    if override is None:
+        override = _modifier_amount_override(text, replay_modifier)
+    if override is None:
+        return False
+
+    target_amounts = _amount_reference_values(target_text)
+    return len(target_amounts) == 1 and any(abs(amount - override) < 0.01 for amount in target_amounts)
+
+
+def _modifier_matches_target_text(modifier: str | None, target_text: str) -> bool:
+    if not modifier:
+        return False
+
+    normalized_modifier = _normalize(modifier)
+    normalized_target = _normalize(target_text)
+    if not normalized_modifier or not normalized_target:
+        return False
+    if normalized_modifier == normalized_target:
+        return True
+    if normalized_modifier in normalized_target or normalized_target in normalized_modifier:
+        return True
+
+    compact_modifier = normalized_modifier.replace(" ", "")
+    compact_target = normalized_target.replace(" ", "")
+    return bool(compact_modifier and compact_target and (compact_modifier == compact_target))
+
+
+def _target_text_is_replay_modifier(
+    decision: ContextFrameFollowupDecision,
+    text: str,
+    state: OrchestratorState,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> bool:
+    target_text = _decision_target_text(decision)
+    if not target_text:
+        return False
+
+    if _target_text_is_replay_amount_override(decision, text, replay_modifier):
+        return True
+
+    if _modifier_matches_target_text(_replay_source_account_candidate(text), target_text):
+        return True
+    if _modifier_matches_target_text(_modifier_source_account_candidate(text, replay_modifier), target_text):
+        return True
+
+    narration = _replay_narration_override(
+        text,
+        accounts=_loaded_accounts(state),
+        replay_modifier=replay_modifier,
+    )
+    return _modifier_matches_target_text(narration, target_text)
+
+
+def _replay_target_entities(
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+    *,
+    text: str,
+    state: OrchestratorState,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> list[ContextEntity]:
     if decision.selection_index is not None:
         idx = decision.selection_index - 1
         if 0 <= idx < len(frame.items):
@@ -1279,7 +1621,9 @@ def _replay_target_entities(frame: ContextFrame, decision: ContextFrameFollowupD
 
     target_text = _decision_target_text(decision)
     if target_text:
-        return _find_matching_entities(frame, target_text)
+        matches = _find_matching_entities(frame, target_text)
+        if matches or not _target_text_is_replay_modifier(decision, text, state, replay_modifier):
+            return matches
 
     filtered = _find_filtered_entities(frame, decision.filters)
     if filtered:
@@ -1293,6 +1637,7 @@ def _build_replay_response(
     frame: ContextFrame,
     decision: ContextFrameFollowupDecision,
     text: str,
+    replay_modifier: ContextFrameReplayModifier | None = None,
 ) -> ContextFrameFollowupResponse | None:
     if frame.frame_type not in {
         ContextFrameType.TRANSACTION_LIST,
@@ -1301,16 +1646,30 @@ def _build_replay_response(
     }:
         return None
 
-    entities = _replay_target_entities(frame, decision)
+    source_requested, source_patch = _replay_source_account_override(text, state, replay_modifier)
+    if source_requested and source_patch is None:
+        return None
+
+    entities = _replay_target_entities(
+        frame,
+        decision,
+        text=text,
+        state=state,
+        replay_modifier=replay_modifier,
+    )
     tasks: dict[str, TaskSpec] = {}
     wave_ids: list[str] = []
     allocated_ids: set[str] = set()
     for entity in entities:
-        replay_payload = _replay_payload_for_entity(entity, text=text)
+        replay_payload = _replay_payload_for_entity(entity, text=text, replay_modifier=replay_modifier)
         if replay_payload is None:
             continue
         task_type, payload = replay_payload
         _enrich_replay_source_account(payload, state)
+        if source_patch is not None:
+            payload.update(source_patch)
+        if task_type == "transfer":
+            _apply_replay_narration_override(payload, text, state, replay_modifier)
         task_id = _new_replay_task_id(state, task_type, allocated_ids)
         allocated_ids.add(task_id)
         tasks[task_id] = TaskSpec(id=task_id, type=cast(Any, task_type), stage=TaskStage.DRAFT, payload=payload)
@@ -1468,7 +1827,13 @@ class SurfaceAnswerEngine:
         if _canonical_decision(decision.decision) == "replay_tasks":
             if decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
                 return None
-            return _build_replay_response(request.state, frame, decision, request.text)
+            return _build_replay_response(
+                request.state,
+                frame,
+                decision,
+                request.text,
+                replay_modifier=request.replay_modifier,
+            )
 
         response = _format_semantic_decision_response(frame, decision, text=request.text)
         if not response:
@@ -1498,9 +1863,17 @@ def build_context_frame_followup_response(
     text: str,
     *,
     decision: ContextFrameFollowupDecision | None = None,
+    replay_modifier: ContextFrameReplayModifier | None = None,
 ) -> ContextFrameFollowupResponse | None:
     """Compatibility wrapper around SurfaceAnswerEngine."""
-    return _SURFACE_ANSWER_ENGINE.answer(SurfaceAnswerRequest(state=state, text=text, decision=decision))
+    return _SURFACE_ANSWER_ENGINE.answer(
+        SurfaceAnswerRequest(
+            state=state,
+            text=text,
+            decision=decision,
+            replay_modifier=replay_modifier,
+        )
+    )
 
 
 __all__ = [

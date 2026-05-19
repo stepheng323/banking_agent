@@ -447,6 +447,38 @@ class ContextFrameFollowupDecision(BaseModel):
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
 
+class ContextFrameReplayModifier(BaseModel):
+    """Strict modifier extraction for replaying displayed transaction items.
+
+    The displayed transaction remains the authoritative base. These fields are only
+    optional edits explicitly present in the user's latest replay message.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    confidence: float = Field(default=0.0, description="Confidence in the replay modifier extraction")
+    detected_language: str | None = Field(default=None, description="Detected language for the user turn")
+    amount: float | None = Field(default=None, gt=0, description="Replacement transaction amount, if explicit")
+    amount_evidence: str | None = Field(
+        default=None,
+        description="Exact user-message phrase supporting amount, else null",
+    )
+    source_account_reference: str | None = Field(
+        default=None,
+        description="User's explicit source account/bank reference, if any",
+    )
+    source_account_evidence: str | None = Field(
+        default=None,
+        description="Exact user-message phrase supporting source_account_reference, else null",
+    )
+    narration: str | None = Field(default=None, description="Replacement transfer narration/memo/note, if explicit")
+    narration_evidence: str | None = Field(
+        default=None,
+        description="Exact user-message phrase supporting narration, else null",
+    )
+    reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+
+
 class InterruptRouteDecision(BaseModel):
     """LLM decision for pending-input routing while a session is active."""
 
