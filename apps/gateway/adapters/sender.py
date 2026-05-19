@@ -9,9 +9,9 @@ logger = get_logger(__name__)
 
 async def send_text(to: str, text: str) -> None:
     """Send a text message via WhatsApp Business API."""
-    url = f"{GRAPH_BASE}/{settings.meta_phone_number_id}/messages"
+    url = f"{GRAPH_BASE}/{settings.whatsapp.phone_number_id}/messages"
     headers = {
-        "Authorization": f"Bearer {settings.meta_access_token}",
+        "Authorization": f"Bearer {settings.whatsapp.access_token}",
         "Content-Type": "application/json",
     }
     payload = {

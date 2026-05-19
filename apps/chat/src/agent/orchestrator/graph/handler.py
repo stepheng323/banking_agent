@@ -630,7 +630,7 @@ class OrchestratorGraphHandler:
                     "delivery_metadata": self._delivery_metadata_from_progress_snapshot(progress_snapshot),
                 }
                 if context.channel == "whatsapp":
-                    typing_visibility_delay_ms = settings.whatsapp_typing_indicator_delay_ms
+                    typing_visibility_delay_ms = settings.whatsapp.typing_indicator_delay_ms
                 elif context.channel == "telegram":
                     typing_visibility_delay_ms = settings.telegram_typing_indicator_delay_ms
                 else:

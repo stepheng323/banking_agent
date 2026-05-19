@@ -24,6 +24,7 @@ class ParsedTelegramMessage(BaseModel):
     quoted_message_id: str | None = None
 
     contact_phone_number: str | None = None
+    contact_user_id: str | None = None
 
     from_user_id: str | None = None
     from_username: str | None = None
@@ -126,6 +127,7 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
             text="",
             type="contact",
             contact_phone_number=contact_obj.get("phone_number"),
+            contact_user_id=str(contact_obj.get("user_id", "")) if contact_obj.get("user_id") else None,
             quoted_message_id=quoted_message_id,
             from_user_id=str(from_user.get("id", "")),
             from_username=from_user.get("username"),

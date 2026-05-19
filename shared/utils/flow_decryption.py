@@ -119,4 +119,5 @@ def is_encrypted(body: dict[str, Any]) -> bool:
     Returns:
         True if encrypted, False otherwise
     """
-    return "encrypted_flow_data" in body
+    required_fields = {"encrypted_flow_data", "encrypted_aes_key", "initial_vector"}
+    return required_fields.issubset(body)

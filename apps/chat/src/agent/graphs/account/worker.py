@@ -1,7 +1,8 @@
 """Account management worker (stateless)."""
 
 import asyncio
-import time
+import hashlib
+import secrets
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -45,6 +46,16 @@ ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
     "change_bvn": AccountCapability.CHANGE_BVN,
     "add_joint_holder": AccountCapability.ADD_JOINT_HOLDER,
 }
+
+
+def _new_link_flow_token() -> str:
+    return f"link-{secrets.token_urlsafe(32)}"
+
+
+def _token_fingerprint(flow_token: str | None) -> str:
+    if not flow_token:
+        return ""
+    return hashlib.sha256(str(flow_token).encode("utf-8")).hexdigest()[:16]
 
 
 class AccountWorker:
@@ -486,7 +497,7 @@ class AccountWorker:
         from shared.config.settings import settings
         from shared.services.onboarding.session import OnboardingStep
 
-        flow_id = settings.account_linking_flow_id
+        flow_id = settings.whatsapp.account_linking_flow_id
         locale = LocaleManager.normalize(context.get("language")).value
         if not flow_id:
             return {"error": render_message("account.linking.unavailable", locale)}
@@ -504,8 +515,7 @@ class AccountWorker:
             return {"error": result.error_message or render_message("account.linking.start_failed", locale)}
 
         methods = [{"id": m["method"], "title": m["hint"]} for m in result.verification_methods]
-        flow_token_phone = canonical_phone_number or str(phone_number or "").strip()
-        flow_token = f"link-{flow_token_phone}-{int(time.time())}"
+        flow_token = _new_link_flow_token()
         session_payload = {
             "phone_number": canonical_phone_number,
             "bvn": bvn,
@@ -516,7 +526,7 @@ class AccountWorker:
             "channel": context.get("channel", "whatsapp"),
         }
         if not self.session_manager:
-            logger.error("account_linking_session_manager_missing", flow_token=flow_token)
+            logger.error("account_linking_session_manager_missing", flow_token_hash=_token_fingerprint(flow_token))
             return {"error": render_message("account.linking.start_failed", locale)}
 
         stored = await self.session_manager.update_session_strict(
@@ -527,7 +537,7 @@ class AccountWorker:
         if not stored:
             logger.error(
                 "account_linking_session_create_failed",
-                flow_token=flow_token,
+                flow_token_hash=_token_fingerprint(flow_token),
                 phone=canonical_phone_number,
                 channel=context.get("channel", "unknown"),
             )

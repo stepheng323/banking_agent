@@ -24,8 +24,8 @@ class WhatsAppClient(MessagingClient):
         return True
 
     def __init__(self):
-        self.access_token = settings.meta_access_token
-        self.phone_number_id = settings.meta_phone_number_id
+        self.access_token = settings.whatsapp.access_token
+        self.phone_number_id = settings.whatsapp.phone_number_id
         self._http_client: httpx.AsyncClient | None = None
         self._validate_config()
 
@@ -135,7 +135,7 @@ class WhatsAppClient(MessagingClient):
             return resolved_message_id
 
         await self.send_typing_indicator(resolved_message_id)
-        delay_seconds = max(0.0, settings.whatsapp_typing_indicator_delay_ms / 1000)
+        delay_seconds = max(0.0, settings.whatsapp.typing_indicator_delay_ms / 1000)
         if delay_seconds > 0:
             await asyncio.sleep(delay_seconds)
         return resolved_message_id

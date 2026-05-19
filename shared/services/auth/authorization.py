@@ -191,3 +191,9 @@ class AuthorizationService:
             )
         except (json.JSONDecodeError, KeyError):
             return None
+
+    async def claim_pin_resume(self, idempotency_key: str, ttl_seconds: int = 86400) -> bool:
+        """Atomically claim a verified PIN resume so queue replays cannot resume twice."""
+        claim_key = f"transaction:pin_resume_claim:{idempotency_key}"
+        claimed = await self.redis_client.set(claim_key, "1", ex=ttl_seconds, nx=True)
+        return bool(claimed)

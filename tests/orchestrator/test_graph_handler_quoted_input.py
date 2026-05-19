@@ -619,7 +619,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.logger.info", _capture)
-    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 650)
+    monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),

@@ -68,9 +68,15 @@ class AccountLinkingService:
         if not session:
             return {"success": False, "error": "Session expired. Please start over."}
 
-        phone_number = session.get("phone_number") or flow_token.split("-")[-1]
+        phone_number = session.get("phone_number")
         if not phone_number:
             return {"success": False, "error": "Phone number missing."}
+
+        telegram_chat_id = None
+        if channel == "telegram":
+            telegram_chat_id = session.get("channel_user_id") or session.get("cta_chat_id")
+            if not telegram_chat_id:
+                return {"success": False, "error": "Telegram session identity missing."}
 
         selected_account = None
         accounts = session.get("accounts", [])
@@ -135,10 +141,9 @@ class AccountLinkingService:
                         )
                     )
 
-                # If this is a Telegram onboarding, link the chat_id identity
-                if flow_token.startswith("onboarding-"):
-                    chat_id = flow_token.split("-", 1)[1]
-                    await uow.users.link_channel_identity(str(user.id), "telegram", chat_id)
+                # If this is a Telegram onboarding, link the verified chat identity from session state.
+                if telegram_chat_id:
+                    await uow.users.link_channel_identity(str(user.id), "telegram", telegram_chat_id)
 
             await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
 

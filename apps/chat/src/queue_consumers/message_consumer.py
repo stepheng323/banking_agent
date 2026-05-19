@@ -1,5 +1,6 @@
 """Unified core consumer for chat messages and flow events."""
 
+import secrets
 import time
 from collections.abc import Callable
 from typing import Any, cast
@@ -18,17 +19,23 @@ from apps.chat.src.agent.orchestrator.models.intents import (
 from apps.chat.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
 from shared.cache.rate_limiter import message_rate_limiter
+from shared.clients.telegram.client import TelegramClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.i18n import render_message
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
 from shared.queue.messages import FlowEventType
 from shared.repositories.user_repository import UserRepository
+from shared.services.auth import AuthorizationService
+from shared.services.channel_linking import build_channel_link_pin_token
+from shared.services.onboarding import session_manager
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
 _TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data"}
+_TELEGRAM_CHANNEL = "telegram"
+_WHATSAPP_CHANNEL = "whatsapp"
 RuntimeBundleFactory = Callable[
     [],
     tuple[UserRepository, OnboardingExecutor, OrchestratorAgent],
@@ -38,6 +45,10 @@ RuntimeBundleFactory = Callable[
 class _NoopPublisher:
     async def publish(self, topic: Any, message: dict[str, Any]) -> None:
         del topic, message
+
+
+def _new_channel_link_token() -> str:
+    return f"channel-link-{secrets.token_urlsafe(32)}"
 
 
 class MessageConsumer:
@@ -90,6 +101,134 @@ class MessageConsumer:
             await store_channel_identity_user(channel, channel_user_id, user)
         return user
 
+    async def _gate_unlinked_whatsapp_identity(
+        self,
+        *,
+        message: ChannelMessage,
+        user: Any,
+        user_repository: UserRepository,
+    ) -> dict[str, Any] | None:
+        """Require the existing Telegram channel to approve first-time WhatsApp access."""
+        channel_user_id = message.channel_user_id
+        if message.channel != _WHATSAPP_CHANNEL or not self._looks_like_phone_number(channel_user_id):
+            return None
+
+        if not hasattr(user_repository, "get_channel_identity_by_phone"):
+            return None
+
+        phone_number = str(getattr(user, "phone_number", "") or "").strip()
+        authorizing_identity = await user_repository.get_channel_identity_by_phone(phone_number, _TELEGRAM_CHANNEL)
+        if not authorizing_identity:
+            return None
+
+        existing_whatsapp_user = await user_repository.get_by_channel_identity(_WHATSAPP_CHANNEL, channel_user_id)
+        if existing_whatsapp_user:
+            if str(getattr(existing_whatsapp_user, "id", "")) != str(getattr(user, "id", "")):
+                logger.warning(
+                    "channel_link_identity_conflict",
+                    requested_channel=_WHATSAPP_CHANNEL,
+                    phone_number=phone_number,
+                )
+                await enqueue_outbox_say(
+                    self.publisher,
+                    channel_user_id,
+                    _WHATSAPP_CHANNEL,
+                    "This WhatsApp number is linked to another profile. Please contact support.",
+                    metadata={"source": "channel_link_guard", "reason": "identity_conflict"},
+                )
+                return {"status": "channel_link_identity_conflict"}
+            return None
+
+        flow_token = _new_channel_link_token()
+        stored = await session_manager.update_session_strict(
+            flow_token,
+            {
+                "purpose": "channel_identity_link",
+                "user_id": str(getattr(user, "id", "")),
+                "phone_number": phone_number,
+                "requested_channel": _WHATSAPP_CHANNEL,
+                "requested_channel_user_id": channel_user_id,
+                "requested_channel_actor_id": channel_user_id,
+                "authorizing_channel": _TELEGRAM_CHANNEL,
+                "authorizing_channel_user_id": str(authorizing_identity),
+                "step": "pending_existing_channel_authorization",
+            },
+            verify=True,
+        )
+        if not stored:
+            logger.error("channel_link_session_store_failed", requested_channel=_WHATSAPP_CHANNEL)
+            await enqueue_outbox_say(
+                self.publisher,
+                channel_user_id,
+                _WHATSAPP_CHANNEL,
+                "I couldn't start that link request. Please try again.",
+                metadata={"source": "channel_link_guard", "reason": "session_store_failed"},
+            )
+            return {"status": "channel_link_session_store_failed"}
+
+        try:
+            result = await TelegramClient().send_flow(
+                to=str(authorizing_identity),
+                flow_id="pin_entry",
+                flow_config={
+                    "header": "Authorize WhatsApp link",
+                    "text_body": (
+                        "Enter your transaction PIN to link WhatsApp to your banking profile. "
+                        "Continue only if this request was from you."
+                    ),
+                    "flow_cta": "Enter PIN",
+                    "flow_token": build_channel_link_pin_token(flow_token),
+                },
+                suppress_typing_indicator=True,
+            )
+        except Exception as e:
+            logger.error("channel_link_authorization_send_failed", requested_channel=_WHATSAPP_CHANNEL, error=str(e))
+            await session_manager.delete_session(flow_token)
+            await enqueue_outbox_say(
+                self.publisher,
+                channel_user_id,
+                _WHATSAPP_CHANNEL,
+                "I couldn't send the Telegram approval request. Please try again.",
+                metadata={"source": "channel_link_guard", "reason": "authorization_send_failed"},
+            )
+            return {"status": "channel_link_authorization_send_failed"}
+
+        if not result.success:
+            logger.error(
+                "channel_link_authorization_send_failed",
+                requested_channel=_WHATSAPP_CHANNEL,
+                error=result.error,
+            )
+            await session_manager.delete_session(flow_token)
+            await enqueue_outbox_say(
+                self.publisher,
+                channel_user_id,
+                _WHATSAPP_CHANNEL,
+                "I couldn't send the Telegram approval request. Please try again.",
+                metadata={"source": "channel_link_guard", "reason": "authorization_send_failed"},
+            )
+            return {"status": "channel_link_authorization_send_failed"}
+
+        await enqueue_outbox_say(
+            self.publisher,
+            channel_user_id,
+            _WHATSAPP_CHANNEL,
+            (
+                "I sent a secure PIN request to your existing Telegram channel. "
+                "Enter your PIN there to finish linking WhatsApp."
+            ),
+            metadata={"source": "channel_link_guard", "reason": "authorization_pending"},
+        )
+        logger.info(
+            "channel_link_authorization_requested",
+            requested_channel=_WHATSAPP_CHANNEL,
+            authorizing_channel=_TELEGRAM_CHANNEL,
+        )
+        return {
+            "status": "channel_link_authorization_pending",
+            "authorizing_channel": _TELEGRAM_CHANNEL,
+        }
+
     @staticmethod
     def _log_latency_span(
         *,
@@ -134,13 +273,13 @@ class MessageConsumer:
     async def process_flow_event(self, event_data: dict[str, Any]) -> None:
         """Process one flow event payload."""
         try:
-            _user_repository, _onboarding_executor, orchestrator = self._runtime_bundle()
-            event_type = str(event_data.get("event_type", ""))
-            flow_type = str(event_data.get("flow_type", ""))
-            phone_number = str(event_data.get("phone_number", ""))
-            idempotency_key = str(event_data.get("idempotency_key", ""))
-            channel = str(event_data.get("channel", "whatsapp"))
-            success = bool(event_data.get("success", False))
+            user_repository, _onboarding_executor, orchestrator = self._runtime_bundle()
+            event_type = str(event_data.get("event_type") or "")
+            flow_type = str(event_data.get("flow_type") or "")
+            phone_number = str(event_data.get("phone_number") or "")
+            idempotency_key = str(event_data.get("idempotency_key") or "")
+            channel = str(event_data.get("channel") or "whatsapp")
+            success = event_data.get("success", False)
             extra_data_raw = event_data.get("extra_data")
             extra_data = extra_data_raw if isinstance(extra_data_raw, dict) else None
 
@@ -156,9 +295,11 @@ class MessageConsumer:
                 await self._handle_pin_verified(
                     flow_type=flow_type,
                     phone_number=phone_number,
+                    idempotency_key=idempotency_key,
                     success=success,
                     channel=channel,
                     extra_data=extra_data,
+                    user_repository=user_repository,
                     orchestrator=orchestrator,
                 )
             elif event_type == FlowEventType.PIN_FAILED.value:
@@ -173,20 +314,71 @@ class MessageConsumer:
         self,
         flow_type: str,
         phone_number: str,
-        success: bool,
+        idempotency_key: str,
+        success: Any,
         channel: str,
         extra_data: dict[str, Any] | None = None,
+        user_repository: UserRepository | None = None,
         orchestrator: OrchestratorAgent | None = None,
     ) -> None:
         """Resume a paused transaction after a successful PIN flow."""
         runtime_orchestrator = orchestrator or self.orchestrator
-        if not success:
+        runtime_user_repository = user_repository or self.user_repository
+        if success is not True:
             logger.warning("pin_verified_but_not_success", phone=phone_number, flow_type=flow_type)
             return
 
         normalized_flow_type = flow_type.strip().lower()
         if normalized_flow_type not in _TRANSACTION_PIN_FLOWS:
             logger.info("pin_verified_non_transaction_flow_ignored", phone=phone_number, flow_type=flow_type)
+            return
+
+        if not phone_number or not idempotency_key:
+            logger.warning(
+                "pin_verified_missing_resume_context",
+                phone=phone_number,
+                flow_type=flow_type,
+                has_idempotency_key=bool(idempotency_key),
+            )
+            return
+
+        if runtime_user_repository is None:
+            logger.error("pin_verified_user_repository_missing", phone=phone_number, flow_type=flow_type)
+            return
+
+        authorization_service = AuthorizationService()
+        auth_result = await authorization_service.get_pin_verification_result(idempotency_key)
+        if not auth_result or not auth_result.verified or not auth_result.user_id:
+            logger.warning(
+                "pin_verified_resume_record_invalid",
+                phone=phone_number,
+                flow_type=flow_type,
+                has_record=bool(auth_result),
+                verified=bool(auth_result.verified) if auth_result else False,
+            )
+            return
+
+        recorded_flow_type = str(auth_result.transaction_type or "").strip().lower()
+        if recorded_flow_type != normalized_flow_type:
+            logger.warning(
+                "pin_verified_resume_flow_mismatch",
+                phone=phone_number,
+                flow_type=flow_type,
+                recorded_flow_type=recorded_flow_type,
+            )
+            return
+
+        user = await runtime_user_repository.get_by_phone(phone_number)
+        if not user or str(getattr(user, "id", "") or "") != str(auth_result.user_id):
+            logger.warning(
+                "pin_verified_resume_user_mismatch",
+                phone=phone_number,
+                flow_type=flow_type,
+            )
+            return
+
+        if not await authorization_service.claim_pin_resume(idempotency_key):
+            logger.warning("pin_verified_resume_replay_ignored", phone=phone_number, flow_type=flow_type)
             return
 
         logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type, channel=channel)
@@ -286,6 +478,14 @@ class MessageConsumer:
 
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return cast(dict[str, Any] | None, await runtime_onboarding_executor.handle_onboarding(message))
+
+        link_gate_result = await self._gate_unlinked_whatsapp_identity(
+            message=message,
+            user=user,
+            user_repository=runtime_user_repository,
+        )
+        if link_gate_result is not None:
+            return link_gate_result
 
         phone_number = str(user.phone_number)
 

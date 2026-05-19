@@ -28,7 +28,11 @@ class OnboardingExecutor:
         # When onboarding starts from Telegram via contact share, we inject onboarding_phone
         actual_phone = message.channel_metadata.get("onboarding_phone", channel_user_id)
 
-        await self.onboarding_service.send_onboarding_flow(channel_user_id, channel=message.channel)
+        await self.onboarding_service.send_onboarding_flow(
+            channel_user_id,
+            channel=message.channel,
+            onboarding_phone=actual_phone,
+        )
 
         async with UnitOfWork() as uow:
             # Check if user already exists

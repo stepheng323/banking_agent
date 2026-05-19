@@ -5,6 +5,7 @@ import pytest
 from apps.gateway.api.webhooks.telegram import router as router_module
 from apps.gateway.api.webhooks.telegram.router import PinSubmitInput
 from shared.services.auth.authorization import AuthorizationResult
+from shared.services.channel_linking import ChannelLinkPinResult
 
 
 class _RequestStub:
@@ -74,7 +75,6 @@ async def test_telegram_webhook_acknowledges_failure_without_retry(monkeypatch: 
             assert update == payload
             raise OSError("Temporary failure in name resolution")
 
-    monkeypatch.setattr(router_module, "require_webhook_ingress_enabled", lambda _: None)
     monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "")
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: _PublisherStub())
     monkeypatch.setattr(router_module, "TelegramWebhookService", _FailingService)
@@ -113,7 +113,6 @@ async def test_telegram_webhook_commits_on_success(monkeypatch: pytest.MonkeyPat
             assert update == payload
             return True
 
-    monkeypatch.setattr(router_module, "require_webhook_ingress_enabled", lambda _: None)
     monkeypatch.setattr(router_module.settings, "telegram_webhook_secret_token", "")
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: _PublisherStub())
     monkeypatch.setattr(router_module, "TelegramWebhookService", _SuccessfulService)
@@ -181,3 +180,57 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
     assert message["idempotency_key"] == "idem-1"
     assert message["extra_data"] == {"source": "telegram_mini_app_rest", "chat_id": "927331985"}
     assert "pin" not in message["extra_data"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_pin_submit_completes_channel_link_with_pin(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def _complete_channel_link_with_pin(**kwargs: Any) -> ChannelLinkPinResult:
+        calls.append(kwargs)
+        return ChannelLinkPinResult(
+            success=True,
+            status="success",
+            requested_channel="whatsapp",
+            requested_channel_user_id="2348162511023",
+        )
+
+    class _WhatsAppClientStub:
+        def __init__(self) -> None:
+            self.text_calls: list[dict[str, Any]] = []
+
+        async def send_text(self, **kwargs: Any) -> dict[str, Any]:
+            self.text_calls.append(kwargs)
+            return {"ok": True}
+
+    whatsapp_client = _WhatsAppClientStub()
+    monkeypatch.setattr(router_module, "complete_channel_link_with_pin", _complete_channel_link_with_pin)
+    monkeypatch.setattr(router_module, "WhatsAppClient", lambda: whatsapp_client)
+    monkeypatch.setattr("shared.cache.redis_client.RedisClient.get_client", lambda: _RedisStub())
+
+    result = await router_module.telegram_pin_submit(
+        PinSubmitInput(
+            flow_token="channel-link-pin-channel-link-token",
+            pin="1234",
+            chat_id="927331985",
+        ),
+        user_data={"user": '{"id": 927331985}'},
+        db=_DbStub(),  # type: ignore[arg-type]
+    )
+
+    assert result == {"success": True}
+    assert calls == [
+        {
+            "flow_token": "channel-link-pin-channel-link-token",
+            "pin": "1234",
+            "authorizing_channel": "telegram",
+            "authorizing_channel_user_id": "927331985",
+        }
+    ]
+    assert whatsapp_client.text_calls == [
+        {
+            "to": "2348162511023",
+            "text": "Your WhatsApp number has been linked. You can now use banking features there.",
+            "suppress_typing_indicator": True,
+        }
+    ]

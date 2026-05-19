@@ -1,5 +1,7 @@
 """BVN verification service for onboarding."""
 
+import hashlib
+
 from shared.clients.providers.mono import BankAccount, BvnLookupData, MonoApiError, mono_client
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
@@ -7,6 +9,12 @@ from shared.utils.logging import get_logger
 from .session import OnboardingStep, SessionManager
 
 logger = get_logger(__name__)
+
+
+def _token_fingerprint(flow_token: str | None) -> str:
+    if not flow_token:
+        return ""
+    return hashlib.sha256(str(flow_token).encode("utf-8")).hexdigest()[:16]
 
 
 class BvnVerificationService:
@@ -99,26 +107,19 @@ class BvnVerificationService:
         if not bvn or len(bvn) != 11 or not bvn.isdigit():
             return {"success": False, "error": "Invalid BVN. Please enter a valid 11-digit BVN."}
 
+        existing_session = await self.session.get_session(flow_token)
+        phone_number = str(existing_session.get("phone_number") or "") if existing_session else ""
+        if not phone_number:
+            return {"success": False, "error": "Session expired. Please start over."}
+
+        is_linking = bool(existing_session.get("is_account_linking")) or flow_token.startswith("link-")
+
         logger.info("bvn_lookup_initiated", bvn=bvn[:4] + "***")
 
         try:
             bvn_data: BvnLookupData = await mono_client.initiate_bvn_lookup(bvn)
 
             methods = [{"id": m.method, "title": m.hint} for m in bvn_data.methods]
-
-            is_linking = flow_token.startswith("link-")
-
-            # Check if the session already has a phone_number (pre-seeded from contact share)
-            existing_session = await self.session.get_session(flow_token)
-            phone_number = existing_session.get("phone_number") if existing_session else ""
-
-            if not phone_number:
-                # Fallback: extract from flow_token
-                if is_linking:
-                    parts = flow_token.split("-")
-                    phone_number = parts[1] if len(parts) >= 2 else ""
-                else:
-                    phone_number = flow_token.split("-")[-1] if flow_token else ""
 
             await self.session.update_session(
                 flow_token,
@@ -142,7 +143,7 @@ class BvnVerificationService:
 
     async def send_otp(self, flow_token: str, method: str) -> dict:
         """Send OTP via a selected method (phone/email)."""
-        logger.info("Got here via otp", method=method, flow_token=flow_token)
+        logger.info("otp_send_requested", method=method, flow_token_hash=_token_fingerprint(flow_token))
         if not method:
             return {"success": False, "error": "Please select a verification method."}
 

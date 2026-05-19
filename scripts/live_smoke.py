@@ -249,29 +249,30 @@ async def _build_agent() -> tuple[UserRepository, OrchestratorAgent, NoopPublish
     shared_redis = RedisClient.get_client()
     publisher = NoopPublisher()
     planner_llm = _build_chat_model(role="planner", model=settings.planner_model, timeout=30.0)
+    app_env = settings.runtime.app_env
     query_model = _resolve_role_model(
         role="query",
         configured_model=settings.query_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     semantic_router_model = _resolve_role_model(
         role="semantic_router",
         configured_model=settings.semantic_router_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     interrupt_model = _resolve_role_model(
         role="interrupt_router",
         configured_model=settings.interrupt_router_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     extractor_model = _resolve_role_model(
         role="extractor",
         configured_model=settings.extractor_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
 
     user_repo, _onboarding_executor, agent = _build_orchestrator_runtime_bundle(

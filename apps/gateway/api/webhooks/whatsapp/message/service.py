@@ -10,6 +10,8 @@ from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_CHANNEL_LINK_APPROVE_PREFIX = "ch_link_ok:"
+_CHANNEL_LINK_DENY_PREFIX = "ch_link_no:"
 
 
 def _normalize_whatsapp_number(value: str | None) -> str:
@@ -63,7 +65,7 @@ class WhatsAppWebhookService:
 
         allowed_numbers = {
             _normalize_whatsapp_number(number)
-            for number in settings.whatsapp_allowed_numbers
+            for number in settings.whatsapp.allowed_numbers
             if _normalize_whatsapp_number(number)
         }
         if allowed_numbers and normalized_from_id not in allowed_numbers:
@@ -85,9 +87,37 @@ class WhatsAppWebhookService:
                 logger.debug("flow_response_skipped", from_id=from_id)
             return False
 
+        if msg.text and await self._handle_channel_link_authorization(msg.text.strip(), from_id):
+            return True
+
         whatsapp_msg = self._build_message(msg)
         await self._enqueue_message(whatsapp_msg, from_id, msg_type)
         return True
+
+    async def _handle_channel_link_authorization(self, text: str, from_id: str) -> bool:
+        """Neutralize stale native channel-link buttons; PIN is required now."""
+        if not (text.startswith(_CHANNEL_LINK_APPROVE_PREFIX) or text.startswith(_CHANNEL_LINK_DENY_PREFIX)):
+            return False
+
+        await self.whatsapp_client.send_text(
+            to=from_id,
+            text="For security, channel linking now requires PIN authorization. Please use the latest PIN prompt.",
+            suppress_typing_indicator=True,
+        )
+        return True
+
+    async def _notify_requested_channel_linked(self, channel: str, channel_user_id: str) -> None:
+        if channel != "telegram":
+            return
+        try:
+            from shared.clients.telegram.client import TelegramClient
+
+            await TelegramClient().send_text(
+                to=channel_user_id,
+                text="Your Telegram account has been linked. You can now use banking features here.",
+            )
+        except Exception as e:
+            logger.warning("channel_link_requested_channel_notify_failed", channel=channel, error=str(e))
 
     def _build_message(self, msg: ParsedMessage) -> ChannelMessage:
         """Build ChannelMessage from ParsedMessage."""

@@ -1,6 +1,7 @@
 """Shared application configuration."""
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -9,22 +10,73 @@ _env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=True)
 
 
+LOCAL_APP_ENVS = frozenset({"dev", "development", "test", "local"})
+
+
+@dataclass
+class RuntimeConfig:
+    """Runtime identity and environment classification."""
+
+    app_env: str
+    infrastructure_environment: str
+
+    @property
+    def is_local(self) -> bool:
+        """Return whether APP_ENV represents a local/test runtime."""
+        return self.app_env.strip().lower() in LOCAL_APP_ENVS
+
+    @property
+    def is_production(self) -> bool:
+        """Return whether APP_ENV represents production."""
+        return self.app_env.strip().lower() == "production"
+
+
+@dataclass
+class WhatsAppConfig:
+    """WhatsApp and Meta Flow configuration."""
+
+    runtime: RuntimeConfig
+    verify_token: str
+    app_secret: str
+    access_token: str
+    phone_number_id: str
+    flow_private_key: str
+    onboarding_flow_id: str
+    account_linking_flow_id: str
+    pin_confirmation_flow_id: str
+    allowed_numbers: set[str]
+    typing_indicator_delay_ms: int
+
+    @property
+    def require_encrypted_flows(self) -> bool:
+        """Return whether WhatsApp Flow data exchange requests must be encrypted."""
+        return not self.runtime.is_local
+
+
 class Settings:
     """Application settings loaded from environment variables and .env file."""
 
     def __init__(self) -> None:
-        self.meta_verify_token: str = os.getenv("META_VERIFY_TOKEN", "development_token")
-        self.meta_access_token: str = os.getenv("META_ACCESS_TOKEN", "development_access_token")
-        self.meta_phone_number_id: str = os.getenv("META_PHONE_NUMBER_ID", "development_phone_id")
-        self.whatsapp_flow_private_key: str = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY", "").strip()
-        self.onboarding_flow_id: str = os.getenv("ONBOARDING_FLOW_ID", "")
-        self.account_linking_flow_id: str = os.getenv("ACCOUNT_LINKING_FLOW_ID", "")
+        self.runtime = RuntimeConfig(
+            app_env=os.getenv("APP_ENV", "development"),
+            infrastructure_environment=os.getenv("ENVIRONMENT", "dev"),
+        )
+        raw_whatsapp_allowed_numbers = os.getenv("WHATSAPP_ALLOWED_NUMBERS", "")
+        self.whatsapp = WhatsAppConfig(
+            runtime=self.runtime,
+            verify_token=os.getenv("META_VERIFY_TOKEN", "development_token"),
+            app_secret=os.getenv("META_APP_SECRET", "").strip(),
+            access_token=os.getenv("META_ACCESS_TOKEN", "development_access_token"),
+            phone_number_id=os.getenv("META_PHONE_NUMBER_ID", "development_phone_id"),
+            flow_private_key=os.getenv("WHATSAPP_FLOW_PRIVATE_KEY", "").strip(),
+            onboarding_flow_id=os.getenv("ONBOARDING_FLOW_ID", ""),
+            account_linking_flow_id=os.getenv("ACCOUNT_LINKING_FLOW_ID", ""),
+            pin_confirmation_flow_id=os.getenv("PIN_CONFIRMATION_FLOW_ID", ""),
+            allowed_numbers={n.strip() for n in raw_whatsapp_allowed_numbers.split(",") if n.strip()},
+            typing_indicator_delay_ms=int(os.getenv("WHATSAPP_TYPING_INDICATOR_DELAY_MS", "650")),
+        )
 
-        self.pin_confirmation_flow_id: str = os.getenv("PIN_CONFIRMATION_FLOW_ID", "")
-
-        self.app_env: str = os.getenv("APP_ENV", "development")
         self.project_name: str = os.getenv("PROJECT_NAME", "banking-agent")
-        self.environment: str = os.getenv("ENVIRONMENT", "dev")
         self.app_host: str = os.getenv("APP_HOST", "0.0.0.0")
         self.app_port: int = int(os.getenv("APP_PORT", "8000"))
         self.app_name: str = os.getenv("APP_NAME", "Narya AI").strip() or "Narya AI"
@@ -82,11 +134,6 @@ class Settings:
         self.telegram_enable_message_draft: bool = os.getenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", "true").lower() == "true"
         self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "650"))
         self.receipt_verification_base_url: str = os.getenv("RECEIPT_VERIFICATION_BASE_URL", "").strip()
-        raw_whatsapp_allowed_numbers = os.getenv("WHATSAPP_ALLOWED_NUMBERS", "")
-        self.whatsapp_allowed_numbers: set[str] = {
-            n.strip() for n in raw_whatsapp_allowed_numbers.split(",") if n.strip()
-        }
-        self.whatsapp_typing_indicator_delay_ms: int = int(os.getenv("WHATSAPP_TYPING_INDICATOR_DELAY_MS", "650"))
 
         self.assistant_profile_path: str = os.getenv("ASSISTANT_PROFILE_PATH", "config/assistant_profile.json")
         self.capability_policy_path: str = os.getenv("CAPABILITY_POLICY_PATH", "config/capability_policy.json")
@@ -134,16 +181,19 @@ class Settings:
         """Validate WhatsApp configuration and warn about missing values."""
         warnings = []
 
-        if self.meta_access_token == "development_access_token":
+        if self.whatsapp.access_token == "development_access_token":
             warnings.append("META_ACCESS_TOKEN is not set - using development default")
 
-        if self.meta_phone_number_id == "development_phone_id":
+        if not self.whatsapp.app_secret:
+            warnings.append("META_APP_SECRET is not set")
+
+        if self.whatsapp.phone_number_id == "development_phone_id":
             warnings.append("META_PHONE_NUMBER_ID is not set - using development default")
 
-        if not self.onboarding_flow_id:
+        if not self.whatsapp.onboarding_flow_id:
             warnings.append("ONBOARDING_FLOW_ID is using default - update with your actual Flow ID")
 
-        if warnings and self.app_env != "dev":
+        if warnings and not self.runtime.is_local:
             print("⚠️  Configuration warnings:")
             for warning in warnings:
                 print(f"   - {warning}")
@@ -151,8 +201,7 @@ class Settings:
 
     def _validate_critical_runtime_config(self) -> None:
         """Fail fast outside dev/test when critical runtime config is missing."""
-        non_dev_env = self.app_env.lower() not in {"dev", "development", "test", "local"}
-        if not non_dev_env:
+        if self.runtime.is_local:
             return
 
         missing: list[str] = []
@@ -163,9 +212,10 @@ class Settings:
             "OPENAI_API_KEY": bool(self.openai_api_key),
             "MONO_API_KEY": bool(self.mono_api_key),
             "FLUTTERWAVE_SECRET_KEY": bool(self.flutterwave_secret_key),
-            "META_ACCESS_TOKEN": self.meta_access_token != "development_access_token",
-            "META_VERIFY_TOKEN": self.meta_verify_token != "development_token",
-            "META_PHONE_NUMBER_ID": self.meta_phone_number_id != "development_phone_id",
+            "META_APP_SECRET": bool(self.whatsapp.app_secret),
+            "META_ACCESS_TOKEN": self.whatsapp.access_token != "development_access_token",
+            "META_VERIFY_TOKEN": self.whatsapp.verify_token != "development_token",
+            "META_PHONE_NUMBER_ID": self.whatsapp.phone_number_id != "development_phone_id",
             "TELEGRAM_BOT_TOKEN": bool(self.telegram_bot_token),
             "TELEGRAM_WEBHOOK_SECRET_TOKEN": bool(self.telegram_webhook_secret_token),
         }
@@ -183,7 +233,7 @@ class Settings:
         """Return whether Mono clients should use mock responses."""
         if self.mono_use_mock_override is not None:
             return self.mono_use_mock_override
-        return self.app_env.lower() == "development"
+        return self.runtime.app_env.lower() == "development"
 
     @property
     def selected_direct_debit_provider(self) -> str:

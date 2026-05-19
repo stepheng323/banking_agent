@@ -271,26 +271,27 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
     llm = ChatOpenAI(model=settings.planner_model, temperature=0, timeout=30.0, max_retries=1)
-    logger.info("planner_model_selected", app_env=settings.app_env, model=settings.planner_model)
+    app_env = settings.runtime.app_env
+    logger.info("planner_model_selected", app_env=app_env, model=settings.planner_model)
     query_model = _resolve_role_model(
         role="query",
         configured_model=settings.query_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     query_llm = ChatOpenAI(model=query_model, temperature=0, timeout=30.0, max_retries=1)
     semantic_router_model = _resolve_role_model(
         role="semantic_router",
         configured_model=settings.semantic_router_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     semantic_router_llm = ChatOpenAI(model=semantic_router_model, temperature=0, timeout=15.0, max_retries=1)
     interrupt_router_model = _resolve_role_model(
         role="interrupt_router",
         configured_model=settings.interrupt_router_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
 
     interrupt_llm = ChatOpenAI(model=interrupt_router_model, temperature=0, timeout=15.0, max_retries=1)
@@ -298,7 +299,7 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         role="extractor",
         configured_model=settings.extractor_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     extractor_llm = ChatOpenAI(model=extractor_model, temperature=0, timeout=20.0, max_retries=1)
     logger.info(
@@ -335,7 +336,7 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     ]
     redis_stream_consumer = RedisStreamConsumer(
         stream_names=[name for name in stream_names if name],
-        group_name=f"{settings.project_name}-chat-worker-{settings.environment}",
+        group_name=f"{settings.project_name}-chat-worker-{settings.runtime.infrastructure_environment}",
     )
     return message_consumer, redis_stream_consumer
 

@@ -4,6 +4,7 @@ import asyncio
 import html
 import re
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
@@ -468,18 +469,26 @@ class TelegramClient(MessagingClient):
                 suppress_typing_indicator=suppress_typing_indicator,
             )
 
+        include_chat_id = False
         if flow_token.startswith("link-"):
             endpoint = "linking.html"
         elif "onboarding" in flow_token:
             endpoint = "onboarding.html"
         else:
             endpoint = "pin_entry.html"
+            include_chat_id = True
         import time
 
-        mini_app_url = (
-            f"{self.mini_app_base_url}/static/telegram/{endpoint}"
-            f"?flow_token={flow_token}&chat_id={to}&v={int(time.time())}"
-        )
+        query_params = {"flow_token": flow_token, "v": str(int(time.time()))}
+        if include_chat_id:
+            query_params["chat_id"] = to
+        if endpoint == "pin_entry.html":
+            if header:
+                query_params["header"] = header
+            if body_text:
+                query_params["body_text"] = body_text
+
+        mini_app_url = f"{self.mini_app_base_url}/static/telegram/{endpoint}?{urlencode(query_params)}"
 
         parts: list[str] = []
         if header:

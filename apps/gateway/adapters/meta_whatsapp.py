@@ -8,6 +8,12 @@ from typing import Any
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.gateway.core.config import settings
+
+
+class WebhookSignatureError(ValueError):
+    """Raised when a Meta webhook signature is missing or invalid."""
+
 
 class QuotedMessage(BaseModel):
     """Represents a quoted/replied-to message."""
@@ -139,14 +145,20 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
 
 async def verify_meta_signature(request: Request) -> None:
     """Verify Meta signature."""
-    app_secret = None
+    app_secret = settings.whatsapp.app_secret
     if not app_secret:
-        return
+        raise WebhookSignatureError("META_APP_SECRET is not set")
+
     sig = request.headers.get("X-Hub-Signature-256")
     if not sig or not sig.startswith("sha256="):
-        return
+        raise WebhookSignatureError("Missing or invalid signature header")
+
+    received_digest = sig.removeprefix("sha256=").strip().lower()
+    if not received_digest:
+        raise WebhookSignatureError("Missing signature digest")
+
     body = await request.body()
     mac = hmac.new(app_secret.encode("utf-8"), msg=body, digestmod=hashlib.sha256)
-    expected = "sha256=" + mac.hexdigest()
-    if not hmac.compare_digest(expected, sig):
-        raise ValueError("Invalid signature")
+    expected_digest = mac.hexdigest()
+    if not hmac.compare_digest(expected_digest, received_digest):
+        raise WebhookSignatureError("Invalid signature")

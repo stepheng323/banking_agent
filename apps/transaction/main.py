@@ -87,7 +87,7 @@ async def _run_transaction_stream_worker(stop_event: asyncio.Event) -> None:
     consumers = setup_transaction_worker_consumers()
     stream_consumer = RedisStreamConsumer(
         stream_names=_enabled_stream_names(),
-        group_name=f"{settings.project_name}-transaction-worker-{settings.environment}",
+        group_name=f"{settings.project_name}-transaction-worker-{settings.runtime.infrastructure_environment}",
     )
     logger.info("transaction_stream_worker_started", streams=stream_consumer.stream_names)
     await stream_consumer.ensure_groups()

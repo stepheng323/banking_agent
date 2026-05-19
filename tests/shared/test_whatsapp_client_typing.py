@@ -36,7 +36,7 @@ async def test_whatsapp_client_send_text_suppresses_typing_when_requested(monkey
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
     monkeypatch.setattr("shared.clients.whatsapp.client.asyncio.sleep", _sleep)
-    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 650)
+    monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     result = await client.send_text(
         to="2348000000000",
@@ -73,7 +73,7 @@ async def test_whatsapp_client_send_text_keeps_typing_by_default(monkeypatch: py
     monkeypatch.setattr(client, "_ensure_message_id", _ensure_message_id)
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
-    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 0)
+    monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 0)
 
     result = await client.send_text(
         to="2348000000000",
@@ -113,7 +113,7 @@ async def test_whatsapp_client_send_text_waits_briefly_after_typing(monkeypatch:
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
     monkeypatch.setattr("shared.clients.whatsapp.client.asyncio.sleep", _sleep)
-    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 650)
+    monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     result = await client.send_text(
         to="2348000000000",
@@ -127,8 +127,8 @@ async def test_whatsapp_client_send_text_waits_briefly_after_typing(monkeypatch:
 
 @pytest.mark.asyncio
 async def test_whatsapp_client_reuses_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "meta_access_token", "token")
-    monkeypatch.setattr(settings, "meta_phone_number_id", "phone-id")
+    monkeypatch.setattr(settings.whatsapp, "access_token", "token")
+    monkeypatch.setattr(settings.whatsapp, "phone_number_id", "phone-id")
     created_clients: list[object] = []
 
     class _FakeAsyncClient:

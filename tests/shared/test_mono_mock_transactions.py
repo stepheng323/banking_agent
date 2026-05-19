@@ -16,7 +16,7 @@ def _reset_mock_state() -> None:
 @pytest.mark.asyncio
 async def test_mono_client_mock_transactions_apply_date_window(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
     all_transactions = await client.get_transactions("acc_1", limit=50, user_id="user_1", mock_account_slot=0)
@@ -38,7 +38,7 @@ async def test_mono_client_mock_transactions_apply_date_window(monkeypatch: pyte
 @pytest.mark.asyncio
 async def test_mono_client_mock_transactions_page_matches_unpaginated_order(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
     all_transactions = await client.get_transactions("acc_1", limit=50, user_id="user_1", mock_account_slot=0)
@@ -70,7 +70,7 @@ async def test_mono_client_mock_transactions_page_matches_unpaginated_order(monk
 @pytest.mark.asyncio
 async def test_mono_client_mock_transactions_are_isolated_per_user(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
     user_1_first = await client.get_transactions("acc_u1_1", limit=5, user_id="user_1")
@@ -82,7 +82,7 @@ async def test_mono_client_mock_transactions_are_isolated_per_user(monkeypatch: 
 @pytest.mark.asyncio
 async def test_mono_client_mock_transactions_use_account_slot_per_user(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
     first_account = await client.get_transactions("acc_1", limit=5, user_id="user_1", mock_account_slot=0)
@@ -95,7 +95,7 @@ async def test_mono_client_mock_transactions_use_account_slot_per_user(monkeypat
 @pytest.mark.asyncio
 async def test_mono_client_mock_debit_defaults_to_immediate_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
     initiated = await client.initiate_debit(
@@ -133,7 +133,7 @@ async def test_mono_client_mock_debit_defaults_to_immediate_success(monkeypatch:
 @pytest.mark.asyncio
 async def test_mono_client_mock_debit_pending_lifecycle_can_still_be_forced(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
     initiated = await client.initiate_debit(
@@ -156,7 +156,7 @@ async def test_mono_client_mock_debit_pending_lifecycle_can_still_be_forced(monk
 @pytest.mark.asyncio
 async def test_mono_client_mock_get_debit_status_raises_for_unknown_debit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
 
@@ -169,7 +169,7 @@ async def test_mono_client_mock_get_debit_status_raises_for_unknown_debit(monkey
 @pytest.mark.asyncio
 async def test_mono_client_mock_failed_debit_uses_non_zero_response_code(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
     initiated = await client.initiate_debit(

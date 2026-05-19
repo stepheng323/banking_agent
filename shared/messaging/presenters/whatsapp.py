@@ -128,7 +128,7 @@ class WhatsAppPresenter(Presenter):
 
             resp = await self.client.send_flow(
                 to=context.phone_number,
-                flow_id=settings.pin_confirmation_flow_id,
+                flow_id=settings.whatsapp.pin_confirmation_flow_id,
                 flow_config={
                     "header": header,
                     "text_body": intent.summary,
@@ -164,7 +164,7 @@ class WhatsAppPresenter(Presenter):
 
             resp = await self.client.send_flow(
                 to=context.phone_number,
-                flow_id=settings.pin_confirmation_flow_id,
+                flow_id=settings.whatsapp.pin_confirmation_flow_id,
                 flow_config={
                     "header": intent.header or "Confirm Transaction",
                     "text_body": intent.summary,

@@ -6,7 +6,6 @@ import traceback
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
-from apps.gateway.api.webhooks.ownership import require_webhook_ingress_enabled
 from apps.gateway.api.webhooks.whatsapp.flows.dependencies import (
     get_queue_publisher,
     get_whatsapp_client,
@@ -16,6 +15,9 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.account_selection_handler
     handle_account_selection,
 )
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.bvn_handler import handle_bvn_entry
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.channel_link_pin_handler import (
+    handle_channel_link_pin,
+)
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.linking_method_selection_handler import (
     LinkingMethodSelectionInput,
     handle_linking_method_selection,
@@ -38,6 +40,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler i
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
+from shared.services.channel_linking import is_channel_link_pin_token
 from shared.utils.flow_encryption import encrypt_flow_response
 
 router = APIRouter()
@@ -56,7 +59,6 @@ async def flow_webhook(
     Note: Agent services are called via queue events, not directly.
     """
     try:
-        require_webhook_ingress_enabled("whatsapp.flow")
         processed_request, error_response = await process_flow_request(req)
         if error_response:
             return error_response
@@ -70,6 +72,7 @@ async def flow_webhook(
         request_was_encrypted = processed_request.request_was_encrypted
         aes_key_bytes = processed_request.aes_key_bytes
         iv_bytes = processed_request.iv_bytes
+        authorizing_channel_user_id = processed_request.authorizing_channel_user_id
 
         if screen == "BVN_ENTRY":
             return await handle_bvn_entry(
@@ -90,6 +93,7 @@ async def flow_webhook(
                     request_was_encrypted,
                     aes_key_bytes or b"",
                     iv_bytes or b"",
+                    authorizing_channel_user_id=authorizing_channel_user_id,
                 )
             else:
                 method_data = MethodSelectionInput(**data)
@@ -132,6 +136,14 @@ async def flow_webhook(
             )
 
         elif screen == "Pin":
+            if is_channel_link_pin_token(flow_token):
+                return await handle_channel_link_pin(
+                    data,
+                    flow_token or "",
+                    request_was_encrypted,
+                    aes_key_bytes or b"",
+                    iv_bytes or b"",
+                )
             return await handle_transaction_pin(
                 data,
                 flow_token or "",

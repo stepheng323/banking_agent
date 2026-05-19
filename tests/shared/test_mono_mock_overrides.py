@@ -9,6 +9,7 @@ def _set_minimum_production_env(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("MONO_API_KEY", "test-mono-key")
     monkeypatch.setenv("FLUTTERWAVE_SECRET_KEY", "test-flw-key")
+    monkeypatch.setenv("META_APP_SECRET", "test-meta-secret")
     monkeypatch.setenv("META_ACCESS_TOKEN", "test-meta-access")
     monkeypatch.setenv("META_VERIFY_TOKEN", "test-meta-verify")
     monkeypatch.setenv("META_PHONE_NUMBER_ID", "12345")
@@ -68,7 +69,7 @@ def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
 def test_direct_debit_provider_factory_uses_mono_mock_toggle(monkeypatch) -> None:
     DirectDebitProviderFactory.clear_cache()
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     provider = DirectDebitProviderFactory.get_provider()
 
@@ -79,7 +80,7 @@ def test_direct_debit_provider_factory_uses_mono_mock_toggle(monkeypatch) -> Non
 
 def test_mono_client_uses_explicit_mock_toggle(monkeypatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
 

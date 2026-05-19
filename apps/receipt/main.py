@@ -57,7 +57,7 @@ async def _run_receipt_stream_worker(stop_event: asyncio.Event) -> None:
         raise RuntimeError("receipt_stream_not_configured")
     stream_consumer = RedisStreamConsumer(
         stream_names=[stream_name],
-        group_name=f"{settings.project_name}-receipt-worker-{settings.environment}",
+        group_name=f"{settings.project_name}-receipt-worker-{settings.runtime.infrastructure_environment}",
     )
     logger.info("receipt_stream_worker_started", streams=stream_consumer.stream_names)
     await stream_consumer.ensure_groups()

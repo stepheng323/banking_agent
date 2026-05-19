@@ -9,10 +9,12 @@ from typing import Any
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.intents import Say, ShowFlow
+from apps.chat.src.queue_consumers import message_consumer as message_consumer_module
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import ChannelMessage, MessageType
+from shared.services.auth import AuthorizationResult
 
 
 class _RateLimiterAllow:
@@ -198,6 +200,63 @@ class _RedisStub:
         self.values[key] = value
 
 
+class _SessionManagerStub:
+    def __init__(self) -> None:
+        self.sessions: dict[str, dict[str, Any]] = {}
+        self.deleted: list[str] = []
+
+    async def update_session_strict(
+        self,
+        flow_token: str,
+        updates: dict[str, Any],
+        *,
+        verify: bool = False,
+    ) -> bool:
+        del verify
+        self.sessions.setdefault(flow_token, {}).update(updates)
+        return True
+
+    async def delete_session(self, flow_token: str) -> None:
+        self.deleted.append(flow_token)
+        self.sessions.pop(flow_token, None)
+
+
+class _AuthorizationServiceStub:
+    def __init__(
+        self,
+        result: AuthorizationResult | None,
+        *,
+        claim_results: list[bool] | None = None,
+    ) -> None:
+        self.result = result
+        self.claim_results = claim_results or [True]
+        self.get_calls: list[str] = []
+        self.claim_calls: list[tuple[str, int]] = []
+
+    async def get_pin_verification_result(self, idempotency_key: str) -> AuthorizationResult | None:
+        self.get_calls.append(idempotency_key)
+        return self.result
+
+    async def claim_pin_resume(self, idempotency_key: str, ttl_seconds: int = 86400) -> bool:
+        self.claim_calls.append((idempotency_key, ttl_seconds))
+        if not self.claim_results:
+            return False
+        return self.claim_results.pop(0)
+
+
+def _pin_verified_event(**overrides: Any) -> dict[str, Any]:
+    event = {
+        "event_type": "pin_verified",
+        "phone_number": "2348162511023",
+        "flow_type": "transfer",
+        "idempotency_key": "idem-1",
+        "success": True,
+        "channel": "whatsapp",
+    }
+    event.update(overrides)
+    return event
+
+
 @pytest.mark.asyncio
 async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     context_manager = _ContextManagerStub(should_claim=True)
@@ -260,6 +319,112 @@ async def test_message_consumer_passes_resolved_user_to_orchestrator(monkeypatch
     assert getattr(orchestrator.last_user, "phone_number", None) == "2348162511023"
     assert user_repository.phone_calls == 1
     assert user_repository.channel_identity_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_message_requires_telegram_approval_before_linking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = SimpleNamespace(
+        id="u1",
+        phone_number="2348162511023",
+        onboarding_status=UserOnboardingStatusEnum.ONBOARDING_COMPLETED,
+    )
+
+    class _LinkingUserRepoStub:
+        async def get_by_phone(self, phone_number: str) -> Any:
+            assert phone_number == "2348162511023"
+            return user
+
+        async def get_channel_identity_by_phone(self, phone_number: str, channel: str) -> str | None:
+            assert phone_number == "2348162511023"
+            assert channel == "telegram"
+            return "927331985"
+
+        async def get_by_channel_identity(self, channel: str, identity: str) -> Any:
+            assert channel == "whatsapp"
+            assert identity == "2348162511023"
+            return None
+
+    class _TelegramClientStub:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def send_flow(self, **kwargs: Any) -> Any:
+            self.calls.append(kwargs)
+            return SimpleNamespace(success=True, error=None, message_id="tg-flow")
+
+    session_manager = _SessionManagerStub()
+    telegram_client = _TelegramClientStub()
+    say_calls: list[tuple[str, str, str, str, dict[str, Any] | None]] = []
+
+    async def _enqueue_outbox_say(
+        publisher: Any,
+        phone_number: str,
+        channel: str,
+        text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        del publisher
+        say_calls.append((phone_number, channel, text, metadata))
+
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "session_manager", session_manager)
+    monkeypatch.setattr(message_consumer_module.secrets, "token_urlsafe", lambda _: "opaque-token")
+    monkeypatch.setattr(message_consumer_module, "TelegramClient", lambda: telegram_client)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_say", _enqueue_outbox_say)
+
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_LinkingUserRepoStub(),  # type: ignore[arg-type]
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    result = await consumer._handle_message(_message("wamid-link-whatsapp"))
+
+    assert result == {"status": "channel_link_authorization_pending", "authorizing_channel": "telegram"}
+    assert orchestrator.invoke_calls == 0
+    assert context_manager.claimed == []
+    assert session_manager.sessions["channel-link-opaque-token"] == {
+        "purpose": "channel_identity_link",
+        "user_id": "u1",
+        "phone_number": "2348162511023",
+        "requested_channel": "whatsapp",
+        "requested_channel_user_id": "2348162511023",
+        "requested_channel_actor_id": "2348162511023",
+        "authorizing_channel": "telegram",
+        "authorizing_channel_user_id": "927331985",
+        "step": "pending_existing_channel_authorization",
+    }
+    assert telegram_client.calls == [
+        {
+            "to": "927331985",
+            "flow_id": "pin_entry",
+            "flow_config": {
+                "header": "Authorize WhatsApp link",
+                "text_body": (
+                    "Enter your transaction PIN to link WhatsApp to your banking profile. "
+                    "Continue only if this request was from you."
+                ),
+                "flow_cta": "Enter PIN",
+                "flow_token": "channel-link-pin-channel-link-opaque-token",
+            },
+            "suppress_typing_indicator": True,
+        }
+    ]
+    assert say_calls == [
+        (
+            "2348162511023",
+            "whatsapp",
+            (
+                "I sent a secure PIN request to your existing Telegram channel. "
+                "Enter your PIN there to finish linking WhatsApp."
+            ),
+            {"source": "channel_link_guard", "reason": "authorization_pending"},
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -451,6 +616,7 @@ async def test_non_transaction_pin_verified_flow_is_ignored(monkeypatch: pytest.
     await consumer._handle_pin_verified(
         flow_type="link",
         phone_number="2348162511023",
+        idempotency_key="idem-1",
         success=True,
         channel="telegram",
         extra_data={"chat_id": "98765"},
@@ -458,6 +624,118 @@ async def test_non_transaction_pin_verified_flow_is_ignored(monkeypatch: pytest.
 
     assert orchestrator.resume_calls == []
     assert enqueue_calls == []
+
+
+@pytest.mark.asyncio
+async def test_pin_verified_event_without_stored_authorization_does_not_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    auth_service = _AuthorizationServiceStub(None)
+    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+
+    await consumer.process_flow_event(_pin_verified_event())
+
+    assert auth_service.get_calls == ["idem-1"]
+    assert auth_service.claim_calls == []
+    assert orchestrator.resume_calls == []
+
+
+@pytest.mark.asyncio
+async def test_pin_verified_event_requires_literal_success_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    auth_service = _AuthorizationServiceStub(
+        AuthorizationResult(verified=True, user_id="u1", transaction_type="transfer")
+    )
+    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+
+    await consumer.process_flow_event(_pin_verified_event(success="true"))
+
+    assert auth_service.get_calls == []
+    assert auth_service.claim_calls == []
+    assert orchestrator.resume_calls == []
+
+
+@pytest.mark.parametrize(
+    ("auth_result", "flow_type"),
+    [
+        (AuthorizationResult(verified=False, user_id="u1", transaction_type="transfer"), "transfer"),
+        (AuthorizationResult(verified=True, user_id=None, transaction_type="transfer"), "transfer"),
+        (AuthorizationResult(verified=True, user_id="u1", transaction_type="airtime"), "transfer"),
+        (AuthorizationResult(verified=True, user_id="u2", transaction_type="transfer"), "transfer"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_pin_verified_event_rejects_invalid_stored_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_result: AuthorizationResult,
+    flow_type: str,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    auth_service = _AuthorizationServiceStub(auth_result)
+    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+
+    await consumer.process_flow_event(_pin_verified_event(flow_type=flow_type))
+
+    assert auth_service.get_calls == ["idem-1"]
+    assert auth_service.claim_calls == []
+    assert orchestrator.resume_calls == []
+
+
+@pytest.mark.asyncio
+async def test_pin_verified_event_resumes_once_after_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    auth_service = _AuthorizationServiceStub(
+        AuthorizationResult(verified=True, user_id="u1", transaction_type="transfer"),
+        claim_results=[True, False],
+    )
+    sent_payloads: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        sent_payloads.append(list(args))
+
+    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    await consumer.process_flow_event(_pin_verified_event())
+    await consumer.process_flow_event(_pin_verified_event())
+
+    assert auth_service.get_calls == ["idem-1", "idem-1"]
+    assert auth_service.claim_calls == [("idem-1", 86400), ("idem-1", 86400)]
+    assert orchestrator.resume_calls == [
+        {
+            "phone_number": "2348162511023",
+            "flow_type": "transfer",
+            "pin_verified": "True",
+            "channel": "whatsapp",
+        }
+    ]
+    assert len(sent_payloads) == 1
 
 
 @pytest.mark.asyncio

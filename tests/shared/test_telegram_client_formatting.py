@@ -295,8 +295,8 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
 
     monkeypatch.setattr(client, "_call", _fake_call)
 
-    await client.send_mini_app(to="12345", flow_token="link-12345-1700000000")
-    await client.send_mini_app(to="12345", flow_token="onboarding-12345")
+    await client.send_mini_app(to="12345", flow_token="link-opaque-token")
+    await client.send_mini_app(to="12345", flow_token="onboarding-opaque-token")
     await client.send_mini_app(to="12345", flow_token="transfer-pin-idem-12345")
 
     assert len(calls) == 3
@@ -304,14 +304,18 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
     first_markup = calls[0]["reply_markup"]
     first_url = first_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/linking.html" in first_url
+    assert "chat_id=" not in first_url
 
     second_markup = calls[1]["reply_markup"]
     second_url = second_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/onboarding.html" in second_url
+    assert "flow_token=onboarding-opaque-token" in second_url
+    assert "chat_id=" not in second_url
 
     third_markup = calls[2]["reply_markup"]
     third_url = third_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/pin_entry.html" in third_url
+    assert "chat_id=12345" in third_url
 
 
 @pytest.mark.asyncio

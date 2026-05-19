@@ -55,7 +55,7 @@ class _FailingSessionManager:
 async def test_build_link_account_flow_uses_canonical_phone_and_persists_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "account_linking_flow_id", "flow-link-123")
+    monkeypatch.setattr(settings.whatsapp, "account_linking_flow_id", "flow-link-123")
     redis = _RedisStub()
     session_manager = FlowSessionManager(redis=redis, key_prefix="onboarding")
     worker = AccountWorker(
@@ -67,7 +67,7 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.secrets.token_urlsafe", lambda _: "opaque-link-token")
 
     flow = await worker._build_link_account_flow(
         {
@@ -78,9 +78,10 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
         }
     )
 
-    assert flow["flow_config"]["flow_token"] == "link-2348000000000-1700000000"
+    assert flow["flow_config"]["flow_token"] == "link-opaque-link-token"
+    assert "2348000000000" not in flow["flow_config"]["flow_token"]
 
-    stored = await BvnVerificationService(session_manager).get_session_data("link-2348000000000-1700000000")
+    stored = await BvnVerificationService(session_manager).get_session_data("link-opaque-link-token")
     assert stored["phone_number"] == "2348000000000"
     assert stored["bvn"] == "12345678901"
     assert stored["session_id"] == "mono-session-123"
@@ -93,7 +94,7 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
 async def test_build_link_account_flow_returns_retryable_error_when_session_store_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "account_linking_flow_id", "flow-link-123")
+    monkeypatch.setattr(settings.whatsapp, "account_linking_flow_id", "flow-link-123")
     worker = AccountWorker(
         account_repo=_DummyRepo(),
         user_repo=_DummyRepo(),
@@ -103,7 +104,7 @@ async def test_build_link_account_flow_returns_retryable_error_when_session_stor
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
+    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.secrets.token_urlsafe", lambda _: "opaque-link-token")
 
     flow = await worker._build_link_account_flow(
         {
