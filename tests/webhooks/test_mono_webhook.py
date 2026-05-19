@@ -1,5 +1,6 @@
 """Tests for Mono webhook handler - Unit tests with mocked dependencies."""
 
+import importlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -8,6 +9,89 @@ import pytest
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from shared.services.async_completion import record_group_leg_and_maybe_build_summary
+
+
+class _FakeMonoRequest:
+    def __init__(self, payload: dict, headers: dict[str, str] | None = None) -> None:
+        self._payload = payload
+        self.headers = headers or {}
+
+    async def json(self) -> dict:
+        return self._payload
+
+
+class _RouterServiceStub:
+    MANDATE_STATUS_MAP = {"events.mandates.approved": "approved"}
+    DEBIT_STATUS_MAP = {"events.mandates.debit.successful": "confirmed"}
+
+    def __init__(self) -> None:
+        self.mandate_events: list[tuple[str, dict]] = []
+        self.debit_events: list[tuple[str, dict]] = []
+
+    async def handle_mandate_event(self, event: str, data: dict) -> bool:
+        self.mandate_events.append((event, data))
+        return True
+
+    async def handle_debit_event(self, event: str, data: dict) -> bool:
+        self.debit_events.append((event, data))
+        return True
+
+
+class TestMonoWebhookRouterSecurity:
+    @pytest.mark.asyncio
+    async def test_rejects_missing_secret_outside_local_before_business_routing(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _RouterServiceStub()
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest({"event": "events.mandates.debit.successful", "data": {"id": "debit-1"}})
+        )
+
+        assert response.status_code == 401
+        assert service.mandate_events == []
+        assert service.debit_events == []
+
+    @pytest.mark.asyncio
+    async def test_rejects_wrong_secret_outside_local(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _RouterServiceStub()
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest(
+                {"event": "events.mandates.debit.successful", "data": {"id": "debit-1"}},
+                headers={"mono-webhook-secret": "wrong-secret"},
+            )
+        )
+
+        assert response.status_code == 401
+        assert service.mandate_events == []
+        assert service.debit_events == []
+
+    @pytest.mark.asyncio
+    async def test_accepts_valid_secret_and_routes_debit_event_to_debit_handler(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _RouterServiceStub()
+        payload = {"event": "events.mandates.debit.successful", "data": {"id": "debit-1"}}
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest(payload, headers={"mono-webhook-secret": "expected-secret"})
+        )
+
+        assert response.status_code == 200
+        assert service.debit_events == [("events.mandates.debit.successful", {"id": "debit-1"})]
+        assert service.mandate_events == []
 
 
 class TestWebhookServiceBasics:

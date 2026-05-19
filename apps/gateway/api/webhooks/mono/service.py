@@ -76,12 +76,12 @@ class MonoWebhookService:
         """
         new_status = self.MANDATE_STATUS_MAP.get(event)
         if not new_status:
-            logger.debug("mandate_event_ignored", event=event)
+            logger.debug("mandate_event_ignored", event_name=event)
             return False
 
         mandate_id = data.get("id")
         if not mandate_id:
-            logger.warning("mono_webhook_no_mandate_id", event=event)
+            logger.warning("mono_webhook_no_mandate_id", event_name=event)
             return False
 
         async with UnitOfWork() as uow:
@@ -132,13 +132,13 @@ class MonoWebhookService:
         funding_status = self.DEBIT_STATUS_MAP.get(event)
         transfer_status = self.TRANSFER_DEBIT_STATUS_MAP.get(event)
         if not funding_status or not transfer_status:
-            logger.debug("debit_event_ignored", event=event)
+            logger.debug("debit_event_ignored", event_name=event)
             return False
 
         reference = data.get("reference_number") or data.get("reference")
         debit_id = data.get("id")
         if not reference and not debit_id:
-            logger.warning("mono_webhook_no_reference", event=event)
+            logger.warning("mono_webhook_no_reference", event_name=event)
             return False
 
         async with UnitOfWork() as uow:

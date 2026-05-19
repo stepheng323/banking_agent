@@ -97,6 +97,13 @@ variable "mono_api_key" {
   default     = ""
 }
 
+variable "mono_webhook_secret" {
+  description = "Mono webhook verification secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "flutterwave_secret_key" {
   description = "Flutterwave secret key"
   type        = string

@@ -6,11 +6,20 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-_env_path = Path(__file__).parent.parent.parent / ".env"
-load_dotenv(dotenv_path=_env_path, override=True)
-
-
 LOCAL_APP_ENVS = frozenset({"dev", "development", "test", "local"})
+
+
+def _load_local_dotenv() -> None:
+    """Load .env only for local runtimes, without overriding deployment env vars."""
+    raw_app_env = os.environ.get("APP_ENV")
+    if raw_app_env is not None and raw_app_env.strip().lower() not in LOCAL_APP_ENVS:
+        return
+
+    _env_path = Path(__file__).parent.parent.parent / ".env"
+    load_dotenv(dotenv_path=_env_path, override=False)
+
+
+_load_local_dotenv()
 
 
 @dataclass
@@ -111,6 +120,7 @@ class Settings:
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
 
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
+        self.mono_webhook_secret: str = os.getenv("MONO_WEBHOOK_SECRET", "").strip()
         self.mono_use_mock_override: bool | None = self._parse_optional_bool(os.getenv("MONO_USE_MOCK"))
 
         self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
@@ -211,6 +221,7 @@ class Settings:
             "REDIS_URL": self.redis_url and self.redis_url != "redis://localhost:6379",
             "OPENAI_API_KEY": bool(self.openai_api_key),
             "MONO_API_KEY": bool(self.mono_api_key),
+            "MONO_WEBHOOK_SECRET": bool(self.mono_webhook_secret),
             "FLUTTERWAVE_SECRET_KEY": bool(self.flutterwave_secret_key),
             "META_APP_SECRET": bool(self.whatsapp.app_secret),
             "META_ACCESS_TOKEN": self.whatsapp.access_token != "development_access_token",

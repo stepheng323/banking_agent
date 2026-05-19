@@ -64,6 +64,7 @@ locals {
       TELEGRAM_BOT_TOKEN            = var.telegram_bot_token
       TELEGRAM_WEBHOOK_SECRET_TOKEN = var.telegram_webhook_secret_token
       MONO_API_KEY                  = var.mono_api_key
+      MONO_WEBHOOK_SECRET           = var.mono_webhook_secret
       FLUTTERWAVE_SECRET_KEY        = var.flutterwave_secret_key
     },
     var.secret_config_values
@@ -74,6 +75,7 @@ locals {
     "META_VERIFY_TOKEN",
     "META_ACCESS_TOKEN",
     "MONO_API_KEY",
+    "MONO_WEBHOOK_SECRET",
     "FLUTTERWAVE_SECRET_KEY"
   ]
 

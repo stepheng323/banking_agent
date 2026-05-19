@@ -8,6 +8,7 @@ def _set_minimum_production_env(monkeypatch) -> None:
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("MONO_API_KEY", "test-mono-key")
+    monkeypatch.setenv("MONO_WEBHOOK_SECRET", "test-mono-webhook-secret")
     monkeypatch.setenv("FLUTTERWAVE_SECRET_KEY", "test-flw-key")
     monkeypatch.setenv("META_APP_SECRET", "test-meta-secret")
     monkeypatch.setenv("META_ACCESS_TOKEN", "test-meta-access")
