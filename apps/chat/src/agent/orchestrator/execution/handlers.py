@@ -20,6 +20,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.shared.query_contracts import FocusedReferent, SelectionPayload
+from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 from shared.utils.serialization import sqlalchemy_to_dict
@@ -1058,6 +1059,20 @@ async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> Non
 
 
 async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    user_msg = ctx.state.last_message_text
+    if looks_like_transaction_replay_modifier_request(user_msg):
+        logger.info("support_task_replay_modifier_rerouted_to_transfer", task_id=task_id)
+        task.type = "transfer"
+        task.payload.clear()
+        task.payload.update(
+            {
+                "message": user_msg,
+                "instruction": user_msg,
+            }
+        )
+        await handle_transfer_task(task, task_id, ctx)
+        return
+
     worker = _get_worker(
         ctx.services,
         "support",
@@ -1068,7 +1083,6 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
     if not worker:
         return
 
-    user_msg = ctx.state.last_message_text
     context_data = {
         "phone_number": ctx.state.phone_number,
         "channel": ctx.state.channel,

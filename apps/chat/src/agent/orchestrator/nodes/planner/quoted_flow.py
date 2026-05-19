@@ -12,7 +12,9 @@ from apps.chat.src.agent.orchestrator.nodes.planner.quoted_replay import (
     _load_quoted_actionable_payload,
     _quoted_replay_clarify_response,
 )
+from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.i18n import render_message
+from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
@@ -77,12 +79,41 @@ async def _handle_quoted_replay_shortcut(
                     "semantic_path_shape": "quoted_router",
                     **locale_updates,
                 }
+            replay_modifier: ContextFrameReplayModifier | None = None
+            if (
+                looks_like_transaction_replay_modifier_request(text)
+                and callable(getattr(task_planner, "extract_context_frame_replay_modifiers", None))
+            ):
+                try:
+                    replay_modifier = cast(
+                        ContextFrameReplayModifier | None,
+                        await task_planner.extract_context_frame_replay_modifiers(
+                            state.phone_number,
+                            text,
+                            context=quoted_context,
+                            path_label="planner_path",
+                        ),
+                    )
+                except Exception as exc:
+                    logger.warning("quoted_replay_modifier_extractor_failed", error=str(exc))
+                else:
+                    if replay_modifier is not None:
+                        logger.info(
+                            "quoted_replay_modifier_extracted",
+                            confidence=replay_modifier.confidence,
+                            detected_language=replay_modifier.detected_language,
+                            has_amount=replay_modifier.amount is not None,
+                            has_source=bool(replay_modifier.source_account_reference),
+                            has_narration=bool(replay_modifier.narration),
+                            reason=replay_modifier.reason,
+                        )
             replay_updates = _build_quoted_replay_execution_updates(
                 state=state,
                 text=text,
                 interpretation=interpretation,
                 locale_updates=locale_updates,
                 quoted_payload=quoted_payload,
+                replay_modifier=replay_modifier,
             )
             if replay_updates is not None:
                 return replay_updates

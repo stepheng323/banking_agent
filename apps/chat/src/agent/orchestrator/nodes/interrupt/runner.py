@@ -197,19 +197,49 @@ def _field_applies_to_task(field: str, task_type: str) -> bool:
 
 def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
     loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
-    accounts = loaded_context.get("accounts")
-    if not isinstance(accounts, list):
-        return []
-    return [account for account in accounts if isinstance(account, dict)]
+    account_sources = (
+        loaded_context.get("transaction_accounts"),
+        loaded_context.get("accounts"),
+        loaded_context.get("all_accounts"),
+    )
+    accounts_by_key: dict[str, dict[str, Any]] = {}
+    for account_source in account_sources:
+        if not isinstance(account_source, list):
+            continue
+        for account in account_source:
+            if not isinstance(account, dict):
+                continue
+            account_id = str(
+                account.get("id") or account.get("account_id") or account.get("source_account_id") or ""
+            ).strip()
+            bank_name = str(
+                account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or ""
+            ).strip()
+            account_number = str(
+                account.get("account_number") or account.get("number") or account.get("source_account_number") or ""
+            ).strip()
+            key = account_id or f"{bank_name}:{account_number}"
+            if key and key not in accounts_by_key:
+                accounts_by_key[key] = account
+    return list(accounts_by_key.values())
 
 
 def _account_source_patch(account: dict[str, Any]) -> dict[str, Any]:
-    bank_name = str(account.get("bank_name") or account.get("bank") or "").strip()
-    account_number = str(account.get("account_number") or account.get("number") or "").strip()
-    account_name = str(account.get("account_name") or account.get("name") or "").strip()
+    bank_name = str(
+        account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or ""
+    ).strip()
+    account_number = str(
+        account.get("account_number") or account.get("number") or account.get("source_account_number") or ""
+    ).strip()
+    account_name = str(
+        account.get("account_name") or account.get("name") or account.get("source_account_name") or ""
+    ).strip()
+    account_id = str(
+        account.get("id") or account.get("account_id") or account.get("source_account_id") or ""
+    ).strip()
     return {
         "confirmation": {"confirmed": False},
-        "source_account_id": str(account.get("id") or account.get("account_id") or "").strip() or None,
+        "source_account_id": account_id or None,
         "source_account_name": account_name or None,
         "source_account_number": account_number or None,
         "source_bank_name": bank_name or None,
@@ -225,7 +255,7 @@ def _resolve_source_account_by_bank(state: OrchestratorState, source_bank_name: 
         return None
     matches = []
     for account in _loaded_accounts(state):
-        bank_name = account.get("bank_name") or account.get("bank")
+        bank_name = account.get("bank_name") or account.get("bank") or account.get("source_bank_name")
         normalized_bank_name = _normalize_account_reference(bank_name)
         if not normalized_bank_name:
             continue
@@ -390,7 +420,9 @@ def _resolve_source_bank_name_from_account_reference(
 
     matches: list[str] = []
     for account in _loaded_accounts(state):
-        bank_name = str(account.get("bank_name") or account.get("bank") or "").strip()
+        bank_name = str(
+            account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or ""
+        ).strip()
         normalized_bank_name = _normalize_account_reference(bank_name)
         if normalized_bank_name and any(normalized_bank_name in reference for reference in normalized_references):
             matches.append(bank_name)

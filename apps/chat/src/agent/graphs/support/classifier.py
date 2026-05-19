@@ -12,6 +12,10 @@ from apps.chat.src.agent.graphs.support.models import (
     TransactionReference,
 )
 from apps.chat.src.agent.graphs.support.prompts.classifier import SUPPORT_CLASSIFIER_PROMPT
+from apps.chat.src.agent.shared.routing_signals import (
+    looks_like_support_problem_statement,
+    looks_like_transaction_replay_modifier_request,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -170,6 +174,19 @@ class SupportClassifier:
                 use_recent=bool(tx_ref_data.get("use_recent", False)),
             )
 
+        if intent == SupportIntent.RETRY_TRANSFER and not SupportClassifier._retry_intent_is_grounded(
+            original_message,
+            tx_ref,
+        ):
+            return _ParseOutcome(
+                result=ClassificationResult(
+                    intent=None,
+                    confidence=self._parse_confidence(data.get("confidence")),
+                    raw_message=original_message,
+                ),
+                usable=True,
+            )
+
         return _ParseOutcome(
             result=ClassificationResult(
                 intent=intent,
@@ -219,7 +236,7 @@ class SupportClassifier:
                 transaction_ref=tx_ref,
                 raw_message=message,
             )
-        if RETRY_RE.search(message):
+        if RETRY_RE.search(message) and SupportClassifier._retry_intent_is_grounded(message, tx_ref):
             return ClassificationResult(
                 intent=SupportIntent.RETRY_TRANSFER,
                 confidence=0.9,
@@ -269,6 +286,21 @@ class SupportClassifier:
                 raw_message=message,
             )
         return None
+
+    @staticmethod
+    def _retry_intent_is_grounded(message: str, tx_ref: TransactionReference | None) -> bool:
+        if looks_like_transaction_replay_modifier_request(message):
+            return False
+        if tx_ref is not None and (
+            tx_ref.transaction_id
+            or tx_ref.amount is not None
+            or tx_ref.recipient_name
+            or tx_ref.date_hint
+            or tx_ref.use_quoted
+            or tx_ref.use_recent
+        ):
+            return True
+        return looks_like_support_problem_statement(message)
 
     def is_support_intent(self, result: ClassificationResult) -> bool:
         """Check if classification result is a valid support intent."""

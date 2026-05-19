@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse, Response
 
 from shared.utils.flow_encryption import encrypt_flow_response
 
+_FLOW_RESPONSE_VERSION = "3.0"
+
 
 def format_encrypted_response(
     response_data: dict[str, Any], aes_key_bytes: bytes | None, iv_bytes: bytes | None
@@ -27,6 +29,7 @@ def format_error_response(
 ) -> Response:
     """Format a standardized error response."""
     response = {
+        "version": _FLOW_RESPONSE_VERSION,
         "screen": screen,
         "data": {"show_error": True, "error_message": error_message, **extra_data},
     }
@@ -46,6 +49,7 @@ def format_success_response(
 ) -> Response:
     """Format a standardized success response."""
     response = {
+        "version": _FLOW_RESPONSE_VERSION,
         "screen": screen,
         "data": data,
     }
@@ -69,6 +73,7 @@ def format_complete_response(
     and prevents the user from reopening it.
     """
     response = {
+        "version": _FLOW_RESPONSE_VERSION,
         "screen": "COMPLETE",
         "data": {"message": message, **extra_data},
     }

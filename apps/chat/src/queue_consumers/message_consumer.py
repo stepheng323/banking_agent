@@ -21,7 +21,7 @@ from shared.cache.channel_identity_cache import load_channel_identity_user, stor
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.telegram.client import TelegramClient
 from shared.database.models import UserOnboardingStatusEnum
-from shared.i18n import render_message
+from shared.i18n import LocaleCode, render_message
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
 from shared.queue.messages import FlowEventType
@@ -29,7 +29,7 @@ from shared.repositories.user_repository import UserRepository
 from shared.services.auth import AuthorizationService
 from shared.services.channel_linking import build_channel_link_pin_token
 from shared.services.onboarding import session_manager
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
@@ -49,6 +49,89 @@ class _NoopPublisher:
 
 def _new_channel_link_token() -> str:
     return f"channel-link-{secrets.token_urlsafe(32)}"
+
+
+def _intent_kind(intent: UiIntent | dict[str, Any]) -> str:
+    if isinstance(intent, dict):
+        return str(intent.get("type") or "unknown")
+    if isinstance(intent, Say):
+        return "say"
+    if isinstance(intent, RequestAuth):
+        return "auth_request"
+    if isinstance(intent, RequestConfirmation):
+        return "request_confirmation"
+    if isinstance(intent, ShowReceipt):
+        return "show_receipt"
+    if isinstance(intent, ShowFlow):
+        return "flow"
+    if isinstance(intent, ShowOptions):
+        return "show_options"
+    return type(intent).__name__.lower()
+
+
+def _intent_text(intent: UiIntent | dict[str, Any]) -> str | None:
+    if isinstance(intent, Say):
+        return intent.text
+    if isinstance(intent, dict) and intent.get("type") == "say":
+        text = intent.get("text")
+        return text if isinstance(text, str) else None
+    return None
+
+
+def _is_default_greeting_text(text: str | None) -> bool:
+    if not text:
+        return False
+    normalized = " ".join(text.split())
+    for locale in LocaleCode:
+        greeting = str(render_message("conversational.greeting", locale.value))
+        if normalized == " ".join(greeting.split()):
+            return True
+    return False
+
+
+def _suppress_spurious_greeting_intents(intents: list[UiIntent | dict[str, Any]]) -> list[UiIntent | dict[str, Any]]:
+    """Drop default greeting only when a substantive response is already queued."""
+    has_non_greeting_visible_response = any(
+        (text is not None and not _is_default_greeting_text(text))
+        or isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowFlow, ShowOptions))
+        for intent in intents
+        for text in [_intent_text(intent)]
+    )
+    if not has_non_greeting_visible_response:
+        return intents
+
+    filtered = [intent for intent in intents if not _is_default_greeting_text(_intent_text(intent))]
+    if len(filtered) != len(intents):
+        logger.warning(
+            "message_consumer_spurious_greeting_suppressed",
+            original_count=len(intents),
+            filtered_count=len(filtered),
+        )
+    return filtered
+
+
+def _log_prepared_outbound(
+    *,
+    message: ChannelMessage,
+    phone_number: str,
+    response_text: str | None,
+    intents: list[UiIntent | dict[str, Any]],
+) -> None:
+    text_hashes = [log_fingerprint(text) for intent in intents if (text := _intent_text(intent))]
+    text_lengths = [len(text) for intent in intents if (text := _intent_text(intent))]
+    logger.info(
+        "message_consumer_outbound_prepared",
+        message_id=message.message_id,
+        channel=message.channel,
+        phone_number=phone_number,
+        intent_count=len(intents),
+        intent_kinds=[_intent_kind(intent) for intent in intents],
+        text_hashes=text_hashes,
+        text_lengths=text_lengths,
+        default_greeting_count=sum(1 for intent in intents if _is_default_greeting_text(_intent_text(intent))),
+        response_text_hash=log_fingerprint(response_text),
+        response_text_is_default_greeting=_is_default_greeting_text(response_text),
+    )
 
 
 class MessageConsumer:
@@ -167,6 +250,13 @@ class MessageConsumer:
             return {"status": "channel_link_session_store_failed"}
 
         try:
+            logger.info(
+                "whatsapp_identity_link_telegram_pin_flow_send",
+                flow_token_hash=log_fingerprint(flow_token),
+                pin_flow_token_hash=log_fingerprint(build_channel_link_pin_token(flow_token)),
+                authorizing_identity_hash=log_fingerprint(str(authorizing_identity)),
+                requested_whatsapp_hash=log_fingerprint(channel_user_id),
+            )
             result = await TelegramClient().send_flow(
                 to=str(authorizing_identity),
                 flow_id="pin_entry",
@@ -180,6 +270,12 @@ class MessageConsumer:
                     "flow_token": build_channel_link_pin_token(flow_token),
                 },
                 suppress_typing_indicator=True,
+            )
+            logger.info(
+                "whatsapp_identity_link_telegram_pin_flow_sent",
+                flow_token_hash=log_fingerprint(flow_token),
+                message_id=getattr(result, "message_id", None),
+                requested_whatsapp_hash=log_fingerprint(channel_user_id),
             )
         except Exception as e:
             logger.error("channel_link_authorization_send_failed", requested_channel=_WHATSAPP_CHANNEL, error=str(e))
@@ -587,6 +683,14 @@ class MessageConsumer:
                         message_id=message.message_id,
                     )
 
+            if intents_to_send:
+                intents_to_send = _suppress_spurious_greeting_intents(intents_to_send)
+                _log_prepared_outbound(
+                    message=message,
+                    phone_number=phone_number,
+                    response_text=response_text,
+                    intents=intents_to_send,
+                )
             if intents_to_send:
                 outbox_start = time.perf_counter()
                 await enqueue_outbox_intents(

@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import sys
 from typing import Any
@@ -68,3 +69,10 @@ def configure_logger() -> None:
 def get_logger(name: str):
     """Get a structured logger."""
     return structlog.get_logger(name)
+
+
+def log_fingerprint(value: Any, length: int = 16) -> str:
+    """Return a short stable hash for correlating sensitive values in logs."""
+    if value is None or value == "":
+        return ""
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:length]

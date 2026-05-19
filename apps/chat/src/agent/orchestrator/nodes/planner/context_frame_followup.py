@@ -600,10 +600,35 @@ def _replay_source_account_candidate(text: str | None) -> str | None:
 
 
 def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
-    accounts = (state.loaded_context or {}).get("accounts") or []
-    if not isinstance(accounts, list):
-        return []
-    return [account for account in accounts if isinstance(account, dict)]
+    loaded_context = state.loaded_context or {}
+    account_sources = (
+        loaded_context.get("transaction_accounts"),
+        loaded_context.get("accounts"),
+        loaded_context.get("all_accounts"),
+    )
+    accounts_by_key: dict[str, dict[str, Any]] = {}
+    for account_source in account_sources:
+        if not isinstance(account_source, list):
+            continue
+        for account in account_source:
+            if not isinstance(account, dict):
+                continue
+            account_id = str(account.get("id") or account.get("account_id") or "").strip()
+            bank_name = str(
+                account.get("bank_name")
+                or account.get("bank")
+                or account.get("source_bank_name")
+                or ""
+            ).strip()
+            account_number = str(
+                account.get("account_number")
+                or account.get("source_account_number")
+                or ""
+            ).strip()
+            key = account_id or f"{bank_name}:{account_number}"
+            if key and key not in accounts_by_key:
+                accounts_by_key[key] = account
+    return list(accounts_by_key.values())
 
 
 def _source_account_patch(account: dict[str, Any]) -> dict[str, Any]:
@@ -623,18 +648,18 @@ def _replay_source_account_override(
     text: str | None,
     state: OrchestratorState,
     replay_modifier: ContextFrameReplayModifier | None,
-) -> tuple[bool, dict[str, Any] | None]:
+) -> tuple[bool, dict[str, Any] | None, str | None]:
     candidate = _replay_source_account_candidate(text)
     if not candidate:
         candidate = _modifier_source_account_candidate(text, replay_modifier)
     if not candidate:
-        return False, None
+        return False, None, None
 
     matched_account = match_source_account_reference(candidate, _loaded_accounts(state))
     if not matched_account:
-        return True, None
+        return True, None, candidate
 
-    return True, _source_account_patch(matched_account)
+    return True, _source_account_patch(matched_account), candidate
 
 
 def _text_is_replay_amount_token(value: str) -> bool:
@@ -1488,18 +1513,16 @@ def _enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorSt
     if payload.get("source_account_number"):
         return
 
-    accounts = (state.loaded_context or {}).get("accounts") or []
-    if not isinstance(accounts, list):
-        return
-
     source_account_id = str(payload.get("source_account_id") or "").strip()
     source_bank_name = str(payload.get("source_bank_name") or "").strip().casefold()
     matched_account: dict[str, Any] | None = None
-    for account in accounts:
-        if not isinstance(account, dict):
-            continue
-        account_id = str(account.get("id") or account.get("account_id") or "").strip()
-        bank_name = str(account.get("bank_name") or account.get("bank") or "").strip().casefold()
+    for account in _loaded_accounts(state):
+        account_id = str(
+            account.get("id") or account.get("account_id") or account.get("source_account_id") or ""
+        ).strip()
+        bank_name = str(
+            account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or ""
+        ).strip().casefold()
         if source_account_id and account_id == source_account_id:
             matched_account = account
             break
@@ -1511,14 +1534,26 @@ def _enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorSt
         return
 
     if not payload.get("source_account_id"):
-        source_id = matched_account.get("id") or matched_account.get("account_id")
+        source_id = (
+            matched_account.get("id")
+            or matched_account.get("account_id")
+            or matched_account.get("source_account_id")
+        )
         if source_id:
             payload["source_account_id"] = source_id
     if not payload.get("source_bank_name"):
-        bank_name = matched_account.get("bank_name") or matched_account.get("bank")
+        bank_name = (
+            matched_account.get("bank_name")
+            or matched_account.get("bank")
+            or matched_account.get("source_bank_name")
+        )
         if bank_name:
             payload["source_bank_name"] = bank_name
-    account_number = matched_account.get("account_number") or matched_account.get("source_account_number")
+    account_number = (
+        matched_account.get("account_number")
+        or matched_account.get("number")
+        or matched_account.get("source_account_number")
+    )
     if account_number:
         payload["source_account_number"] = account_number
 
@@ -1646,9 +1681,18 @@ def _build_replay_response(
     }:
         return None
 
-    source_requested, source_patch = _replay_source_account_override(text, state, replay_modifier)
+    source_requested, source_patch, requested_source = _replay_source_account_override(text, state, replay_modifier)
     if source_requested and source_patch is None:
-        return None
+        source_label = requested_source or "that source account"
+        return ContextFrameFollowupResponse(
+            response=(
+                f"I could not find {source_label!r} among your linked source accounts. "
+                "Choose one of your linked accounts and try again."
+            ),
+            semantic_path_shape="context_frame_replay_source_unmatched",
+            recent_domain_focus="transaction",
+            context_frames=_refresh_context_frame(state, frame),
+        )
 
     entities = _replay_target_entities(
         frame,

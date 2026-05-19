@@ -1,19 +1,24 @@
 import hashlib
 import hmac
+import importlib
 import json
 from collections.abc import Mapping
 from typing import Any
 
 import pytest
+from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from apps.gateway.adapters import meta_whatsapp
 from apps.gateway.adapters.meta_whatsapp import WebhookSignatureError, verify_meta_signature
 from apps.gateway.api.webhooks.whatsapp.flows import request_processor
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
+from apps.gateway.api.webhooks.whatsapp.flows.router import flow_webhook
 from apps.gateway.api.webhooks.whatsapp.message.router import whatsapp_webhook
 from shared.config.settings import Settings
 from shared.utils.flow_decryption import is_encrypted
+
+flow_router_module = importlib.import_module("apps.gateway.api.webhooks.whatsapp.flows.router")
 
 
 def _request(body: bytes, headers: Mapping[str, str] | None = None) -> Request:
@@ -98,6 +103,124 @@ async def test_process_flow_request_allows_plaintext_in_local_app_env(monkeypatc
     assert processed is not None
     assert processed.screen == "BVN_ENTRY"
     assert processed.request_was_encrypted is False
+
+
+@pytest.mark.asyncio
+async def test_process_flow_request_captures_flow_action_and_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
+    monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
+
+    processed, error = await process_flow_request(_json_request({"version": "3.0", "action": "ping"}))
+
+    assert error is None
+    assert processed is not None
+    assert processed.screen is None
+    assert processed.action == "ping"
+    assert processed.version == "3.0"
+
+
+@pytest.mark.asyncio
+async def test_process_flow_request_falls_back_to_data_flow_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
+    monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
+
+    processed, error = await process_flow_request(
+        _json_request(
+            {
+                "version": "3.0",
+                "action": "data_exchange",
+                "screen": "Pin",
+                "data": {"pin": "1234", "flow_token": "transfer-pin-idem-1-2348162511023"},
+            }
+        )
+    )
+
+    assert error is None
+    assert processed is not None
+    assert processed.flow_token == "transfer-pin-idem-1-2348162511023"
+
+
+@pytest.mark.asyncio
+async def test_flow_webhook_ping_returns_versioned_active_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
+    monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
+
+    response = await flow_webhook(_json_request({"version": "3.0", "action": "ping"}))
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"version": "3.0", "data": {"status": "active"}}
+
+
+@pytest.mark.asyncio
+async def test_flow_webhook_data_exchange_launch_returns_pin_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
+    monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
+
+    response = await flow_webhook(
+        _json_request(
+            {
+                "version": "3.0",
+                "action": "data_exchange",
+                "flow_token": "transfer-pin-idem-1-2348162511023",
+            }
+        )
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"version": "3.0", "screen": "Pin", "data": {}}
+
+
+@pytest.mark.asyncio
+async def test_flow_webhook_init_with_blank_screen_returns_pin_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
+    monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
+
+    response = await flow_webhook(
+        _json_request(
+            {
+                "version": "3.0",
+                "action": "INIT",
+                "screen": "",
+                "data": {},
+                "flow_token": "transfer-pin-idem-1-2348162511023",
+            }
+        )
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"version": "3.0", "screen": "Pin", "data": {}}
+
+
+@pytest.mark.asyncio
+async def test_flow_webhook_infers_pin_screen_for_screenless_pin_submit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
+    monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
+
+    calls: list[dict[str, Any]] = []
+
+    async def _handle_transaction_pin(*args: Any, **kwargs: Any) -> JSONResponse:
+        calls.append({"args": args, "kwargs": kwargs})
+        return JSONResponse({"ok": True})
+
+    monkeypatch.setattr(flow_router_module, "handle_transaction_pin", _handle_transaction_pin)
+
+    response = await flow_webhook(
+        _json_request(
+            {
+                "version": "3.0",
+                "action": "data_exchange",
+                "data": {"pin": "1234", "flow_token": "transfer-pin-idem-1-2348162511023"},
+            }
+        )
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"ok": True}
+    assert len(calls) == 1
+    assert calls[0]["args"][0] == {"pin": "1234", "flow_token": "transfer-pin-idem-1-2348162511023"}
+    assert calls[0]["args"][1] == "transfer-pin-idem-1-2348162511023"
 
 
 @pytest.mark.asyncio

@@ -1,15 +1,16 @@
 """WhatsApp client for sending messages and flows."""
 
 import asyncio
-import json
 from typing import Any
 
 import httpx
 
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
+from shared.utils.logging import get_logger, log_fingerprint
 
 GRAPH_API_BASE = "https://graph.facebook.com/v24.0"
+logger = get_logger(__name__)
 
 
 class WhatsAppClient(MessagingClient):
@@ -391,7 +392,19 @@ class WhatsAppClient(MessagingClient):
         screen_name = flow_config.get("screen_name", "")
         footer = flow_config.get("footer", "")
         flow_token = flow_config.get("flow_token", "")
+        flow_action = flow_config.get("flow_action", "navigate")
         flow_action_payload = flow_config.get("flow_action_payload")
+        parameters: dict[str, Any] = {
+            "flow_message_version": "3",
+            "flow_token": flow_token or "",
+            "flow_id": flow_id,
+            "flow_cta": flow_cta,
+            "flow_action": flow_action,
+        }
+        if flow_action_payload is not None:
+            parameters["flow_action_payload"] = flow_action_payload
+        elif flow_action == "navigate":
+            parameters["flow_action_payload"] = {"screen": screen_name}
 
         interactive_payload = {
             "type": "flow",
@@ -399,14 +412,7 @@ class WhatsAppClient(MessagingClient):
             "body": {"text": text_body},
             "action": {
                 "name": "flow",
-                "parameters": {
-                    "flow_message_version": "3",
-                    "flow_token": flow_token or "",
-                    "flow_id": flow_id,
-                    "flow_cta": flow_cta,
-                    "flow_action": "navigate",
-                    "flow_action_payload": (flow_action_payload if flow_action_payload else {"screen": screen_name}),
-                },
+                "parameters": parameters,
             },
         }
 
@@ -421,13 +427,45 @@ class WhatsAppClient(MessagingClient):
             "interactive": interactive_payload,
         }
 
+        action_payload = parameters.get("flow_action_payload")
+        action_payload_data = action_payload.get("data") if isinstance(action_payload, dict) else None
+        logger.info(
+            "whatsapp_flow_send_prepared",
+            to_hash=log_fingerprint(to),
+            flow_id_hash=log_fingerprint(flow_id),
+            flow_token_hash=log_fingerprint(flow_token),
+            flow_action=flow_action,
+            screen_name=screen_name,
+            has_flow_action_payload="flow_action_payload" in parameters,
+            flow_action_payload_keys=(
+                sorted(str(key) for key in action_payload) if isinstance(action_payload, dict) else []
+            ),
+            flow_action_payload_data_keys=(
+                sorted(str(key) for key in action_payload_data) if isinstance(action_payload_data, dict) else []
+            ),
+        )
+
         try:
             result = await self._send(url, payload)
             msg_id = result.get("messages", [{}])[0].get("id")
+            logger.info(
+                "whatsapp_flow_send_succeeded",
+                to_hash=log_fingerprint(to),
+                flow_id_hash=log_fingerprint(flow_id),
+                flow_token_hash=log_fingerprint(flow_token),
+                flow_action=flow_action,
+                message_id=msg_id,
+            )
             return MessageResult(success=True, message_id=msg_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send flow: {e}")
-            print(f"   Payload was: {json.dumps(payload, indent=2)}")
+            logger.error(
+                "whatsapp_flow_send_failed",
+                to_hash=log_fingerprint(to),
+                flow_id_hash=log_fingerprint(flow_id),
+                flow_token_hash=log_fingerprint(flow_token),
+                flow_action=flow_action,
+                error=str(e),
+            )
             # Raise exception if it's critical, or return failed result?
             # Existing clients might expect raise, but interface says return result.
             # However, for now let's return failed result to inhibit crash

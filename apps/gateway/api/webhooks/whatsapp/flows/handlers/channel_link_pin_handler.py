@@ -10,7 +10,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
 )
 from shared.clients.telegram.client import TelegramClient
 from shared.services.channel_linking import complete_channel_link_with_pin
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -25,6 +25,14 @@ async def handle_channel_link_pin(
 ) -> Response:
     """Verify PIN from WhatsApp Flow and complete a pending channel link."""
     pin = data.get("pin")
+    logger.info(
+        "whatsapp_channel_link_pin_received",
+        flow_token_hash=log_fingerprint(flow_token),
+        request_was_encrypted=request_was_encrypted,
+        has_pin=bool(pin),
+        has_authorizing_channel_user_id=bool(authorizing_channel_user_id),
+        authorizing_channel_user_id_hash=log_fingerprint(authorizing_channel_user_id),
+    )
     if not pin:
         return format_error_response(
             "Pin",
@@ -39,6 +47,16 @@ async def handle_channel_link_pin(
         pin=str(pin),
         authorizing_channel="whatsapp",
         authorizing_channel_user_id=authorizing_channel_user_id,
+    )
+    logger.info(
+        "whatsapp_channel_link_pin_completed",
+        flow_token_hash=log_fingerprint(flow_token),
+        status=result.status,
+        success=result.success,
+        requested_channel=result.requested_channel,
+        requested_channel_user_id_hash=log_fingerprint(result.requested_channel_user_id),
+        attempts_remaining=result.attempts_remaining,
+        locked=result.locked,
     )
     if not result.success:
         return format_error_response(
@@ -68,7 +86,7 @@ async def handle_channel_link_pin(
         extension_message_response={
             "params": {
                 "flow_token": flow_token or "completed",
-                "success": True,
+                "success": "true",
             }
         },
     )

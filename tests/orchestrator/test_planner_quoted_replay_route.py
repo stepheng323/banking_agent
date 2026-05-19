@@ -4,22 +4,40 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
-from shared.types.planner import PlannerOutput
+from shared.types.planner import ContextFrameReplayModifier, PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
 
 class _QuotedPlannerStub:
-    def __init__(self, interpretation: QuotedReplayInterpretation) -> None:
+    def __init__(
+        self,
+        interpretation: QuotedReplayInterpretation,
+        replay_modifier: ContextFrameReplayModifier | None = None,
+    ) -> None:
         self.interpretation = interpretation
+        self.replay_modifier = replay_modifier
         self.quoted_called = False
         self.plan_called = False
         self.last_quoted_context: str | None = None
+        self.last_replay_modifier_context: str | None = None
 
     async def interpret_quoted_replay(self, phone_number: str, text: str, context: str = "None") -> Any:
         del phone_number, text
         self.quoted_called = True
         self.last_quoted_context = context
         return self.interpretation
+
+    async def extract_context_frame_replay_modifiers(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "planner_path",
+    ) -> ContextFrameReplayModifier | None:
+        del phone_number, text, path_label
+        self.last_replay_modifier_context = context
+        return self.replay_modifier
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
@@ -448,6 +466,203 @@ async def test_quoted_replay_normalizes_transfer_account_number_and_source_affin
     assert task.payload["recipient_bank_code"] == "044"
     assert task.payload["source_affinity_mode"] == "explicit"
     assert task.payload["source_account_number"] == "0000000003"
+
+
+@pytest.mark.asyncio
+async def test_quoted_replay_modifier_applies_source_account_override() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "execute",
+                "confidence": 0.95,
+                "tasks": [],
+            }
+        ),
+        replay_modifier=ContextFrameReplayModifier(
+            confidence=0.95,
+            source_account_reference="gtb",
+            source_account_evidence="gtb",
+            reason="explicit source override",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u3sourceoverride",
+        phone_number="2348000010016",
+        channel="whatsapp",
+        has_quote=True,
+        quoted_message_id="wamid.receipt.16",
+        last_message_text="Again, but from gtb",
+        loaded_context={
+            "language": "en",
+            "user_id": "user-16",
+            "transaction_accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_name": "Access Main",
+                    "account_number": "6000000003",
+                },
+                {
+                    "id": "acct-gtb",
+                    "bank_name": "GTBank",
+                    "account_name": "GT Main",
+                    "account_number": "6000000002",
+                },
+            ],
+        },
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub(
+                {
+                    "task_type": "transfer",
+                    "amount": 5000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_code": "044",
+                    "recipient_bank_name": "Access Bank",
+                    "source_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_account_number": "6000000003",
+                    "source_affinity_mode": "explicit",
+                    "narration": "for rent",
+                }
+            ),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.quoted_called is True
+    assert planner.plan_called is False
+    assert planner.last_replay_modifier_context is not None
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "transfer"
+    assert task.payload["amount"] == 5000
+    assert task.payload["source_account_id"] == "acct-gtb"
+    assert task.payload["source_bank_name"] == "GTBank"
+    assert task.payload["source_account_name"] == "GT Main"
+    assert task.payload["source_account_number"] == "6000000002"
+    assert task.payload["source_affinity_mode"] == "explicit"
+    assert task.payload["narration"] == "for rent"
+    assert task.payload["skip_extraction"] is True
+
+
+@pytest.mark.asyncio
+async def test_quoted_replay_modifier_applies_amount_and_narration_overrides() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "execute",
+                "confidence": 0.95,
+                "tasks": [],
+            }
+        ),
+        replay_modifier=ContextFrameReplayModifier(
+            confidence=0.95,
+            amount=10000,
+            amount_evidence="10k",
+            narration="school fees",
+            narration_evidence="for school fees",
+            reason="explicit amount and narration override",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u3amountnarration",
+        phone_number="2348000010017",
+        channel="whatsapp",
+        has_quote=True,
+        quoted_message_id="wamid.receipt.17",
+        last_message_text="Again, but with 10k for school fees",
+        loaded_context={"language": "en", "user_id": "user-17"},
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub(
+                {
+                    "task_type": "transfer",
+                    "amount": 5000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_code": "044",
+                    "recipient_bank_name": "Access Bank",
+                    "narration": "for rent",
+                }
+            ),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["amount"] == 10000
+    assert task.payload["narration"] == "school fees"
+
+
+@pytest.mark.asyncio
+async def test_quoted_replay_modifier_unmatched_source_account_clarifies() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "execute",
+                "confidence": 0.95,
+                "tasks": [],
+            }
+        ),
+        replay_modifier=ContextFrameReplayModifier(
+            confidence=0.95,
+            source_account_reference="uba",
+            source_account_evidence="uba",
+            reason="explicit source override",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u3sourceunmatched",
+        phone_number="2348000010018",
+        channel="whatsapp",
+        has_quote=True,
+        quoted_message_id="wamid.receipt.18",
+        last_message_text="Again, but from uba",
+        loaded_context={
+            "language": "en",
+            "user_id": "user-18",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "6000000003",
+                }
+            ],
+        },
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub(
+                {
+                    "task_type": "transfer",
+                    "amount": 5000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_code": "044",
+                    "recipient_bank_name": "Access Bank",
+                    "source_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "source_account_number": "6000000003",
+                }
+            ),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert "tasks" not in updates
+    assert "could not find 'uba'" in updates["final_response"]
 
 
 @pytest.mark.asyncio

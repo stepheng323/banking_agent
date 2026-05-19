@@ -63,7 +63,12 @@ def _resolve_deterministic_input_selection_route(
     if set(required_fields) != {"source_account_id"}:
         return None
     if not text.strip().isdigit():
-        accounts = state.loaded_context.get("accounts") if isinstance(state.loaded_context, dict) else None
+        loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
+        accounts = (
+            loaded_context.get("transaction_accounts")
+            or loaded_context.get("accounts")
+            or loaded_context.get("all_accounts")
+        )
         if not isinstance(accounts, list) or not match_source_account_reference(
             text,
             [account for account in accounts if isinstance(account, dict)],

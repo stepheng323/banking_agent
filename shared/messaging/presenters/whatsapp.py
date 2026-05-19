@@ -1,9 +1,11 @@
 """WhatsApp implementation of the Presenter protocol."""
 
 import base64
+import re
 
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config.settings import settings
+from shared.i18n import LocaleCode, render_message
 from shared.messaging.intents import (
     RequestAuth,
     RequestConfirmation,
@@ -18,6 +20,7 @@ from shared.messaging.presenters.base import PresentationContext, PresentationRe
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_MARKDOWN_BOLD_RE = re.compile(r"\*\*([^*\n]+?)\*\*")
 
 
 class WhatsAppPresenter(Presenter):
@@ -47,6 +50,21 @@ class WhatsAppPresenter(Presenter):
         if isinstance(intent, SendTyping):
             return "typing"
         return type(intent).__name__.lower()
+
+    @staticmethod
+    def _format_text(text: str) -> str:
+        """Adapt internal markdown-ish copy to WhatsApp text formatting."""
+        formatted = _MARKDOWN_BOLD_RE.sub(r"*\1*", text)
+        for locale in LocaleCode:
+            for key in (
+                "conversational.out_of_scope",
+                "conversational.out_of_scope_followup",
+                "conversational.out_of_scope_firm",
+            ):
+                redirect = str(render_message(key, locale.value))
+                if redirect:
+                    formatted = re.sub(rf"(?<!\n)\n{re.escape(redirect)}", f"\n\n{redirect}", formatted)
+        return formatted
 
     @classmethod
     def _log_typing_request(cls, intent: UiIntent, context: PresentationContext) -> None:
@@ -105,7 +123,7 @@ class WhatsAppPresenter(Presenter):
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
         resp = await self.client.send_text(
             to=context.phone_number,
-            text=intent.text,
+            text=self._format_text(intent.text),
             suppress_typing_indicator=self._suppress_typing(context),
         )
         return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
@@ -126,6 +144,7 @@ class WhatsAppPresenter(Presenter):
             if "Transfer" in header:
                 cta = "Authorize Transfer"
 
+            flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
             resp = await self.client.send_flow(
                 to=context.phone_number,
                 flow_id=settings.whatsapp.pin_confirmation_flow_id,
@@ -134,10 +153,8 @@ class WhatsAppPresenter(Presenter):
                     "text_body": intent.summary,
                     "flow_cta": cta,
                     "screen_name": "Pin",
-                    "flow_token": f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}",
-                    "flow_action_payload": {
-                        "screen": "Pin",
-                    },
+                    "flow_token": flow_token,
+                    "flow_action_payload": {"screen": "Pin"},
                 },
                 suppress_typing_indicator=self._suppress_typing(context),
             )
@@ -146,7 +163,9 @@ class WhatsAppPresenter(Presenter):
             logger.warning("auth_flow_unsupported", phone=context.phone_number)
             resp = await self.client.send_text(
                 to=context.phone_number,
-                text="Secure transaction requires WhatsApp Flows support. Please update your WhatsApp version.",
+                text=self._format_text(
+                    "Secure transaction requires WhatsApp Flows support. Please update your WhatsApp version."
+                ),
                 suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
@@ -162,6 +181,7 @@ class WhatsAppPresenter(Presenter):
             elif "Data" in (intent.summary or ""):
                 prefix = "data"
 
+            flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
             resp = await self.client.send_flow(
                 to=context.phone_number,
                 flow_id=settings.whatsapp.pin_confirmation_flow_id,
@@ -170,10 +190,8 @@ class WhatsAppPresenter(Presenter):
                     "text_body": intent.summary,
                     "flow_cta": "Authorize",
                     "screen_name": "Pin",
-                    "flow_token": f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}",
-                    "flow_action_payload": {
-                        "screen": "Pin",
-                    },
+                    "flow_token": flow_token,
+                    "flow_action_payload": {"screen": "Pin"},
                 },
                 suppress_typing_indicator=self._suppress_typing(context),
             )
@@ -182,7 +200,9 @@ class WhatsAppPresenter(Presenter):
             logger.warning("confirmation_flow_unsupported", phone=context.phone_number)
             resp = await self.client.send_text(
                 to=context.phone_number,
-                text="Confirmation requires WhatsApp Flows support. Please update your WhatsApp version.",
+                text=self._format_text(
+                    "Confirmation requires WhatsApp Flows support. Please update your WhatsApp version."
+                ),
                 suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
@@ -226,7 +246,7 @@ class WhatsAppPresenter(Presenter):
                     lines.append(f"*{k}:* {v}")
             resp = await self.client.send_text(
                 to=context.phone_number,
-                text="\n".join(lines),
+                text=self._format_text("\n".join(lines)),
                 suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
@@ -245,7 +265,7 @@ class WhatsAppPresenter(Presenter):
             fallback = intent.fallback_text or "This action requires flow support on your channel."
             resp = await self.client.send_text(
                 to=context.phone_number,
-                text=fallback,
+                text=self._format_text(fallback),
                 suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
@@ -269,7 +289,7 @@ class WhatsAppPresenter(Presenter):
             logger.info("option_render_mode", channel="whatsapp", mode=mode, option_count=len(options))
             interactive_resp = await self.client.send_interactive(
                 to=context.phone_number,
-                body_text=intent.title,
+                body_text=self._format_text(intent.title),
                 options=options,
                 suppress_typing_indicator=self._suppress_typing(context),
             )
@@ -283,7 +303,7 @@ class WhatsAppPresenter(Presenter):
         fallback_text = f"{intent.title}\n{numbered}"
         text_resp = await self.client.send_text(
             to=context.phone_number,
-            text=fallback_text,
+            text=self._format_text(fallback_text),
             suppress_typing_indicator=self._suppress_typing(context),
         )
         return text_resp.get("messages", [{}])[0].get("id") if isinstance(text_resp, dict) else None

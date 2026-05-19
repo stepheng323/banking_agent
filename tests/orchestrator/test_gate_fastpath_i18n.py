@@ -2730,6 +2730,50 @@ async def test_gate_support_retry_followup_still_routes_to_support_context() -> 
     assert updates["tasks"]["direct_support"].type == "support"
 
 
+async def test_gate_does_not_route_replay_modifier_to_support_context() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            mode="new",
+            confidence=0.9,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="llm over-selected support retry",
+        )
+    )
+    redis = _RedisWithSupportContext(
+        {
+            "last_transaction_ref": "tx-success",
+            "last_issue_intent": "failed_transfer",
+            "last_support_step": "looking_up",
+            "attempts": 0,
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_context_replay_modifier",
+        phone_number="23489999999187",
+        channel="whatsapp",
+        last_message_text="Resend from gtb",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "transaction_replay_modifier_transfer"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_decision"] == "transaction_replay_modifier_transfer"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["tasks"]["direct_transfer"].type == "transfer"
+
+
 async def test_gate_explicit_latest_status_query_not_stolen_by_contextual_ack_or_support_context() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

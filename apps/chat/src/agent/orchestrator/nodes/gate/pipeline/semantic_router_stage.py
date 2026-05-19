@@ -27,6 +27,7 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _semantic_route_mode,
     _should_invoke_semantic_router,
 )
+from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.i18n.bridge import render_locale_switched
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
@@ -354,6 +355,71 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
             }
             if route is not None and canonical_decision in route_to_domain:
                 domain = route_to_domain[canonical_decision]
+                if domain == "support" and looks_like_transaction_replay_modifier_request(ctx.message_text):
+                    logger.info(
+                        "gate_semantic_router_support_replay_modifier_veto",
+                        decision=canonical_decision,
+                        mode=canonical_mode,
+                    )
+                    if block_message := _direct_domain_capability_block_message(ctx.state, "transfer"):
+                        logger.info(
+                            "gate_semantic_router_replay_modifier_transfer_policy_blocked",
+                            decision=canonical_decision,
+                            mode=canonical_mode,
+                        )
+                        return {
+                            **ctx.gate_updates,
+                            **(ctx.summary_updates or {}),
+                            "direct_path_triggered": True,
+                            "final_response": block_message,
+                            "semantic_path_shape": "transaction_replay_modifier_transfer_policy_blocked",
+                            **_route_observability_updates(
+                                owner="guardrail",
+                                decision="capability_blocked",
+                                target_domain="transfer",
+                                mode=canonical_mode,
+                                route_source="semantic_router_veto",
+                                heuristic_type="negative_guard",
+                                heuristic_name="transaction_replay_modifier",
+                            ),
+                            **updates,
+                        }
+                    if (
+                        isinstance(ctx.query_session_snapshot, dict)
+                        and ctx.query_session_snapshot.get("session_active")
+                    ):
+                        await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+                        updates.update(
+                            _build_query_session_exit_updates(
+                                ctx.state,
+                                query_session_snapshot=ctx.query_session_snapshot,
+                            )
+                        )
+                    task_id, spec = _build_direct_domain_task(
+                        state=ctx.state,
+                        domain="transfer",
+                        mode=canonical_mode,
+                    )
+                    return {
+                        **ctx.gate_updates,
+                        **(ctx.summary_updates or {}),
+                        "tasks": {task_id: spec},
+                        "waves": [[task_id]],
+                        "current_wave_index": 0,
+                        "planner_output": None,
+                        "direct_path_triggered": True,
+                        "semantic_path_shape": "transaction_replay_modifier_transfer",
+                        **_route_observability_updates(
+                            owner="guardrail",
+                            decision="transaction_replay_modifier_transfer",
+                            target_domain="transfer",
+                            mode=canonical_mode,
+                            route_source="semantic_router_veto",
+                            heuristic_type="negative_guard",
+                            heuristic_name="transaction_replay_modifier",
+                        ),
+                        **updates,
+                    }
                 mixed_executors = _obvious_mixed_transaction_executors(ctx.message_text)
                 if domain in TRANSACTION_EXECUTORS and mixed_executors:
                     updates["preplanner_expected_transaction_executors"] = mixed_executors

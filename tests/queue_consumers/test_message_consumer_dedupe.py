@@ -13,6 +13,7 @@ from apps.chat.src.queue_consumers import message_consumer as message_consumer_m
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
+from shared.i18n import render_message
 from shared.models.messages import ChannelMessage, MessageType
 from shared.services.auth import AuthorizationResult
 
@@ -551,6 +552,51 @@ async def test_message_consumer_does_not_append_say_for_show_flow(monkeypatch: p
     intents = sent_payloads[0][3]
     assert len(intents) == 1
     assert isinstance(intents[0], ShowFlow)
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_suppresses_default_greeting_when_domain_answer_is_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    domain_answer = "*Transactions* — Apr 19-May 19\n\n*May 17*\nN10,000"
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        output={
+            "intents": [
+                Say(text=domain_answer),
+                Say(text=render_message("conversational.greeting", "en")),
+            ],
+            "text": render_message("conversational.greeting", "en"),
+        },
+    )
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    sent_payloads: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        sent_payloads.append(list(args))
+
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    response = await consumer._handle_message(_message("wamid-domain-greeting"))
+
+    assert response is not None
+    assert response["status"] == "success"
+    assert len(sent_payloads) == 1
+    intents = sent_payloads[0][3]
+    assert len(intents) == 1
+    assert isinstance(intents[0], Say)
+    assert intents[0].text == domain_answer
 
 
 @pytest.mark.asyncio

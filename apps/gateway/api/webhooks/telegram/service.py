@@ -15,7 +15,7 @@ from shared.queue.adapter import QueuePublisher
 from shared.repositories.user_repository import UserRepository
 from shared.services.channel_linking import build_channel_link_pin_token
 from shared.services.onboarding import OnboardingStep, session_manager
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _TELEGRAM_CHANNEL = "telegram"
@@ -227,6 +227,14 @@ class TelegramWebhookService:
                 return True
 
             try:
+                logger.info(
+                    "telegram_identity_link_whatsapp_pin_flow_send",
+                    flow_token_hash=log_fingerprint(flow_token),
+                    pin_flow_token_hash=log_fingerprint(build_channel_link_pin_token(flow_token)),
+                    authorizing_identity_hash=log_fingerprint(authorizing_identity),
+                    requested_telegram_hash=log_fingerprint(msg.chat_id),
+                    flow_id=settings.whatsapp.pin_confirmation_flow_id,
+                )
                 flow_result = await WhatsAppClient().send_flow(
                     to=authorizing_identity,
                     flow_id=settings.whatsapp.pin_confirmation_flow_id,
@@ -245,6 +253,12 @@ class TelegramWebhookService:
                 )
                 if not flow_result.success:
                     raise RuntimeError(flow_result.error or "WhatsApp PIN flow send failed")
+                logger.info(
+                    "telegram_identity_link_whatsapp_pin_flow_sent",
+                    flow_token_hash=log_fingerprint(flow_token),
+                    message_id=getattr(flow_result, "message_id", None),
+                    requested_telegram_hash=log_fingerprint(msg.chat_id),
+                )
             except Exception as e:
                 logger.error("telegram_identity_link_authorization_send_failed", error=str(e))
                 await session_manager.delete_session(flow_token)

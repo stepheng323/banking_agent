@@ -36,14 +36,45 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.otp_handler import (
 )
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler import (
     handle_transaction_pin,
+    parse_transaction_pin_flow_token,
 )
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
 from shared.services.channel_linking import is_channel_link_pin_token
 from shared.utils.flow_encryption import encrypt_flow_response
+from shared.utils.logging import get_logger
 
 router = APIRouter()
+logger = get_logger(__name__)
+
+
+def _flow_health_response(version: str | None = None) -> dict[str, object]:
+    return {"version": version or "3.0", "data": {"status": "active"}}
+
+
+def _format_flow_response(
+    response_data: dict[str, object],
+    *,
+    request_was_encrypted: bool,
+    aes_key_bytes: bytes | None,
+    iv_bytes: bytes | None,
+) -> Response:
+    if request_was_encrypted:
+        if aes_key_bytes is None or iv_bytes is None:
+            return JSONResponse(content={"error": "Encryption keys missing"}, status_code=500)
+        encrypted_response = encrypt_flow_response(response_data, aes_key_bytes, iv_bytes)
+        return Response(content=encrypted_response, media_type="text/plain")
+
+    return Response(content=json.dumps(response_data), media_type="text/plain")
+
+
+def _has_pin_submission_data(data: dict[str, object]) -> bool:
+    return any(key in data for key in ("pin", "transaction_pin", "transactionPin", "pin_code", "pinCode"))
+
+
+def _is_pin_flow_token(flow_token: str | None) -> bool:
+    return is_channel_link_pin_token(flow_token) or parse_transaction_pin_flow_token(flow_token) is not None
 
 
 @router.post("/webhook/flow")
@@ -69,10 +100,40 @@ async def flow_webhook(
         screen = processed_request.screen
         data = processed_request.data
         flow_token = processed_request.flow_token
+        action = processed_request.action
+        version = processed_request.version
         request_was_encrypted = processed_request.request_was_encrypted
         aes_key_bytes = processed_request.aes_key_bytes
         iv_bytes = processed_request.iv_bytes
         authorizing_channel_user_id = processed_request.authorizing_channel_user_id
+        normalized_action = (action or "").strip().lower()
+
+        if normalized_action == "ping" and screen is None:
+            logger.info("whatsapp_flow_health_check", version=version, request_was_encrypted=request_was_encrypted)
+            return _format_flow_response(
+                _flow_health_response(version),
+                request_was_encrypted=request_was_encrypted,
+                aes_key_bytes=aes_key_bytes,
+                iv_bytes=iv_bytes,
+            )
+
+        if screen is None and flow_token and _has_pin_submission_data(data):
+            logger.info(
+                "whatsapp_flow_pin_screen_inferred",
+                action=action,
+                version=version,
+                flow_token_type="channel_link" if is_channel_link_pin_token(flow_token) else "transaction",
+            )
+            screen = "Pin"
+
+        if normalized_action != "ping" and screen is None and _is_pin_flow_token(flow_token):
+            logger.info("whatsapp_flow_pin_init", action=action, version=version)
+            return _format_flow_response(
+                {"version": version or "3.0", "screen": "Pin", "data": {}},
+                request_was_encrypted=request_was_encrypted,
+                aes_key_bytes=aes_key_bytes,
+                iv_bytes=iv_bytes,
+            )
 
         if screen == "BVN_ENTRY":
             return await handle_bvn_entry(
@@ -154,16 +215,13 @@ async def flow_webhook(
                 publisher=queue_publisher,
             )
 
-        print(f" 🏥 Health check (unknown screen: {screen})")
-        health_response = {"data": {"status": "active"}}
-
-        if request_was_encrypted:
-            if aes_key_bytes is None or iv_bytes is None:
-                return JSONResponse(content={"error": "Encryption keys missing"}, status_code=500)
-            encrypted_response = encrypt_flow_response(health_response, aes_key_bytes, iv_bytes)
-            return Response(content=encrypted_response, media_type="text/plain")
-
-        return Response(content=json.dumps(health_response), media_type="text/plain")
+        logger.warning("whatsapp_flow_unknown_screen", screen=screen, action=action, version=version)
+        return _format_flow_response(
+            _flow_health_response(version),
+            request_was_encrypted=request_was_encrypted,
+            aes_key_bytes=aes_key_bytes,
+            iv_bytes=iv_bytes,
+        )
 
     except Exception as e:
         print(f"❌ Error in flow webhook: {e}")

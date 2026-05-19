@@ -31,6 +31,53 @@ async def test_conversation_responder_appends_deterministic_banking_redirect() -
 
 
 @pytest.mark.asyncio
+async def test_conversation_responder_omits_redirect_for_banking_result_reaction() -> None:
+    llm = _FakeLLM("No, Olamide - your worth is not defined by your balance.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "So, i am a poor man?",
+        {
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "What my balance"},
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Here are your account balances:\n\n"
+                        "• Zenith Bank (···9384): ₦30,000.00\n\n"
+                        "That gives you a total of ₦120,000.00."
+                    ),
+                },
+            ],
+            "profile": {"first_name": "Olamide"},
+        },
+    )
+
+    assert reply == "No, Olamide - your worth is not defined by your balance."
+    assert render_message("conversational.out_of_scope", "en") not in reply
+    assert llm.messages is not None
+    assert "reacting to recent banking information" in llm.messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_keeps_redirect_for_reaction_without_banking_result() -> None:
+    responder = ConversationResponder(_FakeLLM("No, your worth is not defined by money."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "So, i am a poor man?",
+        {"language": "en", "history": [], "profile": {}},
+    )
+
+    assert reply == (
+        "No, your worth is not defined by money.\n"
+        + render_message("conversational.out_of_scope", "en")
+    )
+
+
+@pytest.mark.asyncio
 async def test_conversation_responder_falls_back_to_redirect_for_unsafe_output() -> None:
     responder = ConversationResponder(_FakeLLM("Here is some investment advice: buy this stock immediately."))  # type: ignore[arg-type]
 

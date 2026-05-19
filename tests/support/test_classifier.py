@@ -73,6 +73,30 @@ async def test_support_classifier_does_not_regex_override_explicit_null_intent()
 
 
 @pytest.mark.asyncio
+async def test_support_classifier_rejects_replay_modifier_retry_from_llm() -> None:
+    classifier = SupportClassifier(
+        _LLMStub(
+            '{"intent":"retry_transfer","confidence":0.88,'
+            '"transaction_ref":{"amount":null,"recipient_name":null,"date_hint":null}}'
+        )
+    )
+
+    result = await classifier.classify("Resend from gtb")
+
+    assert result.intent is None
+    assert result.confidence == 0.88
+
+
+@pytest.mark.asyncio
+async def test_support_classifier_does_not_fallback_retry_for_replay_modifier() -> None:
+    classifier = SupportClassifier(_LLMStub(error=RuntimeError("model unavailable")))
+
+    result = await classifier.classify("Again, but with 10k")
+
+    assert result.intent is None
+
+
+@pytest.mark.asyncio
 async def test_support_classifier_low_confidence_structured_intent_is_not_support_intent() -> None:
     classifier = SupportClassifier(
         _LLMStub(

@@ -48,6 +48,7 @@ from apps.chat.src.agent.graphs.support.models import (
 )
 from apps.chat.src.agent.graphs.support.resolver import TransactionResolver
 from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
+from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.config.settings import settings
 from shared.formatters.currency import format_naira
 from shared.i18n import LocaleManager, render_message
@@ -801,7 +802,7 @@ class SupportWorker:
     ) -> tuple[SupportIntent | None, TransactionReference | None]:
         last_ref = str(getattr(support_ctx, "last_transaction_ref", "") or "").strip()
         if last_ref:
-            if _RETRY_FOLLOWUP_RE.search(message):
+            if _RETRY_FOLLOWUP_RE.search(message) and not looks_like_transaction_replay_modifier_request(message):
                 return SupportIntent.RETRY_TRANSFER, TransactionReference(transaction_id=last_ref)
             if _DETAIL_FOLLOWUP_RE.search(message) or _STATUS_FOLLOWUP_RE.search(message):
                 return SupportIntent.TRANSFER_STATUS, TransactionReference(transaction_id=last_ref)

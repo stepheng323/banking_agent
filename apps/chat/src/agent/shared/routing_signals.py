@@ -56,6 +56,15 @@ _SUPPORT_PROBLEM_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+_REPLAY_CUE_RE = re.compile(
+    r"\b(?:again|redo|repeat|replay|rerun|retry|try\s+again|resend|send\s+again|same\s+again)\b",
+    re.IGNORECASE,
+)
+_REPLAY_MODIFIER_RE = re.compile(
+    r"\b(?:but|instead|change|switch|use|using|with|from|source|account|acct|narration|reason|note|memo|for)\b"
+    r"|(?:₦|\bngn\b|\b\d[\d,]*(?:\.\d+)?\s*(?:k|naira|ngn)?\b)",
+    re.IGNORECASE,
+)
 
 
 def looks_like_explicit_transaction_query_shape(raw_query: str | None) -> bool:
@@ -78,3 +87,18 @@ def looks_like_support_problem_statement(raw_query: str | None) -> bool:
     if looks_like_explicit_transaction_query_shape(normalized):
         return False
     return any(pattern.search(normalized) for pattern in _SUPPORT_PROBLEM_PATTERNS)
+
+
+def looks_like_transaction_replay_modifier_request(raw_query: str | None) -> bool:
+    """Return True for replay requests that are editing a prior money movement.
+
+    Examples: "again with 10k", "resend from gtb", "send again for rent".
+    These should be owned by transaction replay/context routing, not support retry,
+    unless the user also describes a support problem such as failed/pending/debited.
+    """
+    normalized = re.sub(r"\s+", " ", (raw_query or "").strip())
+    if not normalized:
+        return False
+    if looks_like_support_problem_statement(normalized):
+        return False
+    return bool(_REPLAY_CUE_RE.search(normalized) and _REPLAY_MODIFIER_RE.search(normalized))

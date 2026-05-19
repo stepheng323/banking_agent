@@ -7,6 +7,8 @@ from apps.chat.src.messaging.presenters.base import PresentationContext
 from apps.chat.src.messaging.presenters.telegram import TelegramPresenter
 from apps.chat.src.messaging.presenters.whatsapp import WhatsAppPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
+from shared.i18n import render_message
+from shared.messaging.intents import Say
 
 
 class _StubWhatsAppClient:
@@ -62,6 +64,28 @@ async def test_whatsapp_presenter_options_uses_interactive_when_available() -> N
     assert message_id == "wa-interactive-1"
     assert len(client.interactive_calls) == 1
     assert not client.text_calls
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_presenter_formats_markdown_and_redirect_spacing() -> None:
+    client = _StubWhatsAppClient(interactive_success=True)
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+    context = PresentationContext(channel="whatsapp", phone_number="2348000000000")
+    text = (
+        "Here are your account balances:\n\n"
+        "• Zenith Bank (···9384): **₦30,000.00**\n"
+        "No, your worth is not defined by your balance.\n"
+        f"{render_message('conversational.out_of_scope', 'en')}"
+    )
+
+    message_id = await presenter._present_say(Say(text=text), context)
+
+    assert message_id == "wa-text-1"
+    assert len(client.text_calls) == 1
+    sent = client.text_calls[0]["text"]
+    assert "**" not in sent
+    assert "*₦30,000.00*" in sent
+    assert "balance.\n\nI stay on banking." in sent
 
 
 @pytest.mark.asyncio

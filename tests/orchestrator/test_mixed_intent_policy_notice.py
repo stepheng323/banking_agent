@@ -1158,6 +1158,55 @@ async def test_planner_amount_only_transfer_recovers_to_transfer_task() -> None:
 
 
 @pytest.mark.asyncio
+async def test_planner_replay_modifier_support_task_recovers_to_transfer_task() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="support",
+        response="",
+        response_key=None,
+        confidence=0.82,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="Again, but from gtb",
+        tasks=[
+            PlannedTask(
+                task_id="support_retry",
+                action="handle_request",
+                executor="support",
+                instruction="Again, but from gtb",
+                parameters=TaskParameters(),
+                risk="READ_ONLY",
+            )
+        ],
+    )
+
+    state = OrchestratorState(
+        user_id="u_replay_support_recovery",
+        phone_number="2348666666668",
+        channel="whatsapp",
+        last_message_text="Again, but from gtb",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response is None
+    assert "support_retry" not in state.tasks
+    assert "transfer_replay_modifier_recovery" in state.tasks
+    assert state.tasks["transfer_replay_modifier_recovery"].type == "transfer"
+    assert state.waves == [["transfer_replay_modifier_recovery"]]
+
+
+@pytest.mark.asyncio
 async def test_conversational_response_uses_detected_language_even_with_cached_pidgin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

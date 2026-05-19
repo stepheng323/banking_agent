@@ -13,7 +13,10 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _route_observability_updates,
     _support_user_id_for_state,
 )
-from apps.chat.src.agent.shared.routing_signals import looks_like_support_problem_statement
+from apps.chat.src.agent.shared.routing_signals import (
+    looks_like_support_problem_statement,
+    looks_like_transaction_replay_modifier_request,
+)
 from shared.services.async_completion import get_recent_batch_reference
 from shared.utils.logging import get_logger
 
@@ -47,6 +50,8 @@ def _looks_like_support_issue_request(message_text: str) -> bool:
 def _looks_like_support_context_followup(message_text: str, support_ctx: Any) -> bool:
     normalized = re.sub(r"\s+", " ", (message_text or "").strip())
     if not normalized:
+        return False
+    if looks_like_transaction_replay_modifier_request(normalized):
         return False
     pending_reference = getattr(support_ctx, "pending_reference", None)
     last_support_step = getattr(support_ctx, "last_support_step", None)

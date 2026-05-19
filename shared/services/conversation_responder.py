@@ -46,6 +46,26 @@ _JOKE_FOLLOWUP_PATTERN_RE = re.compile(
     r"\b(?:another one|one more|again|another joke|small joke|small one|more)\b",
     re.IGNORECASE,
 )
+_BANKING_RESULT_CONTEXT_RE = re.compile(
+    r"(?:"
+    r"\u20a6\s*\d|"
+    r"\b(?:account\s+balances?|total\s+of|transfer\s+of|sent\s+[\u2014-]|received\s+[\u2014-]|"
+    r"transaction\s+(?:was\s+)?(?:successful|pending|failed)|"
+    r"(?:successful|pending|failed)\s+(?:transaction|transfer|payment)|"
+    r"receipt|showing\s+\d+\s*[-\u2013]\s*\d+)\b"
+    r")",
+    re.IGNORECASE,
+)
+_BANKING_REACTION_RE = re.compile(
+    r"\b(?:"
+    r"(?:am\s+i|i\s+am|i'm|im|so\s+i\s+am|so\s+i'm|so\s+im|this\s+is|that\s+is|"
+    r"this\s+one|that\s+one|my\s+balance|my\s+money)\b.*"
+    r"\b(?:poor|broke|rich|wealthy|worth|enough|low|small|bad|good|sad|happy|"
+    r"worried|scared|ashamed)|"
+    r"^(?:wow|okay|ok|nice|great|good|bad|hmm|chai|omo)[.!?]*$"
+    r")",
+    re.IGNORECASE,
+)
 _BANKING_JOKE_FALLBACKS = (
     "Why did the banker bring a ladder? To reach the next interest level.",
     "Why do bankers love balance? Because it always checks out.",
@@ -230,6 +250,26 @@ def is_contextual_casual_followup_turn(text: str | None, history: list[Any] | No
     return bool(_JOKE_PATTERN_RE.search(history_text))
 
 
+def _is_banking_result_reaction(text: str | None, history: list[Any] | None) -> bool:
+    folded_text = _fold_text(text)
+    if not folded_text or len(folded_text.split()) > 16:
+        return False
+    if _JOKE_PATTERN_RE.search(folded_text) or _BLOCKED_PATTERN_RE.search(folded_text):
+        return False
+    if not _BANKING_REACTION_RE.search(folded_text):
+        return False
+    for turn in reversed(history or []):
+        if not isinstance(turn, dict):
+            continue
+        role = str(turn.get("role", "")).strip().lower()
+        if role != "assistant":
+            continue
+        content = _fold_text(str(turn.get("content", "") or ""))
+        if _BANKING_RESULT_CONTEXT_RE.search(content):
+            return True
+    return False
+
+
 class ConversationResponder:
     """Generates bounded conversational replies for casual non-banking turns."""
 
@@ -305,7 +345,7 @@ class ConversationResponder:
         user_ctx: dict[str, Any],
         intent: str | None = None,
     ) -> str:
-        """Generate a short safe reply and append a deterministic banking redirect."""
+        """Generate a short safe reply with a deterministic redirect when needed."""
         del phone_number
         profile = user_ctx.get("profile") or {}
         name = profile.get("full_name") or profile.get("first_name") if isinstance(profile, dict) else None
@@ -324,6 +364,11 @@ class ConversationResponder:
         history_text = self._recent_history_text(history)
         history_block = f"\nRecent turns:\n{history_text}" if history_text else ""
         is_joke_turn = self._is_joke_turn(text, history)
+        is_banking_reaction = (
+            not is_contextual_worker_followup
+            and casual_streak == 0
+            and _is_banking_result_reaction(text, history)
+        )
         if is_contextual_worker_followup:
             grounded_reply = _contextual_worker_grounded_reply(text, user_ctx, locale)
             if grounded_reply:
@@ -365,6 +410,11 @@ class ConversationResponder:
                 "- Do not say you only handle banking or that you cannot help with harmless casual chat.\n"
                 "- If the ask is unsafe, too broad, or not suitable, return an empty string.\n"
             )
+            if is_banking_reaction:
+                system += (
+                    "- The user is reacting to recent banking information. Give only the short empathetic "
+                    "reply; no generic banking redirect.\n"
+                )
         if not is_contextual_worker_followup and casual_streak >= 2:
             system += "- The user has stayed in casual-chat mode for several turns, so keep the reply extra short.\n"
 
@@ -407,6 +457,8 @@ class ConversationResponder:
         if is_contextual_worker_followup:
             if _CONTEXTUAL_ACTION_PROMISE_RE.search(preface) or _CONTEXTUAL_UNGROUNDED_PREFACE_RE.search(preface):
                 return contextual_worker_fallback_reply(text, user_ctx, locale=locale)
+            return preface
+        if is_banking_reaction:
             return preface
         if preface == redirect_text:
             return redirect_text

@@ -491,6 +491,44 @@ async def test_support_worker_returns_retry_handoff_when_policy_allows_retry(
 
 
 @pytest.mark.asyncio
+async def test_support_worker_does_not_retry_replay_modifier_followup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.support.capabilities.check_unsupported_actions",
+        lambda domain, requested_actions: [],
+    )
+    redis = _RedisStub()
+    redis.values["support_context:user-1"] = (
+        '{"last_transaction_ref":"tx-1","last_issue_intent":"failed_transfer","last_support_step":"resolved"}'
+    )
+    worker = _worker(
+        redis,
+        {
+            "tx-1": _tx(
+                "tx-1",
+                amount=10000,
+                recipient_name="Mercy Johnson",
+                bank_name="Opay",
+                account_number="8162511023",
+                status="failed",
+                error_message="Provider down",
+                failure_category="provider_unavailable",
+            )
+        },
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="Resend from gtb",
+    )
+
+    assert result.handoff is None
+    assert result.outcome == SupportOutcome.OK
+
+
+@pytest.mark.asyncio
 async def test_support_worker_handles_ticket_status_with_latest_ticket() -> None:
     ticket = SimpleNamespace(
         ticket_code="SUP-20260513-0001",

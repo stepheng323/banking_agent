@@ -7,6 +7,7 @@ This handler:
 """
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi.responses import Response
@@ -21,9 +22,43 @@ from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
 from shared.services.auth import AuthorizationService
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
+_INVALID_SESSION_MESSAGE = "Invalid transaction session. Please start a new transaction."
+_PIN_FLOW_PREFIXES = frozenset({"transaction", "transfer", "airtime", "data"})
+
+
+@dataclass(frozen=True)
+class ParsedTransactionPinToken:
+    transaction_type: str | None
+    idempotency_key: str
+    phone_hint: str | None
+
+
+def parse_transaction_pin_flow_token(flow_token: str | None) -> ParsedTransactionPinToken | None:
+    token = str(flow_token or "").strip()
+    if "-pin-" not in token:
+        return None
+
+    prefix, remainder = token.split("-pin-", 1)
+    if prefix not in _PIN_FLOW_PREFIXES or not remainder:
+        return None
+
+    idempotency_key = remainder
+    phone_hint = None
+    if "-" in remainder:
+        maybe_idempotency_key, maybe_phone_hint = remainder.rsplit("-", 1)
+        if maybe_idempotency_key and maybe_phone_hint:
+            idempotency_key = maybe_idempotency_key
+            phone_hint = maybe_phone_hint
+
+    transaction_type = None if prefix == "transaction" else prefix
+    return ParsedTransactionPinToken(
+        transaction_type=transaction_type,
+        idempotency_key=idempotency_key,
+        phone_hint=phone_hint,
+    )
 
 
 async def handle_transaction_pin(
@@ -51,7 +86,18 @@ async def handle_transaction_pin(
     """
     pin = data.get("pin")
 
-    logger.info("transaction_pin_received", has_flow_token=bool(flow_token))
+    parsed_token = parse_transaction_pin_flow_token(flow_token)
+
+    logger.info(
+        "transaction_pin_received",
+        data_keys=sorted(str(key) for key in data),
+        has_flow_token=bool(flow_token),
+        flow_token_hash=log_fingerprint(flow_token),
+        parsed_token=bool(parsed_token),
+        parsed_idempotency_key_hash=log_fingerprint(parsed_token.idempotency_key if parsed_token else None),
+        parsed_phone_hint_hash=log_fingerprint(parsed_token.phone_hint if parsed_token else None),
+        parsed_transaction_type=parsed_token.transaction_type if parsed_token else None,
+    )
 
     if not pin:
         return format_error_response(
@@ -62,48 +108,17 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    transaction_type = None
-    idem_key = None
-    if flow_token and flow_token.startswith("transaction-pin-"):
-        parts = flow_token.split("-")
-        idem_key = "-".join(parts[2:-1])
-    elif flow_token:
-        for prefix in ("transfer", "airtime", "data"):
-            token_prefix = f"{prefix}-pin-"
-            if flow_token.startswith(token_prefix):
-                parts = flow_token.split("-")
-                idem_key = "-".join(parts[2:-1])
-                transaction_type = prefix
-                break
-
-        if idem_key is None:
-            return format_success_response(
-                "SUCCESS",
-                request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
-                extension_message_response={
-                    "params": {
-                        "flow_token": flow_token or "completed",
-                        "pin": str(pin),
-                        "success": True,
-                    }
-                },
-            )
-    else:
-        return format_success_response(
-            "SUCCESS",
+    if not parsed_token:
+        return format_error_response(
+            "Pin",
+            _INVALID_SESSION_MESSAGE,
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
-            extension_message_response={
-                "params": {
-                    "flow_token": "completed",
-                    "pin": str(pin),
-                    "success": True,
-                }
-            },
         )
+
+    transaction_type = parsed_token.transaction_type
+    idem_key = parsed_token.idempotency_key
 
     redis_client = RedisClient.get_client()
 
@@ -116,7 +131,7 @@ async def handle_transaction_pin(
         phone_number = await redis_client.get(f"data:token:{idem_key}:phone")
 
     if not phone_number:
-        phone_number = flow_token.split("-")[-1] if flow_token else None
+        phone_number = parsed_token.phone_hint
 
         if phone_number:
             if publisher is None:
@@ -220,8 +235,7 @@ async def handle_transaction_pin(
         extension_message_response={
             "params": {
                 "flow_token": flow_token or "completed",
-                "pin": str(pin),
-                "success": True,
+                "success": "true",
             }
         },
     )

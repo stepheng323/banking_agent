@@ -30,6 +30,7 @@ from apps.chat.src.agent.orchestrator.nodes.planner.quoted_replay import (
 )
 from apps.chat.src.agent.orchestrator.nodes.planner.response_flow import _build_non_task_response
 from apps.chat.src.agent.orchestrator.nodes.planner.task_flow import _build_planner_task_updates
+from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.i18n import LocaleManager, render_safe_capability_fallback
 from shared.types.planner import PlannedTask, TaskParameters
 from shared.utils.logging import get_logger
@@ -125,6 +126,31 @@ def _recover_missing_slot_transfer_task(planner_output: Any, text: str) -> Plann
     )
 
 
+def _recover_replay_modifier_transfer_task(planner_output: Any, text: str) -> PlannedTask | None:
+    if not looks_like_transaction_replay_modifier_request(text):
+        return None
+    if not planner_output:
+        return None
+
+    tasks = list(getattr(planner_output, "tasks", None) or [])
+    primary_intent = str(getattr(planner_output, "primary_intent", "") or "").strip().lower()
+    if tasks:
+        non_support_tasks = [task for task in tasks if getattr(task, "executor", None) != "support"]
+        if non_support_tasks:
+            return None
+    elif primary_intent not in {"support", "conversational"}:
+        return None
+
+    return PlannedTask(
+        task_id="transfer_replay_modifier_recovery",
+        action="send_money",
+        executor="transfer",
+        instruction=text,
+        parameters=TaskParameters(),
+        risk="MONEY_MOVE",
+    )
+
+
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
 
@@ -203,36 +229,52 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     locale_updates = _build_locale_update(state, current_locale)
 
-    recovered_task = _recover_unexpected_question_task(planner_output, text)
-    if recovered_task is not None:
-        planner_output.tasks = [recovered_task]
+    recovered_replay_task = _recover_replay_modifier_transfer_task(planner_output, text)
+    if recovered_replay_task is not None:
+        planner_output.tasks = [recovered_replay_task]
+        planner_output.primary_intent = "transfer"
         planner_output.response = ""
         planner_output.response_key = None
         logger.info(
             "unexpected_turn_route_breadcrumb",
-            user_turn_kind=planner_output.primary_intent,
+            user_turn_kind=str(getattr(planner_output, "primary_intent", "unknown") or "unknown"),
             active_session_present=bool(state.session_stack),
-            selected_route=f"{planner_output.primary_intent}_task",
-            route_reason="planner_primary_intent_no_task_recovery",
+            selected_route="transfer_replay_modifier_recovery",
+            route_reason="planner_support_replay_modifier_recovery",
             policy_blocked=False,
             fallback_path="worker_task_injected",
         )
     else:
-        recovered_transfer_task = _recover_missing_slot_transfer_task(planner_output, text)
-        if recovered_transfer_task is not None:
-            planner_output.tasks = [recovered_transfer_task]
-            planner_output.primary_intent = "transfer"
+        recovered_task = _recover_unexpected_question_task(planner_output, text)
+        if recovered_task is not None:
+            planner_output.tasks = [recovered_task]
             planner_output.response = ""
             planner_output.response_key = None
             logger.info(
                 "unexpected_turn_route_breadcrumb",
-                user_turn_kind=str(getattr(planner_output, "primary_intent", "unknown") or "unknown"),
+                user_turn_kind=planner_output.primary_intent,
                 active_session_present=bool(state.session_stack),
-                selected_route="transfer_missing_slot_recovery",
-                route_reason="planner_amount_only_transfer_recovery",
+                selected_route=f"{planner_output.primary_intent}_task",
+                route_reason="planner_primary_intent_no_task_recovery",
                 policy_blocked=False,
                 fallback_path="worker_task_injected",
             )
+        else:
+            recovered_transfer_task = _recover_missing_slot_transfer_task(planner_output, text)
+            if recovered_transfer_task is not None:
+                planner_output.tasks = [recovered_transfer_task]
+                planner_output.primary_intent = "transfer"
+                planner_output.response = ""
+                planner_output.response_key = None
+                logger.info(
+                    "unexpected_turn_route_breadcrumb",
+                    user_turn_kind=str(getattr(planner_output, "primary_intent", "unknown") or "unknown"),
+                    active_session_present=bool(state.session_stack),
+                    selected_route="transfer_missing_slot_recovery",
+                    route_reason="planner_amount_only_transfer_recovery",
+                    policy_blocked=False,
+                    fallback_path="worker_task_injected",
+                )
 
     handled_response = await _build_non_task_response(
         state=state,

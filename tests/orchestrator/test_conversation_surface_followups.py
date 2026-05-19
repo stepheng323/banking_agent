@@ -7,6 +7,8 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
+from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
+from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context_frame_stages import _stage_context_frame_followup
 from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.types.planner import (
     ContextFrameFollowupDecision,
@@ -1371,6 +1373,138 @@ async def test_completed_transfer_replay_applies_source_account_override() -> No
 
 
 @pytest.mark.asyncio
+async def test_completed_transfer_replay_applies_source_account_override_from_transaction_accounts() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_source_override_transaction_accounts",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦10,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 10000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="English",
+            target_text="gtb",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_source_override_transaction_accounts",
+        phone_number="2348000000023",
+        channel="whatsapp",
+        last_message_text="Again, from gtb",
+        loaded_context={
+            "transaction_accounts": [
+                {
+                    "id": "acct-access",
+                    "bank": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                },
+                {
+                    "id": "acct-gtb",
+                    "bank": "GTBank",
+                    "account_number": "9000000002",
+                    "account_name": "Olamide Samuel",
+                    "mandate_status": "ready",
+                },
+            ]
+        },
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["amount"] == 10000
+    assert transfer_task.payload["recipient_account"] == "2010000001"
+    assert transfer_task.payload["source_account_id"] == "acct-gtb"
+    assert transfer_task.payload["source_bank_name"] == "GTBank"
+    assert transfer_task.payload["source_account_number"] == "9000000002"
+    assert transfer_task.payload["source_affinity_mode"] == "explicit"
+
+
+@pytest.mark.asyncio
+async def test_completed_transfer_replay_blocks_unmatched_explicit_source() -> None:
+    frame = ContextFrame(
+        frame_id="tx_replay_source_unmatched",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦10,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 10000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="English",
+            target_text="gtb",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_replay_source_unmatched",
+        phone_number="2348000000024",
+        channel="whatsapp",
+        last_message_text="Again, from gtb",
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                }
+            ]
+        },
+        context_frames=[frame],
+    )
+
+    updates = await plan_tasks(state, _config(planner))
+
+    assert "tasks" not in updates
+    assert "could not find 'gtb'" in updates["final_response"]
+    assert updates["semantic_path_shape"] == "context_frame_replay_source_unmatched"
+
+
+@pytest.mark.asyncio
 async def test_completed_transfer_replay_applies_narration_override() -> None:
     frame = ContextFrame(
         frame_id="tx_replay_narration_override",
@@ -1581,6 +1715,110 @@ async def test_completed_transfer_replay_applies_structured_modifier_extraction(
     assert transfer_task.payload["authored_narration"] == "loyer"
     assert transfer_task.payload["user_note"] == "loyer"
     assert transfer_task.payload["recipient_account"] == "2010000001"
+    assert planner.last_replay_modifier_context is not None
+
+
+@pytest.mark.asyncio
+async def test_gate_context_frame_replay_applies_structured_modifier_extraction() -> None:
+    frame = ContextFrame(
+        frame_id="tx_gate_replay_structured_modifier",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-transfer",
+                label="₦20,000 transfer to Tolu Adebayo",
+                data={
+                    "task_type": "transfer",
+                    "amount": 20000,
+                    "recipient_name": "Tolu Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "9000000003",
+                    "narration": "old note",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    modifier = ContextFrameReplayModifier(
+        confidence=0.91,
+        detected_language="French",
+        amount=10000,
+        amount_evidence="dix mille",
+        source_account_reference="gtb",
+        source_account_evidence="gtb",
+        narration="loyer",
+        narration_evidence="loyer",
+        reason="French replay modifiers",
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="replay_tasks",
+            confidence=0.96,
+            detected_language="French",
+            target_text="loyer",
+        ),
+        replay_modifier=modifier,
+    )
+    state = OrchestratorState(
+        user_id="u_gate_replay_structured_modifier",
+        phone_number="2348000000025",
+        channel="whatsapp",
+        last_message_text="Encore avec dix mille depuis gtb pour loyer",
+        stashed_query_session={
+            "session_active": True,
+            "query_result": {"summary_text": "Recent transaction results are still open."},
+        },
+        loaded_context={
+            "transaction_accounts": [
+                {
+                    "id": "acct-access",
+                    "bank": "Access Bank",
+                    "account_number": "9000000003",
+                    "mandate_status": "ready",
+                },
+                {
+                    "id": "acct-gtb",
+                    "bank": "GTBank",
+                    "account_number": "9000000002",
+                    "account_name": "Olamide Samuel",
+                    "mandate_status": "ready",
+                },
+            ],
+        },
+        context_frames=[frame],
+    )
+    ctx = GateContext(
+        state=state,
+        config=_config(planner),
+        redis_client=None,
+        task_planner=planner,
+        conversation_responder=None,
+        message_text=state.last_message_text,
+        current_locale="en",
+        gate_updates={},
+        live_pending_interrupt=False,
+        phrase_heavy_fastpath_allowed=True,
+    )
+
+    updates = await _stage_context_frame_followup(ctx)
+
+    assert updates is not None
+    transfer_task = next(iter(updates["tasks"].values()))
+    assert transfer_task.type == "transfer"
+    assert transfer_task.payload["amount"] == 10000
+    assert transfer_task.payload["source_account_id"] == "acct-gtb"
+    assert transfer_task.payload["source_bank_name"] == "GTBank"
+    assert transfer_task.payload["source_account_number"] == "9000000002"
+    assert transfer_task.payload["narration"] == "loyer"
+    assert transfer_task.payload["authored_narration"] == "loyer"
+    assert transfer_task.payload["user_note"] == "loyer"
     assert planner.last_replay_modifier_context is not None
 
 

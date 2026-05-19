@@ -48,7 +48,7 @@ async def test_whatsapp_channel_link_pin_success_notifies_requested_telegram(
 
     body = json.loads(response.body)
     assert body["screen"] == "SUCCESS"
-    assert body["data"]["extension_message_response"]["params"]["success"] is True
+    assert body["data"]["extension_message_response"]["params"]["success"] == "true"
     assert telegram_client.text_calls == [
         {
             "to": "12345",
@@ -82,6 +82,7 @@ async def test_whatsapp_channel_link_pin_invalid_pin_stays_on_pin_screen(
 
     body = json.loads(response.body)
     assert body == {
+        "version": "3.0",
         "screen": "Pin",
         "data": {
             "show_error": True,

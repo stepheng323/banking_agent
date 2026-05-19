@@ -1,10 +1,15 @@
 """Quoted replay planner helper functions."""
 
 import json
+import re
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.graphs.__shared__.account_selection.reference import (
+    build_source_account_patch,
+    match_source_account_reference,
+)
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.planner.context import (
@@ -12,12 +17,14 @@ from apps.chat.src.agent.orchestrator.nodes.planner.context import (
     get_or_build_turn_context_summary,
 )
 from shared.i18n import render_message
+from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 QUOTED_REPLAY_MIN_CONFIDENCE = 0.75
+QUOTED_REPLAY_MODIFIER_MIN_CONFIDENCE = 0.72
 QUOTED_REPLAY_PAYLOAD_PREVIEW_MAX_CHARS = 1200
 QUOTED_REPLAY_TASK_PREVIEW_LIMIT = 5
 QUOTED_REPLAY_PAYLOAD_KEYS = (
@@ -49,6 +56,49 @@ QUOTED_REPLAY_PAYLOAD_KEYS = (
 )
 
 _REPLAY_TASK_TYPES = {"transfer", "airtime", "data"}
+
+
+def _contains_replay_modifier_evidence(text: str | None, evidence: str | None) -> bool:
+    if not text or not evidence:
+        return False
+    normalized_text = re.sub(r"\s+", " ", text).strip().casefold()
+    normalized_evidence = re.sub(r"\s+", " ", evidence).strip().casefold()
+    return bool(normalized_evidence and normalized_evidence in normalized_text)
+
+
+def _trusted_replay_modifier(modifier: ContextFrameReplayModifier | None) -> ContextFrameReplayModifier | None:
+    if modifier is None:
+        return None
+    if modifier.confidence < QUOTED_REPLAY_MODIFIER_MIN_CONFIDENCE:
+        return None
+    return modifier
+
+
+def _modifier_amount_override(text: str | None, modifier: ContextFrameReplayModifier | None) -> float | None:
+    trusted = _trusted_replay_modifier(modifier)
+    if trusted is None or trusted.amount is None:
+        return None
+    if not _contains_replay_modifier_evidence(text, trusted.amount_evidence):
+        return None
+    return trusted.amount if trusted.amount > 0 else None
+
+
+def _modifier_source_account_candidate(text: str | None, modifier: ContextFrameReplayModifier | None) -> str | None:
+    trusted = _trusted_replay_modifier(modifier)
+    if trusted is None or not trusted.source_account_reference:
+        return None
+    if not _contains_replay_modifier_evidence(text, trusted.source_account_evidence):
+        return None
+    return trusted.source_account_reference.strip() or None
+
+
+def _modifier_narration_candidate(text: str | None, modifier: ContextFrameReplayModifier | None) -> str | None:
+    trusted = _trusted_replay_modifier(modifier)
+    if trusted is None or not trusted.narration:
+        return None
+    if not _contains_replay_modifier_evidence(text, trusted.narration_evidence):
+        return None
+    return trusted.narration.strip() or None
 
 
 def _compact_quoted_task_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -265,7 +315,64 @@ def _normalize_replay_source_affinity(payload: dict[str, Any]) -> None:
     payload["source_affinity_mode"] = "explicit" if has_source_reference else "auto"
 
 
-def _sanitize_replay_task_payload(*, task_type: str, payload: dict[str, Any], text: str) -> dict[str, Any] | None:
+def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
+    loaded_context = state.loaded_context or {}
+    account_sources = (
+        loaded_context.get("transaction_accounts"),
+        loaded_context.get("accounts"),
+        loaded_context.get("all_accounts"),
+    )
+    accounts_by_key: dict[str, dict[str, Any]] = {}
+    for account_source in account_sources:
+        if not isinstance(account_source, list):
+            continue
+        for account in account_source:
+            if not isinstance(account, dict):
+                continue
+            account_id = str(
+                account.get("id") or account.get("account_id") or account.get("source_account_id") or ""
+            ).strip()
+            bank_name = str(
+                account.get("bank_name")
+                or account.get("bank")
+                or account.get("source_bank_name")
+                or ""
+            ).strip()
+            account_number = str(
+                account.get("account_number")
+                or account.get("source_account_number")
+                or ""
+            ).strip()
+            key = account_id or f"{bank_name}:{account_number}"
+            if key and key not in accounts_by_key:
+                accounts_by_key[key] = account
+    return list(accounts_by_key.values())
+
+
+def _quoted_replay_source_override(
+    state: OrchestratorState,
+    text: str,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> tuple[bool, dict[str, Any] | None, str | None]:
+    candidate = _modifier_source_account_candidate(text, replay_modifier)
+    if not candidate:
+        return False, None, None
+
+    matched_account = match_source_account_reference(candidate, _loaded_accounts(state))
+    if not matched_account:
+        return True, None, candidate
+
+    return True, build_source_account_patch(matched_account), candidate
+
+
+def _sanitize_replay_task_payload(
+    *,
+    task_type: str,
+    payload: dict[str, Any],
+    text: str,
+    replay_modifier: ContextFrameReplayModifier | None = None,
+    source_override: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     next_payload = {key: value for key, value in payload.items() if value is not None}
     for metadata_key in (
         "task_id",
@@ -282,6 +389,15 @@ def _sanitize_replay_task_payload(*, task_type: str, payload: dict[str, Any], te
         recipient_account_number = next_payload.get("recipient_account_number")
         if recipient_account_number:
             next_payload["recipient_account"] = recipient_account_number
+    amount_override = _modifier_amount_override(text, replay_modifier)
+    if amount_override is not None and task_type in {"transfer", "airtime"}:
+        next_payload["amount"] = amount_override
+    if source_override and task_type in {"transfer", "airtime", "data"}:
+        next_payload.update(source_override)
+    if task_type == "transfer":
+        narration_override = _modifier_narration_candidate(text, replay_modifier)
+        if narration_override:
+            next_payload["narration"] = narration_override
     if "action" not in next_payload:
         next_payload["action"] = {"transfer": "send_money", "airtime": "buy_airtime", "data": "buy_data"}[task_type]
     next_payload.setdefault("instruction", text)
@@ -308,11 +424,27 @@ def _build_quoted_replay_execution_updates(
     interpretation: QuotedReplayInterpretation,
     locale_updates: dict[str, Any],
     quoted_payload: dict[str, Any] | None = None,
+    replay_modifier: ContextFrameReplayModifier | None = None,
 ) -> dict[str, Any] | None:
     new_tasks: dict[str, TaskSpec] = {}
     wave_ids: list[str] = []
     allocated_ids: set[str] = set()
     missing_fields: list[str] = []
+    source_override_requested, source_override, source_reference = _quoted_replay_source_override(
+        state,
+        text,
+        replay_modifier,
+    )
+    if source_override_requested and source_override is None:
+        return {
+            "final_response": (
+                f"I could not find '{source_reference}' among your linked source accounts. "
+                "Choose one of your linked accounts and try again."
+            ),
+            "normalized_instruction": text,
+            "semantic_path_shape": "quoted_router",
+            **locale_updates,
+        }
 
     seed_tasks = _select_seed_tasks(quoted_payload=quoted_payload, interpretation=interpretation)
     use_seed_tasks = bool(seed_tasks and (_scope_requested(interpretation) or not interpretation.tasks))
@@ -329,7 +461,13 @@ def _build_quoted_replay_execution_updates(
         ]
 
     for task_type, payload in task_inputs:
-        sanitized_payload = _sanitize_replay_task_payload(task_type=task_type, payload=payload, text=text)
+        sanitized_payload = _sanitize_replay_task_payload(
+            task_type=task_type,
+            payload=payload,
+            text=text,
+            replay_modifier=replay_modifier,
+            source_override=source_override,
+        )
         if sanitized_payload is None:
             preview_payload = {key: value for key, value in payload.items() if value is not None}
             if task_type == "transfer" and not preview_payload.get("recipient_account"):
