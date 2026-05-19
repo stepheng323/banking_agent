@@ -16,7 +16,7 @@ from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_re
 from shared.i18n import render_message
 from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -72,7 +72,10 @@ async def _handle_quoted_replay_shortcut(
                     **locale_updates,
                 }
             if quoted_payload is None:
-                logger.info("quoted_replay_actionable_payload_missing", quoted_message_id=state.quoted_message_id)
+                logger.info(
+                    "quoted_replay_actionable_payload_missing",
+                    quoted_message_id_hash=log_fingerprint(state.quoted_message_id),
+                )
                 return {
                     "final_response": render_message("conversational.clarify", current_locale),
                     "normalized_instruction": text,

@@ -83,7 +83,9 @@ class _AccountRepoStub:
 
 
 class _UnitOfWorkStub:
-    def __init__(self, *, user: Any = None, existing_by_id: Any = None, existing_for_user: list[Any] | None = None) -> None:
+    def __init__(
+        self, *, user: Any = None, existing_by_id: Any = None, existing_for_user: list[Any] | None = None
+    ) -> None:
         self.users = _UserRepoStub(user)
         self.accounts = _AccountRepoStub(existing_by_id=existing_by_id, existing_for_user=existing_for_user)
 
@@ -93,6 +95,20 @@ class _UnitOfWorkStub:
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         del exc_type, exc, tb
         return False
+
+
+class _LoggerStub:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any]]] = []
+
+    def info(self, event: str, **kwargs: Any) -> None:
+        self.events.append((event, kwargs))
+
+    def warning(self, event: str, **kwargs: Any) -> None:
+        self.events.append((event, kwargs))
+
+    def error(self, event: str, **kwargs: Any) -> None:
+        self.events.append((event, kwargs))
 
 
 @pytest.mark.asyncio
@@ -240,6 +256,53 @@ async def test_bvn_verification_uses_session_phone_not_token_suffix(
     assert session.data["phone_number"] == "2348162511023"
     assert session.data["is_account_linking"] is False
     assert session.data["step"] == OnboardingStep.METHOD_SELECTION.value
+
+
+@pytest.mark.asyncio
+async def test_send_otp_logs_redacted_session_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _SessionStub(
+        {
+            "phone_number": "2348162511023",
+            "bvn": "12345678901",
+            "session_id": "mono-session-secret",
+            "methods": [{"id": "sms", "title": "081***1023"}],
+            "accounts": [{"account_number": "8162511022"}],
+            "step": OnboardingStep.METHOD_SELECTION.value,
+        }
+    )
+    service = BvnVerificationService(session)
+    logger = _LoggerStub()
+    verify_calls: list[tuple[str, str]] = []
+
+    async def _verify_bvn(session_id: str, method: str) -> None:
+        verify_calls.append((session_id, method))
+
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.logger", logger)
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.verify_bvn", _verify_bvn)
+
+    result = await service.send_otp("flow-token-secret", "sms")
+
+    assert result == {"success": True, "data": {"bvn": "12345678901"}}
+    assert verify_calls == [("mono-session-secret", "sms")]
+
+    session_events = [fields for event, fields in logger.events if event == "otp_session_loaded"]
+    assert session_events == [
+        {
+            "flow_token_hash": "82a39dc852becb79",
+            "step": OnboardingStep.METHOD_SELECTION.value,
+            "phone_masked": "2348***23",
+            "has_bvn": True,
+            "has_session_id": True,
+            "has_accounts": True,
+        }
+    ]
+
+    serialized_logs = str(logger.events)
+    assert "12345678901" not in serialized_logs
+    assert "mono-session-secret" not in serialized_logs
+    assert "8162511022" not in serialized_logs
+    assert "2348162511023" not in serialized_logs
+    assert "flow-token-secret" not in serialized_logs
 
 
 @pytest.mark.asyncio

@@ -23,7 +23,7 @@ from apps.chat.src.agent.orchestrator.nodes.planner.guardrails import (
 )
 from shared.i18n import LanguageDetectionSignal, LocaleManager
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _ACCOUNT_CONTEXT_READ_NON_OVERRIDE_ACTIONS = {"none", "unknown", "list", "list_accounts", "count"}
@@ -174,7 +174,7 @@ async def _execute_planner_with_context(
         if not is_saving:
             suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
             await redis_client.delete(suggestion_key)
-            logger.info("cleared_stale_beneficiary_context", phone=state.phone_number)
+            logger.info("cleared_stale_beneficiary_context", phone_hash=log_fingerprint(state.phone_number))
 
     context_read_updates = _build_beneficiary_context_read_updates(
         state,

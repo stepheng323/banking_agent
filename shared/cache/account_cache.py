@@ -7,7 +7,7 @@ from typing import Any
 import redis.asyncio as redis
 
 from shared.cache.redis_client import RedisClient
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -40,13 +40,13 @@ class AccountCacheService:
                 account = json.loads(cached_data)
                 logger.info(
                     "account_cache_hit",
-                    account_number=account_number,
+                    account_number_hash=log_fingerprint(account_number),
                     bank_code=bank_code,
-                    account_name=account.get("account_name"),
+                    account_name_hash=log_fingerprint(account.get("account_name")),
                 )
                 return account
 
-            logger.debug("account_cache_miss", account_number=account_number, bank_code=bank_code)
+            logger.debug("account_cache_miss", account_number_hash=log_fingerprint(account_number), bank_code=bank_code)
             return None
         except Exception as e:
             logger.error("account_cache_get_error", error=str(e), exc_info=True)
@@ -62,7 +62,7 @@ class AccountCacheService:
             serialized = json.dumps(data)
             await self.redis.setex(key, self.TTL_SECONDS, serialized)
 
-            logger.info("account_cached", account_number=account_number, bank_code=bank_code)
+            logger.info("account_cached", account_number_hash=log_fingerprint(account_number), bank_code=bank_code)
             return True
         except Exception as e:
             logger.error("account_cache_set_error", error=str(e), exc_info=True)
@@ -81,7 +81,7 @@ class AccountCacheService:
 
         # 2. Fetch from Provider
         try:
-            logger.info("account_cache_miss_fetching", account_number=account_number)
+            logger.info("account_cache_miss_fetching", account_number_hash=log_fingerprint(account_number))
             result = await fetch_func()
 
             # 3. Cache if successful

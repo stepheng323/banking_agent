@@ -1,7 +1,6 @@
 """Shared service for beneficiary suggestions across all transaction types."""
 
 import json
-import traceback
 from typing import Any
 
 from apps.chat.src.messaging.outbox import enqueue_outbox_say
@@ -223,9 +222,8 @@ class BeneficiarySuggestionService:
                 else:
                     logger.warning("unknown_beneficiary")
 
-        except Exception:
-            logger.error("error_beneficiary")
-            traceback.print_exc()
+        except Exception as exc:
+            logger.error("error_beneficiary", error_type=type(exc).__name__, exc_info=True)
 
         return None
 

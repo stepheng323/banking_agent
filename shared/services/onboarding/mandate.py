@@ -9,7 +9,7 @@ from shared.clients.providers.mono import MonoApiError, mono_client
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate_messages import format_mandate_auth_message
 from shared.utils.datetime import utc_now_naive
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 if TYPE_CHECKING:
     from shared.services.delivery_service import DeliveryService
@@ -102,7 +102,11 @@ class MandateService:
                 start_date=start_date,
                 end_date=end_date,
             )
-            logger.info("mandate_created", mandate_id=mandate.id, phone=phone_number)
+            logger.info(
+                "mandate_created",
+                mandate_id_hash=log_fingerprint(mandate.id),
+                phone_hash=log_fingerprint(phone_number),
+            )
 
             async with UnitOfWork() as uow:
                 if uow.accounts:
@@ -130,7 +134,11 @@ class MandateService:
             return {"success": True, "mandate": mandate}
 
         except MonoApiError as e:
-            logger.error("mandate_creation_failed", error=str(e), phone=phone_number)
+            logger.error(
+                "mandate_creation_failed",
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+            )
             return {"success": False, "error": str(e)}
 
     async def reinitiate_mandate(self, phone_number: str, account_id: str, channel: str = "whatsapp") -> dict:
@@ -178,9 +186,9 @@ class MandateService:
             )
             logger.info(
                 "mandate_reinitiated",
-                mandate_id=mandate.id,
-                phone=phone_number,
-                account_id=account_id,
+                mandate_id_hash=log_fingerprint(mandate.id),
+                phone_hash=log_fingerprint(phone_number),
+                account_id_hash=log_fingerprint(account_id),
             )
 
             # Update account with new mandate info
@@ -222,10 +230,18 @@ class MandateService:
             }
 
         except MonoApiError as e:
-            logger.error("reinitiate_mandate_mono_error", error=str(e), phone=phone_number)
+            logger.error(
+                "reinitiate_mandate_mono_error",
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+            )
             return {"success": False, "error": f"Failed to reinitiate mandate: {e}"}
         except Exception as e:
-            logger.error("reinitiate_mandate_error", error=str(e), phone=phone_number)
+            logger.error(
+                "reinitiate_mandate_error",
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+            )
             return {"success": False, "error": "Failed to reinitiate mandate. Please try again."}
 
     async def send_auth_instructions(

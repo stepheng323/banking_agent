@@ -7,6 +7,7 @@ import structlog
 
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.providers.flutterwave.client import FlutterwaveClient
+from shared.utils.logging import log_fingerprint
 
 logger = structlog.get_logger(__name__)
 
@@ -86,9 +87,14 @@ class FlutterwavePaymentProvider(PayoutProvider):
         random_part = uuid.uuid4().hex[:8].upper()
         transaction_id = f"FP-{date_part}-{random_part}"
 
-        msg = f"🔍 Placeholder transfer initiated: {amount} {currency} to {recipient_account_number}"
-        print(f"{msg} ({recipient_bank_code})")
-        print(f"   Transaction ID: {transaction_id}")
+        logger.info(
+            "flutterwave_placeholder_transfer_initiated",
+            amount=amount,
+            currency=currency,
+            recipient_account_hash=log_fingerprint(recipient_account_number),
+            recipient_bank_code=recipient_bank_code,
+            transaction_id_hash=log_fingerprint(transaction_id),
+        )
 
         return {
             "success": True,

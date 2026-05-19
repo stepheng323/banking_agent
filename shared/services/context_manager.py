@@ -12,7 +12,7 @@ from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 from shared.utils.serialization import sqlalchemy_to_dict
 
 logger = get_logger(__name__)
@@ -40,7 +40,7 @@ class ContextManager:
             span=span,
             duration_ms=round(duration_ms, 2),
             path_label=path_label,
-            phone_number=phone_number,
+            phone_hash=log_fingerprint(phone_number),
         )
 
     @staticmethod
@@ -78,7 +78,7 @@ class ContextManager:
             cache_status = "hit"
         elif cache_hits > 0:
             cache_status = "partial_hit"
-        logger.info("context_user_data_cache", phone=phone_number, status=cache_status)
+        logger.info("context_user_data_cache", phone_hash=log_fingerprint(phone_number), status=cache_status)
 
         if cache_hits == 3:
             return {
@@ -241,7 +241,11 @@ class ContextManager:
                     for t in txns
                 ]
         except Exception as e:
-            logger.error("get_recent_transactions_error", phone=phone_number, error=str(e))
+            logger.error(
+                "get_recent_transactions_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
             return []
 
         return []
@@ -255,7 +259,11 @@ class ContextManager:
             if data:
                 return cast(dict[str, Any], json.loads(data))
         except Exception as e:
-            logger.warning("get_conversation_state_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "get_conversation_state_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
         return None
 
     async def clear_conversation_state(self, phone_number: str) -> None:
@@ -265,7 +273,7 @@ class ContextManager:
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)
         except Exception as e:
-            logger.error("error_clearing_state", phone=phone_number, error=str(e))
+            logger.error("error_clearing_state", phone_hash=log_fingerprint(phone_number), error_type=type(e).__name__)
 
     async def get_last_response(self, phone_number: str) -> str | None:
         """Get last assistant response from Redis (fast, for LLM context)."""
@@ -274,7 +282,11 @@ class ContextManager:
             key = f"user:{phone_number}:last_response"
             return cast(str | None, await redis_client.get(key))
         except Exception as e:
-            logger.warning("get_last_response_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "get_last_response_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
         return None
 
     async def save_last_response(self, phone_number: str, response: str) -> None:
@@ -284,7 +296,11 @@ class ContextManager:
             key = f"user:{phone_number}:last_response"
             await redis_client.set(key, response, ex=3600)
         except Exception as e:
-            logger.warning("save_last_response_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "save_last_response_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
 
     async def save_message_id(self, phone_number: str, message_id: str) -> None:
         """Save current message_id to Redis for typing indicator support."""
@@ -293,7 +309,11 @@ class ContextManager:
             key = f"user:{phone_number}:current_message_id"
             await redis_client.set(key, message_id, ex=300)  # 5 min TTL
         except Exception as e:
-            logger.warning("save_message_id_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "save_message_id_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
 
     async def claim_inbound_message(
         self,
@@ -310,7 +330,12 @@ class ContextManager:
             claimed = await redis_client.set(key, "1", ex=ttl_seconds, nx=True)
             return bool(claimed)
         except Exception as e:
-            logger.warning("claim_inbound_message_error", phone=phone_number, message_id=message_id, error=str(e))
+            logger.warning(
+                "claim_inbound_message_error",
+                phone_hash=log_fingerprint(phone_number),
+                message_id_hash=log_fingerprint(message_id),
+                error_type=type(e).__name__,
+            )
             return True
 
     async def release_inbound_message_claim(self, phone_number: str, message_id: str) -> None:
@@ -322,7 +347,12 @@ class ContextManager:
             key = f"user:{phone_number}:inbound_message:{message_id}"
             await redis_client.delete(key)
         except Exception as e:
-            logger.warning("release_inbound_message_error", phone=phone_number, message_id=message_id, error=str(e))
+            logger.warning(
+                "release_inbound_message_error",
+                phone_hash=log_fingerprint(phone_number),
+                message_id_hash=log_fingerprint(message_id),
+                error_type=type(e).__name__,
+            )
 
     async def get_message_id(self, phone_number: str) -> str | None:
         """Get current message_id from Redis for typing indicator."""
@@ -331,7 +361,11 @@ class ContextManager:
             key = f"user:{phone_number}:current_message_id"
             return cast(str | None, await redis_client.get(key))
         except Exception as e:
-            logger.warning("get_message_id_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "get_message_id_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
             return None
 
     async def get_conversation_history(self, phone_number: str, limit: int = 10) -> list[dict[str, str]]:
@@ -342,7 +376,11 @@ class ContextManager:
             items = await redis_client.lrange(key, -limit, -1)
             return [json.loads(item) for item in items]
         except Exception as e:
-            logger.warning("get_conversation_history_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "get_conversation_history_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
             return []
 
     async def add_conversation_turn(self, phone_number: str, role: str, content: str) -> None:
@@ -355,7 +393,11 @@ class ContextManager:
             await redis_client.ltrim(key, -50, -1)
             await redis_client.expire(key, 86400)
         except Exception as e:
-            logger.warning("add_conversation_turn_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "add_conversation_turn_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
 
     async def get_user_language(self, phone_number: str) -> str | None:
         """Get user's preferred language."""
@@ -363,7 +405,11 @@ class ContextManager:
             locale = await LocaleManager.get_locale(phone_number)
             return cast(str | None, (locale.value if locale else None))
         except Exception as e:
-            logger.warning("get_user_language_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "get_user_language_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
             return None
 
     async def set_user_language(self, phone_number: str, language: str) -> None:
@@ -371,7 +417,11 @@ class ContextManager:
         try:
             await LocaleManager.set_locale(phone_number, language, source="context_set_user_language")
         except Exception as e:
-            logger.warning("set_user_language_error", phone=phone_number, error=str(e))
+            logger.warning(
+                "set_user_language_error",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
 
     async def update_user_locale(self, phone_number: str, signal: LanguageDetectionSignal) -> str:
         """Update persisted locale using detection/explicit signals."""
@@ -483,7 +533,7 @@ class ContextManager:
             ):
                 logger.info(
                     "context_user_data_restart_gap",
-                    phone=phone_number,
+                    phone_hash=log_fingerprint(phone_number),
                     has_conversation_state=bool(results[0]),
                     has_last_response=bool(results[1]),
                     has_beneficiary_suggestion=bool(results[2]),
@@ -525,7 +575,11 @@ class ContextManager:
             return user_ctx, conversation_state, last_response, suggestion_data
 
         except Exception as e:
-            logger.error("error_in_parallel_context", phone=phone_number, error=str(e))
+            logger.error(
+                "error_in_parallel_context",
+                phone_hash=log_fingerprint(phone_number),
+                error_type=type(e).__name__,
+            )
             user_ctx = await self.load_user_context(
                 phone_number,
                 user=user,

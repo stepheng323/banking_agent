@@ -17,7 +17,7 @@ from shared.messaging.intents import (
     UiIntent,
 )
 from shared.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _MARKDOWN_BOLD_RE = re.compile(r"\*\*([^*\n]+?)\*\*")
@@ -160,7 +160,7 @@ class WhatsAppPresenter(Presenter):
             )
             return resp.message_id
         else:
-            logger.warning("auth_flow_unsupported", phone=context.phone_number)
+            logger.warning("auth_flow_unsupported", phone_hash=log_fingerprint(context.phone_number))
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text=self._format_text(
@@ -197,7 +197,7 @@ class WhatsAppPresenter(Presenter):
             )
             return resp.message_id
         else:
-            logger.warning("confirmation_flow_unsupported", phone=context.phone_number)
+            logger.warning("confirmation_flow_unsupported", phone_hash=log_fingerprint(context.phone_number))
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text=self._format_text(

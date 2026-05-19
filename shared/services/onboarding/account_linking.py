@@ -7,7 +7,7 @@ from shared.models.account import CreateAccount
 from shared.models.user import UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.hash import hash_plaintext, is_valid_pin_format
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 from .mandate import MandateService
 from .session import OnboardingStep, SessionManager
@@ -201,7 +201,11 @@ class AccountLinkingService:
                 identity_number=bvn,
                 identity_type="bvn",
             )
-            logger.info("mono_customer_created_async", phone=phone_number, customer_id=customer.id)
+            logger.info(
+                "mono_customer_created_async",
+                phone_hash=log_fingerprint(phone_number),
+                customer_id_hash=log_fingerprint(customer.id),
+            )
 
             async with UnitOfWork() as uow:
                 if uow.users:
@@ -234,9 +238,9 @@ class AccountLinkingService:
 
             logger.error(
                 "mono_setup_background_error",
-                error=str(e),
-                phone=phone_number,
-                traceback=traceback.format_exc(),
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+                traceback_hash=log_fingerprint(traceback.format_exc()),
             )
             try:
                 error_msg = (

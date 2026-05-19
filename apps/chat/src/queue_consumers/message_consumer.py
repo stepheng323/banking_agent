@@ -383,8 +383,9 @@ class MessageConsumer:
                 "flow_event_received",
                 event_type=event_type,
                 flow_type=flow_type,
-                phone=phone_number,
-                idem_key=idempotency_key,
+                phone_hash=log_fingerprint(phone_number),
+                idempotency_key_hash=log_fingerprint(idempotency_key),
+                extra_data_keys=sorted(str(key) for key in extra_data) if extra_data else [],
             )
 
             if event_type == FlowEventType.PIN_VERIFIED.value:
@@ -399,11 +400,16 @@ class MessageConsumer:
                     orchestrator=orchestrator,
                 )
             elif event_type == FlowEventType.PIN_FAILED.value:
-                logger.info("pin_verification_failed", phone=phone_number, flow_type=flow_type)
+                logger.info("pin_verification_failed", phone_hash=log_fingerprint(phone_number), flow_type=flow_type)
             else:
-                logger.warning("unknown_flow_event", event_type=event_type, event_data=event_data)
+                logger.warning("unknown_flow_event", event_type=event_type, event_keys=sorted(event_data.keys()))
         except Exception as exc:
-            logger.error("flow_event_processing_failed", error=str(exc), event_data=event_data, exc_info=True)
+            logger.error(
+                "flow_event_processing_failed",
+                error_type=type(exc).__name__,
+                event_keys=sorted(event_data.keys()),
+                exc_info=True,
+            )
             raise
 
     async def _handle_pin_verified(
@@ -421,25 +427,37 @@ class MessageConsumer:
         runtime_orchestrator = orchestrator or self.orchestrator
         runtime_user_repository = user_repository or self.user_repository
         if success is not True:
-            logger.warning("pin_verified_but_not_success", phone=phone_number, flow_type=flow_type)
+            logger.warning(
+                "pin_verified_but_not_success",
+                phone_hash=log_fingerprint(phone_number),
+                flow_type=flow_type,
+            )
             return
 
         normalized_flow_type = flow_type.strip().lower()
         if normalized_flow_type not in _TRANSACTION_PIN_FLOWS:
-            logger.info("pin_verified_non_transaction_flow_ignored", phone=phone_number, flow_type=flow_type)
+            logger.info(
+                "pin_verified_non_transaction_flow_ignored",
+                phone_hash=log_fingerprint(phone_number),
+                flow_type=flow_type,
+            )
             return
 
         if not phone_number or not idempotency_key:
             logger.warning(
                 "pin_verified_missing_resume_context",
-                phone=phone_number,
+                phone_hash=log_fingerprint(phone_number),
                 flow_type=flow_type,
                 has_idempotency_key=bool(idempotency_key),
             )
             return
 
         if runtime_user_repository is None:
-            logger.error("pin_verified_user_repository_missing", phone=phone_number, flow_type=flow_type)
+            logger.error(
+                "pin_verified_user_repository_missing",
+                phone_hash=log_fingerprint(phone_number),
+                flow_type=flow_type,
+            )
             return
 
         authorization_service = AuthorizationService()
@@ -447,7 +465,7 @@ class MessageConsumer:
         if not auth_result or not auth_result.verified or not auth_result.user_id:
             logger.warning(
                 "pin_verified_resume_record_invalid",
-                phone=phone_number,
+                phone_hash=log_fingerprint(phone_number),
                 flow_type=flow_type,
                 has_record=bool(auth_result),
                 verified=bool(auth_result.verified) if auth_result else False,
@@ -458,7 +476,7 @@ class MessageConsumer:
         if recorded_flow_type != normalized_flow_type:
             logger.warning(
                 "pin_verified_resume_flow_mismatch",
-                phone=phone_number,
+                phone_hash=log_fingerprint(phone_number),
                 flow_type=flow_type,
                 recorded_flow_type=recorded_flow_type,
             )
@@ -468,16 +486,25 @@ class MessageConsumer:
         if not user or str(getattr(user, "id", "") or "") != str(auth_result.user_id):
             logger.warning(
                 "pin_verified_resume_user_mismatch",
-                phone=phone_number,
+                phone_hash=log_fingerprint(phone_number),
                 flow_type=flow_type,
             )
             return
 
         if not await authorization_service.claim_pin_resume(idempotency_key):
-            logger.warning("pin_verified_resume_replay_ignored", phone=phone_number, flow_type=flow_type)
+            logger.warning(
+                "pin_verified_resume_replay_ignored",
+                phone_hash=log_fingerprint(phone_number),
+                flow_type=flow_type,
+            )
             return
 
-        logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type, channel=channel)
+        logger.info(
+            "resuming_via_orchestrator",
+            phone_hash=log_fingerprint(phone_number),
+            flow=flow_type,
+            channel=channel,
+        )
         response = await runtime_orchestrator.resume_transaction(
             phone_number=phone_number,
             flow_type=normalized_flow_type,
@@ -513,7 +540,11 @@ class MessageConsumer:
             intents_to_send,
             metadata={"source": "flow_event_handler", "flow_type": flow_type, **delivery_metadata},
         )
-        logger.info("pin_response_enqueued_outbox", outbox_phone=outbox_phone, mapped_from=phone_number)
+        logger.info(
+            "pin_response_enqueued_outbox",
+            outbox_phone_hash=log_fingerprint(outbox_phone),
+            mapped_from_hash=log_fingerprint(phone_number),
+        )
 
     async def _handle_message(
         self,
@@ -597,7 +628,11 @@ class MessageConsumer:
             phone_number=phone_number,
         )
         if not claimed_message:
-            logger.info("duplicate_inbound_message_ignored", phone_number=phone_number, message_id=message.message_id)
+            logger.info(
+                "duplicate_inbound_message_ignored",
+                phone_hash=log_fingerprint(phone_number),
+                message_id_hash=log_fingerprint(message.message_id),
+            )
             return {"status": "duplicate_ignored", "message_id": message.message_id}
 
         response_text: str | None = None

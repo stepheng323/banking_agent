@@ -26,7 +26,7 @@ from shared.messaging.presenters.base import PresentationContext
 from shared.messaging.presenters.factory import PresenterFactory
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.datetime import utc_now_naive
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _T = TypeVar("_T")
@@ -273,7 +273,7 @@ class DeliveryService:
     ) -> DeliveryAttemptResult | None:
         status = await _await_maybe(self.redis.hget(ledger_key, "status"))
         if status == "completed":
-            logger.info("delivery_dedupe_hit", ledger_key=ledger_key, status=status)
+            logger.info("delivery_dedupe_hit", ledger_key_hash=log_fingerprint(ledger_key), status=status)
             self._log_progress_dedupe(
                 status="deduped_completed",
                 ledger_key=ledger_key,
@@ -310,7 +310,7 @@ class DeliveryService:
                 message_ids=message_ids,
             )
         await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "completed"}))
-        logger.info("delivery_dedupe_resume_completed", ledger_key=ledger_key)
+        logger.info("delivery_dedupe_resume_completed", ledger_key_hash=log_fingerprint(ledger_key))
         self._log_progress_dedupe(
             status="deduped_resumed",
             ledger_key=ledger_key,
@@ -331,10 +331,10 @@ class DeliveryService:
         logger.info(
             "delivery_progress_dedupe_hit",
             status=status,
-            ledger_key=ledger_key,
+            ledger_key_hash=log_fingerprint(ledger_key),
             progress_stage=progress_stage,
-            turn_id=metadata.get("progress_turn_id"),
-            dedupe_key=metadata.get("dedupe_key"),
+            turn_id_hash=log_fingerprint(metadata.get("progress_turn_id")),
+            dedupe_key_hash=log_fingerprint(metadata.get("dedupe_key")),
         )
 
     def _schedule_actionable_persist(
@@ -420,7 +420,11 @@ class DeliveryService:
 
                 user = await uow.users.get_by_channel_identity(channel, identity_or_phone)
                 if not user:
-                    logger.warning("actionable_persist_user_not_found", channel=channel, identity=identity_or_phone)
+                    logger.warning(
+                        "actionable_persist_user_not_found",
+                        channel=channel,
+                        identity_hash=log_fingerprint(identity_or_phone),
+                    )
                     if strict:
                         raise RuntimeError("actionable_user_not_found")
                     return
@@ -459,8 +463,8 @@ class DeliveryService:
             logger.error(
                 "actionable_persist_failed",
                 channel=channel,
-                message_id=message_id,
-                error=str(exc),
+                message_id_hash=log_fingerprint(message_id),
+                error_type=type(exc).__name__,
                 exc_info=True,
             )
             if strict:

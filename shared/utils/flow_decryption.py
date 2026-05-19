@@ -19,6 +19,10 @@ from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def _normalize_private_key(private_key_pem: str) -> str:
     """Normalize PEM content passed through environment variables."""
@@ -66,10 +70,7 @@ def decrypt_flow_data(
             private_key_pem = get_private_key_from_env()
 
         if not private_key_pem:
-            raise FileNotFoundError(
-                "No private key configured for flow decryption. "
-                "Set WHATSAPP_FLOW_PRIVATE_KEY."
-            )
+            raise FileNotFoundError("No private key configured for flow decryption. Set WHATSAPP_FLOW_PRIVATE_KEY.")
 
         private_key = RSA.import_key(private_key_pem)
         encrypted_key_bytes = base64.b64decode(encrypted_key)
@@ -93,19 +94,19 @@ def decrypt_flow_data(
         return flow_data, aes_key, iv_bytes
 
     except ValueError as ve:
-        if "Incorrect decryption" in str(ve):
-            print("   ❌ RSA decryption failed")
-        else:
-            print(f"   ❌ Decryption error: {ve}")
-        import traceback
-
-        traceback.print_exc()
+        logger.warning(
+            "whatsapp_flow_decrypt_value_error",
+            error_type=type(ve).__name__,
+            reason="rsa_decryption_failed" if "Incorrect decryption" in str(ve) else "decrypt_or_parse_failed",
+            exc_info=True,
+        )
         return None
     except Exception as e:
-        print(f"   ❌ Failed to decrypt flow data: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.warning(
+            "whatsapp_flow_decrypt_unexpected_error",
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
         return None
 
 

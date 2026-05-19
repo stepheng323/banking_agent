@@ -4,7 +4,7 @@ import hashlib
 
 from shared.clients.providers.mono import BankAccount, BvnLookupData, MonoApiError, mono_client
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 from .session import OnboardingStep, SessionManager
 
@@ -15,6 +15,15 @@ def _token_fingerprint(flow_token: str | None) -> str:
     if not flow_token:
         return ""
     return hashlib.sha256(str(flow_token).encode("utf-8")).hexdigest()[:16]
+
+
+def _mask_phone(phone_number: str | None) -> str:
+    if not phone_number:
+        return ""
+    normalized = str(phone_number).strip()
+    if len(normalized) <= 4:
+        return normalized
+    return f"{normalized[:4]}***{normalized[-2:]}"
 
 
 class BvnVerificationService:
@@ -40,7 +49,11 @@ class BvnVerificationService:
                 accounts = await uow.accounts.get_by_user(str(user.id))
                 return {account.account_id for account in accounts if account.account_id}
         except Exception as e:
-            logger.error("linked_account_lookup_failed", error=str(e), phone=phone_number)
+            logger.error(
+                "linked_account_lookup_failed",
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+            )
             return set()
 
     async def get_session_data(self, flow_token: str) -> dict:
@@ -66,12 +79,20 @@ class BvnVerificationService:
                     if user and user.extra_data:
                         bvn = user.extra_data.get("bvn")
         except Exception as e:
-            logger.error("get_stored_bvn_error", error=str(e), phone=phone_number)
+            logger.error(
+                "get_stored_bvn_error",
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+            )
 
         if not bvn:
             return {"success": False, "error": "BVN not found. Please contact support."}
 
-        logger.info("account_linking_initiated", phone=phone_number, bvn=bvn[:4] + "***")
+        logger.info(
+            "account_linking_initiated",
+            phone_hash=log_fingerprint(phone_number),
+            bvn_hash=log_fingerprint(bvn),
+        )
 
         try:
             bvn_data: BvnLookupData = await mono_client.initiate_bvn_lookup(bvn)
@@ -90,7 +111,7 @@ class BvnVerificationService:
                 },
             )
 
-            logger.info("account_linking_bvn_verified", session_id=bvn_data.session_id[:8] + "...")
+            logger.info("account_linking_bvn_verified", session_id_hash=log_fingerprint(bvn_data.session_id))
 
             return {"success": True, "data": {"bvn": bvn, "methods": methods}}
 
@@ -114,7 +135,7 @@ class BvnVerificationService:
 
         is_linking = bool(existing_session.get("is_account_linking")) or flow_token.startswith("link-")
 
-        logger.info("bvn_lookup_initiated", bvn=bvn[:4] + "***")
+        logger.info("bvn_lookup_initiated", bvn_hash=log_fingerprint(bvn))
 
         try:
             bvn_data: BvnLookupData = await mono_client.initiate_bvn_lookup(bvn)
@@ -133,7 +154,7 @@ class BvnVerificationService:
                 },
             )
 
-            logger.info("bvn_lookup_success", session_id=bvn_data.session_id[:8] + "...")
+            logger.info("bvn_lookup_success", session_id_hash=log_fingerprint(bvn_data.session_id))
 
             return {"success": True, "data": {"bvn": bvn, "methods": methods}}
 
@@ -148,7 +169,15 @@ class BvnVerificationService:
             return {"success": False, "error": "Please select a verification method."}
 
         session = await self.session.get_session(flow_token)
-        logger.info("Session", session=session)
+        logger.info(
+            "otp_session_loaded",
+            flow_token_hash=_token_fingerprint(flow_token),
+            step=session.get("step"),
+            phone_masked=_mask_phone(session.get("phone_number")),
+            has_bvn=bool(session.get("bvn")),
+            has_session_id=bool(session.get("session_id")),
+            has_accounts=bool(session.get("accounts")),
+        )
         session_id = session.get("session_id")
         if not session_id:
             return {"success": False, "error": "Session expired. Please start over."}
@@ -210,7 +239,7 @@ class BvnVerificationService:
             if not accounts_data:
                 logger.info(
                     "otp_verified_no_new_accounts",
-                    phone=session.get("phone_number"),
+                    phone_hash=log_fingerprint(session.get("phone_number")),
                     total_accounts=len(accounts),
                     filtered_accounts=len(existing_account_ids),
                 )

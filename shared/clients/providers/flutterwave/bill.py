@@ -7,6 +7,7 @@ import structlog
 
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.clients.providers.flutterwave.client import FlutterwaveClient
+from shared.utils.logging import log_fingerprint
 
 logger = structlog.get_logger(__name__)
 
@@ -117,7 +118,12 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             "reference": reference,
         }
 
-        logger.info("airtime_purchase_request", network=network, amount=amount, phone=customer_phone)
+        logger.info(
+            "airtime_purchase_request",
+            network=network,
+            amount=amount,
+            phone_hash=log_fingerprint(customer_phone),
+        )
         result = await self._client.request("POST", endpoint, payload=payload)
 
         if result["success"]:

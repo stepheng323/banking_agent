@@ -52,12 +52,16 @@ def build_orchestrator_graph(checkpointer: Any = None) -> Any:
         "gate", route_gate, {"advance": "advance", "handle_interrupt": "handle_interrupt", "plan": "plan"}
     )
 
-    from shared.utils.logging import get_logger
+    from shared.utils.logging import get_logger, log_fingerprint
 
     logger = get_logger(__name__)
 
     def route_plan(state: OrchestratorState) -> str:
-        logger.info("route_plan_check", final_response=state.final_response)
+        logger.info(
+            "route_plan_check",
+            has_final_response=bool(state.final_response),
+            final_response_hash=log_fingerprint(state.final_response),
+        )
         if state.final_response:
             return cast(str, END)
         return "advance"

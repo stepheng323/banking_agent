@@ -13,7 +13,7 @@ from apps.receipt.src.renderer import (
 )
 from shared.cache.redis_client import Redis
 from shared.services.delivery_service import DeliveryService
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -98,14 +98,18 @@ class ReceiptJobConsumer:
                 transfer_data = self._extract_transfer_data(payload)
             except ValueError as e:
                 last_error = str(e)
-                logger.error("receipt_job_invalid_payload", phone=phone_number, error=last_error)
+                logger.error(
+                    "receipt_job_invalid_payload",
+                    phone_hash=log_fingerprint(phone_number),
+                    error_hash=log_fingerprint(last_error),
+                )
             else:
                 for attempt in range(1, MAX_RETRIES + 1):
                     attempt_started = asyncio.get_running_loop().time()
                     try:
                         logger.info(
                             "receipt_generation_attempt",
-                            phone=phone_number,
+                            phone_hash=log_fingerprint(phone_number),
                             attempt=attempt,
                         )
 
