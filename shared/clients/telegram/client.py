@@ -511,11 +511,6 @@ class TelegramClient(MessagingClient):
         import time
 
         bootstrap_extra: dict[str, Any] = {}
-        if endpoint == "pin_entry.html":
-            if header:
-                bootstrap_extra["header"] = _telegram_html_to_plain_text(header)
-            if body_text:
-                bootstrap_extra["body_text"] = _telegram_html_to_plain_text(body_text)
 
         try:
             bootstrap_nonce = await create_telegram_miniapp_bootstrap(
@@ -649,6 +644,27 @@ class TelegramClient(MessagingClient):
         except Exception as e:
             logger.warning(
                 "telegram_mark_authorized_failed",
+                chat_id_hash=log_fingerprint(chat_id),
+                message_id_hash=log_fingerprint(message_id),
+                error_type=type(e).__name__,
+            )
+            return False
+
+    async def remove_inline_keyboard(self, chat_id: str, message_id: str | int) -> bool:
+        """Remove an inline keyboard from a sent Telegram message."""
+        try:
+            await self._call(
+                "editMessageReplyMarkup",
+                {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                },
+                max_retries=1,
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "telegram_remove_inline_keyboard_failed",
                 chat_id_hash=log_fingerprint(chat_id),
                 message_id_hash=log_fingerprint(message_id),
                 error_type=type(e).__name__,

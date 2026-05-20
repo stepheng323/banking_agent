@@ -45,7 +45,7 @@ async def create_telegram_miniapp_bootstrap(
     extra: dict[str, Any] | None = None,
     ttl_seconds: int = BOOTSTRAP_TTL_SECONDS,
 ) -> str:
-    """Create a one-time bootstrap nonce bound to a Telegram chat and page type."""
+    """Create a short-lived bootstrap nonce bound to a Telegram chat and page type."""
     normalized_endpoint = _normalize_endpoint(endpoint)
     nonce = secrets.token_urlsafe(32)
     payload = {
@@ -76,7 +76,11 @@ async def consume_telegram_miniapp_bootstrap(
     endpoint: str,
     init_user_id: str,
 ) -> TelegramMiniAppBootstrap | None:
-    """Consume a bootstrap nonce after verifying endpoint type and Telegram owner."""
+    """Resolve a bootstrap nonce after verifying endpoint type and Telegram owner.
+
+    Telegram WebViews can reload a Mini App URL with the same query string, so the
+    nonce is intentionally reusable until its short Redis TTL expires.
+    """
     normalized_endpoint = _normalize_endpoint(endpoint)
     token = str(nonce or "").strip()
     if not token:
@@ -84,13 +88,7 @@ async def consume_telegram_miniapp_bootstrap(
 
     redis = RedisClient.get_client()
     key = _key(token)
-    raw: Any
-    if hasattr(redis, "getdel"):
-        raw = await redis.getdel(key)
-    else:
-        raw = await redis.get(key)
-        if raw is not None:
-            await redis.delete(key)
+    raw: Any = await redis.get(key)
 
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")

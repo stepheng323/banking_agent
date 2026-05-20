@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -12,9 +13,10 @@ from apps.gateway.api.webhooks.telegram.router import (
     TelegramBootstrapInput,
 )
 from shared.cache.flow_session_manager import SessionReadResult
+from shared.services import telegram_miniapp_bootstrap as bootstrap_module
 from shared.services.auth.authorization import AuthorizationResult
 from shared.services.channel_linking import ChannelLinkPinResult
-from shared.services.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap
+from shared.services.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap, consume_telegram_miniapp_bootstrap
 
 
 class _RequestStub:
@@ -309,7 +311,46 @@ async def test_telegram_bootstrap_returns_server_side_token_for_matching_user(
 
 
 @pytest.mark.asyncio
-async def test_telegram_bootstrap_rejects_missing_or_replayed_nonce(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_telegram_bootstrap_nonce_can_be_reused_during_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _BootstrapRedisStub:
+        def __init__(self) -> None:
+            self.get_calls: list[str] = []
+            self.values = {
+                "telegram:miniapp:bootstrap:nonce-1": json.dumps(
+                    {
+                        "flow_token": "transfer-pin-idem-1-927331985",
+                        "chat_id": "927331985",
+                        "endpoint": "pin",
+                        "extra": {},
+                    }
+                )
+            }
+
+        async def get(self, key: str) -> str | None:
+            self.get_calls.append(key)
+            return self.values.get(key)
+
+        async def getdel(self, key: str) -> None:
+            raise AssertionError(f"bootstrap nonce should not be deleted during exchange: {key}")
+
+    redis = _BootstrapRedisStub()
+    monkeypatch.setattr(bootstrap_module.RedisClient, "get_client", lambda: redis)
+
+    first = await consume_telegram_miniapp_bootstrap(nonce="nonce-1", endpoint="pin", init_user_id="927331985")
+    second = await consume_telegram_miniapp_bootstrap(nonce="nonce-1", endpoint="pin", init_user_id="927331985")
+
+    assert first is not None
+    assert second is not None
+    assert first.flow_token == "transfer-pin-idem-1-927331985"
+    assert second.flow_token == "transfer-pin-idem-1-927331985"
+    assert redis.get_calls == [
+        "telegram:miniapp:bootstrap:nonce-1",
+        "telegram:miniapp:bootstrap:nonce-1",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_telegram_bootstrap_rejects_missing_nonce(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _consume(**kwargs: Any) -> None:
         del kwargs
         return None
@@ -478,6 +519,55 @@ def test_telegram_mini_apps_bootstrap_without_query_flow_tokens() -> None:
         assert 'params.get("flow_token")' not in text
         assert 'params.get("chat_id")' not in text
         assert "/webhook/telegram/bootstrap" in text
+
+
+def test_telegram_mini_apps_use_theme_assets_and_native_chrome() -> None:
+    root = Path(__file__).resolve().parents[2]
+    for relative_path in (
+        "apps/gateway/static/telegram/onboarding.html",
+        "apps/gateway/static/telegram/linking.html",
+        "apps/gateway/static/telegram/pin_entry.html",
+    ):
+        text = (root / relative_path).read_text()
+        assert "/static/telegram/miniapp_theme.js?v=6" in text
+        assert "/static/telegram/miniapp_shared.css?v=8" in text
+        assert "TelegramMiniAppTheme?.applyTheme" in text
+        assert 'accentFallback: "#2ea6ff"' in text
+        assert "mini-app-profile" in text
+        assert "mini-app-copy" in text
+        assert "nativeMainButton.onClick" in text
+        assert "uses-native-main-button" in text
+
+    onboarding = (root / "apps/gateway/static/telegram/onboarding.html").read_text()
+    linking = (root / "apps/gateway/static/telegram/linking.html").read_text()
+    assert "mini-topbar-icon" not in onboarding
+    assert "mini-topbar-icon" not in linking
+
+    theme = (root / "apps/gateway/static/telegram/miniapp_theme.js").read_text()
+    assert "secondary_bg_color" in theme
+    assert "section_bg_color" in theme
+    assert "destructive_text_color" in theme
+    assert 'tg.onEvent("themeChanged"' in theme
+    assert "prefers-color-scheme: dark" in theme
+
+    shared_css = (root / "apps/gateway/static/telegram/miniapp_shared.css").read_text()
+    assert "background: var(--mini-link);" in shared_css
+    assert ".mini-app-profile" in shared_css
+    assert "align-items: center;" in shared_css
+    assert ".uses-native-main-button .mini-footer" in shared_css
+
+
+def test_telegram_pin_mini_app_does_not_render_transaction_details() -> None:
+    root = Path(__file__).resolve().parents[2]
+    pin_entry = (root / "apps/gateway/static/telegram/pin_entry.html").read_text()
+
+    assert "payload.body_text" not in pin_entry
+    assert "payload.header" not in pin_entry
+    assert "Use your 6-digit transaction PIN to continue." in pin_entry
+    assert "pin-action-row" in pin_entry
+    assert "Enter 6-digit PIN" in pin_entry
+    assert "pin-action-icon" not in pin_entry
+    assert 'class="mini-btn pin-submit"' not in pin_entry
 
 
 def test_telegram_pin_surfaces_require_six_digit_transaction_pin() -> None:

@@ -8,15 +8,15 @@
     />
     <title>Account Setup</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="/static/telegram/miniapp_theme.js?v=3"></script>
-    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=4" />
+    <script src="/static/telegram/miniapp_theme.js?v=6"></script>
+    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=8" />
     <style>
       .onboarding-sheet {
         min-height: 100%;
       }
 
       .onboarding-title {
-        font-size: 34px;
+        font-size: 25px;
       }
 
       .onboarding-content {
@@ -56,7 +56,7 @@
 
       @media (max-width: 420px) {
         .onboarding-title {
-          font-size: 30px;
+          font-size: 24px;
         }
       }
     </style>
@@ -66,12 +66,13 @@
     <div class="mini-page">
       <div class="mini-sheet">
         <div class="mini-sheet-content onboarding-sheet">
-          <div class="mini-handle"></div>
-          <div class="mini-topbar">
-            <span class="mini-topbar-icon">←</span>
-            <span class="mini-topbar-title" id="topbarTitle">Link Your Account</span>
-            <span class="mini-topbar-icon">⋮</span>
-          </div>
+          <header class="mini-app-profile">
+            <div class="mini-app-avatar" aria-hidden="true">N</div>
+            <div class="mini-app-copy">
+              <h1 class="mini-app-title">Narya</h1>
+              <p class="mini-app-subtitle">Secure account setup in Telegram.</p>
+            </div>
+          </header>
 
           <div class="mini-progress">
             <div class="mini-progress-fill" id="progressFill"></div>
@@ -79,9 +80,9 @@
 
           <div class="onboarding-content">
             <div id="step-bvn" class="mini-step active">
-              <h1 class="mini-title onboarding-title">Welcome</h1>
+              <h1 class="mini-title onboarding-title">Enter your BVN</h1>
               <p class="mini-subtitle">
-                Enter your BVN to verify your identity and fetch your linked bank accounts.
+                Your BVN helps us verify your identity and fetch your linked bank accounts.
               </p>
 
               <div class="onboarding-form">
@@ -107,7 +108,7 @@
             </div>
 
             <div id="step-otp-verify" class="mini-step">
-              <h1 class="mini-title onboarding-title">Enter verification code</h1>
+              <h1 class="mini-title onboarding-title">Enter the 6-digit code</h1>
               <p class="mini-subtitle">We sent a 6-digit code to your selected method.</p>
 
               <div class="onboarding-form">
@@ -124,7 +125,7 @@
             </div>
 
             <div id="step-account" class="mini-step">
-              <h1 class="mini-title onboarding-title">Select your account</h1>
+              <h1 class="mini-title onboarding-title">Select account</h1>
               <p class="mini-subtitle">Choose the bank account you'd like to use.</p>
 
               <label class="mini-section-label">Bank Account</label>
@@ -191,13 +192,7 @@
       const tg = window.Telegram.WebApp;
       tg.ready();
       tg.expand();
-      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#21d07a" });
-
-      try {
-        if (tg.MainButton) {
-          tg.MainButton.hide();
-        }
-      } catch (e) {}
+      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#2ea6ff" });
 
       const params = new URLSearchParams(window.location.search);
       const bootstrapNonce = params.get("boot") || "";
@@ -215,6 +210,23 @@
       const btnMainText = document.getElementById("btnMainText");
       const btnMainLoader = document.getElementById("btnMainLoader");
       const progressFill = document.getElementById("progressFill");
+      const nativeMainButton = tg.MainButton || null;
+      const useNativeMainButton = Boolean(nativeMainButton && typeof nativeMainButton.setText === "function");
+
+      if (useNativeMainButton) {
+        document.body.classList.add("uses-native-main-button");
+        nativeMainButton.onClick(() => {
+          if (currentStep !== "success") {
+            handleMainAction();
+          }
+        });
+      } else {
+        btnMainAction.addEventListener("click", () => {
+          if (!btnMainAction.disabled) {
+            handleMainAction();
+          }
+        });
+      }
 
       tg.BackButton.onClick(() => {
         if (historyStack.length > 0) {
@@ -224,14 +236,34 @@
         }
       });
 
-      btnMainAction.addEventListener("click", () => {
-        if (!btnMainAction.disabled) {
-          handleMainAction();
-        }
-      });
-
       function updateMainButton(text, isLoading, isVisible, isActive = true) {
         const footer = document.getElementById("htmlBottomBar");
+        if (useNativeMainButton) {
+          footer.style.display = "none";
+          try {
+            if (!isVisible || currentStep === "success") {
+              nativeMainButton.hideProgress();
+              nativeMainButton.hide();
+              return;
+            }
+
+            nativeMainButton.setText(text || "Continue");
+            if (isLoading) {
+              nativeMainButton.showProgress(false);
+              nativeMainButton.disable();
+            } else {
+              nativeMainButton.hideProgress();
+              if (isActive) {
+                nativeMainButton.enable();
+              } else {
+                nativeMainButton.disable();
+              }
+            }
+            nativeMainButton.show();
+          } catch (e) {}
+          return;
+        }
+
         if (!isVisible || currentStep === "success") {
           footer.style.display = "none";
           return;
@@ -323,11 +355,11 @@
         if (currentStep === "otp-method") {
           updateMainButton("Send Code", false, true, false);
         } else if (currentStep === "otp-verify") {
-          updateMainButton("Verify Code", false, true, false);
+          updateMainButton("Verify", false, true, false);
         } else if (currentStep === "account") {
           updateMainButton("Link Account", false, true, false);
         } else if (currentStep === "complete") {
-          updateMainButton("Finish Setup", false, true, false);
+          updateMainButton("Complete Setup", false, true, false);
         } else {
           updateMainButton("Continue", false, true, false);
         }
@@ -550,7 +582,7 @@
       const otpInput = document.getElementById("otpInput");
       otpInput.addEventListener("input", () => {
         otpInput.value = otpInput.value.replace(/\D/g, "");
-        updateMainButton("Verify Code", false, true, otpInput.value.length === 6);
+        updateMainButton("Verify", false, true, otpInput.value.length === 6);
       });
 
       async function submitOtp() {
@@ -562,7 +594,7 @@
 
         updateMainButton("Verifying Code...", true, true);
         const res = await makeApiCall("otp", { flow_token: flowToken, otp });
-        updateMainButton("Verify Code", false, true, true);
+        updateMainButton("Verify", false, true, true);
 
         if (!res.success) {
           tg.HapticFeedback.notificationOccurred("error");
@@ -642,7 +674,7 @@
         const pin = pinInput.value.replace(/\D/g, "").slice(0, PIN_LENGTH);
         pinInput.value = pin;
 
-        updateMainButton("Finish Setup", false, true, !!email && !!address && pin.length === PIN_LENGTH);
+        updateMainButton("Complete Setup", false, true, !!email && !!address && pin.length === PIN_LENGTH);
       }
 
       emailInput.addEventListener("input", checkCompleteForm);
@@ -663,7 +695,7 @@
           address,
           pin,
         });
-        updateMainButton("Finish Setup", false, true, true);
+        updateMainButton("Complete Setup", false, true, true);
 
         if (!res.success) {
           tg.HapticFeedback.notificationOccurred("error");

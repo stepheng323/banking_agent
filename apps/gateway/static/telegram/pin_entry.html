@@ -8,8 +8,8 @@
     />
     <title>Enter Transaction PIN</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="/static/telegram/miniapp_theme.js?v=3"></script>
-    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=4" />
+    <script src="/static/telegram/miniapp_theme.js?v=6"></script>
+    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=8" />
     <style>
       body.telegram-pin-page {
         min-height: 100vh;
@@ -22,7 +22,7 @@
         flex-direction: column;
         min-height: 100vh;
         min-height: 100dvh;
-        padding: max(18px, env(safe-area-inset-top)) 18px max(16px, env(safe-area-inset-bottom));
+        padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
       }
 
       .pin-shell {
@@ -30,51 +30,108 @@
         flex: 1;
         flex-direction: column;
         min-height: 0;
+        width: 100%;
+        max-width: 620px;
+        margin: 0 auto;
       }
 
       .pin-content {
         flex: 1;
-        padding-top: 18px;
+        padding-top: 14px;
+      }
+
+      .pin-profile {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        text-align: left;
+        margin: 10px 0 28px;
+      }
+
+      .pin-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(145deg, var(--mini-link), #46dfc2);
+        color: #ffffff;
+        font-size: 20px;
+        font-weight: 800;
+        flex: 0 0 auto;
       }
 
       .pin-eyebrow {
-        margin: 0 0 12px;
+        margin: 0 0 3px;
         color: var(--mini-text-muted);
-        font-size: 15px;
-        font-weight: 550;
+        font-size: 13px;
+        font-weight: 600;
       }
 
       .pin-title {
-        margin: 0 0 10px;
+        margin: 0 0 2px;
         color: var(--mini-text);
-        font-size: 30px;
-        font-weight: 700;
-        line-height: 1.15;
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1.1;
       }
 
       .pin-subtitle {
-        max-width: 32rem;
-        margin: 0 0 28px;
+        max-width: 25rem;
+        margin: 0;
         color: var(--mini-text-muted);
-        font-size: 16px;
-        line-height: 1.45;
+        font-size: 14px;
+        line-height: 1.36;
       }
 
-      .pin-field {
-        margin-top: 8px;
+      .pin-section-title {
+        margin: 0 0 12px;
+        color: var(--mini-text);
+        font-size: 23px;
+        font-weight: 800;
+      }
+
+      .pin-group {
+        border-radius: 15px;
+        overflow: hidden;
+        background: var(--mini-section-bg);
+      }
+
+      .pin-input-row,
+      .pin-action-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 64px;
+        padding: 12px 16px;
+        border: 0;
+        border-bottom: 1px solid var(--mini-separator);
+        background: transparent;
+        color: var(--mini-text);
+        text-align: left;
+        width: 100%;
+      }
+
+      .pin-input-row {
+        align-items: flex-start;
+        flex-direction: column;
       }
 
       .pin-label-row {
         display: flex;
         align-items: baseline;
         justify-content: space-between;
+        width: 100%;
         gap: 12px;
-        margin-bottom: 8px;
       }
 
-      .pin-label-row .mini-section-label {
-        margin: 0;
+      .pin-label {
         color: var(--mini-text);
+        font-size: 16px;
+        font-weight: 700;
       }
 
       .pin-label-meta {
@@ -83,54 +140,84 @@
       }
 
       .pin-input {
-        height: 58px;
-        border-width: 1px;
-        border-radius: 14px;
-        background: var(--mini-input-bg);
-        font-size: 30px;
+        height: 52px;
+        border: 1px solid var(--mini-input-border);
+        border-radius: 12px;
+        background: var(--mini-secondary-bg);
+        font-size: 28px;
         font-weight: 650;
-        letter-spacing: 12px;
+        letter-spacing: 8px;
         text-align: center;
-        caret-color: var(--mini-accent);
-        -webkit-text-security: disc;
+        padding: 0 14px;
+        caret-color: var(--mini-link);
       }
 
       .pin-input:focus {
-        box-shadow: none;
+        border-color: var(--mini-link);
+        box-shadow: 0 0 0 1px var(--mini-link);
+      }
+
+      .pin-input::placeholder {
+        color: var(--mini-text-muted);
+        font-size: 16px;
+        font-weight: 500;
+        letter-spacing: 0;
       }
 
       .pin-error {
         min-height: 20px;
-        margin-top: 12px;
+        margin: 12px 4px 0;
         font-size: 14px;
       }
 
-      .pin-footer {
-        position: sticky;
-        bottom: 0;
-        margin-top: 18px;
-        padding-top: 12px;
-        border-top: none;
-        background: var(--mini-bg);
+      .pin-action-row {
+        border-bottom: 0;
+        color: var(--mini-link);
+        font: inherit;
+        cursor: pointer;
       }
 
-      .pin-submit {
-        height: 52px;
-        border-radius: 12px;
+      .pin-action-row:not(:disabled):active {
+        background: var(--mini-accent-soft);
+      }
+
+      .pin-action-row:disabled {
+        color: var(--mini-button-disabled-text);
+        cursor: default;
+      }
+
+      .uses-native-main-button .pin-action-row {
+        display: none;
+      }
+
+      .uses-native-main-button .pin-input-row {
+        border-bottom: 0;
+      }
+
+      .pin-action-left {
+        display: inline-flex;
+        align-items: center;
+        min-width: 0;
         font-size: 17px;
+        font-weight: 650;
+      }
+
+      .pin-chevron {
+        color: var(--mini-text-muted);
+        font-size: 31px;
+        line-height: 1;
       }
 
       body.locked-state .pin-input {
         border-color: var(--mini-danger);
       }
 
-      body.success-state .pin-input {
-        border-color: var(--mini-accent);
+      body.locked-state .pin-action-row {
+        color: var(--mini-danger);
       }
 
-      body.success-state .pin-submit {
-        background: var(--mini-success);
-        color: #ffffff;
+      body.success-state .pin-action-row {
+        color: var(--mini-success);
       }
 
       @media (max-width: 420px) {
@@ -139,21 +226,31 @@
           padding-left: 16px;
         }
 
+        .pin-content {
+          padding-top: 12px;
+        }
+
+        .pin-profile {
+          margin: 10px 0 24px;
+        }
+
+        .pin-avatar {
+          width: 42px;
+          height: 42px;
+          font-size: 19px;
+        }
+
         .pin-title {
-          font-size: 28px;
+          font-size: 21px;
         }
 
         .pin-subtitle {
-          font-size: 15px;
+          font-size: 14px;
         }
 
         .pin-input {
           font-size: 28px;
-          letter-spacing: 10px;
-        }
-
-        .pin-submit {
-          font-size: 17px;
+          letter-spacing: 11px;
         }
       }
     </style>
@@ -163,36 +260,45 @@
     <div class="mini-page">
       <div class="pin-shell">
         <main class="pin-content">
-          <p class="pin-eyebrow" id="headerText">Secure authorization</p>
-          <h1 class="pin-title">Enter PIN</h1>
-          <p class="pin-subtitle" id="bodyText">
-            Use your 6-digit transaction PIN to authorize this transaction.
-          </p>
+          <header class="pin-profile mini-app-profile">
+            <div class="pin-avatar mini-app-avatar" aria-hidden="true">N</div>
+            <div class="mini-app-copy">
+              <p class="pin-eyebrow" id="headerText">Secure authorization</p>
+              <h1 class="pin-title mini-app-title">Narya</h1>
+              <p class="pin-subtitle mini-app-subtitle" id="bodyText">
+                Use your 6-digit transaction PIN to continue.
+              </p>
+            </div>
+          </header>
 
-          <div class="pin-field">
+          <h2 class="pin-section-title">Enter PIN</h2>
+          <div class="pin-group">
+            <div class="pin-input-row">
             <div class="pin-label-row">
-              <label class="mini-section-label" for="pinInput">Transaction PIN</label>
+              <label class="pin-label" for="pinInput">Transaction PIN</label>
               <span class="pin-label-meta">6 digits</span>
             </div>
             <input
               type="password"
               id="pinInput"
               class="mini-input pin-input"
+              placeholder="Enter 6-digit PIN"
               inputmode="numeric"
               pattern="[0-9]*"
               maxlength="6"
               autocomplete="off"
             />
+            </div>
+            <button class="pin-action-row" id="btnSubmit" onclick="submitPin()" disabled>
+              <span class="pin-action-left">
+                <span id="btnSubmitText">Authorize</span>
+              </span>
+              <span class="pin-chevron" aria-hidden="true">›</span>
+            </button>
           </div>
 
           <div class="mini-error pin-error" id="errorMsg"></div>
         </main>
-
-        <div class="mini-footer pin-footer">
-          <button class="mini-btn pin-submit" id="btnSubmit" onclick="submitPin()" disabled>
-            <span id="btnSubmitText">Authorize</span>
-          </button>
-        </div>
       </div>
     </div>
 
@@ -200,13 +306,7 @@
       const tg = window.Telegram.WebApp;
       tg.ready();
       tg.expand();
-      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#21d07a" });
-
-      try {
-        if (tg.MainButton) {
-          tg.MainButton.hide();
-        }
-      } catch (e) {}
+      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#2ea6ff" });
 
       const params = new URLSearchParams(window.location.search);
       const bootstrapNonce = params.get("boot") || "";
@@ -223,11 +323,19 @@
       const btnSubmit = document.getElementById("btnSubmit");
       const btnSubmitText = document.getElementById("btnSubmitText");
       const errorMsg = document.getElementById("errorMsg");
+      const nativeMainButton = tg.MainButton || null;
+      const useNativeMainButton = Boolean(nativeMainButton && typeof nativeMainButton.setText === "function");
+      let nativeMainButtonAction = () => submitPin();
+
+      if (useNativeMainButton) {
+        document.body.classList.add("uses-native-main-button");
+        nativeMainButton.onClick(() => nativeMainButtonAction());
+      }
 
       function checkInput() {
         if (locked || verified) return;
         pinInput.value = pinInput.value.replace(/\D/g, "").slice(0, PIN_LENGTH);
-        btnSubmit.disabled = pinInput.value.length !== PIN_LENGTH;
+        setSubmitEnabled(pinInput.value.length === PIN_LENGTH);
       }
 
       pinInput.addEventListener("input", checkInput);
@@ -247,9 +355,41 @@
         errorMsg.textContent = msg;
       }
 
-      function updateSubmitButton(text, isLoading) {
+      function setSubmitEnabled(isEnabled) {
+        btnSubmit.disabled = !isEnabled;
+        if (useNativeMainButton) {
+          try {
+            if (isEnabled) {
+              nativeMainButton.enable();
+            } else {
+              nativeMainButton.disable();
+            }
+          } catch (e) {}
+        }
+      }
+
+      function updateSubmitButton(text, isLoading, isEnabled = !isLoading) {
         btnSubmitText.textContent = text;
-        btnSubmit.disabled = isLoading;
+        btnSubmit.disabled = isLoading || !isEnabled;
+        if (!useNativeMainButton) {
+          return;
+        }
+
+        try {
+          nativeMainButton.setText(text || "Authorize");
+          if (isLoading) {
+            nativeMainButton.showProgress(false);
+            nativeMainButton.disable();
+          } else {
+            nativeMainButton.hideProgress();
+            if (isEnabled) {
+              nativeMainButton.enable();
+            } else {
+              nativeMainButton.disable();
+            }
+          }
+          nativeMainButton.show();
+        } catch (e) {}
       }
 
       async function bootstrapMiniApp() {
@@ -275,8 +415,6 @@
           }
           flowToken = payload.flow_token || "";
           chatId = payload.chat_id || "";
-          if (payload.header) document.getElementById("headerText").textContent = payload.header;
-          if (payload.body_text) document.getElementById("bodyText").textContent = payload.body_text;
           return { success: true };
         } catch (err) {
           return { success: false, error: "Network error. Please try again." };
@@ -288,15 +426,13 @@
         showError(msg);
         pinInput.disabled = true;
         document.body.classList.add("locked-state");
-        btnSubmitText.textContent = "Close";
-        btnSubmit.disabled = false;
-        btnSubmit.style.background = "var(--mini-danger)";
-        btnSubmit.style.color = "#ffffff";
+        nativeMainButtonAction = () => tg.close();
+        updateSubmitButton("Close", false, true);
         btnSubmit.onclick = () => tg.close();
       }
 
       async function initializePin() {
-        updateSubmitButton("Loading...", true);
+        updateSubmitButton("Loading...", true, false);
         pinInput.disabled = true;
         const boot = await bootstrapMiniApp();
         if (!boot.success) {
@@ -304,8 +440,7 @@
           return;
         }
         pinInput.disabled = false;
-        updateSubmitButton("Authorize", false);
-        btnSubmit.disabled = true;
+        updateSubmitButton("Authorize", false, false);
         setTimeout(() => pinInput.focus(), 320);
       }
 
@@ -318,7 +453,7 @@
         }
 
         locked = true;
-        updateSubmitButton("Verifying...", true);
+        updateSubmitButton("Verifying...", true, false);
         pinInput.disabled = true;
         showError("");
 
@@ -345,8 +480,9 @@
             verified = true;
             document.body.classList.add("success-state");
             tg.HapticFeedback.notificationOccurred("success");
-            btnSubmitText.textContent = "✓ Authorized";
-            btnSubmit.disabled = false;
+            nativeMainButtonAction = () => tg.close();
+            btnSubmit.onclick = () => tg.close();
+            updateSubmitButton("Authorized", false, true);
             showError("");
             setTimeout(() => tg.close(), 1500);
             return;
@@ -366,8 +502,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(serverMsg);
-          updateSubmitButton("Authorize", false);
-          btnSubmit.disabled = true;
+          updateSubmitButton("Authorize", false, false);
         } catch (e) {
           tg.HapticFeedback.notificationOccurred("error");
           locked = false;
@@ -375,8 +510,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(e.message || "Network error. Please try again.");
-          updateSubmitButton("Authorize", false);
-          btnSubmit.disabled = true;
+          updateSubmitButton("Authorize", false, false);
         }
       }
 

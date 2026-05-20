@@ -350,7 +350,7 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
-async def test_send_mini_app_strips_html_from_pin_bootstrap_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_send_mini_app_keeps_pin_details_in_chat_not_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
     monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.narya.ai")
     client = TelegramClient()
@@ -390,7 +390,7 @@ async def test_send_mini_app_strips_html_from_pin_bootstrap_copy(monkeypatch: py
             "chat_id": "12345",
             "flow_token": "transfer-pin-idem-12345",
             "endpoint": "pin",
-            "extra": {"header": "Authorize Transfer", "body_text": "₦3,000 -> Ada\nGTBank"},
+            "extra": {},
         }
     ]
 
@@ -471,3 +471,30 @@ async def test_send_interactive_groups_compact_option_buttons(monkeypatch: pytes
             ],
         ]
     }
+
+
+@pytest.mark.asyncio
+async def test_remove_inline_keyboard_edits_reply_markup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    client = TelegramClient()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del files
+        assert method == "editMessageReplyMarkup"
+        assert max_retries == 1
+        captured.update(payload or {})
+        return {"ok": True, "result": True}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.remove_inline_keyboard("12345", "99")
+
+    assert result is True
+    assert captured == {"chat_id": "12345", "message_id": "99"}

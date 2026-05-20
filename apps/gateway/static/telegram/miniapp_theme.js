@@ -1,11 +1,15 @@
 (function () {
+  let themeListenerInstalled = false;
+  let mediaListenerInstalled = false;
+  let lastOptions = {};
+
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
 
   function parseColor(input, fallback) {
     const value = (input || fallback || "").trim();
-    if (!value) return [13, 17, 23];
+    if (!value) return [255, 255, 255];
 
     const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
     if (hex) {
@@ -30,7 +34,7 @@
       if (parts.length === 3) return parts;
     }
 
-    return parseColor(fallback || "#0d1117", "#0d1117");
+    return parseColor(fallback || "#ffffff", "#ffffff");
   }
 
   function toHex(rgb) {
@@ -40,6 +44,14 @@
         .map((n) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, "0"))
         .join("")
     );
+  }
+
+  function rgba(rgb, alpha) {
+    return `rgba(${clamp(Math.round(rgb[0]), 0, 255)},${clamp(Math.round(rgb[1]), 0, 255)},${clamp(
+      Math.round(rgb[2]),
+      0,
+      255,
+    )},${clamp(alpha, 0, 1)})`;
   }
 
   function mix(a, b, ratio) {
@@ -63,50 +75,98 @@
     return luminance(rgb) < 0.35;
   }
 
+  function preferredScheme(tg) {
+    const tgScheme = (tg && typeof tg.colorScheme === "string" ? tg.colorScheme : "").toLowerCase();
+    if (tgScheme === "dark" || tgScheme === "light") return tgScheme;
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+    return "light";
+  }
+
+  function colorParam(params, key, fallback) {
+    return parseColor(params && params[key], fallback);
+  }
+
+  function installThemeListeners(tg) {
+    if (tg && typeof tg.onEvent === "function" && !themeListenerInstalled) {
+      themeListenerInstalled = true;
+      tg.onEvent("themeChanged", function () {
+        applyTheme(lastOptions);
+      });
+    }
+
+    if (window.matchMedia && !mediaListenerInstalled) {
+      mediaListenerInstalled = true;
+      const media = window.matchMedia("(prefers-color-scheme: dark)");
+      const listener = function () {
+        applyTheme(lastOptions);
+      };
+      if (typeof media.addEventListener === "function") {
+        media.addEventListener("change", listener);
+      } else if (typeof media.addListener === "function") {
+        media.addListener(listener);
+      }
+    }
+  }
+
   function applyTheme(options) {
-    const opts = options || {};
+    lastOptions = options || {};
+    const opts = lastOptions;
     const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
     const params = (tg && tg.themeParams) || {};
+    const scheme = preferredScheme(tg);
+    const fallbackDark = scheme === "dark";
+    const baseBg = fallbackDark ? "#17212b" : "#ffffff";
+    const baseSecondary = fallbackDark ? "#0f1821" : "#f4f4f5";
+    const baseSection = fallbackDark ? "#1f2c38" : "#ffffff";
+    const baseText = fallbackDark ? "#f5f7fa" : "#111111";
+    const baseHint = fallbackDark ? "#8f9aa6" : "#707579";
+    const baseButton = opts.accentFallback || "#2ea6ff";
+    const baseDanger = fallbackDark ? "#ff453a" : "#ff3b30";
 
-    const bgRgb = parseColor(params.bg_color, "#0d1117");
-    const textRgb = parseColor(params.text_color, isDark(bgRgb) ? "#f4f6f8" : "#161b22");
-    const hintRgb = parseColor(params.hint_color, isDark(bgRgb) ? "#9ea8b3" : "#6b7380");
-    const buttonRgb = parseColor(params.button_color, opts.accentFallback || "#21d07a");
-    const buttonTextRgb = parseColor(params.button_text_color, "#ffffff");
+    const bgRgb = colorParam(params, "bg_color", baseBg);
+    const secondaryRgb = colorParam(params, "secondary_bg_color", baseSecondary);
+    const sectionRgb = colorParam(params, "section_bg_color", toHex(mix(bgRgb, fallbackDark ? [255, 255, 255] : [0, 0, 0], fallbackDark ? 0.08 : 0.03)));
+    const textRgb = colorParam(params, "text_color", baseText);
+    const hintRgb = colorParam(params, "hint_color", baseHint);
+    const buttonRgb = colorParam(params, "button_color", baseButton);
+    const buttonTextRgb = colorParam(params, "button_text_color", "#ffffff");
+    const linkRgb = colorParam(params, "link_color", toHex(buttonRgb));
+    const dangerRgb = colorParam(params, "destructive_text_color", baseDanger);
 
     const darkTheme = isDark(bgRgb);
-    const white = [255, 255, 255];
-    const black = [7, 10, 13];
-
-    const surface = darkTheme ? mix(bgRgb, white, 0.09) : mix(bgRgb, black, 0.05);
-    const surfaceStrong = darkTheme ? mix(bgRgb, white, 0.04) : mix(bgRgb, black, 0.09);
-    const border = darkTheme ? "rgba(255,255,255,0.08)" : "rgba(18,25,35,0.12)";
-    const inputBorder = darkTheme ? "rgba(255,255,255,0.18)" : "rgba(20,28,38,0.22)";
-    const inputBg = darkTheme ? "rgba(7,10,13,0.42)" : "rgba(255,255,255,0.82)";
-    const choiceBg = darkTheme ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.9)";
-    const progressTrack = darkTheme ? "rgba(255,255,255,0.12)" : "rgba(18,25,35,0.14)";
-    const radioBorder = darkTheme ? "rgba(186,196,206,0.72)" : "rgba(82,92,104,0.64)";
-    const accentSoft = toHex(mix(buttonRgb, bgRgb, darkTheme ? 0.72 : 0.8));
-    const disabled = darkTheme ? mix(bgRgb, white, 0.32) : mix(bgRgb, black, 0.2);
-    const disabledText = darkTheme ? "rgba(231,237,243,0.62)" : "rgba(40,46,54,0.56)";
+    const contrast = darkTheme ? [255, 255, 255] : [0, 0, 0];
+    const border = rgba(contrast, darkTheme ? 0.1 : 0.08);
+    const separator = rgba(contrast, darkTheme ? 0.08 : 0.07);
+    const inputBg = toHex(sectionRgb);
+    const disabled = mix(sectionRgb, hintRgb, darkTheme ? 0.28 : 0.18);
+    const disabledText = rgba(hintRgb, 0.72);
 
     const root = document.documentElement.style;
+    root.setProperty("color-scheme", darkTheme ? "dark" : "light");
     root.setProperty("--mini-bg", toHex(bgRgb));
+    root.setProperty("--mini-secondary-bg", toHex(secondaryRgb));
+    root.setProperty("--mini-section-bg", toHex(sectionRgb));
     root.setProperty("--mini-text", toHex(textRgb));
     root.setProperty("--mini-text-muted", toHex(hintRgb));
-    root.setProperty("--mini-surface", toHex(surface));
-    root.setProperty("--mini-surface-strong", toHex(surfaceStrong));
+    root.setProperty("--mini-surface", toHex(sectionRgb));
+    root.setProperty("--mini-surface-strong", toHex(secondaryRgb));
     root.setProperty("--mini-border", border);
+    root.setProperty("--mini-separator", separator);
     root.setProperty("--mini-accent", toHex(buttonRgb));
-    root.setProperty("--mini-accent-soft", `${accentSoft}66`);
+    root.setProperty("--mini-link", toHex(linkRgb));
+    root.setProperty("--mini-accent-soft", rgba(buttonRgb, darkTheme ? 0.18 : 0.12));
+    root.setProperty("--mini-danger", toHex(dangerRgb));
+    root.setProperty("--mini-success", "#34c759");
     root.setProperty("--mini-button-disabled", toHex(disabled));
     root.setProperty("--mini-button-disabled-text", disabledText);
-    root.setProperty("--mini-input-border", inputBorder);
+    root.setProperty("--mini-input-border", border);
     root.setProperty("--mini-input-bg", inputBg);
-    root.setProperty("--mini-choice-bg", choiceBg);
-    root.setProperty("--mini-progress-track", progressTrack);
-    root.setProperty("--mini-radio-border", radioBorder);
+    root.setProperty("--mini-choice-bg", toHex(sectionRgb));
+    root.setProperty("--mini-progress-track", rgba(hintRgb, 0.24));
+    root.setProperty("--mini-radio-border", rgba(hintRgb, 0.72));
     root.setProperty("--mini-btn-text", toHex(buttonTextRgb));
+
+    document.documentElement.dataset.miniTheme = darkTheme ? "dark" : "light";
 
     if (tg) {
       try {
@@ -114,6 +174,8 @@
         tg.setHeaderColor(toHex(bgRgb));
       } catch (e) {}
     }
+
+    installThemeListeners(tg);
 
     return {
       darkTheme: darkTheme,
