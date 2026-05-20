@@ -1,5 +1,7 @@
 """Repository for Beneficiary model."""
 
+import re
+import unicodedata
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -7,6 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import Beneficiary
 from shared.repositories.base import BaseRepository
+
+
+def _normalize_bank_name(value: str | None) -> str:
+    if not value:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", value)
+    without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", without_marks.lower()).strip()
 
 
 class BeneficiaryRepository(BaseRepository[Beneficiary]):
@@ -80,16 +90,29 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         self,
         user_id: str,
         account_number: str,
-        bank_code: str,
+        bank_code: str | None,
+        bank_name: str | None = None,
         beneficiary_type: str = "transfer",
     ) -> bool:
         """Check if recipient should be suggested as a beneficiary."""
         beneficiaries = await self.get_by_user(user_id, beneficiary_type=beneficiary_type)
-        # Handle None values in comparisons - skip if either field is None
+        if bank_code:
+            # Handle None values in comparisons - skip if either field is None.
+            return not any(
+                beneficiary.account_number == account_number and beneficiary.bank_code == bank_code
+                for beneficiary in beneficiaries
+                if beneficiary.account_number is not None and beneficiary.bank_code is not None
+            )
+
+        normalized_bank_name = _normalize_bank_name(bank_name)
+        if not normalized_bank_name:
+            return True
+
         return not any(
-            beneficiary.account_number == account_number and beneficiary.bank_code == bank_code
+            beneficiary.account_number == account_number
+            and _normalize_bank_name(beneficiary.bank_name) == normalized_bank_name
             for beneficiary in beneficiaries
-            if beneficiary.account_number is not None and beneficiary.bank_code is not None
+            if beneficiary.account_number is not None and beneficiary.bank_name is not None
         )
 
     async def should_suggest_airtime_beneficiary(

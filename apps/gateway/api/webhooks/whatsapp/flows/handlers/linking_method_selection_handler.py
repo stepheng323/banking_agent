@@ -4,17 +4,26 @@ This handler is for the dedicated account linking flow where
 METHOD_SELECTION is the first screen (no BVN_ENTRY).
 """
 
+import hashlib
+
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
-    format_error_response,
-    format_success_response,
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
+from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
+    format_owner_error_response,
+    verify_whatsapp_flow_session_owner,
 )
 from shared.services.onboarding import ServiceResult, bvn_service
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _token_fingerprint(flow_token: str | None) -> str:
+    if not flow_token:
+        return ""
+    return hashlib.sha256(str(flow_token).encode("utf-8")).hexdigest()[:16]
 
 
 class LinkingMethodSelectionInput(BaseModel):
@@ -30,19 +39,29 @@ async def handle_linking_method_selection(
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
+    authorizing_channel_user_id: str | None = None,
 ) -> Response:
     """Handle METHOD_SELECTION for account linking flow.
 
     On the initial load (no method): Return stored session data with methods.
     On submitting (method selected): Send OTP via chosen method.
     """
-    logger.info("linking_method_selection_called", flow_token=flow_token, method=data.method)
+    flow_token_hash = _token_fingerprint(flow_token)
+    logger.info("linking_method_selection_called", flow_token_hash=flow_token_hash, method=data.method)
+
+    owner_check = await verify_whatsapp_flow_session_owner(
+        flow_token=flow_token,
+        authorizing_channel_user_id=authorizing_channel_user_id,
+        screen="METHOD_SELECTION",
+    )
+    if not owner_check.ok:
+        return format_owner_error_response("METHOD_SELECTION", request_was_encrypted, aes_key_bytes, iv_bytes)
 
     if not data.method:
-        session_data = await bvn_service.get_session_data(flow_token)
+        session_data = owner_check.session or await bvn_service.get_session_data(flow_token)
         logger.info(
             "linking_session_data",
-            flow_token=flow_token,
+            flow_token_hash=flow_token_hash,
             has_session=bool(session_data),
             session_keys=list(session_data.keys()) if session_data else [],
         )
@@ -60,7 +79,7 @@ async def handle_linking_method_selection(
                 methods=methods,
             )
         else:
-            logger.warning("linking_session_not_found", flow_token=flow_token)
+            logger.warning("linking_session_not_found", flow_token_hash=flow_token_hash)
             return format_error_response(
                 "METHOD_SELECTION",
                 "Session expired. Please start the linking process again.",

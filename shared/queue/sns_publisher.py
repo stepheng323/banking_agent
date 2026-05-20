@@ -1,4 +1,4 @@
-"""SNS publisher for async job topics (transaction, funding, payout, refund, receipt)."""
+"""SNS publisher for async job topics."""
 
 import json
 from typing import Any

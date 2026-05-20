@@ -1,5 +1,7 @@
+import re
 from typing import Any
 
+from apps.chat.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _classify_obvious_transfer_request,
@@ -9,13 +11,19 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup import (
-    build_context_frame_followup_context,
+    build_context_frame_followup_context_for_state,
     build_context_frame_followup_response,
 )
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_CONTEXT_FRAME_REPLAY_CUE_RE = re.compile(
+    r"\b(?:again|redo|repeat|replay|rerun|resend|same\s+again|send\s+again|"
+    r"encore|repete|tun\s+se|tun|sake|maimaita|ziga)\b",
+    re.IGNORECASE,
+)
 
 
 def _is_fresh_transaction_command(ctx: GateContext) -> bool:
@@ -26,6 +34,10 @@ def _is_fresh_transaction_command(ctx: GateContext) -> bool:
     if _classify_obvious_transfer_request(ctx.message_text) is not None:
         return True
     return _is_obvious_airtime_request(ctx.message_text) or _is_obvious_data_request(ctx.message_text)
+
+
+def _looks_like_context_frame_replay(text: str) -> bool:
+    return bool(_CONTEXT_FRAME_REPLAY_CUE_RE.search(text or ""))
 
 
 async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | None:
@@ -40,8 +52,24 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
     ):
         return None
 
+    await ctx.ensure_query_session()
+    if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
+        if not _looks_like_context_frame_replay(ctx.message_text):
+            logger.info("gate_context_frame_followup_skipped_for_active_query_session")
+            return None
+        logger.info("gate_context_frame_followup_active_query_replay_bypass")
+
     frame = OrchestratorContextManager().latest_active_frame(ctx.state)
     if frame is None or not frame.items:
+        return None
+    shortcut = resolve_query_shortcut(ctx.message_text, ctx.current_locale)
+    if shortcut is not None and shortcut.kind == "pagination":
+        logger.info(
+            "gate_context_frame_followup_skipped_for_query_pagination",
+            action=shortcut.action,
+            frame_type=frame.frame_type.value,
+            item_count=len(frame.items),
+        )
         return None
     if _is_fresh_transaction_command(ctx):
         logger.info(
@@ -55,19 +83,53 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
         decision = await ctx.task_planner.interpret_context_frame_followup(
             ctx.state.phone_number,
             ctx.message_text,
-            context=build_context_frame_followup_context(frame),
+            context=build_context_frame_followup_context_for_state(ctx.state),
             path_label="direct_path",
         )
     except Exception as exc:
         logger.warning("gate_context_frame_followup_interpreter_failed", error=str(exc))
         return None
 
-    frame_followup = build_context_frame_followup_response(ctx.state, ctx.message_text, decision=decision)
+    replay_modifier = None
+    if (
+        decision.decision in {"replay_tasks", "replay"}
+        and callable(getattr(ctx.task_planner, "extract_context_frame_replay_modifiers", None))
+    ):
+        try:
+            replay_modifier = await ctx.task_planner.extract_context_frame_replay_modifiers(
+                ctx.state.phone_number,
+                ctx.message_text,
+                context=build_context_frame_followup_context_for_state(ctx.state),
+                path_label="direct_path",
+            )
+        except Exception as exc:
+            logger.warning("gate_context_frame_replay_modifier_extractor_failed", error=str(exc))
+        else:
+            if replay_modifier is not None:
+                logger.info(
+                    "gate_context_frame_replay_modifier_extracted",
+                    confidence=replay_modifier.confidence,
+                    detected_language=replay_modifier.detected_language,
+                    has_amount=replay_modifier.amount is not None,
+                    has_source=bool(replay_modifier.source_account_reference),
+                    has_narration=bool(replay_modifier.narration),
+                    reason=replay_modifier.reason,
+                )
+
+    frame_followup = build_context_frame_followup_response(
+        ctx.state,
+        ctx.message_text,
+        decision=decision,
+        replay_modifier=replay_modifier,
+    )
     logger.info(
         "gate_context_frame_followup_decision",
         decision=decision.decision,
         confidence=decision.confidence,
         detected_language=decision.detected_language,
+        requested_field=decision.requested_field,
+        rank=decision.rank,
+        has_filters=bool(decision.filters),
         reason=decision.reason,
         resolved=bool(frame_followup),
         frame_type=frame.frame_type.value,

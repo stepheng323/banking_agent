@@ -40,6 +40,31 @@ class QueryOperation(str, Enum):
     CHECK_AFFORDABILITY = "check_affordability"
 
 
+QueryFactField = Literal[
+    "date",
+    "counterparty",
+    "amount",
+    "bank",
+    "status",
+    "description",
+    "reference",
+    "account",
+    "direction",
+    "category",
+]
+
+QueryContractRequestShape = Literal[
+    "fact",
+    "existence",
+    "detail",
+    "list",
+    "grouped_summary",
+    "analytics",
+    "comparison",
+    "affordability",
+]
+
+
 class TimeRange(BaseModel):
     """Time range for queries with optional granularity."""
 
@@ -114,7 +139,7 @@ class QueryIntentSpec(BaseModel):
     subject: QuerySubject
     filters: Filters | None = None
     grouping: Literal["category", "merchant", "day", "account", "transaction_type", "none"] = "none"
-    fact_field: Literal["date", "counterparty", "amount", "bank", "none"] = "none"
+    fact_field: QueryFactField | Literal["none"] = "none"
     ranking: Literal["none", "largest", "smallest", "count", "amount"] = "none"
     user_request_shape: UserRequestShape = UserRequestShape.SUMMARY
 
@@ -150,7 +175,8 @@ class QueryIR(BaseModel):
     analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = None
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
+    answer_fact_field: QueryFactField | None = None
+    request_shape: QueryContractRequestShape | None = None
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
@@ -174,7 +200,8 @@ class QueryExecutionContract(BaseModel):
     analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = None
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
+    answer_fact_field: QueryFactField | None = None
+    request_shape: QueryContractRequestShape | None = None
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
@@ -205,6 +232,7 @@ class QueryExecutionContract(BaseModel):
             result_limit=self.result_limit,
             result_reference=self.result_reference,
             answer_fact_field=self.answer_fact_field,
+            request_shape=self.request_shape,
             comparison=self.comparison.model_copy(deep=True) if self.comparison is not None else None,
             continuation_type=self.continuation_type,
             continuation_delta_type=self.continuation_delta_type,
@@ -219,6 +247,7 @@ class QueryExecutionContract(BaseModel):
             filters=ir.filters,
             aggregation=ir.aggregation,
             answer_fact_field=ir.answer_fact_field,
+            request_shape=ir.request_shape,
         )
         execution_plan = build_query_execution_plan_from_fields(
             intent_spec=intent_spec,
@@ -247,6 +276,7 @@ class QueryExecutionContract(BaseModel):
             result_limit=ir.result_limit,
             result_reference=ir.result_reference,
             answer_fact_field=ir.answer_fact_field,
+            request_shape=ir.request_shape,
             comparison=ir.comparison,
             continuation_type=ir.continuation_type,
             continuation_delta_type=ir.continuation_delta_type,
@@ -301,6 +331,7 @@ class QueryFrame(BaseModel):
     interpretation: dict[str, Any] | None = None
     surface_type: SurfaceViewMode | None = None
     surface_context: dict[str, Any] = Field(default_factory=dict)
+    visible_items: list[dict[str, Any]] = Field(default_factory=list)
     facts: QueryFrameFacts = Field(default_factory=QueryFrameFacts)
 
 
@@ -344,7 +375,8 @@ def derive_query_intent_spec_from_fields(
     intent: QueryIntent,
     filters: Filters | None,
     aggregation: Aggregation | None,
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None,
+    answer_fact_field: QueryFactField | None,
+    request_shape: QueryContractRequestShape | None = None,
 ) -> QueryIntentSpec:
     """Derive semantic intent from explicit query fields."""
     grouping: Literal["category", "merchant", "day", "account", "transaction_type", "none"] = "none"
@@ -352,9 +384,12 @@ def derive_query_intent_spec_from_fields(
     objective = QueryObjective.TRANSACTION_LIST
     subject = QuerySubject.TRANSACTIONS
     user_request_shape = UserRequestShape.LIST
-    fact_field: Literal["date", "counterparty", "amount", "bank", "none"] = "none"
+    fact_field: QueryFactField | Literal["none"] = "none"
 
-    if aggregation and aggregation.group_by:
+    if request_shape == "existence":
+        objective = QueryObjective.FACT
+        user_request_shape = UserRequestShape.DIRECT_ANSWER
+    elif aggregation and aggregation.group_by:
         grouping = cast(Literal["category", "merchant", "day", "account", "transaction_type"], aggregation.group_by)
     if aggregation and aggregation.type in {"largest", "smallest"}:
         ranking = cast(Literal["largest", "smallest"], aggregation.type)
@@ -363,7 +398,18 @@ def derive_query_intent_spec_from_fields(
     elif aggregation and aggregation.sort_by in {"count", "amount"}:
         ranking = aggregation.sort_by
 
-    if answer_fact_field in {"date", "counterparty", "amount", "bank"}:
+    if answer_fact_field in {
+        "date",
+        "counterparty",
+        "amount",
+        "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
+    }:
         objective = QueryObjective.FACT
         fact_field = answer_fact_field
         user_request_shape = UserRequestShape.DIRECT_ANSWER

@@ -166,6 +166,188 @@ def test_select_answer_strategy_uses_latest_amount_reply() -> None:
     assert selected.answer_context.secondary_text == "Mar 24 • Opay"
 
 
+def test_select_answer_strategy_uses_posted_status_for_history_item_without_status() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx-acme",
+                description="Salary from Acme Corp",
+                amount=950000,
+                date=date(2026, 5, 13),
+                metadata={
+                    "type": "credit",
+                    "transaction_type": "credit",
+                    "counterparty": "Acme Corp",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 16)),
+                answer_fact_field="status",
+                result_reference="latest",
+                result_limit=1,
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "That transaction is posted."
+    assert selected.answer_context.secondary_text == "₦950,000 • May 13 • Acme Corp"
+
+
+def test_select_answer_strategy_localizes_posted_status_for_pidgin() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx-acme",
+                description="Salary from Acme Corp",
+                amount=950000,
+                date=date(2026, 5, 13),
+                metadata={
+                    "type": "credit",
+                    "transaction_type": "credit",
+                    "counterparty": "Acme Corp",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 16)),
+                answer_fact_field="status",
+                result_reference="latest",
+                result_limit=1,
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="pcm")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "That transaction don post."
+    assert selected.answer_context.secondary_text == "₦950,000 • May 13 • Acme Corp"
+
+
+def test_select_answer_strategy_explains_failed_bank_posted_mismatch() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Tolu",
+                amount=6000,
+                date=date(2026, 5, 16),
+                metadata={
+                    "type": "debit",
+                    "transaction_type": "transfer",
+                    "recipient_name": "Tolu",
+                    "display_status": "failed",
+                    "local_status": "failed",
+                    "bank_status": "posted",
+                    "needs_review": True,
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                answer_fact_field="status",
+                result_reference="latest",
+                result_limit=1,
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_context is not None
+    assert (
+        selected.answer_context.primary_text
+        == "Our app record says that transaction failed, but a matching debit is posted in your bank history. Please ask support to review it."
+    )
+
+
+def test_select_answer_strategy_explains_processing_bank_posted_status() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Tolu",
+                amount=6000,
+                date=date(2026, 5, 16),
+                metadata={
+                    "type": "debit",
+                    "transaction_type": "transfer",
+                    "recipient_name": "Tolu",
+                    "display_status": "processing",
+                    "local_status": "processing",
+                    "bank_status": "posted",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                answer_fact_field="status",
+                result_reference="latest",
+                result_limit=1,
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_context is not None
+    assert (
+        selected.answer_context.primary_text
+        == "That transaction is still processing in our app, but a matching debit is posted in your bank history."
+    )
+
+
+def test_select_answer_strategy_uses_status_aliases() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={
+                    "type": "debit",
+                    "transaction_type": "transfer",
+                    "recipient_name": "Mum",
+                    "provider_status": "processing",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit"),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="status",
+                result_reference="latest",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "That transaction is processing."
+
+
 def test_select_answer_strategy_uses_latest_bank_reply() -> None:
     result = QueryResult(
         summary_text="accounts:1|showing:1-1|total:1",
@@ -218,3 +400,96 @@ def test_select_answer_strategy_uses_clarify_for_ambiguous_fact_match() -> None:
     assert selected.answer_strategy == QueryAnswerStrategy.CLARIFY
     assert selected.answer_context is not None
     assert "I'm not sure which one you mean" in selected.answer_context.primary_text
+
+
+def test_select_answer_strategy_answers_reference_fact_directly() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={
+                    "type": "debit",
+                    "recipient_name": "Mum",
+                    "recipient_bank_name": "Opay",
+                    "transaction_id": "ref_123",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="reference",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "The reference is ref_123."
+    assert selected.answer_context.secondary_text == "₦50,000 • Mar 24 • Mum"
+
+
+def test_select_answer_strategy_answers_existence_yes_with_total() -> None:
+    result = QueryResult(
+        summary_text="You spent *₦70,000* in that period, across 2 transactions.",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={"type": "debit", "recipient_name": "Mum"},
+            ),
+            QueryResultItem(
+                id="tx2",
+                description="Transfer to Mum",
+                amount=20000,
+                date=date(2026, 3, 20),
+                metadata={"type": "debit", "recipient_name": "Mum"},
+            ),
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                request_shape="existence",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "Yes. I found 2 payments to Mum in that period, totaling ₦70,000."
+
+
+def test_select_answer_strategy_answers_existence_no_without_coverage_disclaimer() -> None:
+    result = QueryResult(
+        summary_text="You didn't spend anything in that period.",
+        items=[],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                request_shape="existence",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "No. I don't see any payment to Mum in that period."
+    assert "local" not in selected.answer_context.primary_text.lower()

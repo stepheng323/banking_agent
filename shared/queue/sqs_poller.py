@@ -21,7 +21,7 @@ def build_physical_queue_name(contract: QueueContract) -> str:
     """Build the deployed SQS queue name from logical contract metadata."""
     if not contract.sqs_queue_name:
         raise ValueError(f"queue_contract_missing_sqs_queue_name topic={contract.logical_topic}")
-    return f"{settings.project_name}-{contract.sqs_queue_name}-{settings.environment}"
+    return f"{settings.project_name}-{contract.sqs_queue_name}-{settings.runtime.infrastructure_environment}"
 
 
 class SQSPoller:

@@ -4,7 +4,10 @@ from types import SimpleNamespace
 
 from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
 from apps.chat.src.agent.graphs.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
+from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import prepare_payout_recipient
 from apps.chat.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from shared.formatters.confirmation import build_confirmation_summary
 
 
 class _MockBankingProvider:
@@ -27,6 +30,89 @@ class _MockUnresolvedBankingProvider:
     async def resolve_account(self, account_number: str, bank_code: str) -> SimpleNamespace:
         del account_number, bank_code
         return SimpleNamespace(success=False, account=None)
+
+
+class _MockMonoResolverProvider:
+    provider_name = "mono"
+
+    def __init__(self) -> None:
+        self.resolve_calls: list[tuple[str, str]] = []
+
+    async def get_banks(self) -> SimpleNamespace:
+        return SimpleNamespace(success=True, provider="mono", banks=[])
+
+    async def resolve_account(self, account_number: str, bank_code: str) -> SimpleNamespace:
+        self.resolve_calls.append((account_number, bank_code))
+        return SimpleNamespace(
+            success=True,
+            account=SimpleNamespace(
+                account_name="Mama Nkechi",
+                account_number=account_number,
+                bank_code=bank_code,
+            ),
+        )
+
+
+class _MockMonoBankCache:
+    provider_name = "mono"
+
+    def __init__(self, bank_code: str | None = "044") -> None:
+        self.bank_code = bank_code
+        self.ensure_calls = 0
+        self.lookup_terms: list[str] = []
+
+    async def ensure_banks_cached(self, fetch_banks_func):
+        self.ensure_calls += 1
+        return await fetch_banks_func()
+
+    async def get_bank_code(self, bank_name: str) -> str | None:
+        self.lookup_terms.append(bank_name)
+        return self.bank_code
+
+
+class _MockPayoutResolverProvider:
+    provider_name = "flutterwave"
+
+    def __init__(self, *, success: bool = True, bank_code: str = "000014") -> None:
+        self.success = success
+        self.bank_code = bank_code
+        self.resolve_calls: list[tuple[str, str]] = []
+        self.get_banks_called = False
+
+    async def get_banks(self) -> SimpleNamespace:
+        self.get_banks_called = True
+        return SimpleNamespace(success=True, provider="flutterwave", banks=[])
+
+    async def resolve_account(self, account_number: str, bank_code: str) -> SimpleNamespace:
+        self.resolve_calls.append((account_number, bank_code))
+        if not self.success:
+            return SimpleNamespace(success=False, account=None, error="invalid account")
+        return SimpleNamespace(
+            success=True,
+            error=None,
+            account=SimpleNamespace(
+                account_name="Tolu Adebayo",
+                account_number=account_number,
+                bank_code=self.bank_code,
+            ),
+        )
+
+
+class _MockPayoutBankCache:
+    provider_name = "flutterwave"
+
+    def __init__(self, bank_code: str | None = "000014") -> None:
+        self.bank_code = bank_code
+        self.ensure_calls = 0
+        self.lookup_terms: list[str] = []
+
+    async def ensure_banks_cached(self, fetch_banks_func):
+        self.ensure_calls += 1
+        return await fetch_banks_func()
+
+    async def get_bank_code(self, bank_name: str) -> str | None:
+        self.lookup_terms.append(bank_name)
+        return self.bank_code
 
 
 class _MockTxRepo:
@@ -97,6 +183,161 @@ async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     assert "You asked to send to David" in result.confirmation_summary
     assert "₦5,000 → David (Mercy Johnson)" in result.confirmation_summary
     assert "Mercy Johnson" in result.confirmation_summary
+
+
+async def test_payout_preparation_skips_single_source_funding_plan() -> None:
+    provider = _MockPayoutResolverProvider()
+    cache = _MockPayoutBankCache()
+    payload = TransferPayload(
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+        funding_plan={"is_single_source": True},
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en")
+
+    result = await prepare_payout_recipient(
+        payload,
+        ctx,
+        SimpleNamespace(payout_resolver_provider=provider, payout_bank_cache=cache),
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {}
+    assert provider.resolve_calls == []
+    assert cache.ensure_calls == 0
+
+
+async def test_payout_preparation_remaps_multi_source_recipient_to_flutterwave() -> None:
+    provider = _MockPayoutResolverProvider(bank_code="000014")
+    cache = _MockPayoutBankCache(bank_code="000014")
+    payload = TransferPayload(
+        recipient_name="Tolu",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+        recipient_bank_code_provider="mono",
+        recipient_resolution_provider="mono",
+        funding_plan={"is_single_source": False},
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en")
+
+    result = await prepare_payout_recipient(
+        payload,
+        ctx,
+        SimpleNamespace(payout_resolver_provider=provider, payout_bank_cache=cache),
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert provider.resolve_calls == [("1234567890", "000014")]
+    assert cache.lookup_terms == ["Access Bank"]
+    assert result.patch["recipient_bank_code"] == "000014"
+    assert result.patch["recipient_bank_code_provider"] == "flutterwave"
+    assert result.patch["recipient_resolution_provider"] == "flutterwave"
+    assert result.patch["recipient_resolved_name"] == "Tolu Adebayo"
+
+
+async def test_payout_preparation_fails_safely_when_flutterwave_cannot_verify() -> None:
+    provider = _MockPayoutResolverProvider(success=False)
+    cache = _MockPayoutBankCache(bank_code="000014")
+    payload = TransferPayload(
+        recipient_name="Tolu",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+        funding_plan={"is_single_source": False},
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en")
+
+    result = await prepare_payout_recipient(
+        payload,
+        ctx,
+        SimpleNamespace(payout_resolver_provider=provider, payout_bank_cache=cache),
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["recipient_account", "recipient_bank_name"]
+    assert "couldn't verify" in (result.prompt or "").lower()
+
+
+async def test_multi_source_saved_beneficiary_is_remapped_by_bank_name_not_saved_code() -> None:
+    provider = _MockPayoutResolverProvider(bank_code="fw-access")
+    cache = _MockPayoutBankCache(bank_code="fw-access")
+    payload = TransferPayload(
+        recipient_name="Tolu",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="mono-access",
+        recipient_bank_code_provider="mono",
+        recipient_resolution_provider="mono",
+        resolved_from_saved_beneficiary=True,
+        beneficiary_id="bene-1",
+        funding_plan={"is_single_source": False},
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en")
+
+    result = await prepare_payout_recipient(
+        payload,
+        ctx,
+        SimpleNamespace(payout_resolver_provider=provider, payout_bank_cache=cache),
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert provider.resolve_calls == [("1234567890", "fw-access")]
+    assert result.patch["recipient_bank_code"] == "fw-access"
+    assert result.patch["recipient_bank_code_provider"] == "flutterwave"
+
+
+async def test_multi_source_funding_confirmation_does_not_duplicate_plain_summary() -> None:
+    payload = TransferPayload(
+        amount=35000,
+        recipient_name="Tolu Adebayo",
+        recipient_resolved_name="Tolu Adebayo",
+        recipient_account="2010000001",
+        recipient_bank_name="Access Bank",
+        source_bank_name="Access Bank",
+        source_account_number="6000000003",
+        funding_plan={
+            "is_single_source": False,
+            "transfer_amount": 35000,
+            "primary_bank_name": "Access Bank",
+            "primary_available_balance": 30000,
+            "steps": [
+                {"account_id": "access", "amount": 30000, "bank_name": "Access Bank", "sequence": 1},
+                {"account_id": "first", "amount": 5000, "bank_name": "First Bank", "sequence": 2},
+            ],
+        },
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.confirmation_summary is not None
+    assert "Your Access Bank has *₦30,000*" in result.confirmation_summary
+    assert "Suggested breakdown:" in result.confirmation_summary
+    assert result.confirmation_summary.count("₦35,000 → Tolu Adebayo") == 1
+    assert "Access Bank • 2010000001" not in result.confirmation_summary
+
+
+def test_multi_source_confirmation_summary_does_not_append_single_from_line() -> None:
+    summary = (
+        "₦35,000 → Tolu Adebayo (Access Bank)\n"
+        "Account: 2010000001\n\n"
+        "Your Access Bank has ₦30,000 — not enough for this transfer."
+    )
+    rendered = build_confirmation_summary(
+        task_payload={
+            "source_bank_name": "Access Bank",
+            "source_account_number": "6000000003",
+            "funding_plan": {"is_single_source": False},
+            "confirmation": {"summary": summary},
+        },
+        locale="en",
+        accounts=[],
+    )
+
+    assert rendered == summary
+    assert "From:" not in (rendered or "")
 
 
 async def test_confirmation_update_message_uses_specific_dynamic_ack() -> None:
@@ -340,6 +581,62 @@ async def test_name_variant_only_single_beneficiary_match_autofills_recipient_de
     assert result.patch["recipient_bank_name"] == "GTBank"
     assert result.patch["recipient_name"] == "mom"
     assert result.patch["recipient_resolved_name"] == "Mama Nkechi"
+
+
+async def test_saved_beneficiary_without_bank_code_does_not_patch_string_none_without_resolver() -> None:
+    payload = TransferPayload(amount=6000, recipient_name="Mum")
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-2",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "Access Bank",
+                "bank_code": None,
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["recipient_bank_code"] is None
+    assert result.patch["recipient_bank_code_provider"] is None
+    assert result.patch["recipient_resolution_provider"] is None
+
+
+async def test_saved_beneficiary_without_bank_code_resolves_through_mono_when_available() -> None:
+    payload = TransferPayload(amount=6000, recipient_name="Mum")
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-2",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "Access Bank",
+                "bank_code": None,
+            }
+        ],
+        accounts=[],
+    )
+    provider = _MockMonoResolverProvider()
+    bank_cache = _MockMonoBankCache(bank_code="044")
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=provider, bank_cache=bank_cache)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["recipient_bank_code"] == "044"
+    assert result.patch["recipient_bank_code_provider"] == "mono"
+    assert result.patch["recipient_resolution_provider"] == "mono"
+    assert provider.resolve_calls == [("2010000002", "044")]
+    assert bank_cache.lookup_terms == ["Access Bank"]
 
 
 async def test_selected_beneficiary_prefers_alias_when_payload_name_missing() -> None:

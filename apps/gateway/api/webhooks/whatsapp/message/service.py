@@ -7,9 +7,11 @@ from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.adapter import QueuePublisher
 from shared.utils.datetime import utc_now_naive
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
+_CHANNEL_LINK_APPROVE_PREFIX = "ch_link_ok:"
+_CHANNEL_LINK_DENY_PREFIX = "ch_link_no:"
 
 
 def _normalize_whatsapp_number(value: str | None) -> str:
@@ -20,6 +22,17 @@ def _normalize_whatsapp_number(value: str | None) -> str:
     if digits.startswith("234") and len(digits) == 13:
         return f"0{digits[3:]}"
     return digits
+
+
+def _iter_status_callbacks(payload: dict) -> list[dict]:
+    statuses: list[dict] = []
+    for entry in payload.get("entry", []) or []:
+        for change in entry.get("changes", []) or []:
+            value = change.get("value", {}) or {}
+            for status in value.get("statuses", []) or []:
+                if isinstance(status, dict):
+                    statuses.append(status)
+    return statuses
 
 
 class WhatsAppWebhookService:
@@ -43,7 +56,29 @@ class WhatsAppWebhookService:
         processed = 0
 
         if not messages:
-            logger.info("webhook_no_messages_parsed")
+            statuses = _iter_status_callbacks(payload)
+            if statuses:
+                for status in statuses:
+                    errors = status.get("errors") or []
+                    logger.info(
+                        "webhook_status_callback_received",
+                        message_id_hash=log_fingerprint(status.get("id")),
+                        recipient_id_hash=log_fingerprint(status.get("recipient_id")),
+                        status=status.get("status"),
+                        error_codes=[
+                            error.get("code") for error in errors if isinstance(error, dict) and error.get("code")
+                        ],
+                        error_titles=[
+                            error.get("title") for error in errors if isinstance(error, dict) and error.get("title")
+                        ],
+                        error_details=[
+                            (error.get("error_data") or {}).get("details")
+                            for error in errors
+                            if isinstance(error, dict) and isinstance(error.get("error_data"), dict)
+                        ],
+                    )
+            else:
+                logger.info("webhook_no_messages_parsed")
             return 0
 
         for msg in messages:
@@ -63,7 +98,7 @@ class WhatsAppWebhookService:
 
         allowed_numbers = {
             _normalize_whatsapp_number(number)
-            for number in settings.whatsapp_allowed_numbers
+            for number in settings.whatsapp.allowed_numbers
             if _normalize_whatsapp_number(number)
         }
         if allowed_numbers and normalized_from_id not in allowed_numbers:
@@ -82,12 +117,46 @@ class WhatsAppWebhookService:
 
         if not (is_regular_message or is_interactive_without_flow):
             if msg_type == "interactive" and flow_data:
-                logger.debug("flow_response_skipped", from_id=from_id)
+                interactive = msg.raw.get("interactive", {}) if isinstance(msg.raw, dict) else {}
+                logger.info(
+                    "whatsapp_flow_message_response_skipped",
+                    from_id_hash=log_fingerprint(from_id),
+                    interactive_type=interactive.get("type") if isinstance(interactive, dict) else None,
+                    flow_data_keys=sorted(str(key) for key in flow_data),
+                )
             return False
+
+        if msg.text and await self._handle_channel_link_authorization(msg.text.strip(), from_id):
+            return True
 
         whatsapp_msg = self._build_message(msg)
         await self._enqueue_message(whatsapp_msg, from_id, msg_type)
         return True
+
+    async def _handle_channel_link_authorization(self, text: str, from_id: str) -> bool:
+        """Neutralize stale native channel-link buttons; PIN is required now."""
+        if not (text.startswith(_CHANNEL_LINK_APPROVE_PREFIX) or text.startswith(_CHANNEL_LINK_DENY_PREFIX)):
+            return False
+
+        await self.whatsapp_client.send_text(
+            to=from_id,
+            text="For security, channel linking now requires PIN authorization. Please use the latest PIN prompt.",
+            suppress_typing_indicator=True,
+        )
+        return True
+
+    async def _notify_requested_channel_linked(self, channel: str, channel_user_id: str) -> None:
+        if channel != "telegram":
+            return
+        try:
+            from shared.clients.telegram.client import TelegramClient
+
+            await TelegramClient().send_text(
+                to=channel_user_id,
+                text="Your Telegram account has been linked. You can now use banking features here.",
+            )
+        except Exception as e:
+            logger.warning("channel_link_requested_channel_notify_failed", channel=channel, error=str(e))
 
     def _build_message(self, msg: ParsedMessage) -> ChannelMessage:
         """Build ChannelMessage from ParsedMessage."""

@@ -23,6 +23,7 @@ def test_query_reasoner_prompt_covers_all_continuation_types() -> None:
         "filter_delta",
         "expand",
         "conversational",
+        "coverage",
         "explain_aggregate_scope",
         "drill_down",
         "recipient_drill_down",
@@ -33,7 +34,7 @@ def test_query_reasoner_prompt_covers_all_continuation_types() -> None:
 
 
 def test_query_reasoner_prompt_covers_followup_intents() -> None:
-    for intent in ("continue_pagination", "refine_existing", "replace_scope", "none"):
+    for intent in ("continue_pagination", "previous_pagination", "refine_existing", "replace_scope", "none"):
         assert intent in QUERY_SEMANTIC_REASONER_SYSTEM, f"Missing followup_intent: {intent}"
 
 
@@ -127,9 +128,25 @@ def test_query_parser_prompt_uses_positive_output_contract() -> None:
     assert "Return only these fields" in QUERY_PARSER_PROMPT
     assert "request_shape" in QUERY_PARSER_PROMPT
     assert "fact_query_kind" in QUERY_PARSER_PROMPT
+    assert "answer_fact_field" in QUERY_PARSER_PROMPT
+    assert "existence" in QUERY_PARSER_PROMPT
+    assert "reference" in QUERY_PARSER_PROMPT
+    assert "Do not rely on raw wording for recovery" in QUERY_PARSER_PROMPT
     assert "The runtime derives `query_operation`" in QUERY_PARSER_PROMPT
     assert "REQUESTED CAPABILITIES" not in QUERY_PARSER_PROMPT
     assert "AMBIGUITIES" not in QUERY_PARSER_PROMPT
+
+
+def test_query_prompts_require_typed_multilingual_fact_semantics() -> None:
+    assert "Runtime validation will not infer these fields from raw text" in QUERY_SEMANTIC_REASONER_SYSTEM
+    assert "when did I last send mum money" in QUERY_PARSER_PROMPT
+    assert "who send me 500k last week" in QUERY_PARSER_PROMPT
+    assert "bank wo ni mo lo fun last transfer" in QUERY_PARSER_PROMPT
+    assert "nawa ne bank din last transaction dina" in QUERY_PARSER_PROMPT
+    assert "ole ego ka m zigara tolu ikpeazu" in QUERY_PARSER_PROMPT
+    assert "quelle banque pour ma derniere transaction" in QUERY_PARSER_PROMPT
+    assert "did I send money to mum this month" in QUERY_PARSER_PROMPT
+    assert "what was the reference for that payment" in QUERY_PARSER_PROMPT
 
 
 def test_query_prompts_put_dynamic_message_late_for_cache_reuse() -> None:

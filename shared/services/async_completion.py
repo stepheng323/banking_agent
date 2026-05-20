@@ -40,10 +40,14 @@ ASYNC_GROUP_ACTIONABLE_PAYLOAD_KEYS = (
     "source_account_id",
     "source_account_index",
     "source_account_number",
+    "source_affinity_mode",
     "narration",
     "network",
     "plan_code",
     "plan_name",
+    "final_status",
+    "error_message",
+    "failure_category",
 )
 
 
@@ -64,6 +68,8 @@ class RecentBatchLeg(TypedDict):
     bank_display: str | None
     account_display: str | None
     final_status: Literal["success", "processing", "failed"]
+    error_message: str | None
+    failure_category: str | None
     receipt_allowed: bool
 
 
@@ -261,6 +267,13 @@ def _coerce_amount(value: Any) -> float | None:
     return None
 
 
+def _optional_str(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def _build_recent_batch_leg(leg: dict[str, Any]) -> RecentBatchLeg | None:
     task_type = str(leg.get("type") or "").strip()
     payload = leg.get("payload")
@@ -293,19 +306,26 @@ def _build_recent_batch_leg(leg: dict[str, Any]) -> RecentBatchLeg | None:
             else (str(payload.get("target_phone")).strip() if isinstance(payload.get("target_phone"), str) else None)
         )
     )
-    return {
-        "index": int(leg.get("index") or 0),
-        "transaction_id": str(leg.get("transaction_id")).strip() if leg.get("transaction_id") is not None else None,
-        "task_type": task_type,
-        "amount": _coerce_amount(payload.get("amount")),
-        "recipient_name": recipient_name,
-        "recipient_resolved_name": recipient_resolved_name,
-        "recipient_label": recipient_label,
-        "bank_display": bank_display,
-        "account_display": account_display,
-        "final_status": cast(Literal["success", "processing", "failed"], normalized_status),
-        "receipt_allowed": task_type == "transfer" and normalized_status == "success",
-    }
+    return cast(
+        RecentBatchLeg,
+        {
+            "index": int(leg.get("index") or 0),
+            "transaction_id": str(leg.get("transaction_id")).strip()
+            if leg.get("transaction_id") is not None
+            else None,
+            "task_type": task_type,
+            "amount": _coerce_amount(payload.get("amount")),
+            "recipient_name": recipient_name,
+            "recipient_resolved_name": recipient_resolved_name,
+            "recipient_label": recipient_label,
+            "bank_display": bank_display,
+            "account_display": account_display,
+            "final_status": cast(Literal["success", "processing", "failed"], normalized_status),
+            "error_message": _optional_str(payload.get("error_message")),
+            "failure_category": _optional_str(payload.get("failure_category")),
+            "receipt_allowed": task_type == "transfer" and normalized_status == "success",
+        },
+    )
 
 
 async def _store_recent_batch_reference(
@@ -386,6 +406,12 @@ async def get_recent_batch_reference(
                         Literal["success", "processing", "failed"],
                         _normalize_final_status(str(leg.get("final_status") or "success")),
                     ),
+                    "error_message": str(leg.get("error_message")).strip()
+                    if leg.get("error_message") is not None
+                    else None,
+                    "failure_category": str(leg.get("failure_category")).strip()
+                    if leg.get("failure_category") is not None
+                    else None,
                     "receipt_allowed": bool(leg.get("receipt_allowed")),
                 }
             )

@@ -450,6 +450,8 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
         filters=QueryFilters(recipient="Mum", transaction_type="debit"),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="when did I last pay Mum this month",
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.DATE,
         result_limit=1,
         result_reference="latest",
     )
@@ -463,14 +465,17 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
     assert contract.answer_fact_field == "date"
 
 
-def test_beneficiary_summary_fact_shape_is_recovered_to_single_transaction_query() -> None:
+def test_typed_beneficiary_summary_fact_shape_compiles_to_single_transaction_query() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 28)
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.DATE,
         filters=QueryFilters(recipient="Mum"),
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="when last did I send mum money",
+        result_reference="latest",
     )
 
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
@@ -493,9 +498,12 @@ def test_unscoped_fact_latest_query_defaults_to_latest_across_available_history(
     today = date(2026, 3, 28)
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.SINGLE_TRANSACTION,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.DATE,
         filters=QueryFilters(recipient="Mum"),
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="when last did I send money to mum",
+        result_reference="latest",
     )
 
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
@@ -531,6 +539,8 @@ def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.SINGLE_TRANSACTION,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.COUNTERPARTY,
         filters=QueryFilters(min_amount=500000, max_amount=500000),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
         raw_query="who sent me 500k last week",
@@ -548,8 +558,11 @@ def test_who_did_i_send_money_to_last_compiles_to_latest_counterparty_fact() -> 
     today = date(2026, 3, 28)
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.COUNTERPARTY,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="who did I send money to last",
+        result_reference="latest",
     )
 
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
@@ -573,6 +586,8 @@ def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.SINGLE_TRANSACTION,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.COUNTERPARTY,
         filters=QueryFilters(recipient="unknown", min_amount=500000, max_amount=500000),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
         raw_query="who sent me 500k last week",
@@ -584,6 +599,108 @@ def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
     assert query_ir.filters.counterparty is None
     assert query_ir.filters.transaction_type == "credit"
     assert query_ir.answer_fact_field == "counterparty"
+
+
+@pytest.mark.parametrize(
+    ("raw_query", "intent"),
+    [
+        ("when did I last pay Mum", ExtractionIntent.SINGLE_TRANSACTION),
+        ("which bank was that", ExtractionIntent.TRANSACTION_LIST),
+    ],
+)
+def test_raw_text_alone_does_not_infer_fact_fields(raw_query: str, intent: ExtractionIntent) -> None:
+    parser = QueryParser(_DummyLLM())
+    extraction_kwargs: dict[str, object] = {}
+    if "Mum" in raw_query:
+        extraction_kwargs["filters"] = QueryFilters(recipient="Mum")
+    extraction = QueryExtractionResult(
+        intent=intent,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query=raw_query,
+        result_limit=1,
+        result_reference="latest",
+        **extraction_kwargs,
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 28), language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.answer_fact_field is None
+    assert contract.answer_fact_field is None
+
+
+@pytest.mark.parametrize(
+    ("fact_query_kind", "expected"),
+    [
+        (FactQueryKind.DATE, "date"),
+        (FactQueryKind.COUNTERPARTY, "counterparty"),
+        (FactQueryKind.AMOUNT, "amount"),
+        (FactQueryKind.BANK, "bank"),
+        (FactQueryKind.REFERENCE, "reference"),
+        (FactQueryKind.STATUS, "status"),
+        (FactQueryKind.CATEGORY, "category"),
+    ],
+)
+def test_typed_fact_query_kind_compiles_to_answer_fact_field(
+    fact_query_kind: FactQueryKind,
+    expected: str,
+) -> None:
+    parser = QueryParser(_DummyLLM())
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=fact_query_kind,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="typed semantic fact query",
+        result_reference="latest",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 28), language="en")
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
+    assert query_ir.query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
+    assert query_ir.answer_fact_field == expected
+
+
+@pytest.mark.parametrize("answer_fact_field", ["counterparty", "amount", "bank", "reference", "status"])
+def test_typed_answer_fact_field_compiles_to_single_transaction(answer_fact_field: str) -> None:
+    parser = QueryParser(_DummyLLM())
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        answer_fact_field=answer_fact_field,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="typed answer field query",
+        result_reference="latest",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 28), language="en")
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
+    assert query_ir.answer_fact_field == answer_fact_field
+
+
+def test_existence_request_shape_compiles_to_direct_sum_query() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 28)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        query_operation=QueryOperation.SUM_TRANSACTIONS,
+        request_shape=QueryRequestShape.EXISTENCE,
+        filters=QueryFilters(recipient="Mum", transaction_type="debit"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="did I send money to Mum this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_ir.query_operation == QueryOperation.SUM_TRANSACTIONS
+    assert query_ir.request_shape == "existence"
+    assert query_ir.filters is not None
+    assert query_ir.filters.counterparty == ["Mum"]
+    assert query_ir.filters.transaction_type == "debit"
+    assert contract.request_shape == "existence"
 
 
 def test_spending_by_account_compiles_to_account_breakdown_with_debit_filter() -> None:

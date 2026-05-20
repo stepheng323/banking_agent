@@ -2,6 +2,7 @@
 
 from shared.policy.adapters import (
     check_unsupported_actions,
+    is_capability_supported,
     resolve_capability_alternative,
     resolve_capability_message,
     resolve_capability_rule,
@@ -21,6 +22,7 @@ __all__ = [
     "DomainCapabilityPolicy",
     "capability_block_message",
     "check_unsupported_actions",
+    "is_capability_supported",
     "load_policy",
     "get_cached_policy",
     "resolve_capability_rule",

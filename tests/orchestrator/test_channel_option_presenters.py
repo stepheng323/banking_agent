@@ -7,6 +7,8 @@ from apps.chat.src.messaging.presenters.base import PresentationContext
 from apps.chat.src.messaging.presenters.telegram import TelegramPresenter
 from apps.chat.src.messaging.presenters.whatsapp import WhatsAppPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
+from shared.i18n import render_message
+from shared.messaging.intents import Say
 
 
 class _StubWhatsAppClient:
@@ -65,6 +67,28 @@ async def test_whatsapp_presenter_options_uses_interactive_when_available() -> N
 
 
 @pytest.mark.asyncio
+async def test_whatsapp_presenter_formats_markdown_and_redirect_spacing() -> None:
+    client = _StubWhatsAppClient(interactive_success=True)
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+    context = PresentationContext(channel="whatsapp", phone_number="2348000000000")
+    text = (
+        "Here are your account balances:\n\n"
+        "• Zenith Bank (···9384): **₦30,000.00**\n"
+        "No, your worth is not defined by your balance.\n"
+        f"{render_message('conversational.out_of_scope', 'en')}"
+    )
+
+    message_id = await presenter._present_say(Say(text=text), context)
+
+    assert message_id == "wa-text-1"
+    assert len(client.text_calls) == 1
+    sent = client.text_calls[0]["text"]
+    assert "**" not in sent
+    assert "*₦30,000.00*" in sent
+    assert "balance.\n\nI stay on banking." in sent
+
+
+@pytest.mark.asyncio
 async def test_telegram_presenter_options_falls_back_to_numbered_text() -> None:
     client = _StubTelegramClient(interactive_success=False)
     presenter = TelegramPresenter(cast(MessagingClient, client))
@@ -83,5 +107,31 @@ async def test_telegram_presenter_options_falls_back_to_numbered_text() -> None:
     assert message_id == "tg-text-1"
     assert len(client.interactive_calls) == 1
     assert len(client.text_calls) == 1
+    assert client.interactive_calls[0]["body_text"] == "I found multiple matches for Tolu. Which one?"
+    assert client.interactive_calls[0]["options"] == [
+        {"id": "bene:111", "title": "1"},
+        {"id": "bene:222", "title": "2"},
+    ]
     assert "1. Tolu A • Access Bank • ****1234" in client.text_calls[0]["text"]
     assert "2. Tolu B • GTBank • ****5678" in client.text_calls[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_options_uses_explicit_button_titles() -> None:
+    client = _StubTelegramClient(interactive_success=True)
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = ShowOptions(
+        title="Would you like a receipt image for this transfer?",
+        options=[
+            {"id": "rcpt:send", "title": "Send receipt image", "button_title": "Send receipt"},
+        ],
+    )
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    message_id = await presenter._present_options(intent, context)
+
+    assert message_id == "tg-interactive-1"
+    assert client.interactive_calls[0]["body_text"] == "Would you like a receipt image for this transfer?"
+    assert client.interactive_calls[0]["options"] == [
+        {"id": "rcpt:send", "title": "Send receipt"},
+    ]

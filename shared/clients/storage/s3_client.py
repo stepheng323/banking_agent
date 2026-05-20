@@ -1,6 +1,8 @@
 """S3 client for uploading and managing receipt images."""
 
+import inspect
 import os
+import secrets
 from datetime import datetime
 
 import aioboto3
@@ -8,6 +10,9 @@ from botocore.exceptions import ClientError
 
 from shared.config.settings import settings
 from shared.utils.datetime import utc_now_naive
+from shared.utils.logging import get_logger, log_fingerprint
+
+logger = get_logger(__name__)
 
 
 class S3Client:
@@ -23,22 +28,23 @@ class S3Client:
         self, image_bytes: bytes, transaction_id: str, timestamp: datetime | None = None
     ) -> str:
         """
-        Upload receipt image to S3.
+        Upload receipt image privately to S3 and return a short-lived GET URL.
 
         Args:
             image_bytes: PNG image bytes
-            transaction_id: Transaction ID for path generation
-            timestamp: Optional timestamp for filename (defaults to now)
+            transaction_id: Transaction ID used only for a non-reversible key prefix
+            timestamp: Accepted for compatibility; receipt keys use random nonces
 
         Returns:
-            S3 URL of uploaded image
+            Short-lived presigned GET URL for the uploaded image
         """
         if timestamp is None:
             timestamp = utc_now_naive()
+        del timestamp
 
-        # Generate S3 key: receipts/{transaction_id}/{timestamp}.png
-        timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
-        s3_key = f"{self.receipt_prefix}/{transaction_id}/{timestamp_str}.png"
+        transaction_hash = log_fingerprint(transaction_id, length=24)
+        nonce = secrets.token_urlsafe(16)
+        s3_key = f"{self.receipt_prefix}/{transaction_hash}/{nonce}.png"
 
         try:
             async with self.session.client(
@@ -47,26 +53,42 @@ class S3Client:
                 aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
                 aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
             ) as s3:
-                # Upload with public-read ACL
-                # Note: If bucket doesn't allow ACLs, configure bucket policy for public access
                 await s3.put_object(
                     Bucket=self.bucket_name,
                     Key=s3_key,
                     Body=image_bytes,
                     ContentType="image/png",
-                    ACL="public-read",  # Make receipts publicly accessible
                 )
 
-                # Generate public URL
-                s3_url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
-                print(f"✓ Receipt uploaded to S3: {s3_url}")
-                return s3_url
+                presigned_url = s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": self.bucket_name, "Key": s3_key},
+                    ExpiresIn=900,
+                )
+                if inspect.isawaitable(presigned_url):
+                    presigned_url = await presigned_url
+
+                logger.info(
+                    "receipt_uploaded_to_s3",
+                    bucket_hash=log_fingerprint(self.bucket_name),
+                    key_hash=log_fingerprint(s3_key),
+                    transaction_hash=transaction_hash,
+                )
+                return str(presigned_url)
 
         except ClientError as e:
-            print(f"❌ Error uploading receipt to S3: {e}")
+            logger.error(
+                "receipt_s3_upload_failed",
+                error_code=e.response.get("Error", {}).get("Code"),
+                transaction_hash=log_fingerprint(transaction_id),
+            )
             raise
         except Exception as e:
-            print(f"❌ Unexpected error uploading receipt to S3: {e}")
+            logger.error(
+                "receipt_s3_upload_failed",
+                error_type=type(e).__name__,
+                transaction_hash=log_fingerprint(transaction_id),
+            )
             raise
 
     async def get_receipt_url(self, transaction_id: str, timestamp: datetime | None = None) -> str | None:
@@ -78,12 +100,12 @@ class S3Client:
             timestamp: Optional timestamp (defaults to most recent)
 
         Returns:
-            S3 URL if found, None otherwise
+            Short-lived presigned GET URL if found, None otherwise
         """
         # Note: timestamp parameter reserved for future filtering
         _ = timestamp  # Suppress unused parameter warning
 
-        s3_key_prefix = f"{self.receipt_prefix}/{transaction_id}/"
+        s3_key_prefix = f"{self.receipt_prefix}/{log_fingerprint(transaction_id, length=24)}/"
 
         try:
             async with self.session.client(
@@ -101,14 +123,20 @@ class S3Client:
 
                 if "Contents" in response and len(response["Contents"]) > 0:
                     key = response["Contents"][0]["Key"]
-                    s3_url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{key}"
-                    return s3_url
+                    presigned_url = s3.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": self.bucket_name, "Key": key},
+                        ExpiresIn=900,
+                    )
+                    if inspect.isawaitable(presigned_url):
+                        presigned_url = await presigned_url
+                    return str(presigned_url)
 
                 return None
 
         except ClientError as e:
-            print(f"⚠️  Error retrieving receipt URL from S3: {e}")
+            logger.warning("receipt_s3_lookup_failed", error_code=e.response.get("Error", {}).get("Code"))
             return None
         except Exception as e:
-            print(f"⚠️  Unexpected error retrieving receipt URL from S3: {e}")
+            logger.warning("receipt_s3_lookup_failed", error_type=type(e).__name__)
             return None

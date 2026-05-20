@@ -1,10 +1,19 @@
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from shared.database.enums import TransactionStatusEnum
+from shared.policy.loader import get_cached_policy, load_policy
 from shared.transaction_runtime.executors.data import DataExecutor
+
+CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+DATA_DISABLED_MESSAGE = (
+    "Data purchase is temporarily unavailable. I can still help with transfers, airtime, balances, and transaction "
+    "queries."
+)
 
 
 class _RedisStub:
@@ -56,6 +65,19 @@ def _payload() -> dict:
     }
 
 
+def _install_disabled_data_policy(tmp_path: Path) -> None:
+    raw = load_policy(CAPABILITY_POLICY_PATH).model_dump()
+    raw["capability_matrix"]["data"]["enabled"] = False
+    raw["capability_matrix"]["data"]["limitation_message"] = DATA_DISABLED_MESSAGE
+    policy_path = tmp_path / "capability_policy_data_disabled.json"
+    policy_path.write_text(json.dumps(raw, ensure_ascii=True), encoding="utf-8")
+    get_cached_policy(path=str(policy_path), force_reload=True)
+
+
+def _reset_policy_cache() -> None:
+    get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
+
+
 @pytest.mark.asyncio
 async def test_data_executor_single_success_delivers_to_originating_user() -> None:
     provider = SimpleNamespace(
@@ -74,6 +96,17 @@ async def test_data_executor_single_success_delivers_to_originating_user() -> No
 
     assert transaction_repo.update_status.await_args_list[0].args == ("tx-1", TransactionStatusEnum.PROCESSING.value)
     assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.SUCCESSFUL.value)
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_transaction_id"] == "provider-1"
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_response"] == {
+        "success": True,
+        "transaction_id": "provider-1",
+    }
+    provider.purchase_data.assert_awaited_once_with(
+        plan_code="mtn-1gb",
+        recipient_phone="08031234567",
+        network="MTN",
+        reference="idem-1",
+    )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
     assert "Data purchase successful" in delivery_service.deliver_text.await_args.kwargs["text"]
 
@@ -148,3 +181,34 @@ async def test_data_executor_exception_uses_safe_user_error() -> None:
     error_message = transaction_repo.update_status.await_args_list[1].kwargs["error_message"]
     assert error_message == "Data purchase could not be completed. Please try again."
     assert "raw provider token leaked" not in error_message
+
+
+@pytest.mark.asyncio
+async def test_data_executor_policy_block_does_not_call_provider(tmp_path: Path) -> None:
+    _install_disabled_data_policy(tmp_path)
+    try:
+        provider = SimpleNamespace(
+            purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"})
+        )
+        transaction_repo = SimpleNamespace(update_status=AsyncMock())
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        payload = _payload()
+        payload.pop("async_group")
+        executor = DataExecutor(
+            bill_provider=provider,
+            transaction_repo=transaction_repo,
+            delivery_service=delivery_service,
+            redis_client=_RedisStub(),
+        )
+
+        await executor.handle_data(payload)
+
+        provider.purchase_data.assert_not_awaited()
+        assert transaction_repo.update_status.await_args_list[0].args == (
+            "tx-1",
+            TransactionStatusEnum.FAILED.value,
+        )
+        assert transaction_repo.update_status.await_args_list[0].kwargs["error_message"] == DATA_DISABLED_MESSAGE
+        assert DATA_DISABLED_MESSAGE in delivery_service.deliver_text.await_args.kwargs["text"]
+    finally:
+        _reset_policy_cache()

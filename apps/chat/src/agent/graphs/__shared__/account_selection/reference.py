@@ -37,10 +37,11 @@ def _account_selection_tokens(value: str) -> set[str]:
 
 
 def _tokens_for_account(account: dict[str, Any]) -> set[str]:
-    bank_name = str(account.get("bank_name") or "")
-    account_name = str(account.get("account_name") or "")
-    account_number = str(account.get("account_number") or "")
-    candidate_text = f"{bank_name} {account_name} {account_number}"
+    bank_name = str(account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or "")
+    account_name = str(account.get("account_name") or account.get("name") or account.get("source_account_name") or "")
+    account_number = str(account.get("account_number") or account.get("source_account_number") or "")
+    account_id = str(account.get("id") or account.get("account_id") or account.get("source_account_id") or "")
+    candidate_text = f"{bank_name} {account_name} {account_number} {account_id}"
     tokens = _account_selection_tokens(candidate_text)
     if account_number:
         tokens.add(account_number)
@@ -65,8 +66,10 @@ def match_source_account_reference(
 
     unique: dict[str, dict[str, Any]] = {}
     for account in matches:
-        account_id = str(account.get("id") or "").strip()
-        key = account_id or f"{account.get('bank_name')}:{account.get('account_number')}"
+        account_id = str(account.get("id") or account.get("account_id") or "").strip()
+        bank_name = account.get("bank_name") or account.get("bank") or account.get("source_bank_name")
+        account_number = account.get("account_number") or account.get("source_account_number")
+        key = account_id or f"{bank_name}:{account_number}"
         unique[key] = account
 
     if len(unique) == 1:
@@ -75,11 +78,15 @@ def match_source_account_reference(
 
 
 def build_source_account_patch(account: dict[str, Any]) -> dict[str, Any]:
+    account_id = account.get("id") or account.get("account_id") or account.get("source_account_id")
+    bank_name = account.get("bank_name") or account.get("bank") or account.get("source_bank_name")
+    account_name = account.get("account_name") or account.get("name") or account.get("source_account_name")
+    account_number = account.get("account_number") or account.get("number") or account.get("source_account_number")
     return {
-        "source_account_id": str(account.get("id")),
-        "source_bank_name": account.get("bank_name"),
-        "source_account_name": account.get("account_name"),
-        "source_account_number": account.get("account_number"),
+        "source_account_id": str(account_id).strip() if account_id else None,
+        "source_bank_name": bank_name,
+        "source_account_name": account_name,
+        "source_account_number": account_number,
         "source_affinity_mode": "explicit",
         "source_account_index": None,
         "funding_plan": None,

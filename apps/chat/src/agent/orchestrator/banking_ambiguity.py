@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from apps.chat.src.agent.shared.routing_signals import looks_like_explicit_transaction_query_shape
+
 AmbiguousBankingDomain = Literal["transfer", "airtime", "data", "support", "account_query"]
 
 _TRANSFER_SELF_DIRECTED_RE = re.compile(
@@ -31,6 +33,11 @@ _SUPPORT_AMBIGUOUS_RE = re.compile(
     re.IGNORECASE,
 )
 _SUPPORT_UNGROUNDED_SELF_RE = re.compile(r"\b(?:me|that|this)\b", re.IGNORECASE)
+_SUPPORT_REQUEST_VERB_RE = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:send|show|get|check|issue|provide|give|need|want)\b",
+    re.IGNORECASE,
+)
 _ACCOUNT_QUERY_MIXED_RE = re.compile(
     r"\b(?:balance|account|transactions?|history|statement|receipt)\b.*\b(?:transfer|send|pay|payment)\b|"
     r"\b(?:transfer|send|pay|payment)\b.*\b(?:balance|account|transactions?|history|statement|receipt)\b",
@@ -49,9 +56,17 @@ def classify_banking_coded_ambiguity(text: str | None) -> AmbiguousBankingDomain
         return "transfer"
     if _DATA_SELF_DIRECTED_RE.search(normalized):
         return "data"
-    if _AIRTIME_SELF_DIRECTED_RE.search(normalized) or _RECHARGE_ME_RE.search(normalized):
+    if _AIRTIME_SELF_DIRECTED_RE.search(normalized):
+        if _AMOUNT_RE.search(normalized):
+            return None
         return "airtime"
-    if _SUPPORT_AMBIGUOUS_RE.search(normalized) and _SUPPORT_UNGROUNDED_SELF_RE.search(normalized):
+    if _RECHARGE_ME_RE.search(normalized):
+        return "airtime"
+    if _SUPPORT_AMBIGUOUS_RE.search(normalized) and (
+        _SUPPORT_UNGROUNDED_SELF_RE.search(normalized) or _SUPPORT_REQUEST_VERB_RE.search(normalized)
+    ):
+        if looks_like_explicit_transaction_query_shape(normalized):
+            return None
         return "support"
     if (
         _ACCOUNT_QUERY_MIXED_RE.search(normalized)

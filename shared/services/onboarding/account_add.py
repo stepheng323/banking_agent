@@ -8,7 +8,7 @@ from shared.models.account import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate import MandateService
 from shared.services.onboarding.session import OnboardingStep
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -89,7 +89,11 @@ class AccountAddService:
             try:
                 await UserDataCache().invalidate_accounts(phone_number)
             except Exception as cache_error:
-                logger.warning("account_add_cache_invalidate_failed", phone=phone_number, error=str(cache_error))
+                logger.warning(
+                    "account_add_cache_invalidate_failed",
+                    phone_hash=log_fingerprint(phone_number),
+                    error_type=type(cache_error).__name__,
+                )
 
             await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
 
@@ -115,7 +119,7 @@ class AccountAddService:
             }
 
         except Exception as e:
-            logger.error("add_account_error", error=str(e), phone=phone_number)
+            logger.error("add_account_error", error_type=type(e).__name__, phone_hash=log_fingerprint(phone_number))
             return {"success": False, "error": "Failed to add account. Please try again."}
 
     async def _setup_mandate_for_account(
@@ -149,12 +153,16 @@ class AccountAddService:
                     transfer_destinations=transfer_destinations,
                     channel=channel,
                 )
-                logger.info("account_add_mandate_instruction_sent", phone=phone_number, channel=channel)
+                logger.info(
+                    "account_add_mandate_instruction_sent",
+                    phone_hash=log_fingerprint(phone_number),
+                    channel=channel,
+                )
             else:
                 logger.error(
                     "mandate_creation_failed_for_add",
                     error=result.get("error"),
-                    phone=phone_number,
+                    phone_hash=log_fingerprint(phone_number),
                     channel=channel,
                 )
 
@@ -163,7 +171,7 @@ class AccountAddService:
 
             logger.error(
                 "mandate_setup_error",
-                error=str(e),
-                phone=phone_number,
-                traceback=traceback.format_exc(),
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+                traceback_hash=log_fingerprint(traceback.format_exc()),
             )

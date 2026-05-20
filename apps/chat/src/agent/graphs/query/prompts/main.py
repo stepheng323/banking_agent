@@ -15,6 +15,7 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 | continuation_type     | followup_intent      | when                                                              |
 |-----------------------|----------------------|-------------------------------------------------------------------|
 | show_more             | continue_pagination  | paginate existing list                                            |
+| show_more             | previous_pagination  | go back to the previous page of an existing list                   |
 | show_more             | refine_existing      | show underlying transactions for summary/breakdown                |
 | show_evidence         | refine_existing      | show the transactions behind an aggregate answer                  |
 | grouped_total_followup | refine_existing     | grouped summary -> total over the same scope                      |
@@ -24,13 +25,24 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 | expand                | refine_existing      | expand summary                                                    |
 | aggregate             | refine_existing      | analytics over active result: "total", "how much total", "sum"    |
 | conversational        | none                 | "that's a lot", "wow" — reply via `response_text`, no mutations   |
+| coverage              | none                 | asks whether displayed data is complete/synced/missing             |
 | explain_aggregate_scope | none               | explain what an aggregate total includes/excludes                 |
 | drill_down            | none                 | item detail/receipt/issue/re-transfer                             |
 | recipient_drill_down  | none                 | recipient reply on beneficiary summary                            |
 | unclear               | none                 | ambiguous follow-up — prefer this over guessing                   |
 
-For drill_down with `answer_fact`, set `fact_field` to: status|amount|recipient|bank|date.
+For drill_down with `answer_fact`, set `fact_field` to:
+status|amount|recipient|counterparty|bank|date|description|reference|account|direction|category.
 Only use answer_fact when user clearly refers to the currently displayed item.
+For visible result references, populate typed targets instead of relying on free-form text:
+- target_index: 1-based displayed item number when the user says "second", "3rd", "number 2".
+- target_amount: numeric naira amount when the user says "20k", "₦25,000", "500 naira".
+- target_text: visible counterparty, narration, bank, status, or other item label reference.
+- requested_field: status|amount|recipient|counterparty|bank|date|description|reference|account|direction|category
+  when asking for one safe displayed field.
+- page_direction: next|previous for pagination.
+- rank: largest|smallest|newest|oldest for ranked result requests.
+The runtime deterministically validates these targets against the displayed surface; do not guess an item.
 
 CONTINUATION GUIDELINES
 - For time_delta, the runtime resolves the new time window from the user message via the parser.
@@ -47,6 +59,7 @@ Active list/summary context:
 - "what about last week/yesterday" → time_delta, replace_scope
 - "only today"/"just this week" → time_delta, replace_scope
 - "more"/"next page" → show_more, continue_pagination
+- "back"/"previous page" → show_more, previous_pagination
 - "show them"/"show me" after summary → show_more, refine_existing
 - "show me" after aggregate total/summary answer → show_evidence, refine_existing
 - "so what the total?" after grouped recipient summary → grouped_total_followup, refine_existing
@@ -55,6 +68,7 @@ Active list/summary context:
 - "how all this take be 50k" / "how is that 50k" after aggregate evidence → explain_aggregate_scope, none
 - "what about credit/debit" → filter_delta, refine_existing
 - "income vs spending" → aggregate, refine_existing (breakdown by transaction_type)
+- "is that all?", "why are Zenith transactions missing?", "when was GTBank synced?" → coverage, none
 - "Show my credit transactions this month" after spending summary → new_query (fresh extraction)
 - "Who did I send money to this month" during session → new_query (beneficiary-summary)
 - "okay" after an answered query with no new ask → end_session, kind=courtesy
@@ -75,12 +89,17 @@ QUERY SHAPE RULES
 EXTRACTION RULES (for fresh_query, reinterpret_query, new_query)
 Populate: intent, filters, time_range, comparison, aggregation, request_shape, fact_query_kind, result_limit, result_reference, answer_fact_field.
 - request_shape:
-  fact | detail | list | grouped_summary | analytics | comparison | affordability
+  fact | existence | detail | list | grouped_summary | analytics | comparison | affordability
 - fact_query_kind:
-  date | counterparty | amount | bank
+  date | counterparty | amount | bank | status | description | reference | account | direction | category
 - result_reference: "latest" for most recent, "oldest" for earliest.
-- answer_fact_field: use date|counterparty|amount|bank for singular fact-seeking transaction questions such as
-  "when did I last...", "who sent me...", "how much was...", "which bank was..."
+- answer_fact_field: use date|counterparty|amount|bank|status|description|reference|account|direction|category
+  for singular fact-seeking transaction questions such as "when did I last...", "who sent me...",
+  "how much was...", "which bank was...", "what was the reference?", "what was it for?"
+- For singular transaction fact questions in any supported language, always set `request_shape=fact`,
+  `fact_query_kind`, and `answer_fact_field`. Runtime validation will not infer these fields from raw text.
+- For yes/no transaction existence questions ("did I...", "have I...", "did money come from..."),
+  set `request_shape=existence`, `query_operation=sum_transactions`, and the exact filters.
 - Superlatives by amount ("highest transfer") → aggregation.type=largest/smallest over result_reference.
 - query_operation values: list_transactions, search_single_transaction, sum_transactions, count_transactions,
   average_transactions, rank_largest_transaction, rank_smallest_transaction, breakdown_transactions,
@@ -173,6 +192,8 @@ If the user is vague, express that through the semantic fields:
 - missing/unclear fields → leave the field null instead of fabricating values
 - For grouped recipient/ranking asks, set `intent=beneficiary_summary` and `request_shape=grouped_summary`.
 - For grouped recipient asks about sent/paid/transferred money, set `filters.transaction_type=debit`.
+- For singular transaction fact questions in any supported language, set `intent=single_transaction`,
+  `request_shape=fact`, `fact_query_kind`, and `answer_fact_field`. Do not rely on raw wording for recovery.
 
 MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
 
@@ -189,6 +210,17 @@ EXAMPLES
 "wa na tura wa kudi a wannan watan" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
 "qui ai je envoye de l argent ce mois ci" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
 "tani mo send money to this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
+"when did I last send mum money" → single_transaction, fact, fact_query_kind=date, answer_fact_field=date, result_reference=latest, recipient=mum, debit
+"did I send money to mum this month" → spending_total, existence, sum_transactions, recipient=mum, debit, explicit this_month
+"did I spend on bolt yesterday" → spending_total, existence, sum_transactions, recipient=bolt, debit, explicit yesterday
+"did acme send me money this month" → spending_total, existence, sum_transactions, recipient=acme, credit, explicit this_month
+"who send me 500k last week" → single_transaction, fact, fact_query_kind=counterparty, answer_fact_field=counterparty, credit, explicit last_week
+"bank wo ni mo lo fun last transfer" → single_transaction, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
+"nawa ne bank din last transaction dina" → single_transaction, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
+"ole ego ka m zigara tolu ikpeazu" → single_transaction, fact, fact_query_kind=amount, answer_fact_field=amount, result_reference=latest, recipient=tolu, debit
+"quelle banque pour ma derniere transaction" → single_transaction, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
+"what was the reference for that payment" → single_transaction, fact, fact_query_kind=reference, answer_fact_field=reference
+"what was it for" → single_transaction, fact, fact_query_kind=description, answer_fact_field=description
 "what's my highest single transfer this month" → spending_total, largest, limit=1, debit, explicit this_month
 
 TODAY: {today}

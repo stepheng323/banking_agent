@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,6 +13,8 @@ from apps.chat.src.agent.graphs.query.models import (
     TimeRange,
 )
 from apps.chat.src.agent.graphs.query.services.formatter import QueryFormatter
+from apps.chat.src.agent.shared.unified_transactions import UnifiedTransactionService
+from shared.config.settings import settings
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -38,6 +41,23 @@ class _Provider:
         return []
 
 
+class _ProviderWithRows:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+
+    async def get_transactions(
+        self,
+        account_id: str,
+        start_date: str,
+        end_date: str,
+        limit: int = 100,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
+    ) -> list[dict[str, Any]]:
+        del account_id, start_date, end_date, limit, user_id, mock_account_slot
+        return list(self.rows)
+
+
 def _query_for_today(today: date) -> QueryIR:
     return _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
@@ -48,6 +68,11 @@ def _query_for_today(today: date) -> QueryIR:
 
 def _contract(query: QueryIR) -> QueryExecutionContract:
     return QueryExecutionContract.from_query_ir(query)
+
+
+@pytest.fixture(autouse=True)
+def _disable_unified_transaction_view(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "enable_unified_transaction_view", False)
 
 
 @pytest.mark.asyncio
@@ -85,3 +110,82 @@ async def test_today_query_with_no_bank_feed_rows_returns_no_results_copy(
     result.query_contract = _contract(query)
 
     assert QueryFormatter.format(result, locale="en") == "You had no debit transactions today."
+
+
+@pytest.mark.asyncio
+async def test_unified_view_includes_newer_local_transaction_before_bank_feed_acme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 17)),
+        result_reference="latest",
+        result_limit=1,
+    )
+    provider = _ProviderWithRows(
+        [
+            {
+                "id": "txn_b01",
+                "date": "2026-05-13T10:30:00",
+                "narration": "Salary from Acme Corp",
+                "amount": 950000,
+                "type": "credit",
+                "category": "income",
+                "counterparty": "Acme Corp",
+            }
+        ]
+    )
+    local_transfer = SimpleNamespace(
+        id="local-1",
+        transaction_type="transfer",
+        status="failed",
+        amount=6000.0,
+        currency="NGN",
+        recipient_name="Tolu Adebayo",
+        recipient_account_number="1234567890",
+        recipient_bank_name="Kuda",
+        recipient_bank_code="999999",
+        source_bank_name="GTBank",
+        source_account_number="0123456789",
+        transaction_id="local-provider-1",
+        idempotency_key="idem-local-1",
+        provider_response={},
+        provider_status=None,
+        provider_error_code=None,
+        error_message="Provider timeout",
+        failure_category="provider_error",
+        narration="Transfer to Tolu Adebayo",
+        created_at=datetime(2026, 5, 16, 9, 0, 0),
+        updated_at=datetime(2026, 5, 16, 9, 1, 0),
+        completed_at=None,
+    )
+
+    async def _local_rows(
+        self: UnifiedTransactionService,
+        user_id: str,
+        *,
+        start_date: date,
+        end_date: date,
+        limit: int,
+    ) -> list[Any]:
+        del self, user_id, start_date, end_date, limit
+        return [local_transfer]
+
+    monkeypatch.setattr(settings, "enable_unified_transaction_view", True)
+    monkeypatch.setattr(UnifiedTransactionService, "_load_local_rows", _local_rows)
+
+    result = await handle_transaction_list(
+        provider,  # type: ignore[arg-type]
+        _contract(query),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        user_id="user_1",
+        language="en",
+    )
+
+    assert result.items is not None
+    assert len(result.items) == 1
+    assert result.items[0].description == "Transfer to Tolu Adebayo"
+    assert result.items[0].metadata is not None
+    assert result.items[0].metadata["unified_source"] == "local"
+    assert result.items[0].metadata["status"] == "failed"

@@ -21,7 +21,9 @@ from shared.i18n import (
     render_message,
     render_text,
 )
+from shared.receipts.choice import build_receipt_choice_intent
 from shared.utils.logging import get_logger
+from shared.utils.user_error import safe_user_error_message
 
 logger = get_logger(__name__)
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
@@ -383,15 +385,11 @@ async def _enqueue_finalize_transfer_receipt(
     state: OrchestratorState,
     config: RunnableConfig,
     locale: str,
-) -> None:
+) -> dict[str, Any] | None:
     configurable = config.get("configurable", {})
-    publisher = configurable.get("publisher")
-    if publisher is None:
-        return
-
     transaction_reference = task.payload.get("transaction_id")
     if not isinstance(transaction_reference, str) or not transaction_reference.strip():
-        return
+        return None
 
     beneficiary_suggestion_message: str | None = None
     suggestion_service = configurable.get("beneficiary_suggestion_service")
@@ -405,6 +403,8 @@ async def _enqueue_finalize_transfer_receipt(
                 "account_number": recipient_account,
                 "bank_code": recipient_bank_code,
                 "bank_name": task.payload.get("recipient_bank_name"),
+                "recipient_bank_code_provider": task.payload.get("recipient_bank_code_provider"),
+                "recipient_resolution_provider": task.payload.get("recipient_resolution_provider"),
                 "name": task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"),
                 "original_alias": task.payload.get("recipient_name"),
             },
@@ -440,7 +440,7 @@ async def _enqueue_finalize_transfer_receipt(
     if beneficiary_suggestion_message:
         payload["beneficiary_suggestion_message"] = beneficiary_suggestion_message
 
-    await publisher.publish("receipt.process", payload)
+    return build_receipt_choice_intent(payload, locale).to_dict()
 
 
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -451,8 +451,9 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     failed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.FAILED]
     cancelled_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.CANCELLED]
 
+    suppress_empty_fallback = False
     if completed_tasks:
-        await _handle_completed_tasks(
+        suppress_empty_fallback = await _handle_completed_tasks(
             completed_tasks=completed_tasks,
             state=state,
             config=config,
@@ -464,10 +465,10 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
             message = task.payload.get("error") or render_generic_capability_blocked(locale)
             outbox.append({"type": "say", "text": message})
         elif task.payload.get("is_pending_mandate"):
-            error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
+            error_text = safe_user_error_message(task.payload.get("error"), task_type=task.type, locale=locale)
             outbox.append({"type": "say", "text": error_text})
         else:
-            error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
+            error_text = safe_user_error_message(task.payload.get("error"), task_type=task.type, locale=locale)
             outbox.append(
                 {
                     "type": "say",
@@ -543,6 +544,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
         "last_callback": None,
         "session_stack": [],
         "active_domain": None,
+        "suppress_empty_fallback": suppress_empty_fallback,
         **context_updates,
     }
 
@@ -552,12 +554,12 @@ async def _handle_completed_tasks(
     state: OrchestratorState,
     config: RunnableConfig,
     outbox: list[dict[str, Any]],
-) -> None:
+) -> bool:
     """Handle completed tasks and generate receipts or summaries."""
     locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
     visible_tasks = [task for task in completed_tasks if not task.payload.get("skip_finalize_summary")]
     if not visible_tasks:
-        return
+        return False
 
     logger.info("handling_completed_tasks", count=len(completed_tasks), tasks=[t.type for t in completed_tasks])
     for t in visible_tasks:
@@ -586,9 +588,22 @@ async def _handle_completed_tasks(
 
     if is_single_transfer:
         task = visible_tasks[0]
-        if _receipt_status(task) not in ASYNC_RECEIPT_STATUSES:
-            await _enqueue_finalize_transfer_receipt(task=task, state=state, config=config, locale=locale)
-        _append_transfer_processing_message(task, outbox, locale)
+        if _receipt_status(task) in ASYNC_RECEIPT_STATUSES:
+            logger.info(
+                "finalize_single_transfer_status_deferred_to_executor",
+                task_id=task.id,
+                receipt_status=_receipt_status(task),
+            )
+            return True
+        else:
+            receipt_offer = await _enqueue_finalize_transfer_receipt(
+                task=task,
+                state=state,
+                config=config,
+                locale=locale,
+            )
+            if receipt_offer:
+                outbox.append(receipt_offer)
 
     elif len(async_transaction_tasks) > 1:
         logger.info(
@@ -635,3 +650,5 @@ async def _handle_completed_tasks(
         if actionable_payload := build_actionable_payload_for_tasks(summary_source):
             summary_outbox["actionable_payload"] = actionable_payload
         outbox.append(summary_outbox)
+
+    return False

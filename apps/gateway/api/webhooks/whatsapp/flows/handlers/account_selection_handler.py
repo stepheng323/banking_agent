@@ -7,6 +7,10 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_error_response,
     format_success_response,
 )
+from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
+    format_owner_error_response,
+    verify_whatsapp_flow_session_owner,
+)
 from shared.services.onboarding import (
     ServiceResult,
     account_add_service,
@@ -28,6 +32,7 @@ async def handle_account_selection(
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
+    authorizing_channel_user_id: str | None = None,
 ) -> Response:
     """Handle ACCOUNT_SELECTION screen - stores selected account."""
 
@@ -40,7 +45,15 @@ async def handle_account_selection(
             iv_bytes,
         )
 
-    session = await session_manager.get_session(flow_token)
+    owner_check = await verify_whatsapp_flow_session_owner(
+        flow_token=flow_token,
+        authorizing_channel_user_id=authorizing_channel_user_id,
+        screen="ACCOUNT_SELECTION",
+    )
+    if not owner_check.ok:
+        return format_owner_error_response("ACCOUNT_SELECTION", request_was_encrypted, aes_key_bytes, iv_bytes)
+
+    session = owner_check.session or await session_manager.get_session(flow_token)
     is_account_linking = session.get("is_account_linking", False) if session else False
 
     if is_account_linking:

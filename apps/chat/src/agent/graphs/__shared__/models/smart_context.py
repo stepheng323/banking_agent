@@ -7,6 +7,8 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
+from shared.formatters.currency import format_naira
+
 
 class SmartContext(BaseModel):
     """Structured context for LLM extraction (target: < 1000 tokens)."""
@@ -71,7 +73,7 @@ class SmartContext(BaseModel):
                 tx_type = tx.get("type", "transfer")
                 amount = tx.get("amount", 0)
                 recipient = tx.get("recipient_name") or tx.get("recipient_phone", "")
-                txs.append(f"{tx_type}:₦{amount:,.0f}→{recipient}")
+                txs.append(f"{tx_type}:{format_naira(amount)}→{recipient}")
             if txs:
                 tx_str = f"Recent: {'; '.join(txs)}"
                 if self.estimate_tokens(tx_str) <= remaining_tokens:

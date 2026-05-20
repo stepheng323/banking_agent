@@ -16,6 +16,7 @@ from shared.services.async_completion import (
     get_async_group_meta_for_transaction,
     record_group_leg_and_maybe_build_summary,
 )
+from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -75,12 +76,12 @@ class MonoWebhookService:
         """
         new_status = self.MANDATE_STATUS_MAP.get(event)
         if not new_status:
-            logger.debug("mandate_event_ignored", event=event)
+            logger.debug("mandate_event_ignored", event_name=event)
             return False
 
         mandate_id = data.get("id")
         if not mandate_id:
-            logger.warning("mono_webhook_no_mandate_id", event=event)
+            logger.warning("mono_webhook_no_mandate_id", event_name=event)
             return False
 
         async with UnitOfWork() as uow:
@@ -131,13 +132,13 @@ class MonoWebhookService:
         funding_status = self.DEBIT_STATUS_MAP.get(event)
         transfer_status = self.TRANSFER_DEBIT_STATUS_MAP.get(event)
         if not funding_status or not transfer_status:
-            logger.debug("debit_event_ignored", event=event)
+            logger.debug("debit_event_ignored", event_name=event)
             return False
 
         reference = data.get("reference_number") or data.get("reference")
         debit_id = data.get("id")
         if not reference and not debit_id:
-            logger.warning("mono_webhook_no_reference", event=event)
+            logger.warning("mono_webhook_no_reference", event_name=event)
             return False
 
         async with UnitOfWork() as uow:
@@ -328,13 +329,22 @@ class MonoWebhookService:
             "recipient_name": getattr(tx, "recipient_name", None),
             "recipient_resolved_name": getattr(tx, "recipient_name", None),
             "recipient_account": getattr(tx, "recipient_account_number", None),
+            "recipient_bank_code": getattr(tx, "recipient_bank_code", None),
             "recipient_bank_name": getattr(tx, "recipient_bank_name", None),
+            "source_account_id": getattr(tx, "source_account_id", None),
+            "source_account_number": getattr(tx, "source_account_number", None),
             "source_bank_name": getattr(tx, "source_bank_name", None),
             "narration": getattr(tx, "narration", None),
             "final_status": "success" if status == TransactionStatusEnum.SUCCESSFUL.value else "failed",
         }
         if status == TransactionStatusEnum.FAILED.value:
-            payload["error_message"] = getattr(tx, "error_message", None)
+            error_message = getattr(tx, "error_message", None)
+            payload["error_message"] = error_message
+            payload["failure_category"] = classify_failure_category(
+                message=str(error_message or ""),
+                code=str(getattr(tx, "provider_error_code", "") or ""),
+                context="provider",
+            )
         return payload
 
     async def _maybe_notify_grouped_transfer_resolution(self, *, uow: UnitOfWork, tx: Any, locale: str) -> bool:
@@ -460,6 +470,9 @@ class MonoWebhookService:
                     "amount": float(transfer.amount),
                     "recipient_account": transfer.recipient_account_number,
                     "recipient_bank_code": transfer.recipient_bank_code,
+                    "recipient_bank_code_provider": transfer.payout_provider or "flutterwave",
+                    "recipient_resolution_provider": transfer.payout_provider or "flutterwave",
+                    "payout_provider": transfer.payout_provider or "flutterwave",
                     "idempotency_key": transfer.idempotency_key,
                 },
             )

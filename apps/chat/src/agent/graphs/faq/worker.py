@@ -15,6 +15,7 @@ from apps.chat.src.agent.graphs.faq.retrieval.embeddings import EmbeddingService
 from apps.chat.src.agent.graphs.faq.state import FAQState
 from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome, FAQResult
 from shared.i18n import LocaleManager, render_message
+from shared.policy.service import capability_block_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +42,12 @@ class FAQWorker:
         phone_number = context.get("phone_number", "")
         message = (user_message or "").strip()
         locale = LocaleManager.normalize(context.get("language")).value
+        if policy_message := capability_block_message(domain="faq", action="answer_question", locale=locale):
+            logger.info("faq_worker_capability_blocked")
+            return FAQResult(
+                outcome=FAQOutcome.OK,
+                response=policy_message,
+            )
 
         state: FAQState = {
             "phone_number": phone_number,

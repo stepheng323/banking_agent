@@ -22,6 +22,7 @@ from apps.chat.src.agent.graphs.transfer.nodes.confirmation import ConfirmationS
 from apps.chat.src.agent.graphs.transfer.nodes.execution import ExecutionStep
 from apps.chat.src.agent.graphs.transfer.nodes.extraction import ExtractionStep
 from apps.chat.src.agent.graphs.transfer.nodes.funding import FundingStep
+from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import PayoutPreparationStep
 from apps.chat.src.agent.graphs.transfer.nodes.resolver import ResolutionStep
 from apps.chat.src.agent.graphs.transfer.nodes.security import AuthorizationStep
 from apps.chat.src.agent.graphs.transfer.nodes.selection import SourceSelectionStep
@@ -34,6 +35,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from shared.config.settings import settings
 from shared.database.enums import ScheduledInstructionStatusEnum
+from shared.formatters.currency import format_naira
 from shared.i18n import LocaleManager, render_message
 from shared.policy.service import capability_block_message
 from shared.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
@@ -49,6 +51,12 @@ from shared.services.scheduling.recurrence import (
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+SCHEDULING_ACTIONS = {
+    "schedule_transfer",
+    "recurring_transfer",
+    "list_scheduled_transfers",
+    "cancel_scheduled_transfer",
+}
 
 
 @dataclass(slots=True)
@@ -56,6 +64,8 @@ class TransferWorkerContext:
     extractor: Any
     resolver_provider: Any
     bank_cache: Any
+    payout_resolver_provider: Any | None
+    payout_bank_cache: Any | None
     publisher: Any
     transaction_repo: TransactionRepository
     dd_provider: Any | None
@@ -81,12 +91,16 @@ class TransferWorker:
         transaction_repo: TransactionRepository,
         dd_provider: Any | None = None,
         redis_client: Any | None = None,
+        payout_resolver_provider: Any | None = None,
+        payout_bank_cache: Any | None = None,
     ) -> None:
         self.validation_service = validation_service or ValidationService()
         self.publisher = publisher
         self.extractor = extractor
         self.resolver_provider = resolver_provider
         self.bank_cache = bank_cache
+        self.payout_resolver_provider = payout_resolver_provider
+        self.payout_bank_cache = payout_bank_cache
         self.transaction_repo = transaction_repo
         self.dd_provider = dd_provider
         self.redis_client = redis_client
@@ -125,6 +139,8 @@ class TransferWorker:
             extractor=self.extractor,
             resolver_provider=self.resolver_provider,
             bank_cache=self.bank_cache,
+            payout_resolver_provider=self.payout_resolver_provider,
+            payout_bank_cache=self.payout_bank_cache,
             publisher=self.publisher,
             transaction_repo=self.transaction_repo,
             dd_provider=self.dd_provider,
@@ -139,7 +155,8 @@ class TransferWorker:
 
     @staticmethod
     def _policy_gate_message(action: str, *, locale: str = "en") -> str | None:
-        return cast(str, capability_block_message(domain="transfer", action=action, locale=locale))
+        domain = "schedule" if action in SCHEDULING_ACTIONS else "transfer"
+        return cast(str, capability_block_message(domain=domain, action=action, locale=locale))
 
     @staticmethod
     def _build_pipeline(user_message: str | None, *, include_execution: bool = True) -> TransferPipeline:
@@ -149,6 +166,7 @@ class TransferWorker:
             SourceSelectionStep(),
             ValidationStep(),
             FundingStep(),
+            PayoutPreparationStep(),
             ConfirmationStep(),
             AuthorizationStep(),
         ]
@@ -206,7 +224,9 @@ class TransferWorker:
             recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
             recurrence = str(schedule.recurrence_type).replace("_", " ").title()
             time_local = payload.get("schedule_time_local") or schedule.local_time or DEFAULT_SCHEDULE_TIME_TEXT
-            lines.append(f"{idx}. ₦{amount:,.0f} to {recipient} • {recurrence} at {time_local} (ID: {schedule.id})")
+            lines.append(
+                f"{idx}. {format_naira(amount)} to {recipient} • {recurrence} at {time_local} (ID: {schedule.id})"
+            )
 
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -253,7 +273,7 @@ class TransferWorker:
                     payload = schedule.payload_snapshot if isinstance(schedule.payload_snapshot, dict) else {}
                     recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
                     amount = float(payload.get("amount") or 0.0)
-                    lines.append(f"{idx}. ₦{amount:,.0f} to {recipient}")
+                    lines.append(f"{idx}. {format_naira(amount)} to {recipient}")
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["schedule_selector"],
@@ -344,7 +364,7 @@ class TransferWorker:
             )
             await uow.commit()
 
-        amount = f"₦{float(data.amount or 0.0):,.0f}"
+        amount = format_naira(data.amount)
         recipient = data.recipient_name or data.recipient_resolved_name or "recipient"
         next_run_text = next_run_at.replace(tzinfo=UTC).strftime("%Y-%m-%d %H:%M UTC")
         response = (
@@ -412,13 +432,7 @@ class TransferWorker:
 
         action = str(payload.get("action") or "send_money")
         locale = LocaleManager.normalize(context.get("language")).value
-        scheduling_actions = {
-            "schedule_transfer",
-            "recurring_transfer",
-            "list_scheduled_transfers",
-            "cancel_scheduled_transfer",
-        }
-        if action in scheduling_actions and not settings.enable_transfer_scheduling:
+        if action in SCHEDULING_ACTIONS and not settings.enable_transfer_scheduling:
             message = "Scheduled transfers are currently unavailable. You can send this transfer now."
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
@@ -440,7 +454,7 @@ class TransferWorker:
         gates = self._build_gates(data, pin_verified)
         worker_context = self._build_worker_context(context)
         try:
-            if action in scheduling_actions:
+            if action in SCHEDULING_ACTIONS:
                 return await self._handle_scheduling_action(
                     action=action,
                     data=data,

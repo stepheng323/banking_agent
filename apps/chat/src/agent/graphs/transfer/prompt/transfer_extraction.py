@@ -15,7 +15,7 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | source_account_index | Selection from numbered list | 1 for "first"/"1"/"one", 2 for "second"/"2"/"two" |
 | recipient_name | Name/alias | "to mum", "john's gtb" |
 | is_self | Transfer to own account | true for "to my [bank]", "to myself" |
-| narration | Optional memo | — |
+| narration | Optional memo | Capture explicit purpose/note, e.g. "for groceries", "purpose: rent" |
 | transfer_all | User wants to send entire available balance | true for "send all", "max amount", "whatever I have" |
 | transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
 | source_accounts | Dual-account pooling | List of bank names |
@@ -68,6 +68,14 @@ When user corrects mid-flow ("I meant 50k"):
 
 ## CONTEXT-AWARE SLOT FILL
 - Context may include `RequiredFields` and `LastMsg`.
+- Media inputs may include `User caption/instruction:` followed by `Extracted from image: ...`.
+  Treat the caption as the user's transfer instruction and the image text as extracted recipient/bank details.
+- If media text includes `Caption-derived transfer fields: amount=...`, prefer that amount over any amount visible in
+  `Extracted from image`.
+- If media text includes `Caption-derived transfer fields: narration=...`, set `narration` to that value unless the user
+  explicitly provides a different narration elsewhere.
+- For initial transfer instructions, capture obvious purpose phrases as `narration`:
+  "send 5k for groceries" -> narration="groceries"; "send 20k to 0760505261 Access for rent" -> narration="rent".
 - If `RequiredFields` contains `recipient_bank_name` and user replies with only a bank, map it to `bank_name`.
 - If `RequiredFields` contains `recipient_account` and user reply contains account digits with separators
   (spaces, hyphens, commas, periods), strip non-digits; if result is exactly 10 digits, map to `recipient_account`.
@@ -89,6 +97,7 @@ When user corrects mid-flow ("I meant 50k"):
 | "send 5k to mum" | amount=5000, recipient_name="mum" |
 | "GTB → Access 5k" | amount=5000, source_bank_name="GTBank", bank_name="Access Bank" |
 | "Send 25k to 0760505261 Access Bank" | amount=25000, recipient_account="0760505261", bank_name="Access Bank" |
+| "Send 25k to 0760505261 Access Bank for rent" | amount=25000, recipient_account="0760505261", bank_name="Access Bank", narration="rent" |
 | "816 251 1023 opay" (when awaiting account+bank) | recipient_account="8162511023", bank_name="Opay" |
 | "9162512056, opay" (when awaiting account+bank) | recipient_account="9162512056", bank_name="Opay" |
 | "9162512056 - opay" (when awaiting account+bank) | recipient_account="9162512056", bank_name="Opay" |
@@ -113,6 +122,7 @@ When user corrects mid-flow ("I meant 50k"):
 | "abeg make am dey go every month" | requested_features=["RECURRING"] |
 | "fi 5k si mama" (Yoruba) | amount=5000, recipient_name="mama" |
 | "Oya send 14k to tolu from first bank" | amount=14000, recipient_name="tolu", source_bank_name="First Bank" |
+| "User caption/instruction: send 5k for groceries\nCaption-derived transfer fields: amount=5000.0.\nCaption-derived transfer fields: narration=groceries.\n\nExtracted from image: recipient_account=8162511023; bank_name=OPay." | amount=5000, recipient_account="8162511023", bank_name="OPay", narration="groceries" |
 | "It's for groceries" | correction.field="narration", correction.new_value="groceries", acknowledgment="Updated." |
 
 ## ACKNOWLEDGMENTS

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from shared.database.enums import TransactionStatusEnum
+from shared.services.async_completion import record_group_leg_and_maybe_build_summary
 from shared.transaction_runtime.executors.airtime import AirtimeExecutor
 
 
@@ -65,6 +66,17 @@ async def test_airtime_executor_success_delivers_to_channel_identity_not_recipie
 
     assert transaction_repo.update_status.await_args_list[0].args == ("tx-1", TransactionStatusEnum.PROCESSING.value)
     assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.SUCCESSFUL.value)
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_transaction_id"] == "ref-1"
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_response"] == {
+        "success": True,
+        "reference": "ref-1",
+    }
+    provider.purchase_airtime.assert_awaited_once_with(
+        amount=2000,
+        recipient_phone="08031234567",
+        network="MTN",
+        reference="idem-1",
+    )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
     assert delivery_service.deliver_text.await_args.kwargs["channel"] == "telegram"
     assert "08031234567" in delivery_service.deliver_text.await_args.kwargs["text"]
@@ -121,6 +133,39 @@ async def test_airtime_executor_failure_uses_provider_error_field() -> None:
 
 
 @pytest.mark.asyncio
+async def test_airtime_executor_provider_pending_stays_processing() -> None:
+    provider = SimpleNamespace(
+        purchase_airtime=AsyncMock(return_value={"success": False, "message": "Bill payment is Pending"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_airtime(_payload())
+
+    assert transaction_repo.update_status.await_args_list[0].args == ("tx-1", TransactionStatusEnum.PROCESSING.value)
+    assert transaction_repo.update_status.await_args_list[1].args == (
+        "tx-1",
+        TransactionStatusEnum.PROCESSING.value,
+    )
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_transaction_id"] == "idem-1"
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_response"] == {
+        "success": False,
+        "message": "Bill payment is Pending",
+    }
+    assert "error_message" not in transaction_repo.update_status.await_args_list[1].kwargs
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "being processed" in text
+    assert "failed" not in text.lower()
+
+
+@pytest.mark.asyncio
 async def test_airtime_executor_exception_uses_safe_user_error() -> None:
     provider = SimpleNamespace(purchase_airtime=AsyncMock(side_effect=RuntimeError("dsn password leaked")))
     transaction_repo = SimpleNamespace(update_status=AsyncMock())
@@ -167,3 +212,65 @@ async def test_airtime_executor_grouped_success_waits_for_batch_summary() -> Non
     await executor.handle_airtime(payload)
 
     delivery_service.deliver_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_grouped_processing_emits_batch_summary_not_individual_message() -> None:
+    provider = SimpleNamespace(
+        purchase_airtime=AsyncMock(return_value={"success": False, "message": "Bill payment is Pending"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    redis_client = _RedisStub()
+    first_leg = _payload()
+    first_leg["transaction_id"] = "tx-transfer"
+    first_leg["async_group"] = {
+        "async_group_id": "group-mixed-processing-airtime",
+        "async_group_size": 2,
+        "async_group_kind": "mixed_batch",
+        "async_group_index": 1,
+    }
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=first_leg,
+        task_type="transfer",
+        payload={
+            "amount": 5000,
+            "recipient_name": "Tolu",
+            "recipient_resolved_name": "Tolulope Johnson",
+            "recipient_bank_name": "First Bank",
+            "recipient_account": "2010000003",
+            "source_account_id": "acc-1",
+            "source_account_number": "0000000003",
+            "source_bank_name": "Access Bank",
+            "source_affinity_mode": "explicit",
+            "final_status": "success",
+        },
+        locale="en",
+    )
+    payload = _payload()
+    payload["transaction_id"] = "tx-airtime"
+    payload["async_group"] = {
+        "async_group_id": "group-mixed-processing-airtime",
+        "async_group_size": 2,
+        "async_group_kind": "mixed_batch",
+        "async_group_index": 2,
+    }
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=redis_client,
+    )
+
+    await executor.handle_airtime(payload)
+
+    delivery_service.deliver_text.assert_awaited_once()
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Transaction Update" in text
+    assert "✓ ₦5,000 → Tolu (Tolulope Johnson)" in text
+    assert "… *Airtime:* ₦2,000 for 08031234567 (MTN)" in text
+    assert "awaiting provider confirmation" in text
+    assert "Your airtime purchase" not in text
+    assert "failed" not in text.lower()

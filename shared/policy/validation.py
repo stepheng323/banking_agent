@@ -14,6 +14,12 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
     "data": {
         "buy_data",
     },
+    "schedule": {
+        "schedule_transfer",
+        "recurring_transfer",
+        "cancel_scheduled_transfer",
+        "list_scheduled_transfers",
+    },
     "account": {
         "list_accounts",
         "link_account",
@@ -25,6 +31,7 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
     },
     "support": {
         "lookup_transaction",
+        "lookup_ticket",
         "explain_status",
         "retry_payout",
         "initiate_refund",
@@ -32,6 +39,9 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
         "collect_details",
         "create_ticket",
         "escalate",
+    },
+    "faq": {
+        "answer_question",
     },
     "query": {
         "filter_recipient",

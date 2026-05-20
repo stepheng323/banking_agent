@@ -11,6 +11,7 @@ TopicType = Literal[
     "flow_event.process",
     "refund.process",
     "receipt.process",
+    "notification.send",
 ]
 
 DomainType = Literal[
@@ -19,6 +20,7 @@ DomainType = Literal[
     "payout",
     "refund",
     "receipt",
+    "notification",
 ]
 
 
@@ -78,6 +80,13 @@ QUEUE_CONTRACTS: tuple[QueueContract, ...] = (
         domain="receipt",
         sqs_queue_name="banking-receipts",
         redis_stream_name="async:receipts",
+    ),
+    QueueContract(
+        logical_topic="notification.send",
+        queue_name="banking:notifications",
+        domain="notification",
+        sqs_queue_name="banking-receipts",
+        redis_stream_name="async:notifications",
     ),
 )
 

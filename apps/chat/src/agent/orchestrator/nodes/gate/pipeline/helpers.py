@@ -1,8 +1,13 @@
-
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 
 
-async def _build_bounded_conversational_reply(ctx: GateContext, locale: str) -> str | None:
+async def _build_bounded_conversational_reply(
+    ctx: GateContext,
+    locale: str,
+    *,
+    intent: str = "non_banking_conversational",
+    extra_user_ctx: dict[str, object] | None = None,
+) -> str | None:
     """Generate a bounded conversational reply using the ConversationResponder."""
     if ctx.conversation_responder is None:
         return None
@@ -13,8 +18,9 @@ async def _build_bounded_conversational_reply(ctx: GateContext, locale: str) -> 
             {
                 **(ctx.state.loaded_context or {}),
                 "language": locale,
+                **(extra_user_ctx or {}),
             },
-            intent="non_banking_conversational",
+            intent=intent,
         )
     except Exception as exc:
         import structlog

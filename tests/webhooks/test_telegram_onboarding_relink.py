@@ -20,6 +20,9 @@ from shared.cache.flow_session_manager import FlowSessionManager, SessionReadRes
 from shared.config.settings import settings
 from shared.services.onboarding.bvn_verification import BvnVerificationService
 
+LINK_TOKEN = "link-opaque-token"
+TELEGRAM_USER_DATA = {"user": '{"id": 12345}'}
+
 
 class _BvnServiceStub:
     def __init__(
@@ -120,13 +123,15 @@ async def test_linking_method_bootstrap_returns_preseeded_methods(monkeypatch: p
             "is_account_linking": True,
             "bvn": "12345678901",
             "methods": [{"id": "sms", "title": "0818***6496"}],
+            "channel": "telegram",
+            "channel_user_id": "12345",
         }
     )
     monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
 
     result = await telegram_linking_method(
-        LinkingMethodInput(flow_token="link-2348000000000-1700000000", method=None),
-        user_data={},
+        LinkingMethodInput(flow_token=LINK_TOKEN, method=None),
+        user_data=TELEGRAM_USER_DATA,
     )
 
     assert result["success"] is True
@@ -142,17 +147,19 @@ async def test_linking_method_submit_sends_otp(monkeypatch: pytest.MonkeyPatch) 
             "is_account_linking": True,
             "bvn": "12345678901",
             "methods": [{"id": "sms", "title": "0818***6496"}],
+            "channel": "telegram",
+            "channel_user_id": "12345",
         }
     )
     monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
 
     result = await telegram_linking_method(
-        LinkingMethodInput(flow_token="link-2348000000000-1700000000", method="sms"),
-        user_data={},
+        LinkingMethodInput(flow_token=LINK_TOKEN, method="sms"),
+        user_data=TELEGRAM_USER_DATA,
     )
 
     assert result["success"] is True
-    assert bvn_stub.send_otp_calls == [("link-2348000000000-1700000000", "sms")]
+    assert bvn_stub.send_otp_calls == [(LINK_TOKEN, "sms")]
 
 
 @pytest.mark.asyncio
@@ -162,18 +169,20 @@ async def test_linking_otp_verifies_and_returns_accounts(monkeypatch: pytest.Mon
             "is_account_linking": True,
             "bvn": "12345678901",
             "methods": [{"id": "sms", "title": "0818***6496"}],
+            "channel": "telegram",
+            "channel_user_id": "12345",
         }
     )
     monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
 
     result = await telegram_linking_otp(
-        LinkingOtpInput(flow_token="link-2348000000000-1700000000", otp="123456"),
-        user_data={},
+        LinkingOtpInput(flow_token=LINK_TOKEN, otp="123456"),
+        user_data=TELEGRAM_USER_DATA,
     )
 
     assert result["success"] is True
     assert result["data"]["accounts"][0]["id"] == "acc_1"
-    assert bvn_stub.verify_otp_calls == [("link-2348000000000-1700000000", "123456")]
+    assert bvn_stub.verify_otp_calls == [(LINK_TOKEN, "123456")]
 
 
 @pytest.mark.asyncio
@@ -183,6 +192,8 @@ async def test_linking_account_route_uses_account_add(monkeypatch: pytest.Monkey
             "is_account_linking": True,
             "bvn": "12345678901",
             "methods": [{"id": "sms", "title": "0818***6496"}],
+            "channel": "telegram",
+            "channel_user_id": "12345",
         }
     )
     add_stub = _AccountAddServiceStub()
@@ -190,12 +201,12 @@ async def test_linking_account_route_uses_account_add(monkeypatch: pytest.Monkey
     monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.account_add_service", add_stub)
 
     result = await telegram_linking_account(
-        LinkingAccountInput(flow_token="link-2348000000000-1700000000", account_id="acc_1"),
-        user_data={},
+        LinkingAccountInput(flow_token=LINK_TOKEN, account_id="acc_1"),
+        user_data=TELEGRAM_USER_DATA,
     )
 
     assert result["success"] is True
-    assert add_stub.calls == [("link-2348000000000-1700000000", "acc_1")]
+    assert add_stub.calls == [(LINK_TOKEN, "acc_1")]
 
 
 @pytest.mark.asyncio
@@ -204,12 +215,12 @@ async def test_linking_endpoints_reject_missing_or_invalid_state(monkeypatch: py
     monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
 
     method_result = await telegram_linking_method(
-        LinkingMethodInput(flow_token="link-2348000000000-1700000000", method=None),
-        user_data={},
+        LinkingMethodInput(flow_token=LINK_TOKEN, method=None),
+        user_data=TELEGRAM_USER_DATA,
     )
     otp_result = await telegram_linking_otp(
-        LinkingOtpInput(flow_token="link-2348000000000-1700000000", otp="123456"),
-        user_data={},
+        LinkingOtpInput(flow_token=LINK_TOKEN, otp="123456"),
+        user_data=TELEGRAM_USER_DATA,
     )
 
     assert method_result["success"] is False
@@ -222,16 +233,25 @@ async def test_linking_endpoints_reject_missing_or_invalid_state(monkeypatch: py
 async def test_onboarding_account_route_still_uses_onboarding_select(monkeypatch: pytest.MonkeyPatch) -> None:
     add_stub = _AccountAddServiceStub()
     account_stub = _AccountServiceStub()
+    bvn_stub = _BvnServiceStub(
+        {
+            "phone_number": "2348162511023",
+            "channel": "telegram",
+            "channel_user_id": "12345",
+            "step": "account_selection",
+        }
+    )
     monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.account_add_service", add_stub)
     monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.account_service", account_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
 
     result = await telegram_onboarding_account(
-        AccountInput(flow_token="onboarding-12345", account_id="acc_2"),
-        user_data={},
+        AccountInput(flow_token="onboarding-opaque-token", account_id="acc_2"),
+        user_data=TELEGRAM_USER_DATA,
     )
 
     assert result["success"] is True
-    assert account_stub.calls == [("onboarding-12345", "acc_2")]
+    assert account_stub.calls == [("onboarding-opaque-token", "acc_2")]
     assert add_stub.calls == []
 
 
@@ -239,7 +259,7 @@ async def test_onboarding_account_route_still_uses_onboarding_select(monkeypatch
 async def test_account_worker_link_token_bootstraps_telegram_relink_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "account_linking_flow_id", "flow-link-123")
+    monkeypatch.setattr(settings.whatsapp, "account_linking_flow_id", "flow-link-123")
     redis = _RedisStub()
     session_manager = FlowSessionManager(redis=redis, key_prefix="onboarding")
     worker = AccountWorker(
@@ -251,7 +271,9 @@ async def test_account_worker_link_token_bootstraps_telegram_relink_session(
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.account.worker.secrets.token_urlsafe", lambda _: "opaque-link-token"
+    )
     monkeypatch.setattr(
         "apps.gateway.api.webhooks.telegram.router.bvn_service",
         BvnVerificationService(session_manager),
@@ -268,7 +290,7 @@ async def test_account_worker_link_token_bootstraps_telegram_relink_session(
 
     result = await telegram_linking_method(
         LinkingMethodInput(flow_token=flow["flow_config"]["flow_token"], method=None),
-        user_data={},
+        user_data={"user": {"id": "telegram-chat-id"}},
     )
 
     assert result["success"] is True

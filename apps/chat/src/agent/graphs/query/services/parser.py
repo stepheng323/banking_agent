@@ -16,6 +16,7 @@ from apps.chat.src.agent.graphs.query.models import (
     ParserQueryExtraction,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFactField,
     QueryIntent,
     QueryIR,
     QueryOperation,
@@ -168,6 +169,10 @@ class QueryParser:
     @staticmethod
     def _extract_relative_time_range_from_query(raw_query: str) -> QueryTimeRange | None:
         return lexical_recovery.extract_relative_time_range_from_query(raw_query)
+
+    @staticmethod
+    def looks_like_support_problem_statement(raw_query: str | None) -> bool:
+        return lexical_recovery.looks_like_support_problem_statement(raw_query)
 
     def _recover_known_fragile_query_shapes(
         self,
@@ -327,8 +332,19 @@ class QueryParser:
         return query_compiler.is_aggregate_total_query(raw_query)
 
     @staticmethod
-    def _resolve_result_limit(raw_limit: int | None, *, effective_intent: ExtractionIntent) -> int | None:
-        return query_compiler.resolve_result_limit(raw_limit, effective_intent=effective_intent)
+    def _resolve_result_limit(
+        raw_limit: int | None,
+        *,
+        effective_intent: ExtractionIntent,
+        request_shape: QueryRequestShape | None = None,
+        result_reference: Literal["latest", "oldest"] | None = None,
+    ) -> int | None:
+        return query_compiler.resolve_result_limit(
+            raw_limit,
+            effective_intent=effective_intent,
+            request_shape=request_shape,
+            result_reference=result_reference,
+        )
 
     @staticmethod
     def _build_time_range(
@@ -337,7 +353,7 @@ class QueryParser:
         today: date,
         effective_intent: ExtractionIntent,
         query_operation: QueryOperation,
-        answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None,
+        answer_fact_field: QueryFactField | None,
         result_reference: Literal["latest", "oldest"] | None,
     ) -> TimeRange | None:
         return query_compiler.build_time_range(
@@ -392,7 +408,7 @@ class QueryParser:
         *,
         effective_intent: ExtractionIntent,
         query_operation: QueryOperation,
-    ) -> Literal["date", "counterparty", "amount", "bank"] | None:
+    ) -> QueryFactField | None:
         return query_compiler.infer_answer_fact_field(
             extraction,
             effective_intent=effective_intent,

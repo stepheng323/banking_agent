@@ -4,7 +4,7 @@ from typing import Any
 
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.abstractions.resolution import AccountResolverProvider
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -21,7 +21,11 @@ class PayoutExecutor:
         amount = float(data.get("amount") or 0.0)
         recipient_account = str(data.get("recipient_account") or "")
         recipient_bank_code = str(data.get("recipient_bank_code") or "")
+        recipient_bank_code_provider = str(data.get("recipient_bank_code_provider") or "").strip().lower()
+        recipient_resolution_provider = str(data.get("recipient_resolution_provider") or "").strip().lower()
+        payout_provider_tag = str(data.get("payout_provider") or "").strip().lower()
         narration = data.get("narration")
+        expected_provider = str(self.payout_provider.provider_name or "").strip().lower()
 
         if amount <= 0:
             return {
@@ -37,6 +41,20 @@ class PayoutExecutor:
                 "error": "Missing recipient account details",
                 "provider": self.payout_provider.provider_name,
             }
+        for supplied_provider in (recipient_bank_code_provider, recipient_resolution_provider, payout_provider_tag):
+            if supplied_provider and supplied_provider != expected_provider:
+                logger.error(
+                    "payout_executor_provider_mismatch",
+                    expected_provider=expected_provider,
+                    supplied_provider=supplied_provider,
+                    recipient_bank_code=recipient_bank_code,
+                )
+                return {
+                    "success": False,
+                    "status": "failed",
+                    "error": "Recipient bank code provider mismatch",
+                    "provider": self.payout_provider.provider_name,
+                }
 
         logger.info(
             "payout_executor_start",
@@ -51,7 +69,7 @@ class PayoutExecutor:
             logger.error(
                 "payout_executor_recipient_resolution_failed",
                 provider=self.payout_provider.provider_name,
-                recipient_account=recipient_account,
+                recipient_account_hash=log_fingerprint(recipient_account),
                 recipient_bank_code=recipient_bank_code,
                 error=error,
             )

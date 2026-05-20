@@ -12,6 +12,15 @@ def test_query_shortcut_matches_exact_pagination_phrase_for_english() -> None:
     assert reason == "matched"
 
 
+def test_query_shortcut_matches_previous_pagination_phrase_for_english() -> None:
+    decision, reason = resolve_query_shortcut_with_reason("Previous page", "en")
+
+    assert decision is not None
+    assert decision.kind == "pagination"
+    assert decision.action == "show_previous"
+    assert reason == "matched"
+
+
 def test_query_shortcut_matches_exact_action_phrase_for_pidgin() -> None:
     decision, reason = resolve_query_shortcut_with_reason("receipt", "pcm")
 
@@ -19,6 +28,13 @@ def test_query_shortcut_matches_exact_action_phrase_for_pidgin() -> None:
     assert decision.kind == "actionable"
     assert decision.action == "get_receipt"
     assert reason == "matched"
+
+
+def test_query_shortcut_detail_request_falls_back_for_semantic_resolver() -> None:
+    decision, reason = resolve_query_shortcut_with_reason("show more details", "en")
+
+    assert decision is None
+    assert reason == "no_match"
 
 
 def test_query_shortcut_semantic_followup_falls_back_for_english() -> None:

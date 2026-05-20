@@ -58,11 +58,38 @@ class SessionScopedUserRepository(_SessionScopedRepositoryMixin, UserRepository)
     async def get_by_phone(self, phone_number: str):
         return await self._call_with_session(UserRepository, "get_by_phone", phone_number)
 
+    async def get_by_email(self, email: str):
+        return await self._call_with_session(UserRepository, "get_by_email", email)
+
     async def get_by_channel_identity(self, channel: str, channel_user_id: str):
         return await self._call_with_session(UserRepository, "get_by_channel_identity", channel, channel_user_id)
 
+    async def get_channel_identity_by_phone(self, phone_number: str, channel: str):
+        return await self._call_with_session(UserRepository, "get_channel_identity_by_phone", phone_number, channel)
+
+    async def link_channel_identity(self, user_id: str, channel: str, channel_user_id: str):
+        return await self._call_with_session(UserRepository, "link_channel_identity", user_id, channel, channel_user_id)
+
     async def get_by_id(self, record_id: str):
         return await self._call_with_session(UserRepository, "get_by_id", record_id)
+
+    async def get_by_whatsapp_id(self, whatsapp_id: str):
+        return await self._call_with_session(UserRepository, "get_by_whatsapp_id", whatsapp_id)
+
+    async def is_registered(self, phone_number: str):
+        return await self._call_with_session(UserRepository, "is_registered", phone_number)
+
+    async def register_user(self, user_data):
+        return await self._call_with_session(UserRepository, "register_user", user_data)
+
+    async def update_user(self, user_id: str, user_data):
+        return await self._call_with_session(UserRepository, "update_user", user_id, user_data)
+
+    async def update_last_active(self, user_id: str):
+        return await self._call_with_session(UserRepository, "update_last_active", user_id)
+
+    async def get_registered_count(self):
+        return await self._call_with_session(UserRepository, "get_registered_count")
 
     async def get_accounts_by_phone(self, phone_number: str):
         return await self._call_with_session(UserRepository, "get_accounts_by_phone", phone_number)
@@ -171,6 +198,16 @@ class SessionScopedTransactionRepository(_SessionScopedRepositoryMixin, Transact
 
     async def get_by_user(self, user_id: str, limit: int = 20):
         return await self._call_with_session(TransactionRepository, "get_by_user", user_id, limit)
+
+    async def list_by_user_window(self, user_id: str, *, start_date, end_date, limit: int = 200):
+        return await self._call_with_session(
+            TransactionRepository,
+            "list_by_user_window",
+            user_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+        )
 
     async def get_by_id(self, transaction_id: str):
         return await self._call_with_session(TransactionRepository, "get_by_id", transaction_id)

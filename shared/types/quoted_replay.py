@@ -5,6 +5,17 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 QuotedReplayDecision = Literal["not_replay", "execute", "clarify"]
+ReplayFailureCategory = Literal[
+    "provider_unavailable",
+    "provider_declined",
+    "insufficient_funds",
+    "validation_error",
+    "source_account",
+    "execution_error",
+    "unknown",
+]
+ReplayFinalStatus = Literal["success", "processing", "failed"]
+ReplayTargetType = Literal["transfer", "airtime", "data"]
 
 
 class _StrictModel(BaseModel):
@@ -38,6 +49,7 @@ class ReplayTaskPayload(_StrictModel):
     source_account_id: str | None = None
     source_account_number: str | None = None
     source_account_index: int | None = None
+    source_affinity_mode: Literal["explicit", "auto"] | None = None
     narration: str | None = None
     network: str | None = None
     plan_code: str | None = None
@@ -48,12 +60,15 @@ class ReplayTaskPayload(_StrictModel):
     transaction_id: str | None = None
     skip_extraction: bool | None = None
     confirmation: ReplayTaskConfirmation | None = None
+    final_status: ReplayFinalStatus | None = None
+    error_message: str | None = None
+    failure_category: ReplayFailureCategory | None = None
 
 
 class ReplayExecutableTask(_StrictModel):
     """Executable task returned by quoted replay interpreter."""
 
-    task_type: Literal["transfer", "airtime", "data"]
+    task_type: ReplayTargetType
     payload: ReplayTaskPayload = Field(default_factory=ReplayTaskPayload)
 
 
@@ -64,5 +79,8 @@ class QuotedReplayInterpretation(_StrictModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     detected_language: str | None = None
     tasks: list[ReplayExecutableTask] = Field(default_factory=list)
+    target_statuses: list[ReplayFinalStatus] = Field(default_factory=list)
+    target_types: list[ReplayTargetType] = Field(default_factory=list)
+    target_task_ids: list[str] = Field(default_factory=list)
     clarify_message: str | None = None
     reason: str | None = None

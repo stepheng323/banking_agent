@@ -38,4 +38,8 @@ async def test_whatsapp_presenter_confirmation_uses_context_header() -> None:
 
     assert message_id == "wa-flow-msg-1"
     assert len(client.flow_calls) == 1
-    assert client.flow_calls[0]["flow_config"]["header"] == "Confirm Transfer"
+    flow_config = client.flow_calls[0]["flow_config"]
+    assert flow_config["header"] == "Confirm Transfer"
+    assert flow_config["flow_token"] == "transfer-pin-corr-1-123456789"
+    assert "flow_action" not in flow_config
+    assert flow_config["flow_action_payload"] == {"screen": "Pin"}

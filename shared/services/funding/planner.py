@@ -13,17 +13,19 @@ from typing import Any, Literal
 from uuid import UUID
 
 from shared.clients.abstractions import DirectDebitProvider
+from shared.formatters.currency import format_naira
 from shared.formatters.funding import (
     format_insufficient_funds,
 )
 from shared.i18n import render_message
+from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-MAX_SOURCE_ACCOUNTS = 2
+MAX_SOURCE_ACCOUNTS = MAX_POOLED_SOURCE_ACCOUNTS
 MIN_FUNDING_AMOUNT = 100.0
 
 
@@ -326,7 +328,7 @@ class FundingPlanner:
                 explicit_split_applied=True,
                 error=(
                     "Your split does not match the transfer amount. "
-                    f"Requested total: ₦{split_total:,.0f}, transfer amount: ₦{transfer_amount:,.0f}. "
+                    f"Requested total: {format_naira(split_total)}, transfer amount: {format_naira(transfer_amount)}. "
                     "Please revise the split."
                 ),
             )
@@ -390,8 +392,8 @@ class FundingPlanner:
                     requested_sources=requested_source_banks,
                     explicit_split_applied=True,
                     error=(
-                        f"Your split is not feasible: {account.bank_name} has ₦{available:,.0f}, "
-                        f"but you requested ₦{requested_amount:,.0f}. Please revise the split."
+                        f"Your split is not feasible: {account.bank_name} has {format_naira(available)}, "
+                        f"but you requested {format_naira(requested_amount)}. Please revise the split."
                     ),
                 )
 

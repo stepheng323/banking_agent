@@ -6,6 +6,7 @@ import re
 from time import perf_counter
 from typing import Any, Literal, cast
 
+from apps.chat.src.agent.graphs.query.compiler import lexical_recovery
 from apps.chat.src.agent.graphs.query.models import (
     Ambiguity,
     ExtractionIntent,
@@ -201,24 +202,19 @@ def derive_request_shape(extraction: QueryExtractionResult) -> QueryRequestShape
 def derive_fact_query_kind(extraction: QueryExtractionResult) -> FactQueryKind | None:
     if extraction.fact_query_kind is not None:
         return extraction.fact_query_kind
-    if extraction.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
+    if extraction.answer_fact_field in {
+        "date",
+        "counterparty",
+        "amount",
+        "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
+    }:
         return FactQueryKind(extraction.answer_fact_field)
-
-    raw_query = f" {' '.join((extraction.raw_query or '').strip().lower().split())} "
-    if raw_query == "  ":
-        return None
-    if raw_query.startswith(" when ") or " when did " in raw_query or " when last did " in raw_query:
-        return FactQueryKind.DATE
-    if raw_query.startswith(" who ") or " who sent " in raw_query or " who paid " in raw_query:
-        return FactQueryKind.COUNTERPARTY
-    if raw_query.startswith(" which bank ") or raw_query.startswith(" what bank "):
-        return FactQueryKind.BANK
-    if (
-        raw_query.startswith(" how much was ")
-        or raw_query.startswith(" what was the amount ")
-        or raw_query.startswith(" what amount was ")
-    ):
-        return FactQueryKind.AMOUNT
     return None
 
 
@@ -333,6 +329,28 @@ def parse_deterministic(
         QueryTimeRange,
     )
 
+    latest_status_match = re.fullmatch(
+        r"(?:(?:what(?:'s| is)|whats|tell me|check|show|get)\s+)?"
+        r"(?:the\s+)?status\s+of\s+(?:my\s+)?(?:last|latest|most recent)\s+"
+        r"(?:transaction|transfer|payment)"
+        r"|(?:(?:what(?:'s| is)|whats)\s+)?(?:my\s+)?(?:last|latest|most recent)\s+"
+        r"(?:transaction|transfer|payment)\s+status",
+        normalized,
+    )
+    if latest_status_match:
+        extraction = QueryExtractionResult(
+            intent=ExtractionIntent.SINGLE_TRANSACTION,
+            query_operation=QueryOperation.SEARCH_SINGLE_TRANSACTION,
+            raw_query=question,
+            time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+            request_shape=QueryRequestShape.FACT,
+            fact_query_kind=FactQueryKind.STATUS,
+            result_limit=1,
+            result_reference="latest",
+            answer_fact_field="status",
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
     recent_list_match = re.fullmatch(
         r"(?:(?:show|list|view|get|check|display|see)\s+)?"
         r"(?:(?:my|all my|all)\s+)?recent\s+(transactions?|debits?|credits?|payments?)"
@@ -409,27 +427,18 @@ def parse_deterministic(
         )
         return parser._finalize_extraction(extraction, today=today, language=language)
 
-    match = re.fullmatch(
-        r"how\s+much\s+(?:did|have)\s+i\s+(receive|received|get|got)\s+last",
-        normalized,
-    )
-    if match:
-        extraction = QueryExtractionResult(
-            intent=ExtractionIntent.SINGLE_TRANSACTION,
-            query_operation=QueryOperation.SEARCH_SINGLE_TRANSACTION,
-            raw_query=question,
-            time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
-            filters=QueryFilters(transaction_type="credit"),
-            result_limit=1,
-            result_reference="latest",
-            answer_fact_field="amount",
-        )
-        return parser._finalize_extraction(extraction, today=today, language=language)
-
     return None
 
 
 async def parse(parser: Any, question: str, today: Any, language: str = "en") -> QueryParseResult:
+    if lexical_recovery.looks_like_support_problem_statement(question):
+        logger.info("query_parser_support_problem_guarded")
+        return QueryParseResult(
+            outcome=ResolverOutcome.NEEDS_INPUT,
+            extraction=QueryExtractionResult(raw_query=question),
+            resolver_message=render_message("query.clarify.unsure_rephrase", language),
+        )
+
     deterministic = parse_deterministic(parser, question, today=today, language=language)
     if deterministic is not None:
         return deterministic

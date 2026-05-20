@@ -28,11 +28,11 @@ async def test_update_session_strict_verifies_read_back() -> None:
     manager = FlowSessionManager(redis=redis, key_prefix="onboarding")
 
     ok = await manager.update_session_strict(
-        "link-2348000000000-1700000000",
+        "link-opaque-token",
         {"phone_number": "2348000000000", "step": "method_selection", "is_account_linking": True},
         verify=True,
     )
-    read_result = await manager.read_session("link-2348000000000-1700000000")
+    read_result = await manager.read_session("link-opaque-token")
 
     assert ok is True
     assert read_result.found is True
@@ -46,7 +46,7 @@ async def test_update_session_strict_verifies_read_back() -> None:
 async def test_read_session_reports_backend_error() -> None:
     manager = FlowSessionManager(redis=_RedisStub(fail_get=True), key_prefix="onboarding")
 
-    result = await manager.read_session("link-2348000000000-1700000000")
+    result = await manager.read_session("link-opaque-token")
 
     assert result.backend_error is True
     assert result.error == "redis get failed"
@@ -56,7 +56,7 @@ async def test_update_session_strict_returns_false_when_backend_unavailable() ->
     manager = FlowSessionManager(redis=_RedisStub(fail_set=True), key_prefix="onboarding")
 
     ok = await manager.update_session_strict(
-        "link-2348000000000-1700000000",
+        "link-opaque-token",
         {"phone_number": "2348000000000"},
         verify=True,
     )

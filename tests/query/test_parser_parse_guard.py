@@ -7,10 +7,12 @@ from apps.chat.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
+    FactQueryKind,
     ParserQueryExtraction,
     QueryAggregation,
     QueryExtractionResult,
     QueryFilters,
+    QueryRequestShape,
     QueryTimeRange,
     RequestedCapability,
     ResolverOutcome,
@@ -100,6 +102,46 @@ async def test_parser_logs_llm_call_metadata(monkeypatch: pytest.MonkeyPatch) ->
     assert llm_call_events[0]["language"] == "en"
     assert isinstance(llm_call_events[0]["prompt_chars"], int)
     assert llm_call_events[0]["prompt_chars"] > 0
+
+
+@pytest.mark.asyncio
+async def test_parser_does_not_parse_support_problem_statement_as_query() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        filters=QueryFilters(transaction_type="debit"),
+    )
+    llm = _TrackingLLM(extraction)
+    parser = QueryParser(llm)
+
+    result = await parser.parse(
+        "I was debited but they didn't receive it",
+        today=date(2026, 3, 13),
+        language="en",
+    )
+
+    assert llm.schema is None
+    assert result.outcome == ResolverOutcome.NEEDS_INPUT
+    assert result.query_contract is None
+    assert result.resolver_message == render_message("query.clarify.unsure_rephrase", "en")
+
+
+@pytest.mark.asyncio
+async def test_parser_keeps_explicit_latest_status_query_in_query_domain() -> None:
+    llm = _TrackingLLM(QueryExtractionResult())
+    parser = QueryParser(llm)
+
+    result = await parser.parse(
+        "What is the status of my last transaction?",
+        today=date(2026, 3, 13),
+        language="en",
+    )
+
+    assert llm.schema is None
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["answer_fact_field"] == "status"
+    assert result.query_contract["result_reference"] == "latest"
 
 
 @pytest.mark.asyncio
@@ -205,6 +247,8 @@ async def test_multilingual_recipient_summary_recovery_stays_grouped_and_clears_
 async def test_fact_query_shape_does_not_get_upgraded_to_beneficiary_summary_by_locale_recovery() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.TRANSACTION_LIST,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.DATE,
         filters=QueryFilters(recipient="mum"),
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="when last did I send mum money",
@@ -229,8 +273,11 @@ async def test_fact_query_shape_does_not_get_upgraded_to_beneficiary_summary_by_
 async def test_unscoped_latest_recipient_fact_query_stays_single_transaction() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.COUNTERPARTY,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="who did I send money to last",
+        result_reference="latest",
     )
     parser = QueryParser(_DummyLLM(extraction))
 
@@ -296,12 +343,37 @@ async def test_latest_transaction_query_drops_spurious_narration_negotiation_wit
 
 
 @pytest.mark.asyncio
-async def test_latest_received_amount_query_normalizes_to_latest_credit_fact_lookup() -> None:
+async def test_status_of_last_transaction_deterministically_compiles_to_latest_status_fact() -> None:
+    extraction = QueryExtractionResult(intent=ExtractionIntent.TRANSACTION_LIST)
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "What is the status of my last transaction?",
+        today=date(2026, 5, 17),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["answer_fact_field"] == "status"
+    assert result.query_contract["result_limit"] == 1
+    assert result.query_contract["result_reference"] == "latest"
+
+
+@pytest.mark.asyncio
+async def test_typed_latest_received_amount_query_compiles_to_latest_credit_fact_lookup() -> None:
     parser = QueryParser(
         _DummyLLM(
             QueryExtractionResult(
-                intent=ExtractionIntent.SPENDING_TOTAL,
+                intent=ExtractionIntent.SINGLE_TRANSACTION,
+                request_shape=QueryRequestShape.FACT,
+                fact_query_kind=FactQueryKind.AMOUNT,
+                answer_fact_field="amount",
+                filters=QueryFilters(transaction_type="credit"),
+                time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
                 raw_query="fallback should not be used",
+                result_reference="latest",
             )
         )
     )

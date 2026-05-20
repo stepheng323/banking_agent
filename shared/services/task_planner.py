@@ -17,6 +17,8 @@ from shared.services.task_planner_prompts import (
 from shared.services.task_planner_router_prompts import (
     CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT,
     CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE,
+    CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT,
+    CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE,
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
     INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT,
     INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
@@ -31,6 +33,7 @@ from shared.services.task_planner_router_prompts import (
 from shared.services.task_queue.service import TaskQueueService
 from shared.types.planner import (
     ContextFrameFollowupDecision,
+    ContextFrameReplayModifier,
     InterruptRouteDecision,
     PendingActionEditDecision,
     PlannerOutput,
@@ -99,6 +102,10 @@ class TaskPlanner:
         self.structured_context_frame_followup = _with_structured_output(
             self.semantic_router_llm,
             ContextFrameFollowupDecision,
+        )
+        self.structured_context_frame_replay_modifier = _with_structured_output(
+            self.semantic_router_llm,
+            ContextFrameReplayModifier,
         )
         self.structured_pending_action_edit = _with_structured_output(
             self.interrupt_llm,
@@ -294,6 +301,47 @@ class TaskPlanner:
             return result
         return cast(ContextFrameFollowupDecision, ContextFrameFollowupDecision.model_validate(result))
 
+    async def extract_context_frame_replay_modifiers(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "planner_path",
+    ) -> ContextFrameReplayModifier:
+        """Extract a strict edit patch for frame-backed transaction replay."""
+        user_prompt = CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+            context=context,
+        )
+        system_prompt = CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT
+        start = time.perf_counter()
+        result = await self.structured_context_frame_replay_modifier.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "context_frame_replay_modifier_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.semantic_router_llm),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
+            context_chars=len(context),
+            context_mode="compact" if context == "None" else "full",
+        )
+        self._log_latency_span(
+            span="context_frame_replay_modifier_llm",
+            duration_ms=duration_ms,
+            path_label=path_label,
+        )
+        if isinstance(result, ContextFrameReplayModifier):
+            return result
+        return cast(ContextFrameReplayModifier, ContextFrameReplayModifier.model_validate(result))
+
     async def interpret_pending_action_edit(
         self,
         phone_number: str,
@@ -380,6 +428,7 @@ __all__ = [
     "PlannerPromptBuildInput",
     "PlannerPromptSignals",
     "QUOTED_REPLAY_SYSTEM_PROMPT",
+    "CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT",
     "TaskPlanner",
     "SEMANTIC_ROUTER_SYSTEM_PROMPT",
     "build_planner_system_prompt",

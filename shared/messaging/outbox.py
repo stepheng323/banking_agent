@@ -1,19 +1,34 @@
-"""Outbox helpers for direct presenter-based messaging delivery."""
+"""Outbox helpers for durable presenter-based messaging delivery."""
 
 from typing import Any
 
 from shared.messaging.intents import Say, SendTyping, UiIntent
 from shared.queue.adapter import QueuePublisher
-from shared.services.delivery_service import DeliveryAttemptResult, DeliveryService
-
-_delivery_service: DeliveryService | None = None
+from shared.services.delivery_service import DeliveryAttemptResult
 
 
-def _get_delivery_service() -> DeliveryService:
-    global _delivery_service
-    if _delivery_service is None:
-        _delivery_service = DeliveryService()
-    return _delivery_service
+def _intent_to_dict(intent: UiIntent | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(intent, dict):
+        return dict(intent)
+    to_dict = getattr(intent, "to_dict", None)
+    if callable(to_dict):
+        converted = to_dict()
+        if isinstance(converted, dict):
+            return converted
+    model_dump = getattr(intent, "model_dump", None)
+    if callable(model_dump):
+        converted = model_dump()
+        if isinstance(converted, dict):
+            return converted
+    raise TypeError(f"Unsupported outbox intent type: {type(intent).__name__}")
+
+
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 async def enqueue_outbox_intents(
@@ -23,27 +38,32 @@ async def enqueue_outbox_intents(
     intents: list[UiIntent | dict[str, Any]],
     metadata: dict[str, Any] | None = None,
 ) -> DeliveryAttemptResult:
-    """Deliver intents directly.
-
-    The publisher argument is intentionally retained for backwards
-    compatibility with existing call sites.
-    """
-    del publisher
-
+    """Publish UI intents to the durable notification delivery queue."""
     if not intents:
         return DeliveryAttemptResult(status="delivered")
+    if publisher is None:
+        raise RuntimeError("outbox_publisher_required")
 
-    dedupe_key = None
-    if metadata:
-        dedupe_key = metadata.get("message_id") or metadata.get("idempotency_key") or metadata.get("dedupe_key")
-
-    return await _get_delivery_service().deliver_intents(
-        phone_number=phone_number,
-        channel=channel,
-        intents=intents,
-        metadata=metadata or {},
-        dedupe_key=str(dedupe_key) if dedupe_key else None,
+    delivery_metadata = dict(metadata or {})
+    dedupe_key_raw = (
+        delivery_metadata.get("message_id")
+        or delivery_metadata.get("idempotency_key")
+        or delivery_metadata.get("dedupe_key")
     )
+    strict_actionable = _parse_bool(delivery_metadata.get("strict_actionable"))
+
+    await publisher.publish(
+        topic="notification.send",
+        message={
+            "phone_number": phone_number,
+            "channel": channel,
+            "intents": [_intent_to_dict(intent) for intent in intents],
+            "metadata": delivery_metadata,
+            "dedupe_key": str(dedupe_key_raw) if dedupe_key_raw else None,
+            "strict_actionable": strict_actionable,
+        },
+    )
+    return DeliveryAttemptResult(status="delivered")
 
 
 async def enqueue_outbox_say(
@@ -53,7 +73,7 @@ async def enqueue_outbox_say(
     text: str,
     metadata: dict[str, Any] | None = None,
 ) -> DeliveryAttemptResult:
-    """Deliver one text message directly."""
+    """Publish one text message to the durable notification delivery queue."""
     if not text:
         return DeliveryAttemptResult(status="delivered")
     return await enqueue_outbox_intents(publisher, phone_number, channel, [Say(text=text)], metadata=metadata)
@@ -65,5 +85,5 @@ async def enqueue_outbox_typing(
     channel: str,
     metadata: dict[str, Any] | None = None,
 ) -> DeliveryAttemptResult:
-    """Deliver a pure typing indicator directly."""
+    """Publish a pure typing indicator to the durable notification delivery queue."""
     return await enqueue_outbox_intents(publisher, phone_number, channel, [SendTyping()], metadata=metadata)

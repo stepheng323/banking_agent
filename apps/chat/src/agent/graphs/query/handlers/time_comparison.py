@@ -17,6 +17,7 @@ from apps.chat.src.agent.graphs.query.models import (
 )
 from apps.chat.src.agent.graphs.query.services.fetch import fetch_and_filter
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.formatters.currency import format_naira
 from shared.i18n import render_message
 
 
@@ -225,11 +226,12 @@ def _format_change(change: float, pct_change: float | None, locale: str = "en") 
     """Format change for display."""
     direction = "↑" if change > 0 else "↓" if change < 0 else "→"
     abs_change = abs(change)
+    amount = format_naira(abs_change)
 
     if pct_change is not None:
-        return f"{direction} ₦{abs_change:,.0f} ({abs(pct_change):.0f}%)"
+        return f"{direction} {amount} ({abs(pct_change):.0f}%)"
     if change != 0:
-        return f"{direction} ₦{abs_change:,.0f}"
+        return f"{direction} {amount}"
     return render_message("query.time_comparison.no_change", locale)
 
 

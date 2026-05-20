@@ -137,6 +137,9 @@ def _build_orchestrator_runtime_bundle(
     resolver_provider = ProviderFactory.get_resolver_for_flow("transfer")
     if resolver_provider is None:
         raise RuntimeError("Transfer resolver provider is not configured")
+    payout_resolver_provider = ProviderFactory.get_resolver_for_flow("payout")
+    if payout_resolver_provider is None:
+        raise RuntimeError("Payout resolver provider is not configured")
     direct_debit_provider = MonoDirectDebitProvider()
 
     account_worker = AccountWorker(
@@ -175,7 +178,8 @@ def _build_orchestrator_runtime_bundle(
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
-    bank_cache_service = BankCacheService(redis_client=shared_redis)
+    bank_cache_service = BankCacheService(redis_client=shared_redis, provider_name="mono")
+    payout_bank_cache_service = BankCacheService(redis_client=shared_redis, provider_name="flutterwave")
 
     agent_airtime_worker = AirtimeWorker(
         extractor=AirtimeEntityExtractor(llm=extractor_chat),
@@ -196,6 +200,8 @@ def _build_orchestrator_runtime_bundle(
         resolver_provider=resolver_provider,
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,
+        payout_resolver_provider=payout_resolver_provider,
+        payout_bank_cache=payout_bank_cache_service,
         dd_provider=direct_debit_provider,
         redis_client=shared_redis,
     )
@@ -271,26 +277,27 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
     llm = ChatOpenAI(model=settings.planner_model, temperature=0, timeout=30.0, max_retries=1)
-    logger.info("planner_model_selected", app_env=settings.app_env, model=settings.planner_model)
+    app_env = settings.runtime.app_env
+    logger.info("planner_model_selected", app_env=app_env, model=settings.planner_model)
     query_model = _resolve_role_model(
         role="query",
         configured_model=settings.query_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     query_llm = ChatOpenAI(model=query_model, temperature=0, timeout=30.0, max_retries=1)
     semantic_router_model = _resolve_role_model(
         role="semantic_router",
         configured_model=settings.semantic_router_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     semantic_router_llm = ChatOpenAI(model=semantic_router_model, temperature=0, timeout=15.0, max_retries=1)
     interrupt_router_model = _resolve_role_model(
         role="interrupt_router",
         configured_model=settings.interrupt_router_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
 
     interrupt_llm = ChatOpenAI(model=interrupt_router_model, temperature=0, timeout=15.0, max_retries=1)
@@ -298,7 +305,7 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         role="extractor",
         configured_model=settings.extractor_model,
         planner_model=settings.planner_model,
-        app_env=settings.app_env,
+        app_env=app_env,
     )
     extractor_llm = ChatOpenAI(model=extractor_model, temperature=0, timeout=20.0, max_retries=1)
     logger.info(
@@ -335,7 +342,7 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     ]
     redis_stream_consumer = RedisStreamConsumer(
         stream_names=[name for name in stream_names if name],
-        group_name=f"{settings.project_name}-chat-worker-{settings.environment}",
+        group_name=f"{settings.project_name}-chat-worker-{settings.runtime.infrastructure_environment}",
     )
     return message_consumer, redis_stream_consumer
 

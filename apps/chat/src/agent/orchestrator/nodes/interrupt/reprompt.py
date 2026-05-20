@@ -17,6 +17,7 @@ from apps.chat.src.agent.orchestrator.nodes.interrupt.switch_updates import (
 )
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
 from shared.formatters.confirmation import build_confirmation_summary
+from shared.formatters.currency import format_naira
 from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transaction_copy import build_confirmation_header
@@ -203,7 +204,7 @@ def _format_task_details_for_status(task: TaskSpec, task_type: str) -> str:
 
     def _fmt_amount(value: Any) -> str | None:
         try:
-            return f"₦{float(value):,.0f}"
+            return format_naira(float(value))
         except (TypeError, ValueError):
             return None
 

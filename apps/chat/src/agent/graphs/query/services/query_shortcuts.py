@@ -9,8 +9,8 @@ from typing import Literal
 from shared.i18n import LocaleManager
 from shared.i18n.models import LocaleCode
 
-QueryShortcutKind = Literal["pagination", "actionable", "detail"]
-QueryShortcutAction = Literal["show_more", "get_receipt", "report_issue", "show_details"]
+QueryShortcutKind = Literal["pagination", "actionable"]
+QueryShortcutAction = Literal["show_more", "show_previous", "get_receipt", "report_issue"]
 
 SUPPORTED_QUERY_SHORTCUT_LOCALES = {
     LocaleCode.EN,
@@ -51,26 +51,24 @@ _SHORTCUTS_BY_LOCALE: dict[LocaleCode, dict[str, tuple[QueryShortcutKind, QueryS
         "next": ("pagination", "show_more"),
         "next page": ("pagination", "show_more"),
         "show more": ("pagination", "show_more"),
-        "more details": ("detail", "show_details"),
+        "back": ("pagination", "show_previous"),
+        "previous": ("pagination", "show_previous"),
+        "previous page": ("pagination", "show_previous"),
         "receipt": ("actionable", "get_receipt"),
         "issue": ("actionable", "report_issue"),
         "report issue": ("actionable", "report_issue"),
-        "details": ("detail", "show_details"),
-        "show details": ("detail", "show_details"),
-        "show more details": ("detail", "show_details"),
     },
     LocaleCode.PCM: {
         "more": ("pagination", "show_more"),
         "next": ("pagination", "show_more"),
         "next page": ("pagination", "show_more"),
         "show more": ("pagination", "show_more"),
-        "more details": ("detail", "show_details"),
+        "back": ("pagination", "show_previous"),
+        "previous": ("pagination", "show_previous"),
+        "previous page": ("pagination", "show_previous"),
         "receipt": ("actionable", "get_receipt"),
         "issue": ("actionable", "report_issue"),
         "report issue": ("actionable", "report_issue"),
-        "details": ("detail", "show_details"),
-        "show details": ("detail", "show_details"),
-        "show more details": ("detail", "show_details"),
     },
     LocaleCode.YO: {},
     LocaleCode.HA: {},

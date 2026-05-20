@@ -71,7 +71,11 @@ class OrchestratorState(BaseModel):
     routing_decision: str | None = None
     routing_target_domain: str | None = None
     routing_mode: str | None = None
+    route_source: str | None = None
+    routing_heuristic_type: str | None = None
+    routing_heuristic_name: str | None = None
     planner_used: bool = False
+    suppress_empty_fallback: bool = False
 
     # Stashed Sessions (Upstream)
     stashed_sessions: list[dict[str, Any]] = Field(default_factory=list)

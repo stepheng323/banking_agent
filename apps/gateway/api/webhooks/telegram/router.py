@@ -1,27 +1,47 @@
 """Telegram webhook router — FastAPI endpoint for Telegram Bot updates."""
 
-from typing import cast
+import hashlib
+import hmac
+import json
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.gateway.api.webhooks.ownership import require_webhook_ingress_enabled
 from apps.gateway.api.webhooks.telegram.auth import verify_telegram_init_data
 from apps.gateway.api.webhooks.telegram.service import TelegramWebhookService
 from shared.clients.telegram.client import TelegramClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
 from shared.database.connection import get_db
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
 from shared.repositories.user_repository import UserRepository
+from shared.services.channel_linking import complete_channel_link_with_pin, is_channel_link_pin_token
 from shared.services.onboarding import account_add_service, account_service, bvn_service
-from shared.utils.logging import get_logger
+from shared.services.telegram_miniapp_bootstrap import consume_telegram_miniapp_bootstrap
+from shared.utils.logging import get_logger, log_fingerprint
 
 router = APIRouter(prefix="/webhook", tags=["telegram"])
 logger = get_logger(__name__)
 
 _service_instance: TelegramWebhookService | None = None
+
+
+def _token_fingerprint(flow_token: str | None) -> str:
+    if not flow_token:
+        return ""
+    return hashlib.sha256(str(flow_token).encode("utf-8")).hexdigest()[:16]
+
+
+def _telegram_webhook_secret_is_valid(provided_token: str | None) -> bool:
+    expected_token = settings.telegram_webhook_secret_token
+    if not expected_token:
+        return settings.runtime.is_local
+    if not provided_token:
+        return False
+    return hmac.compare_digest(str(provided_token), str(expected_token))
 
 
 @router.post("/telegram")
@@ -31,12 +51,12 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ) -> Response:
     """Handle incoming Telegram Bot webhook updates."""
-    require_webhook_ingress_enabled("telegram")
-    expected_token = settings.telegram_webhook_secret_token
-    if expected_token and x_telegram_bot_api_secret_token != expected_token:
+    if not _telegram_webhook_secret_is_valid(x_telegram_bot_api_secret_token):
         logger.warning(
             "telegram_webhook_unauthorized",
-            provided_token=x_telegram_bot_api_secret_token,
+            provided_token_present=bool(x_telegram_bot_api_secret_token),
+            provided_token_hash=_token_fingerprint(x_telegram_bot_api_secret_token),
+            expected_token_configured=bool(settings.telegram_webhook_secret_token),
             msg="Invalid or missing secret token",
         )
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -76,10 +96,12 @@ class BvnInput(BaseModel):
 @router.post("/telegram/onboarding/bvn")
 async def telegram_onboarding_bvn(data: BvnInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle BVN verification for Telegram Onboarding."""
-    del user_data
+    session, owner_error = await _get_owned_onboarding_session(data.flow_token, user_data)
+    if owner_error:
+        return owner_error
+
     try:
-        session = await bvn_service.get_session_data(data.flow_token)
-        phone_number = (session or {}).get("phone_number", "")
+        phone_number = session.get("phone_number", "") if session else ""
         if phone_number:
             from shared.database.enums import UserOnboardingStatusEnum
             from shared.repositories.unit_of_work import UnitOfWork
@@ -92,7 +114,7 @@ async def telegram_onboarding_bvn(data: BvnInput, user_data: dict = Depends(veri
                         and getattr(user, "onboarding_status", None)
                         == UserOnboardingStatusEnum.ONBOARDING_COMPLETED.value
                     ):
-                        logger.info("onboarding_already_completed", phone=phone_number)
+                        logger.info("onboarding_already_completed", phone_hash=log_fingerprint(phone_number))
                         return {
                             "success": False,
                             "error": "You have already completed onboarding. "
@@ -126,37 +148,120 @@ def _no_linking_methods_error() -> dict:
     return {"success": False, "error": "No verification methods found. Please restart account linking."}
 
 
-async def _get_valid_linking_session(flow_token: str) -> tuple[dict | None, dict | None]:
+def _invalid_telegram_session_error() -> dict:
+    return {"success": False, "error": "Invalid or expired session. Please reopen this page from Telegram."}
+
+
+def _string_identity(value: Any) -> str:
+    if value is None or isinstance(value, bool):
+        return ""
+    return str(value).strip()
+
+
+def _session_telegram_owner_ids(session: dict | None, *, require_telegram_channel: bool) -> list[str]:
+    if not isinstance(session, dict):
+        return []
+
+    channel = _string_identity(session.get("channel")).lower()
+    if require_telegram_channel and channel and channel != "telegram":
+        return []
+
+    owner_ids: list[str] = []
+    for field in ("channel_user_id", "cta_chat_id"):
+        owner_id = _string_identity(session.get(field))
+        if owner_id and owner_id not in owner_ids:
+            owner_ids.append(owner_id)
+    return owner_ids
+
+
+def _telegram_session_owner_matches(
+    user_data: dict,
+    session: dict | None,
+    *,
+    require_telegram_channel: bool = False,
+) -> bool:
+    init_user_id = _telegram_init_user_id(user_data)
+    if not init_user_id:
+        return False
+    return init_user_id in _session_telegram_owner_ids(session, require_telegram_channel=require_telegram_channel)
+
+
+async def _get_owned_onboarding_session(flow_token: str, user_data: dict) -> tuple[dict | None, dict | None]:
+    token = (flow_token or "").strip()
+    try:
+        session = await bvn_service.get_session_data(token)
+    except Exception as e:
+        logger.warning(
+            "telegram_onboarding_session_read_failed",
+            flow_token_hash=_token_fingerprint(token),
+            error_type=type(e).__name__,
+        )
+        return None, _invalid_telegram_session_error()
+
+    if not session:
+        logger.warning("telegram_onboarding_session_miss", flow_token_hash=_token_fingerprint(token))
+        return None, _invalid_telegram_session_error()
+
+    if not _telegram_session_owner_matches(user_data, session):
+        logger.warning(
+            "telegram_onboarding_session_owner_mismatch",
+            flow_token_hash=_token_fingerprint(token),
+            init_user_id_hash=_token_fingerprint(_telegram_init_user_id(user_data)),
+            has_session_owner=bool(_session_telegram_owner_ids(session, require_telegram_channel=False)),
+            channel=session.get("channel"),
+            step=session.get("step"),
+        )
+        return None, _invalid_telegram_session_error()
+
+    return session, None
+
+
+async def _get_valid_linking_session(flow_token: str, user_data: dict | None = None) -> tuple[dict | None, dict | None]:
     token = (flow_token or "").strip()
     if not token or not token.startswith("link-"):
-        logger.warning("telegram_linking_session_invalid_token", flow_token=flow_token)
+        logger.warning("telegram_linking_session_invalid_token", flow_token_hash=_token_fingerprint(flow_token))
         return None, _invalid_linking_session_error()
 
     session_result = await bvn_service.get_session_status(token)
     if session_result.backend_error:
         logger.error(
             "telegram_linking_session_backend_error",
-            flow_token=token,
+            flow_token_hash=_token_fingerprint(token),
             error=session_result.error,
         )
         return None, _expired_linking_session_error()
 
     session = session_result.data
     if not session_result.found or not session:
-        logger.warning("telegram_linking_session_miss", flow_token=token)
+        logger.warning("telegram_linking_session_miss", flow_token_hash=_token_fingerprint(token))
         return None, _expired_linking_session_error()
 
     if not bool(session.get("is_account_linking")):
         logger.warning(
             "telegram_linking_session_invalid_state",
-            flow_token=token,
+            flow_token_hash=_token_fingerprint(token),
             step=session.get("step"),
         )
         return None, _invalid_linking_session_error()
 
+    if user_data is not None and not _telegram_session_owner_matches(
+        user_data,
+        session,
+        require_telegram_channel=True,
+    ):
+        logger.warning(
+            "telegram_linking_session_owner_mismatch",
+            flow_token_hash=_token_fingerprint(token),
+            init_user_id_hash=_token_fingerprint(_telegram_init_user_id(user_data)),
+            has_session_owner=bool(_session_telegram_owner_ids(session, require_telegram_channel=True)),
+            channel=session.get("channel"),
+            step=session.get("step"),
+        )
+        return None, _invalid_telegram_session_error()
+
     logger.info(
         "telegram_linking_session_validated",
-        flow_token=token,
+        flow_token_hash=_token_fingerprint(token),
         step=session.get("step"),
     )
     return session, None
@@ -167,8 +272,7 @@ async def telegram_onboarding_linking_session(
     data: LinkingSessionInput, user_data: dict = Depends(verify_telegram_init_data)
 ) -> dict:
     """Fetch pre-seeded account relinking session data for Telegram mini app."""
-    del user_data
-    session, error = await _get_valid_linking_session(data.flow_token)
+    session, error = await _get_valid_linking_session(data.flow_token, user_data)
     if error:
         return error
 
@@ -188,7 +292,10 @@ async def telegram_onboarding_linking_session(
 @router.post("/telegram/onboarding/send_otp")
 async def telegram_send_otp(data: MethodInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Send OTP for Telegram Onboarding."""
-    del user_data
+    _, owner_error = await _get_owned_onboarding_session(data.flow_token, user_data)
+    if owner_error:
+        return owner_error
+
     result = await bvn_service.send_otp(data.flow_token, data.method)
     return result
 
@@ -208,9 +315,7 @@ async def telegram_linking_method(
     data: LinkingMethodInput, user_data: dict = Depends(verify_telegram_init_data)
 ) -> dict:
     """Handle METHOD_SELECTION step for Telegram relinking flow."""
-    del user_data
-
-    session, error = await _get_valid_linking_session(data.flow_token)
+    session, error = await _get_valid_linking_session(data.flow_token, user_data)
     if error:
         return error
 
@@ -237,8 +342,7 @@ class LinkingOtpInput(BaseModel):
 @router.post("/telegram/linking/otp")
 async def telegram_linking_otp(data: LinkingOtpInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle OTP verification step for Telegram relinking flow."""
-    del user_data
-    _, error = await _get_valid_linking_session(data.flow_token)
+    _, error = await _get_valid_linking_session(data.flow_token, user_data)
     if error:
         return error
     return await bvn_service.verify_otp(data.flow_token, data.otp)
@@ -254,8 +358,7 @@ async def telegram_linking_account(
     data: LinkingAccountInput, user_data: dict = Depends(verify_telegram_init_data)
 ) -> dict:
     """Handle account selection step for Telegram relinking flow."""
-    del user_data
-    _, error = await _get_valid_linking_session(data.flow_token)
+    _, error = await _get_valid_linking_session(data.flow_token, user_data)
     if error:
         return error
     return await account_add_service.add_account(data.flow_token, data.account_id)
@@ -264,7 +367,10 @@ async def telegram_linking_account(
 @router.post("/telegram/onboarding/otp")
 async def telegram_onboarding_otp(data: OtpInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle OTP verification for Telegram Onboarding."""
-    del user_data
+    _, owner_error = await _get_owned_onboarding_session(data.flow_token, user_data)
+    if owner_error:
+        return owner_error
+
     result = await bvn_service.verify_otp(data.flow_token, data.otp)
     return result
 
@@ -277,7 +383,10 @@ class AccountInput(BaseModel):
 @router.post("/telegram/onboarding/account")
 async def telegram_onboarding_account(data: AccountInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle Account selection for Telegram Onboarding."""
-    del user_data
+    _, owner_error = await _get_owned_onboarding_session(data.flow_token, user_data)
+    if owner_error:
+        return owner_error
+
     result = await account_service.select_account(data.flow_token, data.account_id)
     return result
 
@@ -294,7 +403,10 @@ async def telegram_onboarding_complete(
     data: CompleteInput, user_data: dict = Depends(verify_telegram_init_data)
 ) -> dict:
     """Handle Onboarding completion for Telegram Onboarding."""
-    del user_data
+    _, owner_error = await _get_owned_onboarding_session(data.flow_token, user_data)
+    if owner_error:
+        return owner_error
+
     result = await account_service.complete_onboarding(
         data.flow_token,
         pin=data.pin,
@@ -334,6 +446,56 @@ class PinSubmitInput(BaseModel):
     message_id: str = ""
 
 
+def _telegram_init_user_id(user_data: dict) -> str:
+    raw_user = user_data.get("user")
+    if isinstance(raw_user, str):
+        try:
+            parsed = json.loads(raw_user)
+        except json.JSONDecodeError:
+            return ""
+        return str(parsed.get("id") or "")
+    if isinstance(raw_user, dict):
+        return str(raw_user.get("id") or "")
+    return ""
+
+
+class TelegramBootstrapInput(BaseModel):
+    boot: str
+    endpoint: str
+
+
+@router.post("/telegram/bootstrap")
+async def telegram_bootstrap(
+    data: TelegramBootstrapInput,
+    user_data: dict = Depends(verify_telegram_init_data),
+) -> dict:
+    """Exchange a short-lived Mini App bootstrap nonce for the server-side flow token."""
+    init_user_id = _telegram_init_user_id(user_data)
+    if not init_user_id:
+        return _invalid_telegram_session_error()
+
+    try:
+        bootstrap = await consume_telegram_miniapp_bootstrap(
+            nonce=data.boot,
+            endpoint=data.endpoint,
+            init_user_id=init_user_id,
+        )
+    except ValueError:
+        logger.warning("telegram_miniapp_bootstrap_invalid_endpoint", endpoint=data.endpoint)
+        return _invalid_telegram_session_error()
+
+    if not bootstrap:
+        return _invalid_telegram_session_error()
+
+    response: dict[str, Any] = {
+        "success": True,
+        "flow_token": bootstrap.flow_token,
+        "chat_id": bootstrap.chat_id,
+    }
+    response.update(bootstrap.extra)
+    return response
+
+
 @router.post("/telegram/pin_submit")
 async def telegram_pin_submit(
     data: PinSubmitInput, user_data: dict = Depends(verify_telegram_init_data), db: AsyncSession = Depends(get_db)
@@ -341,18 +503,60 @@ async def telegram_pin_submit(
     """Handle direct PIN submission from pin_entry.html Mini App.
 
     Mirrors WhatsApp's transaction_pin_handler logic:
-    1. Parse flow_token to extract phone_number and idempotency_key
+    1. Parse flow_token to extract idempotency_key
     2. Verify PIN via AuthorizationService (hash check + max 3 attempts)
     3. Only publish FlowEvent on success
     4. Return error details on failure so Mini App can show them
     """
-    del user_data
     if not data.flow_token or not data.pin:
         return {"success": False, "error": "Missing PIN or token"}
 
-    # --- Extract chat_id fallback from flow_token ---
-    if not data.chat_id and "-" in data.flow_token:
-        data.chat_id = data.flow_token.split("-")[-1]
+    init_user_id = _telegram_init_user_id(user_data)
+    if not init_user_id:
+        return {"success": False, "error": "Telegram authentication missing. Reopen this page from Telegram."}
+    if not data.chat_id or data.chat_id != init_user_id:
+        logger.warning(
+            "telegram_pin_submit_chat_mismatch",
+            chat_id_hash=_token_fingerprint(data.chat_id),
+            init_user_id_hash=_token_fingerprint(init_user_id),
+        )
+        return {"success": False, "error": "This PIN request is not valid for this Telegram account."}
+
+    if is_channel_link_pin_token(data.flow_token):
+        result = await complete_channel_link_with_pin(
+            flow_token=data.flow_token,
+            pin=data.pin,
+            authorizing_channel="telegram",
+            authorizing_channel_user_id=init_user_id,
+        )
+        if not result.success:
+            return {
+                "success": False,
+                "error": result.error or "PIN verification failed",
+                "attempts_remaining": result.attempts_remaining,
+                "locked": result.locked,
+            }
+
+        if result.requested_channel == "whatsapp":
+            try:
+                await WhatsAppClient().send_text(
+                    to=result.requested_channel_user_id,
+                    text="Your WhatsApp number has been linked. You can now use banking features there.",
+                    suppress_typing_indicator=True,
+                )
+            except Exception as e:
+                logger.warning("channel_link_requested_channel_notify_failed", channel="whatsapp", error=str(e))
+
+        try:
+            from shared.cache.redis_client import RedisClient
+
+            stored_msg_id = await RedisClient.get_client().getdel(f"tg:pin_msg:{data.flow_token}")
+            if stored_msg_id:
+                await TelegramClient().mark_as_authorized(init_user_id, stored_msg_id)
+        except Exception as e:
+            logger.warning("telegram_channel_link_pin_keyboard_removal_failed", error=str(e))
+
+        return {"success": True}
 
     # --- Parse flow_token: "{type}-pin-{idempotency_key}-{phone}" ---
     parts = data.flow_token.split("-", 2)
@@ -365,6 +569,15 @@ async def telegram_pin_submit(
         # The last segment is the phone/chat_id
         idem_parts = after_pin.rsplit("-", 1)
         idem_key = idem_parts[0] if len(idem_parts) > 1 else after_pin
+        token_channel_id = idem_parts[1] if len(idem_parts) > 1 else ""
+        if token_channel_id and token_channel_id != init_user_id:
+            logger.warning(
+                "telegram_pin_submit_token_owner_mismatch",
+                flow_token_hash=_token_fingerprint(data.flow_token),
+                token_channel_id_hash=_token_fingerprint(token_channel_id),
+                init_user_id_hash=_token_fingerprint(init_user_id),
+            )
+            return {"success": False, "error": "This PIN request is not valid for this Telegram account."}
     token_remainder = data.flow_token.split("-pin-", 1)[-1] if "-pin-" in data.flow_token else data.flow_token
 
     # --- Look up the real phone_number from Redis (chat_id != phone for Telegram) ---
@@ -407,7 +620,11 @@ async def telegram_pin_submit(
     await auth_service.store_pin_verification_result(idem_key or token_remainder, auth_result)
 
     if not auth_result.verified:
-        logger.info("telegram_pin_verification_failed", chat_id=data.chat_id, error=auth_result.error)
+        logger.info(
+            "telegram_pin_verification_failed",
+            chat_id_hash=_token_fingerprint(data.chat_id),
+            error=auth_result.error,
+        )
         return {
             "success": False,
             "error": auth_result.error or "PIN verification failed",
@@ -433,7 +650,11 @@ async def telegram_pin_submit(
             topic="flow_event.process",
             message=cast(dict, event.to_dict()),
         )
-        logger.info("telegram_pin_rest_published", chat_id=data.chat_id, flow_type=resolved_flow_type)
+        logger.info(
+            "telegram_pin_rest_published",
+            chat_id_hash=_token_fingerprint(data.chat_id),
+            flow_type=resolved_flow_type,
+        )
 
         if data.chat_id:
             try:
@@ -442,7 +663,9 @@ async def telegram_pin_submit(
                     _telegram = TelegramClient()
                     await _telegram.mark_as_authorized(data.chat_id, stored_msg_id)
                     logger.info(
-                        "telegram_pin_keyboard_marked_authorized", chat_id=data.chat_id, message_id=stored_msg_id
+                        "telegram_pin_keyboard_marked_authorized",
+                        chat_id_hash=_token_fingerprint(data.chat_id),
+                        message_id_hash=_token_fingerprint(stored_msg_id),
                     )
             except Exception as kb_err:
                 logger.warning("telegram_pin_keyboard_removal_failed", error=str(kb_err))

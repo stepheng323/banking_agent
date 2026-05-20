@@ -35,11 +35,29 @@ class RequestedAction(str, Enum):
     """Actions the user is requesting (LLM detects)."""
 
     LOOKUP_TRANSACTION = "LOOKUP_TRANSACTION"
+    LOOKUP_TICKET = "LOOKUP_TICKET"
     EXPLAIN_STATUS = "EXPLAIN_STATUS"
     RETRY_PAYOUT = "RETRY_PAYOUT"
     INITIATE_REFUND = "INITIATE_REFUND"
+    QUEUE_REFUND_REQUEST = "QUEUE_REFUND_REQUEST"
     CREATE_TICKET = "CREATE_TICKET"
     ESCALATE = "ESCALATE"
+
+
+class SupportDiagnosticAction(str, Enum):
+    """Bounded diagnostic actions support may route through."""
+
+    ASK_REFERENCE = "ask_reference"
+    ASK_CLARIFICATION = "ask_clarification"
+    LOOKUP_TRANSACTION = "lookup_transaction"
+    EXPLAIN_TRANSACTION = "explain_transaction"
+    LOOKUP_TICKET = "lookup_ticket"
+    CREATE_TICKET = "create_ticket"
+    ESCALATE_TICKET = "escalate_ticket"
+    PREPARE_RETRY_HANDOFF = "prepare_retry_handoff"
+    POLICY_BLOCKED = "policy_blocked"
+    NOT_SUPPORTED = "not_supported"
+    FALLBACK_MICRO_RESOLVER = "fallback_micro_resolver"
 
 
 class TransactionReference(BaseModel):
@@ -66,6 +84,8 @@ class SupportReferenceCandidate(BaseModel):
     bank_display: str | None = None
     account_display: str | None = None
     final_status: Literal["success", "processing", "failed"] = "success"
+    error_message: str | None = None
+    failure_category: str | None = None
     receipt_allowed: bool = False
 
 
@@ -75,6 +95,7 @@ class PendingReferenceState(BaseModel):
     source: Literal["recent_batch"] = "recent_batch"
     candidates: list[SupportReferenceCandidate] = Field(default_factory=list)
     reminder: str | None = None
+    intent: str | None = None
 
 
 class ReceiptBatchSelectionRef(BaseModel):
@@ -139,6 +160,19 @@ class SupportExtractionResult(BaseModel):
     raw_issue: str | None = Field(default=None, description="User's description of issue")
 
 
+class SupportDiagnosticDecision(BaseModel):
+    """Structured output from the bounded support diagnostic agent."""
+
+    intent: SupportIntent
+    next_action: SupportDiagnosticAction
+    transaction_ref: TransactionReference | None = None
+    ticket_code: str | None = None
+    required_actions: list[str] = Field(default_factory=list)
+    reason: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    user_message: str | None = None
+
+
 class EscalationResult(BaseModel):
     """Result indicating human handoff is needed."""
 
@@ -157,6 +191,7 @@ class SupportResponse(BaseModel):
     offer_receipt: bool = False
     offer_retry: bool = False
     transaction_data: dict | None = None
+    handoff: dict | None = None
 
 
 class ClassificationResult(BaseModel):

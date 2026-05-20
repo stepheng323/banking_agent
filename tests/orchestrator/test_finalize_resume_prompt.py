@@ -148,11 +148,37 @@ async def test_finalize_stashed_and_completed_transfer_does_not_prompt_resume() 
 
     updates = await finalize(state, _config())
 
-    assert updates["outbox"], "Completed transfer should emit processing text."
-    assert "Would you like to resume your" not in updates["outbox"][-1]["text"]
+    assert updates["outbox"] == []
     assert updates["context_frames"][-1].frame_type == ContextFrameType.TRANSACTION_DETAIL
     assert updates["context_frames"][-1].items[0].data["amount"] == 5000
     assert updates["context_frames"][-1].items[0].data["recipient_name"] == "Fatima"
+
+
+@pytest.mark.asyncio
+async def test_finalize_single_async_transfer_defers_processing_copy_to_executor() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_6",
+        phone_number="2348000000016",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 21000,
+                    "recipient_name": "Emmanuel Tunde Bakare",
+                    "receipt": {"status": "processing"},
+                },
+            )
+        },
+    )
+
+    updates = await finalize(state, _config())
+
+    assert updates["outbox"] == []
+    assert updates["suppress_empty_fallback"] is True
+    assert updates["context_frames"][-1].frame_type == ContextFrameType.RECEIPT
 
 
 @pytest.mark.asyncio

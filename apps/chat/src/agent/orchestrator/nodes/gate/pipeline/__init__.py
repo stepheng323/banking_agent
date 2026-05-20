@@ -1,5 +1,8 @@
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context_frame_stages import _stage_context_frame_followup
+from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.contextual_followup_stages import (
+    _stage_contextual_worker_followup,
+)
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.core_stages import (
     _stage_cancel,
     _stage_expired_pin,
@@ -26,17 +29,22 @@ from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage 
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.support_stages import (
     _stage_receipt_request,
     _stage_receipt_thread_followup,
+    _stage_support_context_followup,
+    _stage_support_issue_request,
 )
 
 _GATE_STAGES = (
     _stage_language_switch,
     _stage_cancel,
     _stage_gibberish_filter,
-    _stage_receipt_thread_followup,
-    _stage_receipt_request,
     _stage_context_frame_followup,
+    _stage_receipt_thread_followup,
+    _stage_support_context_followup,
+    _stage_receipt_request,
     _stage_beneficiary_suggestion,
+    _stage_contextual_worker_followup,
     _stage_banking_ambiguity,
+    _stage_support_issue_request,
     _stage_balance_direct,
     _stage_account_domain,
     _stage_beneficiary_domain,

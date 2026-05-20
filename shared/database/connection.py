@@ -60,11 +60,11 @@ def get_engine():
             db_url,
             connect_args=connect_args,
             echo=False,
-            pool_size=20,
-            max_overflow=10,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
             pool_pre_ping=True,
             pool_recycle=3600,
-            pool_timeout=30,
+            pool_timeout=settings.db_pool_timeout,
         )
         print("✓ Async Database connection pool initialized")
     return _engine

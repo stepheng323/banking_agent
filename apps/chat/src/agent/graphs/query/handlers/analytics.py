@@ -53,20 +53,30 @@ async def handle_analytics(
         if count == 0:
             tx_type = contract.filters.transaction_type if contract.filters else None
             timeframe = _build_timeframe_suffix(contract, language)
+            target_description = _build_sum_target_description(contract, language)
             if tx_type == "credit":
                 return QueryResult(
-                    summary_text=render_message("query.analytics.no_income", language, {"timeframe": timeframe})
+                    summary_text=render_message(
+                        "query.analytics.no_income",
+                        language,
+                        {"target_description": target_description, "timeframe": timeframe},
+                    )
                 )
             if tx_type == "debit":
+                summary_key = (
+                    "query.analytics.no_sent"
+                    if contract.filters and _first_filter_value(contract.filters.counterparty)
+                    else "query.analytics.no_spending"
+                )
                 return QueryResult(
-                    summary_text=render_message("query.analytics.no_spending", language, {"timeframe": timeframe})
+                    summary_text=render_message(
+                        summary_key,
+                        language,
+                        {"target_description": target_description, "timeframe": timeframe},
+                    )
                 )
             return QueryResult(summary_text=render_message("query.format.no_matching_transactions", language))
-        merchant = contract.filters.merchant[0] if contract.filters and contract.filters.merchant else None
-
-        target_description = (
-            render_message("query.analytics.target_merchant", language, {"merchant": merchant}) if merchant else ""
-        )
+        target_description = _build_sum_target_description(contract, language)
         timeframe = _build_timeframe_suffix(contract, language)
 
         items = [
@@ -86,7 +96,7 @@ async def handle_analytics(
 
         return QueryResult(
             summary_text=render_message(
-                "query.analytics.summary_spent",
+                _sum_summary_key(contract),
                 language,
                 {
                     "total": f"{total:,.0f}",
@@ -264,6 +274,67 @@ def _build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
     return render_message("query.analytics.timeframe_default", locale)
 
 
+def _build_sum_target_description(query: QueryExecutionContract, locale: str) -> str:
+    filters = query.filters
+    if filters is None:
+        return ""
+
+    parts: list[str] = []
+    counterparty = _display_filter_value(filters.counterparty)
+    if counterparty:
+        if filters.transaction_type == "debit":
+            parts.append(
+                render_message("query.analytics.target_counterparty_debit", locale, {"counterparty": counterparty})
+            )
+        elif filters.transaction_type == "credit":
+            parts.append(
+                render_message("query.analytics.target_counterparty_credit", locale, {"counterparty": counterparty})
+            )
+        else:
+            parts.append(render_message("query.analytics.target_counterparty", locale, {"counterparty": counterparty}))
+    elif filters.merchant:
+        merchant = _first_filter_value(filters.merchant)
+        if merchant:
+            parts.append(render_message("query.analytics.target_merchant", locale, {"merchant": merchant}))
+
+    account_filter = (filters.account_filter or "").strip()
+    if account_filter:
+        parts.append(render_message("query.analytics.target_account", locale, {"account": account_filter}))
+
+    return "".join(parts)
+
+
+def _sum_summary_key(query: QueryExecutionContract) -> str:
+    filters = query.filters
+    if filters is None:
+        return "query.analytics.summary_spent"
+
+    if filters.transaction_type == "credit":
+        return "query.analytics.summary_received"
+
+    if filters.transaction_type == "debit" and _first_filter_value(filters.counterparty):
+        return "query.analytics.summary_sent"
+
+    return "query.analytics.summary_spent"
+
+
+def _first_filter_value(values: list[str] | None) -> str | None:
+    if not values:
+        return None
+    for value in values:
+        cleaned = value.strip()
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _display_filter_value(values: list[str] | None) -> str | None:
+    cleaned = _first_filter_value(values)
+    if cleaned and cleaned == cleaned.lower():
+        return cleaned.title()
+    return cleaned
+
+
 def _transaction_label(count: int, locale: str) -> str:
     if count == 1:
         return render_message("query.analytics.transaction_singular", locale)
@@ -277,7 +348,15 @@ async def _aggregate_breakdown(
 ) -> QueryResult:
     """Aggregate transactions by day/category/merchant."""
     group_by = contract.aggregation.group_by if contract.aggregation else "day"
-    grouped: dict[str, dict[str, Any]] = defaultdict(lambda: {"debit": 0, "credit": 0, "count": 0})
+    grouped: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "debit": 0,
+            "credit": 0,
+            "count": 0,
+            "category_sources": set(),
+            "account_suffix": None,
+        }
+    )
 
     for t in transactions:
         if group_by == "day":
@@ -287,18 +366,25 @@ async def _aggregate_breakdown(
         elif group_by == "merchant":
             key = t.get("counterparty") or extract_counterparty(t.get("narration", ""), locale=language)
         elif group_by == "account":
+            source_account_number = str(t.get("source_account_number") or "").strip()
+            suffix = f"···{source_account_number[-4:]}" if len(source_account_number) >= 4 else None
             key = (
                 t.get("source_account_label")
                 or t.get("bank_name")
                 or t.get("source_account_id")
                 or "unknown account"
             )
+            if suffix:
+                grouped[key]["account_suffix"] = suffix
         elif group_by == "transaction_type":
             key = t.get("type", "other")
         else:
             key = t.get("date", "")[:10]
 
         tx_type = t.get("type", "unknown")
+        if group_by == "category":
+            source = t.get("category_source") or ("provider" if t.get("category") else "unknown")
+            grouped[key]["category_sources"].add(str(source))
         if tx_type in ("debit", "credit"):
             grouped[key][tx_type] += t.get("amount", 0)
             grouped[key]["count"] += 1
@@ -317,21 +403,33 @@ async def _aggregate_breakdown(
     limit = contract.aggregation.limit if contract.aggregation and contract.aggregation.limit is not None else 10
     sorted_items = sorted_items[:limit]
 
-    items = [
-        QueryResultItem(
-            id=str(i),
-            description=key,
-            amount=data["debit"] + data["credit"],
-            date=parse_date(key) if group_by == "day" else date.today(),
-            metadata={
-                "debit": data["debit"],
-                "credit": data["credit"],
-                "count": data["count"],
-                "key": key,  # Original key for drill-down
-            },
+    items: list[QueryResultItem] = []
+    for i, (key, data) in enumerate(sorted_items):
+        display_key = key
+        account_suffix = data.get("account_suffix")
+        if group_by == "account" and isinstance(account_suffix, str) and account_suffix:
+            display_key = f"{key} ({account_suffix})"
+        metadata = {
+            "debit": data["debit"],
+            "credit": data["credit"],
+            "count": data["count"],
+            "key": key,  # Original key for drill-down
+        }
+        if group_by == "category":
+            category_sources = sorted(str(source) for source in data["category_sources"] if source)
+            metadata["category_sources"] = category_sources
+            metadata["category_confidence"] = "provider" if category_sources == ["provider"] else "inferred"
+        if group_by == "account" and account_suffix:
+            metadata["account_suffix"] = account_suffix
+        items.append(
+            QueryResultItem(
+                id=str(i),
+                description=display_key,
+                amount=data["debit"] + data["credit"],
+                date=parse_date(key) if group_by == "day" else date.today(),
+                metadata=metadata,
+            )
         )
-        for i, (key, data) in enumerate(sorted_items)
-    ]
 
     return QueryResult(
         summary_text=render_message(

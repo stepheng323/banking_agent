@@ -7,7 +7,7 @@ from shared.models.account import CreateAccount
 from shared.models.user import UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.hash import hash_plaintext, is_valid_pin_format
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 from .mandate import MandateService
 from .session import OnboardingStep, SessionManager
@@ -56,7 +56,7 @@ class AccountLinkingService:
     ) -> dict:
         """Complete onboarding by creating customer and linking account."""
         if not pin or not is_valid_pin_format(pin):
-            return {"success": False, "error": "Invalid PIN. Please enter a 4 or 6-digit PIN."}
+            return {"success": False, "error": "Invalid PIN. Please enter a 6-digit numeric PIN."}
 
         if not email:
             return {"success": False, "error": "Email address is required."}
@@ -68,9 +68,15 @@ class AccountLinkingService:
         if not session:
             return {"success": False, "error": "Session expired. Please start over."}
 
-        phone_number = session.get("phone_number") or flow_token.split("-")[-1]
+        phone_number = session.get("phone_number")
         if not phone_number:
             return {"success": False, "error": "Phone number missing."}
+
+        telegram_chat_id = None
+        if channel == "telegram":
+            telegram_chat_id = session.get("channel_user_id") or session.get("cta_chat_id")
+            if not telegram_chat_id:
+                return {"success": False, "error": "Telegram session identity missing."}
 
         selected_account = None
         accounts = session.get("accounts", [])
@@ -135,10 +141,9 @@ class AccountLinkingService:
                         )
                     )
 
-                # If this is a Telegram onboarding, link the chat_id identity
-                if flow_token.startswith("onboarding-"):
-                    chat_id = flow_token.split("-", 1)[1]
-                    await uow.users.link_channel_identity(str(user.id), "telegram", chat_id)
+                # If this is a Telegram onboarding, link the verified chat identity from session state.
+                if telegram_chat_id:
+                    await uow.users.link_channel_identity(str(user.id), "telegram", telegram_chat_id)
 
             await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
 
@@ -196,7 +201,11 @@ class AccountLinkingService:
                 identity_number=bvn,
                 identity_type="bvn",
             )
-            logger.info("mono_customer_created_async", phone=phone_number, customer_id=customer.id)
+            logger.info(
+                "mono_customer_created_async",
+                phone_hash=log_fingerprint(phone_number),
+                customer_id_hash=log_fingerprint(customer.id),
+            )
 
             async with UnitOfWork() as uow:
                 if uow.users:
@@ -229,9 +238,9 @@ class AccountLinkingService:
 
             logger.error(
                 "mono_setup_background_error",
-                error=str(e),
-                phone=phone_number,
-                traceback=traceback.format_exc(),
+                error_type=type(e).__name__,
+                phone_hash=log_fingerprint(phone_number),
+                traceback_hash=log_fingerprint(traceback.format_exc()),
             )
             try:
                 error_msg = (

@@ -4,12 +4,14 @@ import asyncio
 import html
 import re
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
-from shared.utils.logging import get_logger
+from shared.services.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
+from shared.utils.logging import get_logger, log_fingerprint
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 _DRAFT_UNSUPPORTED_STATUS_CODES = {400, 404, 405, 501}
@@ -30,6 +32,16 @@ def _format_telegram_html(text: str) -> str:
 
     escaped = re.sub(r"(^|[\s(])_(?!_)([^_\n]+?)_(?=[\s).,!?:;]|$)", _italic_repl, escaped)
     return escaped
+
+
+def _telegram_html_to_plain_text(text: str) -> str:
+    """Convert Telegram HTML back to plain text for Mini App UI copy."""
+    without_tags = re.sub(
+        r"</?(?:b|strong|i|em|code|u|s|strike|del|tg-spoiler|blockquote)(?:\s[^>]*)?>",
+        "",
+        text or "",
+    )
+    return html.unescape(without_tags)
 
 
 class TelegramClient(MessagingClient):
@@ -97,39 +109,55 @@ class TelegramClient(MessagingClient):
                     desc = result.get("description", "Unknown error")
                     raise ValueError(f"Telegram API error: {desc}")
 
-                print(f"✓ Telegram API {method} successful (attempt {attempt})")
+                logger.debug("telegram_api_call_success", method=method, attempt=attempt)
                 return result
 
             except httpx.HTTPStatusError as e:
                 last_error = e
                 status = e.response.status_code
                 if status == 401:
-                    print("❌ Telegram API Authentication Failed (401)")
-                    print("   Check your TELEGRAM_BOT_TOKEN")
+                    logger.error("telegram_api_auth_failed", method=method, http_status=status)
                     raise
                 if attempt < max_retries:
-                    print(f"⚠️  HTTP {status} (attempt {attempt}/{max_retries}), retrying...")
+                    logger.warning(
+                        "telegram_api_http_retry",
+                        method=method,
+                        http_status=status,
+                        attempt=attempt,
+                        max_retries=max_retries,
+                    )
                     await asyncio.sleep(1 * attempt)
                 else:
-                    print(f"❌ Max retries reached. Final error: {status}")
+                    logger.error("telegram_api_http_failed", method=method, http_status=status)
                     raise
 
             except httpx.ConnectError as e:
                 last_error = e
                 if attempt < max_retries:
-                    print(f"⚠️  Connection failed (attempt {attempt}/{max_retries})")
+                    logger.warning(
+                        "telegram_api_connect_retry",
+                        method=method,
+                        attempt=attempt,
+                        max_retries=max_retries,
+                    )
                     await asyncio.sleep(2 * attempt)
                 else:
-                    print(f"❌ Max retries reached. Connection failed: {e}")
+                    logger.error("telegram_api_connect_failed", method=method, error_type=type(e).__name__)
                     raise
 
             except Exception as e:
                 last_error = e
                 if attempt < max_retries:
-                    print(f"⚠️  Error (attempt {attempt}/{max_retries}): {e}")
+                    logger.warning(
+                        "telegram_api_call_retry",
+                        method=method,
+                        attempt=attempt,
+                        max_retries=max_retries,
+                        error_type=type(e).__name__,
+                    )
                     await asyncio.sleep(1 * attempt)
                 else:
-                    print(f"❌ Max retries reached: {e}")
+                    logger.error("telegram_api_call_failed", method=method, error_type=type(e).__name__)
                     raise
 
         if last_error:
@@ -160,8 +188,8 @@ class TelegramClient(MessagingClient):
             sent_id = str(msg_data.get("message_id", ""))
             return MessageResult(success=True, message_id=sent_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send Telegram text: {e}")
-            return MessageResult(success=False, error=str(e))
+            logger.error("telegram_send_text_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
+            return MessageResult(success=False, error="Telegram send failed")
 
     async def send_message_draft(self, to: str, text: str) -> bool:
         """Set a draft message in chat using Telegram Bot API sendMessageDraft."""
@@ -284,10 +312,7 @@ class TelegramClient(MessagingClient):
         if footer:
             parts.append(f"_{footer}_")
 
-        # Build inline keyboard — one button per row
-        keyboard_rows = [
-            [{"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}] for opt in options
-        ]
+        keyboard_rows = self._build_inline_keyboard_rows(options)
 
         combined_text = "\n\n".join(parts)
         html_text = _format_telegram_html(combined_text)
@@ -305,8 +330,29 @@ class TelegramClient(MessagingClient):
             sent_id = str(msg_data.get("message_id", ""))
             return MessageResult(success=True, message_id=sent_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send Telegram interactive: {e}")
-            return MessageResult(success=False, error=str(e))
+            logger.error("telegram_send_interactive_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
+            return MessageResult(success=False, error="Telegram send failed")
+
+    @staticmethod
+    def _build_inline_keyboard_rows(options: list[dict[str, str]]) -> list[list[dict[str, str]]]:
+        buttons = [
+            {"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")} for opt in options
+        ]
+        if len(buttons) <= 1:
+            return [buttons] if buttons else []
+
+        rows: list[list[dict[str, str]]] = []
+        remaining = list(buttons)
+        while remaining:
+            if len(remaining) == 4 or len(remaining) == 2:
+                row_size = 2
+            else:
+                row_size = min(3, len(remaining))
+                if len(remaining) - row_size == 1 and row_size > 2:
+                    row_size -= 1
+            rows.append(remaining[:row_size])
+            remaining = remaining[row_size:]
+        return rows
 
     async def send_image(
         self,
@@ -331,8 +377,8 @@ class TelegramClient(MessagingClient):
             sent_id = str(msg_data.get("message_id", ""))
             return MessageResult(success=True, message_id=sent_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send Telegram image: {e}")
-            return MessageResult(success=False, error=str(e))
+            logger.error("telegram_send_image_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
+            return MessageResult(success=False, error="Telegram send failed")
 
     async def send_image_data(
         self,
@@ -360,8 +406,8 @@ class TelegramClient(MessagingClient):
             sent_id = str(msg_data.get("message_id", ""))
             return MessageResult(success=True, message_id=sent_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send Telegram image data: {e}")
-            return MessageResult(success=False, error=str(e))
+            logger.error("telegram_send_image_data_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
+            return MessageResult(success=False, error="Telegram send failed")
 
     async def send_typing_indicator(self, chat_id: str) -> bool:
         """Send typing indicator (chat action)."""
@@ -373,7 +419,11 @@ class TelegramClient(MessagingClient):
             )
             return True
         except Exception as e:
-            print(f"⚠️ Typing indicator failed: {e}")
+            logger.warning(
+                "telegram_typing_indicator_failed",
+                chat_id_hash=log_fingerprint(chat_id),
+                error_type=type(e).__name__,
+            )
             return False
 
     async def send_document(
@@ -399,8 +449,8 @@ class TelegramClient(MessagingClient):
             sent_id = str(msg_data.get("message_id", ""))
             return MessageResult(success=True, message_id=sent_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send Telegram document: {e}")
-            return MessageResult(success=False, error=str(e))
+            logger.error("telegram_send_document_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
+            return MessageResult(success=False, error="Telegram send failed")
 
     async def send_flow(
         self,
@@ -451,16 +501,37 @@ class TelegramClient(MessagingClient):
 
         if flow_token.startswith("link-"):
             endpoint = "linking.html"
+            bootstrap_endpoint = "linking"
         elif "onboarding" in flow_token:
             endpoint = "onboarding.html"
+            bootstrap_endpoint = "onboarding"
         else:
             endpoint = "pin_entry.html"
+            bootstrap_endpoint = "pin"
         import time
 
-        mini_app_url = (
-            f"{self.mini_app_base_url}/static/telegram/{endpoint}"
-            f"?flow_token={flow_token}&chat_id={to}&v={int(time.time())}"
-        )
+        bootstrap_extra: dict[str, Any] = {}
+
+        try:
+            bootstrap_nonce = await create_telegram_miniapp_bootstrap(
+                chat_id=to,
+                flow_token=flow_token,
+                endpoint=bootstrap_endpoint,
+                extra=bootstrap_extra,
+            )
+        except Exception as e:
+            logger.error(
+                "telegram_mini_app_bootstrap_create_failed",
+                error_type=type(e).__name__,
+                chat_id_hash=log_fingerprint(to),
+                flow_token_hash=log_fingerprint(flow_token),
+                endpoint=bootstrap_endpoint,
+            )
+            return MessageResult(success=False, error="Failed to create secure Mini App session")
+
+        query_params = {"boot": bootstrap_nonce, "v": str(int(time.time()))}
+
+        mini_app_url = f"{self.mini_app_base_url}/static/telegram/{endpoint}?{urlencode(query_params)}"
 
         parts: list[str] = []
         if header:
@@ -490,12 +561,16 @@ class TelegramClient(MessagingClient):
                     rc = RedisClient.get_client()
                     await rc.setex(f"tg:pin_msg:{flow_token}", 1800, sent_id)
                 except Exception as e:
-                    print(f"⚠️ Could not cache PIN message_id: {e}")
+                    logger.warning(
+                        "telegram_pin_message_cache_failed",
+                        flow_token_hash=log_fingerprint(flow_token),
+                        error_type=type(e).__name__,
+                    )
 
             return MessageResult(success=True, message_id=sent_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send Telegram Mini App: {e}")
-            return MessageResult(success=False, error=str(e))
+            logger.error("telegram_mini_app_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
+            return MessageResult(success=False, error="Telegram Mini App send failed")
 
     async def get_media_url(self, media_id: str) -> str:
         """Get the URL for a Telegram file."""
@@ -507,7 +582,11 @@ class TelegramClient(MessagingClient):
 
             return f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
         except Exception as e:
-            print(f"❌ Failed getting Telegram media URL: {e}")
+            logger.error(
+                "telegram_media_url_failed",
+                media_id_hash=log_fingerprint(media_id),
+                error_type=type(e).__name__,
+            )
             raise
 
     async def download_media(self, media_url: str) -> bytes:
@@ -517,7 +596,11 @@ class TelegramClient(MessagingClient):
             resp.raise_for_status()
             return resp.content
         except Exception as e:
-            print(f"❌ Failed downloading Telegram media: {e}")
+            logger.error(
+                "telegram_media_download_failed",
+                media_url_hash=log_fingerprint(media_url),
+                error_type=type(e).__name__,
+            )
             raise
 
     async def answer_callback_query(
@@ -534,7 +617,11 @@ class TelegramClient(MessagingClient):
             await self._call("answerCallbackQuery", payload, max_retries=1)
             return True
         except Exception as e:
-            print(f"⚠️ answerCallbackQuery failed: {e}")
+            logger.warning(
+                "telegram_answer_callback_failed",
+                callback_query_id_hash=log_fingerprint(callback_query_id),
+                error_type=type(e).__name__,
+            )
             return False
 
     async def mark_as_authorized(self, chat_id: str, message_id: str | int) -> bool:
@@ -555,17 +642,43 @@ class TelegramClient(MessagingClient):
             )
             return True
         except Exception as e:
-            print(f"⚠️ mark_as_authorized failed: {e}")
+            logger.warning(
+                "telegram_mark_authorized_failed",
+                chat_id_hash=log_fingerprint(chat_id),
+                message_id_hash=log_fingerprint(message_id),
+                error_type=type(e).__name__,
+            )
+            return False
+
+    async def remove_inline_keyboard(self, chat_id: str, message_id: str | int) -> bool:
+        """Remove an inline keyboard from a sent Telegram message."""
+        try:
+            await self._call(
+                "editMessageReplyMarkup",
+                {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                },
+                max_retries=1,
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "telegram_remove_inline_keyboard_failed",
+                chat_id_hash=log_fingerprint(chat_id),
+                message_id_hash=log_fingerprint(message_id),
+                error_type=type(e).__name__,
+            )
             return False
 
     async def set_webhook(self, webhook_url: str) -> bool:
         """Register the webhook URL with Telegram."""
         try:
             result = await self._call("setWebhook", {"url": webhook_url})
-            print(f"✓ Telegram webhook set to {webhook_url}")
+            logger.info("telegram_webhook_set", webhook_url_hash=log_fingerprint(webhook_url))
             return result.get("ok", False)
         except Exception as e:
-            print(f"❌ Failed to set webhook: {e}")
+            logger.error("telegram_webhook_set_failed", error_type=type(e).__name__)
             return False
 
     async def set_my_commands(self, commands: list[dict[str, str]]) -> bool:
@@ -574,8 +687,8 @@ class TelegramClient(MessagingClient):
         """
         try:
             result = await self._call("setMyCommands", {"commands": commands})
-            print("✓ Telegram bot commands updated successfully")
+            logger.info("telegram_bot_commands_updated", command_count=len(commands))
             return result.get("ok", False)
         except Exception as e:
-            print(f"❌ Failed to set bot commands: {e}")
+            logger.error("telegram_bot_commands_update_failed", error_type=type(e).__name__)
             return False

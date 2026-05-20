@@ -2,18 +2,28 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import SupportResponse
+from shared.formatters.transaction_copy import format_support_transfer_status_sentence, format_transaction_status_reply
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-def _normalize_status(status: str) -> str:
-    status = (status or "unknown").strip().lower()
-    if status == "success":
-        return "successful"
-    return status
+def _has_unified_bank_status_overlay(transaction: dict[str, Any], status: str) -> bool:
+    bank_status = str(transaction.get("bank_status") or "").strip().lower().replace("_", " ")
+    return bank_status == "posted" and (bool(transaction.get("needs_review")) or status in {"pending", "processing", "posted"})
+
+
+def _format_unified_status_overlay(transaction: dict[str, Any], status: str, *, locale: str) -> str:
+    return format_transaction_status_reply(
+        status,
+        locale=locale,
+        local_status=transaction.get("local_status") or status,
+        bank_status=transaction.get("bank_status"),
+        needs_review=bool(transaction.get("needs_review")),
+    )
 
 
 async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
@@ -21,58 +31,30 @@ async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "
     Handle transfer_status intent.
     Confirms success or explains current state.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
-    amount = transaction.get("amount", 0)
-    recipient = transaction.get("recipient_name", "recipient")
-    created_at = transaction.get("created_at", "")
+    status = resolve_transaction_status(transaction)
 
-    # Parse timestamp for display
-    time_str = ""
-    if created_at:
-        try:
-            from datetime import datetime
-
-            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            time_str = dt.strftime("%b %d at %I:%M %p")
-        except Exception:
-            time_str = ""
+    if _has_unified_bank_status_overlay(transaction, status):
+        return SupportResponse(
+            message=_format_unified_status_overlay(transaction, status, locale=locale),
+            transaction_data=transaction,
+        )
 
     if status == "successful":
-        message = render_message(
-            "support.status.success_no_time",
-            locale,
-            {"amount": f"{amount:,.0f}", "recipient": recipient},
-        )
-        if time_str:
-            message = render_message(
-                "support.status.success_with_time",
-                locale,
-                {"amount": f"{amount:,.0f}", "recipient": recipient, "time": time_str},
-            )
         return SupportResponse(
-            message=message,
+            message=format_support_transfer_status_sentence(transaction, status=status, locale=locale),
             offer_receipt=True,
             transaction_data=transaction,
         )
 
     elif status in {"pending", "processing"}:
-        message = render_message(
-            "support.status.pending",
-            locale,
-            {"amount": f"{amount:,.0f}", "recipient": recipient},
-        )
         return SupportResponse(
-            message=message,
+            message=format_support_transfer_status_sentence(transaction, status=status, locale=locale),
             transaction_data=transaction,
         )
 
     elif status == "failed":
         error = transaction.get("error_message", "")
-        message = render_message(
-            "support.status.failed",
-            locale,
-            {"amount": f"{amount:,.0f}", "recipient": recipient},
-        )
+        message = format_support_transfer_status_sentence(transaction, status=status, locale=locale)
         if error:
             message = f"{message}\n{render_message('support.common.reason', locale, {'reason': error})}"
         return SupportResponse(
@@ -83,7 +65,7 @@ async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "
 
     else:
         return SupportResponse(
-            message=render_message("support.status.raw_status", locale, {"status": status}),
+            message=format_support_transfer_status_sentence(transaction, status=status, locale=locale),
             transaction_data=transaction,
         )
 
@@ -93,7 +75,7 @@ async def handle_pending(transaction: dict[str, Any], *, locale: str = "en") -> 
     Handle pending_transfer intent.
     Explains why transfer is stuck.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
 

@@ -904,7 +904,7 @@ async def test_beneficiary_lookup_followup_answers_no_match_from_recent_frame() 
                     decision="entity_lookup",
                     confidence=0.95,
                     detected_language="English",
-                    reference_text="gaines",
+                    target_text="gaines",
                 )
             ),
             "services": {},
@@ -968,7 +968,7 @@ async def test_beneficiary_lookup_followup_returns_matching_entities_from_recent
                     decision="entity_lookup",
                     confidence=0.95,
                     detected_language="English",
-                    reference_text="tolu",
+                    target_text="tolu",
                 )
             ),
             "services": {},
@@ -996,7 +996,7 @@ async def test_multilingual_frame_followup_uses_semantic_decision_not_english_ph
             decision="entity_lookup",
             confidence=0.92,
             detected_language="Yoruba",
-            reference_text="gaines",
+            target_text="gaines",
         )
     )
     state = OrchestratorState(

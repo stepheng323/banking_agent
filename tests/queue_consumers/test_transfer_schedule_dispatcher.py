@@ -1,10 +1,19 @@
+import json
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from apps.chat.src.schedulers.transfer_schedule_dispatcher import TransferScheduleDispatcher
+from shared.policy.loader import get_cached_policy, load_policy
+
+CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+SCHEDULE_DISABLED_MESSAGE = (
+    "Scheduled payments are temporarily unavailable. I can still help with immediate transfers, airtime/data purchase, "
+    "balances, and transaction queries."
+)
 
 
 class _FakeScheduledInstructionRepo:
@@ -48,9 +57,8 @@ class _FakeUow:
         self.committed = True
 
 
-@pytest.mark.asyncio
-async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
-    schedule = SimpleNamespace(
+def _schedule_fixture() -> SimpleNamespace:
+    return SimpleNamespace(
         id="sch-1",
         user_id="user-1",
         next_run_at_utc=datetime(2026, 3, 5, 10, 0),
@@ -75,6 +83,24 @@ async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch)
             "source_account_name": "Main",
         },
     )
+
+
+def _install_disabled_schedule_policy(tmp_path: Path) -> None:
+    raw = load_policy(CAPABILITY_POLICY_PATH).model_dump()
+    raw["capability_matrix"]["schedule"]["enabled"] = False
+    raw["capability_matrix"]["schedule"]["limitation_message"] = SCHEDULE_DISABLED_MESSAGE
+    policy_path = tmp_path / "capability_policy_schedule_disabled.json"
+    policy_path.write_text(json.dumps(raw, ensure_ascii=True), encoding="utf-8")
+    get_cached_policy(path=str(policy_path), force_reload=True)
+
+
+def _reset_policy_cache() -> None:
+    get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    schedule = _schedule_fixture()
     fake_uow = _FakeUow(schedule)
     monkeypatch.setattr(
         "apps.chat.src.schedulers.transfer_schedule_dispatcher.UnitOfWork",
@@ -91,3 +117,29 @@ async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch)
     assert schedule.status == "completed"
     publisher.publish.assert_awaited_once()
     assert publisher.publish.await_args.kwargs["topic"] == "transaction.execute"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_skips_due_schedule_when_schedule_domain_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_disabled_schedule_policy(tmp_path)
+    try:
+        schedule = _schedule_fixture()
+        fake_uow = _FakeUow(schedule)
+        monkeypatch.setattr(
+            "apps.chat.src.schedulers.transfer_schedule_dispatcher.UnitOfWork",
+            lambda: fake_uow,
+        )
+
+        publisher = SimpleNamespace(publish=AsyncMock())
+        dispatcher = TransferScheduleDispatcher(publisher=publisher, max_due_per_tick=10)
+        stats = await dispatcher.dispatch_due()
+
+        assert stats == {"processed": 0, "skipped": 1}
+        assert fake_uow.committed is True
+        assert schedule.status == "active"
+        publisher.publish.assert_not_awaited()
+    finally:
+        _reset_policy_cache()

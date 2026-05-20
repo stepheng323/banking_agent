@@ -14,7 +14,9 @@ from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitPro
 from shared.database.enums import TransactionStatusEnum
 from shared.formatters.transfer import format_transfer_pending_message, format_transfer_success_message
 from shared.i18n import render_message
+from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
+from shared.receipts.choice import build_receipt_choice_intent
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.unit_of_work import UnitOfWork
@@ -24,6 +26,7 @@ from shared.services.async_completion import (
     record_group_leg_and_maybe_build_summary,
 )
 from shared.services.delivery_service import DeliveryService
+from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -140,13 +143,10 @@ class TransferExecutor:
         except Exception as exc:
             logger.warning("scheduled_failure_notification_failed", error=str(exc))
 
-    async def _enqueue_transfer_receipt(self, *, data: dict[str, Any], transfer_data: dict[str, Any]) -> None:
-        if not self.publisher:
-            return
-
+    def _build_transfer_receipt_job(self, *, data: dict[str, Any], transfer_data: dict[str, Any]) -> dict[str, Any]:
         recipient_data = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
         source_data = transfer_data.get("source", {}) if isinstance(transfer_data.get("source"), dict) else {}
-        payload = {
+        return {
             "phone_number": data.get("phone_number"),
             "channel": data.get("channel", "whatsapp"),
             "channel_identity": data.get("channel_identity"),
@@ -172,7 +172,31 @@ class TransferExecutor:
             ),
             "signal_key": f"receipt:{uuid.uuid4()}",
         }
-        await self.publisher.publish(topic="receipt.process", message=payload)
+
+    async def _offer_transfer_receipt_image(self, *, data: dict[str, Any], transfer_data: dict[str, Any]) -> None:
+        delivery_target = str(data.get("channel_identity") or data.get("phone_number") or "").strip()
+        channel = str(data.get("channel") or "whatsapp")
+        if not delivery_target:
+            logger.warning("receipt_choice_delivery_target_missing", transaction_id=data.get("transaction_id"))
+            return
+
+        delivery = self._resolve_delivery_service()
+        if not delivery:
+            return
+
+        await delivery.deliver_intents(
+            phone_number=delivery_target,
+            channel=channel,
+            intents=[
+                build_receipt_choice_intent(
+                    self._build_transfer_receipt_job(data=data, transfer_data=transfer_data),
+                    str(data.get("language") or "en"),
+                )
+            ],
+            metadata={"source": "transfer_executor", "transaction_id": data.get("transaction_id")},
+            dedupe_key=f"receipt-choice:{data.get('transaction_id')}",
+            strict_actionable=True,
+        )
 
     async def _deliver_text(
         self,
@@ -227,6 +251,7 @@ class TransferExecutor:
         transfer_data: dict[str, Any],
         final_status: str,
         error_message: str | None = None,
+        failure_category: str | None = None,
     ) -> dict[str, Any]:
         recipient = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
         source = transfer_data.get("source", {}) if isinstance(transfer_data.get("source"), dict) else {}
@@ -241,11 +266,14 @@ class TransferExecutor:
             "source_account_number": source.get("account_number"),
             "source_account_name": source.get("account_name"),
             "source_bank_name": source.get("bank_name"),
+            "source_affinity_mode": transfer_data.get("source_affinity_mode"),
             "narration": transfer_data.get("narration"),
             "final_status": final_status,
         }
         if error_message:
             payload["error_message"] = error_message
+        if failure_category:
+            payload["failure_category"] = failure_category
         return payload
 
     @staticmethod
@@ -293,6 +321,32 @@ class TransferExecutor:
                     has_provider_reference=bool(existing_provider_ref),
                 )
                 return
+
+            if is_scheduled:
+                policy_block_message = capability_block_message(
+                    domain="schedule",
+                    action="schedule_transfer",
+                    locale=locale,
+                ) or capability_block_message(
+                    domain="transfer",
+                    action="send_money",
+                    locale=locale,
+                )
+                if policy_block_message:
+                    logger.info("scheduled_transfer_execution_policy_blocked", transaction_id=transaction_id)
+                    if schedule_run_id:
+                        await self._update_scheduled_run(
+                            schedule_run_id,
+                            status="failed",
+                            error_message=policy_block_message,
+                        )
+                    await self.transaction_repo.update_status(
+                        transaction_id,
+                        TransactionStatusEnum.FAILED.value,
+                        policy_block_message,
+                    )
+                    await self._notify_scheduled_failure(data=data, error_message=policy_block_message)
+                    return
 
             if schedule_run_id:
                 await self._update_scheduled_run(schedule_run_id, status="processing")
@@ -379,7 +433,7 @@ class TransferExecutor:
                         dedupe_key=f"transfer:success:{transaction_id}",
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
-                    await self._enqueue_transfer_receipt(data=data, transfer_data=transfer_data)
+                    await self._offer_transfer_receipt_image(data=data, transfer_data=transfer_data)
                 logger.info("transfer_success", transaction_id=transaction_id, ref=result.reference)
             elif result.success and result.status in (DebitStatus.PENDING, DebitStatus.PROCESSING):
                 await self.transaction_repo.update_status(
@@ -427,6 +481,12 @@ class TransferExecutor:
                 logger.info("transfer_processing", transaction_id=transaction_id, ref=result.reference)
             else:
                 error_msg = result.error_message or render_message("transfer.error.provider_failed", locale)
+                provider_error_code = self._provider_error_code(result)
+                failure_category = classify_failure_category(
+                    message=error_msg,
+                    code=provider_error_code,
+                    context="provider",
+                )
                 await self.transaction_repo.update_status(
                     transaction_id,
                     TransactionStatusEnum.FAILED.value,
@@ -434,7 +494,7 @@ class TransferExecutor:
                     provider_transaction_id=result.debit_id,
                     provider_status=result.status.value,
                     provider_response=result.provider_response,
-                    provider_error_code=self._provider_error_code(result),
+                    provider_error_code=provider_error_code,
                 )
                 if schedule_run_id:
                     await self._update_scheduled_run(
@@ -458,6 +518,7 @@ class TransferExecutor:
                     transfer_data=transfer_data,
                     final_status="failed",
                     error_message=error_msg,
+                    failure_category=failure_category,
                 )
                 batch_summary = await record_group_leg_and_maybe_build_summary(
                     self.redis_client,
@@ -484,6 +545,7 @@ class TransferExecutor:
         except Exception as e:
             logger.error("transfer_execution_exception", transaction_id=transaction_id, error=str(e))
             error_msg = _execution_error_message(locale)
+            failure_category = classify_failure_category(message=str(e), context="execution")
             await self.transaction_repo.update_status(
                 transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
             )
@@ -498,6 +560,7 @@ class TransferExecutor:
                 transfer_data=transfer_data,
                 final_status="failed",
                 error_message=error_msg,
+                failure_category=failure_category,
             )
             batch_summary = await record_group_leg_and_maybe_build_summary(
                 self.redis_client,

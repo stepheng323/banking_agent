@@ -4,14 +4,18 @@ from uuid import uuid4
 
 import pytest
 
-from shared.clients.providers.mono.models import BankAccount, Institution
+from apps.chat.src.agent.graphs.onboarding import service as onboarding_service_module
+from shared.clients.providers.mono.models import BankAccount, BvnLookupData, BvnMethod, Institution
 from shared.services.onboarding.account_add import AccountAddService
+from shared.services.onboarding.account_linking import AccountLinkingService
 from shared.services.onboarding.bvn_verification import BvnVerificationService
+from shared.services.onboarding.session import OnboardingStep
 
 
 class _SessionStub:
     def __init__(self, data: dict[str, Any] | None = None) -> None:
         self.data = data or {}
+        self.strict_calls: list[tuple[str, dict[str, Any], bool]] = []
 
     async def get_session(self, flow_token: str) -> dict[str, Any]:
         del flow_token
@@ -19,6 +23,17 @@ class _SessionStub:
 
     async def update_session(self, flow_token: str, updates: dict[str, Any]) -> bool:
         del flow_token
+        self.data.update(updates)
+        return True
+
+    async def update_session_strict(
+        self,
+        flow_token: str,
+        updates: dict[str, Any],
+        *,
+        verify: bool = False,
+    ) -> bool:
+        self.strict_calls.append((flow_token, updates, verify))
         self.data.update(updates)
         return True
 
@@ -68,7 +83,9 @@ class _AccountRepoStub:
 
 
 class _UnitOfWorkStub:
-    def __init__(self, *, user: Any = None, existing_by_id: Any = None, existing_for_user: list[Any] | None = None) -> None:
+    def __init__(
+        self, *, user: Any = None, existing_by_id: Any = None, existing_for_user: list[Any] | None = None
+    ) -> None:
         self.users = _UserRepoStub(user)
         self.accounts = _AccountRepoStub(existing_by_id=existing_by_id, existing_for_user=existing_for_user)
 
@@ -78,6 +95,73 @@ class _UnitOfWorkStub:
     async def __aexit__(self, exc_type, exc, tb) -> bool:
         del exc_type, exc, tb
         return False
+
+
+class _LoggerStub:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any]]] = []
+
+    def info(self, event: str, **kwargs: Any) -> None:
+        self.events.append((event, kwargs))
+
+    def warning(self, event: str, **kwargs: Any) -> None:
+        self.events.append((event, kwargs))
+
+    def error(self, event: str, **kwargs: Any) -> None:
+        self.events.append((event, kwargs))
+
+
+@pytest.mark.asyncio
+async def test_onboarding_service_generates_opaque_token_and_seeds_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _SessionStub()
+    captured: dict[str, Any] = {}
+
+    async def _enqueue_outbox_intents(
+        publisher: Any,
+        phone_number: str,
+        channel: str,
+        intents: list[Any],
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        captured.update(
+            {
+                "publisher": publisher,
+                "phone_number": phone_number,
+                "channel": channel,
+                "intents": intents,
+                "metadata": metadata,
+            }
+        )
+
+    monkeypatch.setattr(onboarding_service_module.secrets, "token_urlsafe", lambda _: "opaque-token")
+    monkeypatch.setattr(onboarding_service_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    publisher = object()
+    service = onboarding_service_module.OnboardingService(publisher=publisher, session_manager=session)  # type: ignore[arg-type]
+
+    await service.send_onboarding_flow("2348162511023", channel="whatsapp")
+
+    assert session.strict_calls == [
+        (
+            "onboarding-opaque-token",
+            {
+                "phone_number": "2348162511023",
+                "channel": "whatsapp",
+                "channel_user_id": "2348162511023",
+                "step": OnboardingStep.BVN_ENTRY.value,
+            },
+            True,
+        )
+    ]
+    assert captured["publisher"] is publisher
+    assert captured["phone_number"] == "2348162511023"
+    assert captured["channel"] == "whatsapp"
+    assert captured["metadata"] == {"source": "onboarding"}
+    [intent] = captured["intents"]
+    assert intent.flow_config["flow_token"] == "onboarding-opaque-token"
+    assert "2348162511023" not in intent.flow_config["flow_token"]
 
 
 @pytest.mark.asyncio
@@ -121,6 +205,134 @@ async def test_account_add_service_uses_async_uow_and_creates_account(monkeypatc
     assert created.account_number == "8162511022"
     assert created.bank_name == "Access Bank"
     assert invalidated == ["2348162511023"]
+
+
+@pytest.mark.asyncio
+async def test_bvn_verification_rejects_missing_preseeded_phone_without_calling_mono(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _SessionStub({})
+    service = BvnVerificationService(session)
+
+    async def _unexpected_lookup(bvn: str) -> BvnLookupData:
+        del bvn
+        raise AssertionError("BVN lookup should not run without a session-bound phone number")
+
+    monkeypatch.setattr(
+        "shared.services.onboarding.bvn_verification.mono_client.initiate_bvn_lookup",
+        _unexpected_lookup,
+    )
+
+    result = await service.initiate_bvn_verification("onboarding-attacker-token", "12345678901")
+
+    assert result == {"success": False, "error": "Session expired. Please start over."}
+
+
+@pytest.mark.asyncio
+async def test_bvn_verification_uses_session_phone_not_token_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _SessionStub({"phone_number": "2348162511023"})
+    service = BvnVerificationService(session)
+    lookups: list[str] = []
+
+    async def _lookup(bvn: str) -> BvnLookupData:
+        lookups.append(bvn)
+        return BvnLookupData(
+            session_id="mono-session-1",
+            bvn=bvn,
+            methods=[BvnMethod(method="sms", hint="081***1023")],
+        )
+
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.initiate_bvn_lookup", _lookup)
+
+    result = await service.initiate_bvn_verification("onboarding-random-suffix-9999999999", "12345678901")
+
+    assert result == {
+        "success": True,
+        "data": {"bvn": "12345678901", "methods": [{"id": "sms", "title": "081***1023"}]},
+    }
+    assert lookups == ["12345678901"]
+    assert session.data["phone_number"] == "2348162511023"
+    assert session.data["is_account_linking"] is False
+    assert session.data["step"] == OnboardingStep.METHOD_SELECTION.value
+
+
+@pytest.mark.asyncio
+async def test_send_otp_logs_redacted_session_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _SessionStub(
+        {
+            "phone_number": "2348162511023",
+            "bvn": "12345678901",
+            "session_id": "mono-session-secret",
+            "methods": [{"id": "sms", "title": "081***1023"}],
+            "accounts": [{"account_number": "8162511022"}],
+            "step": OnboardingStep.METHOD_SELECTION.value,
+        }
+    )
+    service = BvnVerificationService(session)
+    logger = _LoggerStub()
+    verify_calls: list[tuple[str, str]] = []
+
+    async def _verify_bvn(session_id: str, method: str) -> None:
+        verify_calls.append((session_id, method))
+
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.logger", logger)
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.verify_bvn", _verify_bvn)
+
+    result = await service.send_otp("flow-token-secret", "sms")
+
+    assert result == {"success": True, "data": {"bvn": "12345678901"}}
+    assert verify_calls == [("mono-session-secret", "sms")]
+
+    session_events = [fields for event, fields in logger.events if event == "otp_session_loaded"]
+    assert session_events == [
+        {
+            "flow_token_hash": "82a39dc852becb79",
+            "step": OnboardingStep.METHOD_SELECTION.value,
+            "phone_masked": "2348***23",
+            "has_bvn": True,
+            "has_session_id": True,
+            "has_accounts": True,
+        }
+    ]
+
+    serialized_logs = str(logger.events)
+    assert "12345678901" not in serialized_logs
+    assert "mono-session-secret" not in serialized_logs
+    assert "8162511022" not in serialized_logs
+    assert "2348162511023" not in serialized_logs
+    assert "flow-token-secret" not in serialized_logs
+
+
+@pytest.mark.asyncio
+async def test_complete_onboarding_rejects_four_digit_pin() -> None:
+    service = AccountLinkingService(_SessionStub(), _MandateStub())
+
+    result = await service.complete_onboarding(
+        "onboarding-token",
+        pin="1234",
+        email="gaines@example.com",
+        address="1 Marina Road",
+    )
+
+    assert result == {"success": False, "error": "Invalid PIN. Please enter a 6-digit numeric PIN."}
+
+
+@pytest.mark.asyncio
+async def test_telegram_complete_onboarding_requires_session_identity() -> None:
+    session = _SessionStub({"phone_number": "2348162511023"})
+    service = AccountLinkingService(session, _MandateStub())
+
+    result = await service.complete_onboarding(
+        "onboarding-legacy-chat-id-12345",
+        pin="123456",
+        email="gaines@example.com",
+        address="1 Marina Road",
+        channel="telegram",
+    )
+
+    assert result == {"success": False, "error": "Telegram session identity missing."}
 
 
 @pytest.mark.asyncio

@@ -17,8 +17,10 @@ from apps.chat.src.agent.graphs.query.models import (
     ExtractionIntent,
     FactQueryKind,
     Filters,
+    QueryContractRequestShape,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFactField,
     QueryIntent,
     QueryIR,
     QueryOperation,
@@ -69,7 +71,8 @@ def build_query_ir_from_extraction(
         analysis_type=cast(Literal["immediate", "relative", "simulated", "remainder"], compiled["analysis_type"]),
         result_limit=cast(int | None, compiled["result_limit"]),
         result_reference=cast(Literal["latest", "oldest"] | None, compiled["result_reference"]),
-        answer_fact_field=cast(Literal["date", "counterparty", "amount", "bank"] | None, compiled["answer_fact_field"]),
+        answer_fact_field=cast(QueryFactField | None, compiled["answer_fact_field"]),
+        request_shape=cast(QueryContractRequestShape | None, compiled["request_shape"]),
         comparison=comparison,
         continuation_type=continuation_type,
         continuation_delta_type=continuation_delta_type,
@@ -178,12 +181,17 @@ def compile_query_fields_from_extraction(
     extraction = recover_known_fragile_query_shapes(extraction.model_copy(deep=True), language=language)
     effective_intent = parser._resolve_effective_intent(extraction)
     query_operation = parser._infer_query_operation(extraction, effective_intent=effective_intent)
-    result_limit = parser._resolve_result_limit(extraction.result_limit, effective_intent=effective_intent)
     result_reference = parser._infer_result_reference(extraction, query_operation=query_operation)
     answer_fact_field = parser._infer_answer_fact_field(
         extraction,
         effective_intent=effective_intent,
         query_operation=query_operation,
+    )
+    result_limit = parser._resolve_result_limit(
+        extraction.result_limit,
+        effective_intent=effective_intent,
+        request_shape=extraction.request_shape,
+        result_reference=result_reference,
     )
     time_range = parser._build_time_range(
         extraction,
@@ -204,6 +212,7 @@ def compile_query_fields_from_extraction(
         filters=filters,
         aggregation=aggregation,
         answer_fact_field=answer_fact_field,
+        request_shape=extraction.request_shape.value if extraction.request_shape is not None else None,
     )
     return {
         "intent": intent,
@@ -219,6 +228,7 @@ def compile_query_fields_from_extraction(
         "result_limit": result_limit,
         "result_reference": result_reference,
         "answer_fact_field": answer_fact_field,
+        "request_shape": extraction.request_shape.value if extraction.request_shape is not None else None,
         "intent_spec": intent_spec,
     }
 
@@ -232,9 +242,7 @@ def resolve_effective_intent(
     answer_fact_field: str | None = None,
 ) -> ExtractionIntent:
     raw_lower = (raw_query or "").strip().lower()
-    if request_shape == QueryRequestShape.FACT:
-        return ExtractionIntent.SINGLE_TRANSACTION
-    if intent == ExtractionIntent.BENEFICIARY_SUMMARY and is_single_transaction_fact_query(raw_lower):
+    if request_shape in {QueryRequestShape.FACT, QueryRequestShape.EXISTENCE}:
         return ExtractionIntent.SINGLE_TRANSACTION
     if request_shape in {
         QueryRequestShape.ANALYTICS,
@@ -249,72 +257,17 @@ def resolve_effective_intent(
         "counterparty",
         "amount",
         "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
     }:
         return ExtractionIntent.SINGLE_TRANSACTION
     if intent == ExtractionIntent.TRANSACTION_LIST and is_aggregate_total_query(raw_lower):
         return ExtractionIntent.SPENDING_TOTAL
     return intent
-
-
-def is_single_transaction_fact_query(raw_query: str) -> bool:
-    if not raw_query:
-        return False
-    normalized_compact = " ".join(raw_query.split())
-    normalized = f" {normalized_compact} "
-    has_transaction_verb = any(
-        phrase in normalized
-        for phrase in (
-            " pay ",
-            " paid ",
-            " send ",
-            " sent ",
-            " transfer ",
-            " transferred ",
-            " receive ",
-            " received ",
-        )
-    )
-    if (
-        has_transaction_verb
-        and (
-            normalized.startswith(" who did i ")
-            or normalized.startswith(" who do i ")
-        )
-        and (
-            normalized_compact.endswith(" last")
-            or normalized_compact.endswith(" latest")
-            or normalized_compact.endswith(" most recent")
-            or normalized_compact.endswith(" last transaction")
-            or normalized_compact.endswith(" latest transaction")
-        )
-    ):
-        return True
-
-    if any(
-        phrase in normalized
-        for phrase in (
-            " top ",
-            " most ",
-            " people ",
-            " recipients ",
-            " to the most ",
-        )
-    ):
-        return False
-
-    has_fact_cue = (
-        normalized.startswith(" when ")
-        or " when did " in normalized
-        or " when last did " in normalized
-        or normalized.startswith(" which bank ")
-        or normalized.startswith(" what bank ")
-        or normalized.startswith(" how much was ")
-        or normalized.startswith(" how much did ")
-    )
-    if not has_fact_cue:
-        return False
-
-    return has_transaction_verb
 
 
 def intent_from_query_operation(query_operation: QueryOperation) -> QueryIntent:
@@ -341,6 +294,8 @@ def intent_from_query_operation(query_operation: QueryOperation) -> QueryIntent:
 def infer_query_operation(extraction: QueryExtractionResult, *, effective_intent: ExtractionIntent) -> QueryOperation:
     if extraction.query_operation is not None:
         return extraction.query_operation
+    if extraction.request_shape == QueryRequestShape.EXISTENCE:
+        return QueryOperation.SUM_TRANSACTIONS
     if extraction.request_shape == QueryRequestShape.FACT or (
         extraction.fact_query_kind is not None
         and extraction.request_shape
@@ -394,9 +349,17 @@ def is_aggregate_total_query(raw_query: str) -> bool:
     )
 
 
-def resolve_result_limit(raw_limit: int | None, *, effective_intent: ExtractionIntent) -> int | None:
+def resolve_result_limit(
+    raw_limit: int | None,
+    *,
+    effective_intent: ExtractionIntent,
+    request_shape: QueryRequestShape | None = None,
+    result_reference: Literal["latest", "oldest"] | None = None,
+) -> int | None:
     result_limit = raw_limit
-    if effective_intent == ExtractionIntent.SINGLE_TRANSACTION:
+    if effective_intent == ExtractionIntent.SINGLE_TRANSACTION and result_limit is None:
+        if request_shape == QueryRequestShape.FACT and result_reference is None:
+            return None
         result_limit = result_limit or 1
     if result_limit:
         result_limit = min(result_limit, QUERY_LIMITS["max_results"])
@@ -426,7 +389,7 @@ def build_time_range(
     today: date,
     effective_intent: ExtractionIntent,
     query_operation: QueryOperation,
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None,
+    answer_fact_field: QueryFactField | None,
     result_reference: Literal["latest", "oldest"] | None,
 ) -> TimeRange | None:
     if not extraction.time_range:
@@ -449,7 +412,18 @@ def build_time_range(
         and effective_intent == ExtractionIntent.SINGLE_TRANSACTION
         and query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
         and result_reference == "latest"
-        and answer_fact_field in {"date", "counterparty", "amount", "bank"}
+        and answer_fact_field in {
+            "date",
+            "counterparty",
+            "amount",
+            "bank",
+            "status",
+            "description",
+            "reference",
+            "account",
+            "direction",
+            "category",
+        }
     ):
         days_back = QUERY_LIMITS["max_lookback_days"]
     elif reference_type == TimeReference.UNSPECIFIED:
@@ -537,37 +511,34 @@ def infer_answer_fact_field(
     *,
     effective_intent: ExtractionIntent,
     query_operation: QueryOperation,
-) -> Literal["date", "counterparty", "amount", "bank"] | None:
-    if extraction.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
-        return cast(Literal["date", "counterparty", "amount", "bank"], extraction.answer_fact_field)
+) -> QueryFactField | None:
+    del effective_intent, query_operation
+    if extraction.answer_fact_field in {
+        "date",
+        "counterparty",
+        "amount",
+        "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
+    }:
+        return extraction.answer_fact_field
     if extraction.fact_query_kind in {
         FactQueryKind.DATE,
         FactQueryKind.COUNTERPARTY,
         FactQueryKind.AMOUNT,
         FactQueryKind.BANK,
+        FactQueryKind.STATUS,
+        FactQueryKind.DESCRIPTION,
+        FactQueryKind.REFERENCE,
+        FactQueryKind.ACCOUNT,
+        FactQueryKind.DIRECTION,
+        FactQueryKind.CATEGORY,
     }:
-        return cast(Literal["date", "counterparty", "amount", "bank"], extraction.fact_query_kind.value)
-    if effective_intent in {
-        ExtractionIntent.SPENDING_TOTAL,
-        ExtractionIntent.CATEGORY_BREAKDOWN,
-        ExtractionIntent.BENEFICIARY_SUMMARY,
-        ExtractionIntent.TIME_COMPARISON,
-        ExtractionIntent.AFFORDABILITY,
-    }:
-        return None
-    if query_operation not in {QueryOperation.LIST_TRANSACTIONS, QueryOperation.SEARCH_SINGLE_TRANSACTION}:
-        return None
-    raw_query = f" {(extraction.raw_query or '').strip().lower()} "
-    if raw_query == "  ":
-        return None
-    if raw_query.startswith(" when ") or " when did " in raw_query:
-        return "date"
-    if raw_query.startswith(" who ") or " who sent " in raw_query or " who paid " in raw_query:
-        return "counterparty"
-    if raw_query.startswith(" which bank ") or raw_query.startswith(" what bank "):
-        return "bank"
-    if raw_query.startswith(" how much was ") or raw_query.startswith(" how much did i pay for "):
-        return "amount"
+        return cast(QueryFactField, extraction.fact_query_kind.value)
     return None
 
 

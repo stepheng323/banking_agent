@@ -8,7 +8,9 @@ def _set_minimum_production_env(monkeypatch) -> None:
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("MONO_API_KEY", "test-mono-key")
+    monkeypatch.setenv("MONO_WEBHOOK_SECRET", "test-mono-webhook-secret")
     monkeypatch.setenv("FLUTTERWAVE_SECRET_KEY", "test-flw-key")
+    monkeypatch.setenv("META_APP_SECRET", "test-meta-secret")
     monkeypatch.setenv("META_ACCESS_TOKEN", "test-meta-access")
     monkeypatch.setenv("META_VERIFY_TOKEN", "test-meta-verify")
     monkeypatch.setenv("META_PHONE_NUMBER_ID", "12345")
@@ -54,6 +56,28 @@ def test_settings_query_model_defaults_to_planner_model_until_explicitly_configu
     assert cfg.query_model == "gpt-4o-mini-test"
 
 
+def test_settings_media_models_have_dedicated_defaults(monkeypatch) -> None:
+    monkeypatch.delenv("MEDIA_IMAGE_MODEL", raising=False)
+    monkeypatch.delenv("AUDIO_TRANSCRIPTION_MODEL", raising=False)
+    monkeypatch.setenv("EXTRACTOR_MODEL", "extractor-test")
+
+    cfg = Settings()
+
+    assert cfg.extractor_model == "extractor-test"
+    assert cfg.media_image_model == "gpt-5-mini"
+    assert cfg.audio_transcription_model == "gpt-4o-mini-transcribe"
+
+
+def test_settings_media_models_can_be_overridden(monkeypatch) -> None:
+    monkeypatch.setenv("MEDIA_IMAGE_MODEL", "vision-override")
+    monkeypatch.setenv("AUDIO_TRANSCRIPTION_MODEL", "audio-override")
+
+    cfg = Settings()
+
+    assert cfg.media_image_model == "vision-override"
+    assert cfg.audio_transcription_model == "audio-override"
+
+
 def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
     _set_minimum_production_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")
@@ -68,7 +92,7 @@ def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
 def test_direct_debit_provider_factory_uses_mono_mock_toggle(monkeypatch) -> None:
     DirectDebitProviderFactory.clear_cache()
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     provider = DirectDebitProviderFactory.get_provider()
 
@@ -79,7 +103,7 @@ def test_direct_debit_provider_factory_uses_mono_mock_toggle(monkeypatch) -> Non
 
 def test_mono_client_uses_explicit_mock_toggle(monkeypatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings.runtime, "app_env", "production")
 
     client = MonoClient()
 

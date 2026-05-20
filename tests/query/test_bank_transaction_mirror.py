@@ -8,7 +8,11 @@ import pytest
 
 from apps.chat.src.agent.graphs.query.handlers.analytics import _aggregate_breakdown
 from apps.chat.src.agent.graphs.query.models import Aggregation, Filters, QueryIntent, QueryIR, TimeRange
-from apps.chat.src.agent.graphs.query.services.fetch import fetch_and_filter, fetch_transactions_base
+from apps.chat.src.agent.graphs.query.services.fetch import (
+    _is_missing_mirror_table_error,
+    fetch_and_filter,
+    fetch_transactions_base,
+)
 from shared.clients.abstractions.banking import TransactionData, TransactionPageData
 
 
@@ -20,6 +24,12 @@ def _query_ir(**kwargs: object) -> QueryIR:
     }
     defaults.update(kwargs)
     return QueryIR(**defaults)
+
+
+def test_missing_mirror_table_error_is_detected_without_full_sqlalchemy_exception() -> None:
+    error = RuntimeError('relation "bank_transaction_coverage" does not exist')
+
+    assert _is_missing_mirror_table_error(error) is True
 
 
 class _FakeDbSession:

@@ -35,6 +35,7 @@ class Decision(str, Enum):
 class NextStep(str, Enum):
     ASK_REFERENCE = "ask_reference"
     LOOKUP_TRANSACTION = "lookup_transaction"
+    LOOKUP_TICKET = "lookup_ticket"
     EXPLAIN_STATUS = "explain_status"
     ASK_CLARIFICATION = "ask_clarification"
     CREATE_TICKET = "create_ticket"
@@ -65,11 +66,28 @@ class ResolverDecision(BaseModel):
 
 ACTION_MAP = {
     RequestedAction.LOOKUP_TRANSACTION: SupportAction.LOOKUP_TRANSACTION,
+    RequestedAction.LOOKUP_TICKET: SupportAction.LOOKUP_TICKET,
     RequestedAction.EXPLAIN_STATUS: SupportAction.EXPLAIN_STATUS,
     RequestedAction.RETRY_PAYOUT: SupportAction.RETRY_PAYOUT,
     RequestedAction.INITIATE_REFUND: SupportAction.INITIATE_REFUND,
+    RequestedAction.QUEUE_REFUND_REQUEST: SupportAction.QUEUE_REFUND_REQUEST,
     RequestedAction.CREATE_TICKET: SupportAction.CREATE_TICKET,
     RequestedAction.ESCALATE: SupportAction.ESCALATE,
+}
+
+INTENT_ACTIONS: dict[SupportIntent, list[SupportAction]] = {
+    SupportIntent.FAILED_TRANSFER: [SupportAction.LOOKUP_TRANSACTION, SupportAction.EXPLAIN_STATUS],
+    SupportIntent.PENDING_TRANSFER: [SupportAction.LOOKUP_TRANSACTION, SupportAction.EXPLAIN_STATUS],
+    SupportIntent.GENERAL_TX_ISSUE: [SupportAction.LOOKUP_TRANSACTION, SupportAction.EXPLAIN_STATUS],
+    SupportIntent.TRANSFER_STATUS: [SupportAction.LOOKUP_TRANSACTION, SupportAction.EXPLAIN_STATUS],
+    SupportIntent.RECEIPT_REQUEST: [SupportAction.LOOKUP_TRANSACTION],
+    SupportIntent.RETRY_TRANSFER: [SupportAction.LOOKUP_TRANSACTION, SupportAction.RETRY_PAYOUT],
+    SupportIntent.WRONG_DEBIT: [SupportAction.LOOKUP_TRANSACTION, SupportAction.EXPLAIN_STATUS],
+    SupportIntent.REVERSAL_REFUND: [SupportAction.LOOKUP_TRANSACTION, SupportAction.INITIATE_REFUND],
+    SupportIntent.WRONG_RECIPIENT: [SupportAction.LOOKUP_TRANSACTION, SupportAction.CREATE_TICKET],
+    SupportIntent.FRAUD_REPORT: [SupportAction.CREATE_TICKET, SupportAction.ESCALATE],
+    SupportIntent.HUMAN_HANDOFF: [SupportAction.CREATE_TICKET, SupportAction.ESCALATE],
+    SupportIntent.TICKET_STATUS: [SupportAction.LOOKUP_TICKET],
 }
 
 
@@ -132,32 +150,11 @@ def resolve(
     if has_quoted_message and extraction.transaction_ref:
         extraction.transaction_ref.use_quoted = True
 
-    escalation, notify_human = _should_escalate(context, extraction.intent)
-    if escalation:
-        context.last_support_step = "creating_ticket"
-        return ResolverDecision(
-            decision=Decision.ESCALATE,
-            next_step=NextStep.CREATE_TICKET,
-            extraction=extraction,
-            context=context,
-            escalation=escalation,
-            notify_human=notify_human,
-            prompts=[Prompt(key="support.creating_ticket", vars={"reason": escalation.reason})],
-        )
-
-    has_ref = _has_transaction_ref(extraction.transaction_ref)
-
-    if not has_ref and extraction.intent not in (SupportIntent.LIMITS_FEES, SupportIntent.ACCOUNT_LINKING):
-        context.last_support_step = "asked_for_reference"
-        return ResolverDecision(
-            decision=Decision.COLLECT,
-            next_step=NextStep.ASK_REFERENCE,
-            extraction=extraction,
-            context=context,
-            prompts=[Prompt(key="support.ask_reference", vars={"intent": extraction.intent.value})],
-        )
-
     requested = [ACTION_MAP[a] for a in extraction.requested_actions if a in ACTION_MAP]
+    for action in INTENT_ACTIONS.get(extraction.intent, []):
+        if action not in requested:
+            requested.append(action)
+
     missing = check_actions(requested)
 
     if missing:
@@ -177,11 +174,47 @@ def resolve(
             prompts=[Prompt(key="support.negotiate", vars={"message": negotiation.message})],
         )
 
+    escalation, notify_human = _should_escalate(context, extraction.intent)
+    if escalation:
+        context.last_support_step = "creating_ticket"
+        return ResolverDecision(
+            decision=Decision.ESCALATE,
+            next_step=NextStep.CREATE_TICKET,
+            extraction=extraction,
+            context=context,
+            escalation=escalation,
+            notify_human=notify_human,
+            prompts=[Prompt(key="support.creating_ticket", vars={"reason": escalation.reason})],
+        )
+
+    if extraction.intent == SupportIntent.TICKET_STATUS:
+        context.last_support_step = "looking_up_ticket"
+        return ResolverDecision(
+            decision=Decision.PROCEED,
+            next_step=NextStep.LOOKUP_TICKET,
+            extraction=extraction,
+            context=context,
+        )
+
+    has_ref = _has_transaction_ref(extraction.transaction_ref)
+
+    if not has_ref and extraction.intent not in (SupportIntent.LIMITS_FEES, SupportIntent.ACCOUNT_LINKING):
+        context.last_support_step = "asked_for_reference"
+        return ResolverDecision(
+            decision=Decision.COLLECT,
+            next_step=NextStep.ASK_REFERENCE,
+            extraction=extraction,
+            context=context,
+            prompts=[Prompt(key="support.ask_reference", vars={"intent": extraction.intent.value})],
+        )
+
     if extraction.intent in (
         SupportIntent.FAILED_TRANSFER,
         SupportIntent.PENDING_TRANSFER,
         SupportIntent.GENERAL_TX_ISSUE,
         SupportIntent.TRANSFER_STATUS,
+        SupportIntent.RETRY_TRANSFER,
+        SupportIntent.WRONG_DEBIT,
     ):
         context.last_support_step = "looking_up"
         return ResolverDecision(

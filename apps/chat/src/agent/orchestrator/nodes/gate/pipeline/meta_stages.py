@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _classify_obvious_transfer_request,
     _is_direct_context_recap_request,
     _is_query_domain_request,
+    _is_structural_query_domain_request,
     _locale_update,
     _query_followup_bypass_reason,
     _route_observability_updates,
@@ -164,6 +165,7 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
             message_text=ctx.message_text,
             locale=ctx.current_locale,
             query_session_snapshot=ctx.query_session_snapshot if isinstance(ctx.query_session_snapshot, dict) else None,
+            has_context_frames=bool(ctx.state.context_frames),
         )
         if bypass_reason is not None:
             logger.info(
@@ -191,15 +193,21 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
             }
 
     # Deterministic query domain
-    if (
+    can_consider_query_domain = (
         not ctx.live_pending_interrupt
         and not ctx.state.has_quote
         and not has_active_query_session
         and ctx.phrase_heavy_fastpath_allowed
-        and _is_query_domain_request(ctx.message_text)
-    ):
+    )
+    if can_consider_query_domain and _is_structural_query_domain_request(ctx.message_text):
+        semantic_router_available = callable(getattr(ctx.task_planner, "route_semantic_turn", None))
         task_id, spec = _build_direct_domain_task(state=ctx.state, domain="query", mode="new")
-        logger.info("gate_deterministic_query_domain", task_id=task_id)
+        logger.info(
+            "gate_deterministic_query_domain",
+            task_id=task_id,
+            structural_query_request=True,
+            semantic_router_available=semantic_router_available,
+        )
         return {
             **ctx.gate_updates,
             **(ctx.summary_updates or {}),
@@ -214,20 +222,36 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                 decision="deterministic_query_domain",
                 target_domain="query",
                 mode="new",
+                route_source="query_domain_guard",
+                heuristic_type="guardrail_shortcut",
+                heuristic_name="structural_query_domain",
             ),
         }
+    if (
+        can_consider_query_domain
+        and callable(getattr(ctx.task_planner, "route_semantic_turn", None))
+        and _is_query_domain_request(ctx.message_text)
+    ):
+        ctx.add_routing_hint(
+            domain="query",
+            reason="query_domain_phrase",
+            source="query_domain_phrase",
+        )
+        logger.info("gate_query_domain_hint_attached")
+        return None
 
     # Transfer direct
     if not ctx.live_pending_interrupt and not ctx.state.has_quote:
         transfer_request_reason = (
             _classify_obvious_transfer_request(ctx.message_text) if ctx.phrase_heavy_fastpath_allowed else None
         )
-        if transfer_request_reason in {"fresh_transfer_command", "fresh_transfer_missing_recipient_command"}:
+        if transfer_request_reason in {
+            "fresh_transfer_command",
+            "fresh_transfer_missing_recipient_command",
+            "recipient_bank_details_only",
+        }:
             transfer_updates: dict[str, Any] = {}
-            if (
-                isinstance(ctx.query_session_snapshot, dict)
-                and ctx.query_session_snapshot.get("session_active")
-            ):
+            if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
                 await clear_query_session(ctx.redis_client, ctx.state.phone_number)
                 transfer_updates.update(
                     _build_query_session_exit_updates(
@@ -236,6 +260,8 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                     )
                 )
             task_id, spec = _build_direct_domain_task(state=ctx.state, domain="transfer", mode="new")
+            if transfer_request_reason == "recipient_bank_details_only":
+                spec.payload["amount_suggestion_disabled"] = True
             logger.info(
                 "gate_deterministic_transfer_domain",
                 task_id=task_id,
@@ -258,16 +284,16 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                     decision=transfer_request_reason,
                     target_domain="transfer",
                     mode="new",
+                    route_source="transfer_domain_guard",
+                    heuristic_type="slot_parser",
+                    heuristic_name=transfer_request_reason,
                 ),
             }
         if transfer_request_reason in {"batch_transfer_command", "account_aware_transfer_command"}:
             transfer_updates = {
                 "preplanner_expected_transaction_executors": ["transfer"],
             }
-            if (
-                isinstance(ctx.query_session_snapshot, dict)
-                and ctx.query_session_snapshot.get("session_active")
-            ):
+            if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
                 await clear_query_session(ctx.redis_client, ctx.state.phone_number)
                 transfer_updates.update(
                     _build_query_session_exit_updates(
@@ -290,6 +316,9 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                     decision=transfer_request_reason,
                     target_domain="transfer",
                     mode="new",
+                    route_source="transfer_domain_guard",
+                    heuristic_type="slot_parser",
+                    heuristic_name=transfer_request_reason,
                 ),
             }
 

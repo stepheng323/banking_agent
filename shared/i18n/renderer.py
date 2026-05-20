@@ -91,6 +91,8 @@ def _default_template_params() -> dict[str, object]:
         "app_name": settings.app_name,
         "app_name_short": settings.app_name_short,
         "app_creator": settings.app_creator,
+        "app_brand_inspiration": settings.app_brand_inspiration,
+        "app_public_base_url": settings.app_public_base_url,
     }
 
 

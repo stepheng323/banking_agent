@@ -36,7 +36,7 @@ async def test_whatsapp_client_send_text_suppresses_typing_when_requested(monkey
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
     monkeypatch.setattr("shared.clients.whatsapp.client.asyncio.sleep", _sleep)
-    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 650)
+    monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     result = await client.send_text(
         to="2348000000000",
@@ -73,7 +73,7 @@ async def test_whatsapp_client_send_text_keeps_typing_by_default(monkeypatch: py
     monkeypatch.setattr(client, "_ensure_message_id", _ensure_message_id)
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
-    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 0)
+    monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 0)
 
     result = await client.send_text(
         to="2348000000000",
@@ -113,7 +113,7 @@ async def test_whatsapp_client_send_text_waits_briefly_after_typing(monkeypatch:
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
     monkeypatch.setattr("shared.clients.whatsapp.client.asyncio.sleep", _sleep)
-    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 650)
+    monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     result = await client.send_text(
         to="2348000000000",
@@ -126,9 +126,51 @@ async def test_whatsapp_client_send_text_waits_briefly_after_typing(monkeypatch:
 
 
 @pytest.mark.asyncio
+async def test_whatsapp_client_send_flow_data_exchange_omits_action_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = WhatsAppClient.__new__(WhatsAppClient)
+    client.access_token = "token"
+    client.phone_number_id = "phone-id"
+    sent_payloads: list[dict[str, Any]] = []
+
+    async def _ensure_message_id(to: str, message_id: str | None) -> str | None:
+        del to
+        return message_id
+
+    async def _send(url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
+        del url, max_retries
+        sent_payloads.append(payload)
+        return {"messages": [{"id": "wa-flow-1"}]}
+
+    monkeypatch.setattr(client, "_ensure_message_id", _ensure_message_id)
+    monkeypatch.setattr(client, "_send", _send)
+
+    result = await client.send_flow(
+        to="2348000000000",
+        flow_id="flow-id",
+        flow_config={
+            "header": "Authorize",
+            "text_body": "Enter PIN",
+            "flow_cta": "Authorize",
+            "screen_name": "Pin",
+            "flow_token": "transfer-pin-idem-1-2348000000000",
+            "flow_action": "data_exchange",
+        },
+        suppress_typing_indicator=True,
+    )
+
+    assert result.message_id == "wa-flow-1"
+    params = sent_payloads[0]["interactive"]["action"]["parameters"]
+    assert params["flow_action"] == "data_exchange"
+    assert params["flow_token"] == "transfer-pin-idem-1-2348000000000"
+    assert "flow_action_payload" not in params
+
+
+@pytest.mark.asyncio
 async def test_whatsapp_client_reuses_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "meta_access_token", "token")
-    monkeypatch.setattr(settings, "meta_phone_number_id", "phone-id")
+    monkeypatch.setattr(settings.whatsapp, "access_token", "token")
+    monkeypatch.setattr(settings.whatsapp, "phone_number_id", "phone-id")
     created_clients: list[object] = []
 
     class _FakeAsyncClient:

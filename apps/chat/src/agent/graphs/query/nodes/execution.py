@@ -125,7 +125,14 @@ class ExecutionStep(QueryStep):
             "cache_window_end": query_session.get("cache_window_end"),
         }
 
-        if "selected_item_index" in state and state.get("query_session"):
+        if (
+            state.get("query_session")
+            and (
+                "selected_item_index" in state
+                or state.get("selected_payload") is not None
+                or state.get("selected_item_id") is not None
+            )
+        ):
             return await handle_drill_down(state)
 
         if not query_contract or not account_id:
@@ -189,6 +196,8 @@ class ExecutionStep(QueryStep):
                 "resolver_message": None,
                 "session_active": True,
                 "flow_state": "complete",
+                "current_page": current_page,
+                "page_size": page_size,
                 "cached_transactions": result.cached_transactions,
                 "cache_fetched_at": result.cache_fetched_at,
                 "cache_fingerprint": result.cache_fingerprint,

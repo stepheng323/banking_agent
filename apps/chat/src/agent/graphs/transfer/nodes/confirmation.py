@@ -12,6 +12,7 @@ from apps.chat.src.agent.graphs.transfer.models.types import (
 )
 from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.formatters.currency import format_naira
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transfer import format_funding_plan_summary, format_transfer_summary
 from shared.guardrails.loader import get_cached_guardrails
@@ -143,7 +144,7 @@ async def _build_dynamic_risk_patch(
         warning = render_message(
             "transfer.confirmation.high_risk_unsaved_warning",
             ctx.language,
-            {"amount": f"₦{amount:,.0f}", "threshold": f"₦{threshold:,.0f}"},
+            {"amount": format_naira(amount), "threshold": format_naira(threshold)},
         )
 
     return {
@@ -155,7 +156,7 @@ async def _build_dynamic_risk_patch(
 
 def _format_naira(amount: Any) -> str | None:
     try:
-        return f"₦{float(amount):,.0f}"
+        return format_naira(float(amount))
     except (TypeError, ValueError):
         return None
 
@@ -310,7 +311,7 @@ def _has_specific_value_reference(
                 amount_val = float(value)
             except (TypeError, ValueError):
                 continue
-            formatted_amount = f"₦{amount_val:,.0f}".lower()
+            formatted_amount = format_naira(amount_val).lower()
             compact_amount = str(int(round(amount_val)))
             if formatted_amount in normalized_ack:
                 return True
@@ -485,9 +486,16 @@ def build_confirmation(
                 recipient_account=payload.recipient_account or "",
                 locale=ctx.language,
             )
-            summary = (
-                f"{funding_summary}\n\nRecipient will be credited once after all funding debits succeed.\n\n{summary}"
-            )
+            if warning_lines:
+                summary = "\n\n".join(
+                    [
+                        *warning_lines,
+                        funding_summary,
+                        "Recipient will be credited once after all funding debits succeed.",
+                    ]
+                )
+            else:
+                summary = f"{funding_summary}\n\nRecipient will be credited once after all funding debits succeed."
 
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_CONFIRMATION,

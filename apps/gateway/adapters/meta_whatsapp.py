@@ -8,6 +8,12 @@ from typing import Any
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.gateway.core.config import settings
+
+
+class WebhookSignatureError(ValueError):
+    """Raised when a Meta webhook signature is missing or invalid."""
+
 
 class QuotedMessage(BaseModel):
     """Represents a quoted/replied-to message."""
@@ -54,10 +60,10 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
             for message in messages:
                 text = ""
                 message_type: str = message.get("type", "")
+                parsed_type = message_type
                 flow_data: dict[str, Any] | None = None
                 sender = message.get("from")
                 if not sender and contacts:
-                    # Fallback for payload variants where sender id is only present in contacts.
                     sender = contacts[0].get("wa_id")
 
                 if message_type == "text":
@@ -68,6 +74,9 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                     text = image.get("caption", "")
                 elif message_type == "audio":
                     pass
+                elif message_type == "document":
+                    document: dict[str, Any] = message.get("document", {})
+                    text = document.get("caption", "")
                 elif message_type == "interactive":
                     interactive: dict[str, Any] = message.get("interactive", {})
                     interactive_type: str | None = interactive.get("type")
@@ -80,7 +89,6 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                         except json.JSONDecodeError:
                             flow_data = {"raw": response_json}
 
-                    # Also handle nfm_reply type (WhatsApp Flow PIN/data responses)
                     elif interactive_type == "nfm_reply":
                         nfm_reply: dict[str, Any] = interactive.get("nfm_reply", {})
                         response_json_str: str = nfm_reply.get("response_json", "{}")
@@ -89,14 +97,12 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                         except json.JSONDecodeError:
                             flow_data = {"raw": response_json_str}
 
-                    # Handle button replies (user clicked a button)
                     elif interactive_type == "button_reply":
                         button_reply: dict[str, Any] = interactive.get("button_reply", {})
-                        text = button_reply.get("id", "")  # Button ID becomes the text
-                    # Handle list replies (user selected a row from list menu)
+                        text = button_reply.get("id", "")
                     elif interactive_type == "list_reply":
                         list_reply: dict[str, Any] = interactive.get("list_reply", {})
-                        text = list_reply.get("id", "")  # Row ID becomes the text
+                        text = list_reply.get("id", "")
 
                 media_id = None
                 mime_type = None
@@ -109,6 +115,12 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                     audio_data = message.get("audio", {})
                     media_id = audio_data.get("id")
                     mime_type = audio_data.get("mime_type")
+                elif message_type == "document":
+                    document_data = message.get("document", {})
+                    media_id = document_data.get("id")
+                    mime_type = document_data.get("mime_type")
+                    if isinstance(mime_type, str) and mime_type.startswith("image/"):
+                        parsed_type = "image"
 
                 quoted: QuotedMessage | None = None
                 context = message.get("context")
@@ -124,7 +136,7 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                             "id": message.get("id"),
                             "from": sender,
                             "text": text,
-                            "type": message_type,
+                            "type": parsed_type,
                             "flow_data": flow_data,
                             "media_id": media_id,
                             "mime_type": mime_type,
@@ -132,21 +144,26 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                             "raw": message,
                         }
                     )
-
                 )
     return results
 
 
 async def verify_meta_signature(request: Request) -> None:
     """Verify Meta signature."""
-    app_secret = None
+    app_secret = settings.whatsapp.app_secret
     if not app_secret:
-        return
+        raise WebhookSignatureError("META_APP_SECRET is not set")
+
     sig = request.headers.get("X-Hub-Signature-256")
     if not sig or not sig.startswith("sha256="):
-        return
+        raise WebhookSignatureError("Missing or invalid signature header")
+
+    received_digest = sig.removeprefix("sha256=").strip().lower()
+    if not received_digest:
+        raise WebhookSignatureError("Missing signature digest")
+
     body = await request.body()
     mac = hmac.new(app_secret.encode("utf-8"), msg=body, digestmod=hashlib.sha256)
-    expected = "sha256=" + mac.hexdigest()
-    if not hmac.compare_digest(expected, sig):
-        raise ValueError("Invalid signature")
+    expected_digest = mac.hexdigest()
+    if not hmac.compare_digest(expected_digest, received_digest):
+        raise WebhookSignatureError("Invalid signature")

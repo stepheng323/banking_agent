@@ -8,15 +8,15 @@
     />
     <title>Link Account</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="/static/telegram/miniapp_theme.js?v=3"></script>
-    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=4" />
+    <script src="/static/telegram/miniapp_theme.js?v=6"></script>
+    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=8" />
     <style>
       .linking-sheet {
         min-height: 100%;
       }
 
       .linking-title {
-        font-size: 34px;
+        font-size: 25px;
       }
 
       .linking-content {
@@ -32,7 +32,7 @@
 
       @media (max-width: 420px) {
         .linking-title {
-          font-size: 30px;
+          font-size: 24px;
         }
       }
     </style>
@@ -42,12 +42,13 @@
     <div class="mini-page">
       <div class="mini-sheet">
         <div class="mini-sheet-content linking-sheet">
-          <div class="mini-handle"></div>
-          <div class="mini-topbar">
-            <span class="mini-topbar-icon">←</span>
-            <span class="mini-topbar-title">Link New Account</span>
-            <span class="mini-topbar-icon">⋮</span>
-          </div>
+          <header class="mini-app-profile">
+            <div class="mini-app-avatar" aria-hidden="true">N</div>
+            <div class="mini-app-copy">
+              <h1 class="mini-app-title">Narya</h1>
+              <p class="mini-app-subtitle">Secure account linking in Telegram.</p>
+            </div>
+          </header>
 
           <div class="mini-progress">
             <div class="mini-progress-fill" id="progressFill"></div>
@@ -64,7 +65,7 @@
             </div>
 
             <div id="step-otp" class="mini-step">
-              <h1 class="mini-title linking-title">Enter verification code</h1>
+              <h1 class="mini-title linking-title">Enter the 6-digit code</h1>
               <p class="mini-subtitle">We sent a 6-digit code to your selected method.</p>
 
               <input
@@ -78,7 +79,7 @@
             </div>
 
             <div id="step-account" class="mini-step">
-              <h1 class="mini-title linking-title">Select your account</h1>
+              <h1 class="mini-title linking-title">Select account</h1>
               <p class="mini-subtitle">Choose the bank account you want to link.</p>
 
               <label class="mini-section-label">Bank Account</label>
@@ -122,16 +123,11 @@
       const tg = window.Telegram.WebApp;
       tg.ready();
       tg.expand();
-      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#21d07a" });
-
-      try {
-        if (tg.MainButton) {
-          tg.MainButton.hide();
-        }
-      } catch (e) {}
+      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#2ea6ff" });
 
       const params = new URLSearchParams(window.location.search);
-      const flowToken = params.get("flow_token") || "";
+      const bootstrapNonce = params.get("boot") || "";
+      let flowToken = "";
 
       let currentStep = "method";
       const historyStack = [];
@@ -142,6 +138,23 @@
       const btnMainText = document.getElementById("btnMainText");
       const btnMainLoader = document.getElementById("btnMainLoader");
       const progressFill = document.getElementById("progressFill");
+      const nativeMainButton = tg.MainButton || null;
+      const useNativeMainButton = Boolean(nativeMainButton && typeof nativeMainButton.setText === "function");
+
+      if (useNativeMainButton) {
+        document.body.classList.add("uses-native-main-button");
+        nativeMainButton.onClick(() => {
+          if (currentStep !== "success") {
+            handleMainAction();
+          }
+        });
+      } else {
+        btnMainAction.addEventListener("click", () => {
+          if (!btnMainAction.disabled) {
+            handleMainAction();
+          }
+        });
+      }
 
       tg.BackButton.onClick(() => {
         if (historyStack.length > 0) {
@@ -151,14 +164,34 @@
         }
       });
 
-      btnMainAction.addEventListener("click", () => {
-        if (!btnMainAction.disabled) {
-          handleMainAction();
-        }
-      });
-
       function updateMainButton(text, isLoading, isVisible, isActive = true) {
         const footer = document.getElementById("htmlBottomBar");
+        if (useNativeMainButton) {
+          footer.style.display = "none";
+          try {
+            if (!isVisible || currentStep === "success") {
+              nativeMainButton.hideProgress();
+              nativeMainButton.hide();
+              return;
+            }
+
+            nativeMainButton.setText(text || "Continue");
+            if (isLoading) {
+              nativeMainButton.showProgress(false);
+              nativeMainButton.disable();
+            } else {
+              nativeMainButton.hideProgress();
+              if (isActive) {
+                nativeMainButton.enable();
+              } else {
+                nativeMainButton.disable();
+              }
+            }
+            nativeMainButton.show();
+          } catch (e) {}
+          return;
+        }
+
         if (!isVisible || currentStep === "success") {
           footer.style.display = "none";
           return;
@@ -169,6 +202,34 @@
         btnMainAction.disabled = isLoading || !isActive;
         btnMainLoader.style.display = isLoading ? "inline-flex" : "none";
         btnMainText.style.display = isLoading ? "none" : "inline";
+      }
+
+      async function bootstrapMiniApp() {
+        if (!bootstrapNonce) {
+          return { success: false, error: "Session expired. Please reopen this page from Telegram." };
+        }
+        if (!tg.initData) {
+          return { success: false, error: "Telegram authentication missing. Reopen this page from Telegram." };
+        }
+        try {
+          const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/bootstrap`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Telegram-Init-Data": tg.initData || "",
+            },
+            body: JSON.stringify({ boot: bootstrapNonce, endpoint: "linking" }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.success) {
+            return { success: false, error: payload.error || payload.detail || "Session expired. Please reopen this page from Telegram." };
+          }
+          flowToken = payload.flow_token || "";
+          return { success: true };
+        } catch (err) {
+          return { success: false, error: "Network error. Please try again." };
+        }
       }
 
       function getProgressWidth(step) {
@@ -210,7 +271,7 @@
         if (currentStep === "method") {
           updateMainButton("Send Code", false, true, false);
         } else if (currentStep === "otp") {
-          updateMainButton("Verify Code", false, true, false);
+          updateMainButton("Verify", false, true, false);
         } else if (currentStep === "account") {
           updateMainButton("Link Account", false, true, false);
         }
@@ -247,14 +308,39 @@
         }
       }
 
+      function createChoice(name, value, title) {
+        const label = document.createElement("label");
+        label.className = "mini-choice";
+
+        const text = document.createElement("div");
+        text.className = "mini-choice-text";
+
+        const titleEl = document.createElement("span");
+        titleEl.className = "mini-choice-title";
+        titleEl.textContent = title || "";
+        text.appendChild(titleEl);
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = name;
+        input.className = "mini-radio-input";
+        input.value = value || "";
+
+        const radio = document.createElement("span");
+        radio.className = "mini-radio";
+
+        label.appendChild(text);
+        label.appendChild(input);
+        label.appendChild(radio);
+
+        return { label, input };
+      }
+
       function renderMethods(methods) {
         const list = document.getElementById("methodsList");
-        list.innerHTML = "";
+        list.replaceChildren();
 
         methods.forEach((m) => {
-          const label = document.createElement("label");
-          label.className = "mini-choice";
-
           let displayTitle = "";
           if (m.id === "sms") {
             displayTitle = `SMS to ${m.title}`;
@@ -264,15 +350,8 @@
             displayTitle = m.title ? `${m.id} - ${m.title}` : m.id;
           }
 
-          label.innerHTML = `
-            <div class="mini-choice-text">
-              <span class="mini-choice-title">${displayTitle}</span>
-            </div>
-            <input type="radio" name="otp_method" class="mini-radio-input" value="${m.id}" />
-            <span class="mini-radio"></span>
-          `;
-
-          label.querySelector("input").addEventListener("change", () => {
+          const { label, input } = createChoice("otp_method", m.id, displayTitle);
+          input.addEventListener("change", () => {
             selectedMethod = m.id;
             updateMainButton("Send Code", false, true, true);
           });
@@ -283,22 +362,13 @@
 
       function renderAccounts(accounts) {
         const container = document.getElementById("accountsList");
-        container.innerHTML = "";
+        container.replaceChildren();
 
         accounts.forEach((acc) => {
           const title = acc.title || acc.id || "Unknown Account";
+          const { label, input } = createChoice("account_selection", acc.id, title);
 
-          const label = document.createElement("label");
-          label.className = "mini-choice";
-          label.innerHTML = `
-            <div class="mini-choice-text">
-              <span class="mini-choice-title">${title}</span>
-            </div>
-            <input type="radio" name="account_selection" class="mini-radio-input" value="${acc.id}" />
-            <span class="mini-radio"></span>
-          `;
-
-          label.querySelector("input").addEventListener("change", (e) => {
+          input.addEventListener("change", (e) => {
             selectedAccountId = e.target.value;
             updateMainButton("Link Account", false, true, true);
           });
@@ -310,7 +380,7 @@
       const otpInput = document.getElementById("otpInput");
       otpInput.addEventListener("input", () => {
         otpInput.value = otpInput.value.replace(/\D/g, "");
-        updateMainButton("Verify Code", false, true, otpInput.value.length === 6);
+        updateMainButton("Verify", false, true, otpInput.value.length === 6);
       });
 
       async function bootstrapSession() {
@@ -318,6 +388,13 @@
         methodError.textContent = "";
 
         updateMainButton("Loading...", true, true, false);
+        const boot = await bootstrapMiniApp();
+        if (!boot.success) {
+          updateMainButton("Send Code", false, false, false);
+          methodError.textContent = boot.error || "Session expired. Please reopen this page from Telegram.";
+          return;
+        }
+
         const res = await makeApiCall("method", { flow_token: flowToken });
 
         if (!res.success) {
@@ -381,7 +458,7 @@
             flow_token: flowToken,
             otp,
           });
-          updateMainButton("Verify Code", false, true, true);
+          updateMainButton("Verify", false, true, true);
 
           if (!res.success) {
             tg.HapticFeedback.notificationOccurred("error");
@@ -427,7 +504,6 @@
             tg.sendData(
               JSON.stringify({
                 action: "onboarding_success",
-                flow_token: flowToken,
                 mode: "relink",
               }),
             );

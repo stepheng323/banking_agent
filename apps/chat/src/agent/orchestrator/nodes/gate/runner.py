@@ -21,11 +21,19 @@ from apps.chat.src.agent.orchestrator.nodes.planner.context import (
 )
 from shared.config.settings import settings
 from shared.i18n import LocaleManager
+from shared.policy.service import capability_block_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
+DIRECT_DOMAIN_ACTIONS = {
+    "transfer": "send_money",
+    "airtime": "buy_airtime",
+    "data": "buy_data",
+    "support": "collect_details",
+    "faq": "answer_question",
+}
 SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
 _TRANSFER_DIRECT_PREFIX_RE = re.compile(
     r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
@@ -34,6 +42,8 @@ _TRANSFER_DIRECT_PREFIX_RE = re.compile(
 )
 _TRANSFER_DIRECT_RECIPIENT_CUE_RE = re.compile(r"\b(?:to|for|between|btw|si|zuwa)\b", re.IGNORECASE)
 _TRANSFER_DIRECT_AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?\b")
+_NIGERIAN_PHONE_RE_FRAGMENT = r"(?<!\d)(?:\+?234[\s().-]*[789]|0[789])(?:[\s().-]*\d){9}(?!\d)"
+_PHONE_NUMBER_CUE_RE = re.compile(_NIGERIAN_PHONE_RE_FRAGMENT, re.IGNORECASE)
 _TRANSFER_DIRECT_PERCENTAGE_RE = re.compile(
     r"\b(?:half|quarter|tithe|\d{1,3}\s*%|all|everything|max amount|what(?:ever)? i have)\b",
     re.IGNORECASE,
@@ -56,6 +66,28 @@ _TRANSFER_MULTI_RECIPIENT_TAIL_RE = re.compile(
     r"\b(?:to|for|between|btw)\b\s+.+\b(?:and|&)\b\s+.+",
     re.IGNORECASE,
 )
+_MEDIA_CAPTION_INSTRUCTION_RE = re.compile(
+    r"^\s*User caption/instruction:\s*(?P<caption>.+?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_BANK_DETAILS_ACCOUNT_LABEL_RE = re.compile(
+    r"\b(?:account\s*(?:number|no\.?|#)?|acct(?:\s*(?:number|no\.?))?|a/c)\b"
+    r"\s*[:\-]?\s*(?P<account>(?:\d[\s,.\-]?){10,11})(?!\d)",
+    re.IGNORECASE,
+)
+_BANK_DETAILS_BANK_LABEL_RE = re.compile(
+    r"(?:^|\n)\s*bank(?:\s+name)?\s*[:\-]\s*(?P<bank>[^\n;]+)",
+    re.IGNORECASE,
+)
+_BANK_DETAILS_ACCOUNT_FIRST_RE = re.compile(
+    r"^\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s*(?:[,;:\-–—]|\s)\s*(?P<bank>[A-Za-z][A-Za-z0-9 &'._-]{1,80})\s*$",
+    re.IGNORECASE,
+)
+_BANK_DETAILS_BANK_FIRST_RE = re.compile(
+    r"^\s*(?P<bank>[A-Za-z][A-Za-z0-9 &'._-]{1,80})\s*(?:[,;:\-–—]|\s)\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s*$",
+    re.IGNORECASE,
+)
+_BANK_DETAILS_NON_BANK_RE = re.compile(r"\b(?:send|transfer|pay|remit)\b", re.IGNORECASE)
 DETERMINISTIC_GREETING_EXACT = {
     "hi",
     "hello",
@@ -234,7 +266,15 @@ _AIRTIME_DIRECT_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _AIRTIME_DIRECT_HINT_RE = re.compile(
-    r"\b(?:airtime|mtn|glo|airtel|9mobile)\b|(?:\+?234|0)?(?:[\s().-]*\d){10,13}",
+    rf"\b(?:airtime|mtn|glo|airtel|9mobile)\b|{_NIGERIAN_PHONE_RE_FRAGMENT}",
+    re.IGNORECASE,
+)
+_AIRTIME_DIRECT_EXPLICIT_HINT_RE = re.compile(
+    r"\b(?:airtime|mtn|glo|airtel|9mobile)\b",
+    re.IGNORECASE,
+)
+_AIRTIME_DIRECT_SEND_PREFIX_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*send\b",
     re.IGNORECASE,
 )
 _DATA_DIRECT_PREFIX_RE = re.compile(
@@ -243,7 +283,13 @@ _DATA_DIRECT_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _DATA_DIRECT_HINT_RE = re.compile(
-    r"\b(?:data|bundle)\b|\d+\s*(?:mb|gb)\b|(?:\+?234|0)?(?:[\s().-]*\d){10,13}",
+    r"\b(?:data|bundle)\b|\d+\s*(?:mb|gb)\b",
+    re.IGNORECASE,
+)
+_DATA_DIRECT_SIZE_RE = re.compile(r"\d+\s*(?:mb|gb)\b", re.IGNORECASE)
+_DATA_DIRECT_NON_PURCHASE_CONTEXT_RE = re.compile(
+    r"\b(?:transaction|transactions|history|statement|records?|details?|account|accounts|balance|"
+    r"status|failed|failure|pending|receipt|proof|refund|reversal|ticket|complaint|support)\b",
     re.IGNORECASE,
 )
 _DIRECT_CONTEXT_RECAP_EXACT = {
@@ -253,9 +299,7 @@ _DIRECT_CONTEXT_RECAP_EXACT = {
     "repeat that",
     "show it again",
 }
-BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS = (
-    r"\b(send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",
-)
+BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS = (r"\b(send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",)
 _MIXED_TRANSFER_CLAUSE_RE = re.compile(
     r"\b(?:send|transfer|pay|remit|split)\b.*(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?",
     re.IGNORECASE,
@@ -279,6 +323,10 @@ _QUERY_DOMAIN_PATTERNS = (
     r"^(?:what(?:'s| is|'s)|how\s+much\s+is)\s+my\s+(?:spending|expenses?|income|inflow)",
     r"^who\s+did\s+i\s+(?:send|transfer|pay)\s+(?:money\s+)?to",
     r"^(?:top|my)\s+(?:recipients?|beneficiar)",
+)
+_STRUCTURAL_QUERY_DIRECT_PATTERNS = (
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?\b",
 )
 _RECEIPT_REQUEST_RE = re.compile(
     r"\b(?:receipt|proof\s+of\s+payment|payment\s+receipt|show\s+receipt|send\s+receipt)\b",
@@ -501,6 +549,16 @@ def _build_direct_domain_task(
     return task_id, spec
 
 
+def _direct_domain_capability_block_message(
+    state: OrchestratorState,
+    domain: str,
+) -> str | None:
+    action = DIRECT_DOMAIN_ACTIONS.get(domain)
+    if not action:
+        return None
+    return capability_block_message(domain=domain, action=action, locale=_current_locale(state))
+
+
 def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
     loaded_context = dict(state.loaded_context or {})
     loaded_context["language"] = locale
@@ -672,9 +730,18 @@ def _is_query_domain_request(message_text: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in _QUERY_DOMAIN_PATTERNS)
 
 
+def _is_structural_query_domain_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in _STRUCTURAL_QUERY_DIRECT_PATTERNS)
+
+
 def _is_account_domain_request(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if not normalized:
+        return False
+    if _has_recipient_bank_details_shape(message_text):
         return False
     if _is_account_balance_request(normalized):
         return False
@@ -694,6 +761,8 @@ def _is_obvious_airtime_request(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if not normalized or not _AIRTIME_DIRECT_PREFIX_RE.search(normalized):
         return False
+    if _AIRTIME_DIRECT_SEND_PREFIX_RE.match(normalized) and not _AIRTIME_DIRECT_EXPLICIT_HINT_RE.search(normalized):
+        return False
     has_mixed_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
     if has_mixed_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
         return False
@@ -706,6 +775,8 @@ def _is_obvious_data_request(message_text: str) -> bool:
         return False
     has_mixed_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
     if has_mixed_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
+        return False
+    if _DATA_DIRECT_NON_PURCHASE_CONTEXT_RE.search(normalized) and not _DATA_DIRECT_SIZE_RE.search(normalized):
         return False
     return bool(_DATA_DIRECT_HINT_RE.search(normalized))
 
@@ -773,7 +844,12 @@ def _has_pending_mandate_without_ready_accounts(loaded_context: dict[str, Any] |
 def _looks_like_multi_recipient_transfer(normalized: str) -> bool:
     if "split" in normalized or " each " in f" {normalized} " or re.search(r"\b(?:between|btw)\b", normalized):
         return True
-    if len(_TRANSFER_DIRECT_AMOUNT_RE.findall(normalized)) >= 2:
+    amount_matches = [
+        match
+        for match in _TRANSFER_DIRECT_AMOUNT_RE.findall(normalized)
+        if not re.fullmatch(r"\s*\d{10,11}\s*", match)
+    ]
+    if len(amount_matches) >= 2:
         return True
     if not _TRANSFER_MULTI_RECIPIENT_TAIL_RE.search(normalized):
         return False
@@ -782,9 +858,48 @@ def _looks_like_multi_recipient_transfer(normalized: str) -> bool:
     return True
 
 
+def _has_recipient_bank_details_shape(message_text: str) -> bool:
+    text = message_text.strip()
+    if not text:
+        return False
+
+    account_match = _BANK_DETAILS_ACCOUNT_LABEL_RE.search(text)
+    bank_match = _BANK_DETAILS_BANK_LABEL_RE.search(text)
+    if account_match and bank_match:
+        account = re.sub(r"\D+", "", account_match.group("account"))
+        bank = bank_match.group("bank").strip(" \t\r\n*_`.,;:")
+        return len(account) == 10 and bool(bank) and not bank.isdigit() and not _BANK_DETAILS_NON_BANK_RE.search(bank)
+
+    compact_text = re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
+    for pattern in (_BANK_DETAILS_ACCOUNT_FIRST_RE, _BANK_DETAILS_BANK_FIRST_RE):
+        match = pattern.match(compact_text)
+        if not match:
+            continue
+        account = re.sub(r"\D+", "", match.group("account"))
+        bank = match.group("bank").strip(" \t\r\n*_`.,;:")
+        if len(account) == 10 and bank and not bank.isdigit() and not _BANK_DETAILS_NON_BANK_RE.search(bank):
+            return True
+
+    return False
+
+
+def _media_caption_instruction(message_text: str) -> str | None:
+    match = _MEDIA_CAPTION_INSTRUCTION_RE.search(message_text or "")
+    if not match:
+        return None
+    caption = re.sub(r"\s+", " ", match.group("caption")).strip()
+    return caption or None
+
+
 def _classify_obvious_transfer_request(message_text: str) -> str | None:
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
-    if not normalized or not _TRANSFER_DIRECT_PREFIX_RE.search(normalized):
+    caption_instruction = _media_caption_instruction(message_text)
+    classification_text = caption_instruction or message_text
+    normalized = re.sub(r"\s+", " ", classification_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return None
+    if _has_recipient_bank_details_shape(classification_text):
+        return "recipient_bank_details_only"
+    if not _TRANSFER_DIRECT_PREFIX_RE.search(normalized):
         return None
     if _TRANSFER_DIRECT_QUERY_MARKER_RE.search(normalized) and not _TRANSFER_DIRECT_PREFIX_RE.match(normalized):
         return None
@@ -792,6 +907,8 @@ def _classify_obvious_transfer_request(message_text: str) -> str | None:
     if has_multi_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
         return None
     if _is_account_balance_request(normalized) or _is_query_domain_request(normalized):
+        return None
+    if _PHONE_NUMBER_CUE_RE.search(normalized):
         return None
     if _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized) and not _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized):
         return None
@@ -850,6 +967,7 @@ def _build_query_session_exit_updates(
         "session_stack": remaining_sessions,
         "active_domain": None if state.active_domain == "query" else state.active_domain,
     }
+
 
 def _normalize_suggestion_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
@@ -987,12 +1105,18 @@ def _route_observability_updates(
     decision: str,
     target_domain: str | None = None,
     mode: str | None = None,
+    route_source: str | None = None,
+    heuristic_type: str | None = None,
+    heuristic_name: str | None = None,
 ) -> dict[str, Any]:
     return {
         "routing_owner": owner,
         "routing_decision": decision,
         "routing_target_domain": target_domain,
         "routing_mode": mode,
+        "route_source": route_source or owner,
+        "routing_heuristic_type": heuristic_type,
+        "routing_heuristic_name": heuristic_name,
     }
 
 
@@ -1047,9 +1171,14 @@ def _query_followup_bypass_reason(
     message_text: str,
     locale: str,
     query_session_snapshot: dict[str, Any] | None,
+    has_context_frames: bool = False,
 ) -> tuple[str | None, str | None]:
     if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
         return None, None
+
+    transfer_request_reason = _classify_obvious_transfer_request(message_text)
+    if transfer_request_reason or _is_obvious_airtime_request(message_text) or _is_obvious_data_request(message_text):
+        return None, "fresh_transaction_request"
 
     shortcut, miss_reason = resolve_query_shortcut_with_reason(message_text, locale)
     if shortcut is not None:
@@ -1061,11 +1190,9 @@ def _query_followup_bypass_reason(
             return "pending_clarification", parsed_time_range.period or "days_back"
         return None, miss_reason
 
+    if has_context_frames:
+        return "active_query_session", miss_reason or "query_session_active"
     return None, miss_reason
-
-
-
-
 
 
 async def session_gate_direct_path(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -1074,6 +1201,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         GateContext,
         _stage_stale_interrupt_cleanup,
     )
+
     """
     Direct-path gate.
 

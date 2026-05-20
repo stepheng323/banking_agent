@@ -7,7 +7,7 @@ from inspect import isawaitable
 from typing import Any
 
 from shared.queue.contracts import resolve_contract_from_domain
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -61,7 +61,7 @@ class BaseSQSHandler:
                 self._active_record_context = record_context
                 logger.info(
                     f"{self.name}_processing_record",
-                    message_id=message_id,
+                    message_id_hash=log_fingerprint(message_id),
                     queue_name=record_context.get("queue_name"),
                     logical_topic=record_context.get("logical_topic"),
                 )
@@ -70,7 +70,12 @@ class BaseSQSHandler:
                 processed_count += 1
 
             except Exception as e:
-                logger.error(f"{self.name}_record_failed", message_id=message_id, error=str(e), exc_info=True)
+                logger.error(
+                    f"{self.name}_record_failed",
+                    message_id_hash=log_fingerprint(message_id),
+                    error_type=type(e).__name__,
+                    exc_info=True,
+                )
                 failed_count += 1
                 # Report failure for individual record if SQS Batch Item Failures is enabled
                 if message_id:

@@ -2,40 +2,36 @@
 
 ## How do I get a receipt for my transfer?
 
-After every successful transfer, we automatically generate a digital receipt and send it to you via WhatsApp. The receipt includes all transaction details.
+After an eligible successful transfer, Narya AI can send a digital receipt in chat. You can also ask for a receipt later by mentioning the transfer or asking for the receipt for your last successful transfer.
 
 ## What information is on my receipt?
 
-Your receipt includes:
+A receipt may include:
 
-- Transaction reference number
+- Transaction reference
 - Date and time
 - Amount transferred
-- Sender details (your name)
-- Recipient details (name, bank, account)
+- Sender details
+- Recipient name, bank, and account details
 - Transfer status
-- Narration (if provided)
+- Narration, when provided
 
 ## Can I get a receipt for past transactions?
 
-Yes, you can request receipts for past transactions by asking in the chat. Just mention the transaction you need a receipt for.
+Yes, if the transaction is an eligible successful transfer created through Narya AI. Ask for the receipt and include the transaction reference or enough details to identify it.
 
 ## Are receipts valid for official purposes?
 
-Our digital receipts are electronically generated and can be used as proof of payment. For official documentation, you may also request a formal bank statement from your linked bank.
+Narya AI receipts are generated from transaction records and can be used as proof of payment in many situations. For formal documentation, you may still need a bank statement from your bank.
 
 ## Why didn't I receive my receipt?
 
-Receipts are sent automatically after successful transfers. If you didn't receive one:
-
-- Check if your transfer was completed
-- Make sure you're checking the correct WhatsApp number
-- Ask support to resend the receipt
+Receipts are available only after eligible successful transfers. If you did not receive one, ask Narya AI to check the transaction status or resend the receipt if the transfer qualifies.
 
 ## Can I download my receipt as a PDF?
 
-The receipt image we send can be saved to your phone. For a PDF version, contact support.
+PDF receipt export is not available in chat right now. You can save the receipt image or ask Narya AI to show the transaction details.
 
 ## How long are receipts stored?
 
-We keep records of all your transactions. You can request receipts for any past transaction at any time.
+Narya AI keeps transaction records needed to show transaction details and eligible receipts. Availability can depend on retention policy and the type of transaction.

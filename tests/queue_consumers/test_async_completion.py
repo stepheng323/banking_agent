@@ -59,11 +59,19 @@ def _transfer_payload(*, amount: int, recipient: str, final_status: str) -> dict
         "source_account_id": "acct-access",
         "source_account_number": "1234500003",
         "source_bank_name": "Access Bank",
+        "source_affinity_mode": "explicit",
         "final_status": final_status,
     }
 
 
-def _airtime_payload(*, amount: int, phone: str, final_status: str, error_message: str | None = None) -> dict[str, object]:
+def _airtime_payload(
+    *,
+    amount: int,
+    phone: str,
+    final_status: str,
+    error_message: str | None = None,
+    failure_category: str | None = None,
+) -> dict[str, object]:
     payload: dict[str, object] = {
         "amount": amount,
         "phone_number": phone,
@@ -71,10 +79,13 @@ def _airtime_payload(*, amount: int, phone: str, final_status: str, error_messag
         "source_account_id": "acct-access",
         "source_account_number": "1234500003",
         "source_bank_name": "Access Bank",
+        "source_affinity_mode": "explicit",
         "final_status": final_status,
     }
     if error_message:
         payload["error_message"] = error_message
+    if failure_category:
+        payload["failure_category"] = failure_category
     return payload
 
 
@@ -165,6 +176,8 @@ async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None
         async_group_index=2,
         async_group_kind="mixed_batch",
     )
+    transfer_leg["channel_identity"] = "927331985"
+    airtime_leg["channel_identity"] = "927331985"
 
     first = await record_group_leg_and_maybe_build_summary(
         redis_client,
@@ -182,6 +195,7 @@ async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None
             phone="08031234567",
             final_status="failed",
             error_message="Provider down",
+            failure_category="provider_unavailable",
         ),
         locale="en",
     )
@@ -200,7 +214,19 @@ async def test_async_completion_mixed_batch_summary_waits_for_last_leg() -> None
     airtime_payload = next(item for item in actionable_payload["tasks"] if item["task_type"] == "airtime")
     assert airtime_payload["recipient_phone"] == "08031234567"
     assert airtime_payload["action"] == "buy_airtime"
+    assert airtime_payload["final_status"] == "failed"
+    assert airtime_payload["error_message"] == "Provider down"
+    assert airtime_payload["failure_category"] == "provider_unavailable"
     assert {item["source_account_number"] for item in actionable_payload["tasks"]} == {"1234500003"}
+    assert {item["source_affinity_mode"] for item in actionable_payload["tasks"]} == {"explicit"}
+
+    recent = await get_recent_batch_reference(redis_client, identity="927331985")
+    assert recent is not None
+    failed_leg = next(item for item in recent["legs"] if item["task_type"] == "airtime")
+    assert failed_leg["final_status"] == "failed"
+    assert failed_leg["error_message"] == "Provider down"
+    assert failed_leg["failure_category"] == "provider_unavailable"
+
 
 async def test_async_completion_transfer_summary_sends_initial_then_final_update() -> None:
     redis_client = _RedisStub()

@@ -1,7 +1,6 @@
 """Prompts formatting utilities for the orchestrator."""
 
 import re
-from typing import cast
 
 from shared.formatters.accounts import format_accounts_list
 from shared.formatters.transaction_summary import format_amount
@@ -204,52 +203,37 @@ def format_single_transfer_recipient_prompt(
 
     if just_resolved_name is not None:
         if just_resolved_bank:
-            return cast(
-                str,
-                render_message(
-                    "orchestrator.execution.single_found_with_bank_need_details",
-                    locale,
-                    {
-                        "resolved_name": just_resolved_name,
-                        "resolved_bank": just_resolved_bank,
-                        "focused_name": focused_display_name,
-                    },
-                ),
+            return render_message(
+                "orchestrator.execution.single_found_with_bank_need_details",
+                locale,
+                {
+                    "resolved_name": just_resolved_name,
+                    "resolved_bank": just_resolved_bank,
+                    "focused_name": focused_display_name,
+                },
             )
         if just_resolved_name:
-            return cast(
-                str,
-                render_message(
-                    "orchestrator.execution.single_found_need_details",
-                    locale,
-                    {"resolved_name": just_resolved_name, "focused_name": focused_display_name},
-                ),
+            return render_message(
+                "orchestrator.execution.single_found_need_details",
+                locale,
+                {"resolved_name": just_resolved_name, "focused_name": focused_display_name},
             )
-        return cast(
-            str,
-            render_message(
-                "orchestrator.execution.need_account_details_for",
-                locale,
-                {"focused_name": focused_display_name},
-            ),
-        )
-
-    if found_names:
-        return cast(
-            str,
-            render_message(
-                "orchestrator.execution.found_many_need_details",
-                locale,
-                {"found_names": ", ".join(found_names), "focused_name": focused_display_name},
-            ),
-        )
-    return cast(
-        str,
-        render_message(
+        return render_message(
             "orchestrator.execution.need_account_details_for",
             locale,
             {"focused_name": focused_display_name},
-        ),
+        )
+
+    if found_names:
+        return render_message(
+            "orchestrator.execution.found_many_need_details",
+            locale,
+            {"found_names": ", ".join(found_names), "focused_name": focused_display_name},
+        )
+    return render_message(
+        "orchestrator.execution.need_account_details_for",
+        locale,
+        {"focused_name": focused_display_name},
     )
 
 
@@ -262,7 +246,6 @@ def format_missing_details_prompt(
     """Format a prompt for multiple missing details."""
     parts = []
 
-    # 1. Feedback (e.g. "I couldn't find your Access bank account")
     if feedback_messages:
         unique_feedback = []
         for f in feedback_messages:
@@ -270,7 +253,6 @@ def format_missing_details_prompt(
                 unique_feedback.append(f)
         parts.extend(unique_feedback)
 
-    # 2. Confirmation (e.g. "I found Tolu")
     if found_names:
         parts.append(
             render_message(
@@ -288,13 +270,12 @@ def format_missing_details_prompt(
                 unique_missing.append(p)
                 seen_p.add(p)
 
-        # Ensure a gap between "I found" and the missing prompts
         joined_missing = "\n".join(unique_missing)
         parts.append(joined_missing)
 
     if parts:
         return "\n\n".join(parts)
-    return cast(str, render_message("orchestrator.execution.need_some_details", locale))
+    return render_message("orchestrator.execution.need_some_details", locale)
 
 
 def format_auth_reason(task_type: str, locale: str = "en") -> str:
@@ -305,7 +286,7 @@ def format_auth_reason(task_type: str, locale: str = "en") -> str:
         "data": "orchestrator.execution.auth_reason_data",
     }
     key = key_by_task.get(task_type, "orchestrator.execution.auth_reason_default")
-    return cast(str, render_message(key, locale))
+    return render_message(key, locale)
 
 
 def format_source_repair_prompt(
@@ -317,7 +298,6 @@ def format_source_repair_prompt(
     """Format a specialized repair prompt when a requested bank is missing."""
     parts = []
 
-    # 1. Action Summary
     count = len(intents)
     parts.append(
         render_message(
@@ -329,7 +309,6 @@ def format_source_repair_prompt(
     for intent in intents:
         parts.append(render_message("orchestrator.execution.source_repair_bullet", locale, {"intent": intent}))
 
-    # 2. The Discrepancy
     parts.append("")
     parts.append(
         render_message(
@@ -339,10 +318,8 @@ def format_source_repair_prompt(
         )
     )
 
-    # 3. Fallback Choices
     parts.append(render_message("orchestrator.execution.source_repair_question", locale))
 
-    # Identify unique banks from linked accounts
     linked_banks = []
     seen_banks = set()
     for acc in accounts:
@@ -351,7 +328,6 @@ def format_source_repair_prompt(
             linked_banks.append(bank)
             seen_banks.add(bank)
 
-    # Offer top 2 banks as one-click alternatives
     for i, bank in enumerate(linked_banks[:2]):
         choice_text = render_message("orchestrator.execution.source_repair_use_bank", locale, {"bank": bank})
         if count > 1:
@@ -362,7 +338,6 @@ def format_source_repair_prompt(
             )
         parts.append(f"{i + 1}. {choice_text}")
 
-    # Final utility choice
     parts.append(
         f"{len(linked_banks[:2]) + 1}. "
         f"{render_message('orchestrator.execution.source_repair_use_different_accounts', locale)}"

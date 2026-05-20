@@ -10,6 +10,10 @@ from typing import Any
 
 from Crypto.Cipher import AES
 
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def encrypt_flow_response(response: dict[str, Any], aes_key: bytes, iv: bytes) -> str:
     """
@@ -44,5 +48,5 @@ def encrypt_flow_response(response: dict[str, Any], aes_key: bytes, iv: bytes) -
         return base64.b64encode(encrypted_with_tag).decode("utf-8")
 
     except Exception as e:
-        print(f"❌ Failed to encrypt flow response: {e}")
+        logger.error("flow_response_encryption_failed", error_type=type(e).__name__)
         raise

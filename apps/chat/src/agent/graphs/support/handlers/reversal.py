@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import EscalationResult, SupportResponse
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -9,19 +10,12 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _normalize_status(status: str) -> str:
-    status = (status or "unknown").strip().lower()
-    if status == "success":
-        return "successful"
-    return status
-
-
 async def handle_reversal_status(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle reversal_refund_status intent.
     Explains refund status - never promises timelines unless explicitly known.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     provider_response = transaction.get("provider_response", {})
 

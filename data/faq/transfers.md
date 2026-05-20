@@ -2,58 +2,40 @@
 
 ## How do bank transfers work?
 
-When you initiate a transfer, we debit your linked account and send the money to the recipient's bank account. Transfers typically complete within seconds to minutes for most Nigerian banks.
+When you ask Narya AI to send money, it resolves the recipient, asks you to review the amount and account details, and requires the needed confirmation before debiting your linked account. The money is then sent through the available payment provider to the recipient's bank account.
 
 ## What are the transfer limits?
 
-- Single transfer: Up to ₦5,000,000
-- Daily limit: ₦10,000,000
-- Monthly limit: ₦50,000,000
-
-These limits may vary based on your account type and verification status.
+Transfer limits depend on the active capability policy, your account, the provider, and any bank restrictions. Narya AI checks applicable limits during the transfer flow and blocks or corrects requests that are outside the allowed range.
 
 ## Are there any transfer fees?
 
-We charge a small flat fee per transfer:
-
-- Transfers up to ₦5,000: ₦10
-- Transfers ₦5,001 - ₦50,000: ₦25
-- Transfers above ₦50,000: ₦50
+Fees can depend on the provider, bank, amount, and current policy. When a fee is available before processing, Narya AI shows it before you confirm the transfer.
 
 ## How long do transfers take?
 
-Most transfers complete instantly. However, some banks may take:
-
-- Same bank: Instant
-- Different banks: 1-5 minutes
-- In rare cases: Up to 24 hours
-
-If your transfer takes longer than expected, please contact support.
+Most transfers complete within seconds or a few minutes. Some bank confirmations can take longer. If a transfer remains pending or fails, ask Narya AI to check the transaction status or create a support ticket.
 
 ## Can I cancel a transfer?
 
-Once a transfer is initiated and confirmed with your PIN, it cannot be cancelled. Please always verify recipient details before confirming.
+You can cancel before final confirmation. Once a transfer has been confirmed and submitted to the provider, it usually cannot be cancelled from chat.
 
 ## What is a transfer reference?
 
-A transfer reference is a unique identifier assigned to each transaction. You can use this reference when contacting support about a specific transfer.
+A transfer reference is a unique identifier for a transaction. It helps support find the exact transfer if you ask about a failure, pending status, receipt, refund, or dispute.
 
 ## Can I transfer to any bank in Nigeria?
 
-Yes, you can transfer to any commercial bank, microfinance bank, or mobile money wallet in Nigeria.
+Narya AI supports transfers to banks and institutions available through the configured provider. Availability can change, so Narya AI verifies bank and account details during the transfer flow.
 
 ## What happens if I enter wrong account details?
 
-If you enter incorrect account details, we verify the account name before processing. If the name doesn't match what you expect, you can cancel before confirming. Once confirmed, funds sent to the wrong account may require the recipient's cooperation to recover.
+Narya AI checks the recipient account name before asking you to confirm. Review the name, bank, and amount carefully. Once you confirm a transfer to the wrong account, recovery may require the receiving bank or recipient.
 
 ## How do I know my transfer was successful?
 
-You'll receive:
-
-1. An in-app confirmation message
-2. A digital receipt sent via WhatsApp
-3. The transaction will appear in your history
+Narya AI shows the transfer status in chat. You can also ask for the status of a recent transaction, request transaction details, or ask for a receipt for an eligible successful transfer.
 
 ## What is a narration?
 
-A narration is an optional message you can add to your transfer. The recipient will see this message when they receive the funds.
+A narration is an optional note attached to a transfer. When supported by the provider and receiving bank, it helps the recipient understand why the money was sent.

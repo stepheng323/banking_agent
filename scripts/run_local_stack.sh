@@ -105,7 +105,7 @@ fi
 export PYTHONPATH="$ROOT_DIR"
 
 echo "Preparing Redis stream consumer groups..."
-uv run --extra all python -c $'import asyncio\nfrom shared.cache.redis_client import RedisClient\nfrom shared.config.settings import settings\nfrom shared.queue.contracts import get_contract_by_topic\n\nasync def main():\n    redis = RedisClient.get_client()\n    group = f"{settings.project_name}-chat-worker-{settings.environment}"\n    for topic in ("message.received", "flow_event.process"):\n        stream = get_contract_by_topic(topic).redis_stream_name\n        if not stream:\n            continue\n        try:\n            await redis.xgroup_create(stream, group, id="0", mkstream=True)\n        except Exception as exc:\n            if "BUSYGROUP" not in str(exc):\n                raise\n\nasyncio.run(main())'
+uv run --extra all python -c $'import asyncio\nfrom shared.cache.redis_client import RedisClient\nfrom shared.config.settings import settings\nfrom shared.queue.contracts import get_contract_by_topic\n\nasync def main():\n    redis = RedisClient.get_client()\n    group = f"{settings.project_name}-chat-worker-{settings.runtime.infrastructure_environment}"\n    for topic in ("message.received", "flow_event.process"):\n        stream = get_contract_by_topic(topic).redis_stream_name\n        if not stream:\n            continue\n        try:\n            await redis.xgroup_create(stream, group, id="0", mkstream=True)\n        except Exception as exc:\n            if "BUSYGROUP" not in str(exc):\n                raise\n\nasyncio.run(main())'
 
 pids=()
 

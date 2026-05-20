@@ -1,7 +1,8 @@
 """Account management worker (stateless)."""
 
 import asyncio
-import time
+import hashlib
+import secrets
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -45,6 +46,16 @@ ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
     "change_bvn": AccountCapability.CHANGE_BVN,
     "add_joint_holder": AccountCapability.ADD_JOINT_HOLDER,
 }
+
+
+def _new_link_flow_token() -> str:
+    return f"link-{secrets.token_urlsafe(32)}"
+
+
+def _token_fingerprint(flow_token: str | None) -> str:
+    if not flow_token:
+        return ""
+    return hashlib.sha256(str(flow_token).encode("utf-8")).hexdigest()[:16]
 
 
 class AccountWorker:
@@ -326,9 +337,29 @@ class AccountWorker:
     def _serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
         serialized: list[dict[str, Any]] = []
         for idx, account in enumerate(accounts, 1):
+            if isinstance(account, dict):
+                account_id = account.get("account_id") or account.get("id")
+                data = {
+                    "index": idx,
+                    "account_id": str(account_id or ""),
+                    "id": str(account_id or ""),
+                    "bank_name": account.get("bank_name") or account.get("bank") or account.get("name"),
+                    "account_name": account.get("account_name") or account.get("name_on_account"),
+                    "account_number": account.get("account_number") or account.get("number"),
+                    "currency": account.get("currency"),
+                    "mandate_status": account.get("mandate_status"),
+                    "available_balance": account.get("available_balance"),
+                    "balance": account.get("balance"),
+                    "is_default": account.get("is_default"),
+                    "extra_data": account.get("extra_data"),
+                }
+                serialized.append({key: value for key, value in data.items() if value not in (None, "")})
+                continue
+
             data = {
                 "index": idx,
                 "account_id": str(getattr(account, "account_id", "") or getattr(account, "id", "") or ""),
+                "id": str(getattr(account, "account_id", "") or getattr(account, "id", "") or ""),
                 "bank_name": getattr(account, "bank_name", None),
                 "account_name": getattr(account, "account_name", None),
                 "account_number": getattr(account, "account_number", None),
@@ -336,6 +367,8 @@ class AccountWorker:
                 "mandate_status": getattr(account, "mandate_status", None),
                 "available_balance": getattr(account, "available_balance", None),
                 "balance": getattr(account, "balance", None),
+                "is_default": getattr(account, "is_default", None),
+                "extra_data": getattr(account, "extra_data", None),
             }
             serialized.append({key: value for key, value in data.items() if value not in (None, "")})
         return serialized
@@ -464,7 +497,7 @@ class AccountWorker:
         from shared.config.settings import settings
         from shared.services.onboarding.session import OnboardingStep
 
-        flow_id = settings.account_linking_flow_id
+        flow_id = settings.whatsapp.account_linking_flow_id
         locale = LocaleManager.normalize(context.get("language")).value
         if not flow_id:
             return {"error": render_message("account.linking.unavailable", locale)}
@@ -482,8 +515,8 @@ class AccountWorker:
             return {"error": result.error_message or render_message("account.linking.start_failed", locale)}
 
         methods = [{"id": m["method"], "title": m["hint"]} for m in result.verification_methods]
-        flow_token_phone = canonical_phone_number or str(phone_number or "").strip()
-        flow_token = f"link-{flow_token_phone}-{int(time.time())}"
+        flow_token = _new_link_flow_token()
+        channel = context.get("channel", "whatsapp")
         session_payload = {
             "phone_number": canonical_phone_number,
             "bvn": bvn,
@@ -491,10 +524,12 @@ class AccountWorker:
             "methods": methods,
             "step": OnboardingStep.METHOD_SELECTION.value,
             "is_account_linking": True,
-            "channel": context.get("channel", "whatsapp"),
+            "channel": channel,
         }
+        if channel == "telegram":
+            session_payload["channel_user_id"] = str(context.get("channel_user_id") or phone_number or "").strip()
         if not self.session_manager:
-            logger.error("account_linking_session_manager_missing", flow_token=flow_token)
+            logger.error("account_linking_session_manager_missing", flow_token_hash=_token_fingerprint(flow_token))
             return {"error": render_message("account.linking.start_failed", locale)}
 
         stored = await self.session_manager.update_session_strict(
@@ -505,7 +540,7 @@ class AccountWorker:
         if not stored:
             logger.error(
                 "account_linking_session_create_failed",
-                flow_token=flow_token,
+                flow_token_hash=_token_fingerprint(flow_token),
                 phone=canonical_phone_number,
                 channel=context.get("channel", "unknown"),
             )

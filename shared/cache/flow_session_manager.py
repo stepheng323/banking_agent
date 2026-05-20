@@ -1,5 +1,6 @@
 """Global flow session management for all transaction types."""
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -50,6 +51,12 @@ class FlowSessionManager:
         return f"{self.key_prefix}:{flow_token}"
 
     @staticmethod
+    def _token_fingerprint(flow_token: str | None) -> str:
+        if not flow_token:
+            return ""
+        return hashlib.sha256(str(flow_token).encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
     def _mask_phone(phone_number: str | None) -> str:
         if not phone_number:
             return ""
@@ -76,15 +83,15 @@ class FlowSessionManager:
                     step = session.get("step")
                 logger.info(
                     "flow_session_read",
-                    flow_token=flow_token,
+                    flow_token_hash=self._token_fingerprint(flow_token),
                     status="found",
                     step=step,
                     phone=self._mask_phone(phone_number),
                 )
                 return SessionReadResult(status="found", data=session)
-            logger.info("flow_session_read", flow_token=flow_token, status="missing")
+            logger.info("flow_session_read", flow_token_hash=self._token_fingerprint(flow_token), status="missing")
         except Exception as e:
-            logger.error("flow_session_read_failed", flow_token=flow_token, error=str(e))
+            logger.error("flow_session_read_failed", flow_token_hash=self._token_fingerprint(flow_token), error=str(e))
             return SessionReadResult(status="backend_error", error=str(e))
         return SessionReadResult(status="missing")
 
@@ -99,7 +106,7 @@ class FlowSessionManager:
             if existing_result.backend_error:
                 logger.error(
                     "flow_session_store_failed",
-                    flow_token=flow_token,
+                    flow_token_hash=self._token_fingerprint(flow_token),
                     reason="read_existing_failed",
                     error=existing_result.error,
                 )
@@ -110,12 +117,17 @@ class FlowSessionManager:
             await self.redis.set(self._session_key(flow_token), json.dumps(existing), ex=self.ttl)
             logger.info(
                 "flow_session_created",
-                flow_token=flow_token,
+                flow_token_hash=self._token_fingerprint(flow_token),
                 step=existing.get("step"),
                 phone=self._mask_phone(str(existing.get("phone_number") or "")),
             )
         except Exception as e:
-            logger.error("flow_session_store_failed", flow_token=flow_token, reason="write_failed", error=str(e))
+            logger.error(
+                "flow_session_store_failed",
+                flow_token_hash=self._token_fingerprint(flow_token),
+                reason="write_failed",
+                error=str(e),
+            )
             return False
 
         if not verify:
@@ -125,7 +137,7 @@ class FlowSessionManager:
         if not verify_result.found:
             logger.error(
                 "flow_session_verify_failed",
-                flow_token=flow_token,
+                flow_token_hash=self._token_fingerprint(flow_token),
                 reason=verify_result.status,
                 error=verify_result.error,
             )
@@ -136,7 +148,7 @@ class FlowSessionManager:
             if stored.get(key) != value:
                 logger.error(
                     "flow_session_verify_failed",
-                    flow_token=flow_token,
+                    flow_token_hash=self._token_fingerprint(flow_token),
                     reason="payload_mismatch",
                     field=key,
                 )
@@ -144,7 +156,7 @@ class FlowSessionManager:
 
         logger.info(
             "flow_session_verified",
-            flow_token=flow_token,
+            flow_token_hash=self._token_fingerprint(flow_token),
             step=stored.get("step"),
             phone=self._mask_phone(str(stored.get("phone_number") or "")),
         )

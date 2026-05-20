@@ -112,17 +112,11 @@ def _gate_task_ids(
     return _dedupe_task_ids(
         [
             *[task_id for task_id in candidate_task_ids if task_id in state.tasks],
-            *[
-                task_id
-                for task_id in current_wave
-                if task_id in state.tasks and state.tasks[task_id].stage == stage
-            ],
+            *[task_id for task_id in current_wave if task_id in state.tasks and state.tasks[task_id].stage == stage],
             *[
                 task_id
                 for task_id, task in state.tasks.items()
-                if task.stage == stage
-                and group_ids
-                and str(task.payload.get("async_group_id")) in group_ids
+                if task.stage == stage and group_ids and str(task.payload.get("async_group_id")) in group_ids
             ],
         ],
         current_wave,
@@ -1141,6 +1135,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     focused_missing_fields=focused_missing_fields,
                 )
                 outbox_entries = [options_entry] if options_entry else [{"type": "say", "text": prompt_text}]
+                outbox_entries[0]["prompt_kind"] = "pending_input"
                 if queue_meta is not None:
                     outbox_entries[0]["queue"] = queue_meta
                 return {
@@ -1244,6 +1239,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         fallback_outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
         if fallback_options_entry:
             fallback_outbox_entries = [fallback_options_entry]
+        fallback_outbox_entries[0]["prompt_kind"] = "pending_input"
         if fallback_queue_meta is not None:
             fallback_outbox_entries[0]["queue"] = fallback_queue_meta
         return {

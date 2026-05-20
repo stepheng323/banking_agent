@@ -71,7 +71,7 @@ async def test_render_receipt_uses_fast_wait_and_local_font_html(monkeypatch: py
             "source": {"account_name": "John", "name": "First Bank", "account_number": "0987654321"},
             "channel": "whatsapp",
             "session_id": "SESSION-FAST-1",
-            "processor_name": "Fusepay Gateway",
+            "processor_name": "Narya AI Gateway",
             "narration": "Test transfer",
         },
         transaction_reference="TRX-FAST-1",

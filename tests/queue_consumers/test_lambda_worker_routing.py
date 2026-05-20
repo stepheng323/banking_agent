@@ -50,13 +50,29 @@ async def test_transaction_worker_routes_by_domain(domain: str) -> None:
 @pytest.mark.asyncio
 async def test_receipt_worker_routes_by_domain() -> None:
     receipt = type("ReceiptConsumer", (), {"process_job": AsyncMock()})()
-    handler = ReceiptWorkerLambdaHandler(name="test_receipt_worker", dependency_loader=lambda: receipt)
+    notification = type("NotificationConsumer", (), {"process_job": AsyncMock()})()
+    handler = ReceiptWorkerLambdaHandler(name="test_receipt_worker", dependency_loader=lambda: (receipt, notification))
     event = {"Records": [_sns_record("receipt", queue="banking-receipts")]}
 
     result = await handler.process_event(event)
 
     assert result["failed"] == 0
     receipt.process_job.assert_awaited_once_with({})
+    notification.process_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_receipt_worker_routes_notification_domain() -> None:
+    receipt = type("ReceiptConsumer", (), {"process_job": AsyncMock()})()
+    notification = type("NotificationConsumer", (), {"process_job": AsyncMock()})()
+    handler = ReceiptWorkerLambdaHandler(name="test_receipt_worker", dependency_loader=lambda: (receipt, notification))
+    event = {"Records": [_sns_record("notification", queue="banking-receipts")]}
+
+    result = await handler.process_event(event)
+
+    assert result["failed"] == 0
+    receipt.process_job.assert_not_awaited()
+    notification.process_job.assert_awaited_once_with({})
 
 
 @pytest.mark.asyncio

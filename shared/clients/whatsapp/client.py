@@ -1,15 +1,16 @@
 """WhatsApp client for sending messages and flows."""
 
 import asyncio
-import json
 from typing import Any
 
 import httpx
 
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
+from shared.utils.logging import get_logger, log_fingerprint
 
 GRAPH_API_BASE = "https://graph.facebook.com/v24.0"
+logger = get_logger(__name__)
 
 
 class WhatsAppClient(MessagingClient):
@@ -24,8 +25,8 @@ class WhatsAppClient(MessagingClient):
         return True
 
     def __init__(self):
-        self.access_token = settings.meta_access_token
-        self.phone_number_id = settings.meta_phone_number_id
+        self.access_token = settings.whatsapp.access_token
+        self.phone_number_id = settings.whatsapp.phone_number_id
         self._http_client: httpx.AsyncClient | None = None
         self._validate_config()
 
@@ -50,45 +51,47 @@ class WhatsAppClient(MessagingClient):
                 resp = await self._client().post(url, headers=headers, json=payload, timeout=10)
                 resp.raise_for_status()
                 result: dict[str, Any] = resp.json()
-                print(f"✓ Request successful (attempt {attempt})")
+                logger.debug("whatsapp_api_request_success", attempt=attempt)
                 return result
 
             except httpx.HTTPStatusError as e:
                 last_error = e
                 if e.response.status_code == 401:
-                    print("❌ WhatsApp API Authentication Failed (401)")
-                    print("   Check your META_ACCESS_TOKEN")
+                    logger.error("whatsapp_api_auth_failed", http_status=401)
                     raise
                 elif attempt < max_retries:
                     status = e.response.status_code
-                    print(f"⚠️  HTTP {status} error (attempt {attempt}/{max_retries}), retrying...")
+                    logger.warning(
+                        "whatsapp_api_http_retry",
+                        http_status=status,
+                        attempt=attempt,
+                        max_retries=max_retries,
+                    )
                     await asyncio.sleep(1 * attempt)
                 else:
-                    print(f"❌ Max retries reached. Final error: {e.response.status_code}")
-                    try:
-                        error_body = e.response.json()
-                        print(f"   Error response: {error_body}")
-                    except Exception:
-                        print(f"   Error response: {e.response.text}")
+                    logger.error("whatsapp_api_http_failed", http_status=e.response.status_code)
                     raise
 
             except httpx.ConnectError as e:
                 last_error = e
                 if attempt < max_retries:
-                    msg = f"⚠️  Connection failed (attempt {attempt}/{max_retries})"
-                    print(f"{msg}: Network unreachable")
-
+                    logger.warning("whatsapp_api_connect_retry", attempt=attempt, max_retries=max_retries)
                     await asyncio.sleep(2 * attempt)
                 else:
-                    print(f"❌ Max retries reached. Connection failed: {e}")
+                    logger.error("whatsapp_api_connect_failed", error_type=type(e).__name__)
                     raise
             except Exception as e:
                 last_error = e
                 if attempt < max_retries:
-                    print(f"⚠️  Error on attempt {attempt}/{max_retries}: {e}")
+                    logger.warning(
+                        "whatsapp_api_request_retry",
+                        attempt=attempt,
+                        max_retries=max_retries,
+                        error_type=type(e).__name__,
+                    )
                     await asyncio.sleep(1 * attempt)
                 else:
-                    print(f"❌ Max retries reached. Final error: {e}")
+                    logger.error("whatsapp_api_request_failed", error_type=type(e).__name__)
                     raise
 
         if last_error:
@@ -102,12 +105,12 @@ class WhatsAppClient(MessagingClient):
         if not self.access_token:
             errors.append("META_ACCESS_TOKEN is not set")
         elif self.access_token == "development_access_token":
-            print("⚠️  Using development META_ACCESS_TOKEN - messages will fail in production")
+            logger.warning("whatsapp_development_access_token_configured")
 
         if not self.phone_number_id:
             errors.append("META_PHONE_NUMBER_ID is not set")
         elif self.phone_number_id == "development_phone_id":
-            print("⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production")
+            logger.warning("whatsapp_development_phone_number_id_configured")
 
         if errors:
             error_msg = "WhatsApp client configuration errors:\n" + "\n".join(f"  - {error}" for error in errors)
@@ -135,7 +138,7 @@ class WhatsAppClient(MessagingClient):
             return resolved_message_id
 
         await self.send_typing_indicator(resolved_message_id)
-        delay_seconds = max(0.0, settings.whatsapp_typing_indicator_delay_ms / 1000)
+        delay_seconds = max(0.0, settings.whatsapp.typing_indicator_delay_ms / 1000)
         if delay_seconds > 0:
             await asyncio.sleep(delay_seconds)
         return resolved_message_id
@@ -151,20 +154,26 @@ class WhatsAppClient(MessagingClient):
             message_id if available (from parameter or Redis), None otherwise
         """
         if message_id:
-            print(f"📨 Using provided message_id: {message_id[:20]}...")
+            logger.debug("whatsapp_message_id_provided", message_id_hash=log_fingerprint(message_id))
             return message_id
         try:
             from shared.cache.redis_client import RedisClient
 
             redis_client = RedisClient.get_client()
             fetched_id = await redis_client.get(f"user:{to}:current_message_id")
-            if fetched_id:
-                print(f"📨 Fetched message_id from Redis: {fetched_id[:20]}...")
-            else:
-                print(f"⚠️ No message_id in Redis for {to}")
+            logger.debug(
+                "whatsapp_message_id_lookup",
+                to_hash=log_fingerprint(to),
+                found=bool(fetched_id),
+                message_id_hash=log_fingerprint(fetched_id),
+            )
             return fetched_id
         except Exception as e:
-            print(f"❌ Redis fetch failed for message_id: {e}")
+            logger.warning(
+                "whatsapp_message_id_lookup_failed",
+                to_hash=log_fingerprint(to),
+                error_type=type(e).__name__,
+            )
             return None
 
     async def send_text(
@@ -201,7 +210,7 @@ class WhatsAppClient(MessagingClient):
             result = await self._send(url, payload)
             return result
         except Exception as e:
-            print(f"Failed to send text message: {e}")
+            logger.error("whatsapp_send_text_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
 
     async def send_typing_indicator(self, message_id: str) -> dict[str, Any]:
@@ -220,10 +229,14 @@ class WhatsAppClient(MessagingClient):
 
         try:
             result = await self._send(url, payload, max_retries=1)
-            print(f"✓ Typing indicator sent for {message_id[:20]}... Response: {result}")
+            logger.debug("whatsapp_typing_indicator_sent", message_id_hash=log_fingerprint(message_id))
             return result
         except Exception as e:
-            print(f"⚠️ Typing indicator failed for {message_id[:20]}...: {e}")
+            logger.warning(
+                "whatsapp_typing_indicator_failed",
+                message_id_hash=log_fingerprint(message_id),
+                error_type=type(e).__name__,
+            )
             return {}
 
     async def send_button(
@@ -282,10 +295,10 @@ class WhatsAppClient(MessagingClient):
 
         try:
             result = await self._send(url, payload)
-            print(f"✓ Button message sent to {to}")
+            logger.info("whatsapp_button_sent", to_hash=log_fingerprint(to))
             return result
         except Exception as e:
-            print(f"❌ Failed to send button message: {e}")
+            logger.error("whatsapp_button_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
 
     async def send_list(
@@ -344,10 +357,10 @@ class WhatsAppClient(MessagingClient):
 
         try:
             result = await self._send(url, payload)
-            print(f"✓ List message sent to {to}")
+            logger.info("whatsapp_list_sent", to_hash=log_fingerprint(to))
             return result
         except Exception as e:
-            print(f"❌ Failed to send list message: {e}")
+            logger.error("whatsapp_list_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
 
     async def send_flow(
@@ -391,7 +404,19 @@ class WhatsAppClient(MessagingClient):
         screen_name = flow_config.get("screen_name", "")
         footer = flow_config.get("footer", "")
         flow_token = flow_config.get("flow_token", "")
+        flow_action = flow_config.get("flow_action", "navigate")
         flow_action_payload = flow_config.get("flow_action_payload")
+        parameters: dict[str, Any] = {
+            "flow_message_version": "3",
+            "flow_token": flow_token or "",
+            "flow_id": flow_id,
+            "flow_cta": flow_cta,
+            "flow_action": flow_action,
+        }
+        if flow_action_payload is not None:
+            parameters["flow_action_payload"] = flow_action_payload
+        elif flow_action == "navigate":
+            parameters["flow_action_payload"] = {"screen": screen_name}
 
         interactive_payload = {
             "type": "flow",
@@ -399,14 +424,7 @@ class WhatsAppClient(MessagingClient):
             "body": {"text": text_body},
             "action": {
                 "name": "flow",
-                "parameters": {
-                    "flow_message_version": "3",
-                    "flow_token": flow_token or "",
-                    "flow_id": flow_id,
-                    "flow_cta": flow_cta,
-                    "flow_action": "navigate",
-                    "flow_action_payload": (flow_action_payload if flow_action_payload else {"screen": screen_name}),
-                },
+                "parameters": parameters,
             },
         }
 
@@ -421,13 +439,45 @@ class WhatsAppClient(MessagingClient):
             "interactive": interactive_payload,
         }
 
+        action_payload = parameters.get("flow_action_payload")
+        action_payload_data = action_payload.get("data") if isinstance(action_payload, dict) else None
+        logger.info(
+            "whatsapp_flow_send_prepared",
+            to_hash=log_fingerprint(to),
+            flow_id_hash=log_fingerprint(flow_id),
+            flow_token_hash=log_fingerprint(flow_token),
+            flow_action=flow_action,
+            screen_name=screen_name,
+            has_flow_action_payload="flow_action_payload" in parameters,
+            flow_action_payload_keys=(
+                sorted(str(key) for key in action_payload) if isinstance(action_payload, dict) else []
+            ),
+            flow_action_payload_data_keys=(
+                sorted(str(key) for key in action_payload_data) if isinstance(action_payload_data, dict) else []
+            ),
+        )
+
         try:
             result = await self._send(url, payload)
             msg_id = result.get("messages", [{}])[0].get("id")
+            logger.info(
+                "whatsapp_flow_send_succeeded",
+                to_hash=log_fingerprint(to),
+                flow_id_hash=log_fingerprint(flow_id),
+                flow_token_hash=log_fingerprint(flow_token),
+                flow_action=flow_action,
+                message_id_hash=log_fingerprint(msg_id),
+            )
             return MessageResult(success=True, message_id=msg_id, raw_response=result)
         except Exception as e:
-            print(f"❌ Failed to send flow: {e}")
-            print(f"   Payload was: {json.dumps(payload, indent=2)}")
+            logger.error(
+                "whatsapp_flow_send_failed",
+                to_hash=log_fingerprint(to),
+                flow_id_hash=log_fingerprint(flow_id),
+                flow_token_hash=log_fingerprint(flow_token),
+                flow_action=flow_action,
+                error_type=type(e).__name__,
+            )
             # Raise exception if it's critical, or return failed result?
             # Existing clients might expect raise, but interface says return result.
             # However, for now let's return failed result to inhibit crash
@@ -459,10 +509,14 @@ class WhatsAppClient(MessagingClient):
             media_id: str | None = result.get("id")
             if not media_id:
                 raise ValueError("No media ID returned from WhatsApp")
-            print(f"✓ Media uploaded to WhatsApp: {media_id}")
+            logger.info("whatsapp_media_uploaded", media_id_hash=log_fingerprint(media_id))
             return media_id
         except Exception as e:
-            print(f"❌ Failed to upload media to WhatsApp: {e}")
+            logger.error(
+                "whatsapp_media_upload_failed",
+                media_url_hash=log_fingerprint(media_url),
+                error_type=type(e).__name__,
+            )
             raise
 
     async def send_image(
@@ -507,10 +561,10 @@ class WhatsAppClient(MessagingClient):
             }
 
             result = await self._send(url, payload)
-            print(f"✓ Image message sent to {to}")
+            logger.info("whatsapp_image_sent", to_hash=log_fingerprint(to), media_id_hash=log_fingerprint(media_id))
             return result
         except Exception as e:
-            print(f"❌ Failed to send image message: {e}")
+            logger.error("whatsapp_image_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
 
     async def send_image_data(
@@ -562,10 +616,14 @@ class WhatsAppClient(MessagingClient):
             }
 
             result = await self._send(url, payload)
-            print(f"✓ Image (from data) sent to {to}")
+            logger.info(
+                "whatsapp_image_data_sent",
+                to_hash=log_fingerprint(to),
+                media_id_hash=log_fingerprint(media_id),
+            )
             return result
         except Exception as e:
-            print(f"❌ Failed to send image from data: {e}")
+            logger.error("whatsapp_image_data_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
 
     async def get_media_url(self, media_id: str) -> str:
@@ -590,7 +648,11 @@ class WhatsAppClient(MessagingClient):
                 raise ValueError("No URL returned for media")
             return media_url
         except Exception as e:
-            print(f"❌ Failed to get media URL: {e}")
+            logger.error(
+                "whatsapp_media_url_failed",
+                media_id_hash=log_fingerprint(media_id),
+                error_type=type(e).__name__,
+            )
             raise
 
     async def download_media(self, media_url: str) -> bytes:
@@ -609,7 +671,11 @@ class WhatsAppClient(MessagingClient):
             resp.raise_for_status()
             return resp.content
         except Exception as e:
-            print(f"❌ Failed to download media: {e}")
+            logger.error(
+                "whatsapp_media_download_failed",
+                media_url_hash=log_fingerprint(media_url),
+                error_type=type(e).__name__,
+            )
             raise
 
     async def _upload_buffer(
@@ -645,10 +711,18 @@ class WhatsAppClient(MessagingClient):
             media_id: str | None = result.get("id")
             if not media_id:
                 raise ValueError("No media ID returned from WhatsApp")
-            print(f"✓ Buffer uploaded to WhatsApp: {media_id}")
+            logger.info(
+                "whatsapp_buffer_uploaded",
+                media_id_hash=log_fingerprint(media_id),
+                filename_hash=log_fingerprint(filename),
+            )
             return media_id
         except Exception as e:
-            print(f"❌ Failed to upload buffer to WhatsApp: {e}")
+            logger.error(
+                "whatsapp_buffer_upload_failed",
+                filename_hash=log_fingerprint(filename),
+                error_type=type(e).__name__,
+            )
             raise
 
     async def send_document(
@@ -702,10 +776,15 @@ class WhatsAppClient(MessagingClient):
             }
 
             result = await self._send(url, payload)
-            print(f"✓ Document sent to {to}: {filename}")
+            logger.info(
+                "whatsapp_document_sent",
+                to_hash=log_fingerprint(to),
+                filename_hash=log_fingerprint(filename),
+                media_id_hash=log_fingerprint(media_id),
+            )
             return result
         except Exception as e:
-            print(f"❌ Failed to send document: {e}")
+            logger.error("whatsapp_document_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
 
     # ========== MessagingClient Interface Methods ==========

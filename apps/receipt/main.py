@@ -32,12 +32,18 @@ async def _run_receipt_worker(stop_event: asyncio.Event) -> None:
 
 
 async def _process_stream_record(
-    consumer,
+    consumers,
     stream_consumer: RedisStreamConsumer,
     record: RedisStreamRecord,
 ) -> None:
     try:
-        await consumer.process_job(record.payload)
+        receipt_consumer, notification_consumer = consumers
+        if record.topic == "receipt.process":
+            await receipt_consumer.process_job(record.payload)
+        elif record.topic == "notification.send":
+            await notification_consumer.process_job(record.payload)
+        else:
+            logger.warning("receipt_worker_unknown_stream_topic", topic=record.topic, stream=record.stream_name)
         await stream_consumer.ack(record.stream_name, record.record_id)
     except Exception as exc:
         logger.error(
@@ -51,13 +57,17 @@ async def _process_stream_record(
 
 
 async def _run_receipt_stream_worker(stop_event: asyncio.Event) -> None:
-    consumer = setup_receipt_worker_consumers()
-    stream_name = get_contract_by_topic("receipt.process").redis_stream_name
-    if not stream_name:
+    consumers = setup_receipt_worker_consumers()
+    stream_names = [
+        stream_name
+        for topic in ("receipt.process", "notification.send")
+        if (stream_name := get_contract_by_topic(topic).redis_stream_name)
+    ]
+    if not stream_names:
         raise RuntimeError("receipt_stream_not_configured")
     stream_consumer = RedisStreamConsumer(
-        stream_names=[stream_name],
-        group_name=f"{settings.project_name}-receipt-worker-{settings.environment}",
+        stream_names=stream_names,
+        group_name=f"{settings.project_name}-receipt-worker-{settings.runtime.infrastructure_environment}",
     )
     logger.info("receipt_stream_worker_started", streams=stream_consumer.stream_names)
     await stream_consumer.ensure_groups()
@@ -65,11 +75,11 @@ async def _run_receipt_stream_worker(stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
         for record in claimed:
-            await _process_stream_record(consumer, stream_consumer, record)
+            await _process_stream_record(consumers, stream_consumer, record)
 
         records = await stream_consumer.consume(count=25, block_ms=5000)
         for record in records:
-            await _process_stream_record(consumer, stream_consumer, record)
+            await _process_stream_record(consumers, stream_consumer, record)
 
 
 @asynccontextmanager

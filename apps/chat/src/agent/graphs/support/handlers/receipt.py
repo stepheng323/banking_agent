@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import SupportResponse
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -14,7 +15,7 @@ async def handle_receipt_request(transaction: dict[str, Any], *, locale: str = "
     Handle receipt_request intent.
     Only provides receipt for successful transactions.
     """
-    status = str(transaction.get("status", "unknown") or "unknown").strip().lower()
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
     tx_id = transaction.get("transaction_id", "")

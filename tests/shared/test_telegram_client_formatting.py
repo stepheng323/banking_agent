@@ -3,7 +3,7 @@ import pytest
 
 from shared.clients.abstractions.messaging import MessageResult
 from shared.clients.telegram import client as telegram_client_module
-from shared.clients.telegram.client import TelegramClient, _format_telegram_html
+from shared.clients.telegram.client import TelegramClient, _format_telegram_html, _telegram_html_to_plain_text
 from shared.config.settings import Settings, settings
 
 
@@ -24,6 +24,12 @@ def test_telegram_html_formatter_does_not_break_plain_text() -> None:
 def test_telegram_html_formatter_handles_double_asterisk_bold() -> None:
     rendered = _format_telegram_html("**Ticket:** 123\n*Total:* **₦30,000**")
     assert rendered == "<b>Ticket:</b> 123\n<b>Total:</b> <b>₦30,000</b>"
+
+
+def test_telegram_html_to_plain_text_strips_markup_for_mini_app_copy() -> None:
+    rendered = _telegram_html_to_plain_text("<b>₦3,000 -&gt; Ada</b>\n<code>GTBank</code>")
+
+    assert rendered == "₦3,000 -> Ada\nGTBank"
 
 
 def test_telegram_message_draft_defaults_enabled_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,8 +187,14 @@ async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monke
     assert result.success is True
     assert result.message_id == "100"
     assert calls == ["sendMessageDraft", "sendMessage"]
-    assert ("telegram_draft_endpoint_unsupported_disabled", {"channel": "telegram", "method": "sendMessageDraft", "http_status": 400, "runtime_draft_enabled": False}) in log_events
-    assert ("telegram_draft_fallback_to_final_send", {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": False}) in log_events
+    assert (
+        "telegram_draft_endpoint_unsupported_disabled",
+        {"channel": "telegram", "method": "sendMessageDraft", "http_status": 400, "runtime_draft_enabled": False},
+    ) in log_events
+    assert (
+        "telegram_draft_fallback_to_final_send",
+        {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": False},
+    ) in log_events
 
     calls.clear()
     second = await client.send_text_streamed(
@@ -238,7 +250,10 @@ async def test_send_text_streamed_logs_fallback_after_unexpected_draft_failure(m
     assert result.success is True
     assert result.message_id == "202"
     assert calls == ["sendMessageDraft", "sendMessage"]
-    assert ("telegram_draft_fallback_to_final_send", {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": True}) in log_events
+    assert (
+        "telegram_draft_fallback_to_final_send",
+        {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": True},
+    ) in log_events
     assert any(event == "telegram_draft_attempt_failed" for event, _ in log_events)
 
 
@@ -277,10 +292,15 @@ async def test_send_text_streamed_skips_draft_when_feature_disabled(monkeypatch:
 @pytest.mark.asyncio
 async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.fusepay.dev")
+    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.narya.ai")
     client = TelegramClient()
 
     calls: list[dict[str, object]] = []
+    bootstraps: list[dict[str, object]] = []
+
+    async def _fake_bootstrap(**kwargs: object) -> str:
+        bootstraps.append(dict(kwargs))
+        return f"boot-{kwargs['endpoint']}"
 
     async def _fake_call(
         method: str,
@@ -294,9 +314,10 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
         return {"ok": True, "result": {"message_id": 55}}
 
     monkeypatch.setattr(client, "_call", _fake_call)
+    monkeypatch.setattr(telegram_client_module, "create_telegram_miniapp_bootstrap", _fake_bootstrap)
 
-    await client.send_mini_app(to="12345", flow_token="link-12345-1700000000")
-    await client.send_mini_app(to="12345", flow_token="onboarding-12345")
+    await client.send_mini_app(to="12345", flow_token="link-opaque-token")
+    await client.send_mini_app(to="12345", flow_token="onboarding-opaque-token")
     await client.send_mini_app(to="12345", flow_token="transfer-pin-idem-12345")
 
     assert len(calls) == 3
@@ -304,14 +325,74 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
     first_markup = calls[0]["reply_markup"]
     first_url = first_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/linking.html" in first_url
+    assert "boot=boot-linking" in first_url
+    assert "flow_token=" not in first_url
+    assert "chat_id=" not in first_url
 
     second_markup = calls[1]["reply_markup"]
     second_url = second_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/onboarding.html" in second_url
+    assert "boot=boot-onboarding" in second_url
+    assert "flow_token=onboarding-opaque-token" not in second_url
+    assert "chat_id=" not in second_url
 
     third_markup = calls[2]["reply_markup"]
     third_url = third_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/pin_entry.html" in third_url
+    assert "boot=boot-pin" in third_url
+    assert "flow_token=" not in third_url
+    assert "chat_id=12345" not in third_url
+    assert bootstraps == [
+        {"chat_id": "12345", "flow_token": "link-opaque-token", "endpoint": "linking", "extra": {}},
+        {"chat_id": "12345", "flow_token": "onboarding-opaque-token", "endpoint": "onboarding", "extra": {}},
+        {"chat_id": "12345", "flow_token": "transfer-pin-idem-12345", "endpoint": "pin", "extra": {}},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_mini_app_keeps_pin_details_in_chat_not_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.narya.ai")
+    client = TelegramClient()
+
+    bootstraps: list[dict[str, object]] = []
+    captured: dict[str, object] = {}
+
+    async def _fake_bootstrap(**kwargs: object) -> str:
+        bootstraps.append(dict(kwargs))
+        return "boot-pin"
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del files, max_retries
+        assert method == "sendMessage"
+        captured.update(payload or {})
+        return {"ok": True, "result": {"message_id": 56}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+    monkeypatch.setattr(telegram_client_module, "create_telegram_miniapp_bootstrap", _fake_bootstrap)
+
+    await client.send_mini_app(
+        to="12345",
+        flow_token="transfer-pin-idem-12345",
+        header="Authorize Transfer",
+        body_text="<b>₦3,000 -&gt; Ada</b>\n<code>GTBank</code>",
+        cta_text="Authorize",
+    )
+
+    assert captured["text"] == "<b>Authorize Transfer</b>\n\n<b>₦3,000 -&gt; Ada</b>\n<code>GTBank</code>"
+    assert bootstraps == [
+        {
+            "chat_id": "12345",
+            "flow_token": "transfer-pin-idem-12345",
+            "endpoint": "pin",
+            "extra": {},
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -341,6 +422,79 @@ async def test_send_interactive_uses_object_reply_markup(monkeypatch: pytest.Mon
     )
 
     assert result.success is True
+    assert captured["reply_markup"] == {"inline_keyboard": [[{"text": "First", "callback_data": "1"}]]}
+
+
+@pytest.mark.asyncio
+async def test_send_interactive_groups_compact_option_buttons(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    client = TelegramClient()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del files, max_retries
+        assert method == "sendMessage"
+        captured.update(payload or {})
+        return {"ok": True, "result": {"message_id": 78}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.send_interactive(
+        to="12345",
+        body_text="Choose one",
+        options=[
+            {"id": "1", "title": "1"},
+            {"id": "2", "title": "2"},
+            {"id": "3", "title": "3"},
+            {"id": "4", "title": "4"},
+            {"id": "5", "title": "5"},
+        ],
+    )
+
+    assert result.success is True
     assert captured["reply_markup"] == {
-        "inline_keyboard": [[{"text": "First", "callback_data": "1"}]]
+        "inline_keyboard": [
+            [
+                {"text": "1", "callback_data": "1"},
+                {"text": "2", "callback_data": "2"},
+                {"text": "3", "callback_data": "3"},
+            ],
+            [
+                {"text": "4", "callback_data": "4"},
+                {"text": "5", "callback_data": "5"},
+            ],
+        ]
     }
+
+
+@pytest.mark.asyncio
+async def test_remove_inline_keyboard_edits_reply_markup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    client = TelegramClient()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del files
+        assert method == "editMessageReplyMarkup"
+        assert max_retries == 1
+        captured.update(payload or {})
+        return {"ok": True, "result": True}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.remove_inline_keyboard("12345", "99")
+
+    assert result is True
+    assert captured == {"chat_id": "12345", "message_id": "99"}

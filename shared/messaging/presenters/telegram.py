@@ -135,6 +135,22 @@ class TelegramPresenter(Presenter):
             )
             return self._extract_message_id(resp)
 
+        inline_buttons = self._telegram_inline_buttons(intent)
+        if inline_buttons:
+            resp = await self.client.send_interactive(
+                to=context.phone_number,
+                body_text=intent.text,
+                options=inline_buttons,
+                suppress_typing_indicator=self._suppress_typing(context),
+            )
+            if resp.success:
+                return resp.message_id
+
+            logger.info(
+                "telegram_say_inline_buttons_fallback_to_text",
+                button_count=len(inline_buttons),
+            )
+
         stream_enabled = bool(context.metadata.get("telegram_stream_response", True))
         stream_min_chars = int(context.metadata.get("telegram_stream_min_chars", 48))
         stream_client = cast(Any, self.client)
@@ -151,6 +167,23 @@ class TelegramPresenter(Presenter):
                 suppress_typing_indicator=self._suppress_typing(context),
             )
         return self._extract_message_id(resp)
+
+    @staticmethod
+    def _telegram_inline_buttons(intent: Say) -> list[dict[str, str]]:
+        payload = intent.actionable_payload if isinstance(intent.actionable_payload, dict) else {}
+        raw_buttons = payload.get("telegram_inline_buttons") or payload.get("telegram_inline_keyboard")
+        if not isinstance(raw_buttons, list):
+            return []
+
+        buttons: list[dict[str, str]] = []
+        for item in raw_buttons:
+            if not isinstance(item, dict):
+                continue
+            button_id = str(item.get("id") or item.get("callback_data") or "").strip()
+            title = str(item.get("title") or item.get("text") or button_id).strip()
+            if button_id and title:
+                buttons.append({"id": button_id, "title": title})
+        return buttons
 
     async def _present_auth(self, intent: RequestAuth, context: PresentationContext) -> str | None:
         """Present auth request via Telegram Mini App for secure PIN entry."""
@@ -178,7 +211,7 @@ class TelegramPresenter(Presenter):
             flow_config={
                 "header": intent.reason or "Authorize Transaction",
                 "text_body": html_summary,
-                "flow_cta": "🔐 Enter PIN",
+                "flow_cta": "Enter PIN",
                 "flow_token": flow_token,
             },
             suppress_typing_indicator=self._suppress_typing(context),
@@ -207,7 +240,7 @@ class TelegramPresenter(Presenter):
             flow_config={
                 "header": intent.header or "Confirm Transaction",
                 "text_body": html_summary,
-                "flow_cta": "🔐 Authorize",
+                "flow_cta": "Authorize",
                 "flow_token": flow_token,
             },
             suppress_typing_indicator=self._suppress_typing(context),
@@ -274,12 +307,29 @@ class TelegramPresenter(Presenter):
             )
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
 
+    @staticmethod
+    def _compact_option_button_title(index: int, option: dict[str, str]) -> str:
+        explicit_title = str(option.get("button_title") or "").strip()
+        if explicit_title:
+            return explicit_title[:64]
+        return str(index)
+
+    @staticmethod
+    def _telegram_options_body(title: str) -> str:
+        return title.strip() or "Choose an option."
+
+    @staticmethod
+    def _telegram_options_fallback_body(title: str, options: list[dict[str, str]]) -> str:
+        numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
+        return f"{title.strip()}\n\n{numbered}" if title.strip() else numbered
+
     async def _present_options(self, intent: ShowOptions, context: PresentationContext) -> str | None:
         """Present options with Telegram inline keyboard and text fallback."""
         options = [
             {
                 "id": str(option.get("id", "")).strip() or str(idx),
                 "title": str(option.get("title", option.get("label", f"Option {idx}"))),
+                "button_title": str(option.get("button_title", "")).strip(),
             }
             for idx, option in enumerate(intent.options, start=1)
             if isinstance(option, dict)
@@ -287,24 +337,32 @@ class TelegramPresenter(Presenter):
         if not options:
             return await self._present_say(Say(text=intent.title), context)
 
+        body_text = self._telegram_options_body(intent.title)
+        fallback_body_text = self._telegram_options_fallback_body(intent.title, options)
+        button_options = [
+            {
+                "id": opt["id"],
+                "title": self._compact_option_button_title(idx, opt),
+            }
+            for idx, opt in enumerate(options, start=1)
+        ]
+
         logger.info("option_render_mode", channel="telegram", mode="inline_keyboard", option_count=len(options))
         resp = await self.client.send_interactive(
             to=context.phone_number,
-            body_text=intent.title,
-            options=options,
+            body_text=body_text,
+            options=button_options,
             suppress_typing_indicator=self._suppress_typing(context),
         )
         if resp.success:
             return resp.message_id
 
         # Fallback: plain text while preserving numbered selection path.
-        numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
         logger.info("option_render_mode", channel="telegram", mode="text", option_count=len(options))
         logger.info("option_fallback_text_used", channel="telegram", option_count=len(options))
-        fallback_text = f"{intent.title}\n{numbered}"
         text_resp = await self.client.send_text(
             to=context.phone_number,
-            text=fallback_text,
+            text=fallback_body_text,
             suppress_typing_indicator=self._suppress_typing(context),
         )
         return self._extract_message_id(text_resp)

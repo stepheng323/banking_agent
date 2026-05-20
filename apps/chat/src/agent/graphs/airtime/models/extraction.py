@@ -29,6 +29,10 @@ class SimpleAirtimeEntities(BaseModel):
         default=None,
         description="Explicit source account id/reference if user specifies which account to use",
     )
+    source_bank_name: str | None = Field(
+        default=None,
+        description="Source bank/account name when user specifies funding source (e.g. 'from my GTB')",
+    )
     source_account_index: int | None = Field(
         default=None,
         description="Index of source account if user selects from a numbered list (e.g. '2' for option 2).",

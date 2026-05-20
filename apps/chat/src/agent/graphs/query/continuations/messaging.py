@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from apps.chat.src.agent.graphs.query.models import QueryResultItem
+from shared.formatters.currency import format_naira
 from shared.i18n import render_message
 
 
@@ -17,7 +18,7 @@ def build_soft_clarification(items: list[QueryResultItem], context: str = "", lo
     lines.append(render_message("query.clarify.are_you_referring", locale))
 
     for i, item in enumerate(items[:5], 1):
-        amount = f"₦{abs(item.amount):,.0f}" if item.amount else ""
+        amount = format_naira(item.amount, absolute=True) if item.amount else ""
         lines.append(
             render_message(
                 "query.clarify.option_line",
@@ -30,13 +31,3 @@ def build_soft_clarification(items: list[QueryResultItem], context: str = "", lo
     lines.append(render_message("query.clarify.reply_number_or_rephrase", locale))
 
     return "\n".join(lines)
-
-
-def get_recovery_message(locale: str = "en") -> str:
-    """Get the recovery message for total failure scenario."""
-    return render_message("query.clarify.recovery_options", locale)
-
-
-def should_offer_recovery(clarification_attempts: int, max_attempts: int = 3) -> bool:
-    """Check if we should offer recovery options based on attempt count."""
-    return clarification_attempts >= max_attempts

@@ -58,6 +58,8 @@ class TransferPayload(BaseModel):
     recipient_account: str | None = None
     recipient_bank_name: str | None = None
     recipient_bank_code: str | None = None
+    recipient_bank_code_provider: str | None = None
+    recipient_resolution_provider: str | None = None
     recipient_reference: dict[str, Any] | None = None
     beneficiary_id: str | None = None
 
@@ -94,6 +96,7 @@ class TransferPayload(BaseModel):
     # Confirmation sub-state
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
     confirmation_message_scoped: bool = False
+    amount_suggestion_disabled: bool = False
 
     @field_validator("transfer_all", mode="before")
     @classmethod
@@ -251,6 +254,7 @@ class SupportResult(BaseModel):
     outcome: SupportOutcome
     response: str | None = None
     receipt_jobs: list[dict[str, Any]] = Field(default_factory=list)
+    handoff: dict[str, Any] | None = None
     escalation: Any | None = None
     ticket_code: str | None = None
     final_message: str | None = None

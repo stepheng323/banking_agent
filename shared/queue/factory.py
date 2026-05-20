@@ -29,7 +29,7 @@ def _build_sns_topic_arn() -> str:
     """Construct the SNS topic ARN from settings."""
     return (
         f"arn:aws:sns:{settings.aws_region}:{settings.aws_account_id}:"
-        f"{settings.project_name}-async-jobs-{settings.environment}"
+        f"{settings.project_name}-async-jobs-{settings.runtime.infrastructure_environment}"
     )
 
 

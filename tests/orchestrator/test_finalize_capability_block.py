@@ -31,6 +31,17 @@ async def test_finalize_outputs_clean_message_for_capability_blocked_failure():
                 stage=TaskStage.FAILED,
                 payload={"error": "Bank provider timeout"},
             ),
+            "t3": TaskSpec(
+                id="t3",
+                type="transfer",
+                stage=TaskStage.FAILED,
+                payload={
+                    "error": (
+                        "Execution failed: This Session's transaction has been rolled back. "
+                        "[SQL: INSERT INTO transactions ...]"
+                    )
+                },
+            ),
         },
     )
 
@@ -48,3 +59,6 @@ async def test_finalize_outputs_clean_message_for_capability_blocked_failure():
     assert outbox[0]["text"].startswith("Scheduled transfers aren't available yet.")
     assert not outbox[0]["text"].startswith("Failed:")
     assert outbox[1]["text"] == "Failed: Bank provider timeout"
+    assert outbox[2]["text"] == "Failed: Transfer could not be completed. Please try again."
+    assert "[SQL:" not in outbox[2]["text"]
+    assert "Session's transaction" not in outbox[2]["text"]

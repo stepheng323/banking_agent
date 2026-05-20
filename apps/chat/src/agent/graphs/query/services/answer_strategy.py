@@ -11,6 +11,7 @@ from apps.chat.src.agent.graphs.query.models import (
     QueryAnswerContext,
     QueryAnswerStrategy,
     QueryExecutionContract,
+    QueryFactField,
     QueryIntent,
     QueryResult,
     QueryResultItem,
@@ -18,9 +19,11 @@ from apps.chat.src.agent.graphs.query.models import (
 from apps.chat.src.agent.graphs.query.services.continuity import build_soft_clarification
 from apps.chat.src.agent.graphs.query.services.contracts import build_focus_referent
 from apps.chat.src.agent.graphs.query.utils.timezone import lagos_today
+from shared.formatters.currency import format_naira
+from shared.formatters.transaction_copy import format_transaction_evidence_line, format_transaction_status_reply
 from shared.i18n import render_message
 
-FactKind = Literal["date", "counterparty", "amount", "bank"]
+FactKind = QueryFactField
 FactDirection = Literal["debit", "credit", "unknown"]
 
 
@@ -33,6 +36,14 @@ class DirectAnswerFact:
     bank_name: str | None
     date_text: str
     fallback_description: str
+    status_text: str | None
+    local_status_text: str | None
+    bank_status_text: str | None
+    needs_review: bool
+    reference_text: str | None
+    account_text: str | None
+    direction_text: str | None
+    category_text: str | None
     result_reference: Literal["latest", "oldest"] | None
 
 
@@ -43,7 +54,21 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
 
     query_contract = result.query_contract
 
-    if query_contract and query_contract.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
+    if query_contract and query_contract.request_shape == "existence":
+        return _apply_existence_answer_strategy(result, query_contract=query_contract, locale=locale)
+
+    if query_contract and query_contract.answer_fact_field in {
+        "date",
+        "counterparty",
+        "amount",
+        "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
+    }:
         return _apply_fact_answer_strategy(result, query_contract=query_contract, locale=locale)
 
     if query_contract and query_contract.intent in {
@@ -79,13 +104,21 @@ def build_direct_fact_answer(
         direction=direction,
         counterparty=_counterparty_label(item, query_contract=query_contract),
         bank_name=str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip() or None,
-        amount_text=f"₦{abs(float(item.amount)):,.0f}",
+        amount_text=format_naira(item.amount, absolute=True),
         date_text=item.date.strftime("%B %d, %Y"),
         fallback_description=item.description,
+        status_text=_status_label(metadata) or _implicit_history_status_label(item, metadata),
+        local_status_text=_status_value(metadata.get("local_status")),
+        bank_status_text=_status_value(metadata.get("bank_status")),
+        needs_review=bool(metadata.get("needs_review")),
+        reference_text=_reference_label(item),
+        account_text=_account_label(metadata),
+        direction_text=_direction_label(metadata),
+        category_text=_category_label(metadata),
         result_reference=query_contract.result_reference if query_contract is not None else None,
     )
     primary, used_fields = _compose_direct_reply(fact, locale=locale)
-    secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields)
+    secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields, locale=locale)
     return QueryAnswerContext(primary_text=primary, secondary_text=secondary)
 
 
@@ -117,6 +150,19 @@ def _apply_fact_answer_strategy(result: QueryResult, *, query_contract: QueryExe
     return result
 
 
+def _apply_existence_answer_strategy(
+    result: QueryResult,
+    *,
+    query_contract: QueryExecutionContract,
+    locale: str,
+) -> QueryResult:
+    result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
+    result.answer_context = QueryAnswerContext(
+        primary_text=build_existence_answer(result, query_contract=query_contract, locale=locale)
+    )
+    return result
+
+
 def _counterparty_label(item: QueryResultItem, *, query_contract: QueryExecutionContract | None) -> str | None:
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     for candidate in (
@@ -142,7 +188,18 @@ def _first_filter_value(values: list[str] | None) -> str | None:
 
 
 def _normalize_fact_kind(fact_field: str) -> FactKind:
-    if fact_field in {"date", "counterparty", "amount", "bank"}:
+    if fact_field in {
+        "date",
+        "counterparty",
+        "amount",
+        "bank",
+        "status",
+        "description",
+        "reference",
+        "account",
+        "direction",
+        "category",
+    }:
         return cast(FactKind, fact_field)
     return "date"
 
@@ -157,7 +214,7 @@ def _normalize_direction(raw_value: str) -> FactDirection:
 
 
 def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, set[str]]:
-    if locale == "en" and fact.result_reference == "latest":
+    if fact.result_reference == "latest":
         latest_reply = _compose_latest_direct_reply(fact, locale=locale)
         if latest_reply is not None:
             return latest_reply
@@ -248,28 +305,72 @@ def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, 
             {"amount"},
         )
 
-    if fact.bank_name and fact.counterparty and fact.direction == "debit":
+    if fact.fact_kind == "bank":
+        if fact.bank_name and fact.counterparty and fact.direction == "debit":
+            return (
+                render_message(
+                    "query.reply.bank.debit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
+                ),
+                {"counterparty", "bank"},
+            )
+        if fact.bank_name and fact.counterparty and fact.direction == "credit":
+            return (
+                render_message(
+                    "query.reply.bank.credit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
+                ),
+                {"counterparty", "bank"},
+            )
+        if fact.bank_name:
+            return (
+                render_message("query.reply.bank.generic", locale, {"bank_name": fact.bank_name}),
+                {"bank"},
+            )
+        return (render_message("query.reply.bank.unavailable", locale), set())
+
+    if fact.fact_kind == "status":
         return (
-            render_message(
-                "query.reply.bank.debit_named",
-                locale,
-                {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
+            format_transaction_status_reply(
+                fact.status_text,
+                local_status=fact.local_status_text,
+                bank_status=fact.bank_status_text,
+                needs_review=fact.needs_review,
+                locale=locale,
             ),
-            {"counterparty", "bank"},
+            {"status"} if fact.status_text else set(),
         )
-    if fact.bank_name and fact.counterparty and fact.direction == "credit":
+    if fact.fact_kind == "description":
+        return (f"It was for {fact.fallback_description}.", {"description"})
+    if fact.fact_kind == "reference":
         return (
-            render_message(
-                "query.reply.bank.credit_named",
-                locale,
-                {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
-            ),
-            {"counterparty", "bank"},
+            f"The reference is {fact.reference_text}."
+            if fact.reference_text
+            else "I found the transaction, but I couldn't confirm the reference.",
+            {"reference"} if fact.reference_text else set(),
         )
-    if fact.bank_name:
+    if fact.fact_kind == "account":
         return (
-            render_message("query.reply.bank.generic", locale, {"bank_name": fact.bank_name}),
-            {"bank"},
+            f"It was on {fact.account_text}."
+            if fact.account_text
+            else "I found the transaction, but I couldn't confirm the account.",
+            {"account"} if fact.account_text else set(),
+        )
+    if fact.fact_kind == "direction":
+        return (
+            f"It was {fact.direction_text}."
+            if fact.direction_text
+            else "I found the transaction, but I couldn't confirm the direction.",
+            {"direction"} if fact.direction_text else set(),
+        )
+    if fact.fact_kind == "category":
+        return (
+            f"It was categorized as {fact.category_text}."
+            if fact.category_text
+            else "I found the transaction, but I couldn't confirm the category.",
+            {"category"} if fact.category_text else set(),
         )
     return (render_message("query.reply.bank.unavailable", locale), set())
 
@@ -353,29 +454,30 @@ def _compose_latest_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tupl
             {"amount"},
         )
 
-    if fact.bank_name and fact.counterparty and fact.direction == "debit":
-        return (
-            render_message(
-                "query.reply.latest.bank.debit_named",
-                locale,
-                {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
-            ),
-            {"counterparty", "bank"},
-        )
-    if fact.bank_name and fact.counterparty and fact.direction == "credit":
-        return (
-            render_message(
-                "query.reply.latest.bank.credit_named",
-                locale,
-                {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
-            ),
-            {"counterparty", "bank"},
-        )
-    if fact.bank_name:
-        return (
-            render_message("query.reply.latest.bank.generic", locale, {"bank_name": fact.bank_name}),
-            {"bank"},
-        )
+    if fact.fact_kind == "bank":
+        if fact.bank_name and fact.counterparty and fact.direction == "debit":
+            return (
+                render_message(
+                    "query.reply.latest.bank.debit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
+                ),
+                {"counterparty", "bank"},
+            )
+        if fact.bank_name and fact.counterparty and fact.direction == "credit":
+            return (
+                render_message(
+                    "query.reply.latest.bank.credit_named",
+                    locale,
+                    {"counterparty": fact.counterparty, "bank_name": fact.bank_name},
+                ),
+                {"counterparty", "bank"},
+            )
+        if fact.bank_name:
+            return (
+                render_message("query.reply.latest.bank.generic", locale, {"bank_name": fact.bank_name}),
+                {"bank"},
+            )
     return None
 
 
@@ -384,24 +486,176 @@ def _build_evidence_line(
     *,
     query_contract: QueryExecutionContract | None,
     used_fields: set[str],
+    locale: str,
 ) -> str | None:
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     bank_name = str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip()
     counterparty = _counterparty_label(item, query_contract=query_contract)
-    date_text = item.date.strftime("%b %d")
-    amount = f"₦{abs(float(item.amount)):,.0f}"
+    return format_transaction_evidence_line(
+        amount=item.amount,
+        date_value=item.date,
+        counterparty=counterparty,
+        bank_name=bank_name or None,
+        used_fields=used_fields,
+        locale=locale,
+    )
 
-    parts: list[str] = []
-    if "amount" not in used_fields:
-        parts.append(amount)
-    if "date" not in used_fields:
-        parts.append(date_text)
-    if "counterparty" not in used_fields and counterparty:
-        parts.append(counterparty)
-    if "bank" not in used_fields and bank_name:
-        parts.append(bank_name)
 
-    return " • ".join(parts[:3]) or None
+def build_existence_answer(
+    result: QueryResult,
+    *,
+    query_contract: QueryExecutionContract,
+    locale: str = "en",
+) -> str:
+    """Build direct yes/no copy for transaction existence questions."""
+    del locale
+    items = result.items or []
+    count = len(items)
+    filters = query_contract.filters
+    tx_type = filters.transaction_type if filters else None
+    counterparty = _first_filter_value(filters.counterparty if filters else None)
+    merchant = _first_filter_value(filters.merchant if filters else None)
+    category = _first_filter_value(filters.category if filters else None)
+    target = counterparty or merchant or category
+    target_phrase = _target_phrase(target, category=category)
+    time_phrase = _time_phrase(query_contract)
+
+    if count == 0:
+        return _build_existence_no_match(tx_type=tx_type, target_phrase=target_phrase, time_phrase=time_phrase)
+
+    total = sum(abs(float(item.amount)) for item in items)
+    amount = format_naira(total)
+    if tx_type == "credit":
+        if target_phrase:
+            if count == 1:
+                return f"Yes. You received {amount} from {target_phrase}{time_phrase}."
+            return f"Yes. I found {count} credits from {target_phrase}{time_phrase}, totaling {amount}."
+        if count == 1:
+            return f"Yes. You received {amount}{time_phrase}."
+        return f"Yes. I found {count} credits{time_phrase}, totaling {amount}."
+    if tx_type == "debit":
+        if target_phrase:
+            if category:
+                if count == 1:
+                    return f"Yes. You spent {amount} on {target_phrase}{time_phrase}."
+                return f"Yes. I found {count} payments for {target_phrase}{time_phrase}, totaling {amount}."
+            if count == 1:
+                return f"Yes. You sent {amount} to {target_phrase}{time_phrase}."
+            return f"Yes. I found {count} payments to {target_phrase}{time_phrase}, totaling {amount}."
+        if count == 1:
+            return f"Yes. You spent {amount}{time_phrase}."
+        return f"Yes. I found {count} debits{time_phrase}, totaling {amount}."
+    if target_phrase:
+        if count == 1:
+            return f"Yes. I found one transaction with {target_phrase}{time_phrase} for {amount}."
+        return f"Yes. I found {count} transactions with {target_phrase}{time_phrase}, totaling {amount}."
+    if count == 1:
+        return f"Yes. I found one transaction{time_phrase} for {amount}."
+    return f"Yes. I found {count} transactions{time_phrase}, totaling {amount}."
+
+
+def _build_existence_no_match(*, tx_type: str | None, target_phrase: str | None, time_phrase: str) -> str:
+    if tx_type == "credit":
+        if target_phrase:
+            return f"No. I don't see a matching credit from {target_phrase}{time_phrase}."
+        return f"No. I don't see a matching credit{time_phrase}."
+    if tx_type == "debit":
+        if target_phrase:
+            return f"No. I don't see any payment to {target_phrase}{time_phrase}."
+        return f"No. I don't see a matching debit{time_phrase}."
+    if target_phrase:
+        return f"No. I don't see a matching transaction with {target_phrase}{time_phrase}."
+    return f"No. I don't see a matching transaction{time_phrase}."
+
+
+def _target_phrase(target: str | None, *, category: str | None) -> str | None:
+    if not target:
+        return None
+    cleaned = target.strip()
+    if not cleaned:
+        return None
+    if category:
+        return cleaned.replace("_", " ")
+    return cleaned
+
+
+def _time_phrase(query_contract: QueryExecutionContract) -> str:
+    time_range = query_contract.time_range
+    if time_range is None:
+        return ""
+    today = lagos_today()
+    if time_range.start == time_range.end == today:
+        return " today"
+    yesterday = today.fromordinal(today.toordinal() - 1)
+    if time_range.start == time_range.end == yesterday:
+        return " yesterday"
+    if time_range.start.day == 1 and time_range.end == today and time_range.start.year == today.year and time_range.start.month == today.month:
+        return " this month"
+    if time_range.start == today.fromordinal(today.toordinal() - today.weekday()) and time_range.end == today:
+        return " this week"
+    return " in that period"
+
+
+def _status_label(metadata: dict[str, object]) -> str | None:
+    for key in ("display_status", "status", "provider_status", "transaction_status", "tx_status", "final_status"):
+        status = _status_value(metadata.get(key))
+        if status:
+            return status
+    return None
+
+
+def _status_value(value: object) -> str | None:
+    status = str(value or "").strip()
+    if not status:
+        return None
+    lowered = status.lower()
+    if lowered in {"success", "successful", "completed"}:
+        return "successful"
+    return status.replace("_", " ").lower()
+
+
+def _implicit_history_status_label(item: QueryResultItem, metadata: dict[str, object]) -> str | None:
+    """Bank-history items without provider status are already posted entries."""
+    if item.description and item.date and item.amount is not None:
+        return "posted"
+    if metadata.get("posted_at") or metadata.get("posted_date"):
+        return "posted"
+    return None
+
+
+def _reference_label(item: QueryResultItem) -> str | None:
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    for key in ("transaction_id", "reference", "ref"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            return value
+    item_id = str(item.id or "").strip()
+    return item_id or None
+
+
+def _account_label(metadata: dict[str, object]) -> str | None:
+    for key in ("source_account_label", "source_account_number", "account_number", "bank_name"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _direction_label(metadata: dict[str, object]) -> str | None:
+    direction = str(metadata.get("direction") or metadata.get("transaction_type") or metadata.get("type") or "").strip()
+    lowered = direction.lower()
+    if lowered == "debit":
+        return "an outgoing debit"
+    if lowered == "credit":
+        return "an incoming credit"
+    return lowered.replace("_", " ") if lowered else None
+
+
+def _category_label(metadata: dict[str, object]) -> str | None:
+    category = str(metadata.get("resolved_category") or metadata.get("category") or "").strip()
+    if not category:
+        return None
+    return category.replace("_", " ").title()
 
 
 def build_fact_no_results_text(query_contract: QueryExecutionContract | None, *, locale: str = "en") -> str | None:

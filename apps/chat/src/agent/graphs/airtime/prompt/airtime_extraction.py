@@ -15,6 +15,7 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | is_self | Self-purchase | true for "my line", "for me", "myself" |
 | narration | Optional memo | — |
 | source_account_id | Source account | — |
+| source_bank_name | Source bank/account | "from my GTB" → "GTB", "use Access" → "Access" |
 | source_account_index | Selected account | "1", "2" from list options (int) |
 
 ## AMBIGUITIES
@@ -36,6 +37,7 @@ When user corrects mid-flow ("I meant 5k"):
 |-------|-----------------|
 | "buy 2k airtime" | amount=2000 |
 | "5k MTN to 08012345678" | amount=5000, network="MTN", recipient_phone="08012345678" |
+| "buy me 2k airtime from my GTB" | amount=2000, is_self=true, source_bank_name="GTB" |
 | "buy airtime for my line" | is_self=true |
 | "buy 5 airtime" | ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
 | "buy 2k airtime tomorrow" | amount=2000, requested_features=["SCHEDULED"] |

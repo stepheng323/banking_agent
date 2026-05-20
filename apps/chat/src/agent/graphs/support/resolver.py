@@ -10,9 +10,17 @@ Resolves which transaction the user is referring to using:
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import normalize_transaction_status
 from apps.chat.src.agent.graphs.support.models import TransactionReference
+from apps.chat.src.agent.shared.unified_transactions import (
+    UnifiedTransactionRecord,
+    UnifiedTransactionService,
+    default_support_window,
+)
+from shared.config.settings import settings
 from shared.database.models import Transaction
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.bank_transaction_repository import BankTransactionRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.utils.logging import get_logger
 
@@ -26,15 +34,19 @@ class TransactionResolver:
         self,
         transaction_repo: TransactionRepository,
         actionable_message_repo: ActionableMessageRepository,
+        bank_transaction_repo: BankTransactionRepository | None = None,
     ):
         self.tx_repo = transaction_repo
         self.am_repo = actionable_message_repo
+        self.unified_service = UnifiedTransactionService(transaction_repo, bank_transaction_repo)
 
     async def resolve(
         self,
         user_id: str,
         tx_ref: TransactionReference | None,
         quoted_message_id: str | None = None,
+        recent_status_priority: list[str] | None = None,
+        prefer_latest_recent: bool = False,
     ) -> tuple[Transaction | None, str]:
         """
         Resolve a transaction reference.
@@ -49,19 +61,155 @@ class TransactionResolver:
                 logger.info("transaction_resolved", method="quoted", tx_id=str(tx.id))
                 return tx, "quoted"
 
+        if tx_ref and tx_ref.transaction_id:
+            tx = await self.tx_repo.get_by_id(tx_ref.transaction_id)
+            if tx:
+                logger.info("transaction_resolved", method="transaction_id", tx_id=str(tx.id))
+                return tx, "transaction_id"
+
+        if settings.enable_unified_transaction_view:
+            tx, method = await self._resolve_from_unified(
+                user_id,
+                tx_ref,
+                recent_status_priority=recent_status_priority,
+                prefer_latest=prefer_latest_recent,
+            )
+            if tx:
+                logger.info("transaction_resolved", method=method, tx_id=str(tx.get("id") or tx.get("transaction_id")))
+                return tx, method
+            if method == "ambiguous":
+                return None, method
+
         if tx_ref and self._has_explicit_ref(tx_ref):
             tx = await self._resolve_from_explicit(user_id, tx_ref)
             if tx:
                 logger.info("transaction_resolved", method="explicit", tx_id=str(tx.id))
                 return tx, "explicit"
 
-        tx = await self._resolve_from_recent(user_id)
+        tx = await self._resolve_from_recent(
+            user_id,
+            status_priority=recent_status_priority,
+            prefer_latest=prefer_latest_recent,
+        )
         if tx:
             logger.info("transaction_resolved", method="recent", tx_id=str(tx.id))
             return tx, "recent"
 
         logger.info("transaction_not_resolved", user_id=user_id)
         return None, "not_found"
+
+    async def _resolve_from_unified(
+        self,
+        user_id: str,
+        tx_ref: TransactionReference | None,
+        *,
+        recent_status_priority: list[str] | None,
+        prefer_latest: bool,
+    ) -> tuple[dict[str, Any] | None, str]:
+        start_date, end_date = self._unified_window(tx_ref)
+        try:
+            records = await self.unified_service.list_for_user(
+                user_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except Exception as exc:
+            logger.warning("unified_resolution_failed", error=str(exc))
+            return None, "not_found"
+
+        if not records:
+            return None, "not_found"
+
+        if tx_ref and tx_ref.transaction_id:
+            target = tx_ref.transaction_id.strip()
+            for record in records:
+                data = record.to_support_dict()
+                identifiers = {
+                    str(data.get("id") or ""),
+                    str(data.get("transaction_id") or ""),
+                    str(data.get("local_transaction_id") or ""),
+                    str(data.get("bank_transaction_id") or ""),
+                    str(data.get("provider_reference") or ""),
+                }
+                if target in identifiers:
+                    return data, "transaction_id"
+
+        if tx_ref and self._has_explicit_ref(tx_ref):
+            candidates: list[tuple[UnifiedTransactionRecord, float]] = []
+            for record in records:
+                score = self._unified_match_score(record, tx_ref)
+                if score > 0:
+                    candidates.append((record, score))
+            if not candidates:
+                return None, "not_found"
+            candidates.sort(key=lambda item: item[1], reverse=True)
+            if len(candidates) == 1 or candidates[0][1] > candidates[1][1] * 1.5:
+                return candidates[0][0].to_support_dict(), "explicit"
+            return None, "ambiguous"
+
+        if prefer_latest:
+            return records[0].to_support_dict(), "recent"
+
+        if recent_status_priority:
+            priority = [normalize_transaction_status(status) for status in recent_status_priority]
+            priority = [status for status in priority if status != "unknown"]
+            for status in priority:
+                for record in records:
+                    if normalize_transaction_status(record.display_status) == status:
+                        return record.to_support_dict(), "recent"
+
+        for status in ("pending", "processing", "failed"):
+            for record in records:
+                if normalize_transaction_status(record.display_status) == status:
+                    return record.to_support_dict(), "recent"
+
+        return records[0].to_support_dict(), "recent"
+
+    def _unified_window(self, tx_ref: TransactionReference | None) -> tuple[date, date]:
+        if tx_ref and tx_ref.date_hint:
+            parsed = self._parse_date_hint(tx_ref.date_hint)
+            if parsed is not None:
+                return parsed - timedelta(days=1), parsed + timedelta(days=1)
+        return default_support_window()
+
+    def _unified_match_score(self, record: UnifiedTransactionRecord, tx_ref: TransactionReference) -> float:
+        data = record.to_support_dict()
+        score = 0.0
+
+        if tx_ref.amount:
+            amount = float(data.get("amount") or 0.0)
+            if abs(amount - tx_ref.amount) < 1:
+                score += 3.0
+            elif abs(amount - tx_ref.amount) / tx_ref.amount < 0.05:
+                score += 1.0
+
+        if tx_ref.recipient_name:
+            target = tx_ref.recipient_name.lower()
+            haystack = " ".join(
+                str(data.get(key) or "")
+                for key in ("recipient_name", "counterparty", "narration", "recipient_bank_name")
+            ).lower()
+            if target in haystack:
+                score += 2.0
+
+        if tx_ref.date_hint:
+            target_date = self._parse_date_hint(tx_ref.date_hint)
+            if target_date:
+                raw_date = data.get("created_at") or data.get("date")
+                tx_date = None
+                if raw_date:
+                    try:
+                        tx_date = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00")).date()
+                    except ValueError:
+                        tx_date = None
+                if tx_date:
+                    days_diff = abs((tx_date - target_date).days)
+                    if days_diff == 0:
+                        score += 2.0
+                    elif days_diff <= 1:
+                        score += 1.0
+
+        return score
 
     async def _resolve_from_quoted(self, quoted_message_id: str, user_id: str) -> Transaction | None:
         """Resolve transaction from quoted ActionableMessage.
@@ -113,9 +261,38 @@ class TransactionResolver:
             logger.warning("explicit_resolution_failed", error=str(e))
             return None
 
-    async def _resolve_from_recent(self, user_id: str) -> Transaction | None:
+    async def _resolve_from_recent(
+        self,
+        user_id: str,
+        *,
+        status_priority: list[str] | None = None,
+        prefer_latest: bool = False,
+    ) -> Transaction | None:
         """Get most recent unresolved (pending/failed) transaction."""
         try:
+            if prefer_latest:
+                recent = await self.tx_repo.get_by_user(user_id, limit=1)
+                return recent[0] if recent else None
+
+            if status_priority:
+                priority = [normalize_transaction_status(status) for status in status_priority]
+                priority = [status for status in priority if status != "unknown"]
+                if priority:
+                    exact_primary = await self.tx_repo.get_by_status(user_id, priority[0])
+                    if exact_primary:
+                        return exact_primary[0]
+
+                    recent = await self.tx_repo.get_by_user(user_id, limit=50)
+                    if recent_match := self._pick_by_status_priority(recent, priority):
+                        return recent_match
+
+                    for status in priority[1:]:
+                        exact_matches = await self.tx_repo.get_by_status(user_id, status)
+                        if exact_matches:
+                            return exact_matches[0]
+
+                    return recent[0] if recent else None
+
             pending = await self.tx_repo.get_by_status(user_id, "pending")
             if pending:
                 return pending[0]
@@ -129,6 +306,34 @@ class TransactionResolver:
         except Exception as e:
             logger.warning("recent_resolution_failed", error=str(e))
             return None
+
+    @staticmethod
+    def _tx_attr(tx: Any, key: str) -> Any:
+        if isinstance(tx, dict):
+            return tx.get(key)
+        return getattr(tx, key, None)
+
+    @classmethod
+    def _tx_status(cls, tx: Any) -> str:
+        for key in ("status", "final_status", "provider_status", "transaction_status", "tx_status"):
+            status = normalize_transaction_status(cls._tx_attr(tx, key))
+            if status != "unknown":
+                return status
+        provider_response = cls._tx_attr(tx, "provider_response")
+        if isinstance(provider_response, dict):
+            for key in ("status", "provider_status", "transaction_status", "tx_status"):
+                status = normalize_transaction_status(provider_response.get(key))
+                if status != "unknown":
+                    return status
+        return "unknown"
+
+    @classmethod
+    def _pick_by_status_priority(cls, transactions: list[Any], priority: list[str]) -> Any | None:
+        for status in priority:
+            for tx in transactions:
+                if cls._tx_status(tx) == status:
+                    return tx
+        return None
 
     def _has_explicit_ref(self, tx_ref: TransactionReference) -> bool:
         """Check if reference has explicit identifiers."""
@@ -181,6 +386,8 @@ class TransactionResolver:
 
     def transaction_to_dict(self, tx: Transaction) -> dict[str, Any]:
         """Convert transaction to dictionary for handlers."""
+        if isinstance(tx, dict):
+            return dict(tx)
         return {
             "id": str(tx.id),
             "transaction_type": tx.transaction_type,
@@ -195,6 +402,7 @@ class TransactionResolver:
             "source_bank_name": tx.source_bank_name,
             "narration": tx.narration,
             "error_message": tx.error_message,
+            "failure_category": getattr(tx, "failure_category", None),
             "provider_response": tx.provider_response or {},
             "provider_status": getattr(tx, "provider_status", None),
             "provider_error_code": getattr(tx, "provider_error_code", None),

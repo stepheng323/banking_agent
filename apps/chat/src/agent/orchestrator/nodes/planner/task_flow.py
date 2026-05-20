@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.nodes.planner.context_read import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.nodes.planner.policy import _filter_capability_blocked_tasks
 from apps.chat.src.agent.orchestrator.nodes.planner.postprocess import (
     _expand_underproduced_transfer_tasks,
     _reconcile_multi_transfer_recipient_tasks,
@@ -10,15 +11,25 @@ from apps.chat.src.agent.orchestrator.nodes.planner.postprocess import (
     _validate_and_repair_planner_clauses,
 )
 from apps.chat.src.agent.orchestrator.utils.task_payload import build_task_specs_and_waves_from_plan_items
+from shared.policy.transaction_limits import MAX_TRANSACTION_BATCH_TASKS
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _transaction_batch_limit_message(*, transaction_count: int) -> str:
+    return (
+        f"I can handle up to {MAX_TRANSACTION_BATCH_TASKS} transactions in one batch. "
+        f"You asked for {transaction_count}. Please send the first {MAX_TRANSACTION_BATCH_TASKS} now, "
+        "then I can help with the rest."
+    )
 
 
 async def _build_planner_task_updates(
     *,
     planner_output: Any,
     text: str,
+    locale: str,
     query_session_source: str | None,
     query_session_snapshot: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -85,6 +96,36 @@ async def _build_planner_task_updates(
             changed_transfer_task_ids=repair_meta["changed_transfer_task_ids"],
         )
 
+    planner_output, blocked_messages = _filter_capability_blocked_tasks(planner_output, locale)
+    capability_policy_notice = "\n\n".join(blocked_messages) if blocked_messages else None
+    if blocked_messages and not planner_output.tasks:
+        return {
+            "planner_output": planner_output,
+            "new_tasks": {},
+            "waves": [],
+            "stashed_query_session_update": None,
+            "capability_block_response": capability_policy_notice,
+            "capability_policy_notice": None,
+        }
+
+    transaction_task_count = sum(
+        1 for task in planner_output.tasks if getattr(task, "executor", None) in TRANSACTION_EXECUTORS
+    )
+    if transaction_task_count > MAX_TRANSACTION_BATCH_TASKS:
+        logger.info(
+            "planner_transaction_batch_limit_blocked",
+            transaction_task_count=transaction_task_count,
+            max_transaction_batch_tasks=MAX_TRANSACTION_BATCH_TASKS,
+        )
+        return {
+            "planner_output": planner_output,
+            "new_tasks": {},
+            "waves": [],
+            "stashed_query_session_update": None,
+            "batch_limit_response": _transaction_batch_limit_message(transaction_count=transaction_task_count),
+            "capability_policy_notice": capability_policy_notice,
+        }
+
     stashed_query_session_update: dict[str, Any] | None = None
     if (
         query_session_source == "redis"
@@ -129,6 +170,7 @@ async def _build_planner_task_updates(
         "new_tasks": new_tasks,
         "waves": waves,
         "stashed_query_session_update": stashed_query_session_update,
+        "capability_policy_notice": capability_policy_notice,
     }
 
 

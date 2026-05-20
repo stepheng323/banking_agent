@@ -2,18 +2,48 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import SupportResponse
+from shared.formatters.transaction_copy import format_transaction_status_reply
 from shared.i18n import render_message
+from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-def _normalize_status(status: str) -> str:
-    status = (status or "unknown").strip().lower()
-    if status == "success":
-        return "successful"
-    return status
+def _provider_error_code(transaction: dict[str, Any]) -> str | None:
+    provider_response = transaction.get("provider_response", {})
+    if not isinstance(provider_response, dict):
+        provider_response = {}
+    for key in ("provider_error_code", "response_code", "responseCode", "error_code", "code"):
+        value = transaction.get(key) if key == "provider_error_code" else provider_response.get(key)
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _failure_category(transaction: dict[str, Any], error: str) -> str:
+    category = transaction.get("failure_category")
+    if isinstance(category, str) and category.strip():
+        return category.strip()
+    return classify_failure_category(
+        message=error,
+        code=_provider_error_code(transaction),
+        context="provider",
+    )
+
+
+def _retry_block_message(category: str, error: str, *, locale: str) -> str:
+    if locale == "en":
+        guidance = {
+            "insufficient_funds": "Use another source account or reduce the amount before retrying.",
+            "source_account": "Choose another source account or fix the mandate before retrying.",
+            "validation_error": "Correct the recipient account and bank details before retrying.",
+        }.get(category)
+        if guidance:
+            return guidance
+    return render_message("support.retry.not_retryable", locale, {"error": error})
 
 
 async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
@@ -21,9 +51,10 @@ async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> Su
     Handle retry_transfer intent.
     Checks if retryable and prepares for TransferFlowGraph hydration.
     """
-    status = _normalize_status(str(transaction.get("status", "unknown")))
+    status = resolve_transaction_status(transaction)
     amount = transaction.get("amount", 0)
     recipient = transaction.get("recipient_name", "recipient")
+    actionable = transaction.get("actionable")
 
     if status == "successful":
         message = render_message(
@@ -45,12 +76,28 @@ async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> Su
             transaction_data=transaction,
         )
 
-    if status == "failed":
-        # Check if retryable based on error
-        error = transaction.get("error_message", "")
-        non_retryable_errors = ["insufficient funds", "account blocked", "limit exceeded"]
+    if isinstance(actionable, dict) and not actionable.get("retry", False):
+        message = (
+            format_transaction_status_reply(
+                status,
+                locale=locale,
+                local_status=transaction.get("local_status") or status,
+                bank_status=transaction.get("bank_status"),
+                needs_review=bool(transaction.get("needs_review")),
+            )
+            if transaction.get("needs_review") and transaction.get("bank_status") == "posted"
+            else render_message("support.retry.not_retryable", locale, {"error": status})
+        )
+        return SupportResponse(
+            message=message,
+            offer_retry=False,
+            transaction_data=transaction,
+        )
 
-        is_retryable = not any(e in error.lower() for e in non_retryable_errors)
+    if status == "failed":
+        error = transaction.get("error_message", "")
+        category = _failure_category(transaction, str(error or ""))
+        is_retryable = category not in {"insufficient_funds", "source_account", "validation_error"}
 
         if is_retryable:
             message = render_message(
@@ -64,7 +111,7 @@ async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> Su
                 transaction_data=transaction,
             )
         else:
-            message = render_message("support.retry.not_retryable", locale, {"error": error})
+            message = _retry_block_message(category, str(error or ""), locale=locale)
             return SupportResponse(
                 message=message,
                 offer_retry=False,

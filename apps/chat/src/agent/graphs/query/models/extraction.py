@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from apps.chat.src.agent.graphs.query.models.domain import QueryOperation
+from apps.chat.src.agent.graphs.query.models.domain import QueryFactField, QueryOperation
 
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
@@ -27,6 +27,7 @@ class QueryRequestShape(str, Enum):
     """High-level answer shape the user is asking for."""
 
     FACT = "fact"
+    EXISTENCE = "existence"
     DETAIL = "detail"
     LIST = "list"
     GROUPED_SUMMARY = "grouped_summary"
@@ -42,6 +43,12 @@ class FactQueryKind(str, Enum):
     COUNTERPARTY = "counterparty"
     AMOUNT = "amount"
     BANK = "bank"
+    STATUS = "status"
+    DESCRIPTION = "description"
+    REFERENCE = "reference"
+    ACCOUNT = "account"
+    DIRECTION = "direction"
+    CATEGORY = "category"
 
 
 class RequestedCapability(str, Enum):
@@ -142,7 +149,7 @@ class ParserQueryExtraction(BaseModel):
         default=None,
         description="Relative positioning for results when user asks for most recent/oldest",
     )
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(default=None)
+    answer_fact_field: QueryFactField | None = Field(default=None)
 
 
 class QueryExtractionResult(BaseModel):
@@ -164,7 +171,7 @@ class QueryExtractionResult(BaseModel):
         default=None,
         description="Relative positioning for results when user asks for most recent/oldest",
     )
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(default=None)
+    answer_fact_field: QueryFactField | None = Field(default=None)
 
     requested_capabilities: list[RequestedCapability] = Field(
         default_factory=list,
@@ -192,7 +199,7 @@ class ReasonerQueryExtraction(BaseModel):
     fact_query_kind: FactQueryKind | None = Field(default=None)
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(default=None)
+    answer_fact_field: QueryFactField | None = Field(default=None)
     raw_query: str | None = Field(default=None)
 
     def to_query_extraction_result(self) -> "QueryExtractionResult":

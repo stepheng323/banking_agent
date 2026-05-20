@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -30,12 +30,20 @@ class GateContext:
     query_session_source: str | None = None
     turn_summary: TurnContextSummary | None = None
     summary_updates: dict[str, Any] | None = None
+    routing_hints: list[dict[str, str]] = field(default_factory=list)
 
     # Callback to evaluate semantic router to prevent circular imports
     should_invoke_semantic_router_fn: Any | None = None
 
     _query_loaded: bool = False
     _summary_loaded: bool = False
+
+    def add_routing_hint(self, *, domain: str, reason: str, source: str) -> None:
+        """Record a non-authoritative routing hint for later semantic/planner stages."""
+        self.routing_hints.append({"domain": domain, "reason": reason, "source": source})
+
+    def has_routing_hint(self, domain: str) -> bool:
+        return any(hint.get("domain") == domain for hint in self.routing_hints)
 
     async def ensure_query_session(self) -> None:
         """Lazily load the query session snapshot from Redis/state."""

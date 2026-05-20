@@ -2,14 +2,16 @@
 
 from typing import Any
 
+from shared.formatters.currency import format_naira
 from shared.formatters.recipient_display import format_summary_recipient_display_label
 from shared.formatters.transaction_copy import build_completion_frame, derive_task_mix, format_amount_compact
 from shared.i18n import render_message
+from shared.utils.user_error import safe_user_error_message
 
 
 def format_amount(amount: float | int) -> str:
     """Format currency in Naira."""
-    return f"₦{amount:,.2f}" if amount else "₦0.00"
+    return format_naira(amount, decimal_places=2)
 
 
 def mask_account_number(account: str) -> str:
@@ -181,7 +183,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                     )
                 )
                 if status == "failed" and (reason := _failure_reason(task.payload)):
-                    lines.append(_format_failure_reason(reason, locale))
+                    lines.append(_format_failure_reason(reason, locale, task_type=task.type))
 
         lines.append("")
 
@@ -210,7 +212,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
             )
             lines.append(f"{icon} {airtime_line}")
             if status == "failed" and (reason := _failure_reason(task.payload)):
-                lines.append(_format_failure_reason(reason, locale))
+                lines.append(_format_failure_reason(reason, locale, task_type=task.type))
         lines.append("")
 
     # Handle data purchases
@@ -236,7 +238,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
             )
             lines.append(f"{icon} {data_line}")
             if status == "failed" and (reason := _failure_reason(task.payload)):
-                lines.append(_format_failure_reason(reason, locale))
+                lines.append(_format_failure_reason(reason, locale, task_type=task.type))
         lines.append("")
 
     # Handle other task types
@@ -310,8 +312,9 @@ def _failure_reason(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _format_failure_reason(reason: str, locale: str) -> str:
-    return render_message("transaction_summary.multi.failure_reason", locale, {"reason": reason})
+def _format_failure_reason(reason: str, locale: str, *, task_type: str | None = None) -> str:
+    safe_reason = safe_user_error_message(reason, task_type=task_type, locale=locale)
+    return render_message("transaction_summary.multi.failure_reason", locale, {"reason": safe_reason})
 
 
 def _status_icon(status: str) -> str:

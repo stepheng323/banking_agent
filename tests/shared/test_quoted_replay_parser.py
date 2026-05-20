@@ -46,6 +46,24 @@ def test_quoted_replay_contract_accepts_multi_task_execute_shape() -> None:
     assert parsed.tasks[1].task_type == "airtime"
 
 
+def test_quoted_replay_contract_accepts_replay_scope_fields() -> None:
+    parsed = QuotedReplayInterpretation.model_validate(
+        {
+            "decision": "execute",
+            "confidence": 0.91,
+            "target_statuses": ["failed"],
+            "target_types": ["airtime"],
+            "target_task_ids": ["t_airtime"],
+            "tasks": [],
+            "reason": "retry_failed_airtime",
+        }
+    )
+
+    assert parsed.target_statuses == ["failed"]
+    assert parsed.target_types == ["airtime"]
+    assert parsed.target_task_ids == ["t_airtime"]
+
+
 def test_quoted_replay_contract_accepts_clarify_shape() -> None:
     parsed = QuotedReplayInterpretation.model_validate(
         {

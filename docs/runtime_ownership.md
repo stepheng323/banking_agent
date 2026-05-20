@@ -29,7 +29,6 @@ Active services in the runtime stack:
 
 - Owns async messaging and receipt queues:
   - `notification.send`
-  - `actionable_message.send`
   - `receipt.process`
 
 ## Guardrails
@@ -38,6 +37,7 @@ Active services in the runtime stack:
 - Chat-critical queues are consumed only by `chat-worker`.
 - Financial async queues are consumed only by `transaction-worker`.
 - Receipt and outbound messaging queues are consumed only by `receipt-worker`.
+- Actionable message persistence remains inside `DeliveryService` during notification and receipt delivery.
 - Do not run multiple stacks against the same logical queue ownership.
 
 ## Runtime Switching
