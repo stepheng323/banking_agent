@@ -442,13 +442,20 @@ class DeliveryService:
                     else ActionableMessageTypeEnum.CONFIRMATION_REQUEST
                 )
 
+                ttl_days_raw = actionable_payload.get("actionable_ttl_days")
+                try:
+                    ttl_days = int(ttl_days_raw) if ttl_days_raw is not None else 7
+                except (TypeError, ValueError):
+                    ttl_days = 7
+                ttl_days = max(1, min(ttl_days, 3650))
+
                 uow.actionable_messages.db.add(
                     ActionableMessage(
                         user_id=user.id,
                         channel_message_id=message_id,
                         message_type=msg_type.value,
                         message_data=actionable_payload,
-                        expires_at=utc_now_naive() + timedelta(days=7),
+                        expires_at=utc_now_naive() + timedelta(days=ttl_days),
                     )
                 )
 

@@ -125,6 +125,55 @@ async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt() -
 
 
 @pytest.mark.asyncio
+async def test_receipt_consumer_sends_generation_notice_before_rendering_when_requested() -> None:
+    events: list[str] = []
+
+    async def deliver_text(**kwargs: Any) -> None:
+        events.append("generation_notice")
+        assert kwargs["text"] == "I'm generating your receipt now. I'll send it to you as an image shortly."
+        assert kwargs["dedupe_key"] == "receipt-generating:TRX-004"
+
+    async def render_receipt(**kwargs: Any) -> bytes:
+        del kwargs
+        events.append("render")
+        return b"png-bytes"
+
+    async def deliver_intents(**kwargs: Any) -> None:
+        del kwargs
+        events.append("receipt")
+
+    delivery_service = cast(
+        Any,
+        SimpleNamespace(
+            deliver_intents=AsyncMock(side_effect=deliver_intents),
+            deliver_text=AsyncMock(side_effect=deliver_text),
+        ),
+    )
+    consumer = ReceiptJobConsumer(delivery_service=delivery_service, redis_client=None)
+    consumer.renderer = cast(Any, SimpleNamespace(render_receipt=AsyncMock(side_effect=render_receipt)))
+
+    job: dict[str, Any] = {
+        "phone_number": "2348000000004",
+        "channel": "telegram",
+        "channel_identity": "927331985",
+        "language": "en",
+        "send_generation_notice": True,
+        "transfer_data": {
+            "amount": 5000,
+            "recipient": {"name": "Mercy Johnson", "account_number": "8162511023", "bank_name": "Opay"},
+            "source": {"account_name": "Gaines"},
+        },
+        "transaction_reference": "TRX-004",
+    }
+
+    await consumer._process_job(job)
+
+    assert events == ["generation_notice", "render", "receipt"]
+    delivery_service.deliver_text.assert_awaited_once()
+    delivery_service.deliver_intents.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_receipt_consumer_browser_closed_failure_retries_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
     delivery_service = cast(Any, SimpleNamespace(deliver_intents=AsyncMock(), deliver_text=AsyncMock()))
     consumer = ReceiptJobConsumer(delivery_service=delivery_service, redis_client=None)

@@ -12,6 +12,7 @@ from apps.receipt.src.renderer import (
     is_browser_runtime_closed_error,
 )
 from shared.cache.redis_client import Redis
+from shared.i18n import LocaleManager, render_message
 from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -67,6 +68,55 @@ class ReceiptJobConsumer:
             return suggestion
         return None
 
+    @staticmethod
+    def _parse_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @staticmethod
+    def _generation_notice_text(payload: dict[str, Any]) -> str:
+        explicit = payload.get("generation_notice_text")
+        if isinstance(explicit, str) and explicit.strip():
+            return explicit.strip()
+        locale = LocaleManager.normalize(str(payload.get("language") or payload.get("locale") or "en")).value
+        return render_message("query.receipt.generating", locale)
+
+    async def _notify_generation_started(
+        self,
+        *,
+        payload: dict[str, Any],
+        outbox_phone: Any,
+        reference: Any,
+    ) -> None:
+        if not self._parse_bool(payload.get("send_generation_notice")):
+            return
+
+        channel = payload.get("channel", "whatsapp")
+        reference_text = str(reference or "").strip()
+        dedupe_key = f"receipt-generating:{reference_text}" if reference_text and reference_text != "N/A" else None
+        try:
+            await self.delivery_service.deliver_text(
+                phone_number=str(outbox_phone),
+                channel=str(channel),
+                text=self._generation_notice_text(payload),
+                metadata={
+                    "source": "receipt_consumer",
+                    "receipt_status": "generation_started",
+                    "transaction_reference": reference_text,
+                },
+                dedupe_key=dedupe_key,
+            )
+        except Exception as exc:
+            logger.warning(
+                "receipt_generation_notice_failed",
+                phone_hash=log_fingerprint(str(outbox_phone)),
+                reference_hash=log_fingerprint(reference_text),
+                error=str(exc),
+            )
+
     async def _signal_completion(self, signal_key: str | None) -> None:
         """Best-effort completion signal to unblock waiters."""
         if not signal_key or not self.redis_client:
@@ -104,6 +154,11 @@ class ReceiptJobConsumer:
                     error_hash=log_fingerprint(last_error),
                 )
             else:
+                await self._notify_generation_started(
+                    payload=payload,
+                    outbox_phone=outbox_phone,
+                    reference=reference,
+                )
                 for attempt in range(1, MAX_RETRIES + 1):
                     attempt_started = asyncio.get_running_loop().time()
                     try:

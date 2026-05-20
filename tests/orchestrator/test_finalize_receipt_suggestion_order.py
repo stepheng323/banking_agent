@@ -1,4 +1,4 @@
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,7 +15,7 @@ class _SuggestionServiceStub:
 
 
 @pytest.mark.asyncio
-async def test_finalize_defers_beneficiary_prompt_to_receipt_job() -> None:
+async def test_finalize_defers_beneficiary_prompt_to_receipt_choice_payload() -> None:
     queue = AsyncMock()
     state = OrchestratorState(
         user_id="u_receipt_defer_1",
@@ -52,11 +52,12 @@ async def test_finalize_defers_beneficiary_prompt_to_receipt_job() -> None:
     updates = await finalize(state, config)
 
     assert updates["outbox"] and len(updates["outbox"]) == 1
-    assert "Would you like to save" not in updates["outbox"][0]["text"]
-    queue.publish.assert_awaited_once()
-    args = cast(tuple[Any, ...], queue.publish.await_args.args)
-    payload = cast(dict[str, Any], args[1])
+    receipt_choice = updates["outbox"][0]
+    assert receipt_choice["type"] == "show_options"
+    assert "Would you like to save" not in receipt_choice["title"]
+    payload = receipt_choice["actionable_payload"]["receipt_job"]
     assert payload.get("beneficiary_suggestion_message") == "Would you like to save Mercy Johnson?"
+    queue.publish.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -104,15 +105,15 @@ async def test_finalize_keeps_beneficiary_suggestion_when_stashed_session_exists
 
     updates = await finalize(state, config)
 
-    queue.publish.assert_awaited_once()
-    args = cast(tuple[Any, ...], queue.publish.await_args.args)
-    payload = cast(dict[str, Any], args[1])
+    queue.publish.assert_not_awaited()
+    receipt_choice = updates["outbox"][0]
+    payload = receipt_choice["actionable_payload"]["receipt_job"]
     assert payload.get("beneficiary_suggestion_message") == "Would you like to save Mercy Johnson?"
-    assert "Would you like to resume your transfer?" not in updates["outbox"][-1]["text"]
+    assert "Would you like to resume your transfer?" not in receipt_choice["title"]
 
 
 @pytest.mark.asyncio
-async def test_finalize_accepts_publisher_key_from_graph_handler() -> None:
+async def test_finalize_emits_receipt_choice_with_graph_handler_config() -> None:
     queue = AsyncMock()
     state = OrchestratorState(
         user_id="u_receipt_defer_3",
@@ -145,8 +146,9 @@ async def test_finalize_accepts_publisher_key_from_graph_handler() -> None:
         }
     }
 
-    await finalize(state, config)
+    updates = await finalize(state, config)
 
-    queue.publish.assert_awaited_once()
-    args = cast(tuple[Any, ...], queue.publish.await_args.args)
-    assert args[0] == "receipt.process"
+    queue.publish.assert_not_awaited()
+    receipt_choice = updates["outbox"][0]
+    assert receipt_choice["type"] == "show_options"
+    assert receipt_choice["actionable_payload"]["receipt_job"]["transaction_reference"] == "TRX-997"

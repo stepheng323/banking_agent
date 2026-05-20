@@ -16,6 +16,7 @@ from shared.formatters.transfer import format_transfer_pending_message, format_t
 from shared.i18n import render_message
 from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
+from shared.receipts.choice import build_receipt_choice_intent
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.unit_of_work import UnitOfWork
@@ -142,13 +143,10 @@ class TransferExecutor:
         except Exception as exc:
             logger.warning("scheduled_failure_notification_failed", error=str(exc))
 
-    async def _enqueue_transfer_receipt(self, *, data: dict[str, Any], transfer_data: dict[str, Any]) -> None:
-        if not self.publisher:
-            return
-
+    def _build_transfer_receipt_job(self, *, data: dict[str, Any], transfer_data: dict[str, Any]) -> dict[str, Any]:
         recipient_data = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
         source_data = transfer_data.get("source", {}) if isinstance(transfer_data.get("source"), dict) else {}
-        payload = {
+        return {
             "phone_number": data.get("phone_number"),
             "channel": data.get("channel", "whatsapp"),
             "channel_identity": data.get("channel_identity"),
@@ -174,7 +172,31 @@ class TransferExecutor:
             ),
             "signal_key": f"receipt:{uuid.uuid4()}",
         }
-        await self.publisher.publish(topic="receipt.process", message=payload)
+
+    async def _offer_transfer_receipt_image(self, *, data: dict[str, Any], transfer_data: dict[str, Any]) -> None:
+        delivery_target = str(data.get("channel_identity") or data.get("phone_number") or "").strip()
+        channel = str(data.get("channel") or "whatsapp")
+        if not delivery_target:
+            logger.warning("receipt_choice_delivery_target_missing", transaction_id=data.get("transaction_id"))
+            return
+
+        delivery = self._resolve_delivery_service()
+        if not delivery:
+            return
+
+        await delivery.deliver_intents(
+            phone_number=delivery_target,
+            channel=channel,
+            intents=[
+                build_receipt_choice_intent(
+                    self._build_transfer_receipt_job(data=data, transfer_data=transfer_data),
+                    str(data.get("language") or "en"),
+                )
+            ],
+            metadata={"source": "transfer_executor", "transaction_id": data.get("transaction_id")},
+            dedupe_key=f"receipt-choice:{data.get('transaction_id')}",
+            strict_actionable=True,
+        )
 
     async def _deliver_text(
         self,
@@ -411,7 +433,7 @@ class TransferExecutor:
                         dedupe_key=f"transfer:success:{transaction_id}",
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
-                    await self._enqueue_transfer_receipt(data=data, transfer_data=transfer_data)
+                    await self._offer_transfer_receipt_image(data=data, transfer_data=transfer_data)
                 logger.info("transfer_success", transaction_id=transaction_id, ref=result.reference)
             elif result.success and result.status in (DebitStatus.PENDING, DebitStatus.PROCESSING):
                 await self.transaction_repo.update_status(

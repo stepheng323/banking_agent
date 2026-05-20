@@ -148,3 +148,65 @@ async def test_same_thread_records_serialize_through_distributed_lock() -> None:
 
     assert max_active == 1
     assert set(stream_consumer.acked) == {("chat:messages", "1-0"), ("chat:messages", "2-0")}
+
+
+@pytest.mark.asyncio
+async def test_same_thread_records_preserve_batch_order() -> None:
+    stream_consumer = _StreamConsumerStub()
+    events: list[str] = []
+    suppress_flags: list[bool] = []
+
+    class _Consumer:
+        async def process_record(self, topic: str, payload: dict[str, Any]) -> None:
+            del topic
+            record_id = str(payload["record_id"])
+            events.append(f"start:{record_id}")
+            suppress_flags.append(
+                bool((payload.get("channel_metadata") or {}).get("_suppress_intermediate_input_prompt"))
+            )
+            await asyncio.sleep(0.02 if record_id == "1-0" else 0)
+            events.append(f"finish:{record_id}")
+
+    first = _record("1-0", "2348162511001")
+    second = _record("2-0", "2348162511001")
+    first.payload["record_id"] = first.record_id
+    second.payload["record_id"] = second.record_id
+
+    await worker_main._process_stream_records(
+        _Consumer(),
+        stream_consumer,
+        [first, second],
+        asyncio.Semaphore(2),
+    )
+
+    assert events == ["start:1-0", "finish:1-0", "start:2-0", "finish:2-0"]
+    assert suppress_flags == [True, False]
+    assert stream_consumer.acked == [("chat:messages", "1-0"), ("chat:messages", "2-0")]
+
+
+@pytest.mark.asyncio
+async def test_same_thread_records_halt_after_failure_to_preserve_order() -> None:
+    stream_consumer = _StreamConsumerStub()
+    seen: list[str] = []
+
+    class _Consumer:
+        async def process_record(self, topic: str, payload: dict[str, Any]) -> None:
+            del topic
+            seen.append(str(payload["record_id"]))
+            if payload["record_id"] == "1-0":
+                raise RuntimeError("boom")
+
+    first = _record("1-0", "2348162511001")
+    second = _record("2-0", "2348162511001")
+    first.payload["record_id"] = first.record_id
+    second.payload["record_id"] = second.record_id
+
+    await worker_main._process_stream_records(
+        _Consumer(),
+        stream_consumer,
+        [first, second],
+        asyncio.Semaphore(2),
+    )
+
+    assert seen == ["1-0"]
+    assert stream_consumer.acked == []

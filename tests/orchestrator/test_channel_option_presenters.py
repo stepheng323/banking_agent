@@ -107,10 +107,31 @@ async def test_telegram_presenter_options_falls_back_to_numbered_text() -> None:
     assert message_id == "tg-text-1"
     assert len(client.interactive_calls) == 1
     assert len(client.text_calls) == 1
-    assert "1. Tolu A • Access Bank • ****1234" in client.interactive_calls[0]["body_text"]
+    assert client.interactive_calls[0]["body_text"] == "I found multiple matches for Tolu. Which one?"
     assert client.interactive_calls[0]["options"] == [
         {"id": "bene:111", "title": "1"},
         {"id": "bene:222", "title": "2"},
     ]
     assert "1. Tolu A • Access Bank • ****1234" in client.text_calls[0]["text"]
     assert "2. Tolu B • GTBank • ****5678" in client.text_calls[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_options_uses_explicit_button_titles() -> None:
+    client = _StubTelegramClient(interactive_success=True)
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = ShowOptions(
+        title="Would you like a receipt image for this transfer?",
+        options=[
+            {"id": "rcpt:send", "title": "Send receipt image", "button_title": "Send receipt"},
+        ],
+    )
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    message_id = await presenter._present_options(intent, context)
+
+    assert message_id == "tg-interactive-1"
+    assert client.interactive_calls[0]["body_text"] == "Would you like a receipt image for this transfer?"
+    assert client.interactive_calls[0]["options"] == [
+        {"id": "rcpt:send", "title": "Send receipt"},
+    ]

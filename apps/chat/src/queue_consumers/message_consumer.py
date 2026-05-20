@@ -22,11 +22,23 @@ from shared.cache.channel_identity_cache import load_channel_identity_user, stor
 from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.telegram.client import TelegramClient
+from shared.config.settings import settings
 from shared.database.models import UserOnboardingStatusEnum
 from shared.i18n import LocaleCode, render_message
+from shared.i18n.locale import LocaleManager
+from shared.messaging.prompt_suppression import (
+    PENDING_INPUT_PROMPT_KIND,
+    latest_inbound_delivery_target_key,
+    pending_input_prompt_metadata,
+)
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
 from shared.queue.messages import FlowEventType
+from shared.receipts.choice import (
+    extract_receipt_choice_job,
+    parse_receipt_choice_action,
+    receipt_choice_claim_key,
+)
 from shared.repositories.user_repository import UserRepository
 from shared.services.auth import AuthorizationService
 from shared.services.channel_linking import build_channel_link_pin_token
@@ -38,6 +50,7 @@ logger = get_logger(__name__)
 _TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data"}
 _TELEGRAM_CHANNEL = "telegram"
 _WHATSAPP_CHANNEL = "whatsapp"
+_SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
 RuntimeBundleFactory = Callable[
     [],
     tuple[UserRepository, OnboardingExecutor, OrchestratorAgent],
@@ -112,6 +125,22 @@ def _suppress_spurious_greeting_intents(intents: list[UiIntent | dict[str, Any]]
     return filtered
 
 
+def _is_pending_input_prompt_outbox(raw_outbox: Any) -> bool:
+    if not isinstance(raw_outbox, list) or not raw_outbox:
+        return False
+    items = [item for item in raw_outbox if isinstance(item, dict)]
+    return len(items) == len(raw_outbox) and all(
+        item.get("prompt_kind") == PENDING_INPUT_PROMPT_KIND for item in items
+    )
+
+
+def _should_suppress_intermediate_input_prompt(message: ChannelMessage, raw_outbox: Any) -> bool:
+    metadata = message.channel_metadata if isinstance(message.channel_metadata, dict) else {}
+    return bool(metadata.get(_SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY)) and _is_pending_input_prompt_outbox(
+        raw_outbox
+    )
+
+
 def _log_prepared_outbound(
     *,
     message: ChannelMessage,
@@ -146,12 +175,16 @@ class MessageConsumer:
         orchestrator: OrchestratorAgent | None,
         publisher: QueuePublisher | None = None,
         runtime_bundle_factory: RuntimeBundleFactory | None = None,
+        latest_inbound_redis_client: Any | None = None,
+        telegram_client_factory: Callable[[], TelegramClient] | None = None,
     ) -> None:
         self.publisher = publisher or _NoopPublisher()
         self.user_repository = user_repository
         self.onboarding_executor = onboarding_executor
         self.orchestrator = orchestrator
         self.runtime_bundle_factory = runtime_bundle_factory
+        self.latest_inbound_redis_client = latest_inbound_redis_client
+        self.telegram_client_factory = telegram_client_factory or TelegramClient
 
     def _runtime_bundle(self) -> tuple[UserRepository, OnboardingExecutor, OrchestratorAgent]:
         """Resolve runtime dependencies without a long-lived DB session."""
@@ -185,6 +218,216 @@ class MessageConsumer:
         if user is not None:
             await store_channel_identity_user(channel, channel_user_id, user)
         return user
+
+    def _resolve_latest_inbound_redis_client(self, orchestrator: OrchestratorAgent | None) -> Any | None:
+        """Use the chat runtime Redis client when available; tests can omit it."""
+        if self.latest_inbound_redis_client is not None:
+            return self.latest_inbound_redis_client
+        if orchestrator is None:
+            return None
+
+        deps = getattr(orchestrator, "deps", None)
+        redis_client = getattr(deps, "redis_client", None)
+        if redis_client is not None:
+            return redis_client
+
+        handler = getattr(orchestrator, "orchestrator_handler", None)
+        return getattr(handler, "redis_client", None)
+
+    def _resolve_actionable_message_repo(self, orchestrator: OrchestratorAgent | None) -> Any | None:
+        if orchestrator is None:
+            return None
+
+        deps = getattr(orchestrator, "deps", None)
+        repo = getattr(deps, "actionable_message_repo", None)
+        if repo is not None:
+            return repo
+
+        handler = getattr(orchestrator, "orchestrator_handler", None)
+        return getattr(handler, "actionable_message_repo", None)
+
+    async def _remove_telegram_inline_keyboard(
+        self,
+        *,
+        message: ChannelMessage,
+        channel_user_id: str,
+        clicked_message_id: str,
+    ) -> None:
+        if message.channel != _TELEGRAM_CHANNEL or not clicked_message_id:
+            return
+
+        try:
+            await self.telegram_client_factory().remove_inline_keyboard(channel_user_id, clicked_message_id)
+        except Exception as exc:
+            logger.warning(
+                "receipt_choice_telegram_keyboard_remove_failed",
+                channel=message.channel,
+                channel_user_id_hash=log_fingerprint(channel_user_id),
+                clicked_message_id_hash=log_fingerprint(clicked_message_id),
+                error_type=type(exc).__name__,
+            )
+
+    async def _release_receipt_choice_claim(
+        self,
+        *,
+        redis_client: Any | None,
+        channel: str,
+        clicked_message_id: str,
+    ) -> None:
+        if redis_client is None:
+            return
+        try:
+            delete = getattr(redis_client, "delete", None)
+            if delete is not None:
+                await delete(receipt_choice_claim_key(channel, clicked_message_id))
+        except Exception as exc:
+            logger.warning(
+                "receipt_choice_claim_release_failed",
+                channel=channel,
+                clicked_message_id_hash=log_fingerprint(clicked_message_id),
+                error=str(exc),
+            )
+
+    async def _record_latest_inbound_for_delivery_target(
+        self,
+        *,
+        orchestrator: OrchestratorAgent | None,
+        channel: str,
+        delivery_target: str,
+        message_id: str,
+    ) -> None:
+        redis_client = self._resolve_latest_inbound_redis_client(orchestrator)
+        if redis_client is None:
+            return
+
+        key = latest_inbound_delivery_target_key(channel, delivery_target)
+        try:
+            await redis_client.set(
+                key,
+                str(message_id),
+                ex=max(1, settings.chat_latest_inbound_ttl_seconds),
+            )
+        except Exception as exc:
+            logger.warning(
+                "message_consumer_latest_inbound_record_failed",
+                channel=channel,
+                channel_user_id=delivery_target,
+                message_id_hash=log_fingerprint(message_id),
+                error=str(exc),
+            )
+
+    async def _handle_receipt_image_choice(
+        self,
+        *,
+        message: ChannelMessage,
+        orchestrator: OrchestratorAgent | None,
+        user: Any,
+        phone_number: str,
+        channel_user_id: str,
+        text: str,
+    ) -> dict[str, Any] | None:
+        if not parse_receipt_choice_action(text):
+            return None
+
+        locale = (await LocaleManager.get_effective_locale(phone_number)).value
+        clicked_message_id = str(message.quoted_message_id or message.message_id or "").strip()
+        actionable_repo = self._resolve_actionable_message_repo(orchestrator)
+
+        if not clicked_message_id or actionable_repo is None:
+            await enqueue_outbox_intents(
+                self.publisher,
+                channel_user_id,
+                message.channel,
+                [Say(text=render_message("query.receipt.failed", locale))],
+                metadata={"source": "receipt_choice", "message_id": message.message_id},
+            )
+            return {"status": "receipt_image_failed", "reason": "actionable_unavailable"}
+
+        actionable = await actionable_repo.get_by_channel_message_id_for_user(
+            clicked_message_id,
+            str(getattr(user, "id", "")),
+        )
+        receipt_job = extract_receipt_choice_job(getattr(actionable, "message_data", None))
+        if receipt_job is None:
+            await self._remove_telegram_inline_keyboard(
+                message=message,
+                channel_user_id=channel_user_id,
+                clicked_message_id=clicked_message_id,
+            )
+            await enqueue_outbox_intents(
+                self.publisher,
+                channel_user_id,
+                message.channel,
+                [Say(text=render_message("query.receipt.expired", locale))],
+                metadata={"source": "receipt_choice", "message_id": message.message_id},
+            )
+            return {"status": "receipt_image_expired"}
+
+        redis_client = self._resolve_latest_inbound_redis_client(orchestrator)
+        if redis_client is not None:
+            try:
+                claimed = await redis_client.set(
+                    receipt_choice_claim_key(message.channel, clicked_message_id),
+                    "1",
+                    nx=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "receipt_choice_claim_failed",
+                    channel=message.channel,
+                    clicked_message_id_hash=log_fingerprint(clicked_message_id),
+                    error=str(exc),
+                )
+            else:
+                if not claimed:
+                    await self._remove_telegram_inline_keyboard(
+                        message=message,
+                        channel_user_id=channel_user_id,
+                        clicked_message_id=clicked_message_id,
+                    )
+                    await enqueue_outbox_intents(
+                        self.publisher,
+                        channel_user_id,
+                        message.channel,
+                        [Say(text=render_message("query.receipt.already_generating", locale))],
+                        metadata={"source": "receipt_choice", "message_id": message.message_id},
+                    )
+                    return {"status": "receipt_image_already_generating"}
+
+        receipt_job = dict(receipt_job)
+        receipt_job["language"] = locale
+        receipt_job["send_generation_notice"] = True
+
+        try:
+            await self.publisher.publish("receipt.process", receipt_job)
+        except Exception:
+            logger.error(
+                "receipt_choice_publish_failed",
+                channel=message.channel,
+                channel_user_id=channel_user_id,
+                message_id=message.message_id,
+                exc_info=True,
+            )
+            await self._release_receipt_choice_claim(
+                redis_client=redis_client,
+                channel=message.channel,
+                clicked_message_id=clicked_message_id,
+            )
+            await enqueue_outbox_intents(
+                self.publisher,
+                channel_user_id,
+                message.channel,
+                [Say(text=render_message("query.receipt.failed", locale))],
+                metadata={"source": "receipt_choice", "message_id": message.message_id},
+            )
+            return {"status": "receipt_image_failed", "reason": "publish_failed"}
+
+        await self._remove_telegram_inline_keyboard(
+            message=message,
+            channel_user_id=channel_user_id,
+            clicked_message_id=clicked_message_id,
+        )
+        return {"status": "receipt_image_accepted"}
 
     async def _gate_unlinked_whatsapp_identity(
         self,
@@ -644,6 +887,23 @@ class MessageConsumer:
                 channel_user_id=channel_user_id,
                 phone_number=phone_number,
             )
+            await self._record_latest_inbound_for_delivery_target(
+                orchestrator=runtime_orchestrator,
+                channel=message.channel,
+                delivery_target=channel_user_id,
+                message_id=str(message.message_id),
+            )
+
+            receipt_choice_result = await self._handle_receipt_image_choice(
+                message=message,
+                orchestrator=runtime_orchestrator,
+                user=user,
+                phone_number=phone_number,
+                channel_user_id=channel_user_id,
+                text=sanitized_text,
+            )
+            if receipt_choice_result is not None:
+                return receipt_choice_result
 
             invoke_start = time.perf_counter()
             try:
@@ -653,6 +913,7 @@ class MessageConsumer:
                     str(message.message_id),
                     message_type=message.message_type.value,
                     media_id=message.media_id,
+                    mime_type=message.mime_type,
                     quoted_message_id=message.quoted_message_id,
                     channel=message.channel,
                     channel_identity=channel_user_id,
@@ -723,6 +984,15 @@ class MessageConsumer:
                     )
 
             if intents_to_send:
+                if _should_suppress_intermediate_input_prompt(message, raw_outbox):
+                    logger.info(
+                        "message_consumer_intermediate_input_prompt_suppressed",
+                        message_id=message.message_id,
+                        channel=message.channel,
+                        channel_user_id=channel_user_id,
+                    )
+                    intents_to_send = []
+            if intents_to_send:
                 intents_to_send = _suppress_spurious_greeting_intents(intents_to_send)
                 _log_prepared_outbound(
                     message=message,
@@ -731,13 +1001,26 @@ class MessageConsumer:
                     intents=intents_to_send,
                 )
             if intents_to_send:
+                outbound_metadata: dict[str, Any] = {
+                    "source": "message_consumer",
+                    "message_id": message.message_id,
+                    **delivery_metadata,
+                }
+                if _is_pending_input_prompt_outbox(raw_outbox):
+                    outbound_metadata.update(
+                        pending_input_prompt_metadata(
+                            channel=message.channel,
+                            delivery_target=channel_user_id,
+                            origin_message_id=str(message.message_id),
+                        )
+                    )
                 outbox_start = time.perf_counter()
                 await enqueue_outbox_intents(
                     self.publisher,
                     channel_user_id,
                     message.channel,
                     intents_to_send,
-                    metadata={"source": "message_consumer", "message_id": message.message_id, **delivery_metadata},
+                    metadata=outbound_metadata,
                 )
                 self._log_latency_span(
                     span="message_consumer_outbox_enqueue",

@@ -16,7 +16,17 @@ from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
 from shared.i18n import render_message
+from shared.messaging.prompt_suppression import (
+    PENDING_INPUT_PROMPT_METADATA_KEY,
+    PENDING_INPUT_PROMPT_ORIGIN_MESSAGE_ID_KEY,
+    PENDING_INPUT_PROMPT_THREAD_KEY,
+    latest_inbound_delivery_target_key,
+)
 from shared.models.messages import ChannelMessage, MessageType
+from shared.receipts.choice import (
+    RECEIPT_IMAGE_ACTION_ID,
+    build_receipt_choice_actionable_payload,
+)
 from shared.services.auth import AuthorizationResult
 
 
@@ -119,6 +129,7 @@ class _OrchestratorStub:
         self.resume_output = resume_output or {"text": "ok", "outbox": []}
         self.invoke_calls = 0
         self.last_user: Any | None = None
+        self.last_mime_type: str | None = None
         self.resume_calls: list[dict[str, str]] = []
 
     async def invoke(
@@ -129,6 +140,7 @@ class _OrchestratorStub:
         *,
         message_type: str = "text",
         media_id: str | None = None,
+        mime_type: str | None = None,
         quoted_message_id: str | None = None,
         channel: str = "whatsapp",
         channel_identity: str | None = None,
@@ -137,6 +149,7 @@ class _OrchestratorStub:
         del phone_number, text, message_id, message_type, media_id, quoted_message_id, channel, channel_identity
         self.invoke_calls += 1
         self.last_user = user
+        self.last_mime_type = mime_type
         if self.should_fail:
             raise RuntimeError("invoke failed")
         if self.output is not None:
@@ -201,13 +214,22 @@ def _telegram_message(message_id: str = "tg-1") -> ChannelMessage:
 class _RedisStub:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
+        self.set_calls: list[dict[str, Any]] = []
+        self.deleted: list[str] = []
 
     async def get(self, key: str) -> str | None:
         return self.values.get(key)
 
-    async def set(self, key: str, value: str, ex: int | None = None) -> None:
-        del ex
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if nx and key in self.values:
+            return False
+        self.set_calls.append({"key": key, "value": value, "ex": ex})
         self.values[key] = value
+        return True
+
+    async def delete(self, key: str) -> int:
+        self.deleted.append(key)
+        return 1 if self.values.pop(key, None) is not None else 0
 
 
 class _SessionManagerStub:
@@ -301,6 +323,37 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
     assert second["status"] == "duplicate_ignored"
     assert orchestrator.invoke_calls == 1
     assert len(enqueue_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_passes_media_mime_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-image")
+    message.message_type = MessageType.IMAGE
+    message.media_id = "media-1"
+    message.mime_type = "image/png"
+
+    response = await consumer._handle_message(message)
+
+    assert response is not None
+    assert response["status"] == "success"
+    assert orchestrator.last_mime_type == "image/png"
 
 
 @pytest.mark.asyncio
@@ -476,7 +529,7 @@ async def test_message_consumer_uses_cached_telegram_identity(monkeypatch: pytes
     redis_stub = _RedisStub()
     redis_stub.values["cache:channel_identity:telegram:927331985"] = json.dumps(
         {
-            "id": "u1",
+            "id": "dbfea933-7738-4f87-8a15-98ba39da189c",
             "phone_number": "2348162511023",
             "onboarding_status": UserOnboardingStatusEnum.ONBOARDING_COMPLETED.value,
             "full_name": "Olamide Samuel",
@@ -499,6 +552,47 @@ async def test_message_consumer_uses_cached_telegram_identity(monkeypatch: pytes
     assert getattr(orchestrator.last_user, "phone_number", None) == "2348162511023"
     assert user_repository.channel_identity_calls == 0
     assert user_repository.phone_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_refetches_invalid_cached_telegram_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    user_repository = _UserRepoStub()
+    consumer = MessageConsumer(
+        user_repository=user_repository,
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    redis_stub = _RedisStub()
+    redis_stub.values["cache:channel_identity:telegram:927331985"] = json.dumps(
+        {
+            "id": "u1",
+            "phone_number": "2348162511023",
+            "onboarding_status": UserOnboardingStatusEnum.ONBOARDING_COMPLETED.value,
+            "full_name": "Olamide Samuel",
+        }
+    )
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("shared.cache.channel_identity_cache.RedisClient.get_client", lambda: redis_stub)
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    await consumer._handle_message(_telegram_message("tg-cache-invalid"))
+
+    assert orchestrator.last_user is not None
+    assert getattr(orchestrator.last_user, "phone_number", None) == "2348162511023"
+    assert user_repository.channel_identity_calls == 1
+    assert user_repository.phone_calls == 0
+    assert redis_stub.deleted == ["cache:channel_identity:telegram:927331985"]
 
 
 @pytest.mark.asyncio
@@ -671,6 +765,260 @@ async def test_message_consumer_falls_back_to_raw_outbox_when_intents_are_empty(
     assert response["status"] == "success"
     assert len(sent_payloads) == 1
     assert sent_payloads[0][3] == [{"type": "say", "text": "I am generating your receipt now."}]
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_suppresses_intermediate_input_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        output={
+            "intents": [Say(text="How much would you like to send?")],
+            "outbox": [{"type": "say", "text": "How much would you like to send?", "prompt_kind": "pending_input"}],
+            "text": None,
+        },
+    )
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    enqueue_outbox_intents = AsyncMock()
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-intermediate-prompt")
+    message.channel_metadata["_suppress_intermediate_input_prompt"] = True
+
+    response = await consumer._handle_message(message)
+
+    assert response is not None
+    assert response["status"] == "success"
+    enqueue_outbox_intents.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_marks_pending_input_prompt_for_receipt_staleness_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        output={
+            "intents": [Say(text="How much would you like to send?")],
+            "outbox": [{"type": "say", "text": "How much would you like to send?", "prompt_kind": "pending_input"}],
+            "text": None,
+        },
+    )
+    redis = _RedisStub()
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+        latest_inbound_redis_client=redis,
+    )
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    enqueue_outbox_intents = AsyncMock()
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-pending-prompt")
+    response = await consumer._handle_message(message)
+
+    assert response is not None
+    assert response["status"] == "success"
+    key = latest_inbound_delivery_target_key("whatsapp", "2348162511023")
+    assert redis.values[key] == "wamid-pending-prompt"
+    assert redis.set_calls == [
+        {
+            "key": key,
+            "value": "wamid-pending-prompt",
+            "ex": message_consumer_module.settings.chat_latest_inbound_ttl_seconds,
+        }
+    ]
+    metadata = enqueue_outbox_intents.await_args.kwargs["metadata"]
+    assert metadata[PENDING_INPUT_PROMPT_METADATA_KEY] is True
+    assert metadata[PENDING_INPUT_PROMPT_ORIGIN_MESSAGE_ID_KEY] == "wamid-pending-prompt"
+    assert metadata[PENDING_INPUT_PROMPT_THREAD_KEY] == key
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_keeps_intermediate_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    confirmation = {
+        "type": "request_confirmation",
+        "task_ids": ["t1"],
+        "summary": "Confirm Transfer\n₦3,000 → Tolu",
+        "idempotency_key": "idem-1",
+    }
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        output={
+            "intents": [],
+            "outbox": [confirmation],
+            "text": None,
+        },
+    )
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    enqueue_outbox_intents = AsyncMock()
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-intermediate-confirmation")
+    message.channel_metadata["_suppress_intermediate_input_prompt"] = True
+
+    response = await consumer._handle_message(message)
+
+    assert response is not None
+    assert response["status"] == "success"
+    enqueue_outbox_intents.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_accepts_receipt_image_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    redis = _RedisStub()
+    publisher = SimpleNamespace(publish=AsyncMock())
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+        publisher=publisher,
+        latest_inbound_redis_client=redis,
+    )
+    receipt_job = {"phone_number": "2348162511023", "transaction_reference": "tx-1"}
+    repo = SimpleNamespace(
+        get_by_channel_message_id_for_user=AsyncMock(
+            return_value=SimpleNamespace(message_data=build_receipt_choice_actionable_payload(receipt_job))
+        )
+    )
+    orchestrator.deps = SimpleNamespace(actionable_message_repo=repo)
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    enqueue_outbox_intents = AsyncMock()
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-receipt-yes")
+    message.text = RECEIPT_IMAGE_ACTION_ID
+    message.quoted_message_id = "wamid-receipt-offer"
+    response = await consumer._handle_message(message)
+
+    assert response == {"status": "receipt_image_accepted"}
+    assert orchestrator.invoke_calls == 0
+    repo.get_by_channel_message_id_for_user.assert_awaited_once_with("wamid-receipt-offer", "u1")
+    publisher.publish.assert_awaited_once_with(
+        "receipt.process",
+        {**receipt_job, "language": "en", "send_generation_notice": True},
+    )
+    enqueue_outbox_intents.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_accepts_telegram_receipt_image_choice_removes_button(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    redis = _RedisStub()
+    publisher = SimpleNamespace(publish=AsyncMock())
+    telegram_client = SimpleNamespace(remove_inline_keyboard=AsyncMock(return_value=True))
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+        publisher=publisher,
+        latest_inbound_redis_client=redis,
+        telegram_client_factory=lambda: telegram_client,
+    )
+    receipt_job = {"phone_number": "927331985", "transaction_reference": "tx-telegram-1"}
+    repo = SimpleNamespace(
+        get_by_channel_message_id_for_user=AsyncMock(
+            return_value=SimpleNamespace(message_data=build_receipt_choice_actionable_payload(receipt_job))
+        )
+    )
+    orchestrator.deps = SimpleNamespace(actionable_message_repo=repo)
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    enqueue_outbox_intents = AsyncMock()
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        enqueue_outbox_intents,
+    )
+
+    message = _telegram_message("tg-receipt-offer")
+    message.text = RECEIPT_IMAGE_ACTION_ID
+    response = await consumer._handle_message(message)
+
+    assert response == {"status": "receipt_image_accepted"}
+    assert orchestrator.invoke_calls == 0
+    repo.get_by_channel_message_id_for_user.assert_awaited_once_with("tg-receipt-offer", "u1")
+    publisher.publish.assert_awaited_once_with(
+        "receipt.process",
+        {**receipt_job, "language": "en", "send_generation_notice": True},
+    )
+    telegram_client.remove_inline_keyboard.assert_awaited_once_with("927331985", "tg-receipt-offer")
+    enqueue_outbox_intents.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_receipt_image_choice_missing_payload_expires_gracefully(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    publisher = SimpleNamespace(publish=AsyncMock())
+    repo = SimpleNamespace(get_by_channel_message_id_for_user=AsyncMock(return_value=None))
+    orchestrator.deps = SimpleNamespace(actionable_message_repo=repo)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+        publisher=publisher,
+        latest_inbound_redis_client=_RedisStub(),
+    )
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    enqueue_outbox_intents = AsyncMock()
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-receipt-missing")
+    message.text = RECEIPT_IMAGE_ACTION_ID
+    message.quoted_message_id = "wamid-receipt-offer-missing"
+    response = await consumer._handle_message(message)
+
+    assert response == {"status": "receipt_image_expired"}
+    assert orchestrator.invoke_calls == 0
+    publisher.publish.assert_not_awaited()
+    enqueue_outbox_intents.assert_awaited_once()
+    assert enqueue_outbox_intents.await_args.args[3][0].text == render_message("query.receipt.expired", "en")
 
 
 @pytest.mark.asyncio

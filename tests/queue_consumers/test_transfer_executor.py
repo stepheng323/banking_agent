@@ -105,7 +105,7 @@ async def test_transfer_executor_single_success_delivers_and_enqueues_receipt() 
     account_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=SimpleNamespace(mandate_id="mandate-1")))
     transaction_repo = SimpleNamespace(update_status=AsyncMock())
     publisher = SimpleNamespace(publish=AsyncMock())
-    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock(), deliver_intents=AsyncMock())
     executor = TransferExecutor(
         direct_debit_provider=dd_provider,
         account_repo=account_repo,
@@ -132,10 +132,18 @@ async def test_transfer_executor_single_success_delivers_and_enqueues_receipt() 
         "provider_error_code": "00",
     }
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
-    assert "Transfer successful" in delivery_service.deliver_text.await_args.kwargs["text"]
-    publisher.publish.assert_awaited_once()
-    assert publisher.publish.await_args.kwargs["topic"] == "receipt.process"
-    assert publisher.publish.await_args.kwargs["message"]["transaction_reference"] == "debit-1"
+    delivered_text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Transfer successful" in delivered_text
+    assert "Transaction ID" not in delivered_text
+    assert "debit-1" not in delivered_text
+    publisher.publish.assert_not_awaited()
+    delivery_service.deliver_intents.assert_awaited_once()
+    receipt_offer = delivery_service.deliver_intents.await_args.kwargs
+    assert receipt_offer["phone_number"] == "927331985"
+    assert receipt_offer["channel"] == "telegram"
+    assert receipt_offer["intents"][0].title == "Would you like a receipt image for this transfer?"
+    assert receipt_offer["intents"][0].options[0]["title"] == "Send receipt image"
+    assert receipt_offer["dedupe_key"] == "receipt-choice:tx-1"
 
 
 @pytest.mark.asyncio

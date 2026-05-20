@@ -2,6 +2,7 @@
 
 import asyncio
 import signal
+from collections import OrderedDict
 from datetime import UTC, datetime
 
 from apps.chat.src.runtime.chat_worker_dependencies import setup_chat_consumers
@@ -15,19 +16,21 @@ configure_logger()
 logger = get_logger(__name__)
 setup_core_consumers = setup_chat_consumers
 _RUNTIME_WARMUP_TIMEOUT_SECONDS = 8.0
+_SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
 
 
 async def _process_stream_record(
     consumer,
     stream_consumer: RedisStreamConsumer,
     record: RedisStreamRecord,
-) -> None:
+) -> bool:
     try:
         if _should_drop_stale(record):
             await stream_consumer.ack(record.stream_name, record.record_id)
-            return
+            return True
         await consumer.process_record(record.topic, record.payload)
         await stream_consumer.ack(record.stream_name, record.record_id)
+        return True
     except Exception as exc:
         logger.error(
             "chat_worker_stream_record_failed",
@@ -37,6 +40,7 @@ async def _process_stream_record(
             error=str(exc),
             exc_info=True,
         )
+        return False
 
 
 async def _process_stream_record_bounded(
@@ -44,9 +48,62 @@ async def _process_stream_record_bounded(
     stream_consumer: RedisStreamConsumer,
     record: RedisStreamRecord,
     semaphore: asyncio.Semaphore,
-) -> None:
+) -> bool:
     async with semaphore:
-        await _process_stream_record(consumer, stream_consumer, record)
+        return await _process_stream_record(consumer, stream_consumer, record)
+
+
+def _record_ordering_key(record: RedisStreamRecord) -> str:
+    payload = record.payload
+    if record.topic == "message.received":
+        channel = str(payload.get("channel") or "whatsapp")
+        channel_user_id = str(payload.get("channel_user_id") or payload.get("phone_number") or "").strip()
+        if channel_user_id:
+            return f"message:{channel}:{channel_user_id}"
+    if record.topic == "flow_event.process":
+        channel = str(payload.get("channel") or "whatsapp")
+        phone_number = str(payload.get("phone_number") or payload.get("channel_user_id") or "").strip()
+        if phone_number:
+            return f"flow:{channel}:{phone_number}"
+    return f"{record.stream_name}:{record.record_id}"
+
+
+def _group_stream_records(records: list[RedisStreamRecord]) -> list[list[RedisStreamRecord]]:
+    groups: OrderedDict[str, list[RedisStreamRecord]] = OrderedDict()
+    for record in records:
+        groups.setdefault(_record_ordering_key(record), []).append(record)
+    return list(groups.values())
+
+
+def _mark_intermediate_message_record(record: RedisStreamRecord) -> None:
+    if record.topic != "message.received":
+        return
+    metadata = record.payload.get("channel_metadata")
+    record.payload["channel_metadata"] = {
+        **(metadata if isinstance(metadata, dict) else {}),
+        _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY: True,
+    }
+
+
+async def _process_stream_record_group(
+    consumer,
+    stream_consumer: RedisStreamConsumer,
+    records: list[RedisStreamRecord],
+    semaphore: asyncio.Semaphore,
+) -> None:
+    for index, record in enumerate(records):
+        if index < len(records) - 1:
+            _mark_intermediate_message_record(record)
+        processed = await _process_stream_record_bounded(consumer, stream_consumer, record, semaphore)
+        if not processed:
+            logger.warning(
+                "chat_worker_ordered_group_halted",
+                stream=record.stream_name,
+                record_id=record.record_id,
+                topic=record.topic,
+                remaining_records=max(len(records) - index - 1, 0),
+            )
+            return
 
 
 async def _process_stream_records(
@@ -59,13 +116,13 @@ async def _process_stream_records(
         return
     await asyncio.gather(
         *(
-            _process_stream_record_bounded(
+            _process_stream_record_group(
                 consumer,
                 stream_consumer,
-                record,
+                group,
                 semaphore,
             )
-            for record in records
+            for group in _group_stream_records(records)
         )
     )
 

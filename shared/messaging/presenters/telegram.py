@@ -308,12 +308,18 @@ class TelegramPresenter(Presenter):
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
 
     @staticmethod
-    def _compact_option_button_title(index: int, title: str) -> str:
-        del title
+    def _compact_option_button_title(index: int, option: dict[str, str]) -> str:
+        explicit_title = str(option.get("button_title") or "").strip()
+        if explicit_title:
+            return explicit_title[:64]
         return str(index)
 
     @staticmethod
-    def _telegram_options_body(title: str, options: list[dict[str, str]]) -> str:
+    def _telegram_options_body(title: str) -> str:
+        return title.strip() or "Choose an option."
+
+    @staticmethod
+    def _telegram_options_fallback_body(title: str, options: list[dict[str, str]]) -> str:
         numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
         return f"{title.strip()}\n\n{numbered}" if title.strip() else numbered
 
@@ -323,6 +329,7 @@ class TelegramPresenter(Presenter):
             {
                 "id": str(option.get("id", "")).strip() or str(idx),
                 "title": str(option.get("title", option.get("label", f"Option {idx}"))),
+                "button_title": str(option.get("button_title", "")).strip(),
             }
             for idx, option in enumerate(intent.options, start=1)
             if isinstance(option, dict)
@@ -330,11 +337,12 @@ class TelegramPresenter(Presenter):
         if not options:
             return await self._present_say(Say(text=intent.title), context)
 
-        body_text = self._telegram_options_body(intent.title, options)
+        body_text = self._telegram_options_body(intent.title)
+        fallback_body_text = self._telegram_options_fallback_body(intent.title, options)
         button_options = [
             {
                 "id": opt["id"],
-                "title": self._compact_option_button_title(idx, opt["title"]),
+                "title": self._compact_option_button_title(idx, opt),
             }
             for idx, opt in enumerate(options, start=1)
         ]
@@ -354,7 +362,7 @@ class TelegramPresenter(Presenter):
         logger.info("option_fallback_text_used", channel="telegram", option_count=len(options))
         text_resp = await self.client.send_text(
             to=context.phone_number,
-            text=body_text,
+            text=fallback_body_text,
             suppress_typing_indicator=self._suppress_typing(context),
         )
         return self._extract_message_id(text_resp)

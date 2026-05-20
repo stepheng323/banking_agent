@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
+from shared.cache.redis_client import RedisClient
+from shared.config.settings import settings
+from shared.messaging.prompt_suppression import (
+    PENDING_INPUT_PROMPT_ORIGIN_MESSAGE_ID_KEY,
+    PENDING_INPUT_PROMPT_THREAD_KEY,
+    is_pending_input_prompt_metadata,
+    latest_inbound_delivery_target_key,
+)
 from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -13,8 +22,20 @@ logger = get_logger(__name__)
 class NotificationJobConsumer:
     """Consumes queued outbound notification jobs and delivers them through channel clients."""
 
-    def __init__(self, delivery_service: DeliveryService | None = None) -> None:
+    def __init__(
+        self,
+        delivery_service: DeliveryService | None = None,
+        *,
+        redis_client: Any | None = None,
+        prompt_debounce_seconds: float | None = None,
+    ) -> None:
         self.delivery_service = delivery_service or DeliveryService()
+        self.redis_client = redis_client
+        self.prompt_debounce_seconds = (
+            settings.chat_pending_input_prompt_debounce_seconds
+            if prompt_debounce_seconds is None
+            else prompt_debounce_seconds
+        )
 
     @staticmethod
     def _extract_payload(job: dict[str, Any]) -> dict[str, Any]:
@@ -38,6 +59,56 @@ class NotificationJobConsumer:
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
 
+    def _get_redis_client(self) -> Any:
+        if self.redis_client is not None:
+            return self.redis_client
+        return RedisClient.get_client()
+
+    async def _should_drop_stale_pending_input_prompt(
+        self,
+        *,
+        channel: str,
+        delivery_target: str,
+        metadata: dict[str, Any],
+    ) -> bool:
+        if not is_pending_input_prompt_metadata(metadata):
+            return False
+
+        origin_message_id = str(metadata.get(PENDING_INPUT_PROMPT_ORIGIN_MESSAGE_ID_KEY) or "").strip()
+        if not origin_message_id:
+            return False
+
+        debounce_seconds = max(0.0, float(self.prompt_debounce_seconds))
+        if debounce_seconds:
+            await asyncio.sleep(debounce_seconds)
+
+        prompt_thread_key = str(metadata.get(PENDING_INPUT_PROMPT_THREAD_KEY) or "").strip()
+        latest_key = prompt_thread_key or latest_inbound_delivery_target_key(channel, delivery_target)
+        try:
+            latest_message_id = await self._get_redis_client().get(latest_key)
+        except Exception as exc:
+            logger.warning(
+                "notification_pending_input_prompt_staleness_check_failed",
+                channel=channel,
+                phone_hash=log_fingerprint(delivery_target),
+                origin_message_id_hash=log_fingerprint(origin_message_id),
+                error=str(exc),
+            )
+            return False
+
+        latest_message_id_text = str(latest_message_id or "").strip()
+        if latest_message_id_text and latest_message_id_text != origin_message_id:
+            logger.info(
+                "notification_pending_input_prompt_suppressed",
+                channel=channel,
+                phone_hash=log_fingerprint(delivery_target),
+                origin_message_id_hash=log_fingerprint(origin_message_id),
+                latest_message_id_hash=log_fingerprint(latest_message_id_text),
+            )
+            return True
+
+        return False
+
     async def process_job(self, job: dict[str, Any]) -> None:
         """Deliver one queued notification job."""
         payload = self._extract_payload(job)
@@ -59,6 +130,13 @@ class NotificationJobConsumer:
                 phone_hash=log_fingerprint(phone_number),
                 channel=channel,
             )
+            return
+
+        if await self._should_drop_stale_pending_input_prompt(
+            channel=channel,
+            delivery_target=phone_number,
+            metadata=metadata,
+        ):
             return
 
         result = await self.delivery_service.deliver_intents(

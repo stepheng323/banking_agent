@@ -56,6 +56,28 @@ def test_settings_query_model_defaults_to_planner_model_until_explicitly_configu
     assert cfg.query_model == "gpt-4o-mini-test"
 
 
+def test_settings_media_models_have_dedicated_defaults(monkeypatch) -> None:
+    monkeypatch.delenv("MEDIA_IMAGE_MODEL", raising=False)
+    monkeypatch.delenv("AUDIO_TRANSCRIPTION_MODEL", raising=False)
+    monkeypatch.setenv("EXTRACTOR_MODEL", "extractor-test")
+
+    cfg = Settings()
+
+    assert cfg.extractor_model == "extractor-test"
+    assert cfg.media_image_model == "gpt-5-mini"
+    assert cfg.audio_transcription_model == "gpt-4o-mini-transcribe"
+
+
+def test_settings_media_models_can_be_overridden(monkeypatch) -> None:
+    monkeypatch.setenv("MEDIA_IMAGE_MODEL", "vision-override")
+    monkeypatch.setenv("AUDIO_TRANSCRIPTION_MODEL", "audio-override")
+
+    cfg = Settings()
+
+    assert cfg.media_image_model == "vision-override"
+    assert cfg.audio_transcription_model == "audio-override"
+
+
 def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
     _set_minimum_production_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")
