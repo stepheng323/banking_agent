@@ -137,6 +137,9 @@ def _build_orchestrator_runtime_bundle(
     resolver_provider = ProviderFactory.get_resolver_for_flow("transfer")
     if resolver_provider is None:
         raise RuntimeError("Transfer resolver provider is not configured")
+    payout_resolver_provider = ProviderFactory.get_resolver_for_flow("payout")
+    if payout_resolver_provider is None:
+        raise RuntimeError("Payout resolver provider is not configured")
     direct_debit_provider = MonoDirectDebitProvider()
 
     account_worker = AccountWorker(
@@ -175,7 +178,8 @@ def _build_orchestrator_runtime_bundle(
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
-    bank_cache_service = BankCacheService(redis_client=shared_redis)
+    bank_cache_service = BankCacheService(redis_client=shared_redis, provider_name="mono")
+    payout_bank_cache_service = BankCacheService(redis_client=shared_redis, provider_name="flutterwave")
 
     agent_airtime_worker = AirtimeWorker(
         extractor=AirtimeEntityExtractor(llm=extractor_chat),
@@ -196,6 +200,8 @@ def _build_orchestrator_runtime_bundle(
         resolver_provider=resolver_provider,
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,
+        payout_resolver_provider=payout_resolver_provider,
+        payout_bank_cache=payout_bank_cache_service,
         dd_provider=direct_debit_provider,
         redis_client=shared_redis,
     )

@@ -166,13 +166,13 @@
           <p class="pin-eyebrow" id="headerText">Secure authorization</p>
           <h1 class="pin-title">Enter PIN</h1>
           <p class="pin-subtitle" id="bodyText">
-            Use your 4-digit transaction PIN to authorize this transaction.
+            Use your 6-digit transaction PIN to authorize this transaction.
           </p>
 
           <div class="pin-field">
             <div class="pin-label-row">
               <label class="mini-section-label" for="pinInput">Transaction PIN</label>
-              <span class="pin-label-meta">4 digits</span>
+              <span class="pin-label-meta">6 digits</span>
             </div>
             <input
               type="password"
@@ -180,7 +180,7 @@
               class="mini-input pin-input"
               inputmode="numeric"
               pattern="[0-9]*"
-              maxlength="4"
+              maxlength="6"
               autocomplete="off"
             />
           </div>
@@ -213,7 +213,7 @@
       let flowToken = "";
       let chatId = "";
 
-      const PIN_LENGTH = 4;
+      const PIN_LENGTH = 6;
       const MAX_ATTEMPTS = 3;
       let attempts = 0;
       let locked = false;
@@ -313,7 +313,7 @@
         if (locked || verified) return;
         const pin = pinInput.value;
         if (pin.length !== PIN_LENGTH) {
-          showError("Please enter all 4 digits");
+          showError("Please enter all 6 digits");
           return;
         }
 

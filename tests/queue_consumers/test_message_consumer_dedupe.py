@@ -5,12 +5,14 @@ import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.intents import Say, ShowFlow
 from apps.chat.src.queue_consumers import message_consumer as message_consumer_module
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
+from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
 from shared.i18n import render_message
@@ -159,6 +161,13 @@ class _OrchestratorStub:
         return self.resume_output
 
 
+class _LockTimeoutOrchestratorStub(_OrchestratorStub):
+    async def invoke(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        del args, kwargs
+        self.invoke_calls += 1
+        raise RedisLockTimeoutError("redis_lock_acquire_timeout:chat:thread-lock:whatsapp:2348162511023")
+
+
 def _message(message_id: str = "wamid-1") -> ChannelMessage:
     return ChannelMessage(
         message_id=message_id,
@@ -292,6 +301,32 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
     assert second["status"] == "duplicate_ignored"
     assert orchestrator.invoke_calls == 1
     assert len(enqueue_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_lock_timeout_releases_claim_and_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _LockTimeoutOrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    enqueue_outbox_intents = AsyncMock()
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        enqueue_outbox_intents,
+    )
+
+    with pytest.raises(RedisLockTimeoutError):
+        await consumer._handle_message(_message("wamid-lock-timeout"))
+
+    assert context_manager.released == [("2348162511023", "wamid-lock-timeout")]
+    enqueue_outbox_intents.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -782,6 +817,47 @@ async def test_pin_verified_event_resumes_once_after_claim(monkeypatch: pytest.M
         }
     ]
     assert len(sent_payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_pin_verified_resume_does_not_duplicate_final_response_and_outbox_say(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    response_text = render_message("orchestrator.session.transaction_expired", "en")
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        resume_output={
+            "text": response_text,
+            "final_response": response_text,
+            "outbox": [{"type": "say", "text": response_text}],
+        },
+    )
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    auth_service = _AuthorizationServiceStub(
+        AuthorizationResult(verified=True, user_id="u1", transaction_type="transfer"),
+        claim_results=[True],
+    )
+    sent_payloads: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        sent_payloads.append(list(args))
+
+    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    await consumer.process_flow_event(_pin_verified_event())
+
+    assert len(sent_payloads) == 1
+    intents = sent_payloads[0][3]
+    assert len(intents) == 1
+    assert isinstance(intents[0], Say)
+    assert intents[0].text == response_text
 
 
 @pytest.mark.asyncio

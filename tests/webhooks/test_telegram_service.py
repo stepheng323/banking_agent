@@ -211,7 +211,7 @@ async def test_legacy_telegram_web_app_pin_data_does_not_publish_pin_event() -> 
                 "chat": {"id": 12345},
                 "from": {"id": 12345, "first_name": "Gaines"},
                 "web_app_data": {
-                    "data": '{"flow_token": "transfer-pin-idem-1-12345", "pin": "1234"}',
+                    "data": '{"flow_token": "transfer-pin-idem-1-12345", "pin": "123456"}',
                 },
             },
         }

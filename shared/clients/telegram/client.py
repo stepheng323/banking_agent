@@ -34,6 +34,16 @@ def _format_telegram_html(text: str) -> str:
     return escaped
 
 
+def _telegram_html_to_plain_text(text: str) -> str:
+    """Convert Telegram HTML back to plain text for Mini App UI copy."""
+    without_tags = re.sub(
+        r"</?(?:b|strong|i|em|code|u|s|strike|del|tg-spoiler|blockquote)(?:\s[^>]*)?>",
+        "",
+        text or "",
+    )
+    return html.unescape(without_tags)
+
+
 class TelegramClient(MessagingClient):
     """Telegram Bot API client implementing the MessagingClient interface."""
 
@@ -326,8 +336,7 @@ class TelegramClient(MessagingClient):
     @staticmethod
     def _build_inline_keyboard_rows(options: list[dict[str, str]]) -> list[list[dict[str, str]]]:
         buttons = [
-            {"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}
-            for opt in options
+            {"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")} for opt in options
         ]
         if len(buttons) <= 1:
             return [buttons] if buttons else []
@@ -504,9 +513,9 @@ class TelegramClient(MessagingClient):
         bootstrap_extra: dict[str, Any] = {}
         if endpoint == "pin_entry.html":
             if header:
-                bootstrap_extra["header"] = header
+                bootstrap_extra["header"] = _telegram_html_to_plain_text(header)
             if body_text:
-                bootstrap_extra["body_text"] = body_text
+                bootstrap_extra["body_text"] = _telegram_html_to_plain_text(body_text)
 
         try:
             bootstrap_nonce = await create_telegram_miniapp_bootstrap(

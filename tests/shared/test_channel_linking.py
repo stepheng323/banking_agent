@@ -103,7 +103,7 @@ async def test_channel_link_pin_completion_links_requested_identity(monkeypatch:
 
     result = await complete_channel_link_with_pin(
         flow_token=build_channel_link_pin_token("channel-link-token"),
-        pin="1234",
+        pin="123456",
         authorizing_channel="whatsapp",
         authorizing_channel_user_id="08162511023",
         session_manager=session_manager,
@@ -117,7 +117,7 @@ async def test_channel_link_pin_completion_links_requested_identity(monkeypatch:
     assert auth.verify_calls == [
         {
             "phone_number": "2348162511023",
-            "pin": "1234",
+            "pin": "123456",
             "idempotency_key": "channel-link-token",
             "transaction_type": "channel_link",
         }
@@ -138,7 +138,7 @@ async def test_channel_link_pin_completion_rejects_invalid_pin() -> None:
 
     result = await complete_channel_link_with_pin(
         flow_token=build_channel_link_pin_token("channel-link-token"),
-        pin="0000",
+        pin="000000",
         authorizing_channel="whatsapp",
         authorizing_channel_user_id="2348162511023",
         session_manager=session_manager,
@@ -158,7 +158,7 @@ async def test_channel_link_pin_completion_rejects_pin_for_different_user() -> N
 
     result = await complete_channel_link_with_pin(
         flow_token=build_channel_link_pin_token("channel-link-token"),
-        pin="1234",
+        pin="123456",
         authorizing_channel="whatsapp",
         authorizing_channel_user_id="2348162511023",
         session_manager=session_manager,
@@ -214,7 +214,7 @@ async def test_channel_link_pin_completion_rejects_stale_telegram_authorizer(
 
     result = await complete_channel_link_with_pin(
         flow_token=build_channel_link_pin_token("channel-link-token"),
-        pin="1234",
+        pin="123456",
         authorizing_channel="telegram",
         authorizing_channel_user_id="927331985",
         session_manager=session_manager,
@@ -233,7 +233,7 @@ async def test_channel_link_pin_completion_rejects_expired_session() -> None:
 
     result = await complete_channel_link_with_pin(
         flow_token=build_channel_link_pin_token("missing-token"),
-        pin="1234",
+        pin="123456",
         authorizing_channel="whatsapp",
         session_manager=session_manager,
         authorization_service=auth,  # type: ignore[arg-type]

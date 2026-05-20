@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 
 from shared.services.auth import AuthorizationService
+from shared.utils.hash import is_valid_pin_format
 
 
 class _RedisStub:
@@ -16,6 +17,24 @@ class _RedisStub:
             return None
         self.values[key] = value
         return True
+
+
+def test_transaction_pin_format_requires_six_digits() -> None:
+    assert is_valid_pin_format("123456") is True
+    assert is_valid_pin_format("1234") is False
+    assert is_valid_pin_format("1234567") is False
+    assert is_valid_pin_format("12345a") is False
+
+
+@pytest.mark.asyncio
+async def test_verify_pin_rejects_four_digit_pin_before_session_lookup() -> None:
+    service = AuthorizationService(redis_client=_RedisStub())
+
+    result = await service.verify_pin("2348162511023", "1234", "idem-1", transaction_type="transfer")
+
+    assert result.verified is False
+    assert result.error == "Invalid PIN. Enter a 6-digit numeric PIN."
+    assert result.retry_count == 0
 
 
 @pytest.mark.asyncio

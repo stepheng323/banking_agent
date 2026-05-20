@@ -282,6 +282,8 @@ def _parse_simple_transfer_command(
                 "recipient_account": recipient_account,
                 "recipient_bank_name": recipient_bank_name,
                 "recipient_bank_code": None,
+                "recipient_bank_code_provider": None,
+                "recipient_resolution_provider": None,
                 "recipient_resolved_name": None,
                 "name_mismatch": False,
                 "name_match_score": None,
@@ -742,6 +744,8 @@ class ExtractionStep(TransferStep):
                         "recipient_account": acct,
                         "recipient_bank_name": bank,
                         "recipient_bank_code": None,
+                        "recipient_bank_code_provider": None,
+                        "recipient_resolution_provider": None,
                         "recipient_resolved_name": None,
                         "name_mismatch": False,
                         "name_match_score": None,
@@ -859,6 +863,8 @@ async def _extract_transfer_update(
 
         if "recipient_bank_name" in extracted_data:
             extracted_data["recipient_bank_code"] = None
+            extracted_data["recipient_bank_code_provider"] = None
+            extracted_data["recipient_resolution_provider"] = None
             extracted_data["recipient_resolved_name"] = None
             extracted_data["name_mismatch"] = False
             extracted_data["name_match_score"] = None
@@ -918,11 +924,15 @@ async def _extract_transfer_update(
                 extracted_data.pop("name_match_score", None)
                 extracted_data.pop("name_mismatch_warning", None)
                 extracted_data.pop("recipient_bank_code", None)
+                extracted_data.pop("recipient_bank_code_provider", None)
+                extracted_data.pop("recipient_resolution_provider", None)
                 extracted_data.pop("recipient_bank_name", None)
 
             elif not names_match:
                 extracted_data["recipient_account"] = None
                 extracted_data["recipient_bank_code"] = None
+                extracted_data["recipient_bank_code_provider"] = None
+                extracted_data["recipient_resolution_provider"] = None
                 extracted_data["recipient_bank_name"] = None
                 extracted_data["recipient_resolved_name"] = None
                 extracted_data["beneficiary_id"] = None

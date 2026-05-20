@@ -85,6 +85,65 @@ async def test_payout_executor_resolves_then_transfers() -> None:
 
 
 @pytest.mark.asyncio
+async def test_payout_executor_accepts_matching_provider_metadata() -> None:
+    payout_provider = _PayoutProvider()
+    resolver_provider = _ResolverProvider(
+        resolve_result=type(
+            "ResolutionResult",
+            (),
+            {
+                "success": True,
+                "error": None,
+                "account": type(
+                    "ResolvedAccount",
+                    (),
+                    {"account_name": "Tolu A", "account_number": "8162511023", "bank_code": "033"},
+                )(),
+            },
+        )()
+    )
+    executor = PayoutExecutor(payout_provider=payout_provider, resolver_provider=resolver_provider)
+
+    result = await executor.handle_payout(
+        {
+            "amount": 5000,
+            "recipient_account": "8162511023",
+            "recipient_bank_code": "033",
+            "recipient_bank_code_provider": "flutterwave",
+            "recipient_resolution_provider": "flutterwave",
+            "payout_provider": "flutterwave",
+        }
+    )
+
+    assert result["success"] is True
+    resolver_provider.resolve_account.assert_awaited_once_with("8162511023", "033")
+    payout_provider.initiate_transfer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_payout_executor_rejects_explicit_mismatched_provider_metadata() -> None:
+    payout_provider = _PayoutProvider()
+    resolver_provider = _ResolverProvider(resolve_result=None)
+    executor = PayoutExecutor(payout_provider=payout_provider, resolver_provider=resolver_provider)
+
+    result = await executor.handle_payout(
+        {
+            "amount": 5000,
+            "recipient_account": "8162511023",
+            "recipient_bank_code": "033",
+            "recipient_bank_code_provider": "mono",
+            "payout_provider": "flutterwave",
+        }
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "failed"
+    assert result["error"] == "Recipient bank code provider mismatch"
+    resolver_provider.resolve_account.assert_not_awaited()
+    payout_provider.initiate_transfer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_payout_executor_rejects_invalid_input() -> None:
     payout_provider = _PayoutProvider()
     resolver_provider = _ResolverProvider(resolve_result=None)

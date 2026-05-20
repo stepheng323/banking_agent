@@ -36,6 +36,7 @@ from apps.chat.src.agent.orchestrator.progress import (
     should_emit_progress,
 )
 from apps.chat.src.messaging.outbox import enqueue_outbox_say, enqueue_outbox_typing
+from shared.cache.distributed_lock import RedisDistributedLock
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.config.settings import settings
 from shared.i18n import LocaleManager
@@ -109,9 +110,6 @@ class OrchestratorGraphHandler:
         self.checkpointer = AsyncRedisSaver(redis_client=redis_client)
         self._checkpointer_setup = False
         self._checkpointer_setup_lock = asyncio.Lock()
-        self._thread_locks_guard = asyncio.Lock()
-        self._thread_locks: dict[str, asyncio.Lock] = {}
-        self._thread_lock_refcounts: dict[str, int] = {}
         self._housekeeping_semaphore = asyncio.Semaphore(max(1, settings.async_housekeeping_max_concurrency))
         self._error_window: deque[int] = deque(maxlen=200)
 
@@ -177,36 +175,38 @@ class OrchestratorGraphHandler:
     def _thread_id(phone_number: str, channel: str) -> str:
         return f"{channel}:{phone_number}"
 
-    async def _reserve_thread_lock(self, thread_id: str) -> asyncio.Lock:
-        async with self._thread_locks_guard:
-            lock = self._thread_locks.get(thread_id)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._thread_locks[thread_id] = lock
-            self._thread_lock_refcounts[thread_id] = self._thread_lock_refcounts.get(thread_id, 0) + 1
-            return lock
-
-    async def _drop_thread_lock_reservation(self, thread_id: str, lock: asyncio.Lock) -> None:
-        async with self._thread_locks_guard:
-            remaining = self._thread_lock_refcounts.get(thread_id, 0) - 1
-            if remaining <= 0:
-                self._thread_lock_refcounts.pop(thread_id, None)
-                if self._thread_locks.get(thread_id) is lock and not lock.locked():
-                    self._thread_locks.pop(thread_id, None)
-                return
-            self._thread_lock_refcounts[thread_id] = remaining
-
     @asynccontextmanager
     async def _thread_invocation_lock(self, thread_id: str) -> AsyncIterator[None]:
-        lock = await self._reserve_thread_lock(thread_id)
+        lock = RedisDistributedLock(
+            self.redis_client,
+            key=f"chat:thread-lock:{thread_id}",
+            ttl_seconds=settings.chat_thread_lock_ttl_seconds,
+        )
+        await lock.acquire(wait_seconds=settings.chat_thread_lock_wait_seconds)
+        renew_task = asyncio.create_task(
+            lock.renew_periodically(interval_seconds=settings.chat_thread_lock_renew_seconds),
+            name=f"chat-thread-lock-renew:{thread_id}",
+        )
         try:
-            await lock.acquire()
-            try:
-                yield
-            finally:
-                lock.release()
+            logger.info(
+                "orchestrator_thread_lock_acquired",
+                thread_id=thread_id,
+                ttl_seconds=settings.chat_thread_lock_ttl_seconds,
+                renew_seconds=settings.chat_thread_lock_renew_seconds,
+            )
+            yield
         finally:
-            await self._drop_thread_lock_reservation(thread_id, lock)
+            renew_task.cancel()
+            renew_results = await asyncio.gather(renew_task, return_exceptions=True)
+            for result in renew_results:
+                if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                    logger.warning("orchestrator_thread_lock_renew_failed", thread_id=thread_id, error=str(result))
+            try:
+                released = await lock.release()
+            except Exception as exc:
+                logger.warning("orchestrator_thread_lock_release_failed", thread_id=thread_id, error=str(exc))
+            else:
+                logger.info("orchestrator_thread_lock_released", thread_id=thread_id, released=released)
 
     def _get_config(self, phone_number: str, channel: str) -> RunnableConfig:
         """Create LangGraph configuration."""

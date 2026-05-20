@@ -39,6 +39,37 @@ async def _process_stream_record(
         )
 
 
+async def _process_stream_record_bounded(
+    consumer,
+    stream_consumer: RedisStreamConsumer,
+    record: RedisStreamRecord,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    async with semaphore:
+        await _process_stream_record(consumer, stream_consumer, record)
+
+
+async def _process_stream_records(
+    consumer,
+    stream_consumer: RedisStreamConsumer,
+    records: list[RedisStreamRecord],
+    semaphore: asyncio.Semaphore,
+) -> None:
+    if not records:
+        return
+    await asyncio.gather(
+        *(
+            _process_stream_record_bounded(
+                consumer,
+                stream_consumer,
+                record,
+                semaphore,
+            )
+            for record in records
+        )
+    )
+
+
 def _should_drop_stale(record: RedisStreamRecord) -> bool:
     if record.topic != "message.received":
         return False
@@ -70,17 +101,21 @@ def _should_drop_stale(record: RedisStreamRecord) -> bool:
 
 
 async def _run_stream_loop(consumer, stream_consumer: RedisStreamConsumer) -> None:
-    logger.info("chat_worker_stream_loop_starting", streams=stream_consumer.stream_names)
+    max_concurrency = max(1, settings.chat_worker_max_concurrency)
+    semaphore = asyncio.Semaphore(max_concurrency)
+    logger.info(
+        "chat_worker_stream_loop_starting",
+        streams=stream_consumer.stream_names,
+        max_concurrency=max_concurrency,
+    )
     await stream_consumer.ensure_groups()
 
     while True:
         claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
-        for record in claimed:
-            await _process_stream_record(consumer, stream_consumer, record)
+        await _process_stream_records(consumer, stream_consumer, claimed, semaphore)
 
         records = await stream_consumer.consume(count=25, block_ms=5000)
-        for record in records:
-            await _process_stream_record(consumer, stream_consumer, record)
+        await _process_stream_records(consumer, stream_consumer, records, semaphore)
 
 
 async def _warm_runtime_best_effort() -> None:

@@ -75,6 +75,7 @@ class TransferPipeline:
             "SourceSelectionStep": "transfer.confirming_details",
             "ValidationStep": "transfer.confirming_details",
             "FundingStep": "transfer.confirming_details",
+            "PayoutPreparationStep": "transfer.confirming_details",
             "ConfirmationStep": "transfer.confirming_details",
             "AuthorizationStep": "transfer.authorizing_transfer",
             "ExecutionStep": "transfer.processing_transfer",

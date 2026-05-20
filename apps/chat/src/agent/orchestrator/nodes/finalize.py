@@ -406,6 +406,8 @@ async def _enqueue_finalize_transfer_receipt(
                 "account_number": recipient_account,
                 "bank_code": recipient_bank_code,
                 "bank_name": task.payload.get("recipient_bank_name"),
+                "recipient_bank_code_provider": task.payload.get("recipient_bank_code_provider"),
+                "recipient_resolution_provider": task.payload.get("recipient_resolution_provider"),
                 "name": task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"),
                 "original_alias": task.payload.get("recipient_name"),
             },

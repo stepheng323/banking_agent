@@ -16,8 +16,10 @@ from apps.chat.src.agent.orchestrator.models.intents import (
     ShowReceipt,
     UiIntent,
 )
+from apps.chat.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from apps.chat.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
+from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.telegram.client import TelegramClient
 from shared.database.models import UserOnboardingStatusEnum
@@ -520,11 +522,8 @@ class MessageConsumer:
         raw_delivery_metadata = response.get("delivery_metadata")
         delivery_metadata = raw_delivery_metadata if isinstance(raw_delivery_metadata, dict) else {}
 
-        intents_to_send: list[UiIntent | dict[str, Any]] = []
-        if text:
-            intents_to_send.append({"type": "say", "text": text})
-        if isinstance(outbox, list):
-            intents_to_send.extend([item for item in outbox if isinstance(item, dict)])
+        raw_outbox = [item for item in outbox if isinstance(item, dict)] if isinstance(outbox, list) else []
+        intents_to_send = cast(list[UiIntent | dict[str, Any]], map_outbox_to_intents(raw_outbox, text))
 
         if not intents_to_send:
             return
@@ -660,6 +659,13 @@ class MessageConsumer:
                     user=user,
                 )
             except Exception as exc:
+                if isinstance(exc, RedisLockTimeoutError):
+                    logger.warning(
+                        "message_consumer_orchestrator_lock_timeout",
+                        phone_number=phone_number,
+                        message_id=message.message_id,
+                    )
+                    raise
                 logger.error(
                     "message_consumer_orchestrator_invoke_failed_safe_fallback",
                     error=str(exc),
@@ -706,9 +712,7 @@ class MessageConsumer:
                 intents_to_send = cast(list[UiIntent | dict[str, Any]], intents)
             else:
                 fallback_outbox = (
-                    [item for item in raw_outbox if isinstance(item, dict)]
-                    if isinstance(raw_outbox, list)
-                    else []
+                    [item for item in raw_outbox if isinstance(item, dict)] if isinstance(raw_outbox, list) else []
                 )
                 intents_to_send = fallback_outbox
                 if fallback_outbox:

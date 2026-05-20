@@ -15,6 +15,9 @@ Common runtime ownership flags:
 
 - `CHAT_TRANSPORT`
 - `ASYNC_TRANSPORT`
+- `DB_POOL_SIZE` (optional, defaults to `20`)
+- `DB_MAX_OVERFLOW` (optional, defaults to `10`)
+- `DB_POOL_TIMEOUT` (optional, defaults to `30`)
 
 ## gateway
 
@@ -50,6 +53,10 @@ Required app integrations:
 - `TTL_SECONDS`
 - `FLOW_SESSION_TIMEOUT`
 - `PENDING_TRANSACTION_TTL`
+- `CHAT_WORKER_MAX_CONCURRENCY` (optional, defaults to `8`)
+- `CHAT_THREAD_LOCK_TTL_SECONDS` (optional, defaults to `120`)
+- `CHAT_THREAD_LOCK_RENEW_SECONDS` (optional, defaults to `30`)
+- `CHAT_THREAD_LOCK_WAIT_SECONDS` (optional, defaults to `60`)
 
 ## transaction-worker
 

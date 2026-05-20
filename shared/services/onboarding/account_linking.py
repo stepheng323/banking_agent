@@ -56,7 +56,7 @@ class AccountLinkingService:
     ) -> dict:
         """Complete onboarding by creating customer and linking account."""
         if not pin or not is_valid_pin_format(pin):
-            return {"success": False, "error": "Invalid PIN. Please enter a 4 or 6-digit PIN."}
+            return {"success": False, "error": "Invalid PIN. Please enter a 6-digit numeric PIN."}
 
         if not email:
             return {"success": False, "error": "Email address is required."}

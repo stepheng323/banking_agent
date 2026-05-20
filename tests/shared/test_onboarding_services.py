@@ -306,13 +306,27 @@ async def test_send_otp_logs_redacted_session_fields(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
+async def test_complete_onboarding_rejects_four_digit_pin() -> None:
+    service = AccountLinkingService(_SessionStub(), _MandateStub())
+
+    result = await service.complete_onboarding(
+        "onboarding-token",
+        pin="1234",
+        email="gaines@example.com",
+        address="1 Marina Road",
+    )
+
+    assert result == {"success": False, "error": "Invalid PIN. Please enter a 6-digit numeric PIN."}
+
+
+@pytest.mark.asyncio
 async def test_telegram_complete_onboarding_requires_session_identity() -> None:
     session = _SessionStub({"phone_number": "2348162511023"})
     service = AccountLinkingService(session, _MandateStub())
 
     result = await service.complete_onboarding(
         "onboarding-legacy-chat-id-12345",
-        pin="1234",
+        pin="123456",
         email="gaines@example.com",
         address="1 Marina Road",
         channel="telegram",

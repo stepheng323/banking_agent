@@ -82,7 +82,7 @@ def build_transaction_heading(query_contract: QueryExecutionContract | None, loc
     tx_type = filters.transaction_type if filters else None
     categories = filters.category if filters and filters.category else []
     counterparties = filters.counterparty if filters and filters.counterparty else []
-    counterparty = next((item.strip() for item in counterparties if isinstance(item, str) and item.strip()), None)
+    counterparty = _first_display_filter_value(counterparties)
 
     if counterparty:
         if tx_type == "debit":
@@ -183,7 +183,7 @@ def _collect_scope_qualifiers(
     filters = query_contract.filters
 
     if include_counterparty and filters and filters.counterparty and locale == "en":
-        counterparty = next((item.strip() for item in filters.counterparty if isinstance(item, str) and item.strip()), None)
+        counterparty = _first_display_filter_value(filters.counterparty)
         if counterparty:
             qualifiers.append(f"With {counterparty}")
 
@@ -207,6 +207,18 @@ def _join_heading(base: str, qualifiers: list[str]) -> str:
     if not filtered:
         return base
     return f"{base} — {' — '.join(filtered)}"
+
+
+def _first_display_filter_value(values: list[str] | None) -> str | None:
+    if not values:
+        return None
+    for value in values:
+        cleaned = value.strip()
+        if cleaned:
+            if cleaned == cleaned.lower():
+                return cleaned.title()
+            return cleaned
+    return None
 
 
 def _format_date(value: date) -> str:

@@ -243,7 +243,7 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
             transaction_type: str | None = None,
         ) -> AuthorizationResult:
             assert phone_number == "2348162511023"
-            assert pin == "1234"
+            assert pin == "123456"
             assert idempotency_key == "idem-1"
             assert transaction_type == "transaction"
             return AuthorizationResult(
@@ -265,7 +265,7 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: publisher)
 
     result = await router_module.telegram_pin_submit(
-        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="1234", chat_id="927331985"),
+        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="123456", chat_id="927331985"),
         user_data={"user": '{"id": 927331985}'},
         db=_DbStub(),  # type: ignore[arg-type]
     )
@@ -327,7 +327,7 @@ async def test_telegram_bootstrap_rejects_missing_or_replayed_nonce(monkeypatch:
 @pytest.mark.asyncio
 async def test_telegram_pin_submit_requires_init_user_for_transaction_pin() -> None:
     result = await router_module.telegram_pin_submit(
-        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="1234", chat_id="927331985"),
+        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="123456", chat_id="927331985"),
         user_data={},
         db=_DbStub(),  # type: ignore[arg-type]
     )
@@ -338,7 +338,7 @@ async def test_telegram_pin_submit_requires_init_user_for_transaction_pin() -> N
 @pytest.mark.asyncio
 async def test_telegram_pin_submit_rejects_mismatched_chat_id_for_transaction_pin() -> None:
     result = await router_module.telegram_pin_submit(
-        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="1234", chat_id="attacker-chat"),
+        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="123456", chat_id="attacker-chat"),
         user_data={"user": '{"id": 927331985}'},
         db=_DbStub(),  # type: ignore[arg-type]
     )
@@ -349,7 +349,7 @@ async def test_telegram_pin_submit_rejects_mismatched_chat_id_for_transaction_pi
 @pytest.mark.asyncio
 async def test_telegram_pin_submit_rejects_flow_token_bound_to_other_chat_id() -> None:
     result = await router_module.telegram_pin_submit(
-        PinSubmitInput(flow_token="transaction-pin-idem-1-111111", pin="1234", chat_id="927331985"),
+        PinSubmitInput(flow_token="transaction-pin-idem-1-111111", pin="123456", chat_id="927331985"),
         user_data={"user": '{"id": 927331985}'},
         db=_DbStub(),  # type: ignore[arg-type]
     )
@@ -386,7 +386,7 @@ async def test_telegram_pin_submit_completes_channel_link_with_pin(monkeypatch: 
     result = await router_module.telegram_pin_submit(
         PinSubmitInput(
             flow_token="channel-link-pin-channel-link-token",
-            pin="1234",
+            pin="123456",
             chat_id="927331985",
         ),
         user_data={"user": '{"id": 927331985}'},
@@ -397,7 +397,7 @@ async def test_telegram_pin_submit_completes_channel_link_with_pin(monkeypatch: 
     assert calls == [
         {
             "flow_token": "channel-link-pin-channel-link-token",
-            "pin": "1234",
+            "pin": "123456",
             "authorizing_channel": "telegram",
             "authorizing_channel_user_id": "927331985",
         }
@@ -478,3 +478,18 @@ def test_telegram_mini_apps_bootstrap_without_query_flow_tokens() -> None:
         assert 'params.get("flow_token")' not in text
         assert 'params.get("chat_id")' not in text
         assert "/webhook/telegram/bootstrap" in text
+
+
+def test_telegram_pin_surfaces_require_six_digit_transaction_pin() -> None:
+    root = Path(__file__).resolve().parents[2]
+    onboarding = (root / "apps/gateway/static/telegram/onboarding.html").read_text()
+    pin_entry = (root / "apps/gateway/static/telegram/pin_entry.html").read_text()
+    whatsapp_flow = (root / "config/whatsapp_pin_flow.json").read_text()
+
+    assert 'placeholder="Transaction PIN (6 digits)"' in onboarding
+    assert "const PIN_LENGTH = 6" in onboarding
+    assert "pin.length === PIN_LENGTH" in onboarding
+    assert "Use your 6-digit transaction PIN" in pin_entry
+    assert "const PIN_LENGTH = 6" in pin_entry
+    assert '"min-chars": 6' in whatsapp_flow
+    assert '"max-chars": 6' in whatsapp_flow

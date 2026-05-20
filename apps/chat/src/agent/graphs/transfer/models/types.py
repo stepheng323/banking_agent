@@ -3,7 +3,7 @@
 Strict Pydantic contract for the Transfer Subgraph.
 """
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,6 +35,8 @@ class TransferPayload(BaseModel):
     recipient_account: str | None = None
     recipient_bank_code: str | None = None
     recipient_bank_name: str | None = None
+    recipient_bank_code_provider: str | None = None
+    recipient_resolution_provider: str | None = None
     recipient_resolved_name: str | None = None
     recipient_reference: dict[str, Any] | None = None
     recipient_binding_source: Literal["fanout"] | None = None
@@ -140,6 +142,8 @@ class TransferRecipient(TypedDict):
     bank_code: str
     name: str | None
     bank_name: str | None
+    bank_code_provider: NotRequired[str | None]
+    resolution_provider: NotRequired[str | None]
 
 
 class TransferSource(TypedDict):

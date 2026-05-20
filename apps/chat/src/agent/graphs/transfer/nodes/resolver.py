@@ -26,6 +26,27 @@ _RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previo
 _UNSAFE_RECIPIENT_TOKENS = _RECIPIENT_PRONOUN_TOKENS | {"send", "transfer", "pay", "recipient", "s"}
 
 
+def _provider_name(provider: Any, default: str = "mono") -> str:
+    value = getattr(provider, "provider_name", None)
+    return str(value or default).strip().lower()
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "none":
+        return None
+    return text
+
+
+def _beneficiary_provider(value: Any, bank_code: str | None) -> str | None:
+    if not bank_code:
+        return None
+    provider = _optional_text(value)
+    return (provider or "mono").lower()
+
+
 def _canonical_beneficiary_id(value: str | None) -> str | None:
     if not value:
         return None
@@ -130,6 +151,7 @@ def _matches_selected_beneficiary(payload: TransferPayload, selected: dict[str, 
     """Return True when current payload still targets the selected beneficiary."""
     selected_account = str(selected.get("account_number") or "").strip()
     selected_bank_code = str(selected.get("bank_code") or "").strip()
+    selected_bank_code_provider = str(selected.get("bank_code_provider") or "mono").strip().lower()
     selected_bank_name = str(selected.get("bank_name") or "").strip()
     selected_alias = str(selected.get("alias") or "").strip()
     selected_account_name = str(selected.get("account_name") or "").strip()
@@ -139,7 +161,13 @@ def _matches_selected_beneficiary(payload: TransferPayload, selected: dict[str, 
         return False
 
     req_bank_code = str(payload.recipient_bank_code or "").strip()
-    if req_bank_code and selected_bank_code and req_bank_code != selected_bank_code:
+    req_bank_code_provider = str(payload.recipient_bank_code_provider or selected_bank_code_provider).strip().lower()
+    if (
+        req_bank_code
+        and selected_bank_code
+        and req_bank_code_provider == selected_bank_code_provider
+        and req_bank_code != selected_bank_code
+    ):
         return False
 
     req_bank_name = str(payload.recipient_bank_name or "").strip()
@@ -159,6 +187,7 @@ def _clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[st
     """Detach payload from previously selected beneficiary when recipient changes."""
     selected_account = str(selected.get("account_number") or "").strip()
     selected_bank_code = str(selected.get("bank_code") or "").strip()
+    selected_bank_code_provider = str(selected.get("bank_code_provider") or "mono").strip().lower()
     selected_bank_name = str(selected.get("bank_name") or "").strip()
 
     payload.beneficiary_id = None
@@ -170,8 +199,16 @@ def _clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[st
         payload.recipient_account = None
 
     req_bank_code = str(payload.recipient_bank_code or "").strip()
-    if req_bank_code and selected_bank_code and req_bank_code == selected_bank_code:
+    req_bank_code_provider = str(payload.recipient_bank_code_provider or selected_bank_code_provider).strip().lower()
+    if (
+        req_bank_code
+        and selected_bank_code
+        and req_bank_code_provider == selected_bank_code_provider
+        and req_bank_code == selected_bank_code
+    ):
         payload.recipient_bank_code = None
+        payload.recipient_bank_code_provider = None
+        payload.recipient_resolution_provider = None
 
     req_bank_name = str(payload.recipient_bank_name or "").strip()
     if req_bank_name and selected_bank_name and _normalize_name(req_bank_name) == _normalize_name(selected_bank_name):
@@ -222,11 +259,15 @@ def _build_single_beneficiary_patch(single: Beneficiary, recipient_name: str | N
     account_name = str(single.account_name or "").strip()
     resolved_name = account_name or beneficiary_alias or requested_alias or None
     alias_name = requested_alias or beneficiary_alias or account_name or None
+    bank_code = _optional_text(single.bank_code)
+    provider = _beneficiary_provider(None, bank_code)
 
     return {
-        "recipient_account": str(single.account_number),
-        "recipient_bank_code": str(single.bank_code),
+        "recipient_account": _optional_text(single.account_number),
+        "recipient_bank_code": bank_code,
         "recipient_bank_name": single.bank_name,
+        "recipient_bank_code_provider": provider,
+        "recipient_resolution_provider": provider,
         "recipient_name": alias_name,
         "recipient_resolved_name": resolved_name,
         "beneficiary_id": str(single.id),
@@ -245,11 +286,16 @@ def _build_single_beneficiary_patch_from_record(record: dict[str, Any], recipien
     resolved_name = account_name or beneficiary_alias or requested_alias or None
     alias_name = requested_alias or beneficiary_alias or account_name or None
     beneficiary_id = str(record.get("id") or "").strip() or None
+    bank_code = _optional_text(record.get("bank_code"))
+    provider = _beneficiary_provider(record.get("bank_code_provider"), bank_code)
+    resolution_provider = _beneficiary_provider(record.get("resolution_provider"), bank_code)
 
     return {
-        "recipient_account": str(record.get("account_number") or "").strip() or None,
-        "recipient_bank_code": str(record.get("bank_code") or "").strip() or None,
+        "recipient_account": _optional_text(record.get("account_number")),
+        "recipient_bank_code": bank_code,
         "recipient_bank_name": record.get("bank_name"),
+        "recipient_bank_code_provider": provider,
+        "recipient_resolution_provider": resolution_provider or provider,
         "recipient_name": alias_name,
         "recipient_resolved_name": resolved_name,
         "beneficiary_id": beneficiary_id,
@@ -259,6 +305,77 @@ def _build_single_beneficiary_patch_from_record(record: dict[str, Any], recipien
         "name_mismatch_warning": None,
         "beneficiary_candidates": [],
     }
+
+
+async def _saved_beneficiary_result(
+    patch: dict[str, Any],
+    payload: TransferPayload,
+    locale: str,
+    resolver_provider: Any | None,
+    bank_cache: Any | None,
+) -> TransactionResult:
+    """Return a saved-beneficiary patch, resolving Mono bank code when the saved record has only a bank name."""
+    if patch.get("recipient_bank_code"):
+        return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
+
+    account_number = _optional_text(patch.get("recipient_account"))
+    bank_name = _optional_text(patch.get("recipient_bank_name"))
+    if not account_number or not bank_name or not resolver_provider or not bank_cache:
+        return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
+
+    try:
+        await bank_cache.ensure_banks_cached(resolver_provider.get_banks)
+        bank_code = await bank_cache.get_bank_code(bank_name)
+    except Exception as exc:
+        logger.warning("saved_beneficiary_bank_lookup_failed", error=str(exc))
+        bank_code = None
+
+    if not bank_code:
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_bank_name"],
+            prompt=render_message("transfer.resolve.bank_name_not_found", locale, {"bank_name": bank_name}),
+        )
+
+    resolver_name = _provider_name(resolver_provider)
+    try:
+        resolved = await resolver_provider.resolve_account(account_number, bank_code)
+    except Exception as exc:
+        logger.warning("saved_beneficiary_account_resolution_failed", error=str(exc), provider=resolver_name)
+        resolved = None
+
+    if not resolved or not resolved.success or not resolved.account:
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_account", "recipient_bank_name"],
+            prompt=(
+                f"{render_message('response.templates.account_validation_failed', locale)} "
+                f"{_ask_account_and_bank_prompt(locale, patch.get('recipient_name'))}"
+            ),
+        )
+
+    resolved_name = resolved.account.account_name
+    patch.update(
+        {
+            "recipient_resolved_name": resolved_name or patch.get("recipient_resolved_name"),
+            "recipient_bank_code": resolved.account.bank_code or bank_code,
+            "recipient_bank_code_provider": resolver_name,
+            "recipient_resolution_provider": resolver_name,
+        }
+    )
+    if not patch.get("recipient_name") and resolved_name:
+        patch["recipient_name"] = resolved_name
+
+    consistency_payload = payload.model_copy(
+        update={
+            "recipient_name": patch.get("recipient_name"),
+            "recipient_account": account_number,
+            "recipient_bank_code": patch.get("recipient_bank_code"),
+            "recipient_bank_name": bank_name,
+        }
+    )
+    patch.update(_build_name_consistency_patch(consistency_payload, resolved_name, locale))
+    return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
 
 
 def _build_beneficiary_clarify_result(
@@ -364,12 +481,16 @@ async def resolve_beneficiary(
                 selected_account_name = str(selected.get("account_name") or "").strip()
                 recipient_name = current_name or selected_alias or selected_account_name or None
                 resolved_name = selected_account_name or selected_alias or current_name or None
-                return TransactionResult(
-                    outcome=TransactionOutcome.OK,
-                    patch={
-                        "recipient_account": str(selected.get("account_number")),
-                        "recipient_bank_code": str(selected.get("bank_code")),
+                bank_code = _optional_text(selected.get("bank_code"))
+                provider = _beneficiary_provider(selected.get("bank_code_provider"), bank_code)
+                resolution_provider = _beneficiary_provider(selected.get("resolution_provider"), bank_code)
+                return await _saved_beneficiary_result(
+                    {
+                        "recipient_account": _optional_text(selected.get("account_number")),
+                        "recipient_bank_code": bank_code,
                         "recipient_bank_name": selected.get("bank_name"),
+                        "recipient_bank_code_provider": provider,
+                        "recipient_resolution_provider": resolution_provider or provider,
                         "recipient_name": recipient_name,
                         "recipient_resolved_name": resolved_name,
                         "resolved_from_saved_beneficiary": True,
@@ -378,6 +499,10 @@ async def resolve_beneficiary(
                         "name_mismatch_warning": None,
                         "beneficiary_candidates": [],
                     },
+                    payload,
+                    locale,
+                    resolver_provider,
+                    bank_cache,
                 )
 
     if payload.recipient_resolved_name:
@@ -397,14 +522,17 @@ async def resolve_beneficiary(
             if code:
                 # Update payload directly as we are about to use it for account resolution
                 payload.recipient_bank_code = code
+                payload.recipient_bank_code_provider = _provider_name(bank_cache)
 
     if payload.recipient_account and payload.recipient_bank_code and not payload.recipient_resolved_name:
         if resolver_provider:
             try:
+                resolver_name = _provider_name(resolver_provider)
                 logger.info(
                     "resolving_recipient_account",
                     account=payload.recipient_account,
                     bank_code=payload.recipient_bank_code,
+                    provider=resolver_name,
                 )
                 resolved = await resolver_provider.resolve_account(
                     payload.recipient_account, payload.recipient_bank_code
@@ -415,6 +543,8 @@ async def resolve_beneficiary(
                         "recipient_resolved_name": resolved_name,
                         "recipient_bank_name": payload.recipient_bank_name,
                         "recipient_bank_code": resolved.account.bank_code or payload.recipient_bank_code,
+                        "recipient_bank_code_provider": resolver_name,
+                        "recipient_resolution_provider": resolver_name,
                         "resolved_from_saved_beneficiary": False,
                     }
                     if (not payload.recipient_name or _is_unsafe_recipient_placeholder(payload.recipient_name)) and resolved_name:
@@ -430,6 +560,7 @@ async def resolve_beneficiary(
                     error=str(e),
                     account=payload.recipient_account,
                     bank_code=payload.recipient_bank_code,
+                    provider=_provider_name(resolver_provider),
                 )
 
         if not payload.recipient_name and not payload.recipient_resolved_name:
@@ -444,32 +575,44 @@ async def resolve_beneficiary(
         beneficiaries,
     )
     if beneficiary_from_reference:
-        return TransactionResult(
-            outcome=TransactionOutcome.OK,
-            patch=_build_single_beneficiary_patch(beneficiary_from_reference, recipient_name_for_match),
+        return await _saved_beneficiary_result(
+            _build_single_beneficiary_patch(beneficiary_from_reference, recipient_name_for_match),
+            payload,
+            locale,
+            resolver_provider,
+            bank_cache,
         )
 
     previous_beneficiary = ctx.previous_beneficiary if isinstance(ctx.previous_beneficiary, dict) else None
     previous_reference = payload.recipient_reference if isinstance(payload.recipient_reference, dict) else None
     if previous_beneficiary:
         if previous_reference and str(previous_reference.get("selector") or "").strip().lower() == "previous":
-            return TransactionResult(
-                outcome=TransactionOutcome.OK,
-                patch=_build_single_beneficiary_patch_from_record(previous_beneficiary, recipient_name_for_match),
+            return await _saved_beneficiary_result(
+                _build_single_beneficiary_patch_from_record(previous_beneficiary, recipient_name_for_match),
+                payload,
+                locale,
+                resolver_provider,
+                bank_cache,
             )
         if _is_pronoun_recipient(raw_recipient_name):
-            return TransactionResult(
-                outcome=TransactionOutcome.OK,
-                patch=_build_single_beneficiary_patch_from_record(previous_beneficiary, recipient_name_for_match),
+            return await _saved_beneficiary_result(
+                _build_single_beneficiary_patch_from_record(previous_beneficiary, recipient_name_for_match),
+                payload,
+                locale,
+                resolver_provider,
+                bank_cache,
             )
 
     if _is_pronoun_recipient(raw_recipient_name):
         if not ctx.recent_beneficiary_context:
             recipient_name_for_match = None
         elif len(beneficiaries) == 1:
-            return TransactionResult(
-                outcome=TransactionOutcome.OK,
-                patch=_build_single_beneficiary_patch(beneficiaries[0], recipient_name_for_match),
+            return await _saved_beneficiary_result(
+                _build_single_beneficiary_patch(beneficiaries[0], recipient_name_for_match),
+                payload,
+                locale,
+                resolver_provider,
+                bank_cache,
             )
         elif len(beneficiaries) > 1:
             return _build_beneficiary_clarify_result(recipient_name_for_match, beneficiaries, locale)
@@ -571,6 +714,8 @@ async def resolve_beneficiary(
                     "recipient_account": str(candidate_account.get("account_number")),
                     "recipient_bank_code": str(candidate_account.get("bank_code")),
                     "recipient_bank_name": candidate_account.get("bank_name"),
+                    "recipient_bank_code_provider": "mono",
+                    "recipient_resolution_provider": "mono",
                     "recipient_resolved_name": render_message(
                         "transfer.resolve.my_bank_account",
                         locale,
@@ -605,9 +750,12 @@ async def resolve_beneficiary(
     )
 
     if status == "single" and single:
-        return TransactionResult(
-            outcome=TransactionOutcome.OK,
-            patch=_build_single_beneficiary_patch(single, recipient_name_for_match),
+        return await _saved_beneficiary_result(
+            _build_single_beneficiary_patch(single, recipient_name_for_match),
+            payload,
+            locale,
+            resolver_provider,
+            bank_cache,
         )
     elif status == "clarify" and candidates:
         return _build_beneficiary_clarify_result(recipient_name_for_match, candidates, locale)

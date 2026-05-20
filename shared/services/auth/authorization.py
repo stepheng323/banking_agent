@@ -71,7 +71,7 @@ class AuthorizationService:
         if not is_valid_pin_format(str(pin)):
             return AuthorizationResult(
                 verified=False,
-                error="Invalid PIN. Enter a 4-digit numeric PIN.",
+                error="Invalid PIN. Enter a 6-digit numeric PIN.",
                 retry_count=0,
             )
 

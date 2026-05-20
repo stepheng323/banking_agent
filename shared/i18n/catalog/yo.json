@@ -366,11 +366,17 @@
     "analytics": {
       "no_aggregation": "No aggregation specified.",
       "no_transactions": "No transactions found.",
-      "no_spending": "You didn't spend anything{timeframe}.",
-      "no_income": "You didn't receive any inflow{timeframe}.",
+      "no_spending": "You didn't spend anything{target_description}{timeframe}.",
+      "no_sent": "You didn't send anything{target_description}{timeframe}.",
+      "no_income": "You didn't receive any inflow{target_description}{timeframe}.",
       "target_merchant": " on {merchant}",
       "target_account": " with {account}",
+      "target_counterparty": " with {counterparty}",
+      "target_counterparty_debit": " to {counterparty}",
+      "target_counterparty_credit": " from {counterparty}",
       "summary_spent": "You spent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_sent": "You sent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_received": "You received *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_average": "Your average transaction is *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' to see details_",
       "summary_count": "You made *{count}* transaction(s){timeframe}.",
       "transaction_singular": "transaction",
@@ -576,6 +582,7 @@
       "bank_unknown": "Unknown Bank"
     },
     "add": {
+      "manual_disabled": "Beneficiaries are saved after a successful transfer. Send money to the recipient first, then I can save them for next time.",
       "missing_account_or_bank": "I need the account number and bank to add a beneficiary.",
       "account_verification_failed": "Could not verify account {account_number}. Please check the details.",
       "account_lookup_failed": "Account lookup failed/invalid for {account_number} at {bank_name}.",

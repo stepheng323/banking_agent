@@ -100,6 +100,9 @@ class Settings:
         )
 
         self.database_url: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+        self.db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "20"))
+        self.db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+        self.db_pool_timeout: int = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
@@ -131,6 +134,10 @@ class Settings:
         self.chat_transport: str = os.getenv("CHAT_TRANSPORT", "redis").strip() or "redis"
         self.async_transport: str = os.getenv("ASYNC_TRANSPORT", "aws").strip() or "aws"
         self.chat_message_max_age_seconds: int = int(os.getenv("CHAT_MESSAGE_MAX_AGE_SECONDS", "120"))
+        self.chat_thread_lock_ttl_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_TTL_SECONDS", "120"))
+        self.chat_thread_lock_renew_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_RENEW_SECONDS", "30"))
+        self.chat_thread_lock_wait_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_WAIT_SECONDS", "60"))
+        self.chat_worker_max_concurrency: int = int(os.getenv("CHAT_WORKER_MAX_CONCURRENCY", "8"))
         self.sqs_wait_time_seconds: int = int(os.getenv("SQS_WAIT_TIME_SECONDS", "10"))
         self.sqs_visibility_timeout_seconds: int = int(os.getenv("SQS_VISIBILITY_TIMEOUT_SECONDS", "90"))
         self.sqs_poll_max_messages: int = int(os.getenv("SQS_POLL_MAX_MESSAGES", "5"))

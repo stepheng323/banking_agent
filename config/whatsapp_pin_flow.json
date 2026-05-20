@@ -24,7 +24,7 @@
               },
               {
                 "type": "TextBody",
-                "text": "Please enter your 4-digit transaction pin to authorize your transaction"
+                "text": "Please enter your 6-digit transaction pin to authorize your transaction"
               },
               {
                 "type": "TextInput",
@@ -32,8 +32,8 @@
                 "label": "Enter Pin",
                 "input-type": "passcode",
                 "required": true,
-                "min-chars": 4,
-                "max-chars": 4,
+                "min-chars": 6,
+                "max-chars": 6,
                 "helper-text": "Enter your transaction pin"
               },
               {

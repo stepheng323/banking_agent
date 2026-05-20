@@ -14,6 +14,7 @@ from apps.chat.src.agent.graphs.query.models import (
 )
 from apps.chat.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
 from apps.chat.src.agent.graphs.query.services.formatter import QueryFormatter
+from apps.chat.src.agent.graphs.query.services.presentation_scope import build_transaction_heading
 
 
 class _Provider:
@@ -114,6 +115,73 @@ async def test_analytics_sum_response_names_retained_account_scope(monkeypatch: 
     )
 
     assert result.summary_text == "You spent *₦96,200* with First Bank from May 01 to May 11, across 2 transactions."
+
+
+@pytest.mark.asyncio
+async def test_analytics_sum_response_names_recipient_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        del args, kwargs
+        return [
+            {
+                "id": "tx_1",
+                "amount": 5000,
+                "narration": "Transfer to Tolu Adebayo",
+                "date": "2026-05-19",
+                "type": "debit",
+                "counterparty": "Tolu Adebayo",
+            },
+            {
+                "id": "tx_2",
+                "amount": 10000,
+                "narration": "Transfer to Tolu Adebayo",
+                "date": "2026-05-20",
+                "type": "debit",
+                "counterparty": "Tolu Adebayo",
+            },
+        ]
+
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        _fake_fetch_and_filter,
+    )
+    monkeypatch.setattr("apps.chat.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 5, 20))
+
+    result = await handle_analytics(
+        _Provider(),  # type: ignore[arg-type]
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="sum"),
+                filters=Filters(transaction_type="debit", counterparty=["tolu"]),
+                time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 20)),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        language="en",
+    )
+
+    assert result.summary_text == "You sent *₦15,000* to Tolu from May 01 to May 20, across 2 transactions."
+
+
+def test_transaction_heading_title_cases_lowercase_recipient_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "apps.chat.src.agent.graphs.query.services.presentation_scope.lagos_today",
+        lambda: date(2026, 5, 20),
+    )
+
+    heading = build_transaction_heading(
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.TRANSACTION_LIST,
+                filters=Filters(transaction_type="debit", counterparty=["tolu"]),
+                time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 20)),
+            )
+        ),
+        locale="en",
+    )
+
+    assert heading == "*Payments to Tolu* — This Month"
 
 
 @pytest.mark.asyncio

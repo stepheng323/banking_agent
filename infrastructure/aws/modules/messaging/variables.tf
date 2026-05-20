@@ -49,6 +49,6 @@ variable "queue_filter_policies" {
   type        = map(string)
   default = {
     "transactions" = "{\"domain\":[\"transaction\",\"funding\",\"payout\",\"refund\"]}"
-    "receipts"     = "{\"domain\":[\"receipt\"]}"
+    "receipts"     = "{\"domain\":[\"receipt\",\"notification\"]}"
   }
 }

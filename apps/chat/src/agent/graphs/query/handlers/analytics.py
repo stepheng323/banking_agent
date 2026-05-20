@@ -53,27 +53,30 @@ async def handle_analytics(
         if count == 0:
             tx_type = contract.filters.transaction_type if contract.filters else None
             timeframe = _build_timeframe_suffix(contract, language)
+            target_description = _build_sum_target_description(contract, language)
             if tx_type == "credit":
                 return QueryResult(
-                    summary_text=render_message("query.analytics.no_income", language, {"timeframe": timeframe})
+                    summary_text=render_message(
+                        "query.analytics.no_income",
+                        language,
+                        {"target_description": target_description, "timeframe": timeframe},
+                    )
                 )
             if tx_type == "debit":
+                summary_key = (
+                    "query.analytics.no_sent"
+                    if contract.filters and _first_filter_value(contract.filters.counterparty)
+                    else "query.analytics.no_spending"
+                )
                 return QueryResult(
-                    summary_text=render_message("query.analytics.no_spending", language, {"timeframe": timeframe})
+                    summary_text=render_message(
+                        summary_key,
+                        language,
+                        {"target_description": target_description, "timeframe": timeframe},
+                    )
                 )
             return QueryResult(summary_text=render_message("query.format.no_matching_transactions", language))
-        merchant = contract.filters.merchant[0] if contract.filters and contract.filters.merchant else None
-        account_filter = contract.filters.account_filter if contract.filters and contract.filters.account_filter else None
-
-        target_description = (
-            render_message("query.analytics.target_merchant", language, {"merchant": merchant}) if merchant else ""
-        )
-        if account_filter:
-            target_description += render_message(
-                "query.analytics.target_account",
-                language,
-                {"account": account_filter},
-            )
+        target_description = _build_sum_target_description(contract, language)
         timeframe = _build_timeframe_suffix(contract, language)
 
         items = [
@@ -93,7 +96,7 @@ async def handle_analytics(
 
         return QueryResult(
             summary_text=render_message(
-                "query.analytics.summary_spent",
+                _sum_summary_key(contract),
                 language,
                 {
                     "total": f"{total:,.0f}",
@@ -269,6 +272,67 @@ def _build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
             },
         )
     return render_message("query.analytics.timeframe_default", locale)
+
+
+def _build_sum_target_description(query: QueryExecutionContract, locale: str) -> str:
+    filters = query.filters
+    if filters is None:
+        return ""
+
+    parts: list[str] = []
+    counterparty = _display_filter_value(filters.counterparty)
+    if counterparty:
+        if filters.transaction_type == "debit":
+            parts.append(
+                render_message("query.analytics.target_counterparty_debit", locale, {"counterparty": counterparty})
+            )
+        elif filters.transaction_type == "credit":
+            parts.append(
+                render_message("query.analytics.target_counterparty_credit", locale, {"counterparty": counterparty})
+            )
+        else:
+            parts.append(render_message("query.analytics.target_counterparty", locale, {"counterparty": counterparty}))
+    elif filters.merchant:
+        merchant = _first_filter_value(filters.merchant)
+        if merchant:
+            parts.append(render_message("query.analytics.target_merchant", locale, {"merchant": merchant}))
+
+    account_filter = (filters.account_filter or "").strip()
+    if account_filter:
+        parts.append(render_message("query.analytics.target_account", locale, {"account": account_filter}))
+
+    return "".join(parts)
+
+
+def _sum_summary_key(query: QueryExecutionContract) -> str:
+    filters = query.filters
+    if filters is None:
+        return "query.analytics.summary_spent"
+
+    if filters.transaction_type == "credit":
+        return "query.analytics.summary_received"
+
+    if filters.transaction_type == "debit" and _first_filter_value(filters.counterparty):
+        return "query.analytics.summary_sent"
+
+    return "query.analytics.summary_spent"
+
+
+def _first_filter_value(values: list[str] | None) -> str | None:
+    if not values:
+        return None
+    for value in values:
+        cleaned = value.strip()
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _display_filter_value(values: list[str] | None) -> str | None:
+    cleaned = _first_filter_value(values)
+    if cleaned and cleaned == cleaned.lower():
+        return cleaned.title()
+    return cleaned
 
 
 def _transaction_label(count: int, locale: str) -> str:

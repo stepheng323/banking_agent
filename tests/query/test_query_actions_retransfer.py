@@ -44,7 +44,41 @@ async def test_retransfer_builds_handoff_payload_for_transfer_item() -> None:
     assert handoff["recipient_name"] == "Tolu"
     assert handoff["recipient_account"] == "8162511023"
     assert handoff["recipient_bank_name"] == "Opay"
+    assert "recipient_bank_code" not in handoff
+
+
+@pytest.mark.asyncio
+async def test_retransfer_preserves_bank_code_only_with_provider_metadata() -> None:
+    item = QueryResultItem(
+        id="txn-1",
+        description="Transfer to Tolu",
+        amount=5000.0,
+        date=date.today(),
+        metadata={
+            "transaction_type": "transfer",
+            "recipient_name": "Tolu",
+            "recipient_account_number": "8162511023",
+            "recipient_bank_name": "Opay",
+            "recipient_bank_code": "999992",
+            "recipient_bank_code_provider": "mono",
+            "recipient_resolution_provider": "mono",
+        },
+    )
+    query_result = QueryResult(summary_text="single", items=[item], context_key="ctx-1")
+
+    result = await handle_drill_down(
+        {
+            "language": "en",
+            "query_result": query_result,
+            "drill_down_action": "re_transfer",
+            "selected_item_index": 0,
+        }
+    )
+
+    handoff = result.patch["query_transfer_handoff"]
     assert handoff["recipient_bank_code"] == "999992"
+    assert handoff["recipient_bank_code_provider"] == "mono"
+    assert handoff["recipient_resolution_provider"] == "mono"
 
 
 @pytest.mark.asyncio

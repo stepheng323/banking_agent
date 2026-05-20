@@ -22,6 +22,7 @@ from apps.chat.src.agent.graphs.transfer.nodes.confirmation import ConfirmationS
 from apps.chat.src.agent.graphs.transfer.nodes.execution import ExecutionStep
 from apps.chat.src.agent.graphs.transfer.nodes.extraction import ExtractionStep
 from apps.chat.src.agent.graphs.transfer.nodes.funding import FundingStep
+from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import PayoutPreparationStep
 from apps.chat.src.agent.graphs.transfer.nodes.resolver import ResolutionStep
 from apps.chat.src.agent.graphs.transfer.nodes.security import AuthorizationStep
 from apps.chat.src.agent.graphs.transfer.nodes.selection import SourceSelectionStep
@@ -63,6 +64,8 @@ class TransferWorkerContext:
     extractor: Any
     resolver_provider: Any
     bank_cache: Any
+    payout_resolver_provider: Any | None
+    payout_bank_cache: Any | None
     publisher: Any
     transaction_repo: TransactionRepository
     dd_provider: Any | None
@@ -88,12 +91,16 @@ class TransferWorker:
         transaction_repo: TransactionRepository,
         dd_provider: Any | None = None,
         redis_client: Any | None = None,
+        payout_resolver_provider: Any | None = None,
+        payout_bank_cache: Any | None = None,
     ) -> None:
         self.validation_service = validation_service or ValidationService()
         self.publisher = publisher
         self.extractor = extractor
         self.resolver_provider = resolver_provider
         self.bank_cache = bank_cache
+        self.payout_resolver_provider = payout_resolver_provider
+        self.payout_bank_cache = payout_bank_cache
         self.transaction_repo = transaction_repo
         self.dd_provider = dd_provider
         self.redis_client = redis_client
@@ -132,6 +139,8 @@ class TransferWorker:
             extractor=self.extractor,
             resolver_provider=self.resolver_provider,
             bank_cache=self.bank_cache,
+            payout_resolver_provider=self.payout_resolver_provider,
+            payout_bank_cache=self.payout_bank_cache,
             publisher=self.publisher,
             transaction_repo=self.transaction_repo,
             dd_provider=self.dd_provider,
@@ -157,6 +166,7 @@ class TransferWorker:
             SourceSelectionStep(),
             ValidationStep(),
             FundingStep(),
+            PayoutPreparationStep(),
             ConfirmationStep(),
             AuthorizationStep(),
         ]

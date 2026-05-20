@@ -97,6 +97,7 @@ class ExecutionStep(TransferStep):
                                 recipient_bank_name=data.recipient_bank_name or "",
                                 recipient_name=data.recipient_resolved_name or data.recipient_name or "Recipient",
                                 narration=narration,
+                                payout_provider="flutterwave",
                                 status=FundedTransferStatusEnum.FUNDING_PENDING.value,
                                 idempotency_key=key,
                             )
@@ -168,6 +169,8 @@ class ExecutionStep(TransferStep):
                             "recipient": {
                                 "account_number": data.recipient_account,
                                 "bank_code": data.recipient_bank_code,
+                                "bank_code_provider": data.recipient_bank_code_provider,
+                                "resolution_provider": data.recipient_resolution_provider,
                                 "name": data.recipient_resolved_name or data.recipient_name,
                                 "bank_name": data.recipient_bank_name,
                             },

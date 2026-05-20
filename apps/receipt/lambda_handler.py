@@ -13,7 +13,7 @@ class ReceiptWorkerLambdaHandler(BaseSQSHandler):
     """Routes receipt-domain jobs based on queue contract."""
 
     async def process_record(self, payload: dict, deps: Any) -> None:
-        receipt_consumer = deps
+        receipt_consumer, notification_consumer = deps
 
         context = self.get_active_record_context()
         domain = context.get("domain")
@@ -22,6 +22,8 @@ class ReceiptWorkerLambdaHandler(BaseSQSHandler):
 
         if domain == "receipt":
             await receipt_consumer.process_job(payload)
+        elif domain == "notification":
+            await notification_consumer.process_job(payload)
         else:
             raise ValueError(f"receipt_worker_unknown_route domain={domain} queue_name={queue_name}")
 

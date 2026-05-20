@@ -143,8 +143,8 @@
                   type="password"
                   id="pinInput"
                   class="mini-input setup-pin"
-                  placeholder="Transaction PIN (4 digits)"
-                  maxlength="4"
+                  placeholder="Transaction PIN (6 digits)"
+                  maxlength="6"
                   pattern="[0-9]*"
                   inputmode="numeric"
                 />
@@ -201,6 +201,7 @@
 
       const params = new URLSearchParams(window.location.search);
       const bootstrapNonce = params.get("boot") || "";
+      const PIN_LENGTH = 6;
       let flowToken = "";
       let isLinkingFlow = false;
 
@@ -638,10 +639,10 @@
       function checkCompleteForm() {
         const email = emailInput.value.trim();
         const address = addressInput.value.trim();
-        const pin = pinInput.value.replace(/\D/g, "");
+        const pin = pinInput.value.replace(/\D/g, "").slice(0, PIN_LENGTH);
         pinInput.value = pin;
 
-        updateMainButton("Finish Setup", false, true, !!email && !!address && pin.length === 4);
+        updateMainButton("Finish Setup", false, true, !!email && !!address && pin.length === PIN_LENGTH);
       }
 
       emailInput.addEventListener("input", checkCompleteForm);

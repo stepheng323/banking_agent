@@ -77,6 +77,9 @@ class PayoutJobPayload(TypedDict):
     amount: float
     recipient_account: str
     recipient_bank_code: str
+    recipient_bank_code_provider: NotRequired[str | None]
+    recipient_resolution_provider: NotRequired[str | None]
+    payout_provider: NotRequired[str | None]
     idempotency_key: str
     narration: NotRequired[str | None]
 

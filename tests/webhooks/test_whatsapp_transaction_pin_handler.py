@@ -73,7 +73,7 @@ def test_parse_transaction_pin_flow_token_accepts_transaction_prefix_without_typ
 @pytest.mark.asyncio
 async def test_whatsapp_transaction_pin_rejects_missing_flow_token() -> None:
     response = await handle_transaction_pin(
-        {"pin": "1234"},
+        {"pin": "123456"},
         "",
         False,
         b"",
@@ -96,7 +96,7 @@ async def test_whatsapp_transaction_pin_rejects_missing_flow_token() -> None:
 @pytest.mark.asyncio
 async def test_whatsapp_transaction_pin_rejects_unknown_flow_token() -> None:
     response = await handle_transaction_pin(
-        {"pin": "1234"},
+        {"pin": "123456"},
         "unknown-pin-token",
         False,
         b"",
@@ -123,7 +123,7 @@ async def test_whatsapp_transaction_pin_success_does_not_echo_pin(monkeypatch: p
     monkeypatch.setattr(handler_module, "AuthorizationService", lambda redis_client=None: auth_service)
 
     response = await handle_transaction_pin(
-        {"pin": "1234"},
+        {"pin": "123456"},
         "transfer-pin-idem-1-2348162511023",
         False,
         b"",
@@ -140,7 +140,7 @@ async def test_whatsapp_transaction_pin_success_does_not_echo_pin(monkeypatch: p
         "success": "true",
     }
     assert "pin" not in params
-    assert auth_service.verify_calls == [("2348162511023", "1234", "idem-1", "transfer")]
+    assert auth_service.verify_calls == [("2348162511023", "123456", "idem-1", "transfer")]
     assert auth_service.stored == [("idem-1", auth_service.result)]
     assert publisher.published[0]["message"]["event_type"] == "pin_verified"
 
@@ -160,7 +160,7 @@ async def test_whatsapp_transaction_pin_rejects_mismatched_provider_identity(
     monkeypatch.setattr(handler_module, "AuthorizationService", lambda redis_client=None: auth_service)
 
     response = await handle_transaction_pin(
-        {"pin": "1234"},
+        {"pin": "123456"},
         "transfer-pin-idem-1-2348162511023",
         False,
         b"",

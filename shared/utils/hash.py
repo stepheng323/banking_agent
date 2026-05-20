@@ -8,6 +8,7 @@ bcrypt is designed to be computationally expensive to resist brute force attacks
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+TRANSACTION_PIN_LENGTH = 6
 
 
 def _bcrypt_truncate(value: str) -> str:
@@ -58,5 +59,5 @@ def verify_hash(value: str, stored_hash: str) -> bool:
 
 
 def is_valid_pin_format(pin: str) -> bool:
-    """A PIN is valid if it is a string of exactly 4 digits."""
-    return isinstance(pin, str) and len(pin) == 4 and pin.isdigit()
+    """A transaction PIN is valid if it is exactly six numeric digits."""
+    return isinstance(pin, str) and len(pin) == TRANSACTION_PIN_LENGTH and pin.isdigit()

@@ -58,6 +58,8 @@ class TransferPayload(BaseModel):
     recipient_account: str | None = None
     recipient_bank_name: str | None = None
     recipient_bank_code: str | None = None
+    recipient_bank_code_provider: str | None = None
+    recipient_resolution_provider: str | None = None
     recipient_reference: dict[str, Any] | None = None
     beneficiary_id: str | None = None
 

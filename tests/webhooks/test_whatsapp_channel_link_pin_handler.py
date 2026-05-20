@@ -24,7 +24,7 @@ async def test_whatsapp_channel_link_pin_success_notifies_requested_telegram(
 ) -> None:
     async def _complete_channel_link_with_pin(**kwargs: Any) -> ChannelLinkPinResult:
         assert kwargs["flow_token"] == "channel-link-pin-channel-link-token"
-        assert kwargs["pin"] == "1234"
+        assert kwargs["pin"] == "123456"
         assert kwargs["authorizing_channel"] == "whatsapp"
         assert kwargs["authorizing_channel_user_id"] == "2348162511023"
         return ChannelLinkPinResult(
@@ -39,7 +39,7 @@ async def test_whatsapp_channel_link_pin_success_notifies_requested_telegram(
     monkeypatch.setattr(handler_module, "TelegramClient", lambda: telegram_client)
 
     response = await handle_channel_link_pin(
-        {"pin": "1234"},
+        {"pin": "123456"},
         "channel-link-pin-channel-link-token",
         False,
         b"",
@@ -74,7 +74,7 @@ async def test_whatsapp_channel_link_pin_invalid_pin_stays_on_pin_screen(
     monkeypatch.setattr(handler_module, "complete_channel_link_with_pin", _complete_channel_link_with_pin)
 
     response = await handle_channel_link_pin(
-        {"pin": "0000"},
+        {"pin": "000000"},
         "channel-link-pin-channel-link-token",
         False,
         b"",
@@ -106,7 +106,7 @@ async def test_whatsapp_channel_link_pin_requires_provider_identity_outside_loca
     monkeypatch.setattr(session_owner_module.settings.runtime, "app_env", "production")
 
     response = await handle_channel_link_pin(
-        {"pin": "1234"},
+        {"pin": "123456"},
         "channel-link-pin-channel-link-token",
         False,
         b"",

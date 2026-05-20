@@ -1,4 +1,4 @@
-"""Redis Streams publisher for chat-critical ingress topics."""
+"""Redis Streams publisher for logical queue topics."""
 
 import json
 from typing import Any

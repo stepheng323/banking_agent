@@ -1,0 +1,316 @@
+{
+  "version": "7.0",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "BVN_ENTRY": [
+      "METHOD_SELECTION"
+    ],
+    "METHOD_SELECTION": [
+      "OTP_VERIFICATION"
+    ],
+    "OTP_VERIFICATION": [
+      "ACCOUNT_SELECTION"
+    ],
+    "ACCOUNT_SELECTION": [
+      "PIN_ENTRY"
+    ],
+    "PIN_ENTRY": [
+      "SUCCESS"
+    ]
+  },
+  "screens": [
+    {
+      "id": "BVN_ENTRY",
+      "title": "Link Your Account",
+      "terminal": false,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Enter your BVN"
+          },
+          {
+            "type": "TextBody",
+            "text": "Your BVN helps us verify your identity and fetch your linked bank accounts."
+          },
+          {
+            "type": "TextInput",
+            "name": "bvn",
+            "label": "BVN (11 digits)",
+            "input-type": "number",
+            "required": true,
+            "min-chars": 11,
+            "max-chars": 11
+          },
+          {
+            "type": "Footer",
+            "label": "Continue",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "bvn": "${form.bvn}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "METHOD_SELECTION",
+      "title": "Verify Your Identity",
+      "terminal": false,
+      "data": {
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "phone",
+              "title": "SMS to 0818***6496"
+            },
+            {
+              "id": "email",
+              "title": "Email to tom***@gmail.com"
+            }
+          ]
+        },
+        "bvn": {
+          "type": "string",
+          "__example__": "12345678901"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "How would you like to receive your verification code?"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "method",
+            "label": "Verification Method",
+            "data-source": "${data.methods}",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Send Code",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "method": "${form.method}",
+                "bvn": "${data.bvn}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "OTP_VERIFICATION",
+      "title": "Enter Verification Code",
+      "terminal": false,
+      "data": {
+        "bvn": {
+          "type": "string",
+          "__example__": "12345678901"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Enter the 6-digit code"
+          },
+          {
+            "type": "TextBody",
+            "text": "We sent a verification code to your selected method."
+          },
+          {
+            "type": "TextInput",
+            "name": "otp",
+            "label": "Verification Code",
+            "input-type": "number",
+            "required": true,
+            "min-chars": 6,
+            "max-chars": 6
+          },
+          {
+            "type": "Footer",
+            "label": "Verify",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "otp": "${form.otp}",
+                "bvn": "${data.bvn}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ACCOUNT_SELECTION",
+      "title": "Select Account",
+      "terminal": false,
+      "data": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "011_1234567890",
+              "title": "First Bank - 1234567890"
+            },
+            {
+              "id": "057_9876543210",
+              "title": "Zenith Bank - 9876543210"
+            }
+          ]
+        },
+        "bvn": {
+          "type": "string",
+          "__example__": "12345678901"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Select your account"
+          },
+          {
+            "type": "TextBody",
+            "text": "Choose the bank account you'd like to use with Fusepay."
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "selected_account",
+            "label": "Bank Account",
+            "data-source": "${data.accounts}",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Continue",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "selected_account": "${form.selected_account}",
+                "bvn": "${data.bvn}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIN_ENTRY",
+      "title": "Complete Setup",
+      "terminal": false,
+      "data": {
+        "bvn": {
+          "type": "string",
+          "__example__": "12345678901"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Complete your profile"
+          },
+          {
+            "type": "TextInput",
+            "name": "email",
+            "label": "Email Address",
+            "input-type": "email",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "address",
+            "label": "Address",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "pin",
+            "label": "Transaction PIN (6 digits)",
+            "input-type": "password",
+            "required": true,
+            "min-chars": 6,
+            "max-chars": 6
+          },
+          {
+            "type": "Footer",
+            "label": "Complete Setup",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "pin": "${form.pin}",
+                "email": "${form.email}",
+                "address": "${form.address}",
+                "bvn": "${data.bvn}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUCCESS",
+      "title": "Welcome!",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "\\ud83c\\udf89 You're all set!"
+          },
+          {
+            "type": "TextBody",
+            "text": "Your account is being set up. You'll receive a message shortly with instructions to activate payments on your account."
+          },
+          {
+            "type": "Footer",
+            "label": "Done",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {}
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

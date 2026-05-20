@@ -131,7 +131,7 @@ async def test_process_flow_request_falls_back_to_data_flow_token(monkeypatch: p
                 "version": "3.0",
                 "action": "data_exchange",
                 "screen": "Pin",
-                "data": {"pin": "1234", "flow_token": "transfer-pin-idem-1-2348162511023"},
+                "data": {"pin": "123456", "flow_token": "transfer-pin-idem-1-2348162511023"},
             }
         )
     )
@@ -212,7 +212,7 @@ async def test_flow_webhook_infers_pin_screen_for_screenless_pin_submit(
             {
                 "version": "3.0",
                 "action": "data_exchange",
-                "data": {"pin": "1234", "flow_token": "transfer-pin-idem-1-2348162511023"},
+                "data": {"pin": "123456", "flow_token": "transfer-pin-idem-1-2348162511023"},
             }
         )
     )
@@ -220,7 +220,7 @@ async def test_flow_webhook_infers_pin_screen_for_screenless_pin_submit(
     assert response.status_code == 200
     assert json.loads(response.body) == {"ok": True}
     assert len(calls) == 1
-    assert calls[0]["args"][0] == {"pin": "1234", "flow_token": "transfer-pin-idem-1-2348162511023"}
+    assert calls[0]["args"][0] == {"pin": "123456", "flow_token": "transfer-pin-idem-1-2348162511023"}
     assert calls[0]["args"][1] == "transfer-pin-idem-1-2348162511023"
 
 
@@ -236,7 +236,7 @@ async def test_process_flow_request_extracts_provider_whatsapp_identity(
             {
                 "screen": "Pin",
                 "contacts": [{"wa_id": "2348162511023"}],
-                "data": {"pin": "1234", "wa_id": "0000000000"},
+                "data": {"pin": "123456", "wa_id": "0000000000"},
                 "flow_token": "channel-link-pin-channel-link-token",
             }
         )
@@ -268,7 +268,7 @@ async def test_flow_webhook_channel_link_pin_passes_provider_whatsapp_identity(
                 "version": "3.0",
                 "screen": "Pin",
                 "contacts": [{"wa_id": "2348162511023"}],
-                "data": {"pin": "1234"},
+                "data": {"pin": "123456"},
                 "flow_token": "channel-link-pin-channel-link-token",
             }
         )
@@ -278,7 +278,7 @@ async def test_flow_webhook_channel_link_pin_passes_provider_whatsapp_identity(
     assert json.loads(response.body) == {"ok": True}
     assert len(calls) == 1
     assert calls[0]["args"][:5] == (
-        {"pin": "1234"},
+        {"pin": "123456"},
         "channel-link-pin-channel-link-token",
         False,
         b"",
@@ -298,7 +298,7 @@ async def test_process_flow_request_does_not_trust_user_controlled_data_identity
         _json_request(
             {
                 "screen": "Pin",
-                "data": {"pin": "1234", "wa_id": "2348162511023"},
+                "data": {"pin": "123456", "wa_id": "2348162511023"},
                 "flow_token": "channel-link-pin-channel-link-token",
             }
         )

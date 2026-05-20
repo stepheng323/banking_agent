@@ -109,101 +109,11 @@ class BeneficiaryWorker:
             )
 
     async def _add_beneficiary(self, user_id: str, payload: dict, context: dict) -> TransactionResult:
+        del user_id, payload
         locale = LocaleManager.normalize(context.get("language")).value
-        name = payload.get("name") or payload.get("account_name")
-        alias = payload.get("alias")
-        account_number = payload.get("account_number")
-        bank_code = payload.get("bank_code")
-        bank_name = payload.get("bank_name")
-
-        if not account_number or (not bank_code and not bank_name):
-            return TransactionResult(
-                outcome=TransactionOutcome.FAILED,
-                error=render_message("beneficiary.add.missing_account_or_bank", locale),
-            )
-
-        provider = context.get("resolver_provider")
-        resolved_name = None
-
-        if provider:
-            if not bank_code and bank_name:
-                try:
-                    banks_resp = await provider.get_banks()
-                    if banks_resp.success:
-                        target = bank_name.lower()
-                        for bank in banks_resp.banks:
-                            if bank.name.lower() == target or target in bank.name.lower():
-                                bank_code = bank.code
-                                bank_name = bank.name
-                                break
-                except Exception:
-                    logger.warning("bank_resolution_failed")
-
-            if account_number and bank_code:
-                try:
-                    resolved = await provider.resolve_account(account_number, bank_code)
-                    if resolved.success and resolved.account:
-                        resolved_name = resolved.account.account_name
-                        if resolved.account.bank_code:
-                            bank_code = resolved.account.bank_code
-                except Exception as e:
-                    logger.warning("account_resolution_failed", error=str(e))
-                    return TransactionResult(
-                        outcome=TransactionOutcome.FAILED,
-                        error=render_message(
-                            "beneficiary.add.account_verification_failed",
-                            locale,
-                            {"account_number": account_number},
-                        ),
-                    )
-
-            if not resolved_name and provider:
-                return TransactionResult(
-                    outcome=TransactionOutcome.FAILED,
-                    error=render_message(
-                        "beneficiary.add.account_lookup_failed",
-                        locale,
-                        {
-                            "account_number": account_number,
-                            "bank_name": bank_name or "",
-                        },
-                    ),
-                )
-        final_account_name = resolved_name or name or ""
-
-        async with UnitOfWork() as uow:
-            uow.beneficiaries.create(
-                user_id=user_id,
-                account_number=account_number,
-                bank_code=bank_code or "",  # Fallback
-                bank_name=bank_name or render_message("beneficiary.common.bank_unknown", locale),
-                account_name=final_account_name,
-                alias=alias
-                or name
-                or final_account_name
-                or render_message("beneficiary.suggestion.default_alias", locale),
-                beneficiary_type="transfer",
-            )
-            uow.commit()
-
-        phone_number = context.get("phone_number")
-        if phone_number:
-            from shared.cache.redis_client import RedisClient
-            from shared.cache.user_data import UserDataCache
-
-            await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
-
-        display_name = alias or final_account_name or render_message("beneficiary.common.default_name", locale)
         return TransactionResult(
-            outcome=TransactionOutcome.OK,
-            response=render_message(
-                "beneficiary.add.success",
-                locale,
-                {
-                    "display_name": display_name,
-                    "account_name": final_account_name,
-                },
-            ),
+            outcome=TransactionOutcome.FAILED,
+            error=render_message("beneficiary.add.manual_disabled", locale),
         )
 
     async def _delete_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
@@ -236,8 +146,8 @@ class BeneficiaryWorker:
                     ),
                 )
 
-            uow.beneficiaries.delete(match.id)
-            uow.commit()
+            await uow.beneficiaries.delete(match)
+            await uow.commit()
 
         phone_number = context.get("phone_number")
         if phone_number:

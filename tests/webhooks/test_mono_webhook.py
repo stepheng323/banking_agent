@@ -246,6 +246,46 @@ class _NoopPublisher:
         return None
 
 
+class _CapturePublisher:
+    def __init__(self) -> None:
+        self.published: list[tuple[str, dict]] = []
+
+    async def publish(self, topic: str, message: dict) -> None:
+        self.published.append((topic, message))
+
+
+@pytest.mark.asyncio
+async def test_mono_webhook_queues_payout_with_provider_metadata() -> None:
+    publisher = _CapturePublisher()
+    service = MonoWebhookService(publisher=publisher)  # type: ignore[arg-type]
+    transfer = SimpleNamespace(
+        id="funded-1",
+        amount=5000,
+        recipient_account_number="8162511023",
+        recipient_bank_code="000014",
+        payout_provider="flutterwave",
+        idempotency_key="idem-1",
+    )
+
+    await service._queue_payout(transfer)  # type: ignore[arg-type]
+
+    assert publisher.published == [
+        (
+            "payout.process",
+            {
+                "funded_transfer_id": "funded-1",
+                "amount": 5000.0,
+                "recipient_account": "8162511023",
+                "recipient_bank_code": "000014",
+                "recipient_bank_code_provider": "flutterwave",
+                "recipient_resolution_provider": "flutterwave",
+                "payout_provider": "flutterwave",
+                "idempotency_key": "idem-1",
+            },
+        )
+    ]
+
+
 class TestMonoWebhookRefundGate:
     @pytest.mark.asyncio
     async def test_any_failed_step_triggers_refund_even_if_latest_status_is_confirmed(self):

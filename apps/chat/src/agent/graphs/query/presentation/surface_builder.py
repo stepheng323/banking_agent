@@ -34,6 +34,8 @@ def build_query_transfer_handoff_payload(item: QueryResultItem) -> dict[str, Any
     ).strip()
     recipient_bank_name = str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip()
     recipient_bank_code = str(metadata.get("recipient_bank_code") or "").strip()
+    recipient_bank_code_provider = str(metadata.get("recipient_bank_code_provider") or "").strip().lower()
+    recipient_resolution_provider = str(metadata.get("recipient_resolution_provider") or "").strip().lower()
     tx_type = str(metadata.get("transaction_type") or metadata.get("type") or "").strip().lower()
     if not recipient_name:
         return None
@@ -47,9 +49,12 @@ def build_query_transfer_handoff_payload(item: QueryResultItem) -> dict[str, Any
         "recipient_name": recipient_name,
         "recipient_account": recipient_account or None,
         "recipient_bank_name": recipient_bank_name or None,
-        "recipient_bank_code": recipient_bank_code or None,
         "skip_extraction": True,
     }
+    if recipient_bank_code and recipient_bank_code_provider:
+        payload["recipient_bank_code"] = recipient_bank_code
+        payload["recipient_bank_code_provider"] = recipient_bank_code_provider
+        payload["recipient_resolution_provider"] = recipient_resolution_provider or recipient_bank_code_provider
     return {key: value for key, value in payload.items() if value is not None and value != ""}
 
 
@@ -82,7 +87,12 @@ def build_focus_referent(item: QueryResultItem, *, query_contract: QueryExecutio
         ).strip()
         or None,
         recipient_bank_name=str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip() or None,
-        recipient_bank_code=str(metadata.get("recipient_bank_code") or "").strip() or None,
+        recipient_bank_code=(
+            str(metadata.get("recipient_bank_code") or "").strip()
+            if str(metadata.get("recipient_bank_code_provider") or "").strip()
+            else None
+        )
+        or None,
         recipient_resolved_name=str(metadata.get("recipient_resolved_name") or recipient_name or label).strip() or None,
     )
 

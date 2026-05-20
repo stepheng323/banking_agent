@@ -13,6 +13,15 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _clean_provider(value: Any, default: str = "mono") -> str:
+    text = str(value or default).strip().lower()
+    return text or default
+
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
 class BeneficiarySuggestionService:
     """Suggest beneficiaries across transfer, airtime, and data flows."""
 
@@ -71,17 +80,36 @@ class BeneficiarySuggestionService:
                 if beneficiary_type == "transfer":
                     if recipient_data.get("is_self") or recipient_data.get("is_own_account"):
                         return None
-                    account_number = recipient_data.get("account_number")
-                    bank_code = recipient_data.get("bank_code")
-                    recipient_name = recipient_data.get("name", "")
+                    account_number = _clean_text(recipient_data.get("account_number"))
+                    bank_code = _clean_text(recipient_data.get("bank_code"))
+                    bank_name = _clean_text(recipient_data.get("bank_name"))
+                    recipient_name = _clean_text(recipient_data.get("name"))
+                    bank_code_provider = _clean_provider(
+                        recipient_data.get("recipient_bank_code_provider")
+                        or recipient_data.get("bank_code_provider")
+                    )
+                    resolution_provider = _clean_provider(
+                        recipient_data.get("recipient_resolution_provider")
+                        or recipient_data.get("resolution_provider")
+                        or bank_code_provider
+                    )
 
-                    if not account_number or not bank_code:
+                    if not account_number or not (bank_code or bank_name):
+                        return None
+                    if bank_code_provider == "mono" and not bank_code:
+                        return None
+                    if bank_code_provider != "mono" and not bank_name:
                         return None
 
                     if has_beneficiary_repo:
                         try:
+                            duplicate_bank_code = bank_code if bank_code_provider == "mono" else None
                             exists_in_beneficiaries = not await uow.beneficiaries.should_suggest_beneficiary(
-                                user_id, account_number, bank_code, beneficiary_type="transfer"
+                                user_id,
+                                account_number,
+                                duplicate_bank_code,
+                                bank_name=bank_name,
+                                beneficiary_type="transfer",
                             )
                         except Exception:
                             exists_in_beneficiaries = False
@@ -96,9 +124,9 @@ class BeneficiarySuggestionService:
                         suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
                         masked_acct = f"…{str(account_number)[-4:]}"
                         recipient_display = recipient_name or masked_acct
-                        bank_display = recipient_data.get("bank_name", "") or bank_code
+                        bank_display = bank_name or bank_code
 
-                        original_alias = recipient_data.get("original_alias", "")
+                        original_alias = _clean_text(recipient_data.get("original_alias"))
 
                         suggestion_context = {
                             "beneficiary_type": "transfer",
@@ -106,7 +134,9 @@ class BeneficiarySuggestionService:
                             "recipient_name": recipient_name,
                             "account_number": account_number,
                             "bank_code": bank_code,
-                            "bank_name": recipient_data.get("bank_name", ""),
+                            "bank_name": bank_name,
+                            "recipient_bank_code_provider": bank_code_provider,
+                            "recipient_resolution_provider": resolution_provider,
                             "alias_suggested": original_alias or recipient_name or "",
                             "original_alias": original_alias,
                         }
@@ -262,10 +292,12 @@ class BeneficiarySuggestionService:
                 )
 
                 if beneficiary_type == "transfer":
+                    bank_code_provider = _clean_provider(data.get("recipient_bank_code_provider"))
+                    bank_code = _clean_text(data.get("bank_code")) if bank_code_provider == "mono" else None
                     await uow.beneficiaries.create(
                         user_id=user_id,
                         account_number=data["account_number"],
-                        bank_code=data["bank_code"],
+                        bank_code=bank_code,
                         bank_name=data["bank_name"],
                         account_name=data.get("recipient_name", ""),
                         alias=final_alias,

@@ -470,6 +470,9 @@ class MonoWebhookService:
                     "amount": float(transfer.amount),
                     "recipient_account": transfer.recipient_account_number,
                     "recipient_bank_code": transfer.recipient_bank_code,
+                    "recipient_bank_code_provider": transfer.payout_provider or "flutterwave",
+                    "recipient_resolution_provider": transfer.payout_provider or "flutterwave",
+                    "payout_provider": transfer.payout_provider or "flutterwave",
                     "idempotency_key": transfer.idempotency_key,
                 },
             )
