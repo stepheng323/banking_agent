@@ -11,10 +11,12 @@ class ParsedTelegramMessage(BaseModel):
     message_id: str | None = None
     chat_id: str = ""
     text: str = ""
-    type: str = ""  # "text" | "photo" | "audio" | "callback_query" | "web_app_data"
+    type: str = ""  # "text" | "photo" | "document_image" | "audio" | "callback_query" | "web_app_data"
 
     photo_file_id: str | None = None
+    document_file_id: str | None = None
     audio_file_id: str | None = None
+    mime_type: str | None = None
 
     callback_query_id: str | None = None
     callback_data: str | None = None
@@ -104,14 +106,33 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
             raw=update,
         )
 
+    document: dict[str, Any] | None = msg.get("document")
+    if document:
+        mime_type = str(document.get("mime_type") or "")
+        if mime_type.startswith("image/"):
+            return ParsedTelegramMessage(
+                message_id=str(msg.get("message_id", "")),
+                chat_id=chat_id,
+                text=msg.get("caption", ""),
+                type="document_image",
+                document_file_id=document.get("file_id"),
+                mime_type=mime_type,
+                quoted_message_id=quoted_message_id,
+                from_user_id=str(from_user.get("id", "")),
+                from_username=from_user.get("username"),
+                from_first_name=from_user.get("first_name"),
+                raw=update,
+            )
+
     audio: dict[str, Any] | None = msg.get("audio") or msg.get("voice")
     if audio:
         return ParsedTelegramMessage(
             message_id=str(msg.get("message_id", "")),
             chat_id=chat_id,
-            text="",
+            text=msg.get("caption", ""),
             type="audio",
             audio_file_id=audio.get("file_id"),
+            mime_type=audio.get("mime_type"),
             quoted_message_id=quoted_message_id,
             from_user_id=str(from_user.get("id", "")),
             from_username=from_user.get("username"),

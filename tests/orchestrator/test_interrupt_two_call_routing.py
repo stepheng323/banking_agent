@@ -31,7 +31,9 @@ class _CountingPlanner:
         self.last_context = context
         return self._route
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(
+        self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None
+    ) -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1
         return self._output
@@ -150,6 +152,53 @@ async def test_transaction_switch_target_skips_planner_call() -> None:
     task_ids = list(updates["tasks"].keys())
     assert len(task_ids) == 1
     assert updates["tasks"][task_ids[0]].type == "transfer"
+
+
+@pytest.mark.asyncio
+async def test_amount_interrupt_send_amount_reply_continues_same_transfer_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_amount_command",
+        phone_number="2348100000013",
+        channel="whatsapp",
+        last_message_text="Send 12k",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["amount"]}),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "recipient_account": "0760505261",
+                    "recipient_bank_name": "Opay",
+                    "recipient_resolved_name": "TOLU ADEDAYO",
+                    "suggested_amount": 10000,
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.96,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="would be wrong for amount-only continuation",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload["recipient_account"] == "0760505261"
+    assert updates["tasks"]["t1"].payload["suggested_amount"] == 10000
 
 
 @pytest.mark.asyncio

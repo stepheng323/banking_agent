@@ -42,6 +42,8 @@ Required app integrations:
 - `OPENAI_API_KEY`
 - `PLANNER_MODEL`
 - `INTERRUPT_ROUTER_MODEL` (optional, defaults to `PLANNER_MODEL`)
+- `MEDIA_IMAGE_MODEL` (optional, defaults to `gpt-5-mini`)
+- `AUDIO_TRANSCRIPTION_MODEL` (optional, defaults to `gpt-4o-mini-transcribe`)
 - `MONO_API_KEY`
 - `FLUTTERWAVE_SECRET_KEY`
 - `FLUTTERWAVE_USE_SANDBOX`
@@ -57,6 +59,7 @@ Required app integrations:
 - `CHAT_THREAD_LOCK_TTL_SECONDS` (optional, defaults to `120`)
 - `CHAT_THREAD_LOCK_RENEW_SECONDS` (optional, defaults to `30`)
 - `CHAT_THREAD_LOCK_WAIT_SECONDS` (optional, defaults to `60`)
+- `CHAT_LATEST_INBOUND_TTL_SECONDS` (optional, defaults to `300`)
 
 ## transaction-worker
 
@@ -80,6 +83,7 @@ Required integrations:
 - `TELEGRAM_MINI_APP_BASE_URL`
 - `WHATSAPP_FLOW_PRIVATE_KEY`
 - `S3_BUCKET_NAME`
+- `CHAT_PENDING_INPUT_PROMPT_DEBOUNCE_SECONDS` (optional, defaults to `1.5`)
 
 ## Host Requirements
 

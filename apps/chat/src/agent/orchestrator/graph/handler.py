@@ -628,6 +628,7 @@ class OrchestratorGraphHandler:
                     "outbox": outbox,  # Keep raw outbox for logging/debug if needed
                     "locale": resolved_locale,
                     "delivery_metadata": self._delivery_metadata_from_progress_snapshot(progress_snapshot),
+                    "suppress_empty_fallback": bool(final_state.get("suppress_empty_fallback")),
                 }
                 if context.channel == "whatsapp":
                     typing_visibility_delay_ms = settings.whatsapp.typing_indicator_delay_ms

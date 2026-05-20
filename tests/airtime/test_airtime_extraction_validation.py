@@ -4,6 +4,7 @@ import pytest
 
 from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
 from apps.chat.src.agent.graphs.airtime.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.airtime.nodes.selection import SourceSelectionStep
 from apps.chat.src.agent.graphs.airtime.nodes.validation import ValidationStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 
@@ -54,6 +55,83 @@ async def test_airtime_extraction_applies_network_correction_patch() -> None:
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch == {"network": "MTN"}
+
+
+@pytest.mark.asyncio
+async def test_airtime_extraction_applies_source_bank_name_patch() -> None:
+    step = ExtractionStep("buy me 2k airtime from my gtb")
+    payload = AirtimePayload(amount=2000)
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(
+        required_fields=[],
+        extractor=_ExtractorStub({"entities": {"source_bank_name": "GTB"}, "correction": None}),
+    )
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {"source_bank_name": "GTB", "is_self": True}
+
+
+@pytest.mark.asyncio
+async def test_airtime_extraction_source_bank_fallback_uses_linked_accounts() -> None:
+    step = ExtractionStep("buy me 2k airtime from my gtb")
+    payload = AirtimePayload(amount=2000)
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        accounts=[
+            {"bank_name": "Access Bank", "account_number": "0000000003"},
+            {"bank_name": "GTBank", "account_number": "0000000002"},
+        ],
+    )
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(
+        required_fields=[],
+        extractor=_ExtractorStub({"entities": {}, "correction": None}),
+    )
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {"is_self": True, "source_bank_name": "GTBank"}
+
+
+@pytest.mark.asyncio
+async def test_airtime_source_selection_honors_explicit_bank_over_default() -> None:
+    step = SourceSelectionStep()
+    payload = AirtimePayload(amount=2000, recipient_phone="08162511023", network="MTN", source_bank_name="GTB")
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        accounts=[
+            {
+                "id": "access-1",
+                "bank_name": "Access Bank",
+                "account_name": "Access Main",
+                "account_number": "0000000003",
+                "is_default": True,
+            },
+            {
+                "id": "gtb-1",
+                "bank_name": "GTBank",
+                "account_name": "GT Main",
+                "account_number": "0000000002",
+                "is_default": False,
+            },
+        ],
+    )
+
+    result = await step.execute(payload, context, AirtimeGates(), SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {
+        "source_account_id": "gtb-1",
+        "source_bank_name": "GTBank",
+        "source_account_name": "GT Main",
+        "source_account_number": "0000000002",
+    }
 
 
 @pytest.mark.asyncio

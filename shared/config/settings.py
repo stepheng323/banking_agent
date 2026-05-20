@@ -118,6 +118,9 @@ class Settings:
         self.interrupt_router_model: str = os.getenv("INTERRUPT_ROUTER_MODEL", self.planner_model).strip()
         self.semantic_router_model: str = os.getenv("SEMANTIC_ROUTER_MODEL", "gpt-5.4-nano").strip()
         self.extractor_model: str = os.getenv("EXTRACTOR_MODEL", "gpt-5.4-mini").strip()
+        self.media_image_model: str = os.getenv("MEDIA_IMAGE_MODEL", "gpt-5-mini").strip()
+        self.audio_transcription_model: str = os.getenv("AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
+        self.media_image_max_bytes: int = int(os.getenv("MEDIA_IMAGE_MAX_BYTES", "5000000"))
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
@@ -138,6 +141,10 @@ class Settings:
         self.chat_thread_lock_renew_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_RENEW_SECONDS", "30"))
         self.chat_thread_lock_wait_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_WAIT_SECONDS", "60"))
         self.chat_worker_max_concurrency: int = int(os.getenv("CHAT_WORKER_MAX_CONCURRENCY", "8"))
+        self.chat_pending_input_prompt_debounce_seconds: float = float(
+            os.getenv("CHAT_PENDING_INPUT_PROMPT_DEBOUNCE_SECONDS", "1.5")
+        )
+        self.chat_latest_inbound_ttl_seconds: int = int(os.getenv("CHAT_LATEST_INBOUND_TTL_SECONDS", "300"))
         self.sqs_wait_time_seconds: int = int(os.getenv("SQS_WAIT_TIME_SECONDS", "10"))
         self.sqs_visibility_timeout_seconds: int = int(os.getenv("SQS_VISIBILITY_TIMEOUT_SECONDS", "90"))
         self.sqs_poll_max_messages: int = int(os.getenv("SQS_POLL_MAX_MESSAGES", "5"))

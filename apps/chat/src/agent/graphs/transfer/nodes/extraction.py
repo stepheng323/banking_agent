@@ -29,8 +29,24 @@ logger = get_logger(__name__)
 
 _ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN = re.compile(r"^\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s+(?P<bank>.+?)\s*$")
 _ACCOUNT_BANK_BANK_FIRST_PATTERN = re.compile(r"^\s*(?P<bank>.+?)\s+(?P<account>(?:\d[\s,.\-]?){10,11})\s*$")
+_ACCOUNT_LABEL_PATTERN = re.compile(
+    r"\b(?:account\s*(?:number|no\.?|#)?|acct(?:\s*(?:number|no\.?))?|a/c)\b"
+    r"\s*[:\-]?\s*(?P<account>(?:\d[\s,.\-]?){10,11})(?!\d)",
+    re.IGNORECASE,
+)
+_BANK_LABEL_PATTERN = re.compile(
+    r"(?:^|\n)\s*bank(?:\s+name)?\s*[:\-]\s*(?P<bank>[^\n;]+)",
+    re.IGNORECASE,
+)
+_BANK_DETAIL_INLINE_NON_BANK_RE = re.compile(r"\b(?:send|transfer|pay|remit)\b", re.IGNORECASE)
 _AMOUNT_REPLY_PATTERN = re.compile(
     r"^\s*(?:₦|ngn)?\s*(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKhH]?)\s*$",
+    re.IGNORECASE,
+)
+_AMOUNT_COMMAND_REPLY_PATTERN = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:send|transfer|pay|remit)\s+"
+    r"(?:₦|ngn)?\s*(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKhH]?)\s*[.!?]?\s*$",
     re.IGNORECASE,
 )
 _SIMPLE_TRANSFER_PREFIX_RE = re.compile(
@@ -67,7 +83,14 @@ _CONFIRMATION_NARRATION_RE = re.compile(
     r")$",
     re.IGNORECASE,
 )
-
+_MEDIA_CAPTION_NARRATION_RE = re.compile(
+    r"^\s*Caption-derived transfer fields:\s*narration=(?P<narration>.+?)\.?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_MEDIA_CAPTION_AMOUNT_RE = re.compile(
+    r"^\s*Caption-derived transfer fields:\s*amount=(?P<amount>\d[\d,]*(?:\.\d+)?)\.?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def _canonical_beneficiary_id(value: str) -> str:
@@ -75,6 +98,27 @@ def _canonical_beneficiary_id(value: str) -> str:
     if text.startswith("bene:"):
         return text.split(":", 1)[1].strip()
     return text
+
+
+def _extract_media_caption_narration(user_message: str) -> str | None:
+    match = _MEDIA_CAPTION_NARRATION_RE.search(user_message or "")
+    if not match:
+        return None
+    narration = re.sub(r"\s+", " ", match.group("narration")).strip(" \t\r\n\"'`.,;:")
+    if not narration or len(narration) > 80:
+        return None
+    return narration
+
+
+def _extract_media_caption_amount(user_message: str) -> float | None:
+    match = _MEDIA_CAPTION_AMOUNT_RE.search(user_message or "")
+    if not match:
+        return None
+    try:
+        amount = float(match.group("amount").replace(",", ""))
+    except ValueError:
+        return None
+    return amount if amount > 0 else None
 
 
 def _render_beneficiary_retry_prompt(
@@ -185,8 +229,21 @@ def _parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
     if not text:
         return None
 
+    account_match = _ACCOUNT_LABEL_PATTERN.search(text)
+    bank_match = _BANK_LABEL_PATTERN.search(text)
+    if account_match and bank_match:
+        normalized_account = normalize_bank_account_number(account_match.group("account"))
+        bank_name = bank_match.group("bank").strip().strip("*_` ,.-")
+        if (
+            len(normalized_account) == 10
+            and bank_name
+            and not bank_name.isdigit()
+            and not _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name)
+        ):
+            return normalized_account, bank_name
+
     for pattern in (_ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN, _ACCOUNT_BANK_BANK_FIRST_PATTERN):
-        match = pattern.match(text)
+        match = pattern.match(re.sub(r"\s+", " ", text.replace("\n", " ")).strip())
         if not match:
             continue
 
@@ -197,6 +254,8 @@ def _parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
             continue
         if not bank_name or bank_name.isdigit():
             continue
+        if _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name):
+            continue
 
         return normalized_account, bank_name
 
@@ -205,7 +264,8 @@ def _parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
 
 def _parse_amount_input(user_message: str) -> float | None:
     """Parse shorthand amount replies like '20k', '20000', '₦20,000'."""
-    match = _AMOUNT_REPLY_PATTERN.match(user_message.strip())
+    text = user_message.strip()
+    match = _AMOUNT_REPLY_PATTERN.match(text) or _AMOUNT_COMMAND_REPLY_PATTERN.match(text)
     if not match:
         return None
 
@@ -583,9 +643,9 @@ class ExtractionStep(TransferStep):
                     outcome=TransactionOutcome.OK,
                     patch=_with_skip_patch(
                         {
-                        "amount": float(data.suggested_amount),
-                        "suggested_amount": None,
-                        "confirmation": {"confirmed": False},
+                            "amount": float(data.suggested_amount),
+                            "suggested_amount": None,
+                            "confirmation": {"confirmed": False},
                         }
                     ),
                 )
@@ -594,8 +654,8 @@ class ExtractionStep(TransferStep):
                     outcome=TransactionOutcome.OK,
                     patch=_with_skip_patch(
                         {
-                        "suggested_amount": None,
-                        "confirmation": {"confirmed": False},
+                            "suggested_amount": None,
+                            "confirmation": {"confirmed": False},
                         }
                     ),
                 )
@@ -605,9 +665,9 @@ class ExtractionStep(TransferStep):
                     outcome=TransactionOutcome.OK,
                     patch=_with_skip_patch(
                         {
-                        "amount": float(data.suggested_amount),
-                        "suggested_amount": None,
-                        "confirmation": {"confirmed": False},
+                            "amount": float(data.suggested_amount),
+                            "suggested_amount": None,
+                            "confirmation": {"confirmed": False},
                         }
                     ),
                 )
@@ -616,8 +676,8 @@ class ExtractionStep(TransferStep):
                     outcome=TransactionOutcome.OK,
                     patch=_with_skip_patch(
                         {
-                        "suggested_amount": None,
-                        "confirmation": {"confirmed": False},
+                            "suggested_amount": None,
+                            "confirmation": {"confirmed": False},
                         }
                     ),
                 )
@@ -706,7 +766,9 @@ class ExtractionStep(TransferStep):
         if waiting_for_source_account:
             source_account = match_source_account_reference(self.user_message, context.accounts)
         numeric_patch = None
-        if waiting_for_source_account and not (self.user_message.strip().isdigit() and len(self.user_message.strip()) >= 4):
+        if waiting_for_source_account and not (
+            self.user_message.strip().isdigit() and len(self.user_message.strip()) >= 4
+        ):
             numeric_patch = try_extract_numeric_index(self.user_message, "transfer")
         if numeric_patch:
             return TransactionResult(
@@ -728,19 +790,27 @@ class ExtractionStep(TransferStep):
         # When user replies with e.g. "8067892221 Opay" and we're waiting for account+bank,
         # parse deterministically instead of relying on the LLM.
         awaiting_account_and_bank = "recipient_account" in required_fields and "recipient_bank_name" in required_fields
-        if awaiting_account_and_bank and self.user_message:
-            parsed = _parse_account_and_bank_input(self.user_message)
-            if parsed:
-                acct, bank = parsed
+        parsed_account_and_bank = _parse_account_and_bank_input(self.user_message) if self.user_message else None
+        if parsed_account_and_bank and (
+            awaiting_account_and_bank or not (data.recipient_account or data.recipient_bank_name)
+        ):
+            acct, bank = parsed_account_and_bank
+            if awaiting_account_and_bank:
                 logger.info(
                     "deterministic_account_bank_fastpath",
                     account=acct,
                     bank=bank,
                 )
-                return TransactionResult(
-                    outcome=TransactionOutcome.OK,
-                    patch=_with_skip_patch(
-                        {
+            else:
+                logger.info(
+                    "deterministic_initial_account_bank_fastpath",
+                    account=acct,
+                    bank=bank,
+                )
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_with_skip_patch(
+                    {
                         "recipient_account": acct,
                         "recipient_bank_name": bank,
                         "recipient_bank_code": None,
@@ -750,10 +820,11 @@ class ExtractionStep(TransferStep):
                         "name_mismatch": False,
                         "name_match_score": None,
                         "name_mismatch_warning": None,
+                        **({"amount_suggestion_disabled": True} if not awaiting_account_and_bank else {}),
                         "confirmation": {"confirmed": False},
-                        }
-                    ),
-                )
+                    }
+                ),
+            )
 
         simple_transfer_patch = _parse_simple_transfer_command(self.user_message, data)
         if simple_transfer_patch is not None:
@@ -820,6 +891,15 @@ async def _extract_transfer_update(
                 extracted_data[field] = value
 
             logger.info("transfer_extraction_correction_applied", field=field)
+
+        caption_narration = _extract_media_caption_narration(user_message)
+        if caption_narration and "narration" not in extracted_data:
+            extracted_data["narration"] = caption_narration
+            logger.info("transfer_extraction_caption_narration_applied")
+        caption_amount = _extract_media_caption_amount(user_message)
+        if caption_amount is not None:
+            extracted_data["amount"] = caption_amount
+            logger.info("transfer_extraction_caption_amount_applied")
 
         if not extracted_data and not extraction.acknowledgment:
             return TransactionResult(outcome=TransactionOutcome.OK)

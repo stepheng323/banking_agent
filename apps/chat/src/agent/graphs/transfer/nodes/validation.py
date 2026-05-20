@@ -67,7 +67,9 @@ async def _resolve_account_aware_amount(
     try:
         balance = await dd_provider.get_balance(str(provider_account_id), real_time=True)
     except Exception as exc:
-        logger.warning("account_aware_amount_balance_lookup_failed", source_account_id=data.source_account_id, error=str(exc))
+        logger.warning(
+            "account_aware_amount_balance_lookup_failed", source_account_id=data.source_account_id, error=str(exc)
+        )
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
             error=render_message("account.balance.unavailable", locale),
@@ -123,6 +125,7 @@ class ValidationStep(TransferStep):
             data_for_validation.amount is None
             and not data_for_validation.transfer_all
             and not data_for_validation.transfer_percentage
+            and not data_for_validation.amount_suggestion_disabled
             and (data_for_validation.recipient_resolved_name or data_for_validation.recipient_name)
             and getattr(worker_context, "transaction_repo", None) is not None
             and getattr(worker_context, "user_id", None)
@@ -176,7 +179,9 @@ class ValidationStep(TransferStep):
         patch = dict(derived_patch)
         patch.update(res_amount.patch or {})
 
-        data_for_val = validation_payload.model_copy(update=res_amount.patch) if res_amount.patch else validation_payload
+        data_for_val = (
+            validation_payload.model_copy(update=res_amount.patch) if res_amount.patch else validation_payload
+        )
 
         res_transfer = service.validate_transfer(data_for_val, context)
         if res_transfer.outcome != TransactionOutcome.OK:

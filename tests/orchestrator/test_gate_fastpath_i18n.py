@@ -325,6 +325,70 @@ async def test_gate_routes_recent_batch_receipt_followup_to_support_without_plan
     assert task.payload["recent_batch_followup"] is True
 
 
+async def test_gate_routes_captioned_receipt_image_instruction_to_transfer_not_receipt_support() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not run for captioned media transfer",
+        )
+    )
+    redis_client = _TrackingLocaleRedis()
+    redis_client.store["async-group:recent-batch:927331985"] = json.dumps(
+        {
+            "async_group_id": "group-1",
+            "stored_at_ts": int(time.time()),
+            "legs": [
+                {
+                    "index": 1,
+                    "transaction_id": "tx-1",
+                    "task_type": "transfer",
+                    "amount": 10000,
+                    "recipient_name": "Mum",
+                    "recipient_resolved_name": "Mercy Johnson",
+                    "recipient_label": "Mercy Johnson",
+                    "final_status": "success",
+                    "receipt_allowed": True,
+                }
+            ],
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_receipt_image_transfer",
+        phone_number="2348162511023",
+        channel="telegram",
+        channel_identity="927331985",
+        last_message_text=(
+            "User caption/instruction: send 21k\n"
+            "Caption-derived transfer fields: amount=21000.0.\n\n"
+            "Extracted from image: recipient_account=7750145200; bank_name=Wema Bank; "
+            "recipient_name=Spectranet Limited; amount=1500.0; visible_text=Transaction Receipt."
+        ),
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert "send 21k" in task.payload["message"]
+    assert task.payload.get("intent") != "receipt_request"
+
+
 async def test_gate_routes_active_receipt_thread_followup_to_support_without_receipt_keyword() -> None:
     redis_client = _TrackingLocaleRedis()
     redis_client.store["support_context:u_gate_receipt_thread_1"] = json.dumps(
@@ -1915,6 +1979,40 @@ async def test_gate_deterministic_airtime_bypasses_semantic_router() -> None:
     assert task.type == "airtime"
 
 
+async def test_gate_self_airtime_with_amount_routes_instead_of_ambiguity_prompt() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_airtime",
+            mode="new",
+            target_intent="airtime",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["airtime"],
+            reason="single-domain airtime request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_self_airtime_amount",
+        phone_number="234899999991723",
+        channel="telegram",
+        last_message_text="Buy me 1k airtime",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
+    assert updates["routing_decision"] == "deterministic_airtime_domain"
+    task = updates["tasks"]["direct_airtime"]
+    assert task.type == "airtime"
+    assert task.payload["message"] == "Buy me 1k airtime"
+
+
 async def test_gate_explicit_send_airtime_to_phone_still_uses_direct_airtime() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -3004,6 +3102,93 @@ async def test_gate_amount_only_transfer_fastpath_still_routes_to_transfer_worke
     assert task.payload["message"] == "Send 10k"
 
 
+async def test_gate_account_number_transfer_command_is_not_bank_details_only() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_router_account_number_transfer",
+        phone_number="23489999999184",
+        channel="whatsapp",
+        last_message_text="Send 5k to 8162511023",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "fresh_transfer_command"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["message"] == "Send 5k to 8162511023"
+
+
+async def test_gate_bank_details_only_turn_routes_to_transfer_worker() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.94,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="would otherwise look like account text",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_bank_details",
+        phone_number="23489999999182",
+        channel="whatsapp",
+        last_message_text="0760505261, Opay",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "recipient_bank_details_only"
+    assert updates["routing_heuristic_name"] == "recipient_bank_details_only"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["message"] == "0760505261, Opay"
+    assert task.payload["amount_suggestion_disabled"] is True
+
+
+async def test_gate_labeled_forwarded_bank_details_route_to_transfer_worker() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_router_forwarded_bank_details",
+        phone_number="23489999999183",
+        channel="whatsapp",
+        last_message_text=(
+            "Account Number: 0760505261\n"
+            "Account Name: ABIODUN OLATUNDE OYEBANJI\n"
+            "Account Type: PREMIER SAVINGS\n"
+            "Bank: Access Bank Nigeria"
+        ),
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "recipient_bank_details_only"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert "Account Number: 0760505261" in task.payload["message"]
+    assert task.payload["amount_suggestion_disabled"] is True
+
+
 async def test_gate_batch_transfer_turn_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -3709,7 +3894,9 @@ async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_bac
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture
+    )
 
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -4034,9 +4221,7 @@ async def test_gate_semantic_router_can_answer_grounded_query_follow_up_without_
     class _RedisWithQuerySession:
         async def get(self, key: str) -> str | None:
             if "query:session:" in key:
-                return (
-                    '{"session_active": true, "query_result": {"summary_text": "Recent results include 3 debits and 1 credit."}}'
-                )
+                return '{"session_active": true, "query_result": {"summary_text": "Recent results include 3 debits and 1 credit."}}'
             return None
 
     config: RunnableConfig = {
@@ -4226,9 +4411,7 @@ async def test_gate_contextual_casual_followup_bypasses_semantic_router_to_respo
             reason="ambiguous follow-up",
         )
     )
-    responder = _FakeConversationResponder(
-        render_message("conversational.out_of_scope_firm", "en")
-    )
+    responder = _FakeConversationResponder(render_message("conversational.out_of_scope_firm", "en"))
     state = OrchestratorState(
         user_id="u_gate_oos_conv_followup_1",
         phone_number="23480000000061",
@@ -4294,7 +4477,9 @@ async def test_gate_semantic_router_passes_expected_executors_without_direct_pat
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
 
 
-async def test_gate_semantic_router_single_domain_miss_on_obvious_mixed_transfer_airtime_falls_through_to_planner() -> None:
+async def test_gate_semantic_router_single_domain_miss_on_obvious_mixed_transfer_airtime_falls_through_to_planner() -> (
+    None
+):
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_airtime",
@@ -4760,7 +4945,9 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture
+    )
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.pipeline.domain_stages.logger.info", _capture)
 
     planner = _RouteTurnPlanner(

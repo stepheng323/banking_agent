@@ -74,6 +74,7 @@ class TransferPayload(BaseModel):
     transition_acknowledgment: str | None = None
     previous_confirmation_snapshot: dict[str, Any] | None = None
     suggested_amount: float | None = None
+    amount_suggestion_disabled: bool = False
     is_high_risk_transfer: bool = False
     dynamic_risk_threshold: float | None = None
     high_risk_warning: str | None = None

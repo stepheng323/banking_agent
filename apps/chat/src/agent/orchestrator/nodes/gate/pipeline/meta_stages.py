@@ -245,12 +245,13 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
         transfer_request_reason = (
             _classify_obvious_transfer_request(ctx.message_text) if ctx.phrase_heavy_fastpath_allowed else None
         )
-        if transfer_request_reason in {"fresh_transfer_command", "fresh_transfer_missing_recipient_command"}:
+        if transfer_request_reason in {
+            "fresh_transfer_command",
+            "fresh_transfer_missing_recipient_command",
+            "recipient_bank_details_only",
+        }:
             transfer_updates: dict[str, Any] = {}
-            if (
-                isinstance(ctx.query_session_snapshot, dict)
-                and ctx.query_session_snapshot.get("session_active")
-            ):
+            if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
                 await clear_query_session(ctx.redis_client, ctx.state.phone_number)
                 transfer_updates.update(
                     _build_query_session_exit_updates(
@@ -259,6 +260,8 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
                     )
                 )
             task_id, spec = _build_direct_domain_task(state=ctx.state, domain="transfer", mode="new")
+            if transfer_request_reason == "recipient_bank_details_only":
+                spec.payload["amount_suggestion_disabled"] = True
             logger.info(
                 "gate_deterministic_transfer_domain",
                 task_id=task_id,
@@ -290,10 +293,7 @@ async def _stage_deterministic_domains(ctx: GateContext) -> dict[str, Any] | Non
             transfer_updates = {
                 "preplanner_expected_transaction_executors": ["transfer"],
             }
-            if (
-                isinstance(ctx.query_session_snapshot, dict)
-                and ctx.query_session_snapshot.get("session_active")
-            ):
+            if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
                 await clear_query_session(ctx.redis_client, ctx.state.phone_number)
                 transfer_updates.update(
                     _build_query_session_exit_updates(

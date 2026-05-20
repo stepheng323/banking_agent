@@ -106,7 +106,7 @@ class TelegramWebhookService:
             return await self._handle_web_app_data(parsed)
         elif parsed.type == "callback_query":
             return await self._handle_callback_query(parsed)
-        elif parsed.type in ("text", "photo", "audio", "contact"):
+        elif parsed.type in ("text", "photo", "document_image", "audio", "contact"):
             return await self._handle_regular_message(parsed)
 
         return False
@@ -320,13 +320,13 @@ class TelegramWebhookService:
 
             cta_result = await self.telegram_client._call(
                 "sendMessage",
-                    {
-                        "chat_id": msg.chat_id,
-                        "text": (
-                            f"Welcome to {settings.app_name}! 🚀\n\n"
-                            "We couldn't find an existing account matching your phone number.\n"
-                            "Please click the button below to securely create your new account."
-                        ),
+                {
+                    "chat_id": msg.chat_id,
+                    "text": (
+                        f"Welcome to {settings.app_name}! 🚀\n\n"
+                        "We couldn't find an existing account matching your phone number.\n"
+                        "Please click the button below to securely create your new account."
+                    ),
                     "reply_markup": {
                         "inline_keyboard": [
                             [
@@ -474,6 +474,7 @@ class TelegramWebhookService:
         type_map: dict[str, MessageType] = {
             "text": MessageType.TEXT,
             "photo": MessageType.IMAGE,
+            "document_image": MessageType.IMAGE,
             "audio": MessageType.AUDIO,
             "callback_query": MessageType.TEXT,  # treat button press as text
             "contact": MessageType.CONTACT,
@@ -490,8 +491,8 @@ class TelegramWebhookService:
             message_type=enum_type,
             text=msg.text or "",
             flow_data=None,
-            media_id=msg.photo_file_id or msg.audio_file_id,
-            mime_type=None,
+            media_id=msg.photo_file_id or msg.document_file_id or msg.audio_file_id,
+            mime_type=msg.mime_type,
             quoted_message_id=msg.quoted_message_id,
             channel_metadata=metadata,
             timestamp=datetime.now(tz=UTC),

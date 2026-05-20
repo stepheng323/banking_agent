@@ -96,6 +96,7 @@ class TransferPayload(BaseModel):
     # Confirmation sub-state
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
     confirmation_message_scoped: bool = False
+    amount_suggestion_disabled: bool = False
 
     @field_validator("transfer_all", mode="before")
     @classmethod

@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from apps.gateway.adapters.telegram import parse_update
 from apps.gateway.api.webhooks.telegram import service as telegram_service_module
 from apps.gateway.api.webhooks.telegram.service import TelegramWebhookService
 
@@ -119,6 +120,106 @@ class _WhatsAppClientStub:
         return {"ok": True}
 
 
+def test_parse_update_preserves_telegram_photo_caption_and_file_id() -> None:
+    parsed = parse_update(
+        {
+            "update_id": 10,
+            "message": {
+                "message_id": 200,
+                "chat": {"id": 12345},
+                "from": {"id": 12345, "first_name": "Gaines"},
+                "caption": "send 5k for groceries",
+                "photo": [
+                    {"file_id": "small-photo", "width": 90, "height": 90},
+                    {"file_id": "large-photo", "width": 1280, "height": 1280},
+                ],
+            },
+        }
+    )
+
+    assert parsed is not None
+    assert parsed.type == "photo"
+    assert parsed.text == "send 5k for groceries"
+    assert parsed.photo_file_id == "large-photo"
+
+
+def test_parse_update_preserves_telegram_audio_caption() -> None:
+    parsed = parse_update(
+        {
+            "update_id": 11,
+            "message": {
+                "message_id": 201,
+                "chat": {"id": 12345},
+                "from": {"id": 12345, "first_name": "Gaines"},
+                "caption": "send it today",
+                "audio": {"file_id": "audio-file", "mime_type": "audio/mpeg"},
+            },
+        }
+    )
+
+    assert parsed is not None
+    assert parsed.type == "audio"
+    assert parsed.text == "send it today"
+    assert parsed.audio_file_id == "audio-file"
+    assert parsed.mime_type == "audio/mpeg"
+
+
+def test_parse_update_maps_image_document_to_image_media() -> None:
+    parsed = parse_update(
+        {
+            "update_id": 12,
+            "message": {
+                "message_id": 202,
+                "chat": {"id": 12345},
+                "from": {"id": 12345, "first_name": "Gaines"},
+                "caption": "use this account",
+                "document": {"file_id": "doc-image", "mime_type": "image/png"},
+            },
+        }
+    )
+
+    assert parsed is not None
+    assert parsed.type == "document_image"
+    assert parsed.text == "use this account"
+    assert parsed.document_file_id == "doc-image"
+    assert parsed.mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_process_update_enqueues_linked_image_document() -> None:
+    publisher = _PublisherStub()
+    telegram_client = _TelegramClientStub()
+    user_repository = _UserRepositoryStub()
+    service = TelegramWebhookService(
+        publisher=publisher,
+        user_repository=user_repository,
+        telegram_client=telegram_client,  # type: ignore[arg-type]
+    )
+
+    handled = await service.process_update(
+        {
+            "update_id": 13,
+            "message": {
+                "message_id": 203,
+                "chat": {"id": 12345},
+                "from": {"id": 12345, "first_name": "Gaines"},
+                "caption": "send 5k for groceries",
+                "document": {"file_id": "doc-image", "mime_type": "image/png"},
+            },
+        }
+    )
+
+    assert handled is True
+    assert len(publisher.published) == 1
+    topic, payload = publisher.published[0]
+    assert topic == "message.received"
+    assert payload["message_type"] == "image"
+    assert payload["text"] == "send 5k for groceries"
+    assert payload["media_id"] == "doc-image"
+    assert payload["mime_type"] == "image/png"
+    assert payload["channel"] == "telegram"
+
+
 @pytest.mark.asyncio
 async def test_process_update_enqueues_linked_text_without_eager_typing() -> None:
     publisher = _PublisherStub()
@@ -161,7 +262,7 @@ async def test_process_update_uses_cached_linked_identity(monkeypatch: pytest.Mo
     redis_stub = _RedisStub(
         {
             "cache:channel_identity:telegram:12345": (
-                '{"id": "user-1", "phone_number": "2348162511023", '
+                '{"id": "dbfea933-7738-4f87-8a15-98ba39da189c", "phone_number": "2348162511023", '
                 '"onboarding_status": "onboarding_completed", "full_name": "Gaines"}'
             )
         }

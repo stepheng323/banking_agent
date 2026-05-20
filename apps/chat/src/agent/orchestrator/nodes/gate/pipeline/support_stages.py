@@ -5,6 +5,7 @@ from apps.chat.src.agent.graphs.support.context_manager import SupportContextMan
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _build_direct_domain_task,
+    _classify_obvious_transfer_request,
     _direct_domain_capability_block_message,
     _has_receipt_thread_candidates,
     _looks_like_receipt_request,
@@ -21,6 +22,13 @@ from shared.services.async_completion import get_recent_batch_reference
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_MEDIA_CAPTION_PREFIX = "User caption/instruction:"
+_CAPTION_TRANSFER_REASONS = {
+    "fresh_transfer_command",
+    "fresh_transfer_missing_recipient_command",
+    "batch_transfer_command",
+    "account_aware_transfer_command",
+}
 
 _SUPPORT_CONTEXT_REFERENCE_RE = re.compile(
     r"^\s*(?:my|the|this|that)?\s*(?:last|latest|most\s+recent|recent)\s+"
@@ -41,6 +49,12 @@ _SUPPORT_CONTEXT_EXPLICIT_LATEST_STATUS_QUERY_RE = re.compile(
     r"|\b(?:my\s+)?(?:last|latest|most\s+recent)\s+(?:transaction|transfer|payment)\s+status\b",
     re.IGNORECASE,
 )
+
+
+def _is_captioned_media_transfer_request(message_text: str) -> bool:
+    if _MEDIA_CAPTION_PREFIX not in (message_text or ""):
+        return False
+    return _classify_obvious_transfer_request(message_text) in _CAPTION_TRANSFER_REASONS
 
 
 def _looks_like_support_issue_request(message_text: str) -> bool:
@@ -141,6 +155,7 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
     if (
         ctx.live_pending_interrupt
         or not ctx.redis_client
+        or _is_captioned_media_transfer_request(ctx.message_text)
         or not _looks_like_receipt_selector_followup(ctx.message_text)
     ):
         return None
@@ -189,7 +204,12 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
 
 async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
     """Recent batch receipt request."""
-    if ctx.live_pending_interrupt or not ctx.redis_client or not _looks_like_receipt_request(ctx.message_text):
+    if (
+        ctx.live_pending_interrupt
+        or not ctx.redis_client
+        or _is_captioned_media_transfer_request(ctx.message_text)
+        or not _looks_like_receipt_request(ctx.message_text)
+    ):
         return None
     recent_batch_identity = _recent_batch_identity_for_state(ctx.state)
     recent_batch = await get_recent_batch_reference(ctx.redis_client, identity=recent_batch_identity)

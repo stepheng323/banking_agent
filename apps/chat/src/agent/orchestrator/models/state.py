@@ -75,6 +75,7 @@ class OrchestratorState(BaseModel):
     routing_heuristic_type: str | None = None
     routing_heuristic_name: str | None = None
     planner_used: bool = False
+    suppress_empty_fallback: bool = False
 
     # Stashed Sessions (Upstream)
     stashed_sessions: list[dict[str, Any]] = Field(default_factory=list)

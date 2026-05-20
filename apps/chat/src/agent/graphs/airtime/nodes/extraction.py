@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
+from apps.chat.src.agent.graphs.__shared__.source_account_guard import find_account_by_bank_name
 from apps.chat.src.agent.graphs.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -12,6 +13,7 @@ from apps.chat.src.agent.graphs.airtime.models.types import (
 from apps.chat.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import render_message
+from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -19,6 +21,7 @@ logger = get_logger(__name__)
 _NETWORK_CANONICAL = {"MTN", "AIRTEL", "GLO", "9MOBILE"}
 _PHONE_CANDIDATE_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
 _NETWORK_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+_SOURCE_BANK_PREFIX_RE = r"(?:from|using|use|with|debit(?:ing)?|charge)"
 
 
 def _matches_self_airtime_phrase(message: str) -> bool:
@@ -52,6 +55,33 @@ def _has_resolved_network(network: str | None) -> bool:
     if normalized:
         return True
     return network.strip().upper() in _NETWORK_CANONICAL
+
+
+def _source_bank_terms(bank_name: str) -> list[str]:
+    terms = {term.strip().lower() for term in get_bank_search_terms(bank_name) if term.strip()}
+    normalized = bank_name.strip().lower()
+    if normalized:
+        terms.add(normalized)
+        for suffix in (" bank", " plc", " limited"):
+            if normalized.endswith(suffix):
+                terms.add(normalized[: -len(suffix)].strip())
+    return sorted(terms, key=len, reverse=True)
+
+
+def _extract_source_bank_hint(message: str, accounts: list[dict[str, Any]]) -> str | None:
+    normalized_message = re.sub(r"\s+", " ", message.strip().lower())
+    if not normalized_message:
+        return None
+
+    for account in accounts:
+        bank_name = str(account.get("bank_name") or "").strip()
+        if not bank_name:
+            continue
+        for term in _source_bank_terms(bank_name):
+            escaped = re.escape(term).replace(r"\ ", r"\s+")
+            if re.search(rf"\b{_SOURCE_BANK_PREFIX_RE}\s+(?:my\s+)?{escaped}(?:\s+(?:account|acct|bank))?\b", normalized_message):
+                return bank_name
+    return None
 
 
 def _skip_override_reason(payload: AirtimePayload, message: str) -> str | None:
@@ -149,6 +179,8 @@ class ExtractionStep(AirtimeStep):
 
             if entities.get("source_account_index") is not None:
                 patch["source_account_index"] = entities["source_account_index"]
+            if entities.get("source_bank_name"):
+                patch["source_bank_name"] = str(entities["source_bank_name"]).strip()
 
             correction = extracted.get("correction")
             if correction:
@@ -204,6 +236,14 @@ class ExtractionStep(AirtimeStep):
             if raw_is_self is None and not has_resolved_phone and _matches_self_airtime_phrase(self.user_message):
                 logger.info("airtime_self_fallback_applied")
                 patch["is_self"] = True
+
+            if not patch.get("source_bank_name") and not data.source_bank_name:
+                bank_hint = _extract_source_bank_hint(self.user_message, context.all_accounts or context.accounts)
+                if bank_hint:
+                    matched_account = find_account_by_bank_name(context.all_accounts or context.accounts, bank_hint)
+                    patch["source_bank_name"] = (
+                        str(matched_account.get("bank_name") or bank_hint) if matched_account else bank_hint
+                    )
 
             return TransactionResult(
                 outcome=TransactionOutcome.OK,

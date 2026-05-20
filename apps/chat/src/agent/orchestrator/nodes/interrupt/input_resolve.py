@@ -27,6 +27,12 @@ INTERRUPT_REQUIRED_FIELDS_COMPACT_MAX_CHARS = 240
 INTERRUPT_PROMPT_COMPACT_MAX_CHARS = 160
 INTERRUPT_ACTIVE_TASK_STATE_COMPACT_MAX_CHARS = 320
 _INPUT_SIMPLE_AMOUNT_REPLY_RE = re.compile(r"^(?:₦?\d[\d,]*(?:\.\d+)?k?|all|everything|half|50%)$", re.IGNORECASE)
+_INPUT_AMOUNT_COMMAND_REPLY_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:send|transfer|pay|remit)\s+"
+    r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?\s*[.!?]?$",
+    re.IGNORECASE,
+)
 _NON_TRANSFER_INTENT_HINT_RE = re.compile(
     r"\b(airtime|data|bundle|balance|statement|support|faq|ticket|complaint)\b",
     re.IGNORECASE,
@@ -44,6 +50,7 @@ _INPUT_RECIPIENT_REPLY_META_RE = re.compile(
     r"^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no)$",
     re.IGNORECASE,
 )
+
 
 def _resolve_deterministic_input_selection_route(
     *,
@@ -85,6 +92,7 @@ def _resolve_deterministic_input_selection_route(
         reason="shortcut_input_numeric_selection",
     )
 
+
 def _is_beneficiary_clarification_interrupt(interrupt: Any) -> bool:
     if not interrupt or getattr(interrupt, "kind", None) != "input":
         return False
@@ -92,6 +100,7 @@ def _is_beneficiary_clarification_interrupt(interrupt: Any) -> bool:
     if not isinstance(fields_by_task, dict):
         return False
     return any(isinstance(fields, list) and "beneficiary_id" in fields for fields in fields_by_task.values())
+
 
 def _resolve_deterministic_input_slot_route(
     *,
@@ -110,11 +119,7 @@ def _resolve_deterministic_input_slot_route(
     active_task_type = active_task.type if active_task is not None else None
 
     fields_by_task = getattr(interrupt, "fields_by_task", None) or {}
-    required_fields = {
-        field
-        for field in (fields_by_task.get(str(task_ids[0])) or [])
-        if isinstance(field, str)
-    }
+    required_fields = {field for field in (fields_by_task.get(str(task_ids[0])) or []) if isinstance(field, str)}
     if not required_fields:
         return None
 
@@ -160,7 +165,10 @@ def _resolve_deterministic_input_slot_route(
             reason="shortcut_input_phone_entry",
         )
 
-    if required_fields == {"amount"} and _INPUT_SIMPLE_AMOUNT_REPLY_RE.fullmatch(stripped_text):
+    if required_fields == {"amount"} and (
+        _INPUT_SIMPLE_AMOUNT_REPLY_RE.fullmatch(stripped_text)
+        or _INPUT_AMOUNT_COMMAND_REPLY_RE.fullmatch(stripped_text)
+    ):
         return InterruptRouteDecision(
             decision="continue_flow",
             confidence=0.99,
@@ -187,6 +195,7 @@ def _resolve_deterministic_input_slot_route(
         )
 
     return None
+
 
 def _looks_like_simple_transfer_recipient_reply(text: str) -> bool:
     stripped_text = text.strip()
@@ -219,6 +228,7 @@ def _looks_like_simple_transfer_recipient_reply(text: str) -> bool:
         return False
 
     return all(len(token) >= 2 for token in tokens)
+
 
 def _continue_flow_updates(
     state: OrchestratorState,

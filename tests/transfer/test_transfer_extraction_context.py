@@ -10,8 +10,11 @@ from apps.chat.src.agent.graphs.transfer.models.extraction import (
     TransferExtractionResult,
 )
 from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.transfer.nodes.extraction import ExtractionStep, _extract_transfer_update
+from apps.chat.src.agent.graphs.transfer.nodes.validation import ValidationStep
+from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferPipeline
 from apps.chat.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
+from apps.chat.src.agent.graphs.transfer.services.validation import ValidationService
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 
 
@@ -24,6 +27,26 @@ class _CaptureExtractor:
         self.last_user_message = text
         self.last_smart_context = smart_context
         return TransferExtractionResult()
+
+
+class _StaticExtractor:
+    def __init__(self, result: TransferExtractionResult) -> None:
+        self.result = result
+
+    async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+        del text, smart_context
+        return self.result
+
+
+class _RecentTransferRepository:
+    def __init__(self, amount: float) -> None:
+        self.amount = amount
+        self.calls = 0
+
+    async def get_recent_successful_transfer_by_recipient(self, user_id: str, recipient_hint: str) -> SimpleNamespace:
+        del user_id, recipient_hint
+        self.calls += 1
+        return SimpleNamespace(amount=self.amount)
 
 
 async def test_extraction_step_passes_required_fields_previous_response_and_known_recipient() -> None:
@@ -55,6 +78,61 @@ async def test_extraction_step_passes_required_fields_previous_response_and_know
         "recipient_account": None,
         "recipient_bank_name": None,
     }
+
+
+async def test_media_caption_narration_hint_fills_missing_extractor_narration() -> None:
+    extractor = _StaticExtractor(
+        TransferExtractionResult(
+            entities=TransferEntities(
+                amount=5000,
+                recipient_account="8162511023",
+                bank_name="OPay",
+            )
+        )
+    )
+    user_message = (
+        "User caption/instruction: send 5k for groceries\n"
+        "Caption-derived transfer fields: amount=5000.0.\n"
+        "Caption-derived transfer fields: narration=groceries.\n\n"
+        "Extracted from image: recipient_account=8162511023; bank_name=OPay."
+    )
+
+    result = await _extract_transfer_update(TransferPayload(), extractor, user_message, {})
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 5000
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["recipient_bank_name"] == "OPay"
+    assert result.patch["narration"] == "groceries"
+    assert result.patch["authored_narration"] == "groceries"
+    assert result.patch["user_note"] == "groceries"
+
+
+async def test_media_caption_amount_overrides_image_receipt_amount() -> None:
+    extractor = _StaticExtractor(
+        TransferExtractionResult(
+            entities=TransferEntities(
+                amount=1500,
+                recipient_account="7750145200",
+                bank_name="Wema Bank",
+                recipient_name="Spectranet Limited",
+            )
+        )
+    )
+    user_message = (
+        "User caption/instruction: send 21k\n"
+        "Caption-derived transfer fields: amount=21000.0.\n\n"
+        "Extracted from image: recipient_account=7750145200; bank_name=Wema Bank; "
+        "recipient_name=Spectranet Limited; amount=1500.0."
+    )
+
+    result = await _extract_transfer_update(TransferPayload(), extractor, user_message, {})
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 21000.0
+    assert result.patch["recipient_account"] == "7750145200"
+    assert result.patch["recipient_bank_name"] == "Wema Bank"
+    assert result.patch["recipient_name"] == "Spectranet Limited"
 
 
 def test_extractor_context_string_includes_required_fields_and_known_recipient_hints() -> None:
@@ -489,6 +567,7 @@ async def test_deterministic_account_bank_fastpath_bank_first() -> None:
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["recipient_account"] == "8162511023"
     assert result.patch["recipient_bank_name"] == "Opay"
+    assert "amount_suggestion_disabled" not in result.patch
     assert extractor.called is False
 
 
@@ -550,6 +629,97 @@ async def test_deterministic_account_bank_fastpath_account_first_with_separators
     assert extractor.called is False
 
 
+async def test_deterministic_initial_account_bank_fastpath_parses_forwarded_details_without_extractor() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(
+        user_message=(
+            "Account Number: 0760505261\n"
+            "Account Name: ABIODUN OLATUNDE OYEBANJI\n"
+            "Account Type: PREMIER SAVINGS\n"
+            "Bank: Access Bank Nigeria"
+        )
+    )
+    payload = TransferPayload()
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "0760505261"
+    assert result.patch["recipient_bank_name"] == "Access Bank Nigeria"
+    assert result.patch["amount_suggestion_disabled"] is True
+    assert result.patch["confirmation"] == {"confirmed": False}
+    assert extractor.called is False
+
+
+async def test_deterministic_initial_account_bank_fastpath_parses_inline_details_without_extractor() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="0760505261, Opay")
+    payload = TransferPayload()
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "0760505261"
+    assert result.patch["recipient_bank_name"] == "Opay"
+    assert result.patch["amount_suggestion_disabled"] is True
+    assert result.patch["confirmation"] == {"confirmed": False}
+    assert extractor.called is False
+
+
+async def test_forwarded_bank_details_skip_recent_amount_suggestion() -> None:
+    repo = _RecentTransferRepository(amount=10000)
+    step = ValidationStep()
+    payload = TransferPayload(
+        recipient_account="0760505261",
+        recipient_bank_name="Opay",
+        recipient_resolved_name="TOLU ADEDAYO",
+        amount_suggestion_disabled=True,
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        transaction_repo=repo,
+        user_id="user-1",
+        validation_service=ValidationService(),
+        dd_provider=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["amount"]
+    assert result.prompt == "How much would you like to send?"
+    assert result.patch == {}
+    assert repo.calls == 0
+
+
 async def test_deterministic_account_bank_fastpath_clears_skip_extraction_flag() -> None:
     """Account+bank deterministic path should clear skip_extraction for next user turn."""
 
@@ -597,6 +767,26 @@ async def test_deterministic_amount_fastpath_parses_shorthand_reply() -> None:
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["amount"] == 20000
     assert result.patch["suggested_amount"] is None
+    assert extractor.last_user_message is None
+
+
+async def test_deterministic_amount_fastpath_parses_send_amount_reply() -> None:
+    extractor = _CaptureExtractor()
+    pipeline = TransferPipeline([ExtractionStep(user_message="Send 5k")])
+    payload = TransferPayload(recipient_account="0760505261", recipient_bank_name="Opay")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["amount"],
+        previous_response="How much would you like to send?",
+    )
+
+    result = await pipeline.run(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 5000
+    assert result.patch["recipient_account"] == "0760505261"
+    assert result.patch["recipient_bank_name"] == "Opay"
     assert extractor.last_user_message is None
 
 

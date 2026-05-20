@@ -168,7 +168,12 @@
     },
     "receipt": {
       "only_transfer": "Receipts are only available for bank transfers. This is a {transaction_type}.",
+      "offer": "Would you like a receipt image for this transfer?",
+      "offer_accept": "Send receipt image",
+      "offer_accept_button": "Send receipt",
       "generating": "I'm generating your receipt now. I'll send it to you as an image shortly.",
+      "already_generating": "I'm already generating that receipt image.",
+      "expired": "I couldn't find the receipt details for that button. Reply 'receipt' if you still need it.",
       "failed": "Sorry, I couldn't generate the receipt at this moment. Please try again later.",
       "bank_unknown": "Unknown Bank",
       "na": "N/A",
@@ -500,7 +505,8 @@
       "faq_failed": "FAQ failed",
       "support_worker_unavailable": "System error: Support worker unavailable",
       "support_flow_failed": "Support flow failed",
-      "audio_unprocessable": "Attributes of the audio could not be processed."
+      "audio_unprocessable": "Attributes of the audio could not be processed.",
+      "image_unprocessable": "I couldn't read that image clearly. Please type the bank name, account number, amount, and what you want me to do."
     },
     "session": {
       "no_stashed": "No session to resume.",
@@ -685,7 +691,7 @@
         "total_line": "*Total:* {amount}"
       },
       "notifications": {
-        "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}. Transaction ID: {transaction_id}",
+        "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
         "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
         "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
       }
