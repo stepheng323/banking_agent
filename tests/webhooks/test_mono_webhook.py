@@ -445,7 +445,10 @@ class TestMonoWebhookTransferUpdates:
         delivery_service.deliver_text.assert_awaited_once()
         assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
         assert delivery_service.deliver_text.await_args.kwargs["channel"] == "telegram"
-        assert "Transfer successful" in delivery_service.deliver_text.await_args.kwargs["text"]
+        delivered_text = delivery_service.deliver_text.await_args.kwargs["text"]
+        assert "Transfer successful" in delivered_text
+        assert "Transaction ID" not in delivered_text
+        assert "debit-1" not in delivered_text
 
     @pytest.mark.asyncio
     async def test_debit_failure_updates_transfer_transaction_by_reference(self, monkeypatch):

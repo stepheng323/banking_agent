@@ -168,6 +168,8 @@ async def test_support_worker_enqueues_single_transfer_receipt_for_successful_tr
                 "recipient_account_number": "8162511023",
                 "recipient_bank_name": "Opay",
                 "source_bank_name": "Zenith Bank",
+                "source_account_name": "Olamide Samuel",
+                "source_account_number": "1234509384",
                 "narration": "Allowance",
             },
         },
@@ -184,6 +186,11 @@ async def test_support_worker_enqueues_single_transfer_receipt_for_successful_tr
     assert result.response is not None and "image shortly" in result.response
     assert len(result.receipt_jobs) == 1
     assert result.receipt_jobs[0]["transaction_reference"] == "tx-1"
+    assert result.receipt_jobs[0]["transfer_data"]["source"] == {
+        "name": "Zenith Bank",
+        "account_name": "Olamide Samuel",
+        "account_number": "1234509384",
+    }
 
 
 @pytest.mark.asyncio

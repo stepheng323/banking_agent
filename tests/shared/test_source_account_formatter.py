@@ -2,7 +2,11 @@ from shared.formatters.accounts import format_source_account_info_from_account_n
 from shared.formatters.airtime import format_airtime_summary
 from shared.formatters.confirmation import build_source_account_info
 from shared.formatters.data import format_data_summary
-from shared.formatters.transfer import format_multi_source_transfer_summary, format_transfer_summary
+from shared.formatters.transfer import (
+    format_multi_source_transfer_summary,
+    format_transfer_success_message,
+    format_transfer_summary,
+)
 
 
 def test_source_account_info_from_number_with_balance() -> None:
@@ -46,6 +50,19 @@ def test_transfer_summary_uses_shared_source_line_formatter() -> None:
         locale="en",
     )
     assert "From: First Bank (···7890)" in summary
+
+
+def test_transfer_success_message_omits_provider_transaction_id() -> None:
+    message = format_transfer_success_message(
+        amount=5000,
+        recipient_name="Tolu Adebayo",
+        transaction_id="mock_debit_5e23f4cd782d",
+        locale="en",
+    )
+
+    assert message == "✓ Transfer successful! ₦5,000 has been sent to Tolu Adebayo."
+    assert "Transaction ID" not in message
+    assert "mock_debit" not in message
 
 
 def test_airtime_summary_uses_shared_source_line_formatter() -> None:

@@ -103,6 +103,13 @@ def _support_identity(context: dict[str, Any]) -> str | None:
     return None
 
 
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 def _ticket_code_from_message(message: str) -> str | None:
     match = _TICKET_CODE_RE.search(message)
     if match is None:
@@ -313,11 +320,12 @@ class SupportWorker:
         )
 
     def _build_receipt_transfer_data(self, transaction: dict[str, Any], *, locale: str) -> ReceiptTransferData:
+        source_account_name = _optional_text(transaction.get("source_account_name"))
         return {
             "amount": transaction.get("amount"),
             "source": {
                 "name": transaction.get("source_bank_name"),
-                "account_name": transaction.get("source_bank_name") or render_message("query.receipt.user_account", locale),
+                "account_name": source_account_name or render_message("query.receipt.user_account", locale),
                 "account_number": transaction.get("source_account_number"),
             },
             "recipient": {
