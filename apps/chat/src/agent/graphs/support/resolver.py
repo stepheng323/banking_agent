@@ -38,7 +38,11 @@ class TransactionResolver:
     ):
         self.tx_repo = transaction_repo
         self.am_repo = actionable_message_repo
-        self.unified_service = UnifiedTransactionService(transaction_repo, bank_transaction_repo)
+        self.unified_service = UnifiedTransactionService(
+            transaction_repo,
+            bank_transaction_repo,
+            load_bank_rows_from_uow=False,
+        )
 
     async def resolve(
         self,

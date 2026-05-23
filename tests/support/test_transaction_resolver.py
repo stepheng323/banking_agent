@@ -318,6 +318,56 @@ async def test_resolver_can_prefer_latest_recent_over_status_priority() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_unified_without_bank_repo_does_not_open_unit_of_work(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "enable_unified_transaction_view", True)
+
+    import shared.repositories.unit_of_work as unit_of_work_module
+
+    class _ExplodingUnitOfWork:
+        def __init__(self) -> None:
+            raise AssertionError("support resolver should not open implicit bank-row unit of work")
+
+    monkeypatch.setattr(unit_of_work_module, "UnitOfWork", _ExplodingUnitOfWork)
+
+    local_failed = SimpleNamespace(
+        id=uuid4(),
+        transaction_type="transfer",
+        status="failed",
+        amount=6000.0,
+        recipient_name="Tolu",
+        recipient_account_number="1234567890",
+        recipient_bank_name="Kuda",
+        recipient_bank_code="999999",
+        source_bank_name="GTBank",
+        source_account_number="0123456789",
+        transaction_id="local-failed",
+        idempotency_key="idem-failed",
+        provider_response={},
+        error_message="Provider timeout",
+        created_at=datetime(2026, 5, 16, 9, 0, 0),
+        updated_at=datetime(2026, 5, 16, 9, 0, 0),
+        completed_at=None,
+    )
+    resolver = TransactionResolver(
+        transaction_repo=_TransactionRepoStub(by_user=[local_failed], failed=[local_failed]),
+        actionable_message_repo=_ActionableRepoStub(actionable=None),
+    )
+
+    resolved, method = await resolver.resolve(
+        user_id="u1",
+        tx_ref=None,
+        quoted_message_id=None,
+        recent_status_priority=["failed", "processing", "pending"],
+        prefer_latest_recent=True,
+    )
+
+    assert method == "recent"
+    assert isinstance(resolved, dict)
+    assert resolved["unified_source"] == "local"
+    assert resolved["recipient_name"] == "Tolu"
+
+
+@pytest.mark.asyncio
 async def test_resolver_unified_latest_can_return_bank_posted_transaction(monkeypatch) -> None:
     monkeypatch.setattr(settings, "enable_unified_transaction_view", True)
     local_failed = SimpleNamespace(

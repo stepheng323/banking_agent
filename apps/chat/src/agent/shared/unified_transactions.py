@@ -379,9 +379,16 @@ def _in_window(record: UnifiedTransactionRecord, start_date: date, end_date: dat
 class UnifiedTransactionService:
     """Build read-side unified transaction records."""
 
-    def __init__(self, transaction_repo: Any | None = None, bank_transaction_repo: Any | None = None) -> None:
+    def __init__(
+        self,
+        transaction_repo: Any | None = None,
+        bank_transaction_repo: Any | None = None,
+        *,
+        load_bank_rows_from_uow: bool = True,
+    ) -> None:
         self.transaction_repo = transaction_repo
         self.bank_transaction_repo = bank_transaction_repo
+        self.load_bank_rows_from_uow = load_bank_rows_from_uow
 
     async def list_for_user(
         self,
@@ -435,6 +442,8 @@ class UnifiedTransactionService:
     async def _load_bank_rows(self, user_id: str, *, start_date: date, end_date: date) -> list[Any]:
         bank_transaction_repo = self.bank_transaction_repo
         if bank_transaction_repo is None or not hasattr(bank_transaction_repo, "list_by_user_window"):
+            if not self.load_bank_rows_from_uow:
+                return []
             from shared.repositories.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:

@@ -39,6 +39,7 @@ from shared.queue.redis_stream_consumer import RedisStreamConsumer
 from shared.repositories.session_scoped import (
     SessionScopedAccountRepository,
     SessionScopedActionableMessageRepository,
+    SessionScopedBankTransactionRepository,
     SessionScopedBeneficiaryRepository,
     SessionScopedTransactionRepository,
     SessionScopedUserRepository,
@@ -124,6 +125,7 @@ def _build_orchestrator_runtime_bundle(
     beneficiary_repository = SessionScopedBeneficiaryRepository(session_factory)
     account_repository = SessionScopedAccountRepository(session_factory)
     actionable_message_repository = SessionScopedActionableMessageRepository(session_factory)
+    bank_transaction_repository = SessionScopedBankTransactionRepository(session_factory)
     transaction_repository = SessionScopedTransactionRepository(session_factory)
 
     user_data_cache = UserDataCache(redis_client=shared_redis)
@@ -165,6 +167,7 @@ def _build_orchestrator_runtime_bundle(
         llm=llm,
         transaction_repo=transaction_repository,
         actionable_message_repo=actionable_message_repository,
+        bank_transaction_repo=bank_transaction_repository,
         redis_client=shared_redis,
         ticket_service=TicketService(session_factory=session_factory),
     )
