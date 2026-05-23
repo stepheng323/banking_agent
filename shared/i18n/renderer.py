@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -90,7 +91,7 @@ def _flatten_string_leaves(payload: dict[str, Any], prefix: str = "") -> dict[st
     return leaves
 
 
-def _render_template(template: str, params: dict[str, object] | None) -> str:
+def _render_template(template: str, params: Mapping[str, object] | None) -> str:
     if not params:
         return template
     try:
@@ -100,7 +101,7 @@ def _render_template(template: str, params: dict[str, object] | None) -> str:
         return template
 
 
-def _default_template_params() -> dict[str, object]:
+def _default_template_params() -> Mapping[str, object]:
     from shared.branding import brand_template_params
 
     return brand_template_params()
@@ -109,7 +110,7 @@ def _default_template_params() -> dict[str, object]:
 def render_message(
     message_key: MessageKey,
     locale: str | LocaleCode,
-    params: dict[str, object] | None = None,
+    params: Mapping[str, object] | None = None,
     fallback_en: str | None = None,
 ) -> str:
     """Render a keyed message in a locale with English fallback."""
@@ -117,7 +118,7 @@ def render_message(
 
     resolved_locale = LocaleManager.normalize(locale)
 
-    merged_params = _default_template_params()
+    merged_params = dict(_default_template_params())
     if params:
         merged_params.update(params)
 
