@@ -96,9 +96,13 @@ class Settings:
         self.app_brand_inspiration: str = (
             os.getenv(
                 "APP_BRAND_INSPIRATION",
-                "Nenya, the Ring of Water worn by Galadriel in The Lord of the Rings",
+                "the Ring of Water from Tolkien's lore",
             ).strip()
-            or "Nenya, the Ring of Water worn by Galadriel in The Lord of the Rings"
+            or "the Ring of Water from Tolkien's lore"
+        )
+        self.app_brand_symbolism: str = (
+            os.getenv("APP_BRAND_SYMBOLISM", "water suggests liquidity and flow").strip()
+            or "water suggests liquidity and flow"
         )
         self.app_public_base_url: str = (
             os.getenv("APP_PUBLIC_BASE_URL", "https://nenya.ai").strip().rstrip("/") or "https://nenya.ai"

@@ -12,6 +12,7 @@ BRAND_TEMPLATE_KEYS = (
     "app_initial",
     "app_creator",
     "app_brand_inspiration",
+    "app_brand_symbolism",
     "app_public_base_url",
 )
 
@@ -56,6 +57,7 @@ def brand_template_params(*, html_escape_values: bool = False) -> dict[str, str]
         "app_initial": _initial_for(settings.app_name_short or settings.app_name),
         "app_creator": settings.app_creator,
         "app_brand_inspiration": settings.app_brand_inspiration,
+        "app_brand_symbolism": settings.app_brand_symbolism,
         "app_public_base_url": settings.app_public_base_url,
     }
 

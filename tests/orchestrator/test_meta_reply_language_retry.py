@@ -10,6 +10,14 @@ from shared.assistant_profile.voice import AssistantVoice
 from shared.config.settings import settings
 
 
+def _expected_brand_origin() -> str:
+    return (
+        f"The name {settings.app_name_short} comes from {settings.app_brand_inspiration}. "
+        f"We chose it because {settings.app_brand_symbolism}: the idea behind {settings.app_name} "
+        "is to help your money move smoothly, clearly, and under your control."
+    )
+
+
 class _FakeMetaLLM:
     def __init__(self, responses: list[dict[str, Any]]) -> None:
         self._responses = responses
@@ -32,7 +40,7 @@ def _voice(
     supported_domains: tuple[str, ...] = ("Send money",),
     unsupported_capabilities: tuple[str, ...] = ("Investments",),
     creator: str | None = settings.app_creator,
-    brand_origin: str | None = f"{settings.app_name} is inspired by {settings.app_brand_inspiration}.",
+    brand_origin: str | None = _expected_brand_origin(),
 ) -> AssistantVoice:
     return AssistantVoice(
         name=settings.app_name,
@@ -90,13 +98,13 @@ async def test_meta_reply_falls_back_when_language_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_brand_origin_reply_allows_grounded_lotr_origin() -> None:
+async def test_brand_origin_reply_allows_grounded_water_origin() -> None:
     llm = _FakeMetaLLM(
         [
             {
                 "handoff": "meta",
                 "language": "en",
-                "message": f"{settings.app_name} is inspired by {settings.app_brand_inspiration}.",
+                "message": _expected_brand_origin(),
             }
         ]
     )
@@ -111,7 +119,7 @@ async def test_brand_origin_reply_allows_grounded_lotr_origin() -> None:
     )
 
     assert handoff == "meta"
-    assert message == f"{settings.app_name} is inspired by {settings.app_brand_inspiration}."
+    assert message == _expected_brand_origin()
 
 
 @pytest.mark.asyncio
