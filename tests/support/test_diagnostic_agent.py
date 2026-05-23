@@ -32,7 +32,7 @@ class _StructuredLLM:
         self.messages: list[Any] = []
         self.schema: object | None = None
 
-    def with_structured_output(self, schema: object) -> "_StructuredLLM":
+    def with_structured_output(self, schema: object) -> _StructuredLLM:
         self.schema = schema
         return self
 

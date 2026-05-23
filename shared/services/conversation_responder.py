@@ -12,6 +12,7 @@ from langchain_openai import ChatOpenAI
 
 from shared.assistant_profile.voice import build_conversation_voice_block
 from shared.i18n import LocaleManager, render_message, render_text
+from shared.i18n.message_keys import as_message_key
 
 _LANGUAGE_LABELS = {
     "en": "English",
@@ -171,7 +172,7 @@ def _contextual_worker_subject_key(context_blob: str) -> str:
 
 def _contextual_worker_subject_label(subject_key: str, locale: str) -> str:
     return render_message(
-        f"conversational.contextual_worker_followup.subject.{subject_key}",
+        as_message_key(f"conversational.contextual_worker_followup.subject.{subject_key}"),
         locale,
         fallback_en=subject_key.replace("_", " "),
     )
@@ -186,7 +187,7 @@ def _contextual_worker_message(
     params: dict[str, object] | None = None
     if subject_key:
         params = {"subject": _contextual_worker_subject_label(subject_key, locale)}
-    return render_message(f"conversational.contextual_worker_followup.{message_key}", locale, params)
+    return render_message(as_message_key(f"conversational.contextual_worker_followup.{message_key}"), locale, params)
 
 
 def _contextual_worker_grounded_reply(

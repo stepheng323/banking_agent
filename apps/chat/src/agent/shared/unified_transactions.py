@@ -217,6 +217,8 @@ def _local_to_record(tx: Any) -> UnifiedTransactionRecord:
     amount = abs(float(_tx_attr(tx, "amount") or 0.0))
     provider_reference = _first_reference(tx)
     tx_id = _clean(_tx_attr(tx, "id"))
+    created_at = _coerce_datetime(_tx_attr(tx, "created_at"))
+    completed_at = _coerce_datetime(_tx_attr(tx, "completed_at"))
     actionable = {
         "retry": transaction_type == "transfer" and status == "failed",
         "receipt": transaction_type == "transfer" and status == "successful",
@@ -251,12 +253,8 @@ def _local_to_record(tx: Any) -> UnifiedTransactionRecord:
             "provider_error_code": _tx_attr(tx, "provider_error_code"),
             "error_message": _tx_attr(tx, "error_message"),
             "failure_category": _tx_attr(tx, "failure_category"),
-            "created_at": _coerce_datetime(_tx_attr(tx, "created_at")).isoformat()
-            if _coerce_datetime(_tx_attr(tx, "created_at"))
-            else None,
-            "completed_at": _coerce_datetime(_tx_attr(tx, "completed_at")).isoformat()
-            if _coerce_datetime(_tx_attr(tx, "completed_at"))
-            else None,
+            "created_at": created_at.isoformat() if created_at else None,
+            "completed_at": completed_at.isoformat() if completed_at else None,
         },
     )
 
@@ -404,7 +402,8 @@ class UnifiedTransactionService:
         return [record for record in records if _in_window(record, start_date, end_date)]
 
     async def _load_local_rows(self, user_id: str, *, start_date: date, end_date: date, limit: int) -> list[Any]:
-        if self.transaction_repo is None:
+        transaction_repo = self.transaction_repo
+        if transaction_repo is None:
             from shared.repositories.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
@@ -417,15 +416,16 @@ class UnifiedTransactionService:
                     limit=limit,
                 )
 
-        if hasattr(self.transaction_repo, "list_by_user_window"):
-            return await self.transaction_repo.list_by_user_window(
+        assert transaction_repo is not None
+        if hasattr(transaction_repo, "list_by_user_window"):
+            return await transaction_repo.list_by_user_window(
                 user_id,
                 start_date=start_date,
                 end_date=end_date,
                 limit=limit,
             )
 
-        rows = await self.transaction_repo.get_by_user(user_id, limit=limit)
+        rows = await transaction_repo.get_by_user(user_id, limit=limit)
         return [
             row
             for row in rows
@@ -433,23 +433,25 @@ class UnifiedTransactionService:
         ]
 
     async def _load_bank_rows(self, user_id: str, *, start_date: date, end_date: date) -> list[Any]:
-        if self.bank_transaction_repo is not None and hasattr(self.bank_transaction_repo, "list_by_user_window"):
-            return await self.bank_transaction_repo.list_by_user_window(
-                user_id,
-                start_date=start_date,
-                end_date=end_date,
-            )
+        bank_transaction_repo = self.bank_transaction_repo
+        if bank_transaction_repo is None or not hasattr(bank_transaction_repo, "list_by_user_window"):
+            from shared.repositories.unit_of_work import UnitOfWork
 
-        from shared.repositories.unit_of_work import UnitOfWork
+            async with UnitOfWork() as uow:
+                if uow.bank_transactions is None:
+                    return []
+                return await uow.bank_transactions.list_by_user_window(
+                    user_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
 
-        async with UnitOfWork() as uow:
-            if uow.bank_transactions is None:
-                return []
-            return await uow.bank_transactions.list_by_user_window(
-                user_id,
-                start_date=start_date,
-                end_date=end_date,
-            )
+        assert bank_transaction_repo is not None
+        return await bank_transaction_repo.list_by_user_window(
+            user_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
     @classmethod
     def reconcile(cls, local_transactions: list[Any], bank_transactions: list[Any]) -> list[UnifiedTransactionRecord]:

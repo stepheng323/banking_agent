@@ -17,7 +17,7 @@ from apps.chat.src.agent.graphs.query.services.fetch import (
 )
 from apps.chat.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.i18n import render_message
+from shared.i18n import MessageKey, render_message
 
 
 async def handle_analytics(
@@ -63,7 +63,7 @@ async def handle_analytics(
                     )
                 )
             if tx_type == "debit":
-                summary_key = (
+                summary_key: MessageKey = (
                     "query.analytics.no_sent"
                     if contract.filters and _first_filter_value(contract.filters.counterparty)
                     else "query.analytics.no_spending"
@@ -304,7 +304,7 @@ def _build_sum_target_description(query: QueryExecutionContract, locale: str) ->
     return "".join(parts)
 
 
-def _sum_summary_key(query: QueryExecutionContract) -> str:
+def _sum_summary_key(query: QueryExecutionContract) -> MessageKey:
     filters = query.filters
     if filters is None:
         return "query.analytics.summary_spent"
