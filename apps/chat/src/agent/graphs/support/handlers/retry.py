@@ -1,11 +1,12 @@
 """Handler for retry transfer requests."""
 
-from typing import Any
+from typing import Any, cast
 
 from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import SupportResponse
 from shared.formatters.transaction_copy import format_transaction_status_reply
-from shared.i18n import render_message
+from shared.i18n import message_key_exists, render_message
+from shared.i18n.message_keys import MessageKey
 from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
@@ -35,14 +36,10 @@ def _failure_category(transaction: dict[str, Any], error: str) -> str:
 
 
 def _retry_block_message(category: str, error: str, *, locale: str) -> str:
-    if locale == "en":
-        guidance = {
-            "insufficient_funds": "Use another source account or reduce the amount before retrying.",
-            "source_account": "Choose another source account or fix the mandate before retrying.",
-            "validation_error": "Correct the recipient account and bank details before retrying.",
-        }.get(category)
-        if guidance:
-            return guidance
+    normalized = category.strip().lower()
+    key = f"support.retry.block.{normalized}"
+    if normalized and message_key_exists(key, locale):
+        return render_message(cast(MessageKey, key), locale)
     return render_message("support.retry.not_retryable", locale, {"error": error})
 
 

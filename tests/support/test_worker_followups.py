@@ -725,6 +725,47 @@ async def test_support_worker_keeps_batch_clarification_alive_for_acknowledgemen
 
 
 @pytest.mark.asyncio
+async def test_support_worker_batch_reference_prompt_uses_locale_catalog() -> None:
+    redis_client = _RedisStub()
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-1", 1),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=10000,
+            recipient_name="Mum",
+            resolved_name="Mercy Johnson",
+            account="8162511023",
+            bank="Opay",
+        ),
+        locale="pcm",
+    )
+    await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message=_group_message("tx-2", 2),
+        task_type="transfer",
+        payload=_leg_payload(
+            amount=5000,
+            recipient_name="Tolu",
+            resolved_name="Tolu Adedayo",
+            account="0760505261",
+            bank="First Bank",
+        ),
+        locale="pcm",
+    )
+
+    result = await _worker(redis_client, {}).run(
+        payload={"intent": "receipt_request"},
+        context={"phone_number": "2348162511023", "channel_identity": "927331985", "language": "pcm"},
+        user_message="Get me the receipt for the transaction",
+    )
+
+    assert result.outcome == SupportOutcome.NEEDS_INPUT
+    assert "I no sure which transaction you mean." in (result.response or "")
+    assert "Na which one you dey talk about:" in (result.response or "")
+
+
+@pytest.mark.asyncio
 async def test_support_worker_enqueues_both_receipts_for_two_leg_batch() -> None:
     redis_client = _RedisStub()
     await record_group_leg_and_maybe_build_summary(

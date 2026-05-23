@@ -1,11 +1,12 @@
 """Handler for failure reason and wrong debit queries."""
 
-from typing import Any
+from typing import Any, cast
 
 from apps.chat.src.agent.graphs.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.graphs.support.models import EscalationResult, SupportResponse
 from shared.formatters.transaction_copy import format_transaction_status_reply
-from shared.i18n import render_message
+from shared.i18n import message_key_exists, render_message
+from shared.i18n.message_keys import MessageKey
 from shared.services.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
@@ -35,16 +36,13 @@ def _failure_category(transaction: dict[str, Any], reason: str) -> str:
 
 
 def _category_guidance(category: str, *, locale: str) -> str | None:
-    if locale != "en":
+    normalized = category.strip().lower()
+    if not normalized:
         return None
-    return {
-        "provider_unavailable": "You can retry now, or wait a bit if the provider is still unstable.",
-        "provider_declined": "The provider declined it. You can retry, but if it repeats, contact support.",
-        "insufficient_funds": "Use another source account or reduce the amount before retrying.",
-        "validation_error": "Check the recipient account and bank details before retrying.",
-        "source_account": "Choose another source account or fix the mandate before retrying.",
-        "execution_error": "This looks like a processing error. You can retry, and contact support if it repeats.",
-    }.get(category)
+    key = f"support.failure.guidance.{normalized}"
+    if not message_key_exists(key, locale):
+        return None
+    return render_message(cast(MessageKey, key), locale)
 
 
 def _append_category_guidance(message: str, category: str, *, locale: str) -> str:

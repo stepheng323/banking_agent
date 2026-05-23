@@ -66,13 +66,28 @@
     "common": {
       "reason": "Reason: {reason}"
     },
+    "reference": {
+      "which_transaction": "Wane transaction kake nufi?",
+      "ambiguous_header": "Ban tabbatar da wane transaction kake nufi ba.",
+      "options_header": "Kana nufin:",
+      "reply_with_one": "Amsa da 1.",
+      "reply_with_range": "Amsa da 1 ko {count}."
+    },
     "failure": {
       "success_no_failure": "• This transfer was actually successful. No failure occurred.",
       "reason_not_provided": "The bank did not provide a specific reason.",
       "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not failed.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
       "debited_failed": "× This ₦{amount} transfer failed after your account was debited.\nReason: {reason}\nA refund is being processed.",
       "not_debited_failed": "× This ₦{amount} transfer failed.\nReason: {reason}\nNo money was debited from your account.",
-      "unknown_reason_contact": "Unable to determine failure reason. Please contact support."
+      "unknown_reason_contact": "Unable to determine failure reason. Please contact support.",
+      "guidance": {
+        "provider_unavailable": "Za ka iya sake gwadawa yanzu, ko ka jira kadan idan provider bai daidaita ba.",
+        "provider_declined": "Provider ya ki karba. Za ka iya sake gwadawa, amma idan ya maimaitu, tuntubi support.",
+        "insufficient_funds": "Yi amfani da wani source account ko ka rage amount kafin retry.",
+        "validation_error": "Duba recipient account da bank details kafin retry.",
+        "source_account": "Zabi wani source account ko gyara mandate kafin retry.",
+        "execution_error": "Wannan kamar processing error ne. Za ka iya retry, kuma tuntubi support idan ya maimaitu."
+      }
     },
     "wrong_debit": {
       "success_debit_correct": "• This transfer was successful. The debit was correct.",
@@ -95,7 +110,12 @@
       "pending_wait": "○ This transfer is still processing.\nPlease wait for it to complete before retrying.",
       "ready": "Ready to retry ₦{amount} to {recipient}.\nReply 'yes' to confirm.",
       "not_retryable": "× Cannot retry this transfer: {error}\nPlease resolve the issue first.",
-      "unknown_status": "Cannot determine if this transfer can be retried. Status: {status}"
+      "unknown_status": "Cannot determine if this transfer can be retried. Status: {status}",
+      "block": {
+        "insufficient_funds": "Yi amfani da wani source account ko ka rage amount kafin retry.",
+        "source_account": "Zabi wani source account ko gyara mandate kafin retry.",
+        "validation_error": "Gyara recipient account da bank details kafin retry."
+      }
     },
     "status": {
       "success_no_time": "• This transfer of ₦{amount} to {recipient} was successful.",
@@ -120,7 +140,15 @@
       "account": "Account: {account}",
       "ref": "Ref: {reference}",
       "date": "Date: {date}",
-      "status_success": "Status: • Successful"
+      "status_success": "Status: • Successful",
+      "batch_sending_one": "Ina aika receipt yanzu.",
+      "batch_sending_many": "Ina aika receipts na transfers da suka yi nasara yanzu.",
+      "batch_skipped_failed": "{count} failed",
+      "batch_skipped_pending": "{count} pending",
+      "batch_skipped_non_transfer": "{count} non-transfer",
+      "batch_skipped_items": "{base} Na tsallake {skipped} item{item_suffix}.",
+      "batch_exhausted": "Na riga na aika available receipts na wannan batch.",
+      "batch_no_completed": "Ba zan iya aika receipts na wannan batch yanzu ba saboda babu transfer leg da ya kammala successfully."
     },
     "ticket": {
       "not_found": "I couldn't find a ticket with code {ticket_code}.\n\nPlease check the code and try again.",

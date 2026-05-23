@@ -66,13 +66,28 @@
     "common": {
       "reason": "Reason: {reason}"
     },
+    "reference": {
+      "which_transaction": "Which transaction you mean?",
+      "ambiguous_header": "I no sure which transaction you mean.",
+      "options_header": "Na which one you dey talk about:",
+      "reply_with_one": "Reply with 1.",
+      "reply_with_range": "Reply with 1 or {count}."
+    },
     "failure": {
       "success_no_failure": "• This transfer was actually successful. No failure occurred.",
       "reason_not_provided": "The bank did not provide a specific reason.",
       "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not failed.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
       "debited_failed": "× This ₦{amount} transfer failed after your account was debited.\nReason: {reason}\nA refund is being processed.",
       "not_debited_failed": "× This ₦{amount} transfer failed.\nReason: {reason}\nNo money was debited from your account.",
-      "unknown_reason_contact": "Unable to determine failure reason. Please contact support."
+      "unknown_reason_contact": "Unable to determine failure reason. Please contact support.",
+      "guidance": {
+        "provider_unavailable": "You fit retry now, or wait small if provider still dey unstable.",
+        "provider_declined": "Provider decline am. You fit retry, but if e repeat, contact support.",
+        "insufficient_funds": "Use another source account or reduce the amount before you retry.",
+        "validation_error": "Check recipient account and bank details before you retry.",
+        "source_account": "Choose another source account or fix the mandate before you retry.",
+        "execution_error": "This one look like processing error. You fit retry, and contact support if e repeat."
+      }
     },
     "wrong_debit": {
       "success_debit_correct": "• This transfer was successful. The debit was correct.",
@@ -95,7 +110,12 @@
       "pending_wait": "○ This transfer is still processing.\nPlease wait for it to complete before retrying.",
       "ready": "Ready to retry ₦{amount} to {recipient}.\nReply 'yes' to confirm.",
       "not_retryable": "× Cannot retry this transfer: {error}\nPlease resolve the issue first.",
-      "unknown_status": "Cannot determine if this transfer can be retried. Status: {status}"
+      "unknown_status": "Cannot determine if this transfer can be retried. Status: {status}",
+      "block": {
+        "insufficient_funds": "Use another source account or reduce the amount before you retry.",
+        "source_account": "Choose another source account or fix the mandate before you retry.",
+        "validation_error": "Correct recipient account and bank details before you retry."
+      }
     },
     "status": {
       "success_no_time": "• This transfer of ₦{amount} to {recipient} was successful.",
@@ -120,7 +140,15 @@
       "account": "Account: {account}",
       "ref": "Ref: {reference}",
       "date": "Date: {date}",
-      "status_success": "Status: • Successful"
+      "status_success": "Status: • Successful",
+      "batch_sending_one": "I dey send the receipt now.",
+      "batch_sending_many": "I dey send receipts for the successful transfers now.",
+      "batch_skipped_failed": "{count} failed",
+      "batch_skipped_pending": "{count} pending",
+      "batch_skipped_non_transfer": "{count} non-transfer",
+      "batch_skipped_items": "{base} I skip {skipped} item{item_suffix}.",
+      "batch_exhausted": "I don already send the available receipts for that batch.",
+      "batch_no_completed": "I no fit send receipts for that batch yet because none of those transfer legs complete successfully."
     },
     "ticket": {
       "not_found": "I couldn't find a ticket with code {ticket_code}.\n\nPlease check the code and try again.",

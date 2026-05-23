@@ -197,23 +197,27 @@ def _candidate_label(candidate: SupportReferenceCandidate) -> str:
     return candidate.task_type.replace("_", " ").title()
 
 
-def _build_reference_prompt(candidates: list[SupportReferenceCandidate]) -> str:
+def _build_reference_prompt(candidates: list[SupportReferenceCandidate], locale: str) -> str:
     if not candidates:
-        return "Which transaction do you mean?"
-    lines = ["I'm not sure which one you mean (Which transaction).", "", "Are you referring to:"]
+        return render_message("support.reference.which_transaction", locale)
+    lines = [
+        render_message("support.reference.ambiguous_header", locale),
+        "",
+        render_message("support.reference.options_header", locale),
+    ]
     for candidate in candidates:
         amount = format_naira(candidate.amount) if isinstance(candidate.amount, (int, float)) else "This transaction"
         lines.append(f"{candidate.ordinal}️⃣ {amount} — {_candidate_label(candidate)}")
-    lines.extend(["", "Reply with the number or rephrase."])
+    lines.extend(["", render_message("query.clarify.reply_number_or_rephrase", locale)])
     return "\n".join(lines)
 
 
-def _build_reference_reminder(candidates: list[SupportReferenceCandidate]) -> str:
+def _build_reference_reminder(candidates: list[SupportReferenceCandidate], locale: str) -> str:
     if not candidates:
-        return render_message("support.ask_clarification", "en")
+        return render_message("support.ask_clarification", locale)
     if len(candidates) == 1:
-        return "Reply with 1."
-    return f"Reply with 1 or {len(candidates)}."
+        return render_message("support.reference.reply_with_one", locale)
+    return render_message("support.reference.reply_with_range", locale, {"count": len(candidates)})
 
 
 def _leg_to_candidate(leg: RecentBatchLeg) -> SupportReferenceCandidate | None:
@@ -251,23 +255,32 @@ def _build_batch_receipt_ack(
     skipped_failed: int,
     skipped_processing: int,
     skipped_non_transfer: int,
+    locale: str,
 ) -> str:
-    base = "I'm sending the receipt now." if total_jobs == 1 else "I'm sending the receipts for the successful transfers now."
+    base_key = "support.receipt.batch_sending_one" if total_jobs == 1 else "support.receipt.batch_sending_many"
+    base = render_message(base_key, locale)
     skipped_parts: list[str] = []
     if skipped_failed:
-        skipped_parts.append(f"{skipped_failed} failed")
+        skipped_parts.append(render_message("support.receipt.batch_skipped_failed", locale, {"count": skipped_failed}))
     if skipped_processing:
-        skipped_parts.append(f"{skipped_processing} pending")
+        skipped_parts.append(render_message("support.receipt.batch_skipped_pending", locale, {"count": skipped_processing}))
     if skipped_non_transfer:
-        skipped_parts.append(f"{skipped_non_transfer} non-transfer")
+        skipped_parts.append(
+            render_message("support.receipt.batch_skipped_non_transfer", locale, {"count": skipped_non_transfer})
+        )
     if not skipped_parts:
         return base
     skipped_text = ", ".join(skipped_parts)
-    return f"{base} I skipped {skipped_text} item{'s' if sum((skipped_failed, skipped_processing, skipped_non_transfer)) != 1 else ''}."
+    skipped_count = sum((skipped_failed, skipped_processing, skipped_non_transfer))
+    return render_message(
+        "support.receipt.batch_skipped_items",
+        locale,
+        {"base": base, "skipped": skipped_text, "item_suffix": "s" if skipped_count != 1 else ""},
+    )
 
 
-def _batch_receipt_exhausted_message() -> str:
-    return "I've already sent the available receipts for that batch."
+def _batch_receipt_exhausted_message(locale: str) -> str:
+    return render_message("support.receipt.batch_exhausted", locale)
 
 
 class SupportWorker:
@@ -434,6 +447,7 @@ class SupportWorker:
         *,
         async_group_id: str,
         candidates: list[SupportReferenceCandidate],
+        locale: str,
         served_transaction_ids: list[str] | None = None,
         last_selector_result_ids: list[str] | None = None,
         last_served_transaction_ids: list[str] | None = None,
@@ -448,7 +462,7 @@ class SupportWorker:
             remaining_transaction_ids=remaining_ids,
             last_selector_result_ids=list(dict.fromkeys(last_selector_result_ids or [])),
             last_served_transaction_ids=list(dict.fromkeys(last_served_transaction_ids or [])),
-            reminder=_build_reference_reminder(self._eligible_receipt_candidates(candidates)),
+            reminder=_build_reference_reminder(self._eligible_receipt_candidates(candidates), locale),
         )
 
     async def _save_receipt_thread_state(
@@ -549,11 +563,11 @@ class SupportWorker:
         locale: str,
         intent: SupportIntent | None = None,
     ) -> None:
-        reminder = _build_reference_reminder(candidates)
+        reminder = _build_reference_reminder(candidates, locale)
         support_ctx.pending_reference = PendingReferenceState(
             source="recent_batch",
             candidates=candidates,
-            reminder=reminder if locale == "en" else reminder,
+            reminder=reminder,
             intent=intent.value if intent is not None else None,
         )
         await self.context_manager.save(user_id, support_ctx)
@@ -564,6 +578,7 @@ class SupportWorker:
         message: str,
         candidates: list[SupportReferenceCandidate],
         thread_state: ReceiptBatchThreadState | None,
+        locale: str,
     ) -> tuple[list[SupportReferenceCandidate], ReceiptBatchSelection | None, str | None, list[SupportReferenceCandidate] | None]:
         eligible_candidates = self._eligible_receipt_candidates(candidates)
         remaining_candidates = [
@@ -589,7 +604,7 @@ class SupportWorker:
                 )
             if remaining_candidates:
                 return [], None, None, remaining_candidates
-            return [], None, _batch_receipt_exhausted_message(), None
+            return [], None, _batch_receipt_exhausted_message(locale), None
 
         if _REMAINING_RE.search(normalized_message):
             if remaining_candidates:
@@ -604,7 +619,7 @@ class SupportWorker:
                     None,
                     None,
                 )
-            return [], None, _batch_receipt_exhausted_message(), None
+            return [], None, _batch_receipt_exhausted_message(locale), None
 
         if all_except_match:
             base_candidates = candidates
@@ -619,7 +634,7 @@ class SupportWorker:
                 return [], None, None, eligible_candidates
             selected = [candidate for candidate in base_candidates if candidate not in excluded]
             if not selected and excluded:
-                return [], None, _batch_receipt_exhausted_message(), None
+                return [], None, _batch_receipt_exhausted_message(locale), None
             return (
                 selected,
                 self._selector_from_refs(
@@ -981,7 +996,7 @@ class SupportWorker:
             return None, None
 
         if _ACK_ONLY_RE.match(message):
-            reminder = pending.reminder or _build_reference_reminder(pending.candidates)
+            reminder = pending.reminder or _build_reference_reminder(pending.candidates, locale)
             await self.context_manager.save(user_id, support_ctx)
             return None, SupportResult(outcome=SupportOutcome.NEEDS_INPUT, response=reminder)
 
@@ -1000,6 +1015,7 @@ class SupportWorker:
             updated_thread = self._build_receipt_thread_state(
                 async_group_id=thread_state.async_group_id,
                 candidates=thread_state.candidates,
+                locale=locale,
                 served_transaction_ids=thread_state.served_transaction_ids + [matches[0].transaction_id],
                 last_selector_result_ids=[matches[0].transaction_id],
                 last_served_transaction_ids=[matches[0].transaction_id],
@@ -1079,7 +1095,7 @@ class SupportWorker:
         )
         return None, SupportResult(
             outcome=SupportOutcome.NEEDS_INPUT,
-            response=_build_reference_prompt(failed_candidates),
+            response=_build_reference_prompt(failed_candidates, locale),
         )
 
     async def _resolve_recent_batch_receipt_reference(
@@ -1119,12 +1135,14 @@ class SupportWorker:
             message=message,
             candidates=candidates,
             thread_state=thread_state if isinstance(thread_state, ReceiptBatchThreadState) else None,
+            locale=locale,
         )
         if exhausted_message is not None:
             if async_group_id:
                 support_ctx.receipt_thread_state = self._build_receipt_thread_state(
                     async_group_id=async_group_id,
                     candidates=candidates,
+                    locale=locale,
                     served_transaction_ids=(
                         thread_state.served_transaction_ids
                         if isinstance(thread_state, ReceiptBatchThreadState)
@@ -1148,7 +1166,7 @@ class SupportWorker:
                 locale=locale,
             )
             if not jobs:
-                response = "I can't send receipts for that batch yet because none of those transfer legs completed successfully."
+                response = render_message("support.receipt.batch_no_completed", locale)
                 return None, SupportResult(
                     outcome=SupportOutcome.OK,
                     response=response,
@@ -1166,6 +1184,7 @@ class SupportWorker:
                 updated_thread = self._build_receipt_thread_state(
                     async_group_id=async_group_id,
                     candidates=candidates,
+                    locale=locale,
                     served_transaction_ids=served_ids + selected_ids,
                     last_selector_result_ids=selected_ids,
                     last_served_transaction_ids=selected_ids,
@@ -1181,6 +1200,7 @@ class SupportWorker:
                 skipped_failed=skipped_failed,
                 skipped_processing=skipped_processing,
                 skipped_non_transfer=skipped_non_transfer,
+                locale=locale,
             )
             if len(selected) == 1 and selection and selection.selection_mode == "subset":
                 resolved = await self._load_transaction_dict(selected[0].transaction_id)
@@ -1221,6 +1241,7 @@ class SupportWorker:
                 thread_state=self._build_receipt_thread_state(
                     async_group_id=async_group_id,
                     candidates=candidates,
+                    locale=locale,
                     served_transaction_ids=existing_served,
                     last_selector_result_ids=[],
                     last_served_transaction_ids=[],
@@ -1228,7 +1249,7 @@ class SupportWorker:
             )
         return None, SupportResult(
             outcome=SupportOutcome.NEEDS_INPUT,
-            response=_build_reference_prompt(prompt_candidates),
+            response=_build_reference_prompt(prompt_candidates, locale),
         )
 
     async def run(
