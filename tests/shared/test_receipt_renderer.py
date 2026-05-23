@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from apps.receipt.src.renderer import ReceiptRenderer
+from shared.config.settings import settings
 
 
 @pytest.mark.asyncio
@@ -71,7 +72,7 @@ async def test_render_receipt_uses_fast_wait_and_local_font_html(monkeypatch: py
             "source": {"account_name": "John", "name": "First Bank", "account_number": "0987654321"},
             "channel": "whatsapp",
             "session_id": "SESSION-FAST-1",
-            "processor_name": "Narya AI Gateway",
+            "processor_name": f"{settings.app_name} Gateway",
             "narration": "Test transfer",
         },
         transaction_reference="TRX-FAST-1",
