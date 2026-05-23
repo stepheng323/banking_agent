@@ -7,6 +7,7 @@ from typing import Any, Literal, cast
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.context.referent_memory import build_resolved_referents, forget_stashed_referents
 from apps.chat.src.agent.orchestrator.context.surface_adapter import build_context_frame_from_surface_view
 from apps.chat.src.agent.orchestrator.models.domain import (
     AccountOutcome,
@@ -248,6 +249,7 @@ def _push_query_followup_referent_frame(
     )
     OrchestratorContextManager().push_frame(ctx.state, frame)
     ctx.agg.updates["context_frames"] = ctx.state.context_frames
+    ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
 
 
 def _push_account_list_frame(ctx: ExecutionContext, accounts: list[dict[str, Any]]) -> None:
@@ -279,6 +281,7 @@ def _push_account_list_frame(ctx: ExecutionContext, accounts: list[dict[str, Any
     )
     OrchestratorContextManager().push_frame(ctx.state, frame)
     ctx.agg.updates["context_frames"] = ctx.state.context_frames
+    ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
     logger.info("context_frame_pushed", type="account_list", count=len(entities))
 
 
@@ -316,6 +319,7 @@ def _push_schedule_list_frame(ctx: ExecutionContext, items: list[dict[str, Any]]
     )
     OrchestratorContextManager().push_frame(ctx.state, frame)
     ctx.agg.updates["context_frames"] = ctx.state.context_frames
+    ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
     logger.info("context_frame_pushed", type="schedule_list", count=len(entities))
 
 
@@ -345,6 +349,7 @@ def _push_query_surface_frame(ctx: ExecutionContext, query_result: Any) -> None:
 
     OrchestratorContextManager().push_frame(ctx.state, frame)
     ctx.agg.updates["context_frames"] = ctx.state.context_frames
+    ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
     logger.info("context_frame_pushed", type=frame.frame_type.value, count=len(frame.items))
 
 
@@ -595,15 +600,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
                 error=str(e),
             )
 
-    ctx_manager = OrchestratorContextManager()
-    previous_beneficiary_entity = ctx_manager.latest_beneficiary_entity(ctx.state)
-    previous_beneficiary = None
-    if previous_beneficiary_entity is not None:
-        previous_beneficiary = dict(previous_beneficiary_entity.data)
-        if previous_beneficiary_entity.focused_referent is not None:
-            previous_beneficiary["focused_referent"] = previous_beneficiary_entity.focused_referent.model_dump()
-        if previous_beneficiary_entity.selection_payload is not None:
-            previous_beneficiary["selection_payload"] = previous_beneficiary_entity.selection_payload.model_dump()
+    resolved_referents = build_resolved_referents(ctx.state, user_msg)
     context_data = {
         "phone_number": ctx.state.phone_number,
         "channel": ctx.state.channel,
@@ -612,8 +609,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "accounts": ctx.state.loaded_context.get("transaction_accounts", ctx.state.loaded_context.get("accounts", [])),
         "all_accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": beneficiaries,
-        "recent_beneficiary_context": ctx_manager.has_recent_beneficiary_context(ctx.state),
-        "previous_beneficiary": previous_beneficiary,
+        "referent_memory": ctx.state.referent_memory.model_dump(mode="json"),
+        "resolved_referents": resolved_referents,
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
@@ -865,6 +862,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
 
                     ctx_manager.push_frame(ctx.state, frame)
                     ctx.agg.updates["context_frames"] = ctx.state.context_frames
+                    ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
                     logger.info("context_frame_pushed", type="beneficiary_list", count=len(entities))
 
             if result.response:
@@ -959,6 +957,8 @@ async def _handle_purchase_task(
         "accounts": ctx.state.loaded_context.get("transaction_accounts", ctx.state.loaded_context.get("accounts", [])),
         "all_accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "referent_memory": ctx.state.referent_memory.model_dump(mode="json"),
+        "resolved_referents": build_resolved_referents(ctx.state, user_msg),
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
@@ -1274,6 +1274,10 @@ async def handle_orchestrator_task(task: Any, task_id: str, ctx: ExecutionContex
     intent = str(last_session.get("intent", render_message("orchestrator.session.default_intent", locale)))
     ctx.agg.updates["stashed_sessions"] = remaining_stash
     ctx.agg.updates["context_frames"] = _clear_resume_prompt_frames(ctx.state.context_frames)
+    stash_id = str(last_session.get("stash_id") or "").strip()
+    if stash_id:
+        forget_stashed_referents(ctx.state, {stash_id})
+        ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
 
     if action == "resume_session":
         p_interrupt = last_session.get("pending_interrupt")

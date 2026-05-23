@@ -17,6 +17,7 @@ from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph.state import CompiledStateGraph
 
 from apps.chat.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.chat.src.agent.orchestrator.context.referent_memory import referent_memory_ttl_seconds
 from apps.chat.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.nodes.cancellation import cancel_match_kind, is_obvious_cancel_message
@@ -884,7 +885,7 @@ class OrchestratorGraphHandler:
         )
 
         if not tasks and not waves and not pending_interrupt and not stashed_sessions:
-            context_frame_ttl = self._context_frame_ttl_seconds(state)
+            context_frame_ttl = max(self._context_frame_ttl_seconds(state), referent_memory_ttl_seconds(state))
             if context_frame_ttl > 0:
                 ttl_ok = await self._apply_session_ttl(thread_id, ttl=context_frame_ttl)
                 logger.info(

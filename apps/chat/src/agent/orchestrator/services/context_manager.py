@@ -1,6 +1,7 @@
 import time
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
+from apps.chat.src.agent.orchestrator.context.referent_memory import remember_referents_from_frame
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
 
@@ -40,6 +41,7 @@ class OrchestratorContextManager:
             active_frames = active_frames[-self.max_frames :]
 
         state.context_frames = active_frames
+        remember_referents_from_frame(state, frame)
         logger.info("context_frame_pushed", type=frame.frame_type, frame_id=frame.frame_id)
         return state
 
@@ -67,24 +69,9 @@ class OrchestratorContextManager:
         """Return the latest active frame with entries, regardless of frame type."""
         return self._latest_active_frame(state)
 
-    def has_recent_beneficiary_context(self, state: OrchestratorState) -> bool:
-        """Return whether a recent beneficiary-list frame with entries exists."""
-        return self._latest_active_frame(state, frame_type=ContextFrameType.BENEFICIARY_LIST) is not None
-
     def latest_beneficiary_frame(self, state: OrchestratorState) -> ContextFrame | None:
         """Return the latest active beneficiary-list frame with entries."""
         return self._latest_active_frame(state, frame_type=ContextFrameType.BENEFICIARY_LIST)
-
-    def latest_beneficiary_entity(self, state: OrchestratorState) -> ContextEntity | None:
-        """Return the focused beneficiary entity from the latest active beneficiary frame."""
-        frame = self.latest_beneficiary_frame(state)
-        if frame is None:
-            return None
-        if len(frame.items) == 1:
-            return frame.items[0]
-        if 0 <= frame.focus_index < len(frame.items):
-            return frame.items[frame.focus_index]
-        return None
 
     def build_llm_summary(self, state: OrchestratorState) -> str:
         """Generate compact summary of active context for LLM."""

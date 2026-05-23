@@ -232,6 +232,68 @@ def _resolve_beneficiary_selection_from_input(
     )
 
 
+def _render_referent_recipient_retry_prompt(candidates: list[dict[str, Any]], locale: str) -> str:
+    prompt = render_message("transfer.resolve.which_recipient", locale, fallback_en="Which recipient did you mean?")
+    lines = "\n".join(
+        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}"
+        for idx, candidate in enumerate(candidates, start=1)
+    )
+    reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
+    return f"{prompt}\n{lines}\n{reply_hint}" if lines else f"{prompt}\n{reply_hint}"
+
+
+def _resolve_referent_recipient_selection_from_input(
+    user_message: str,
+    existing_candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
+    clean_msg = user_message.strip()
+    if not clean_msg or not existing_candidates:
+        return None, None
+
+    selected: dict[str, Any] | None = None
+    if clean_msg.isdigit():
+        selected_index = int(clean_msg)
+        for candidate in existing_candidates:
+            try:
+                candidate_index = int(candidate.get("index", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if candidate_index == selected_index:
+                selected = candidate
+                break
+        if selected is None:
+            return None, existing_candidates
+    else:
+        normalized_input = clean_msg.lower()
+        for candidate in existing_candidates:
+            option_id = str(candidate.get("option_id") or "").strip().lower()
+            if option_id and normalized_input == option_id:
+                selected = candidate
+                break
+        if selected is None:
+            return None, None
+
+    patch_fields = (
+        "beneficiary_id",
+        "recipient_name",
+        "recipient_resolved_name",
+        "recipient_account",
+        "recipient_bank_name",
+        "recipient_bank_code",
+        "recipient_bank_code_provider",
+        "recipient_resolution_provider",
+        "resolved_from_saved_beneficiary",
+    )
+    patch = {
+        field: selected.get(field)
+        for field in patch_fields
+        if selected.get(field) not in (None, "")
+    }
+    patch["referent_recipient_candidates"] = []
+    patch["confirmation"] = {"confirmed": False}
+    return patch, None
+
+
 def _should_override_skip_extraction(payload: TransferPayload) -> bool:
     """Return True when planner-provided recipient text still needs LLM entity extraction."""
     if payload.recipient_account and (payload.recipient_bank_name or payload.recipient_bank_code):
@@ -769,7 +831,42 @@ class ExtractionStep(TransferStep):
             logger.info("override_skip_extraction_for_account_like_recipient", recipient=data.recipient_name)
 
         waiting_for_beneficiary = "beneficiary_id" in required_fields
+        waiting_for_referent_recipient = "referent_recipient_id" in required_fields
         waiting_for_source_account = "source_account_id" in required_fields
+        if waiting_for_referent_recipient:
+            referent_patch, invalid_referents = _resolve_referent_recipient_selection_from_input(
+                self.user_message,
+                data.referent_recipient_candidates,
+            )
+            if referent_patch:
+                logger.info(
+                    "transfer_extraction_referent_recipient_selection",
+                    fields=sorted(referent_patch.keys()),
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(referent_patch),
+                )
+            if invalid_referents:
+                retry_prompt = _render_referent_recipient_retry_prompt(invalid_referents, context.language)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["referent_recipient_id"],
+                    prompt=retry_prompt,
+                    patch=_with_skip_patch({"referent_recipient_candidates": invalid_referents}),
+                    details={
+                        "ambiguity": "MULTIPLE_REFERENT_RECIPIENTS",
+                        "candidates": invalid_referents,
+                        "options": [
+                            {
+                                "id": str(candidate.get("option_id", "")).strip(),
+                                "title": str(candidate.get("label", "")),
+                            }
+                            for candidate in invalid_referents
+                            if str(candidate.get("option_id", "")).strip()
+                        ],
+                    },
+                )
         if waiting_for_beneficiary:
             beneficiary_patch, invalid_candidates = _resolve_beneficiary_selection_from_input(
                 self.user_message,

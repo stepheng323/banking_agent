@@ -451,6 +451,16 @@ async def _build_planner_context(
         )
         logger.info("planner_context_injected", context="short_term_memory")
 
+    if turn_summary.referent_memory_summary and not compact_transaction_context:
+        has_short_term_memory = True
+        planner_context_sections.append(
+            (
+                "referent_memory",
+                _clip_text(turn_summary.referent_memory_summary, PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS),
+            )
+        )
+        logger.info("planner_context_injected", context="referent_memory")
+
     recent_domain_focus = turn_summary.recent_domain_focus
     if recent_domain_focus and not compact_transaction_context:
         planner_context_sections.append(

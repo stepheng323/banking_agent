@@ -243,6 +243,48 @@ async def test_extraction_step_accepts_option_id_for_beneficiary_selection() -> 
     assert result.patch["beneficiary_candidates"] == []
 
 
+async def test_extraction_step_accepts_numeric_referent_recipient_selection() -> None:
+    step = ExtractionStep(user_message="1")
+    payload = TransferPayload(
+        recipient_name="him",
+        referent_recipient_candidates=[
+            {
+                "index": 1,
+                "option_id": "referent:1",
+                "label": "Grace • Opay • ****1023",
+                "beneficiary_id": "bene-grace",
+                "recipient_name": "Grace",
+                "recipient_resolved_name": "Grace Okafor",
+                "recipient_account": "8162511023",
+                "recipient_bank_name": "Opay",
+                "recipient_bank_code": "100004",
+                "resolved_from_saved_beneficiary": True,
+            },
+            {
+                "index": 2,
+                "option_id": "referent:2",
+                "label": "Ada • GTBank • ****0003",
+                "recipient_name": "Ada",
+                "recipient_account": "2010000003",
+                "recipient_bank_name": "GTBank",
+            },
+        ],
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["referent_recipient_id"],
+        previous_response="Which recipient did you mean?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_name"] == "Grace"
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["referent_recipient_candidates"] == []
+
+
 async def test_extraction_step_accepts_unique_bank_label_for_beneficiary_selection() -> None:
     first_id = str(uuid4())
     second_id = str(uuid4())

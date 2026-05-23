@@ -179,8 +179,10 @@ class TransferWorker:
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
             all_accounts=context.get("all_accounts", []),
-            recent_beneficiary_context=bool(context.get("recent_beneficiary_context")),
-            previous_beneficiary=context.get("previous_beneficiary"),
+            referent_memory=context.get("referent_memory") if isinstance(context.get("referent_memory"), dict) else {},
+            resolved_referents=(
+                context.get("resolved_referents") if isinstance(context.get("resolved_referents"), dict) else {}
+            ),
             channel=str(context.get("channel") or "whatsapp"),
             channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
         )

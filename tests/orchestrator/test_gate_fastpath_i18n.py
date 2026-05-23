@@ -4220,6 +4220,103 @@ class _RouteTurnPlanner:
         raise AssertionError("planner should not run when gate returns a direct router answer")
 
 
+def _resume_prompt_frame() -> ContextFrame:
+    return ContextFrame(
+        frame_id="resume-frame",
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_id="resumption_prompt",
+                entity_type=EntityType.GENERIC,
+                label="Resume transfer",
+                data={"intent": "transfer", "resume_prompt": True, "stash_id": "stash-gate"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=300,
+    )
+
+
+def _stashed_transfer_session() -> dict[str, object]:
+    return {
+        "stash_id": "stash-gate",
+        "tasks": {
+            "t_stashed": TaskSpec(
+                id="t_stashed",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 5000, "recipient_name": "Grace"},
+            )
+        },
+        "waves": [["t_stashed"]],
+        "current_wave_index": 0,
+        "pending_interrupt": {"kind": "input", "task_ids": ["t_stashed"]},
+        "intent": "transfer",
+        "stashed_at_ts": int(time.time()),
+    }
+
+
+@pytest.mark.parametrize("message", ["yes", "continue", "that transfer"])
+async def test_gate_resume_prompt_accepts_terse_replies_without_semantic_router(message: str) -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_resume",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        last_message_text=message,
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "resume_session_direct"
+    assert planner.route_calls == 0
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "orchestrator"
+    assert task.payload["action"] == "resume_session"
+
+
+@pytest.mark.parametrize("message", ["no", "leave it"])
+async def test_gate_resume_prompt_dismisses_terse_replies_without_semantic_router(message: str) -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_resume_dismiss",
+        phone_number="2348000000101",
+        channel="whatsapp",
+        last_message_text=message,
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "dismiss_resume_session_direct"
+    assert planner.route_calls == 0
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["action"] == "dismiss_resume_session"
+
+
+async def test_gate_resume_prompt_does_not_capture_fresh_transfer_request() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="semantic path"))
+    state = OrchestratorState(
+        user_id="u_gate_resume_fresh",
+        phone_number="2348000000102",
+        channel="whatsapp",
+        last_message_text="send 5k to Ada",
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] != "resume_session_direct"
+    assert next(iter(updates["tasks"].values())).type == "transfer"
+
+
 class _ScheduleReadPlanner(_RouteTurnPlanner):
     def __init__(self, schedule_read_decision: SemanticRouteDecision) -> None:
         super().__init__(

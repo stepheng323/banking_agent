@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
+from apps.chat.src.agent.orchestrator.context.referent_memory import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 from shared.types.planner import PlannerOutput
 
@@ -58,6 +59,7 @@ class OrchestratorState(BaseModel):
 
     # Context Frames (Upstream)
     context_frames: list[ContextFrame] = Field(default_factory=list)
+    referent_memory: ShortTermReferentMemory = Field(default_factory=ShortTermReferentMemory)
 
     # Direct Path & Session Stack (Optimization)
     direct_path_triggered: bool = False

@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
 from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup import build_context_frame_followup_response
+from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.config.settings import settings
 from shared.types.planner import ContextFrameFollowupDecision
 
@@ -576,88 +577,70 @@ async def test_unsafe_recipient_name_falls_back_to_generic_prompt_label() -> Non
     assert "please share the account number and bank for recipient." in text
 
 
-async def test_transfer_handler_passes_recent_beneficiary_context_to_worker() -> None:
+async def test_transfer_handler_passes_referent_memory_to_worker() -> None:
     worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
-    state = _build_state()
+    state = _build_state(last_message_text="send her 5k")
     now = int(time.time())
-    state.context_frames = [
-        ContextFrame(
-            frame_id="frame_bene_recent",
-            frame_type=ContextFrameType.BENEFICIARY_LIST,
-            items=[
-                ContextEntity(
-                    entity_type=EntityType.BENEFICIARY,
-                    entity_id="bene-1",
-                    label="Mum",
-                    data={"id": "bene-1", "alias": "Mum"},
-                )
-            ],
-            created_at_ts=now,
-            ttl_seconds=600,
-        )
-    ]
+    frame = ContextFrame(
+        frame_id="frame_bene_recent",
+        frame_type=ContextFrameType.BENEFICIARY_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.BENEFICIARY,
+                entity_id="bene-1",
+                label="Mum",
+                data={"id": "bene-1", "alias": "Mum"},
+            )
+        ],
+        created_at_ts=now,
+        ttl_seconds=600,
+    )
+    OrchestratorContextManager().push_frame(state, frame)
     config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
 
     await advance_wave(state, config)
 
     assert worker.last_context is not None
-    assert worker.last_context.get("recent_beneficiary_context") is True
+    assert worker.last_context.get("referent_memory", {}).get("items")
+    assert worker.last_context.get("resolved_referents", {}).get("recipient", {}).get("status") == "resolved"
 
 
-async def test_transfer_handler_passes_focused_previous_beneficiary_to_worker() -> None:
+async def test_transfer_handler_resolves_focused_beneficiary_referent_to_worker() -> None:
     worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
-    state = _build_state()
+    state = _build_state(last_message_text="send her 5k")
     now = int(time.time())
-    state.context_frames = [
-        ContextFrame(
-            frame_id="frame_bene_focused",
-            frame_type=ContextFrameType.BENEFICIARY_LIST,
-            items=[
-                ContextEntity(
-                    entity_type=EntityType.BENEFICIARY,
-                    entity_id="bene-1",
-                    label="Mum",
-                    data={
-                        "id": "bene-1",
-                        "alias": "Mum",
-                        "account_name": "Mercy Johnson",
-                        "account_number": "8162511023",
-                        "bank_name": "Opay",
-                        "bank_code": "100004",
-                    },
-                ),
-                ContextEntity(
-                    entity_type=EntityType.BENEFICIARY,
-                    entity_id="bene-2",
-                    label="Dad",
-                    data={
-                        "id": "bene-2",
-                        "alias": "Dad",
-                        "account_name": "Papa Johnson",
-                        "account_number": "2010000003",
-                        "bank_name": "GTBank",
-                        "bank_code": "058",
-                    },
-                ),
-            ],
-            focus_index=0,
-            created_at_ts=now,
-            ttl_seconds=600,
-        )
-    ]
+    frame = ContextFrame(
+        frame_id="frame_bene_focused",
+        frame_type=ContextFrameType.BENEFICIARY_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.BENEFICIARY,
+                entity_id="bene-1",
+                label="Mum",
+                data={
+                    "id": "bene-1",
+                    "alias": "Mum",
+                    "account_name": "Mercy Johnson",
+                    "account_number": "8162511023",
+                    "bank_name": "Opay",
+                    "bank_code": "100004",
+                },
+            )
+        ],
+        focus_index=0,
+        created_at_ts=now,
+        ttl_seconds=600,
+    )
+    OrchestratorContextManager().push_frame(state, frame)
     config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
 
     await advance_wave(state, config)
 
     assert worker.last_context is not None
-    assert worker.last_context.get("previous_beneficiary") == {
-        "id": "bene-1",
-        "alias": "Mum",
-        "account_name": "Mercy Johnson",
-        "account_number": "8162511023",
-        "bank_name": "Opay",
-        "bank_code": "100004",
-    }
+    resolved = worker.last_context.get("resolved_referents", {}).get("recipient", {})
+    data = resolved.get("item", {}).get("data", {})
+    assert resolved.get("status") == "resolved"
+    assert data.get("account_number") == "8162511023"
 
 
 async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> None:

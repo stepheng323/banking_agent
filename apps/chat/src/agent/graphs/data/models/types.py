@@ -54,6 +54,8 @@ class DataContext(BaseModel):
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
     all_accounts: list[dict[str, Any]] = Field(default_factory=list)
+    referent_memory: dict[str, Any] = Field(default_factory=dict)
+    resolved_referents: dict[str, Any] = Field(default_factory=dict)
     user_id: str | None = None
 
 

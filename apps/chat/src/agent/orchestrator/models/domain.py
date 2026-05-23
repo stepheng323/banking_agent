@@ -62,6 +62,7 @@ class TransferPayload(BaseModel):
     recipient_resolution_provider: str | None = None
     recipient_reference: dict[str, Any] | None = None
     beneficiary_id: str | None = None
+    referent_recipient_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
     source_account_id: str | None = None
     source_bank_name: str | None = None

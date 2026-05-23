@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from apps.chat.src.agent.graphs.query.session import _session_has_surface_view, is_query_session_stale
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
+from apps.chat.src.agent.orchestrator.context.referent_memory import build_referent_memory_summary
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
 
@@ -71,6 +72,7 @@ class TurnContextSummary:
     active_flow_missing_fields: list[str] = field(default_factory=list)
     active_flow_interrupt_kind: str | None = None
     short_term_memory_summary: str | None = None
+    referent_memory_summary: str | None = None
 
 
 def _clip_text(value: str, max_chars: int) -> str:
@@ -349,6 +351,7 @@ def build_turn_context_summary(
         active_flow_missing_fields=active_flow_missing_fields,
         active_flow_interrupt_kind=active_flow_interrupt_kind,
         short_term_memory_summary=OrchestratorContextManager().build_llm_summary(state) or None,
+        referent_memory_summary=build_referent_memory_summary(state) or None,
     )
 
 
@@ -475,7 +478,11 @@ def build_router_context_from_summary(
         sections.append(
             "RECENT_CONTEXT:\n" + _clip_text(summary.short_term_memory_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
         )
-    elif summary.history_lines:
+    if summary.referent_memory_summary:
+        sections.append(
+            "REFERENT_MEMORY:\n" + _clip_text(summary.referent_memory_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
+        )
+    elif not summary.short_term_memory_summary and summary.history_lines:
         sections.append(
             "RECENT_CHAT:\n"
             + _clip_text(
@@ -574,7 +581,10 @@ def build_quoted_replay_context_from_summary(
     if summary.short_term_memory_summary:
         shared_lines.append("RECENT_CONTEXT:")
         shared_lines.append(_clip_text(summary.short_term_memory_summary, QUOTED_REPLAY_CONTEXT_SECTION_MAX_CHARS))
-    elif summary.history_lines:
+    if summary.referent_memory_summary:
+        shared_lines.append("REFERENT_MEMORY:")
+        shared_lines.append(_clip_text(summary.referent_memory_summary, QUOTED_REPLAY_CONTEXT_SECTION_MAX_CHARS))
+    elif not summary.short_term_memory_summary and summary.history_lines:
         shared_lines.append("RECENT_CHAT:")
         shared_lines.extend(f"- {line}" for line in summary.history_lines[-2:])
     sections.append(
