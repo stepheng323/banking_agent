@@ -19,8 +19,13 @@ from apps.chat.src.agent.orchestrator.nodes.planner.context import (
     TurnContextSummary,
     build_router_context_from_summary,
 )
-from shared.config.settings import settings
+from apps.chat.src.agent.orchestrator.utils.task_payload import (
+    _derive_transfer_schedule_fields,
+    _infer_schedule_action_from_text,
+)
+from shared.branding import brand_name_aliases, legacy_brand_names, normalize_brand_name
 from shared.i18n import LocaleManager
+from shared.i18n.message_keys import MessageKey
 from shared.policy.service import capability_block_message
 from shared.utils.logging import get_logger
 
@@ -115,22 +120,68 @@ DETERMINISTIC_CHECKIN_EXACT = {
     "you online",
     "you there",
 }
+DETERMINISTIC_ADDRESSED_GREETING_RE = re.compile(
+    r"^(?P<greeting>hi|hello|hey|good morning|good afternoon|good evening)"
+    r"\s*[,;:!-]?\s+(?P<address>[a-z][a-z0-9 ._-]{0,48})$",
+    re.IGNORECASE,
+)
+GENERIC_GREETING_ADDRESSES = {
+    "abeg",
+    "boss",
+    "bro",
+    "dear",
+    "fam",
+    "friend",
+    "g",
+    "guy",
+    "my g",
+    "my guy",
+    "oga",
+    "please",
+    "pls",
+    "sis",
+    "team",
+    "there",
+}
+ADDRESSED_GREETING_NON_NAME_TOKENS = {
+    "account",
+    "airtime",
+    "balance",
+    "buy",
+    "can",
+    "check",
+    "data",
+    "do",
+    "for",
+    "from",
+    "get",
+    "help",
+    "how",
+    "i",
+    "pay",
+    "please",
+    "pls",
+    "send",
+    "show",
+    "to",
+    "transaction",
+    "transactions",
+    "transfer",
+    "what",
+    "where",
+    "with",
+    "you",
+}
 DETERMINISTIC_IDENTITY_EXACT = {
     "who are you",
     "what is your name",
     "what s your name",
     "what's your name",
 }
-_APP_NAME_LOWER = settings.app_name.lower()
-_APP_NAME_SHORT_LOWER = settings.app_name_short.lower()
 DETERMINISTIC_BRAND_ORIGIN_EXACT = {
     "who created you",
     "who built you",
     "who made you",
-    f"what does {_APP_NAME_LOWER} mean",
-    f"what is {_APP_NAME_LOWER}",
-    f"what does {_APP_NAME_SHORT_LOWER} mean",
-    f"what is {_APP_NAME_SHORT_LOWER}",
 }
 DETERMINISTIC_CAPABILITY_EXACT = {
     "what can you do",
@@ -191,7 +242,7 @@ _LANGUAGE_SWITCH_EXACT: dict[str, str] = {
     "use igbo": "ig",
     "kwuo igbo": "ig",
 }
-DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[str, str]] = {
+DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[MessageKey, str]] = {
     # Pidgin
     "wetin you fit do": ("conversational.capability_question", "pcm"),
     "who you be": ("conversational.identity", "pcm"),
@@ -218,7 +269,7 @@ DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[str, str]] = {
     "onye ka i bu": ("conversational.identity", "ig"),
     "gini ka i nwere ike ime": ("conversational.capability_question", "ig"),
 }
-DETERMINISTIC_LOCALE_META_PATTERNS: tuple[tuple[re.Pattern[str], tuple[str, str]], ...] = (
+DETERMINISTIC_LOCALE_META_PATTERNS: tuple[tuple[re.Pattern[str], tuple[MessageKey, str]], ...] = (
     (
         re.compile(
             r"^(?:(?:my\s+)?(?:g|guy|gee|bro|boss|oga|chairman|fam)[\s,]+)?"
@@ -472,6 +523,13 @@ _SUGGESTION_TX_BANK_NETWORK_PATTERN = re.compile(
 
 
 @dataclass(frozen=True, slots=True)
+class DeterministicMetaResponse:
+    response_key: MessageKey
+    response_locale: str | None = None
+    params: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BeneficiarySuggestionDecision:
     action: Literal["save_default", "save_alias", "dismiss"]
     alias: str | None = None
@@ -520,8 +578,9 @@ def _semantic_route_mode(route: Any) -> str | None:
 def _build_direct_domain_task(
     *,
     state: OrchestratorState,
-    domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data"],
+    domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule"],
     mode: str | None = None,
+    schedule_response_mode: Literal["list", "count"] | None = None,
 ) -> tuple[str, TaskSpec]:
     if domain == "query":
         task_id = _next_direct_query_task_id(state.tasks)
@@ -535,10 +594,33 @@ def _build_direct_domain_task(
     if domain == "query":
         if mode == "new":
             payload["force_new_query"] = True
+    elif domain in {"transfer", "airtime", "data"}:
+        inferred_schedule_action = _infer_schedule_action_from_text(str(state.last_message_text or ""))
+        if inferred_schedule_action:
+            domain_schedule_action = {
+                "transfer": inferred_schedule_action,
+                "airtime": "recurring_airtime"
+                if inferred_schedule_action == "recurring_transfer"
+                else "schedule_airtime",
+                "data": "recurring_data" if inferred_schedule_action == "recurring_transfer" else "schedule_data",
+            }[domain]
+            payload["action"] = domain_schedule_action
+            payload.update(
+                _derive_transfer_schedule_fields(
+                    str(state.last_message_text or ""),
+                    schedule_text=None,
+                    scheduled_text=None,
+                    recurring_flag=domain_schedule_action.startswith("recurring_"),
+                )
+            )
     elif domain == "beneficiary":
         payload["action"] = "list_beneficiaries"
         payload["intent"] = "list_beneficiaries"
         payload["list_intent"] = True
+    elif domain == "schedule":
+        payload["action"] = "list_scheduled_transactions"
+        if schedule_response_mode in {"list", "count"}:
+            payload["schedule_response_mode"] = schedule_response_mode
 
     spec = TaskSpec(
         id=task_id,
@@ -649,6 +731,53 @@ def _looks_like_language_switch_request(message_text: str, requested_locale: str
     return bool(re.search(r"\b(?:switch|speak|reply|continue|use|talk|chat|yarn|answer)\b", normalized))
 
 
+def _meta_response(
+    response_key: MessageKey,
+    response_locale: str | None = None,
+    params: dict[str, object] | None = None,
+) -> DeterministicMetaResponse:
+    return DeterministicMetaResponse(response_key=response_key, response_locale=response_locale, params=params)
+
+
+def _addressed_name_param(address: str) -> dict[str, object]:
+    return {"addressed_name": " ".join(token.capitalize() for token in address.split())}
+
+
+def _classify_addressed_greeting(normalized: str) -> DeterministicMetaResponse | None:
+    match = DETERMINISTIC_ADDRESSED_GREETING_RE.match(normalized)
+    if not match:
+        return None
+
+    address = normalize_brand_name(match.group("address"))
+    if not address:
+        return _meta_response("conversational.greeting")
+    if address in brand_name_aliases() or address in GENERIC_GREETING_ADDRESSES:
+        return _meta_response("conversational.greeting")
+    if address in legacy_brand_names():
+        return _meta_response("conversational.identity_correction", params=_addressed_name_param(address))
+    address_tokens = address.split()
+    if len(address_tokens) > 3 or set(address_tokens) & ADDRESSED_GREETING_NON_NAME_TOKENS:
+        return None
+    return _meta_response("conversational.identity_correction", params=_addressed_name_param(address))
+
+
+def _is_brand_origin_lookup(normalized: str) -> bool:
+    for alias in brand_name_aliases() | legacy_brand_names():
+        if normalized in {
+            f"what does {alias} mean",
+            f"what is {alias}",
+            f"what is the meaning of {alias}",
+            f"what's the meaning of {alias}",
+            f"what s the meaning of {alias}",
+            f"meaning of {alias}",
+            f"why are you called {alias}",
+            f"why are you named {alias}",
+            f"where did the name {alias} come from",
+        }:
+            return True
+    return False
+
+
 async def _effective_response_locale(
     *,
     state: OrchestratorState,
@@ -674,27 +803,32 @@ def _should_invoke_semantic_router(message_text: str) -> bool:
     return bool(normalized)
 
 
-def classify_deterministic_meta_response(message_text: str) -> tuple[str, str | None] | None:
+def classify_deterministic_meta_response(message_text: str) -> DeterministicMetaResponse | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if normalized in DETERMINISTIC_LOCALE_META_EXACT:
-        return DETERMINISTIC_LOCALE_META_EXACT[normalized]
+        response_key, response_locale = DETERMINISTIC_LOCALE_META_EXACT[normalized]
+        return _meta_response(response_key, response_locale)
     for pattern, response in DETERMINISTIC_LOCALE_META_PATTERNS:
         if pattern.match(normalized):
-            return response
+            response_key, response_locale = response
+            return _meta_response(response_key, response_locale)
     if normalized in DETERMINISTIC_GREETING_EXACT:
-        return "conversational.greeting", None
+        return _meta_response("conversational.greeting")
     if normalized in DETERMINISTIC_APPRECIATION_EXACT:
-        return "conversational.appreciation", None
+        return _meta_response("conversational.appreciation")
     if normalized in DETERMINISTIC_CHECKIN_EXACT:
-        return "conversational.checkin", None
+        return _meta_response("conversational.checkin")
+    addressed_greeting = _classify_addressed_greeting(normalized)
+    if addressed_greeting:
+        return addressed_greeting
     if normalized in DETERMINISTIC_IDENTITY_EXACT:
-        return "conversational.identity", None
-    if normalized in DETERMINISTIC_BRAND_ORIGIN_EXACT:
-        return "conversational.brand_origin", None
+        return _meta_response("conversational.identity")
+    if normalized in DETERMINISTIC_BRAND_ORIGIN_EXACT or _is_brand_origin_lookup(normalized):
+        return _meta_response("conversational.brand_origin")
     if normalized in DETERMINISTIC_CAPABILITY_EXACT:
-        return "conversational.capability_question", None
+        return _meta_response("conversational.capability_question")
     if any(pattern.match(normalized) for pattern in DETERMINISTIC_CAPABILITY_PATTERNS):
-        return "conversational.capability_question", None
+        return _meta_response("conversational.capability_question")
     return None
 
 

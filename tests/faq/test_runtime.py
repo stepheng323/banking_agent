@@ -11,6 +11,7 @@ from apps.chat.src.agent.graphs.faq.nodes.validate import validate_intent_node
 from apps.chat.src.agent.graphs.faq.retrieval import hybrid as hybrid_module
 from apps.chat.src.agent.graphs.faq.retrieval.hybrid import HybridRetriever
 from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome
+from shared.config.settings import settings
 from shared.i18n import render_message
 
 
@@ -43,7 +44,7 @@ async def test_retrieve_node_uses_async_session_factory(monkeypatch: pytest.Monk
                         id="faq_1",
                         category="transfers",
                         question="How do bank transfers work?",
-                        answer="Review and confirm before Narya AI sends the transfer.",
+                        answer=f"Review and confirm before {settings.app_name} sends the transfer.",
                         score=6.0,
                         match_type="keyword",
                     )
@@ -66,7 +67,7 @@ async def test_retrieve_node_uses_async_session_factory(monkeypatch: pytest.Monk
             "id": "faq_1",
             "category": "transfers",
             "question": "How do bank transfers work?",
-            "answer": "Review and confirm before Narya AI sends the transfer.",
+            "answer": f"Review and confirm before {settings.app_name} sends the transfer.",
             "score": 6.0,
             "match_type": "keyword",
         }
@@ -81,7 +82,7 @@ async def test_hybrid_retriever_keyword_match_returns_expected_entry(
         id="faq_receipt",
         category="receipts",
         question="How do I get a receipt for my transfer?",
-        answer="After an eligible successful transfer, Narya AI can send a digital receipt in chat.",
+        answer=f"After an eligible successful transfer, {settings.app_name} can send a digital receipt in chat.",
     )
 
     class FakeFAQRepository:

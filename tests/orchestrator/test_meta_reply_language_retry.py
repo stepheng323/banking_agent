@@ -7,6 +7,15 @@ import pytest
 from apps.chat.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
 from shared.assistant_profile.voice import AssistantVoice
+from shared.config.settings import settings
+
+
+def _expected_brand_origin() -> str:
+    return (
+        f"The name {settings.app_name_short} comes from {settings.app_brand_inspiration}. "
+        f"We chose it because {settings.app_brand_symbolism}: the idea behind {settings.app_name} "
+        "is to help your money move smoothly, clearly, and under your control."
+    )
 
 
 class _FakeMetaLLM:
@@ -30,11 +39,11 @@ def _voice(
     *,
     supported_domains: tuple[str, ...] = ("Send money",),
     unsupported_capabilities: tuple[str, ...] = ("Investments",),
-    creator: str | None = "Narya AI team",
-    brand_origin: str | None = "Narya AI is inspired by Narya from The Lord of the Rings.",
+    creator: str | None = settings.app_creator,
+    brand_origin: str | None = _expected_brand_origin(),
 ) -> AssistantVoice:
     return AssistantVoice(
-        name="Narya AI",
+        name=settings.app_name,
         description="A calm banking concierge.",
         positioning="Banking only",
         creator=creator,
@@ -89,13 +98,13 @@ async def test_meta_reply_falls_back_when_language_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_brand_origin_reply_allows_grounded_lotr_origin() -> None:
+async def test_brand_origin_reply_allows_grounded_water_origin() -> None:
     llm = _FakeMetaLLM(
         [
             {
                 "handoff": "meta",
                 "language": "en",
-                "message": "Narya AI is inspired by Narya from The Lord of the Rings.",
+                "message": _expected_brand_origin(),
             }
         ]
     )
@@ -110,7 +119,7 @@ async def test_brand_origin_reply_allows_grounded_lotr_origin() -> None:
     )
 
     assert handoff == "meta"
-    assert message == "Narya AI is inspired by Narya from The Lord of the Rings."
+    assert message == _expected_brand_origin()
 
 
 @pytest.mark.asyncio
@@ -120,7 +129,7 @@ async def test_brand_origin_reply_falls_back_when_llm_over_specifies_lotr_claim(
             {
                 "handoff": "meta",
                 "language": "en",
-                "message": "Narya AI is the ring of power from Tolkien lore.",
+                "message": f"{settings.app_name} is the ring of power from Tolkien lore.",
             }
         ]
     )
@@ -151,7 +160,7 @@ async def test_identity_no_llm_uses_grounded_identity_message() -> None:
     )
 
     assert handoff == "meta"
-    assert message == "I'm Narya AI. A calm banking concierge. Built by Narya AI team."
+    assert message == f"I'm {settings.app_name}. A calm banking concierge. Built by {settings.app_creator}."
 
 
 @pytest.mark.asyncio
@@ -161,7 +170,7 @@ async def test_creator_reply_falls_back_to_policy_creator_when_llm_is_incorrect(
             {
                 "handoff": "meta",
                 "language": "en",
-                "message": "Narya AI was built by Unknown Labs.",
+                "message": f"{settings.app_name} was built by Unknown Labs.",
             }
         ]
     )
@@ -176,7 +185,7 @@ async def test_creator_reply_falls_back_to_policy_creator_when_llm_is_incorrect(
     )
 
     assert handoff == "meta"
-    assert message == "Narya AI was built by Narya AI team."
+    assert message == f"{settings.app_name} was built by {settings.app_creator}."
 
 
 @pytest.mark.asyncio

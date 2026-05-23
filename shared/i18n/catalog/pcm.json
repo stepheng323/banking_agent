@@ -32,12 +32,13 @@
     "appreciation": "No wahala. Wetin we go handle next?",
     "checkin": "I dey here. Wetin you wan make I help you do?",
     "identity": "I be {app_name}. I dey run real banking tasks fast and sharp.",
-    "brand_origin": "{app_name} get inspiration from {app_brand_inspiration}.",
+    "identity_correction": "No be {addressed_name} 😄 I be {app_name}. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
+    "brand_origin": "The name {app_name_short} come from {app_brand_inspiration}. We choose am because {app_brand_symbolism}: the idea behind {app_name} na to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_followup": "If you want, I still fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_firm": "Make we switch back to banking. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
-    "clarify": "I no catch the banking request well. Tell me wetin you wan do, like transfer, buy airtime, or check transactions.",
+    "clarify": "I fit help with banking tasks. Try: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "I don get am.",
       "settled": "No wahala, that one don settle.",
@@ -550,6 +551,12 @@
       "failed_unknown": "Unknown error.",
       "failed_prefix": "Failed: {error}",
       "resume_prompt": "Would you like to resume your {intent}?",
+      "resume_prompt_transfer_specific": "You still get transfer wey dey wait: {amount} to {recipient}. Make I continue am?",
+      "resume_prompt_transfer_generic": "You still get transfer wey dey wait. Make I continue am?",
+      "resume_prompt_airtime_specific": "You still get airtime purchase wey dey wait: {amount} for {phone}. Make I continue am?",
+      "resume_prompt_airtime_generic": "You still get airtime purchase wey dey wait. Make I continue am?",
+      "resume_prompt_data_specific": "You still get data purchase wey dey wait: {amount} for {phone}. Make I continue am?",
+      "resume_prompt_data_generic": "You still get data purchase wey dey wait. Make I continue am?",
       "recipient_fallback": "recipient",
       "transfer_processing": "Transfer of ₦{amount} to {display_name} is being processed.",
       "transaction_completed": "Transaction completed",
@@ -619,11 +626,19 @@
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "You talk say make I send to {requested_name}, but account resolve as {resolved_name}.",
-      "high_risk_unsaved_warning": "⚠️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm."
+      "high_risk_unsaved_warning": "⚠️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm.",
+      "high_risk_unsaved_warning_variants": {
+        "standard": "⚠️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm.",
+        "careful": "⚠️ Abeg check this high-risk transfer well: {amount} dey go person wey you never save."
+      }
     },
     "funding": {
       "plan_failed": "Failed to plan funding.",
-      "insufficient_funds": "Insufficient funds."
+      "insufficient_funds": "Insufficient funds.",
+      "insufficient_funds_variants": {
+        "standard": "Insufficient funds.",
+        "reassuring": "Balance no reach for this transfer. You fit reduce the amount, add money, or choose another account."
+      }
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
@@ -652,6 +667,12 @@
         "recipient_fallback": "Recipient",
         "last4_fallback": "????",
         "title": "*{amount} → {recipient_name}*",
+        "title_variants": {
+          "standard": "*{amount} → {recipient_name}*",
+          "warm": "*Ready: {amount} to {recipient_name}*",
+          "careful": "*Check am well: {amount} to {recipient_name}*",
+          "trusted_careful": "*Ready, abeg review am: {amount} to {recipient_name}*"
+        },
         "recipient_line": "{recipient_bank} • {recipient_account}",
         "user_note": "Narration: {user_note}",
         "source_line": "From: {source_bank} (···{last4})"
@@ -692,18 +713,40 @@
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+        "success_variants": {
+          "standard": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+          "warm": "Done. {amount} don go {recipient_name}.",
+          "celebratory": "All set. {amount} don reach {recipient_name}."
+        },
         "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending_variants": {
+          "standard": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "warm": "Got it. Your {amount} transfer to {recipient_name} dey process.\n\nYou go get confirmation soon.",
+          "reassuring": "Your {amount} transfer to {recipient_name} dey process. Bank confirmation fit take small time."
+        },
         "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
       }
     },
     "execution": {
       "date_now": "Now",
-      "failed": "Execution failed: {error}"
+      "failed": "Execution failed: {error}",
+      "failed_variants": {
+        "standard": "Execution failed: {error}",
+        "reassuring": "I no fit complete the transfer: {error}. Abeg try again or contact support if e continue."
+      }
     },
     "error": {
       "execution_failed": "Transfer could not be completed. Please try again.",
+      "execution_failed_variants": {
+        "standard": "Transfer could not be completed. Please try again.",
+        "reassuring": "Transfer no complete right now. Abeg try again."
+      },
       "pipeline_failed": "Pipeline failed: {error}",
-      "provider_failed": "Transfer failed at provider"
+      "provider_failed": "Transfer failed at provider",
+      "provider_failed_variants": {
+        "standard": "Transfer failed at provider",
+        "reassuring": "Provider no fit complete the transfer right now."
+      }
     }
   },
   "airtime": {
@@ -799,6 +842,16 @@
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",
+      "transfer_variants": {
+        "standard": "Confirm Transfer",
+        "warm": "Review Transfer",
+        "careful": "Check Transfer Well",
+        "trusted_careful": "Review Transfer"
+      },
+      "scheduled_transfer": "Confirm Scheduled Transfer",
+      "scheduled_airtime": "Confirm Scheduled Airtime Purchase",
+      "scheduled_data": "Confirm Scheduled Data Purchase",
+      "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
       "data": "Confirm Data Purchase",
       "mixed": "Confirm Transactions",

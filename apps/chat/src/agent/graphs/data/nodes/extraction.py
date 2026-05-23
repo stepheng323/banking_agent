@@ -2,9 +2,14 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
+from apps.chat.src.agent.graphs.__shared__.scheduling import (
+    SCHEDULE_FIELD_NAMES,
+    parse_schedule_slot_patch,
+    schedule_required_prompt,
+)
 from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.graphs.data.pipeline.base import PipelineStep
-from apps.chat.src.agent.orchestrator.models.domain import TransactionResult
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -46,6 +51,36 @@ def _skip_override_reason(payload: DataPayload, message: str) -> str | None:
     return None
 
 
+def _resolved_phone_referent(context: DataContext) -> dict[str, Any] | None:
+    resolution = context.resolved_referents.get("phone")
+    if not isinstance(resolution, dict) or resolution.get("status") != "resolved":
+        return None
+    item = resolution.get("item")
+    if not isinstance(item, dict):
+        return None
+    data = item.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _ambiguous_phone_referent_prompt(context: DataContext) -> str | None:
+    resolution = context.resolved_referents.get("phone")
+    if not isinstance(resolution, dict) or resolution.get("status") != "ambiguous":
+        return None
+    raw_candidates = resolution.get("candidates")
+    candidates = raw_candidates if isinstance(raw_candidates, list) else []
+    lines: list[str] = []
+    for idx, item in enumerate(candidates[:5], start=1):
+        if not isinstance(item, dict):
+            continue
+        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        phone = str(data.get("phone") or data.get("target_phone") or item.get("label") or "").strip()
+        if phone:
+            lines.append(f"{idx}. {phone}")
+    if not lines:
+        return None
+    return "Which number did you mean?\n" + "\n".join(lines)
+
+
 class ExtractionStep(PipelineStep):
     """Extraction Step: Parse user message into DataPayload."""
 
@@ -64,6 +99,36 @@ class ExtractionStep(PipelineStep):
         raw_required_fields = getattr(worker_context, "required_fields", [])
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         waiting_for_source_account = "source_account_id" in required_fields
+        if not payload.target_phone:
+            ambiguity_prompt = _ambiguous_phone_referent_prompt(context)
+            if ambiguity_prompt:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["target_phone"],
+                    prompt=ambiguity_prompt,
+                    patch=payload.model_dump(exclude_none=True),
+                )
+        schedule_required_fields = [field for field in required_fields if field in SCHEDULE_FIELD_NAMES]
+        if schedule_required_fields:
+            schedule_patch, remaining_schedule_fields = parse_schedule_slot_patch(
+                self.user_message,
+                schedule_required_fields,
+            )
+            if schedule_patch:
+                for field, value in schedule_patch.items():
+                    if field == "confirmation":
+                        payload.confirmation = value
+                    elif hasattr(payload, field):
+                        setattr(payload, field, value)
+                payload.skip_extraction = False
+                return None
+            if len(schedule_required_fields) == len(required_fields):
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=remaining_schedule_fields or schedule_required_fields,
+                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields),
+                    patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+                )
         numeric_patch = try_extract_numeric_index(self.user_message, "data") if waiting_for_source_account else None
         if numeric_patch:
             payload.source_account_index = numeric_patch["source_account_index"]
@@ -81,6 +146,13 @@ class ExtractionStep(PipelineStep):
         extractor = worker_context.extractor
         if not extractor:
             logger.info("data_extraction_skipped", reason="extractor_unavailable")
+            phone_referent = _resolved_phone_referent(context)
+            phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
+            if phone and not payload.target_phone:
+                payload.target_phone = phone
+                if not payload.network and phone_referent and phone_referent.get("network"):
+                    normalized_network = normalize_network_name(str(phone_referent["network"]))
+                    payload.network = normalized_network or str(phone_referent["network"]).strip().upper()
             return None
         extraction_result = await extractor.extract(
             self.user_message,
@@ -101,9 +173,19 @@ class ExtractionStep(PipelineStep):
 
         if extraction_result.entities.recipient_phone:
             payload.target_phone = extraction_result.entities.recipient_phone
+        elif not payload.target_phone:
+            phone_referent = _resolved_phone_referent(context)
+            phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
+            if phone:
+                payload.target_phone = phone
 
         if extraction_result.entities.network:
             payload.network = extraction_result.entities.network
+        elif not payload.network and payload.target_phone:
+            phone_referent = _resolved_phone_referent(context)
+            if phone_referent and phone_referent.get("network"):
+                normalized_network = normalize_network_name(str(phone_referent["network"]))
+                payload.network = normalized_network or str(phone_referent["network"]).strip().upper()
 
         # TODO: Handle 'amount' or 'budget' text to float mapping more robustly if needed
         # For now assuming simple mapping usually happens in resolution or prior

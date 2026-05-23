@@ -20,6 +20,7 @@ SUPPORTED_EXECUTOR_LABELS = {
     "support": "support request",
     "faq": "banking help",
     "beneficiary": "beneficiary management",
+    "schedule": "scheduled transaction management",
 }
 
 TRANSACTION_DEFAULT_ACTIONS = {
@@ -31,8 +32,16 @@ TRANSACTION_DEFAULT_ACTIONS = {
 SCHEDULE_ACTIONS = {
     "schedule_transfer",
     "recurring_transfer",
+    "schedule_airtime",
+    "recurring_airtime",
+    "schedule_data",
+    "recurring_data",
     "list_scheduled_transfers",
     "cancel_scheduled_transfer",
+    "list_scheduled_transactions",
+    "find_scheduled_transaction",
+    "cancel_scheduled_transaction",
+    "edit_scheduled_transaction",
 }
 
 POLICY_ACTION_ALIASES = {
@@ -164,7 +173,7 @@ def _task_capability_target(task: Any) -> tuple[str, str] | None:
     action = str(getattr(task, "action", "") or "").strip()
     parameters = getattr(task, "parameters", None)
 
-    if executor == "transfer" and action in SCHEDULE_ACTIONS:
+    if action in SCHEDULE_ACTIONS:
         return "schedule", action
     if executor == "transfer" and action == "send_money" and (
         getattr(parameters, "schedule", None) or getattr(parameters, "scheduled", None)

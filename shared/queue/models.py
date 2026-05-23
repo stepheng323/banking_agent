@@ -42,13 +42,16 @@ class ReceiptJobPayload(TypedDict):
     beneficiary_suggestion_message: NotRequired[str]
 
 
-class TransferScheduledMeta(TypedDict):
+class ScheduledMeta(TypedDict):
     schedule_id: str
     schedule_run_id: str
     run_source: Literal["scheduled"]
     attempt: int
     channel: str
     channel_identity: NotRequired[str | None]
+
+
+TransferScheduledMeta = ScheduledMeta
 
 
 class TransferJobPayload(TypedDict):
@@ -120,6 +123,7 @@ class AirtimeJobPayload(TypedDict):
     channel: str
     channel_identity: NotRequired[str | None]
     language: str
+    scheduled_meta: NotRequired[ScheduledMeta]
     async_group: NotRequired[AsyncGroupMeta]
 
 
@@ -141,6 +145,7 @@ class DataJobPayload(TypedDict):
     channel: str
     channel_identity: NotRequired[str | None]
     language: str
+    scheduled_meta: NotRequired[ScheduledMeta]
     async_group: NotRequired[AsyncGroupMeta]
 
 

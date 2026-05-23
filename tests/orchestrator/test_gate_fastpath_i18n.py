@@ -17,13 +17,31 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.gate.runner import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
+    classify_deterministic_meta_response,
+    session_gate_direct_path,
+)
+from shared.config.settings import settings
 from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
 from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 
 def _apply_updates(state: OrchestratorState, updates: dict[str, object]) -> OrchestratorState:
     return state.model_copy(update=updates)
+
+
+def _assert_meta_response(
+    message_text: str,
+    response_key: str,
+    *,
+    response_locale: str | None = None,
+    params: dict[str, object] | None = None,
+) -> None:
+    response = classify_deterministic_meta_response(message_text)
+    assert response is not None
+    assert response.response_key == response_key
+    assert response.response_locale == response_locale
+    assert response.params == params
 
 
 class _MockTransferNeedsInputWorker:
@@ -63,6 +81,127 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_decision"] == "meta_direct"
+
+
+def test_addressed_greeting_uses_current_brand_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    non_canonical_name = "Old Assistant"
+    monkeypatch.setattr(settings, "app_name", "Aurora Pay")
+    monkeypatch.setattr(settings, "app_name_short", "Aurora")
+    monkeypatch.setattr(settings, "app_name_aliases", ())
+    monkeypatch.setattr(settings, "app_legacy_names", ())
+
+    _assert_meta_response("Hi Aurora", "conversational.greeting")
+    _assert_meta_response("Hi, Aurora Pay", "conversational.greeting")
+    _assert_meta_response(
+        f"Hi {non_canonical_name}",
+        "conversational.identity_correction",
+        params={"addressed_name": non_canonical_name},
+    )
+
+    monkeypatch.setattr(settings, "app_name_aliases", (non_canonical_name,))
+    _assert_meta_response(f"Hi {non_canonical_name}", "conversational.greeting")
+
+    monkeypatch.setattr(settings, "app_name_aliases", ())
+    monkeypatch.setattr(settings, "app_legacy_names", (non_canonical_name,))
+    _assert_meta_response(
+        f"Hi {non_canonical_name}",
+        "conversational.identity_correction",
+        params={"addressed_name": non_canonical_name},
+    )
+
+
+def test_addressed_greeting_distinguishes_generic_and_wrong_names() -> None:
+    _assert_meta_response(f"Hi {settings.app_name_short}", "conversational.greeting")
+    _assert_meta_response(f"Hi, {settings.app_name}", "conversational.greeting")
+    _assert_meta_response("hello there", "conversational.greeting")
+    _assert_meta_response(
+        "Hi, xara",
+        "conversational.identity_correction",
+        params={"addressed_name": "Xara"},
+    )
+    _assert_meta_response(
+        "hi claude code",
+        "conversational.identity_correction",
+        params={"addressed_name": "Claude Code"},
+    )
+    assert classify_deterministic_meta_response("Hi I want to send money") is None
+
+
+def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    _assert_meta_response(f"What is the meaning of {settings.app_name_short}", "conversational.brand_origin")
+    _assert_meta_response(f"meaning of {settings.app_name_short}", "conversational.brand_origin")
+    _assert_meta_response(f"why are you called {settings.app_name}", "conversational.brand_origin")
+    _assert_meta_response(f"where did the name {settings.app_name_short} come from", "conversational.brand_origin")
+    _assert_meta_response("Who are you", "conversational.identity")
+    assert classify_deterministic_meta_response("what is the meaning of xara") is None
+
+    monkeypatch.setattr(settings, "app_name", "Aurora Pay")
+    monkeypatch.setattr(settings, "app_name_short", "Aurora")
+    monkeypatch.setattr(settings, "app_name_aliases", ())
+    monkeypatch.setattr(settings, "app_legacy_names", ())
+
+    _assert_meta_response("what is the meaning of Aurora", "conversational.brand_origin")
+    assert classify_deterministic_meta_response("what is the meaning of xara") is None
+
+
+async def test_gate_wrong_addressed_name_uses_light_identity_correction_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.95,
+            detected_language="English",
+            response_key="conversational.greeting",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for wrong addressed name",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_wrong_addressed_name",
+        phone_number="2348777777717",
+        channel="whatsapp",
+        last_message_text="Hi, xara",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message(
+        "conversational.identity_correction",
+        "en",
+        {"addressed_name": "Xara"},
+    )
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_brand_meaning_uses_brand_origin_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.95,
+            detected_language="English",
+            response_key="conversational.identity",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for brand meaning",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_brand_meaning",
+        phone_number="2348777777718",
+        channel="whatsapp",
+        last_message_text=f"What is the meaning of {settings.app_name_short}",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.brand_origin", "en")
+    assert updates["routing_owner"] == "guardrail"
 
 
 async def test_gate_handles_pidgin_social_greeting_deterministically() -> None:
@@ -1101,6 +1240,313 @@ async def test_gate_non_structural_query_phrase_falls_through_without_semantic_r
     assert "tasks" not in updates
     assert updates["routing_owner"] == "planner"
     assert updates["routing_decision"] == "planner_handoff"
+
+
+async def test_gate_semantic_schedule_domain_hands_off_to_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="new",
+            target_intent="schedule",
+            confidence=0.95,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="scheduled task management",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_domain_1",
+        phone_number="2348999999916",
+        channel="whatsapp",
+        last_message_text="How many scheduled tramsaction is pending",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["semantic_path_shape"] == "semantic_router_schedule_planner_handoff"
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["routing_target_domain"] == "schedule"
+
+
+async def test_gate_semantic_schedule_target_vetoes_direct_context_answer() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_context_answer",
+            mode="new",
+            target_intent="schedule",
+            confidence=0.72,
+            detected_language="English",
+            response="There is no active transfer flow right now. Start a transfer and I will guide you.",
+            expected_transaction_executors=[],
+            reason="misclassified schedule status as flow recap",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_direct_answer_veto_1",
+        phone_number="2348999999917",
+        channel="whatsapp",
+        last_message_text="How many scheduled transaction is pending",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates.get("direct_path_triggered") is None
+    assert "final_response" not in updates
+    assert updates["semantic_path_shape"] == "semantic_router_schedule_planner_handoff"
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["routing_target_domain"] == "schedule"
+
+
+async def test_gate_semantic_schedule_count_skips_planner() -> None:
+    planner = _ScheduleReadPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="continuation",
+            target_intent="schedule",
+            confidence=0.95,
+            detected_language="English",
+            expected_transaction_executors=[],
+            schedule_response_mode="count",
+            reason="scheduled task count",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_count_direct_1",
+        phone_number="2348999999918",
+        channel="whatsapp",
+        last_message_text="How many scheduled transaction is pending",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "schedule_read_router_direct"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "schedule"
+    assert planner.plan_calls == 0
+    task = updates["tasks"]["direct_schedule"]
+    assert task.type == "schedule"
+    assert task.payload["action"] == "list_scheduled_transactions"
+    assert task.payload["schedule_response_mode"] == "count"
+
+
+async def test_gate_schedule_read_router_skips_broad_semantic_router() -> None:
+    planner = _ScheduleReadPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="new",
+            target_intent="schedule",
+            confidence=0.94,
+            detected_language="English",
+            expected_transaction_executors=[],
+            schedule_response_mode="count",
+            reason="scheduled count read",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_read_router_1",
+        phone_number="2348999999918",
+        channel="whatsapp",
+        last_message_text="Do i have any pending scheduled transsction",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "schedule_read_router_direct"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["route_source"] == "schedule_read_router"
+    assert planner.schedule_read_calls == 1
+    assert planner.route_calls == 0
+    task = updates["tasks"]["direct_schedule"]
+    assert task.payload["action"] == "list_scheduled_transactions"
+    assert task.payload["schedule_response_mode"] == "count"
+
+
+async def test_gate_schedule_count_ignores_existing_schedule_frame() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_existing",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _ScheduleReadPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="continuation",
+            target_intent="schedule",
+            confidence=0.95,
+            detected_language="English",
+            expected_transaction_executors=[],
+            schedule_response_mode="count",
+            reason="scheduled task count",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_count_existing_frame_1",
+        phone_number="2348999999919",
+        channel="whatsapp",
+        last_message_text="How many scheduled transaction is pending",
+        loaded_context={"language": "en"},
+        context_frames=[frame],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "schedule_read_router_direct"
+    assert planner.frame_followup_calls == 0
+    assert planner.schedule_read_calls == 1
+    task = updates["tasks"]["direct_schedule"]
+    assert task.type == "schedule"
+    assert task.payload["schedule_response_mode"] == "count"
+
+
+async def test_gate_schedule_terse_followup_uses_context_frame_before_router() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_existing",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "domain": "Transfer",
+                    "amount": "₦20,000",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "recurrence": "One Time",
+                    "schedule_time": "2:00 PM Lagos time",
+                    "next_run": "May 23, 2026 at 2:00 PM Lagos time",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            mode="new",
+            target_intent=None,
+            confidence=0.1,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="router should not be called",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.91),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_terse_followup_1",
+        phone_number="2348999999920",
+        channel="whatsapp",
+        last_message_text="which one",
+        loaded_context={"language": "en"},
+        context_frames=[frame],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "schedule"
+    assert "Scheduled Transaction Details" in updates["final_response"]
+    assert "FATIMA ZAHRA MUSA" in updates["final_response"]
+    assert "Target:" not in updates["final_response"]
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+
+
+async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_existing",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "domain": "Transfer",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "schedule_time": "2:00 PM Lagos time",
+                    "next_run": "May 23, 2026 at 2:00 PM Lagos time",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            mode="new",
+            target_intent=None,
+            confidence=0.1,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="router should not be called",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="edit_schedule",
+            confidence=0.9,
+            detected_language="Pidgin",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_edit_followup_1",
+        phone_number="2348999999921",
+        channel="whatsapp",
+        last_message_text="i been wan change the time to 9am",
+        loaded_context={"language": "en"},
+        context_frames=[frame],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["routing_target_domain"] == "schedule"
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    task = updates["tasks"]["context_schedule_management_1"]
+    assert task.type == "schedule"
+    assert task.payload["action"] == "edit_scheduled_transaction"
+    assert task.payload["schedule_selector"] == "sch-1"
+    assert task.payload["schedule_time_local"] == "09:00"
 
 
 async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
@@ -3102,6 +3548,27 @@ async def test_gate_amount_only_transfer_fastpath_still_routes_to_transfer_worke
     assert task.payload["message"] == "Send 10k"
 
 
+async def test_gate_date_only_scheduled_transfer_fastpath_keeps_schedule_action_without_default_time() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_router_scheduled_transfer",
+        phone_number="23489999999185",
+        channel="whatsapp",
+        last_message_text="Send 20k to mum by tommorow",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["action"] == "schedule_transfer"
+    assert task.payload["schedule_start_date"]
+    assert "schedule_time_local" not in task.payload
+
+
 async def test_gate_account_number_transfer_command_is_not_bank_details_only() -> None:
     state = OrchestratorState(
         user_id="u_gate_router_account_number_transfer",
@@ -3751,6 +4218,129 @@ class _RouteTurnPlanner:
         del args, kwargs
         self.plan_calls += 1
         raise AssertionError("planner should not run when gate returns a direct router answer")
+
+
+def _resume_prompt_frame() -> ContextFrame:
+    return ContextFrame(
+        frame_id="resume-frame",
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_id="resumption_prompt",
+                entity_type=EntityType.GENERIC,
+                label="Resume transfer",
+                data={"intent": "transfer", "resume_prompt": True, "stash_id": "stash-gate"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=300,
+    )
+
+
+def _stashed_transfer_session() -> dict[str, object]:
+    return {
+        "stash_id": "stash-gate",
+        "tasks": {
+            "t_stashed": TaskSpec(
+                id="t_stashed",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 5000, "recipient_name": "Grace"},
+            )
+        },
+        "waves": [["t_stashed"]],
+        "current_wave_index": 0,
+        "pending_interrupt": {"kind": "input", "task_ids": ["t_stashed"]},
+        "intent": "transfer",
+        "stashed_at_ts": int(time.time()),
+    }
+
+
+@pytest.mark.parametrize("message", ["yes", "continue", "that transfer"])
+async def test_gate_resume_prompt_accepts_terse_replies_without_semantic_router(message: str) -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_resume",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        last_message_text=message,
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "resume_session_direct"
+    assert planner.route_calls == 0
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "orchestrator"
+    assert task.payload["action"] == "resume_session"
+
+
+@pytest.mark.parametrize("message", ["no", "leave it"])
+async def test_gate_resume_prompt_dismisses_terse_replies_without_semantic_router(message: str) -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_resume_dismiss",
+        phone_number="2348000000101",
+        channel="whatsapp",
+        last_message_text=message,
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "dismiss_resume_session_direct"
+    assert planner.route_calls == 0
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["action"] == "dismiss_resume_session"
+
+
+async def test_gate_resume_prompt_does_not_capture_fresh_transfer_request() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="semantic path"))
+    state = OrchestratorState(
+        user_id="u_gate_resume_fresh",
+        phone_number="2348000000102",
+        channel="whatsapp",
+        last_message_text="send 5k to Ada",
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] != "resume_session_direct"
+    assert next(iter(updates["tasks"].values())).type == "transfer"
+
+
+class _ScheduleReadPlanner(_RouteTurnPlanner):
+    def __init__(self, schedule_read_decision: SemanticRouteDecision) -> None:
+        super().__init__(
+            SemanticRouteDecision(
+                decision="planner_ambiguous",
+                confidence=0.1,
+                detected_language="English",
+                expected_transaction_executors=[],
+                reason="broad router should not run",
+            )
+        )
+        self._schedule_read_decision = schedule_read_decision
+        self.schedule_read_calls = 0
+
+    async def route_schedule_read_turn(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        path_label: str = "direct_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, path_label
+        self.schedule_read_calls += 1
+        return self._schedule_read_decision
 
 
 class _TrackingRedis:

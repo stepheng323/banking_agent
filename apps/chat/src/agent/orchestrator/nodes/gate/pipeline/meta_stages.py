@@ -62,7 +62,8 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
     deterministic_meta = classify_deterministic_meta_response(ctx.message_text)
     if not deterministic_meta:
         return None
-    response_key, response_locale = deterministic_meta
+    response_key = deterministic_meta.response_key
+    response_locale = deterministic_meta.response_locale
     locale = response_locale or ctx.current_locale
     locale_updates = _locale_update(ctx.state, locale) if response_locale else {}
     await ctx.ensure_query_session()
@@ -83,7 +84,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         **exit_updates,
         **locale_updates,
         "direct_path_triggered": True,
-        "final_response": render_message(response_key, locale),
+        "final_response": render_message(response_key, locale, deterministic_meta.params),
         "semantic_path_shape": "meta_direct",
         **_route_observability_updates(owner="guardrail", decision="meta_direct"),
     }

@@ -5,6 +5,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from apps.chat.src.agent.graphs.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.graphs.transfer.models.types import (
     TransferContext,
     TransferGates,
@@ -17,6 +18,12 @@ from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transfer import format_funding_plan_summary, format_transfer_summary
 from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import render_message
+from shared.i18n.personality import (
+    PersonalityContext,
+    render_personalized_message,
+    transfer_personality_context_from_payload,
+)
+from shared.transaction_runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 
@@ -64,7 +71,16 @@ class ConfirmationStep(TransferStep):
         if risk_patch:
             data = data.model_copy(update=risk_patch)
 
-        res = build_confirmation(data, context)
+        personality_context = transfer_personality_context_from_payload(data, moment="confirmation")
+        personality_context = await enrich_transfer_personality_context(
+            personality_context,
+            user_id=getattr(worker_context, "user_id", None),
+            transaction_repo=getattr(worker_context, "transaction_repo", None),
+            payload=data,
+            idempotency_key=data.idempotency_key,
+        )
+
+        res = build_confirmation(data, context, personality_context=personality_context)
         if risk_patch:
             res.patch = {**(res.patch or {}), **risk_patch}
 
@@ -141,10 +157,17 @@ async def _build_dynamic_risk_patch(
 
     warning = None
     if is_high_risk:
-        warning = render_message(
+        warning = render_personalized_message(
             "transfer.confirmation.high_risk_unsaved_warning",
             ctx.language,
             {"amount": format_naira(amount), "threshold": format_naira(threshold)},
+            PersonalityContext(
+                moment="confirmation",
+                amount=amount,
+                saved_recipient=False,
+                high_risk=True,
+                dynamic_risk_threshold=threshold,
+            ),
         )
 
     return {
@@ -415,6 +438,7 @@ def _resolve_transition_update_message(
 def build_confirmation(
     payload: TransferPayload,
     ctx: TransferContext,
+    personality_context: PersonalityContext | None = None,
 ) -> TransactionResult:
     """Build confirmation summary."""
     recipient_display_name = (
@@ -425,6 +449,7 @@ def build_confirmation(
     display_narration = _display_narration(payload)
     effective_narration = _effective_narration(payload)
     description = _derived_description(payload, recipient_display_name)
+    schedule_line = format_schedule_confirmation_line(payload)
     snap = {
         "amount": payload.amount,
         "recipient_name": recipient_display_name,
@@ -436,12 +461,17 @@ def build_confirmation(
         "narration": effective_narration,
         "description": description,
         "user_note": payload.user_note,
+        "schedule_start_date": payload.schedule_start_date,
+        "schedule_time_local": payload.schedule_time_local,
+        "schedule_line": schedule_line,
     }
     update_message = _resolve_transition_update_message(
         payload=payload,
         current_snapshot=snap,
         locale=ctx.language,
     )
+    if personality_context is None:
+        personality_context = transfer_personality_context_from_payload(payload, moment="confirmation")
     base_summary = format_transfer_summary(
         {
             "amount": payload.amount,
@@ -457,12 +487,15 @@ def build_confirmation(
         },
         include_source=False,  # Orchestrator will handle the "From" line for batching
         locale=ctx.language,
+        personality_context=personality_context,
     )
     warning_lines: list[str] = []
     if payload.name_mismatch_warning:
         warning_lines.append(payload.name_mismatch_warning)
     if payload.high_risk_warning:
         warning_lines.append(payload.high_risk_warning)
+    if schedule_line:
+        base_summary = f"{base_summary}\n\n{schedule_line}"
     summary = "\n\n".join([*warning_lines, base_summary]) if warning_lines else base_summary
 
     funding_plan = payload.funding_plan or {}

@@ -23,7 +23,9 @@ from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.meta_stages import (
     _stage_deterministic_domains,
     _stage_deterministic_meta,
 )
+from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.resume_stages import _stage_resume_prompt_action
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage import (
+    _stage_schedule_read_router,
     _stage_semantic_router,
 )
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.support_stages import (
@@ -37,6 +39,8 @@ _GATE_STAGES = (
     _stage_language_switch,
     _stage_cancel,
     _stage_gibberish_filter,
+    _stage_schedule_read_router,
+    _stage_resume_prompt_action,
     _stage_context_frame_followup,
     _stage_receipt_thread_followup,
     _stage_support_context_followup,

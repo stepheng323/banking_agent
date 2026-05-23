@@ -43,6 +43,33 @@ async def test_data_skip_extraction_overrides_for_phone_signal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_data_extraction_reuses_resolved_phone_referent_without_extractor() -> None:
+    step = ExtractionStep("buy data for that number")
+    payload = DataPayload()
+    context = DataContext(
+        phone_number="2348000000000",
+        language="en",
+        resolved_referents={
+            "phone": {
+                "status": "resolved",
+                "item": {
+                    "label": "Mum",
+                    "data": {"phone": "08162511023", "network": "mtn"},
+                },
+            }
+        },
+    )
+    gates = DataGates()
+    worker_context = SimpleNamespace(required_fields=["target_phone"], extractor=None)
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is None
+    assert payload.target_phone == "08162511023"
+    assert payload.network == "MTN"
+
+
+@pytest.mark.asyncio
 async def test_data_extraction_passes_compact_context_to_extractor() -> None:
     step = ExtractionStep("08162511023")
     payload = DataPayload(network="MTN")

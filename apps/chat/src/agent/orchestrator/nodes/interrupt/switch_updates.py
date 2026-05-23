@@ -1,6 +1,8 @@
 import time
+import uuid
 from typing import Any, cast
 
+from apps.chat.src.agent.orchestrator.context.referent_memory import remember_referents_from_stashed_session
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.interrupt.context import (
@@ -30,7 +32,9 @@ def _stash_current_session(
     interrupt: Any,
     intent: str,
 ) -> list[dict[str, Any]]:
+    stash_id = f"stash_{uuid.uuid4().hex}"
     current_session = {
+        "stash_id": stash_id,
         "tasks": state.tasks,
         "waves": state.waves,
         "current_wave_index": state.current_wave_index,
@@ -38,6 +42,7 @@ def _stash_current_session(
         "intent": intent,
         "stashed_at_ts": int(time.time()),
     }
+    remember_referents_from_stashed_session(state, current_session)
     return cast(list[dict[str, Any]], state.stashed_sessions + [current_session])
 
 def _build_stash_switch_updates(
@@ -71,6 +76,7 @@ def _build_stash_switch_updates(
         "normalized_instruction": text,
         "task_results": {},
         "stashed_sessions": stashed,
+        "referent_memory": state.referent_memory,
         "session_stack": cleaned_stack,
         "active_domain": active_domain,
         "pin_verified": False,
@@ -282,6 +288,7 @@ def _build_planner_switch_updates(
     if current_task_types.issubset(TRANSACTION_INTENTS) and _is_resumable_interrupt(interrupt):
         stashed = _stash_current_session(state, interrupt=interrupt, intent=active_type)
         updates["stashed_sessions"] = stashed
+        updates["referent_memory"] = state.referent_memory
         logger.info(
             "interrupt_switch_to_planner_stashed",
             kind=interrupt.kind,

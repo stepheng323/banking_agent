@@ -2,6 +2,7 @@
 
 import base64
 import re
+from typing import Any
 
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config.settings import settings
@@ -21,6 +22,34 @@ from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _MARKDOWN_BOLD_RE = re.compile(r"\*\*([^*\n]+?)\*\*")
+
+
+def _actionable_payload(intent: UiIntent) -> dict[str, Any]:
+    payload = intent.actionable_payload
+    return payload if isinstance(payload, dict) else {}
+
+
+def _is_schedule_update_confirmation(intent: RequestConfirmation) -> bool:
+    payload = _actionable_payload(intent)
+    return (
+        str(payload.get("task_type") or "").strip().lower() == "schedule"
+        and str(payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
+    )
+
+
+def _pin_flow_prefix(intent: RequestAuth | RequestConfirmation) -> str:
+    payload = _actionable_payload(intent)
+    task_type = str(payload.get("task_type") or "").strip().lower()
+    action = str(payload.get("action") or "").strip().lower()
+    if task_type == "schedule" or action in {"edit_scheduled_transaction", "schedule_update"}:
+        return "schedule"
+
+    text = f"{getattr(intent, 'reason', '') or ''}\n{getattr(intent, 'header', '') or ''}\n{intent.summary or ''}"
+    if "Airtime" in text:
+        return "airtime"
+    if "Data" in text:
+        return "data"
+    return "transfer"
 
 
 class WhatsAppPresenter(Presenter):
@@ -135,14 +164,12 @@ class WhatsAppPresenter(Presenter):
             header = intent.reason or "Authorize Transaction"
             cta = "Authorize"
 
-            prefix = "transfer"
-            if "Airtime" in header or "Airtime" in (intent.summary or ""):
-                prefix = "airtime"
-            elif "Data" in header or "Data" in (intent.summary or ""):
-                prefix = "data"
+            prefix = _pin_flow_prefix(intent)
 
             if "Transfer" in header:
                 cta = "Authorize Transfer"
+            if prefix == "schedule":
+                cta = "Authorize Update"
 
             flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
             resp = await self.client.send_flow(
@@ -173,13 +200,19 @@ class WhatsAppPresenter(Presenter):
     async def _present_confirmation(self, intent: RequestConfirmation, context: PresentationContext) -> str | None:
         supports_flows = context.capabilities.get("flows", False)
 
+        if _is_schedule_update_confirmation(intent):
+            body = self._format_text((intent.summary or "").strip())
+            prompt = "Reply yes to confirm this schedule update, or no to cancel."
+            text = f"{intent.header or 'Confirm Schedule Update'}\n\n{body}\n\n{prompt}" if body else prompt
+            resp = await self.client.send_text(
+                to=context.phone_number,
+                text=text,
+                suppress_typing_indicator=self._suppress_typing(context),
+            )
+            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
+
         if supports_flows:
-            # Dynamic Prefix logic
-            prefix = "transfer"
-            if "Airtime" in (intent.summary or ""):
-                prefix = "airtime"
-            elif "Data" in (intent.summary or ""):
-                prefix = "data"
+            prefix = _pin_flow_prefix(intent)
 
             flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
             resp = await self.client.send_flow(

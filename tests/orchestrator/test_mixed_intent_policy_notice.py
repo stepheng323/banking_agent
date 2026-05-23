@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
 from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.chat.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
+from shared.config.settings import settings
 from shared.i18n import render_message
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
@@ -385,7 +386,7 @@ async def test_conversational_identity_renders_deterministically_even_when_meta_
             "task_planner": _MockPlanner(
                 planner_output,
                 planner_llm=_FakeMetaLLM(
-                    {"handoff": "meta", "language": "en", "message": "I am Narya AI, built by Unknown Labs."}
+                    {"handoff": "meta", "language": "en", "message": f"I am {settings.app_name}, built by Unknown Labs."}
                 ),
             ),
             "services": {},

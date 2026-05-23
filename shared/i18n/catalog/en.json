@@ -32,12 +32,13 @@
     "appreciation": "Anytime. What should we handle next?",
     "checkin": "I'm here. What would you like to do?",
     "identity": "I'm {app_name}. I execute real banking tasks fast and carefully.",
-    "brand_origin": "{app_name} is inspired by {app_brand_inspiration}.",
+    "identity_correction": "Not {addressed_name} 😄 I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
+    "brand_origin": "The name {app_name_short} comes from {app_brand_inspiration}. We chose it because {app_brand_symbolism}: the idea behind {app_name} is to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
     "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",
     "out_of_scope_followup": "If you want, I can also help with transfers, airtime/data, balances, and transaction queries.",
     "out_of_scope_firm": "Let's switch back to banking. I can help with transfers, airtime/data, balances, and transaction queries.",
-    "clarify": "I didn't quite catch the banking request. Tell me what you'd like to do, like send money, buy airtime, or check transactions.",
+    "clarify": "I can help with banking tasks. Try: show scheduled transactions, send money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "Got it.",
       "settled": "No worries, that's settled.",
@@ -550,6 +551,12 @@
       "failed_unknown": "Unknown error.",
       "failed_prefix": "Failed: {error}",
       "resume_prompt": "Would you like to resume your {intent}?",
+      "resume_prompt_transfer_specific": "You still have a transfer waiting: {amount} to {recipient}. Continue it?",
+      "resume_prompt_transfer_generic": "You still have a transfer waiting. Continue it?",
+      "resume_prompt_airtime_specific": "You still have an airtime purchase waiting: {amount} for {phone}. Continue it?",
+      "resume_prompt_airtime_generic": "You still have an airtime purchase waiting. Continue it?",
+      "resume_prompt_data_specific": "You still have a data purchase waiting: {amount} for {phone}. Continue it?",
+      "resume_prompt_data_generic": "You still have a data purchase waiting. Continue it?",
       "recipient_fallback": "recipient",
       "transfer_processing": "Transfer of ₦{amount} to {display_name} is being processed.",
       "transaction_completed": "Transaction completed",
@@ -619,11 +626,19 @@
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "You asked to send to {requested_name}, but the account resolved as {resolved_name}.",
-      "high_risk_unsaved_warning": "⚠️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully."
+      "high_risk_unsaved_warning": "⚠️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully.",
+      "high_risk_unsaved_warning_variants": {
+        "standard": "⚠️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully.",
+        "careful": "⚠️ Please review this high-risk transfer carefully: {amount} is going to an unsaved recipient."
+      }
     },
     "funding": {
       "plan_failed": "Failed to plan funding.",
-      "insufficient_funds": "Insufficient funds."
+      "insufficient_funds": "Insufficient funds.",
+      "insufficient_funds_variants": {
+        "standard": "Insufficient funds.",
+        "reassuring": "There isn't enough available balance for this transfer. You can lower the amount, add funds, or choose another account."
+      }
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
@@ -649,18 +664,36 @@
     },
     "execution": {
       "date_now": "Now",
-      "failed": "Execution failed: {error}"
+      "failed": "Execution failed: {error}",
+      "failed_variants": {
+        "standard": "Execution failed: {error}",
+        "reassuring": "I couldn't complete the transfer: {error}. Please try again or contact support if it continues."
+      }
     },
     "error": {
       "execution_failed": "Transfer could not be completed. Please try again.",
+      "execution_failed_variants": {
+        "standard": "Transfer could not be completed. Please try again.",
+        "reassuring": "The transfer could not be completed right now. Please try again."
+      },
       "pipeline_failed": "Pipeline failed: {error}",
-      "provider_failed": "Transfer failed at provider"
+      "provider_failed": "Transfer failed at provider",
+      "provider_failed_variants": {
+        "standard": "Transfer failed at provider",
+        "reassuring": "The transfer could not be completed with the provider right now."
+      }
     },
     "format": {
       "summary": {
         "recipient_fallback": "Recipient",
         "last4_fallback": "????",
         "title": "*{amount} → {recipient_name}*",
+        "title_variants": {
+          "standard": "*{amount} → {recipient_name}*",
+          "warm": "*Ready: {amount} to {recipient_name}*",
+          "careful": "*Review carefully: {amount} to {recipient_name}*",
+          "trusted_careful": "*Ready, please review: {amount} to {recipient_name}*"
+        },
         "recipient_line": "{recipient_bank} • {recipient_account}",
         "user_note": "Narration: {user_note}",
         "source_line": "From: {source_bank} (···{last4})"
@@ -701,7 +734,17 @@
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+        "success_variants": {
+          "standard": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+          "warm": "Done. {amount} has been sent to {recipient_name}.",
+          "celebratory": "All set. {amount} has been sent to {recipient_name}."
+        },
         "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending_variants": {
+          "standard": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "warm": "Got it. Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly.",
+          "reassuring": "Your {amount} transfer to {recipient_name} is processing. Bank confirmation can take a few minutes."
+        },
         "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
       }
     }
@@ -833,6 +876,16 @@
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",
+      "transfer_variants": {
+        "standard": "Confirm Transfer",
+        "warm": "Review Transfer",
+        "careful": "Review Transfer Carefully",
+        "trusted_careful": "Review Transfer"
+      },
+      "scheduled_transfer": "Confirm Scheduled Transfer",
+      "scheduled_airtime": "Confirm Scheduled Airtime Purchase",
+      "scheduled_data": "Confirm Scheduled Data Purchase",
+      "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
       "data": "Confirm Data Purchase",
       "mixed": "Confirm Transactions",

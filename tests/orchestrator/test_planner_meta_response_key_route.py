@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from shared.config.settings import settings
 from shared.i18n import render_message
 from shared.types.planner import PlannerOutput
 
@@ -56,7 +57,7 @@ async def test_planner_identity_response_key_renders_deterministically() -> None
     )
     planner = _MockPlanner(
         planner_output,
-        planner_llm=_FakeMetaLLM({"handoff": "meta", "language": "en", "message": "I am Narya AI."}),
+        planner_llm=_FakeMetaLLM({"handoff": "meta", "language": "en", "message": f"I am {settings.app_name}."}),
     )
     state = OrchestratorState(
         user_id="u_meta_r_1",

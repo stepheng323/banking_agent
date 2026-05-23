@@ -261,10 +261,10 @@
       <div class="pin-shell">
         <main class="pin-content">
           <header class="pin-profile mini-app-profile">
-            <div class="pin-avatar mini-app-avatar" aria-hidden="true">N</div>
+            <div class="pin-avatar mini-app-avatar" aria-hidden="true">{app_initial}</div>
             <div class="mini-app-copy">
               <p class="pin-eyebrow" id="headerText">Secure authorization</p>
-              <h1 class="pin-title mini-app-title">Narya</h1>
+              <h1 class="pin-title mini-app-title">{app_name_short}</h1>
               <p class="pin-subtitle mini-app-subtitle" id="bodyText">
                 Use your 6-digit transaction PIN to continue.
               </p>
@@ -312,6 +312,7 @@
       const bootstrapNonce = params.get("boot") || "";
       let flowToken = "";
       let chatId = "";
+      let submitLabel = "Authorize";
 
       const PIN_LENGTH = 6;
       const MAX_ATTEMPTS = 3;
@@ -415,6 +416,7 @@
           }
           flowToken = payload.flow_token || "";
           chatId = payload.chat_id || "";
+          submitLabel = payload.submit_label || submitLabel;
           return { success: true };
         } catch (err) {
           return { success: false, error: "Network error. Please try again." };
@@ -440,7 +442,7 @@
           return;
         }
         pinInput.disabled = false;
-        updateSubmitButton("Authorize", false, false);
+        updateSubmitButton(submitLabel, false, false);
         setTimeout(() => pinInput.focus(), 320);
       }
 
@@ -502,7 +504,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(serverMsg);
-          updateSubmitButton("Authorize", false, false);
+          updateSubmitButton(submitLabel, false, false);
         } catch (e) {
           tg.HapticFeedback.notificationOccurred("error");
           locked = false;
@@ -510,7 +512,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(e.message || "Network error. Please try again.");
-          updateSubmitButton("Authorize", false, false);
+          updateSubmitButton(submitLabel, false, false);
         }
       }
 

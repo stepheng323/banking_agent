@@ -147,6 +147,54 @@ async def test_transfer_executor_single_success_delivers_and_enqueues_receipt() 
 
 
 @pytest.mark.asyncio
+async def test_transfer_executor_success_uses_celebratory_tone_for_first_transfer() -> None:
+    class _TransactionRepo:
+        def __init__(self) -> None:
+            self.update_status = AsyncMock(return_value=SimpleNamespace(user_id="user-1"))
+            self.stats_calls: list[dict] = []
+
+        async def get_by_id(self, transaction_id: str) -> SimpleNamespace:
+            del transaction_id
+            return SimpleNamespace(status=TransactionStatusEnum.PROCESSING.value, user_id="user-1")
+
+        async def get_successful_transfer_personality_stats(self, user_id: str, **kwargs) -> dict:
+            self.stats_calls.append({"user_id": user_id, **kwargs})
+            return {
+                "prior_successful_transfer_count": 0,
+                "prior_max_successful_transfer_amount": 0,
+                "recipient_success_count_90d": 0,
+            }
+
+    dd_provider = SimpleNamespace(
+        initiate_debit_to_beneficiary=AsyncMock(
+            return_value=DebitResult(
+                success=True,
+                status=DebitStatus.SUCCESSFUL,
+                debit_id="debit-1",
+                reference="ref-1",
+                provider_response={"id": "debit-1", "status": "successful", "reference": "ref-1", "response_code": "00"},
+            )
+        )
+    )
+    account_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=SimpleNamespace(mandate_id="mandate-1")))
+    transaction_repo = _TransactionRepo()
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock(), deliver_intents=AsyncMock())
+    executor = TransferExecutor(
+        direct_debit_provider=dd_provider,
+        account_repo=account_repo,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_transfer(_payload())
+
+    assert delivery_service.deliver_text.await_args.kwargs["text"].startswith("All set. ₦5,000")
+    assert transaction_repo.stats_calls[0]["exclude_transaction_id"] == "tx-1"
+    assert transaction_repo.stats_calls[0]["exclude_idempotency_key"] == "idem-1"
+
+
+@pytest.mark.asyncio
 async def test_transfer_executor_processing_persists_provider_metadata() -> None:
     dd_provider = SimpleNamespace(
         initiate_debit_to_beneficiary=AsyncMock(

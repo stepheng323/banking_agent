@@ -6,6 +6,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.context.referent_memory import ReferentMemoryItem
 from apps.chat.src.agent.orchestrator.execution.handlers import (
     ExecutionAggregation,
     ExecutionContext,
@@ -172,6 +173,101 @@ async def test_resume_session_restores_stash_without_replaying_outbox() -> None:
     assert len(ctx.agg.updates["context_frames"]) == 1
     assert ctx.agg.updates["context_frames"][0].frame_id == "keep-frame"
     assert "outbox" not in ctx.agg.updates
+
+
+async def test_resume_session_clears_matching_stashed_referents() -> None:
+    pending_interrupt = PendingInterrupt(kind="input", task_ids=["t_stashed"], fields_by_task={"t_stashed": ["amount"]})
+    stashed_task = TaskSpec(id="t_stashed", type="transfer", stage=TaskStage.EXTRACTED, payload={"amount": 5000})
+    orchestrator_task = TaskSpec(
+        id="o1",
+        type="orchestrator",
+        stage=TaskStage.DRAFT,
+        payload={"action": "resume_session"},
+    )
+    state = OrchestratorState(
+        user_id="u_resume_action_clear",
+        phone_number="2348000000021",
+        channel="whatsapp",
+        tasks={"o1": orchestrator_task},
+        stashed_sessions=[
+            {
+                "stash_id": "stash-clear",
+                "tasks": {"t_stashed": stashed_task},
+                "waves": [["t_stashed"]],
+                "current_wave_index": 0,
+                "pending_interrupt": pending_interrupt,
+                "intent": "transfer",
+            }
+        ],
+        context_frames=[_resume_frame()],
+    )
+    state.referent_memory.items = [
+        ReferentMemoryItem(
+            referent_type="recipient",
+            source="stashed_session",
+            label="Grace",
+            data={"recipient_name": "Grace", "stash_id": "stash-clear"},
+        ),
+        ReferentMemoryItem(
+            referent_type="recipient",
+            source="completed_task",
+            label="Emeka",
+            data={"recipient_name": "Emeka"},
+        ),
+    ]
+
+    ctx = _ctx(state)
+    await handle_orchestrator_task(orchestrator_task, "o1", ctx)
+
+    assert [item.label for item in ctx.agg.updates["referent_memory"].items] == ["Emeka"]
+
+
+async def test_dismiss_resume_session_clears_matching_stashed_referents() -> None:
+    orchestrator_task = TaskSpec(
+        id="o1",
+        type="orchestrator",
+        stage=TaskStage.DRAFT,
+        payload={"action": "dismiss_resume_session"},
+    )
+    state = OrchestratorState(
+        user_id="u_resume_action_dismiss_clear",
+        phone_number="2348000000021",
+        channel="whatsapp",
+        tasks={"o1": orchestrator_task},
+        stashed_sessions=[
+            {
+                "stash_id": "stash-dismiss",
+                "tasks": {
+                    "t_stashed": TaskSpec(
+                        id="t_stashed",
+                        type="transfer",
+                        stage=TaskStage.EXTRACTED,
+                        payload={"amount": 5000},
+                    )
+                },
+                "waves": [["t_stashed"]],
+                "current_wave_index": 0,
+                "pending_interrupt": {"kind": "input", "task_ids": ["t_stashed"]},
+                "intent": "transfer",
+            }
+        ],
+        context_frames=[_resume_frame()],
+    )
+    state.referent_memory.items = [
+        ReferentMemoryItem(
+            referent_type="recipient",
+            source="stashed_session",
+            label="Grace",
+            data={"recipient_name": "Grace", "stash_id": "stash-dismiss"},
+        )
+    ]
+
+    ctx = _ctx(state)
+    await handle_orchestrator_task(orchestrator_task, "o1", ctx)
+
+    assert orchestrator_task.stage == TaskStage.COMPLETED
+    assert ctx.agg.updates["stashed_sessions"] == []
+    assert ctx.agg.updates["referent_memory"].items == []
 
 
 async def test_resume_session_reruns_worker_and_regenerates_confirmation_prompt() -> None:

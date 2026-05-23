@@ -32,12 +32,13 @@
     "appreciation": "Babu komai. Wane aiki za mu yi na gaba?",
     "checkin": "Ina nan. Wane aikin kudi za mu fara?",
     "identity": "Ni ne {app_name}. Ina gudanar da ainihin ayyukan banking da sauri kuma cikin kulawa.",
-    "brand_origin": "{app_name} ya samo wahayi daga {app_brand_inspiration}.",
+    "identity_correction": "Ba {addressed_name} ba ne 😄 Ni ne {app_name}. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction. Me kake so mu yi?",
+    "brand_origin": "Sunan {app_name_short} ya fito daga {app_brand_inspiration}. Mun zabe shi saboda {app_brand_symbolism}: manufar {app_name} ita ce taimaka wa kudinka su motsa cikin sauki, a fili, kuma karkashin ikonka.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "out_of_scope_followup": "Idan kana so, zan kuma iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "out_of_scope_firm": "Mu koma ga banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
-    "clarify": "Don Allah ka kara bayyana abin da kake so na taimaka da shi.",
+    "clarify": "Zan iya taimakawa da banking tasks: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "Na gane.",
       "settled": "Ba damuwa, an daidaita.",
@@ -550,6 +551,12 @@
       "failed_unknown": "Unknown error.",
       "failed_prefix": "Failed: {error}",
       "resume_prompt": "Would you like to resume your {intent}?",
+      "resume_prompt_transfer_specific": "Kana da transfer da ke jira: {amount} zuwa {recipient}. A ci gaba?",
+      "resume_prompt_transfer_generic": "Kana da transfer da ke jira. A ci gaba?",
+      "resume_prompt_airtime_specific": "Kana da sayen airtime da ke jira: {amount} ga {phone}. A ci gaba?",
+      "resume_prompt_airtime_generic": "Kana da sayen airtime da ke jira. A ci gaba?",
+      "resume_prompt_data_specific": "Kana da sayen data da ke jira: {amount} ga {phone}. A ci gaba?",
+      "resume_prompt_data_generic": "Kana da sayen data da ke jira. A ci gaba?",
       "recipient_fallback": "recipient",
       "transfer_processing": "Transfer of ₦{amount} to {display_name} is being processed.",
       "transaction_completed": "Transaction completed",
@@ -619,11 +626,19 @@
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "Ka ce a tura zuwa {requested_name}, amma an warware account din a matsayin {resolved_name}.",
-      "high_risk_unsaved_warning": "⚠️ Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai."
+      "high_risk_unsaved_warning": "⚠️ Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai.",
+      "high_risk_unsaved_warning_variants": {
+        "standard": "⚠️ Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai.",
+        "careful": "⚠️ Don Allah ka duba wannan transfer mai hadari sosai: {amount} zai tafi ga wanda ba a ajiye ba."
+      }
     },
     "funding": {
       "plan_failed": "Failed to plan funding.",
-      "insufficient_funds": "Insufficient funds."
+      "insufficient_funds": "Insufficient funds.",
+      "insufficient_funds_variants": {
+        "standard": "Insufficient funds.",
+        "reassuring": "Balance bai isa wannan transfer ba. Za ka iya rage adadin, kara kudi, ko zabar wani account."
+      }
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
@@ -652,6 +667,12 @@
         "recipient_fallback": "Recipient",
         "last4_fallback": "????",
         "title": "*{amount} → {recipient_name}*",
+        "title_variants": {
+          "standard": "*{amount} → {recipient_name}*",
+          "warm": "*Shirye: {amount} zuwa {recipient_name}*",
+          "careful": "*Duba sosai: {amount} zuwa {recipient_name}*",
+          "trusted_careful": "*Shirye, don Allah ka duba: {amount} zuwa {recipient_name}*"
+        },
         "recipient_line": "{recipient_bank} • {recipient_account}",
         "user_note": "Narration: {user_note}",
         "source_line": "From: {source_bank} (···{last4})"
@@ -692,18 +713,40 @@
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+        "success_variants": {
+          "standard": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+          "warm": "An gama. An tura {amount} zuwa {recipient_name}.",
+          "celebratory": "Komai ya kammala. An tura {amount} zuwa {recipient_name}."
+        },
         "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending_variants": {
+          "standard": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "warm": "Na karba. Transfer din {amount} zuwa {recipient_name} yana aiki.\n\nZa ka samu tabbaci nan ba da jimawa ba.",
+          "reassuring": "Transfer din {amount} zuwa {recipient_name} yana aiki. Tabbacin banki na iya daukar 'yan mintuna."
+        },
         "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
       }
     },
     "execution": {
       "date_now": "Now",
-      "failed": "Execution failed: {error}"
+      "failed": "Execution failed: {error}",
+      "failed_variants": {
+        "standard": "Execution failed: {error}",
+        "reassuring": "Ban iya kammala transfer din ba: {error}. Don Allah ka sake gwadawa ko ka tuntubi support idan ya ci gaba."
+      }
     },
     "error": {
       "execution_failed": "Transfer could not be completed. Please try again.",
+      "execution_failed_variants": {
+        "standard": "Transfer could not be completed. Please try again.",
+        "reassuring": "Transfer din bai kammala ba yanzu. Don Allah ka sake gwadawa."
+      },
       "pipeline_failed": "Pipeline failed: {error}",
-      "provider_failed": "Transfer failed at provider"
+      "provider_failed": "Transfer failed at provider",
+      "provider_failed_variants": {
+        "standard": "Transfer failed at provider",
+        "reassuring": "Provider bai iya kammala transfer din yanzu ba."
+      }
     }
   },
   "airtime": {
@@ -799,6 +842,16 @@
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",
+      "transfer_variants": {
+        "standard": "Confirm Transfer",
+        "warm": "Review Transfer",
+        "careful": "Duba Transfer Sosai",
+        "trusted_careful": "Review Transfer"
+      },
+      "scheduled_transfer": "Confirm Scheduled Transfer",
+      "scheduled_airtime": "Confirm Scheduled Airtime Purchase",
+      "scheduled_data": "Confirm Scheduled Data Purchase",
+      "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
       "data": "Confirm Data Purchase",
       "mixed": "Confirm Transactions",

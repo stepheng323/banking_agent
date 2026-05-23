@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from apps.receipt.src.consumer import ReceiptJobConsumer
+from shared.config.settings import settings
 
 
 @pytest.mark.asyncio
@@ -27,7 +28,7 @@ async def test_receipt_consumer_processes_top_level_payload() -> None:
             "narration": "offering",
             "channel": "whatsapp",
             "session_id": "session-123",
-            "processor_name": "Narya AI Gateway",
+            "processor_name": f"{settings.app_name} Gateway",
         },
         "transaction_reference": "TRX-001",
         "signal_key": "receipt:signal:test-1",

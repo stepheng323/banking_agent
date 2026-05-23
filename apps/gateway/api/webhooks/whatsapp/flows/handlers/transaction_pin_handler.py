@@ -31,7 +31,7 @@ from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _INVALID_SESSION_MESSAGE = "Invalid transaction session. Please start a new transaction."
-_PIN_FLOW_PREFIXES = frozenset({"transaction", "transfer", "airtime", "data"})
+_PIN_FLOW_PREFIXES = frozenset({"transaction", "transfer", "airtime", "data", "schedule"})
 
 
 @dataclass(frozen=True)

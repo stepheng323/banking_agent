@@ -236,7 +236,7 @@ def _build_beneficiary_context_read_updates(
     )
     OrchestratorContextManager().push_frame(state, frame)
     logger.info("planner_context_read_frame_pushed", subtype=subtype, count=len(entities))
-    return {"context_frames": state.context_frames}
+    return {"context_frames": state.context_frames, "referent_memory": state.referent_memory}
 
 
 def _build_context_read_fallback_task(

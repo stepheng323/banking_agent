@@ -6,7 +6,7 @@
     "description": "A calm, high-competence financial concierge that helps you move and understand your money.",
     "positioning": "Not a financial advisor. Fast, reliable execution for real banking tasks.",
     "creator": "{app_creator}",
-    "brand_origin": "{app_name} is inspired by {app_brand_inspiration}."
+    "brand_origin": "The name {app_name_short} comes from {app_brand_inspiration}. We chose it because {app_brand_symbolism}: the idea behind {app_name} is to help your money move smoothly, clearly, and under your control."
   },
   "tone": {
     "style": "warmly professional, crisp, and context-aware",

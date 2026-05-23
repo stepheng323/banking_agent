@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, Trans
 from apps.chat.src.agent.orchestrator.nodes.planner.policy import _build_policy_notice
 from shared.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
 from shared.assistant_profile.voice import build_planner_voice_block, get_runtime_voice
+from shared.config.settings import settings
 from shared.guardrails.loader import get_cached_guardrails, load_guardrails
 from shared.policy.adapters import resolve_capability_message, resolve_capability_rule
 from shared.policy.loader import get_cached_policy, load_policy
@@ -71,7 +72,7 @@ def test_capability_policy_loads_from_json_file() -> None:
 
 def test_assistant_profile_loads_from_json_file() -> None:
     profile = load_assistant_profile(ASSISTANT_PROFILE_PATH)
-    assert profile.identity.name == "Narya AI"
+    assert profile.identity.name == settings.app_name
     assert "Send money" in profile.supported_domains
 
 

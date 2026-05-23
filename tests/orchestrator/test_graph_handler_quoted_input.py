@@ -101,6 +101,31 @@ class _ProgressTrackerStub:
         return
 
 
+class _NoopDistributedLock:
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+
+    async def acquire(self, *, wait_seconds: float, retry_interval_seconds: float = 0.1) -> bool:
+        del wait_seconds, retry_interval_seconds
+        return True
+
+    async def release(self) -> bool:
+        return True
+
+    async def renew_periodically(self, *, interval_seconds: float) -> None:
+        del interval_seconds
+        while True:
+            await asyncio.sleep(3600)
+
+
+@pytest.fixture(autouse=True)
+def _stub_distributed_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.graph.handler.RedisDistributedLock",
+        _NoopDistributedLock,
+    )
+
+
 @pytest.mark.asyncio
 async def test_graph_handler_invoke_passes_quoted_message_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _GraphStub()

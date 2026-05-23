@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.banking_ambiguity import render_banking_coded_ambiguity_prompt
@@ -36,6 +37,25 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+_SCHEDULE_READ_CANDIDATE_RE = re.compile(
+    r"(?iu)(?:"
+    r"\bschedul\w*\b|\brecurr\w*\b|\bpending\b.*\b(?:transaction|payment|transfer|airtime|data)\w*\b|"
+    r"\bprogram(?:me|med|mes|ar|ado|ada|ados|adas|mé|mée|mées|més)\w*\b|"
+    r"\betal[eè]\b|\betalement\b|\bprogramm[ée]s?\b|"
+    r"\beto\b.*\b(?:isanwo|owo|transaction)\b|"
+    r"\b(?:ti a se eto|san nigbamii|sisanwo ti n bo)\b|"
+    r"\b(?:tsara|jadawali|maimaitawa|biyan)\b.*\b(?:kudi|ciniki|biya)\b|"
+    r"\b(?:haziri|ugwo|mbufe|azumahia)\b.*\b(?:emechaa|na-abia|oge)\b"
+    r")"
+)
+
+
+def _could_be_schedule_read_request(text: str) -> bool:
+    normalized = " ".join((text or "").split())
+    if not normalized or len(normalized) > 180:
+        return False
+    return bool(_SCHEDULE_READ_CANDIDATE_RE.search(normalized))
+
 
 def _append_routing_hints(route_context: str, hints: list[dict[str, str]]) -> str:
     if not hints:
@@ -59,6 +79,96 @@ def _semantic_route_vetoed_by_support_hint(canonical_decision: str | None) -> bo
         "direct_context_answer",
         "planner_ambiguous",
     }
+
+
+def _semantic_schedule_response_mode(route: Any) -> str | None:
+    mode = getattr(route, "schedule_response_mode", None)
+    if mode in {"list", "count"}:
+        return str(mode)
+    return None
+
+
+def _build_direct_schedule_read_updates(
+    ctx: GateContext,
+    *,
+    updates: dict[str, Any],
+    schedule_response_mode: str,
+    canonical_decision: str | None,
+    canonical_mode: str | None,
+    route_source: str,
+) -> dict[str, Any]:
+    task_id, spec = _build_direct_domain_task(
+        state=ctx.state,
+        domain="schedule",
+        mode=canonical_mode,
+        schedule_response_mode="count" if schedule_response_mode == "count" else "list",
+    )
+    return {
+        **ctx.gate_updates,
+        **(ctx.summary_updates or {}),
+        "tasks": {task_id: spec},
+        "waves": [[task_id]],
+        "current_wave_index": 0,
+        "planner_output": None,
+        "direct_path_triggered": True,
+        "semantic_path_shape": "semantic_router_schedule_direct",
+        **_route_observability_updates(
+            owner="semantic_router",
+            decision=canonical_decision or "domain_schedule",
+            target_domain="schedule",
+            mode=canonical_mode,
+            route_source=route_source,
+        ),
+        **updates,
+    }
+
+
+async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None:
+    """Use a small semantic classifier for simple scheduled-transaction read turns."""
+    if (
+        ctx.live_pending_interrupt
+        or ctx.state.pending_interrupt is not None
+        or ctx.state.has_quote
+        or ctx.state.session_stack
+        or ctx.state.waves
+        or not callable(getattr(ctx.task_planner, "route_schedule_read_turn", None))
+    ):
+        return None
+    if not _could_be_schedule_read_request(ctx.message_text):
+        return None
+
+    try:
+        route = await ctx.task_planner.route_schedule_read_turn(
+            ctx.state.phone_number,
+            ctx.message_text,
+            path_label="direct_path",
+        )
+    except TypeError:
+        route = await ctx.task_planner.route_schedule_read_turn(ctx.state.phone_number, ctx.message_text)
+    except Exception as exc:
+        logger.warning("gate_schedule_read_router_failed", error=str(exc))
+        return None
+
+    canonical_decision = _semantic_route_decision(route)
+    schedule_response_mode = _semantic_schedule_response_mode(route)
+    confidence = float(getattr(route, "confidence", 0.0) or 0.0)
+    if canonical_decision != "domain_schedule" or schedule_response_mode is None or confidence < 0.72:
+        return None
+
+    logger.info(
+        "gate_schedule_read_router_direct",
+        decision=canonical_decision,
+        schedule_response_mode=schedule_response_mode,
+        confidence=round(confidence, 2),
+    )
+    return _build_direct_schedule_read_updates(
+        ctx,
+        updates={"semantic_path_shape": "schedule_read_router_direct"},
+        schedule_response_mode=schedule_response_mode,
+        canonical_decision=canonical_decision,
+        canonical_mode=_semantic_route_mode(route) or "new",
+        route_source="schedule_read_router",
+    )
 
 
 async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
@@ -200,6 +310,42 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
                         owner="semantic_router",
                         decision=canonical_decision,
                         mode=canonical_mode,
+                    ),
+                    **updates,
+                }
+
+            if route is not None and getattr(route, "target_intent", None) == "schedule":
+                schedule_response_mode = _semantic_schedule_response_mode(route)
+                if schedule_response_mode is not None:
+                    logger.info(
+                        "gate_semantic_router_schedule_direct",
+                        decision=canonical_decision,
+                        mode=canonical_mode,
+                        schedule_response_mode=schedule_response_mode,
+                    )
+                    return _build_direct_schedule_read_updates(
+                        ctx,
+                        updates=updates,
+                        schedule_response_mode=schedule_response_mode,
+                        canonical_decision=canonical_decision,
+                        canonical_mode=canonical_mode,
+                        route_source="semantic_router_target_intent",
+                    )
+                logger.info(
+                    "gate_semantic_router_schedule_target_planner_handoff",
+                    decision=canonical_decision,
+                    mode=canonical_mode,
+                )
+                return {
+                    **ctx.gate_updates,
+                    **(ctx.summary_updates or {}),
+                    "semantic_path_shape": "semantic_router_schedule_planner_handoff",
+                    **_route_observability_updates(
+                        owner="planner",
+                        decision="planner_handoff",
+                        target_domain="schedule",
+                        mode=canonical_mode,
+                        route_source="semantic_router_target_intent",
                     ),
                     **updates,
                 }
@@ -353,6 +499,41 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
                 "domain_airtime": "airtime",
                 "domain_data": "data",
             }
+            if route is not None and canonical_decision == "domain_schedule":
+                schedule_response_mode = _semantic_schedule_response_mode(route)
+                if schedule_response_mode is not None:
+                    logger.info(
+                        "gate_semantic_router_schedule_direct",
+                        decision=canonical_decision,
+                        mode=canonical_mode,
+                        schedule_response_mode=schedule_response_mode,
+                    )
+                    return _build_direct_schedule_read_updates(
+                        ctx,
+                        updates=updates,
+                        schedule_response_mode=schedule_response_mode,
+                        canonical_decision=canonical_decision,
+                        canonical_mode=canonical_mode,
+                        route_source="semantic_router",
+                    )
+                logger.info(
+                    "gate_semantic_router_schedule_planner_handoff",
+                    decision=canonical_decision,
+                    mode=canonical_mode,
+                )
+                return {
+                    **ctx.gate_updates,
+                    **(ctx.summary_updates or {}),
+                    "semantic_path_shape": "semantic_router_schedule_planner_handoff",
+                    **_route_observability_updates(
+                        owner="planner",
+                        decision="planner_handoff",
+                        target_domain="schedule",
+                        mode=canonical_mode,
+                        route_source="semantic_router",
+                    ),
+                    **updates,
+                }
             if route is not None and canonical_decision in route_to_domain:
                 domain = route_to_domain[canonical_decision]
                 if domain == "support" and looks_like_transaction_replay_modifier_request(ctx.message_text):

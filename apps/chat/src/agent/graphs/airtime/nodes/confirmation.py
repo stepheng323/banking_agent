@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.graphs.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -47,6 +48,9 @@ class ConfirmationStep(AirtimeStep):
             },
             locale=context.language,
         )
+        schedule_line = format_schedule_confirmation_line(data)
+        if schedule_line:
+            summary = f"{summary}\n\n{schedule_line}"
 
         try:
             redis_client = getattr(worker_context, "redis_client", None)

@@ -25,6 +25,7 @@ class ContextFrameType(str, Enum):
     RECEIPT = "receipt"
     BENEFICIARY_LIST = "beneficiary_list"
     ACCOUNT_LIST = "account_list"
+    SCHEDULE_LIST = "schedule_list"
     GENERIC = "generic"
 
 

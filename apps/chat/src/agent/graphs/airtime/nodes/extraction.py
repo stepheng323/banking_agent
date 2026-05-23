@@ -4,6 +4,11 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
+from apps.chat.src.agent.graphs.__shared__.scheduling import (
+    SCHEDULE_FIELD_NAMES,
+    parse_schedule_slot_patch,
+    schedule_required_prompt,
+)
 from apps.chat.src.agent.graphs.__shared__.source_account_guard import find_account_by_bank_name
 from apps.chat.src.agent.graphs.airtime.models.types import (
     AirtimeContext,
@@ -12,7 +17,6 @@ from apps.chat.src.agent.graphs.airtime.models.types import (
 )
 from apps.chat.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from shared.i18n import render_message
 from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
@@ -95,6 +99,36 @@ def _skip_override_reason(payload: AirtimePayload, message: str) -> str | None:
     return None
 
 
+def _resolved_phone_referent(context: AirtimeContext) -> dict[str, Any] | None:
+    resolution = context.resolved_referents.get("phone")
+    if not isinstance(resolution, dict) or resolution.get("status") != "resolved":
+        return None
+    item = resolution.get("item")
+    if not isinstance(item, dict):
+        return None
+    data = item.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _ambiguous_phone_referent_prompt(context: AirtimeContext) -> str | None:
+    resolution = context.resolved_referents.get("phone")
+    if not isinstance(resolution, dict) or resolution.get("status") != "ambiguous":
+        return None
+    raw_candidates = resolution.get("candidates")
+    candidates = raw_candidates if isinstance(raw_candidates, list) else []
+    lines: list[str] = []
+    for idx, item in enumerate(candidates[:5], start=1):
+        if not isinstance(item, dict):
+            continue
+        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        phone = str(data.get("phone") or data.get("recipient_phone") or item.get("label") or "").strip()
+        if phone:
+            lines.append(f"{idx}. {phone}")
+    if not lines:
+        return None
+    return "Which number did you mean?\n" + "\n".join(lines)
+
+
 class ExtractionStep(AirtimeStep):
     """Refines payload with extraction from current message."""
 
@@ -109,7 +143,6 @@ class ExtractionStep(AirtimeStep):
         worker_context: Any,
     ) -> TransactionResult:
         del gates
-        locale = context.language
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK)
 
@@ -128,6 +161,32 @@ class ExtractionStep(AirtimeStep):
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         waiting_for_source_account = "source_account_id" in required_fields
         waiting_for_recipient_phone = "recipient_phone" in required_fields or "phone_number" in required_fields
+        schedule_required_fields = [field for field in required_fields if field in SCHEDULE_FIELD_NAMES]
+        if not data.recipient_phone:
+            ambiguity_prompt = _ambiguous_phone_referent_prompt(context)
+            if ambiguity_prompt:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["recipient_phone"],
+                    prompt=ambiguity_prompt,
+                )
+        if schedule_required_fields:
+            schedule_patch, remaining_schedule_fields = parse_schedule_slot_patch(
+                self.user_message,
+                schedule_required_fields,
+            )
+            if schedule_patch:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(schedule_patch),
+                )
+            if len(schedule_required_fields) == len(required_fields):
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=remaining_schedule_fields or schedule_required_fields,
+                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields),
+                    patch=_with_skip_patch({"is_scheduled_operation": True, "skip_finalize_summary": True}),
+                )
         numeric_patch = try_extract_numeric_index(self.user_message, "airtime") if waiting_for_source_account else None
         if numeric_patch:
             return TransactionResult(
@@ -145,7 +204,18 @@ class ExtractionStep(AirtimeStep):
         extractor = worker_context.extractor
         if not extractor:
             logger.warning("airtime_extractor_missing")
-            return TransactionResult(outcome=TransactionOutcome.OK, patch=_with_skip_patch({}))
+            phone_referent = _resolved_phone_referent(context)
+            phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
+            patch = {}
+            if phone and not data.recipient_phone:
+                patch["recipient_phone"] = phone
+                if not data.network and phone_referent and phone_referent.get("network"):
+                    normalized_network = normalize_network_name(str(phone_referent["network"]))
+                    patch["network"] = normalized_network or str(phone_referent["network"]).strip().upper()
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_with_skip_patch(patch),
+            )
 
         temp_state = {
             "message": self.user_message,
@@ -182,6 +252,15 @@ class ExtractionStep(AirtimeStep):
             if entities.get("source_bank_name"):
                 patch["source_bank_name"] = str(entities["source_bank_name"]).strip()
 
+            if not patch.get("recipient_phone") and not data.recipient_phone:
+                phone_referent = _resolved_phone_referent(context)
+                phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
+                if phone:
+                    patch["recipient_phone"] = phone
+                    if not patch.get("network") and phone_referent and phone_referent.get("network"):
+                        normalized_network = normalize_network_name(str(phone_referent["network"]))
+                        patch["network"] = normalized_network or str(phone_referent["network"]).strip().upper()
+
             correction = extracted.get("correction")
             if correction:
                 field = correction.get("field")
@@ -205,25 +284,6 @@ class ExtractionStep(AirtimeStep):
                 fallback_phone = normalize_nigerian_phone(self.user_message)
                 if fallback_phone:
                     patch["recipient_phone"] = fallback_phone
-
-            # Check for unsupported features (Scheduled/Recurring)
-            if extracted.get("requested_features"):
-                features = extracted["requested_features"]
-                # Hardcoded check: Scheduled/Recurring are not supported in V2 yet
-                # We return NEEDS_INPUT with a friendly limitation message
-                unsupported = [f for f in features if f in ["SCHEDULED", "RECURRING"]]
-                if unsupported:
-                    feature_name = unsupported[0].lower().replace("_", " ")
-                    return TransactionResult(
-                        outcome=TransactionOutcome.NEEDS_INPUT,
-                        prompt=render_message(
-                            "airtime.extraction.unsupported_feature",
-                            locale,
-                            {"feature_name": feature_name},
-                        ),
-                        details={"limitation": f"{unsupported[0]}_UNSUPPORTED"},
-                        patch=_with_skip_patch({}),
-                    )
 
             raw_is_self = entities.get("is_self")
             if raw_is_self is True:

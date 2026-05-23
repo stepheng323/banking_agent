@@ -152,6 +152,32 @@ async def test_airtime_extraction_phone_slot_fallback_normalizes_digits_only_rep
 
 
 @pytest.mark.asyncio
+async def test_airtime_extraction_reuses_resolved_phone_referent_without_extractor() -> None:
+    step = ExtractionStep("buy airtime for that number")
+    payload = AirtimePayload(amount=5000)
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        resolved_referents={
+            "phone": {
+                "status": "resolved",
+                "item": {
+                    "label": "Mum",
+                    "data": {"phone": "08162511023", "network": "mtn"},
+                },
+            }
+        },
+    )
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["recipient_phone"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {"recipient_phone": "08162511023", "network": "MTN"}
+
+
+@pytest.mark.asyncio
 async def test_airtime_extraction_passes_compact_context_to_extractor() -> None:
     step = ExtractionStep("08162511023")
     payload = AirtimePayload(amount=5000, recipient_name="Mum")

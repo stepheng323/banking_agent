@@ -8,6 +8,7 @@ from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import prepare
 from apps.chat.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from shared.formatters.confirmation import build_confirmation_summary
+from shared.i18n.personality import PersonalityContext
 
 
 class _MockBankingProvider:
@@ -68,6 +69,41 @@ class _MockMonoBankCache:
     async def get_bank_code(self, bank_name: str) -> str | None:
         self.lookup_terms.append(bank_name)
         return self.bank_code
+
+
+def _recipient_referent(
+    *,
+    label: str = "Mum",
+    beneficiary_id: str | None = "bene-1",
+    account_name: str = "Mama Nkechi",
+    account_number: str = "2010000002",
+    bank_name: str = "Opay",
+    bank_code: str = "100004",
+) -> dict:
+    return {
+        "referent_type": "recipient",
+        "source": "context_frame",
+        "label": label,
+        "entity_id": beneficiary_id,
+        "confidence": 0.95,
+        "created_at_ts": 1,
+        "ttl_seconds": 900,
+        "data": {
+            "id": beneficiary_id,
+            "beneficiary_id": beneficiary_id,
+            "alias": label,
+            "account_name": account_name,
+            "account_number": account_number,
+            "bank_name": bank_name,
+            "bank_code": bank_code,
+            "recipient_name": label,
+            "recipient_resolved_name": account_name,
+            "recipient_account": account_number,
+            "recipient_bank_name": bank_name,
+            "recipient_bank_code": bank_code,
+            "beneficiary_type": "transfer",
+        },
+    }
 
 
 class _MockPayoutResolverProvider:
@@ -183,6 +219,27 @@ async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     assert "You asked to send to David" in result.confirmation_summary
     assert "₦5,000 → David (Mercy Johnson)" in result.confirmation_summary
     assert "Mercy Johnson" in result.confirmation_summary
+
+
+async def test_confirmation_summary_uses_trusted_careful_for_large_saved_recipient() -> None:
+    payload = TransferPayload(
+        amount=70000,
+        recipient_name="Mum",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        beneficiary_id="ben-1",
+        resolved_from_saved_beneficiary=True,
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(
+        payload,
+        ctx,
+        personality_context=PersonalityContext(moment="confirmation", amount=70000, saved_recipient=True),
+    )
+
+    assert result.confirmation_summary is not None
+    assert result.confirmation_summary.startswith("*Ready, please review: ₦70,000 to Mum*")
 
 
 async def test_payout_preparation_skips_single_source_funding_plan() -> None:
@@ -795,23 +852,12 @@ async def test_only_account_missing_requests_account_only() -> None:
     assert "account number" in result.prompt.lower()
 
 
-async def test_pronoun_with_recent_beneficiary_context_single_match_autofills() -> None:
+async def test_pronoun_with_referent_memory_single_match_autofills() -> None:
     payload = TransferPayload(amount=10000, recipient_name="her")
     ctx = TransferContext(
         phone_number="2348000000000",
         language="en",
-        recent_beneficiary_context=True,
-        beneficiaries=[
-            {
-                "id": "bene-1",
-                "beneficiary_type": "transfer",
-                "alias": "Mum",
-                "account_name": "Mama Nkechi",
-                "account_number": "2010000002",
-                "bank_name": "Opay",
-                "bank_code": "100004",
-            }
-        ],
+        resolved_referents={"recipient": {"status": "resolved", "item": _recipient_referent()}},
         accounts=[],
     )
 
@@ -822,48 +868,43 @@ async def test_pronoun_with_recent_beneficiary_context_single_match_autofills() 
     assert result.patch["recipient_bank_name"] == "Opay"
 
 
-async def test_pronoun_with_recent_beneficiary_context_multiple_candidates_clarifies() -> None:
+async def test_pronoun_with_referent_memory_multiple_candidates_clarifies() -> None:
     payload = TransferPayload(amount=10000, recipient_name="her")
     ctx = TransferContext(
         phone_number="2348000000000",
         language="en",
-        recent_beneficiary_context=True,
-        beneficiaries=[
-            {
-                "id": "bene-1",
-                "beneficiary_type": "transfer",
-                "alias": "Mum",
-                "account_name": "Mama Nkechi",
-                "account_number": "2010000002",
-                "bank_name": "Opay",
-                "bank_code": "100004",
-            },
-            {
-                "id": "bene-2",
-                "beneficiary_type": "transfer",
-                "alias": "Dad",
-                "account_name": "Papa Nkechi",
-                "account_number": "2010000003",
-                "bank_name": "GTBank",
-                "bank_code": "058",
-            },
-        ],
+        resolved_referents={
+            "recipient": {
+                "status": "ambiguous",
+                "candidates": [
+                    _recipient_referent(),
+                    _recipient_referent(
+                        label="Dad",
+                        beneficiary_id="bene-2",
+                        account_name="Papa Nkechi",
+                        account_number="2010000003",
+                        bank_name="GTBank",
+                        bank_code="058",
+                    ),
+                ],
+            }
+        },
         accounts=[],
     )
 
     result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
 
     assert result.outcome.value == "needs_input"
-    assert result.required_fields == ["beneficiary_id"]
-    assert result.details.get("ambiguity") == "MULTIPLE_BENEFICIARIES"
+    assert result.required_fields == ["referent_recipient_id"]
+    assert result.patch["referent_recipient_candidates"]
+    assert result.details.get("ambiguity") == "MULTIPLE_REFERENT_RECIPIENTS"
 
 
-async def test_pronoun_without_recent_beneficiary_context_does_not_autoresolve() -> None:
+async def test_pronoun_without_referent_memory_does_not_autoresolve() -> None:
     payload = TransferPayload(amount=10000, recipient_name="her")
     ctx = TransferContext(
         phone_number="2348000000000",
         language="en",
-        recent_beneficiary_context=False,
         beneficiaries=[
             {
                 "id": "bene-1",
@@ -884,18 +925,16 @@ async def test_pronoun_without_recent_beneficiary_context_does_not_autoresolve()
     assert result.required_fields == ["recipient_account", "recipient_bank_name"]
 
 
-async def test_pronoun_uses_previous_query_beneficiary_when_available() -> None:
+async def test_pronoun_uses_query_recipient_referent_when_available() -> None:
     payload = TransferPayload(amount=10000, recipient_name="her")
     ctx = TransferContext(
         phone_number="2348000000000",
         language="en",
-        recent_beneficiary_context=True,
-        previous_beneficiary={
-            "alias": "Mum",
-            "account_name": "Mercy Johnson",
-            "account_number": "2010000002",
-            "bank_name": "Opay",
-            "bank_code": "100004",
+        resolved_referents={
+            "recipient": {
+                "status": "resolved",
+                "item": _recipient_referent(account_name="Mercy Johnson"),
+            }
         },
         beneficiaries=[
             {
@@ -927,7 +966,6 @@ async def test_reference_previous_does_not_guess_from_recent_beneficiary_list_wi
     ctx = TransferContext(
         phone_number="2348000000000",
         language="en",
-        recent_beneficiary_context=True,
         beneficiaries=[
             {
                 "id": "bene-1",
@@ -957,7 +995,6 @@ async def test_reference_index_resolves_transfer_beneficiary() -> None:
     ctx = TransferContext(
         phone_number="2348000000000",
         language="en",
-        recent_beneficiary_context=True,
         beneficiaries=[
             {
                 "id": "bene-1",

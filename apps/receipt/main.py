@@ -12,7 +12,7 @@ from apps.receipt.dependencies import setup_receipt_worker_consumers
 from apps.receipt.lambda_handler import _handler as receipt_lambda_handler
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
-from shared.queue.contracts import get_contract_by_topic
+from shared.queue.contracts import TopicType, get_contract_by_topic
 from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
 from shared.queue.sqs_poller import SQSPoller
 from shared.runtime_ownership import build_runtime_status
@@ -23,6 +23,7 @@ logger = get_logger(__name__)
 
 _worker_task: asyncio.Task[None] | None = None
 _stop_event: asyncio.Event | None = None
+_RECEIPT_STREAM_TOPICS: tuple[TopicType, ...] = ("receipt.process", "notification.send")
 
 
 async def _run_receipt_worker(stop_event: asyncio.Event) -> None:
@@ -60,7 +61,7 @@ async def _run_receipt_stream_worker(stop_event: asyncio.Event) -> None:
     consumers = setup_receipt_worker_consumers()
     stream_names = [
         stream_name
-        for topic in ("receipt.process", "notification.send")
+        for topic in _RECEIPT_STREAM_TOPICS
         if (stream_name := get_contract_by_topic(topic).redis_stream_name)
     ]
     if not stream_names:

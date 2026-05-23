@@ -10,6 +10,11 @@ from apps.chat.src.agent.graphs.__shared__.account_selection.reference import (
 from apps.chat.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.chat.src.agent.graphs.__shared__.beneficiary.selection import match_beneficiary_candidate_selection
 from apps.chat.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
+from apps.chat.src.agent.graphs.__shared__.scheduling import (
+    SCHEDULE_FIELD_NAMES,
+    parse_schedule_slot_patch,
+    schedule_required_prompt,
+)
 from apps.chat.src.agent.graphs.__shared__.source_account_guard import find_account_by_bank_name
 from apps.chat.src.agent.graphs.transfer.models.types import (
     TransferContext,
@@ -59,7 +64,11 @@ _SIMPLE_TRANSFER_PREFIX_RE = re.compile(
 )
 _SIMPLE_TRANSFER_COMPLEX_MARKERS_RE = re.compile(
     r"\b(?:each|split|between|btw|half|quarter|tithe|all|everything|from|using|use|with|"
-    r"tomorrow|next week|weekly|monthly|every|abroad|international)\b",
+    r"tomorrow|tommorow|next week|weekly|monthly|every|abroad|international)\b",
+    re.IGNORECASE,
+)
+_RECIPIENT_SCHEDULE_SUFFIX_RE = re.compile(
+    r"\s+(?:by\s+)?(?:tomorrow|tommorow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b.*$",
     re.IGNORECASE,
 )
 _SIMPLE_TRANSFER_MULTI_TARGET_RE = re.compile(r"\s(?:and|&)\s|,", re.IGNORECASE)
@@ -91,8 +100,6 @@ _MEDIA_CAPTION_AMOUNT_RE = re.compile(
     r"^\s*Caption-derived transfer fields:\s*amount=(?P<amount>\d[\d,]*(?:\.\d+)?)\.?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
-
-
 def _canonical_beneficiary_id(value: str) -> str:
     text = value.strip()
     if text.startswith("bene:"):
@@ -119,6 +126,21 @@ def _extract_media_caption_amount(user_message: str) -> float | None:
     except ValueError:
         return None
     return amount if amount > 0 else None
+
+
+def _strip_recipient_schedule_suffix(value: str | None) -> str | None:
+    if not value:
+        return value
+    stripped = _RECIPIENT_SCHEDULE_SUFFIX_RE.sub("", value).strip(" \t\r\n,.;:!?")
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    return stripped or None
+
+
+def _recipient_schedule_cleanup_patch(data: TransferPayload) -> dict[str, Any]:
+    cleaned = _strip_recipient_schedule_suffix(data.recipient_name)
+    if cleaned and cleaned != data.recipient_name:
+        return {"recipient_name": cleaned}
+    return {}
 
 
 def _render_beneficiary_retry_prompt(
@@ -208,6 +230,68 @@ def _resolve_beneficiary_selection_from_input(
         },
         None,
     )
+
+
+def _render_referent_recipient_retry_prompt(candidates: list[dict[str, Any]], locale: str) -> str:
+    prompt = render_message("transfer.resolve.which_recipient", locale, fallback_en="Which recipient did you mean?")
+    lines = "\n".join(
+        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}"
+        for idx, candidate in enumerate(candidates, start=1)
+    )
+    reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
+    return f"{prompt}\n{lines}\n{reply_hint}" if lines else f"{prompt}\n{reply_hint}"
+
+
+def _resolve_referent_recipient_selection_from_input(
+    user_message: str,
+    existing_candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
+    clean_msg = user_message.strip()
+    if not clean_msg or not existing_candidates:
+        return None, None
+
+    selected: dict[str, Any] | None = None
+    if clean_msg.isdigit():
+        selected_index = int(clean_msg)
+        for candidate in existing_candidates:
+            try:
+                candidate_index = int(candidate.get("index", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if candidate_index == selected_index:
+                selected = candidate
+                break
+        if selected is None:
+            return None, existing_candidates
+    else:
+        normalized_input = clean_msg.lower()
+        for candidate in existing_candidates:
+            option_id = str(candidate.get("option_id") or "").strip().lower()
+            if option_id and normalized_input == option_id:
+                selected = candidate
+                break
+        if selected is None:
+            return None, None
+
+    patch_fields = (
+        "beneficiary_id",
+        "recipient_name",
+        "recipient_resolved_name",
+        "recipient_account",
+        "recipient_bank_name",
+        "recipient_bank_code",
+        "recipient_bank_code_provider",
+        "recipient_resolution_provider",
+        "resolved_from_saved_beneficiary",
+    )
+    patch = {
+        field: selected.get(field)
+        for field in patch_fields
+        if selected.get(field) not in (None, "")
+    }
+    patch["referent_recipient_candidates"] = []
+    patch["confirmation"] = {"confirmed": False}
+    return patch, None
 
 
 def _should_override_skip_extraction(payload: TransferPayload) -> bool:
@@ -318,7 +402,7 @@ def _parse_simple_transfer_command(
     if not match:
         return None
 
-    target = match.group("target").strip().strip(".!?")
+    target = _strip_recipient_schedule_suffix(match.group("target").strip().strip(".!?")) or ""
     if not target or _SIMPLE_TRANSFER_MULTI_TARGET_RE.search(target):
         return None
 
@@ -615,9 +699,12 @@ class ExtractionStep(TransferStep):
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
         def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any] | None:
-            if not data.skip_extraction and not data.confirmation_message_scoped:
+            cleanup_patch = _recipient_schedule_cleanup_patch(data)
+            if not data.skip_extraction and not data.confirmation_message_scoped and not cleanup_patch:
                 return patch
             merged = dict(patch or {})
+            for key, value in cleanup_patch.items():
+                merged.setdefault(key, value)
             if data.skip_extraction:
                 merged.setdefault("skip_extraction", False)
             if data.confirmation_message_scoped:
@@ -626,6 +713,28 @@ class ExtractionStep(TransferStep):
 
         raw_required_fields = getattr(worker_context, "required_fields", [])
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
+        schedule_required_fields = [field for field in required_fields if field in SCHEDULE_FIELD_NAMES]
+        if schedule_required_fields:
+            schedule_patch, remaining_schedule_fields = parse_schedule_slot_patch(
+                self.user_message,
+                schedule_required_fields,
+            )
+            if schedule_patch:
+                logger.info(
+                    "deterministic_schedule_slot_fastpath",
+                    fields=sorted(key for key in schedule_patch if key != "confirmation"),
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(schedule_patch),
+                )
+            if len(schedule_required_fields) == len(required_fields):
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=remaining_schedule_fields or schedule_required_fields,
+                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields),
+                    patch=_with_skip_patch({}),
+                )
         if (
             gates.confirmation_confirmed
             and data.confirmation.confirmed
@@ -722,7 +831,42 @@ class ExtractionStep(TransferStep):
             logger.info("override_skip_extraction_for_account_like_recipient", recipient=data.recipient_name)
 
         waiting_for_beneficiary = "beneficiary_id" in required_fields
+        waiting_for_referent_recipient = "referent_recipient_id" in required_fields
         waiting_for_source_account = "source_account_id" in required_fields
+        if waiting_for_referent_recipient:
+            referent_patch, invalid_referents = _resolve_referent_recipient_selection_from_input(
+                self.user_message,
+                data.referent_recipient_candidates,
+            )
+            if referent_patch:
+                logger.info(
+                    "transfer_extraction_referent_recipient_selection",
+                    fields=sorted(referent_patch.keys()),
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(referent_patch),
+                )
+            if invalid_referents:
+                retry_prompt = _render_referent_recipient_retry_prompt(invalid_referents, context.language)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["referent_recipient_id"],
+                    prompt=retry_prompt,
+                    patch=_with_skip_patch({"referent_recipient_candidates": invalid_referents}),
+                    details={
+                        "ambiguity": "MULTIPLE_REFERENT_RECIPIENTS",
+                        "candidates": invalid_referents,
+                        "options": [
+                            {
+                                "id": str(candidate.get("option_id", "")).strip(),
+                                "title": str(candidate.get("label", "")),
+                            }
+                            for candidate in invalid_referents
+                            if str(candidate.get("option_id", "")).strip()
+                        ],
+                    },
+                )
         if waiting_for_beneficiary:
             beneficiary_patch, invalid_candidates = _resolve_beneficiary_selection_from_input(
                 self.user_message,
@@ -988,6 +1132,14 @@ async def _extract_transfer_update(
             extracted_data["name_mismatch_warning"] = None
 
         if "recipient_name" in extracted_data and "recipient_account" not in extracted_data:
+            cleaned_recipient_name = _strip_recipient_schedule_suffix(str(extracted_data["recipient_name"]))
+            if cleaned_recipient_name:
+                extracted_data["recipient_name"] = cleaned_recipient_name
+            else:
+                extracted_data.pop("recipient_name", None)
+                extracted_data.pop("recipient_resolved_name", None)
+                return TransactionResult(outcome=TransactionOutcome.OK, patch=extracted_data)
+
             # [FIX] Only clear account details if the name actually changed.
             # This prevents re-extraction (e.g. from proper nouns in synthesized messages)
             # from wiping out valid account details we just collected.

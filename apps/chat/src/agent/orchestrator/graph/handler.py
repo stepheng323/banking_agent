@@ -17,6 +17,7 @@ from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph.state import CompiledStateGraph
 
 from apps.chat.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.chat.src.agent.orchestrator.context.referent_memory import referent_memory_ttl_seconds
 from apps.chat.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.nodes.cancellation import cancel_match_kind, is_obvious_cancel_message
@@ -371,14 +372,14 @@ class OrchestratorGraphHandler:
         turn_id: str,
         enable_initial_typing: bool,
     ) -> None:
-        del channel_identity
         deduped_progress_keys: set[str] = set()
+        delivery_target = channel_identity if channel != "whatsapp" and channel_identity else phone_number
 
         if enable_initial_typing:
             try:
                 await enqueue_outbox_typing(
                     self.publisher,
-                    phone_number,
+                    delivery_target,
                     channel,
                     metadata={
                         "inbound_message_id": inbound_message_id,
@@ -433,7 +434,7 @@ class OrchestratorGraphHandler:
                 }
                 delivery_task = asyncio.create_task(
                     self._deliver_progress_update(
-                        phone_number=phone_number,
+                        phone_number=delivery_target,
                         channel=channel,
                         text=text,
                         metadata=metadata,
@@ -506,7 +507,8 @@ class OrchestratorGraphHandler:
                 elif not context.quoted_message_id:
                     pre_route_meta_response = classify_deterministic_meta_response(context.text)
                     if pre_route_meta_response:
-                        response_key, response_locale = pre_route_meta_response
+                        response_key = pre_route_meta_response.response_key
+                        response_locale = pre_route_meta_response.response_locale
                         path_label = "direct_path"
                         hydration_profile_mode = "minimal"
                         hydration_account_mode = "cache_only"
@@ -571,6 +573,7 @@ class OrchestratorGraphHandler:
                         tracker=progress_tracker,
                         phone_number=phone_number,
                         channel=context.channel,
+                        channel_identity=context.channel_identity,
                         inbound_message_id=context.message_id,
                         thread_id=thread_id,
                         turn_id=turn_id,
@@ -882,7 +885,7 @@ class OrchestratorGraphHandler:
         )
 
         if not tasks and not waves and not pending_interrupt and not stashed_sessions:
-            context_frame_ttl = self._context_frame_ttl_seconds(state)
+            context_frame_ttl = max(self._context_frame_ttl_seconds(state), referent_memory_ttl_seconds(state))
             if context_frame_ttl > 0:
                 ttl_ok = await self._apply_session_ttl(thread_id, ttl=context_frame_ttl)
                 logger.info(

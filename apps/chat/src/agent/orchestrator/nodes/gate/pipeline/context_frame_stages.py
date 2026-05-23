@@ -11,10 +11,12 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup import (
+    ContextFrameFollowupResponse,
     build_context_frame_followup_context_for_state,
     build_context_frame_followup_response,
 )
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from shared.types.planner import ContextFrameFollowupDecision
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -23,6 +25,13 @@ _CONTEXT_FRAME_REPLAY_CUE_RE = re.compile(
     r"\b(?:again|redo|repeat|replay|rerun|resend|same\s+again|send\s+again|"
     r"encore|repete|tun\s+se|tun|sake|maimaita|ziga)\b",
     re.IGNORECASE,
+)
+_CONTEXT_FRAME_DISPLAY_CUE_RE = re.compile(
+    r"(?iu)(?:"
+    r"\b(?:show|view|see|display|open|list|details?|more)\b|"
+    r"\b(?:montre|voir|affiche|muestra|mostrar|ver)\b|"
+    r"\b(?:fihan|wo|nuna|gani|gosi|lee)\b"
+    r")"
 )
 
 
@@ -38,6 +47,48 @@ def _is_fresh_transaction_command(ctx: GateContext) -> bool:
 
 def _looks_like_context_frame_replay(text: str) -> bool:
     return bool(_CONTEXT_FRAME_REPLAY_CUE_RE.search(text or ""))
+
+
+def _looks_like_context_frame_display_request(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", (text or "").strip())
+    if not normalized or len(normalized) > 80:
+        return False
+    if re.search(r"\bmy\b", normalized, re.IGNORECASE):
+        return False
+    if re.search(r"(?:₦|ngn|\d)", normalized, re.IGNORECASE):
+        return False
+    return bool(_CONTEXT_FRAME_DISPLAY_CUE_RE.search(normalized))
+
+
+def _looks_like_terse_context_frame_followup(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", (text or "").strip())
+    if not normalized:
+        return False
+    if len(normalized) > 80:
+        return False
+    tokens = re.findall(r"[\w']+", normalized, re.UNICODE)
+    return len(tokens) <= 4
+
+
+def _context_frame_followup_updates(
+    ctx: GateContext,
+    frame_followup: ContextFrameFollowupResponse,
+) -> dict[str, Any]:
+    return {
+        **ctx.gate_updates,
+        "direct_path_triggered": True,
+        "semantic_path_shape": frame_followup.semantic_path_shape,
+        "context_frames": frame_followup.context_frames or ctx.state.context_frames,
+        **({"final_response": frame_followup.response} if frame_followup.response else {}),
+        **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
+        **({"waves": frame_followup.waves} if frame_followup.waves else {}),
+        **({"current_wave_index": 0} if frame_followup.waves else {}),
+        **_route_observability_updates(
+            owner="guardrail",
+            decision="context_frame_followup",
+            target_domain=frame_followup.recent_domain_focus,
+        ),
+    }
 
 
 async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | None:
@@ -78,6 +129,26 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
             item_count=len(frame.items),
         )
         return None
+
+    display_request = _looks_like_context_frame_display_request(ctx.message_text)
+    if display_request:
+        frame_followup = build_context_frame_followup_response(
+            ctx.state,
+            ctx.message_text,
+            decision=ContextFrameFollowupDecision(
+                decision="show_details",
+                confidence=0.92,
+                detected_language=ctx.current_locale,
+                reason="short visible-context display request",
+            ),
+        )
+        if frame_followup:
+            logger.info(
+                "gate_context_frame_display_shortcut_hit",
+                frame_type=frame.frame_type.value,
+                item_count=len(frame.items),
+            )
+            return _context_frame_followup_updates(ctx, frame_followup)
 
     try:
         decision = await ctx.task_planner.interpret_context_frame_followup(
@@ -143,21 +214,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
         frame_type=frame.frame_type.value,
         item_count=len(frame.items),
     )
-    return {
-        **ctx.gate_updates,
-        "direct_path_triggered": True,
-        "semantic_path_shape": frame_followup.semantic_path_shape,
-        "context_frames": frame_followup.context_frames or ctx.state.context_frames,
-        **({"final_response": frame_followup.response} if frame_followup.response else {}),
-        **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
-        **({"waves": frame_followup.waves} if frame_followup.waves else {}),
-        **({"current_wave_index": 0} if frame_followup.waves else {}),
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="context_frame_followup",
-            target_domain=frame_followup.recent_domain_focus,
-        ),
-    }
+    return _context_frame_followup_updates(ctx, frame_followup)
 
 
 __all__ = ["_stage_context_frame_followup"]

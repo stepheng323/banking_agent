@@ -1,13 +1,14 @@
 import re
-from datetime import UTC, datetime, timedelta
-from typing import Any
+from datetime import datetime
+from typing import Any, cast
 
+from apps.chat.src.agent.graphs.__shared__.scheduling import parse_schedule_date
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.services.scheduling.recurrence import (
-    DEFAULT_SCHEDULE_TIME_TEXT,
     SCHEDULE_TIMEZONE,
     normalize_time_local,
+    now_lagos,
 )
 from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.logging import get_logger
@@ -17,6 +18,8 @@ from shared.utils.sanitize import normalize_bank_account_number
 _TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
 _RECIPIENT_NOISE_TOKENS = _TRANSFER_VERB_TOKENS | {"to", "for", "money", "cash", "funds", "s"}
 _RECIPIENT_SEGMENT_BOUNDARY = re.compile(r"\b(?:then|from|using|with|via|through|while)\b")
+_SCHEDULE_DATE_PATTERN = r"(?:tomorrow|tommorow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})"
+_RECIPIENT_SCHEDULE_SUFFIX_RE = re.compile(rf"\s+(?:by\s+)?{_SCHEDULE_DATE_PATTERN}\b.*$", re.IGNORECASE)
 _WEEKDAY_NAME_TO_INDEX = {
     "monday": 0,
     "tuesday": 1,
@@ -28,6 +31,14 @@ _WEEKDAY_NAME_TO_INDEX = {
 }
 _AMOUNT_VALUE_PATTERN = re.compile(r"^\s*(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKmMhH]?)\s*$")
 _BALANCE_SHARE_PERCENT_PATTERN = re.compile(r"\b(\d{1,3})\s*%\b", re.IGNORECASE)
+_SCHEDULE_MANAGEMENT_ACTIONS = {
+    "list_scheduled_transfers",
+    "cancel_scheduled_transfer",
+    "list_scheduled_transactions",
+    "find_scheduled_transaction",
+    "cancel_scheduled_transaction",
+    "edit_scheduled_transaction",
+}
 
 logger = get_logger(__name__)
 
@@ -121,6 +132,14 @@ def _is_plausible_recipient_candidate(candidate: str | None) -> bool:
     return not all(token in _RECIPIENT_NOISE_TOKENS for token in tokens)
 
 
+def _strip_recipient_schedule_suffix(value: str | None) -> str | None:
+    if not value:
+        return value
+    stripped = _RECIPIENT_SCHEDULE_SUFFIX_RE.sub("", value).strip(" \t\r\n,.;:!?")
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    return stripped or None
+
+
 def _recipient_grounded_in_user_text(recipient: str | None, user_text: str) -> bool:
     """Return True if planner recipient is clearly present in user's original message."""
     norm_recipient = _normalize_text(recipient)
@@ -151,6 +170,7 @@ def _derive_recipients_from_user_text(user_text: str) -> list[str]:
         return []
 
     segment = _RECIPIENT_SEGMENT_BOUNDARY.split(segment, maxsplit=1)[0].strip()
+    segment = _strip_recipient_schedule_suffix(segment) or ""
     segment = re.sub(r"\band\s+to\b", " and ", segment)
     if not segment:
         return []
@@ -268,6 +288,8 @@ def _apply_transfer_payload_fields(
         recipient_val = payload.pop("recipient")
         if strip_recipient_suffix and isinstance(recipient_val, str) and recipient_val:
             recipient_val = recipient_val.rstrip("},. ")
+        if isinstance(recipient_val, str) and recipient_val:
+            recipient_val = _strip_recipient_schedule_suffix(recipient_val)
         recipient_val_str = str(recipient_val) if recipient_val is not None else None
         if not payload.get("recipient_name"):
             if _recipient_grounded_in_user_text(recipient_val_str, fallback_message):
@@ -286,6 +308,20 @@ def _apply_transfer_payload_fields(
 
     # Guard against planner hallucinating a fully-resolved name not present in user text.
     recipient_name = payload.get("recipient_name")
+    if isinstance(recipient_name, str) and recipient_name:
+        original_recipient_name = recipient_name
+        cleaned_recipient_name = _strip_recipient_schedule_suffix(recipient_name)
+        if cleaned_recipient_name and cleaned_recipient_name != recipient_name:
+            payload["recipient_name"] = cleaned_recipient_name
+            recipient_name = cleaned_recipient_name
+            logger.info(
+                "transfer_recipient_schedule_suffix_stripped",
+                planner_recipient=original_recipient_name,
+                cleaned_recipient=cleaned_recipient_name,
+            )
+        elif cleaned_recipient_name is None:
+            payload.pop("recipient_name", None)
+            recipient_name = None
     if (
         isinstance(recipient_name, str)
         and recipient_name
@@ -352,20 +388,55 @@ def _apply_transfer_payload_fields(
             recurring_flag=(plan_item.parameters.recurring if plan_item.parameters else None),
         )
         payload.update(schedule_patch)
-    elif action_name == "cancel_scheduled_transfer":
-        if payload.get("schedule_id") and not payload.get("schedule_selector"):
-            payload["schedule_selector"] = payload.get("schedule_id")
-        schedule_selector = _derive_schedule_selector_from_user_text(fallback_message)
-        if schedule_selector:
-            payload["schedule_selector"] = schedule_selector
+    elif action_name in _SCHEDULE_MANAGEMENT_ACTIONS:
+        _apply_schedule_management_payload_fields(payload, plan_item, fallback_message)
 
 
-def _apply_airtime_payload_fields(payload: dict[str, Any], plan_item: Any) -> None:
+def _apply_schedule_management_payload_fields(payload: dict[str, Any], plan_item: Any, fallback_message: str) -> None:
+    action_name = str(payload.get("action") or "")
+    if action_name not in _SCHEDULE_MANAGEMENT_ACTIONS:
+        return
+
+    if payload.get("schedule_id") and not payload.get("schedule_selector"):
+        payload["schedule_selector"] = payload.get("schedule_id")
+    schedule_selector = _derive_schedule_selector_from_user_text(fallback_message)
+    if schedule_selector:
+        payload["schedule_selector"] = schedule_selector
+    if action_name == "edit_scheduled_transaction":
+        if payload.get("plan") and not payload.get("plan_name"):
+            payload["plan_name"] = payload.get("plan")
+        if payload.get("phone") and not payload.get("recipient_phone"):
+            payload["recipient_phone"] = payload.get("phone")
+        payload.update(
+            _derive_transfer_schedule_fields(
+                fallback_message,
+                schedule_text=(plan_item.parameters.schedule if plan_item.parameters else None),
+                scheduled_text=(plan_item.parameters.scheduled if plan_item.parameters else None),
+                recurring_flag=(plan_item.parameters.recurring if plan_item.parameters else None),
+            )
+        )
+
+
+def _apply_airtime_payload_fields(payload: dict[str, Any], plan_item: Any, fallback_message: str) -> None:
     if plan_item.executor != "airtime":
         return
     phone = payload.get("phone")
     if isinstance(phone, str) and phone.strip() and not payload.get("recipient_phone"):
         payload["recipient_phone"] = phone
+    action_name = str(payload.get("action") or "buy_airtime")
+    inferred_schedule_action = _infer_schedule_action_from_text(fallback_message)
+    if action_name == "buy_airtime" and inferred_schedule_action:
+        action_name = "recurring_airtime" if inferred_schedule_action == "recurring_transfer" else "schedule_airtime"
+        payload["action"] = action_name
+    if action_name in {"schedule_airtime", "recurring_airtime"}:
+        payload.update(
+            _derive_transfer_schedule_fields(
+                fallback_message,
+                schedule_text=(plan_item.parameters.schedule if plan_item.parameters else None),
+                scheduled_text=(plan_item.parameters.scheduled if plan_item.parameters else None),
+                recurring_flag=(plan_item.parameters.recurring if plan_item.parameters else None),
+            )
+        )
 
 
 def _parse_amount_value(value: Any) -> float | None:
@@ -401,7 +472,7 @@ def _parse_amount_value(value: Any) -> float | None:
     return amount
 
 
-def _apply_data_payload_fields(payload: dict[str, Any], plan_item: Any) -> None:
+def _apply_data_payload_fields(payload: dict[str, Any], plan_item: Any, fallback_message: str) -> None:
     if plan_item.executor != "data":
         return
 
@@ -429,12 +500,27 @@ def _apply_data_payload_fields(payload: dict[str, Any], plan_item: Any) -> None:
         if parsed_budget is not None:
             payload["amount"] = parsed_budget
 
+    action_name = str(payload.get("action") or "buy_data")
+    inferred_schedule_action = _infer_schedule_action_from_text(fallback_message)
+    if action_name == "buy_data" and inferred_schedule_action:
+        action_name = "recurring_data" if inferred_schedule_action == "recurring_transfer" else "schedule_data"
+        payload["action"] = action_name
+    if action_name in {"schedule_data", "recurring_data"}:
+        payload.update(
+            _derive_transfer_schedule_fields(
+                fallback_message,
+                schedule_text=(plan_item.parameters.schedule if plan_item.parameters else None),
+                scheduled_text=(plan_item.parameters.scheduled if plan_item.parameters else None),
+                recurring_flag=(plan_item.parameters.recurring if plan_item.parameters else None),
+            )
+        )
+
 
 def _infer_schedule_action_from_text(user_text: str) -> str | None:
     normalized = user_text.lower()
     if re.search(r"\b(?:every|daily|weekly|monthly)\b", normalized):
         return "recurring_transfer"
-    if re.search(r"\b(?:tomorrow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b", normalized):
+    if re.search(rf"\b{_SCHEDULE_DATE_PATTERN}\b", normalized):
         return "schedule_transfer"
     return None
 
@@ -454,10 +540,10 @@ def _derive_transfer_schedule_fields(
     recurring_flag: bool | None,
 ) -> dict[str, Any]:
     raw_text = " ".join(filter(None, [user_text, schedule_text, scheduled_text])).strip().lower()
-    now_local = datetime.now(UTC) + timedelta(hours=1)  # Africa/Lagos UTC+1
+    now_local = now_lagos()
 
-    time_local = _extract_time_local(raw_text) or DEFAULT_SCHEDULE_TIME_TEXT
-    is_recurring = bool(recurring_flag) or "every " in raw_text or "daily" in raw_text or "weekly" in raw_text
+    time_local = _extract_time_local(raw_text)
+    is_recurring = bool(recurring_flag) or re.search(r"\b(?:every|daily|weekly|monthly)\b", raw_text) is not None
     recurrence_type = "one_time"
     schedule_mode = "one_time"
     schedule_start_date: str | None = None
@@ -467,6 +553,9 @@ def _derive_transfer_schedule_fields(
     if is_recurring:
         schedule_mode = "recurring"
         recurrence_type = "daily"
+
+        if re.search(r"\b(?:every\s+month|monthly)\b", raw_text):
+            recurrence_type = "monthly"
 
         weekday_match = re.search(
             r"\bevery\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
@@ -494,8 +583,9 @@ def _derive_transfer_schedule_fields(
         "schedule_mode": schedule_mode,
         "recurrence_type": recurrence_type,
         "schedule_timezone": SCHEDULE_TIMEZONE,
-        "schedule_time_local": time_local,
     }
+    if time_local:
+        patch["schedule_time_local"] = time_local
     if schedule_start_date:
         patch["schedule_start_date"] = schedule_start_date
     if schedule_day_of_week is not None:
@@ -522,25 +612,7 @@ def _extract_time_local(text: str) -> str | None:
 
 
 def _extract_date(text: str, *, now_local: datetime) -> str | None:
-    if "tomorrow" in text:
-        return (now_local.date() + timedelta(days=1)).isoformat()
-    if "today" in text:
-        return now_local.date().isoformat()
-
-    iso_match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
-    if iso_match:
-        return iso_match.group(1)
-
-    dmy_match = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b", text)
-    if dmy_match:
-        day = int(dmy_match.group(1))
-        month = int(dmy_match.group(2))
-        year = int(dmy_match.group(3))
-        try:
-            return datetime(year=year, month=month, day=day).date().isoformat()
-        except ValueError:
-            return None
-    return None
+    return parse_schedule_date(text, now_local=now_local)
 
 
 def build_task_spec_from_plan_item(
@@ -573,7 +645,11 @@ def build_task_spec_from_plan_item(
     if isinstance(source_clause_index, int) and source_clause_index > 0:
         payload["source_clause_index"] = source_clause_index
 
-    if include_skip_extraction and plan_item.executor in ("transfer", "airtime", "data"):
+    if (
+        include_skip_extraction
+        and plan_item.executor in ("transfer", "airtime", "data")
+        and str(payload.get("action") or "") not in _SCHEDULE_MANAGEMENT_ACTIONS
+    ):
         payload["skip_extraction"] = True
 
     _apply_transfer_payload_fields(
@@ -583,13 +659,16 @@ def build_task_spec_from_plan_item(
         strip_recipient_suffix=strip_transfer_recipient_suffix,
         format_narration_requires_recipient_field=format_narration_requires_recipient_field,
     )
-    _apply_airtime_payload_fields(payload, plan_item)
-    _apply_data_payload_fields(payload, plan_item)
+    _apply_airtime_payload_fields(payload, plan_item, fallback_message)
+    _apply_data_payload_fields(payload, plan_item, fallback_message)
+    _apply_schedule_management_payload_fields(payload, plan_item, fallback_message)
     apply_source_account_fields(payload, plan_item)
+
+    task_type = "schedule" if str(payload.get("action") or "") in _SCHEDULE_MANAGEMENT_ACTIONS else plan_item.executor
 
     return TaskSpec(
         id=plan_item.task_id,
-        type=plan_item.executor,
+        type=cast(Any, task_type),
         depends_on=list(plan_item.depends_on or []),
         stage=TaskStage.DRAFT,
         payload=payload,

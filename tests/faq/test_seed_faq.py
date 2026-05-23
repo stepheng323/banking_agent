@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import scripts.seed_faq as seed_faq
+from shared.config.settings import settings
 
 
 def _write_faq(path: Path, content: str) -> Path:
@@ -39,12 +40,36 @@ def test_category_names_normalize(tmp_path: Path) -> None:
             # Category: Data Purchase
 
             ## How do I buy data?
-            Ask Narya AI to buy data and review the plan before confirming.
+            Ask {app_name} to buy data and review the plan before confirming.
             """,
         )
     )
 
     assert entries[0]["category"] == "data_purchase"
+    assert settings.app_name in entries[0]["answer"]
+
+
+def test_brand_placeholders_render_from_runtime_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "app_name", "Aurora Pay")
+    monkeypatch.setattr(settings, "app_brand_inspiration", "a better myth")
+
+    entries = seed_faq.parse_markdown_file(
+        _write_faq(
+            tmp_path / "general.md",
+            """
+            # Category: General
+
+            ## What is {app_name}?
+            {app_name} is inspired by {app_brand_inspiration}.
+            """,
+        )
+    )
+
+    assert entries[0]["question"] == "What is Aurora Pay?"
+    assert entries[0]["answer"] == "Aurora Pay is inspired by a better myth."
 
 
 def test_missing_category_fails(tmp_path: Path) -> None:
@@ -52,7 +77,7 @@ def test_missing_category_fails(tmp_path: Path) -> None:
         tmp_path / "bad.md",
         """
         ## How do I buy data?
-        Ask Narya AI to buy data.
+        Ask {app_name} to buy data.
         """,
     )
 
@@ -66,7 +91,7 @@ def test_empty_answer_fails(tmp_path: Path) -> None:
         """
         # Category: General
 
-        ## What is Narya AI?
+        ## What is {app_name}?
         """,
     )
 
@@ -98,8 +123,8 @@ async def test_seed_dry_run_parses_without_embeddings_or_db_writes(
         """
         # Category: General
 
-        ## What is Narya AI?
-        Narya AI is a chat-based banking assistant.
+        ## What is {app_name}?
+        {app_name} is a chat-based banking assistant.
         """,
     )
     monkeypatch.setattr(seed_faq, "add_embeddings", lambda entries: pytest.fail("embeddings called"))
@@ -122,8 +147,8 @@ async def test_seed_no_embeddings_replaces_entries_without_calling_openai(
         """
         # Category: General
 
-        ## What is Narya AI?
-        Narya AI is a chat-based banking assistant.
+        ## What is {app_name}?
+        {app_name} is a chat-based banking assistant.
         """,
     )
     captured_entries = []
@@ -144,9 +169,9 @@ def test_embedding_failure_keeps_keyword_searchable_entries() -> None:
     entries = [
         {
             "category": "general",
-            "question": "What is Narya AI?",
-            "answer": "Narya AI is a chat-based banking assistant.",
-            "keywords": ["narya"],
+            "question": f"What is {settings.app_name}?",
+            "answer": f"{settings.app_name} is a chat-based banking assistant.",
+            "keywords": [settings.app_name_short.lower()],
             "tags": ["general"],
             "priority": 0,
             "is_active": True,
@@ -159,7 +184,7 @@ def test_embedding_failure_keeps_keyword_searchable_entries() -> None:
 
     assert not seed_faq.add_embeddings(entries, service_factory=FailingEmbeddingService)
     assert "embedding" not in entries[0]
-    assert entries[0]["keywords"] == ["narya"]
+    assert entries[0]["keywords"] == [settings.app_name_short.lower()]
 
 
 @pytest.mark.asyncio
@@ -203,9 +228,9 @@ async def test_replace_all_deletes_and_inserts_in_one_transaction(monkeypatch: p
     entries = [
         {
             "category": "general",
-            "question": "What is Narya AI?",
-            "answer": "Narya AI is a chat-based banking assistant.",
-            "keywords": ["narya"],
+            "question": f"What is {settings.app_name}?",
+            "answer": f"{settings.app_name} is a chat-based banking assistant.",
+            "keywords": [settings.app_name_short.lower()],
             "tags": ["general"],
             "priority": 0,
             "is_active": True,

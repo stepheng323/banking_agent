@@ -43,6 +43,7 @@ class TransferPayload(BaseModel):
     recipient_binding_index: int | None = None
     beneficiary_id: str | None = None
     beneficiary_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    referent_recipient_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_self: bool = False
     resolved_from_saved_beneficiary: bool = False
     name_mismatch: bool = False
@@ -95,6 +96,17 @@ class TransferPayload(BaseModel):
     schedule_id: str | None = None
     schedule_selector: str | None = None
     schedule_operation_note: str | None = None
+    schedule_response_mode: Literal["list", "count"] | None = None
+    schedule_edit_patch: dict[str, Any] | None = None
+    schedule_edit_requires_auth: bool | None = None
+    schedule_edit_next_run_at_utc: str | None = None
+
+    # Generic schedule-management edit fields for airtime/data schedules.
+    recipient_phone: str | None = None
+    network: str | None = None
+    target_phone: str | None = None
+    plan_code: str | None = None
+    plan_name: str | None = None
 
     @field_validator("transfer_all", mode="before")
     @classmethod
@@ -130,8 +142,8 @@ class TransferContext(BaseModel):
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
     all_accounts: list[dict[str, Any]] = Field(default_factory=list)
-    recent_beneficiary_context: bool = False
-    previous_beneficiary: dict[str, Any] | None = None
+    referent_memory: dict[str, Any] = Field(default_factory=dict)
+    resolved_referents: dict[str, Any] = Field(default_factory=dict)
     channel: str = "whatsapp"
     channel_identity: str | None = None
 

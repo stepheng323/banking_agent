@@ -51,7 +51,7 @@ For "same as before", "like last time", "send again":
 
 ## REQUESTED FEATURES (unsupported)
 Detect but don't process:
-- SCHEDULED: tomorrow, next week, later, Friday
+- SCHEDULED: tomorrow/tommorow, next week, later, Friday
 - RECURRING: every week, monthly, automatic
 - INTERNATIONAL: abroad, USA, UK, Ghana
 
@@ -104,6 +104,7 @@ When user corrects mid-flow ("I meant 50k"):
 | "816-251-1023" (when awaiting account) | recipient_account="8162511023" |
 | "send 5 to john" | recipient_name="john", ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
 | "send 50k to mum tomorrow" | amount=50000, recipient_name="mum", requested_features=["SCHEDULED"] |
+| "send 50k to mum by tommorow" | amount=50000, recipient_name="mum", requested_features=["SCHEDULED"] |
 | "Send to my GTB" | bank_name="GTBank", is_self=true |
 | "From my Access send 14k to tolu" | amount=14000, source_bank_name="Access Bank", recipient_name="tolu" |
 | "Send 14k to tolu from my first bank" | amount=14000, recipient_name="tolu", source_bank_name="First Bank" |

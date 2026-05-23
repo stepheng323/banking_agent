@@ -5,6 +5,7 @@ from typing import cast
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.formatters.currency import coerce_amount, format_naira
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext, render_personalized_message
 
 
 def _calculate_transfer_fee(amount: float) -> float:
@@ -21,7 +22,12 @@ def _resolve_display_narration(data: dict) -> str | None:
     return None
 
 
-def format_transfer_summary(data: dict, include_source: bool = True, locale: str = "en") -> str:
+def format_transfer_summary(
+    data: dict,
+    include_source: bool = True,
+    locale: str = "en",
+    personality_context: PersonalityContext | None = None,
+) -> str:
     """Format a WhatsApp-friendly transfer confirmation summary.
 
     Expected keys in data:
@@ -46,10 +52,11 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
     source_account = str(data.get("sourceAccount") or "")
     display_narration = _resolve_display_narration(data)
     lines = [
-        render_message(
+        render_personalized_message(
             "transfer.format.summary.title",
             locale,
             {"amount": format_naira(amount), "recipient_name": recipient_name.title()},
+            personality_context,
         ),
         render_message(
             "transfer.format.summary.recipient_line",
@@ -382,6 +389,7 @@ def format_transfer_success_message(
     recipient_name: str,
     transaction_id: str,
     locale: str = "en",
+    personality_context: PersonalityContext | None = None,
 ) -> str:
     """Format transfer success notification message.
 
@@ -395,7 +403,7 @@ def format_transfer_success_message(
     """
     return cast(
         str,
-        render_message(
+        render_personalized_message(
             "transfer.format.notifications.success",
             locale,
             {
@@ -403,6 +411,7 @@ def format_transfer_success_message(
                 "recipient_name": recipient_name,
                 "transaction_id": transaction_id,
             },
+            personality_context,
         ),
     )
 
@@ -411,6 +420,7 @@ def format_transfer_pending_message(
     amount: float,
     recipient_name: str,
     locale: str = "en",
+    personality_context: PersonalityContext | None = None,
 ) -> str:
     """Format transfer pending notification message.
 
@@ -423,13 +433,14 @@ def format_transfer_pending_message(
     """
     return cast(
         str,
-        render_message(
+        render_personalized_message(
             "transfer.format.notifications.pending",
             locale,
             {
                 "amount": format_naira(amount),
                 "recipient_name": recipient_name,
             },
+            personality_context,
         ),
     )
 

@@ -10,9 +10,21 @@ Returns a standardized TransactionResult.
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, cast
 
+from apps.chat.src.agent.graphs.__shared__.schedule_management import (
+    apply_schedule_edit,
+    build_schedule_context_items,
+    build_schedule_edit_patch,
+    build_schedule_edit_success_message,
+    build_schedule_update_summary,
+    cancelled_now,
+    disambiguation_result,
+    format_schedule_row,
+    resolve_schedule_selection,
+    schedule_edit_requires_auth,
+)
 from apps.chat.src.agent.graphs.transfer.models.types import (
     TransferContext,
     TransferGates,
@@ -27,7 +39,7 @@ from apps.chat.src.agent.graphs.transfer.nodes.resolver import ResolutionStep
 from apps.chat.src.agent.graphs.transfer.nodes.security import AuthorizationStep
 from apps.chat.src.agent.graphs.transfer.nodes.selection import SourceSelectionStep
 from apps.chat.src.agent.graphs.transfer.nodes.validation import ValidationStep
-from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferPipeline
+from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferPipeline, TransferStep
 from apps.chat.src.agent.graphs.transfer.services.validation import ValidationService
 from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
@@ -44,9 +56,10 @@ from shared.repositories.transaction_repository import (
 )
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.scheduling.recurrence import (
-    DEFAULT_SCHEDULE_TIME_TEXT,
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,
+    format_lagos_schedule_datetime,
+    today_lagos,
 )
 from shared.utils.logging import get_logger
 
@@ -56,7 +69,55 @@ SCHEDULING_ACTIONS = {
     "recurring_transfer",
     "list_scheduled_transfers",
     "cancel_scheduled_transfer",
+    "list_scheduled_transactions",
+    "find_scheduled_transaction",
+    "cancel_scheduled_transaction",
+    "edit_scheduled_transaction",
 }
+LIST_SCHEDULE_ACTIONS = {"list_scheduled_transfers", "list_scheduled_transactions", "find_scheduled_transaction"}
+CANCEL_SCHEDULE_ACTIONS = {"cancel_scheduled_transfer", "cancel_scheduled_transaction"}
+EDIT_SCHEDULE_ACTIONS = {"edit_scheduled_transaction"}
+
+
+def _missing_schedule_fields(data: TransferPayload) -> list[str]:
+    missing: list[str] = []
+    recurrence_type = data.recurrence_type or "one_time"
+    if recurrence_type == "one_time" and not data.schedule_start_date:
+        missing.append("schedule_start_date")
+    if not data.schedule_time_local:
+        missing.append("schedule_time_local")
+    return missing
+
+
+def _schedule_required_prompt(missing_fields: list[str]) -> str:
+    fields = set(missing_fields)
+    if fields == {"schedule_time_local"}:
+        return "What time should I send it?"
+    if fields == {"schedule_start_date"}:
+        return "What date should I send it?"
+    return "Please provide a future schedule date and time."
+
+
+class ScheduleRequirementsStep(TransferStep):
+    """Requires explicit schedule fields before confirmation."""
+
+    async def execute(
+        self,
+        data: TransferPayload,
+        context: TransferContext,
+        gates: TransferGates,
+        worker_context: Any = None,
+    ) -> TransactionResult:
+        del context, gates, worker_context
+        missing_fields = _missing_schedule_fields(data)
+        if not missing_fields:
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=missing_fields,
+            prompt=_schedule_required_prompt(missing_fields),
+            patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+        )
 
 
 @dataclass(slots=True)
@@ -118,8 +179,10 @@ class TransferWorker:
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
             all_accounts=context.get("all_accounts", []),
-            recent_beneficiary_context=bool(context.get("recent_beneficiary_context")),
-            previous_beneficiary=context.get("previous_beneficiary"),
+            referent_memory=context.get("referent_memory") if isinstance(context.get("referent_memory"), dict) else {},
+            resolved_referents=(
+                context.get("resolved_referents") if isinstance(context.get("resolved_referents"), dict) else {}
+            ),
             channel=str(context.get("channel") or "whatsapp"),
             channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
         )
@@ -159,7 +222,12 @@ class TransferWorker:
         return cast(str, capability_block_message(domain=domain, action=action, locale=locale))
 
     @staticmethod
-    def _build_pipeline(user_message: str | None, *, include_execution: bool = True) -> TransferPipeline:
+    def _build_pipeline(
+        user_message: str | None,
+        *,
+        include_execution: bool = True,
+        require_schedule_fields: bool = False,
+    ) -> TransferPipeline:
         steps: list[Any] = [
             ExtractionStep(user_message),
             ResolutionStep(),
@@ -167,14 +235,13 @@ class TransferWorker:
             ValidationStep(),
             FundingStep(),
             PayoutPreparationStep(),
-            ConfirmationStep(),
-            AuthorizationStep(),
         ]
+        if require_schedule_fields:
+            steps.append(ScheduleRequirementsStep())
+        steps.extend([ConfirmationStep(), AuthorizationStep()])
         if include_execution:
             steps.append(ExecutionStep())
-        return TransferPipeline(
-            steps
-        )
+        return TransferPipeline(steps)
 
     @staticmethod
     def _schedule_fields_from_payload(data: TransferPayload) -> dict[str, Any]:
@@ -183,7 +250,7 @@ class TransferWorker:
             "recurrence_type": data.recurrence_type or "one_time",
             "schedule_timezone": data.schedule_timezone or SCHEDULE_TIMEZONE,
             "schedule_start_date": data.schedule_start_date,
-            "schedule_time_local": data.schedule_time_local or DEFAULT_SCHEDULE_TIME_TEXT,
+            "schedule_time_local": data.schedule_time_local,
             "schedule_day_of_week": data.schedule_day_of_week,
             "schedule_day_of_month": data.schedule_day_of_month,
             "schedule_end_date": data.schedule_end_date,
@@ -201,37 +268,89 @@ class TransferWorker:
             return text
         return None
 
-    async def _list_schedules(self, *, user_id: str, locale: str) -> TransactionResult:
+    async def _list_schedules(
+        self,
+        *,
+        data: TransferPayload | None = None,
+        user_id: str,
+        locale: str,
+    ) -> TransactionResult:
+        async with UnitOfWork() as uow:
+            if not uow.scheduled_instructions:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("transfer.error.pipeline_failed", locale, {"error": "schedule_repo_missing"}),
+            )
+            schedules = await uow.scheduled_instructions.get_active_by_user(user_id, limit=10)
+
+        if data and data.schedule_response_mode == "count":
+            count = len(schedules)
+            noun = "transaction" if count == 1 else "transactions"
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response=f"You have {count} pending scheduled {noun}.",
+                patch={
+                    "is_scheduled_operation": True,
+                    "skip_finalize_summary": True,
+                    "schedule_context_items": build_schedule_context_items(schedules),
+                },
+            )
+
+        if not schedules:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response="You have no active scheduled transactions.",
+                patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+            )
+
+        lines = ["Scheduled transactions:"]
+        lines.extend(format_schedule_row(idx, schedule) for idx, schedule in enumerate(schedules, start=1))
+
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="\n".join(lines),
+            patch={
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "schedule_context_items": build_schedule_context_items(schedules),
+            },
+        )
+
+    async def _find_schedules(
+        self,
+        *,
+        data: TransferPayload,
+        user_id: str,
+        locale: str,
+        user_message: str | None,
+    ) -> TransactionResult:
         async with UnitOfWork() as uow:
             if not uow.scheduled_instructions:
                 return TransactionResult(
                     outcome=TransactionOutcome.FAILED,
                     error=render_message("transfer.error.pipeline_failed", locale, {"error": "schedule_repo_missing"}),
                 )
-            schedules = await uow.scheduled_instructions.get_active_by_user(user_id, limit=10)
+            schedules = await uow.scheduled_instructions.get_active_by_user(user_id, limit=20)
 
-        if not schedules:
+        selection = resolve_schedule_selection(schedules, data=data, user_message=user_message)
+        matches = selection.schedules
+        if not matches:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                response="You have no active scheduled transfers.",
+                response="I couldn't find an active scheduled transaction matching that.",
                 patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
             )
 
-        lines = ["Scheduled transfers:"]
-        for idx, schedule in enumerate(schedules, start=1):
-            payload = schedule.payload_snapshot if isinstance(schedule.payload_snapshot, dict) else {}
-            amount = float(payload.get("amount") or 0.0)
-            recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
-            recurrence = str(schedule.recurrence_type).replace("_", " ").title()
-            time_local = payload.get("schedule_time_local") or schedule.local_time or DEFAULT_SCHEDULE_TIME_TEXT
-            lines.append(
-                f"{idx}. {format_naira(amount)} to {recipient} • {recurrence} at {time_local} (ID: {schedule.id})"
-            )
-
+        lines = ["Matching scheduled transactions:"]
+        lines.extend(format_schedule_row(idx, schedule) for idx, schedule in enumerate(matches, start=1))
         return TransactionResult(
             outcome=TransactionOutcome.OK,
             response="\n".join(lines),
-            patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+            patch={
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "schedule_context_items": build_schedule_context_items(matches),
+            },
         )
 
     async def _cancel_schedule(
@@ -242,7 +361,6 @@ class TransferWorker:
         locale: str,
         user_message: str | None,
     ) -> TransactionResult:
-        selector = self._resolve_schedule_selector(data, user_message)
         async with UnitOfWork() as uow:
             repo = uow.scheduled_instructions
             if not repo:
@@ -254,41 +372,140 @@ class TransferWorker:
             if not schedules:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    response="You have no active scheduled transfers to cancel.",
+                    response="You have no active scheduled transactions to cancel.",
                     patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
                 )
 
-            selected = None
-            if selector:
-                if selector.isdigit():
-                    idx = int(selector)
-                    if 1 <= idx <= len(schedules):
-                        selected = schedules[idx - 1]
-                if selected is None:
-                    selected = next((item for item in schedules if str(item.id) == selector), None)
+            selection = resolve_schedule_selection(schedules, data=data, user_message=user_message)
+            selected = selection.selected
 
             if selected is None:
-                lines = ["Reply with the schedule number to cancel:"]
-                for idx, schedule in enumerate(schedules, start=1):
-                    payload = schedule.payload_snapshot if isinstance(schedule.payload_snapshot, dict) else {}
-                    recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
-                    amount = float(payload.get("amount") or 0.0)
-                    lines.append(f"{idx}. {format_naira(amount)} to {recipient}")
-                return TransactionResult(
-                    outcome=TransactionOutcome.NEEDS_INPUT,
-                    required_fields=["schedule_selector"],
-                    prompt="\n".join(lines),
-                    patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
-                )
+                return disambiguation_result(selection.schedules, action_label="cancel")
 
             selected.status = ScheduledInstructionStatusEnum.CANCELLED.value
-            selected.cancelled_at = datetime.now(UTC).replace(tzinfo=None)
+            selected.cancelled_at = cancelled_now()
             await uow.commit()
 
         return TransactionResult(
             outcome=TransactionOutcome.OK,
-            response=f"Scheduled transfer cancelled (ID: {selected.id}).",
+            response="Scheduled transaction cancelled.",
             patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+        )
+
+    async def _edit_schedule(
+        self,
+        *,
+        data: TransferPayload,
+        user_id: str,
+        locale: str,
+        user_message: str | None,
+        gates: TransferGates,
+    ) -> TransactionResult:
+        schedule_id = (data.schedule_id or data.schedule_selector or "").strip()
+        edit_patch = dict(data.schedule_edit_patch or {})
+        requires_auth = bool(getattr(data, "schedule_edit_requires_auth", False))
+        next_run_at: datetime | None = None
+
+        if schedule_id and edit_patch:
+            try:
+                next_run_at_text = data.schedule_edit_next_run_at_utc or ""
+                next_run_at = datetime.fromisoformat(next_run_at_text) if next_run_at_text else None
+            except ValueError:
+                next_run_at = None
+
+        async with UnitOfWork() as uow:
+            repo = uow.scheduled_instructions
+            if not repo:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("transfer.error.pipeline_failed", locale, {"error": "schedule_repo_missing"}),
+                )
+
+            schedules = await repo.get_active_by_user(user_id, limit=20)
+            selection = resolve_schedule_selection(schedules, data=data, user_message=user_message)
+            selected = selection.selected
+            if selected is None:
+                return disambiguation_result(selection.schedules, action_label="edit")
+
+            domain = str(getattr(selected, "domain", None) or "transfer")
+            if not edit_patch:
+                edit_patch = build_schedule_edit_patch(data, domain=domain)
+            if not edit_patch:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["schedule_edit_patch"],
+                    prompt="What should I change on this scheduled transaction?",
+                    patch={
+                        "is_scheduled_operation": True,
+                        "skip_finalize_summary": True,
+                        "schedule_id": str(selected.id),
+                    },
+                )
+
+            requires_auth = schedule_edit_requires_auth(domain, edit_patch)
+            summary, snapshot, computed_next_run = build_schedule_update_summary(selected, edit_patch)
+            if computed_next_run is None:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["schedule_start_date", "schedule_time_local"],
+                    prompt="Please provide a future schedule date and time.",
+                    patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+                )
+            next_run_at = next_run_at or computed_next_run
+
+            if requires_auth and not gates.pin_verified:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_AUTH,
+                    confirmation_summary=summary,
+                    confirmation_snapshot=snapshot,
+                    patch={
+                        "is_scheduled_operation": True,
+                        "skip_finalize_summary": True,
+                        "schedule_id": str(selected.id),
+                        "schedule_selector": str(selected.id),
+                        "schedule_edit_patch": edit_patch,
+                        "schedule_edit_requires_auth": True,
+                        "schedule_edit_next_run_at_utc": next_run_at.isoformat(),
+                    },
+                )
+            if not requires_auth and not gates.confirmation_confirmed:
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+                    confirmation_summary=summary,
+                    confirmation_snapshot=snapshot,
+                    patch={
+                        "is_scheduled_operation": True,
+                        "skip_finalize_summary": True,
+                        "schedule_id": str(selected.id),
+                        "schedule_selector": str(selected.id),
+                        "schedule_edit_patch": edit_patch,
+                        "schedule_edit_requires_auth": False,
+                        "schedule_edit_next_run_at_utc": next_run_at.isoformat(),
+                    },
+                )
+
+            locked_selected = await repo.get_active_for_user_for_update(str(selected.id), user_id)
+            if locked_selected is None:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error="This schedule is already being processed or is no longer active. Please try again.",
+                    response="This schedule is already being processed or is no longer active. Please try again.",
+                    patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+                )
+            selected = locked_selected
+            success_message = build_schedule_edit_success_message(selected, edit_patch, next_run_at)
+            apply_schedule_edit(selected, edit_patch, next_run_at)
+            await uow.commit()
+
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response=success_message,
+            patch={
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "schedule_id": str(schedule_id or selected.id),
+                "schedule_operation_note": success_message,
+            },
         )
 
     async def _create_schedule_after_auth(
@@ -306,6 +523,14 @@ class TransferWorker:
         timezone = cast(str, schedule_fields["schedule_timezone"] or SCHEDULE_TIMEZONE)
         day_of_week = cast(int | None, schedule_fields["schedule_day_of_week"])
         day_of_month = cast(int | None, schedule_fields["schedule_day_of_month"])
+        missing_fields = _missing_schedule_fields(data)
+        if missing_fields:
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=missing_fields,
+                prompt=_schedule_required_prompt(missing_fields),
+                patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+            )
 
         next_run_at = compute_initial_next_run_utc(
             recurrence_type=recurrence_type,
@@ -353,8 +578,8 @@ class TransferWorker:
                 payload_snapshot=snapshot,
                 timezone=timezone,
                 recurrence_type=recurrence_type,
-                start_date=start_date or datetime.now(UTC).date().isoformat(),
-                local_time=time_local or DEFAULT_SCHEDULE_TIME_TEXT,
+                start_date=start_date or today_lagos().isoformat(),
+                local_time=time_local,
                 day_of_week=day_of_week,
                 day_of_month=day_of_month,
                 end_date=schedule_fields["schedule_end_date"],
@@ -366,11 +591,10 @@ class TransferWorker:
 
         amount = format_naira(data.amount)
         recipient = data.recipient_name or data.recipient_resolved_name or "recipient"
-        next_run_text = next_run_at.replace(tzinfo=UTC).strftime("%Y-%m-%d %H:%M UTC")
+        next_run_text = format_lagos_schedule_datetime(next_run_at)
         response = (
-            f"Scheduled successfully: {amount} to {recipient} "
-            f"({recurrence_type.replace('_', ' ')}) in {timezone}. Next run: {next_run_text}. "
-            f"Schedule ID: {schedule.id}"
+            f"Scheduled transfer created: {amount} to {recipient} "
+            f"({recurrence_type.replace('_', ' ')}) in {timezone}. Next run: {next_run_text}."
         )
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -401,13 +625,25 @@ class TransferWorker:
                 error=render_message("transfer.error.pipeline_failed", locale, {"error": "missing_user_id"}),
             )
 
-        if action == "list_scheduled_transfers":
-            return await self._list_schedules(user_id=user_id, locale=locale)
+        if action in {"list_scheduled_transfers", "list_scheduled_transactions"}:
+            return await self._list_schedules(data=data, user_id=user_id, locale=locale)
 
-        if action == "cancel_scheduled_transfer":
+        if action == "find_scheduled_transaction":
+            return await self._find_schedules(data=data, user_id=user_id, locale=locale, user_message=user_message)
+
+        if action in CANCEL_SCHEDULE_ACTIONS:
             return await self._cancel_schedule(data=data, user_id=user_id, locale=locale, user_message=user_message)
 
-        pipeline = self._build_pipeline(user_message, include_execution=False)
+        if action in EDIT_SCHEDULE_ACTIONS:
+            return await self._edit_schedule(
+                data=data,
+                user_id=user_id,
+                locale=locale,
+                user_message=user_message,
+                gates=gates,
+            )
+
+        pipeline = self._build_pipeline(user_message, include_execution=False, require_schedule_fields=True)
         result = await pipeline.run(data, ctx, gates, worker_context)
         if result.outcome != TransactionOutcome.OK:
             return result
@@ -455,7 +691,7 @@ class TransferWorker:
         worker_context = self._build_worker_context(context)
         try:
             if action in SCHEDULING_ACTIONS:
-                return await self._handle_scheduling_action(
+                result = await self._handle_scheduling_action(
                     action=action,
                     data=data,
                     ctx=ctx,
@@ -463,6 +699,11 @@ class TransferWorker:
                     user_message=user_message,
                     gates=gates,
                 )
+                if data.idempotency_key:
+                    if result.patch is None:
+                        result.patch = {}
+                    result.patch["idempotency_key"] = data.idempotency_key
+                return result
 
             pipeline = self._build_pipeline(user_message, include_execution=True)
             return await pipeline.run(data, ctx, gates, worker_context)

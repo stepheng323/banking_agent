@@ -85,17 +85,44 @@ Pending context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 
+SCHEDULE_READ_ROUTER_SYSTEM_PROMPT = """Classify whether a user is asking to read scheduled banking instructions.
+Return ONLY JSON for this schema:
+- decision: domain_schedule | planner_ambiguous
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- mode: new | continuation | null
+- target_intent: schedule | null
+- schedule_response_mode: list | count | null
+- reason: short reason
+
+Rules:
+1) Use decision=domain_schedule only for read-only scheduled/recurring transaction management questions.
+2) Use schedule_response_mode=count for count/existence asks, including "how many", "do I have any",
+   "any pending scheduled...", and multilingual equivalents.
+3) Use schedule_response_mode=list for asks to show/list/view scheduled transactions,
+   payments, airtime, data, or transfers.
+4) Do not route create/edit/cancel/delete/reschedule requests here; return planner_ambiguous.
+5) Do not route normal transaction history, account balance, beneficiaries, or immediate money movement here.
+6) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+7) If decision=domain_schedule, set target_intent=schedule and mode=new.
+8) If uncertain, return planner_ambiguous with schedule_response_mode=null.
+"""
+
+SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
 SEMANTIC_ROUTER_SYSTEM_PROMPT = """You are the top-level semantic router for a multilingual Nigerian banking assistant.
 
 Return ONLY JSON with:
 - decision: direct_reply | direct_context_answer | domain_query | domain_account |
   domain_support | domain_beneficiary | domain_transfer | domain_airtime | domain_data |
-  planner_mixed | planner_ambiguous | cancel
+  domain_schedule | planner_mixed | planner_ambiguous | cancel
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - requested_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - mode: new | continuation | quoted_replay | active_flow_interrupt | null
-- target_intent: query | account | support | beneficiary | transfer | airtime | data | null
+- target_intent: query | account | support | beneficiary | transfer | airtime | data | schedule | null
 - response_key: conversational.greeting | conversational.appreciation |
   conversational.checkin | conversational.identity |
   conversational.brand_origin | conversational.capability_question |
@@ -103,6 +130,7 @@ Return ONLY JSON with:
   conversational.out_of_scope | conversational.clarify | planner.cancelled | null
 - response: short direct response text or null
 - expected_transaction_executors: array of transfer|airtime|data (empty if none)
+- schedule_response_mode: list | count | null
 - reason: short reason
 
 Rules:
@@ -132,6 +160,11 @@ Rules:
 4) Route read-only money-understanding asks to domain_query.
    This includes fresh asks and grounded follow-ups about transactions, debits, credits, inflow/income,
    totals, comparisons, pagination, drill-down, beneficiary spending, and analytics.
+   Scheduled/recurring instruction management is not transaction-history query; use domain_schedule.
+   For simple read-only list/count/existence scheduled-transaction asks, set schedule_response_mode=list or count
+   so the gate can skip planner. Existence questions like "do I have any pending scheduled..." are count mode,
+   not list mode. For find/cancel/edit/reschedule, leave schedule_response_mode=null so the planner can resolve
+   the operation.
    If the context shows a pending query clarification, short answers that complete the missing query detail
    should also route to domain_query rather than planner_ambiguous.
    Examples:
@@ -150,6 +183,11 @@ Rules:
    - "How much total" after a transaction list -> domain_query with mode=continuation
    - "wetin be total" after a transaction list -> domain_query with mode=continuation
    - "lapapo meloo" after a transaction list -> domain_query with mode=continuation
+   - "How many scheduled transactions are pending" -> domain_schedule, schedule_response_mode=count
+   - "Do I have any pending scheduled transactions?" -> domain_schedule, schedule_response_mode=count
+   - "Do i have any pending scheduled transsction" -> domain_schedule, schedule_response_mode=count
+   - "Wetin be my scheduled payments" -> domain_schedule, schedule_response_mode=list
+   - "Montre mes paiements programmés" -> domain_schedule, schedule_response_mode=list
 5) Balance/account-status asks are domain_account, not domain_query.
    Examples:
    - "check my balance" -> domain_account
@@ -180,6 +218,7 @@ Rules:
    - never guess or invent missing facts
    - never use this for mutations or money movement
    - use this only for fact-class answers (status/count/boolean/short recap)
+   - never use this for scheduled/recurring instruction status or counts; use domain_schedule
    - do NOT use this for structured surfaces like detail cards, lists, pagination, or actionable result screens
    - if context is insufficient or ambiguous, use planner_ambiguous instead
    Examples:
@@ -199,6 +238,8 @@ Rules:
    - "Show my last transaction" -> domain_query
    - "Show my linked accounts" -> domain_account
    - "Show my beneficiaries" -> domain_beneficiary
+   - "How many scheduled transaction is pending" -> domain_schedule
+   - "Elo ni scheduled payments mi" -> domain_schedule
 8) Use decision=planner_mixed for explicit multi-domain asks.
    Example: "send 10k to mum and show my last 3 credits" -> planner_mixed.
 9) Use decision=planner_ambiguous when meaning is genuinely unclear or requires deeper orchestration.
@@ -230,7 +271,7 @@ to the latest displayed assistant result frame.
 
 Return ONLY JSON for this schema:
 - decision: answer_completeness | lookup_entity | show_details | filter_items | compare_items | select_item |
-  explain_result | replay_tasks | start_new_task | unclear
+  explain_result | replay_tasks | edit_schedule | cancel_schedule | start_new_task | unclear
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - target_text: referenced displayed entity, label, bank, recipient, group, or visible target, else null
@@ -241,8 +282,8 @@ Return ONLY JSON for this schema:
 - reason: short reason
 
 Semantic operations:
-1) answer_completeness: user asks whether the displayed result is exhaustive, complete, missing more items, or whether
-   that is all.
+1) answer_completeness: user asks whether the displayed result is exhaustive, complete, missing more items, whether
+   that is all, or how many displayed items exist.
 2) lookup_entity: user asks whether a named entity, expected item, remembered item, alternative, or missing item is
    part of the displayed result.
 3) show_details: user asks for more details, full details, specific fields, or explanation of one or more displayed
@@ -257,8 +298,12 @@ Semantic operations:
 8) replay_tasks: user asks to repeat, replay, redo, resend, or run again one or more transaction items from the
    displayed frame. This is only valid for transaction/receipt frames. If no specific item is referenced, it means
    every replayable transaction item in the displayed frame.
-9) start_new_task: user is starting a fresh banking/conversation task, not following up on the displayed frame.
-10) unclear: not enough signal.
+9) edit_schedule: user asks to change, update, reschedule, move, or modify one or more displayed scheduled
+   transaction items. This is only valid for scheduled transaction frames.
+10) cancel_schedule: user asks to cancel, delete, remove, stop, or disable one or more displayed scheduled
+   transaction items. This is only valid for scheduled transaction frames.
+11) start_new_task: user is starting a fresh banking/conversation task, not following up on the displayed frame.
+12) unclear: not enough signal.
 
 Rules:
 - Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
@@ -275,11 +320,16 @@ Rules:
   for transfer, airtime, data, credit, debit, inflow, outflow when that is the user's target.
 - For numeric/ordinal selection, set selection_index when clear.
 - Do not classify money movement or mutations as frame follow-ups unless the user is only selecting from the
-  displayed frame or asking to replay displayed transaction item(s).
+  displayed frame, asking to replay displayed transaction item(s), or asking to edit/cancel displayed scheduled
+  transaction item(s).
 - For replay_tasks, set target_text only when the user targets a subset such as a recipient, "airtime", amount,
   ordinal, bank, or label. Set selection_index for clear numeric/ordinal references.
 - When a displayed frame exists, prefer one of the frame operations for comments/questions that can plausibly refer
   to that frame. Use start_new_task only when the user clearly asks for a fresh action or fresh read.
+- For scheduled transaction frames, treat schedule management follow-ups like "change it to 9am", "move that one",
+  "cancel it", and multilingual equivalents as edit_schedule or cancel_schedule, not generic start_new_task.
+- For scheduled transaction frames, broad count/list/read questions like "do I have any scheduled transactions" are
+  fresh reads; use start_new_task so the schedule worker can reload active schedules.
 - If the user challenges, doubts, remembers, expects, or asks about a missing item from the displayed result,
   classify it as lookup_entity and set target_text to the missing or expected item.
 - If the message is plausibly about the displayed frame but the operation is uncertain, use unclear instead of

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -63,6 +64,22 @@ def _get_by_dotted_key(payload: dict[str, Any], dotted_key: str) -> str | None:
     return node if isinstance(node, str) else None
 
 
+def message_key_exists(message_key: str, locale: str | LocaleCode) -> bool:
+    """Return whether a message key has a string template in locale or English."""
+    from shared.i18n.locale import LocaleManager
+
+    resolved_locale = LocaleManager.normalize(locale)
+    locale_catalog = _read_catalog(resolved_locale)
+    if _get_by_dotted_key(locale_catalog, message_key) is not None:
+        return True
+
+    if resolved_locale == LocaleCode.EN:
+        return False
+
+    en_catalog = _read_catalog(LocaleCode.EN)
+    return _get_by_dotted_key(en_catalog, message_key) is not None
+
+
 def _flatten_string_leaves(payload: dict[str, Any], prefix: str = "") -> dict[str, str]:
     leaves: dict[str, str] = {}
     for key, value in payload.items():
@@ -74,7 +91,7 @@ def _flatten_string_leaves(payload: dict[str, Any], prefix: str = "") -> dict[st
     return leaves
 
 
-def _render_template(template: str, params: dict[str, object] | None) -> str:
+def _render_template(template: str, params: Mapping[str, object] | None) -> str:
     if not params:
         return template
     try:
@@ -84,22 +101,16 @@ def _render_template(template: str, params: dict[str, object] | None) -> str:
         return template
 
 
-def _default_template_params() -> dict[str, object]:
-    from shared.config.settings import settings
+def _default_template_params() -> Mapping[str, object]:
+    from shared.branding import brand_template_params
 
-    return {
-        "app_name": settings.app_name,
-        "app_name_short": settings.app_name_short,
-        "app_creator": settings.app_creator,
-        "app_brand_inspiration": settings.app_brand_inspiration,
-        "app_public_base_url": settings.app_public_base_url,
-    }
+    return brand_template_params()
 
 
 def render_message(
     message_key: MessageKey,
     locale: str | LocaleCode,
-    params: dict[str, object] | None = None,
+    params: Mapping[str, object] | None = None,
     fallback_en: str | None = None,
 ) -> str:
     """Render a keyed message in a locale with English fallback."""
@@ -107,7 +118,7 @@ def render_message(
 
     resolved_locale = LocaleManager.normalize(locale)
 
-    merged_params = _default_template_params()
+    merged_params = dict(_default_template_params())
     if params:
         merged_params.update(params)
 

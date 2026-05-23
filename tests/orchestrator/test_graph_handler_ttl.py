@@ -92,10 +92,27 @@ class _RedisStub:
         self.matches = matches or {}
         self.expire_calls: list[tuple[str, int]] = []
         self.pipeline_instances: list[_PipelineStub] = []
+        self.values: dict[str, str] = {}
 
     async def scan_iter(self, match: str):
         for key in self.matches.get(match, []):
             yield key
+
+    async def set(self, key: str, value: str, *, ex: int | None = None, nx: bool = False) -> bool:
+        del ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def eval(self, script: str, numkeys: int, key: str, token: str, *args: str) -> int:
+        del numkeys, args
+        if self.values.get(key) != token:
+            return 0
+        if "redis.call(\"del\", KEYS[1])" in script:
+            self.values.pop(key, None)
+            return 1
+        return 1
 
     async def expire(self, key: str, ttl: int) -> bool:
         self.expire_calls.append((key, ttl))
@@ -247,8 +264,7 @@ async def test_invoke_allows_different_threads_to_run_concurrently(monkeypatch: 
 
     assert graph.max_active_calls == 2
     assert sorted(graph.thread_ids) == ["telegram:2348000000001", "telegram:2348000000002"]
-    assert handler._thread_locks == {}
-    assert handler._thread_lock_refcounts == {}
+    assert handler.redis_client.values == {}
 
 
 @pytest.mark.asyncio
@@ -278,5 +294,4 @@ async def test_invoke_serializes_same_thread(monkeypatch: pytest.MonkeyPatch) ->
 
     assert graph.max_active_calls == 1
     assert graph.thread_ids == ["telegram:2348000000001", "telegram:2348000000001"]
-    assert handler._thread_locks == {}
-    assert handler._thread_lock_refcounts == {}
+    assert handler.redis_client.values == {}

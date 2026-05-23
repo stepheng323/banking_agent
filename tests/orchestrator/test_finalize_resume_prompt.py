@@ -7,6 +7,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.context.referent_memory import ReferentMemoryItem
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
@@ -22,11 +23,19 @@ def _config() -> RunnableConfig:
     }
 
 
-def _stashed(intent: str = "transfer") -> list[dict]:
+def _stashed(intent: str = "transfer", payload: dict | None = None, *, stash_id: str = "stash-test") -> list[dict]:
     now_ts = int(time.time())
     return [
         {
-            "tasks": {"t_stashed": TaskSpec(id="t_stashed", type="transfer", stage=TaskStage.EXTRACTED, payload={})},
+            "stash_id": stash_id,
+            "tasks": {
+                "t_stashed": TaskSpec(
+                    id="t_stashed",
+                    type=intent if intent in {"transfer", "airtime", "data"} else "transfer",
+                    stage=TaskStage.EXTRACTED,
+                    payload=payload or {},
+                )
+            },
             "waves": [["t_stashed"]],
             "current_wave_index": 0,
             "pending_interrupt": {
@@ -48,14 +57,33 @@ async def test_finalize_stashed_and_completed_appends_resume_prompt() -> None:
         phone_number="2348000000011",
         channel="whatsapp",
         tasks={"t1": TaskSpec(id="t1", type="account", stage=TaskStage.COMPLETED, payload={})},
+        stashed_sessions=_stashed(
+            intent="transfer",
+            payload={"amount": 5000, "recipient_name": "Grace", "recipient_bank_name": "Opay"},
+        ),
+    )
+
+    updates = await finalize(state, _config())
+
+    assert updates["outbox"][-1]["text"] == "You still have a transfer waiting: ₦5,000 to Grace. Continue it?"
+    assert "context_frames" in updates
+    assert updates["context_frames"][-1].items[0].data["resume_prompt"] is True
+    assert updates["context_frames"][-1].items[0].data["stash_id"] == "stash-test"
+
+
+@pytest.mark.asyncio
+async def test_finalize_stashed_with_missing_details_uses_generic_resume_prompt() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_1b",
+        phone_number="2348000000011",
+        channel="whatsapp",
+        tasks={"t1": TaskSpec(id="t1", type="account", stage=TaskStage.COMPLETED, payload={})},
         stashed_sessions=_stashed(intent="transfer"),
     )
 
     updates = await finalize(state, _config())
 
-    assert updates["outbox"][-1]["text"] == "Would you like to resume your transfer?"
-    assert "context_frames" in updates
-    assert updates["context_frames"][-1].items[0].data["resume_prompt"] is True
+    assert updates["outbox"][-1]["text"] == "You still have a transfer waiting. Continue it?"
 
 
 @pytest.mark.asyncio
@@ -185,6 +213,7 @@ async def test_finalize_single_async_transfer_defers_processing_copy_to_executor
 async def test_finalize_stale_stash_does_not_prompt_resume_and_cleans_stash() -> None:
     stale_stash = [
         {
+            "stash_id": "stale-stash",
             "tasks": {"t_stashed": TaskSpec(id="t_stashed", type="transfer", stage=TaskStage.EXTRACTED, payload={})},
             "waves": [["t_stashed"]],
             "current_wave_index": 0,
@@ -204,12 +233,21 @@ async def test_finalize_stale_stash_does_not_prompt_resume_and_cleans_stash() ->
         tasks={"t1": TaskSpec(id="t1", type="account", stage=TaskStage.COMPLETED, payload={})},
         stashed_sessions=stale_stash,
     )
+    state.referent_memory.items = [
+        ReferentMemoryItem(
+            referent_type="recipient",
+            source="stashed_session",
+            label="Grace",
+            data={"recipient_name": "Grace", "stash_id": "stale-stash"},
+        )
+    ]
 
     updates = await finalize(state, _config())
 
     assert updates["outbox"] == []
     assert "context_frames" not in updates
     assert updates["stashed_sessions"] == []
+    assert updates["referent_memory"].items == []
 
 
 @pytest.mark.asyncio

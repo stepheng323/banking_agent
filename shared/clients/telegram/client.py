@@ -511,6 +511,8 @@ class TelegramClient(MessagingClient):
         import time
 
         bootstrap_extra: dict[str, Any] = {}
+        if bootstrap_endpoint == "pin" and cta_text and cta_text != "Open":
+            bootstrap_extra["submit_label"] = str(cta_text)
 
         try:
             bootstrap_nonce = await create_telegram_miniapp_bootstrap(

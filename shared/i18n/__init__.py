@@ -12,7 +12,7 @@ from shared.i18n.bridge import (
 from shared.i18n.locale import LocaleManager
 from shared.i18n.message_keys import MessageKey
 from shared.i18n.models import LanguageDetectionSignal, LocaleCode, RenderRequest, RenderResult
-from shared.i18n.renderer import render_message, render_text, validate_catalog_completeness
+from shared.i18n.renderer import message_key_exists, render_message, render_text, validate_catalog_completeness
 
 __all__ = [
     "LocaleCode",
@@ -23,6 +23,7 @@ __all__ = [
     "LocaleManager",
     "render_message",
     "render_text",
+    "message_key_exists",
     "validate_catalog_completeness",
     "normalize_locale",
     "render_capability_limitation",

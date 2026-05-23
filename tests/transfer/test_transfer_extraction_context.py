@@ -243,6 +243,48 @@ async def test_extraction_step_accepts_option_id_for_beneficiary_selection() -> 
     assert result.patch["beneficiary_candidates"] == []
 
 
+async def test_extraction_step_accepts_numeric_referent_recipient_selection() -> None:
+    step = ExtractionStep(user_message="1")
+    payload = TransferPayload(
+        recipient_name="him",
+        referent_recipient_candidates=[
+            {
+                "index": 1,
+                "option_id": "referent:1",
+                "label": "Grace • Opay • ****1023",
+                "beneficiary_id": "bene-grace",
+                "recipient_name": "Grace",
+                "recipient_resolved_name": "Grace Okafor",
+                "recipient_account": "8162511023",
+                "recipient_bank_name": "Opay",
+                "recipient_bank_code": "100004",
+                "resolved_from_saved_beneficiary": True,
+            },
+            {
+                "index": 2,
+                "option_id": "referent:2",
+                "label": "Ada • GTBank • ****0003",
+                "recipient_name": "Ada",
+                "recipient_account": "2010000003",
+                "recipient_bank_name": "GTBank",
+            },
+        ],
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["referent_recipient_id"],
+        previous_response="Which recipient did you mean?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_name"] == "Grace"
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["referent_recipient_candidates"] == []
+
+
 async def test_extraction_step_accepts_unique_bank_label_for_beneficiary_selection() -> None:
     first_id = str(uuid4())
     second_id = str(uuid4())
@@ -692,6 +734,161 @@ async def test_deterministic_initial_account_bank_fastpath_parses_inline_details
     assert result.patch["amount_suggestion_disabled"] is True
     assert result.patch["confirmation"] == {"confirmed": False}
     assert extractor.called is False
+
+
+async def test_account_bank_reply_cleans_scheduled_phrase_from_existing_recipient() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="0034575515, Gtb")
+    payload = TransferPayload(amount=20000, recipient_name="Mum By Tommorow")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="Please share the account number and bank for your mum.",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_name"] == "Mum"
+    assert result.patch["recipient_account"] == "0034575515"
+    assert result.patch["recipient_bank_name"] == "Gtb"
+    assert extractor.called is False
+
+
+async def test_schedule_time_reply_fills_required_time_without_extractor() -> None:
+    capture_extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="8am")
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Mum",
+        recipient_account="0034575515",
+        recipient_bank_name="Gtb",
+        schedule_start_date="2026-05-22",
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=capture_extractor,
+        required_fields=["schedule_time_local"],
+        previous_response="What time should I send it?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["schedule_time_local"] == "08:00"
+    assert result.patch["confirmation"] == {"confirmed": False}
+    assert capture_extractor.last_user_message is None
+
+
+async def test_schedule_date_and_time_reply_fills_required_slots() -> None:
+    step = ExtractionStep(user_message="tomorrow 8:30 pm")
+    payload = TransferPayload(amount=20000, recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_CaptureExtractor(),
+        required_fields=["schedule_start_date", "schedule_time_local"],
+        previous_response="Please provide a future schedule date and time.",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["schedule_start_date"]
+    assert result.patch["schedule_time_local"] == "20:30"
+    assert result.patch["confirmation"] == {"confirmed": False}
+
+
+async def test_recurring_schedule_reply_fills_monthly_cadence_without_extractor() -> None:
+    capture_extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="every month")
+    payload = TransferPayload(amount=20000, recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=capture_extractor,
+        required_fields=["schedule_start_date", "schedule_time_local"],
+        previous_response="Please provide a future schedule date and time.",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["schedule_mode"] == "recurring"
+    assert result.patch["recurrence_type"] == "monthly"
+    assert result.patch["schedule_timezone"] == "Africa/Lagos"
+    assert result.patch["confirmation"] == {"confirmed": False}
+    assert capture_extractor.last_user_message is None
+
+
+async def test_monthly_schedule_weekday_time_reply_fills_date_and_time() -> None:
+    capture_extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="sunday 3pm")
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Mum",
+        recurrence_type="monthly",
+        schedule_mode="recurring",
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=capture_extractor,
+        required_fields=["schedule_time_local"],
+        previous_response="What time should I send it?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["schedule_start_date"]
+    assert result.patch["schedule_time_local"] == "15:00"
+    assert result.patch["confirmation"] == {"confirmed": False}
+    assert capture_extractor.last_user_message is None
+
+
+async def test_schedule_weekday_reply_fills_required_date_without_extractor() -> None:
+    capture_extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="on sunday")
+    payload = TransferPayload(amount=20000, recipient_name="Mum", schedule_time_local="15:00")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=capture_extractor,
+        required_fields=["schedule_start_date"],
+        previous_response="What date should I send it?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["schedule_start_date"]
+    assert result.patch["confirmation"] == {"confirmed": False}
+    assert capture_extractor.last_user_message is None
+
+
+async def test_invalid_schedule_time_reply_reprompts_without_extractor() -> None:
+    capture_extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="morning")
+    payload = TransferPayload(amount=20000, recipient_name="Mum", schedule_start_date="2026-05-22")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=capture_extractor,
+        required_fields=["schedule_time_local"],
+        previous_response="What time should I send it?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["schedule_time_local"]
+    assert result.prompt == "What time should I send it?"
+    assert capture_extractor.last_user_message is None
 
 
 async def test_forwarded_bank_details_skip_recent_amount_suggestion() -> None:
