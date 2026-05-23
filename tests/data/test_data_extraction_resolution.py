@@ -258,6 +258,21 @@ async def test_data_resolution_normalizes_phone_and_infers_network() -> None:
 
 
 @pytest.mark.asyncio
+async def test_data_resolution_missing_target_phone_uses_locale_prompt() -> None:
+    step = ResolutionStep()
+    payload = DataPayload()
+    context = DataContext(phone_number="2348000000000", language="pcm")
+    gates = DataGates()
+
+    result = await step.run(payload, context, gates, SimpleNamespace())
+
+    assert result is not None
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["target_phone"]
+    assert result.prompt == "Na who you wan buy data for?"
+
+
+@pytest.mark.asyncio
 async def test_data_resolution_asks_when_network_unresolved_from_phone() -> None:
     step = ResolutionStep()
     payload = DataPayload(target_phone="07001234567")
@@ -270,6 +285,21 @@ async def test_data_resolution_asks_when_network_unresolved_from_phone() -> None
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["network"]
     assert "07001234567" in (result.prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_data_resolution_network_prompt_uses_locale_copy() -> None:
+    step = ResolutionStep()
+    payload = DataPayload(target_phone="07001234567")
+    context = DataContext(phone_number="2348000000000", language="yo")
+    gates = DataGates()
+
+    result = await step.run(payload, context, gates, SimpleNamespace())
+
+    assert result is not None
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["network"]
+    assert result.prompt == "Network wo ni 07001234567 wa lori?"
 
 
 @pytest.mark.asyncio
@@ -319,3 +349,17 @@ async def test_data_confirmation_keeps_short_prompt_when_amount_is_unknown() -> 
     assert result is not None
     assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
     assert result.confirmation_summary == "Buy MTN data for 08162511023?"
+
+
+@pytest.mark.asyncio
+async def test_data_confirmation_short_prompt_uses_locale_copy() -> None:
+    step = ConfirmationStep()
+    payload = DataPayload(network="MTN", target_phone="08162511023")
+    context = DataContext(phone_number="2348000000000", language="yo")
+    gates = DataGates()
+
+    result = await step.run(payload, context, gates, SimpleNamespace())
+
+    assert result is not None
+    assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert result.confirmation_summary == "Ra data MTN fun 08162511023?"

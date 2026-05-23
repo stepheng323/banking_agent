@@ -16,6 +16,29 @@ from shared.utils.network_utils import is_valid_nigerian_phone, normalize_networ
 logger = get_logger(__name__)
 
 
+def _missing_field_label(field: str, locale: str) -> str:
+    if field == "recipient_phone":
+        return render_message("airtime.validation.field.phone_number", locale)
+    if field == "amount":
+        return render_message("airtime.validation.field.amount", locale)
+    return field
+
+
+def _join_missing_fields(fields: list[str], locale: str) -> str:
+    labels = [_missing_field_label(field, locale) for field in fields]
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return render_message("airtime.validation.join_two", locale, {"first": labels[0], "second": labels[1]})
+    return render_message(
+        "airtime.validation.join_many",
+        locale,
+        {"head": ", ".join(labels[:-1]), "last": labels[-1]},
+    )
+
+
 class ValidationStep(AirtimeStep):
     """Validates airtime data."""
 
@@ -33,7 +56,7 @@ class ValidationStep(AirtimeStep):
         logger.info("Validating airtime data", data=data)
 
         if not data.recipient_phone:
-            missing.append("phone number")
+            missing.append("recipient_phone")
             required_fields.append("recipient_phone")
 
         if not data.amount:
@@ -44,14 +67,18 @@ class ValidationStep(AirtimeStep):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=required_fields,
-                prompt=render_message("airtime.validation.missing_fields", locale, {"missing": " and ".join(missing)}),
+                prompt=render_message(
+                    "airtime.validation.missing_fields",
+                    locale,
+                    {"missing": _join_missing_fields(missing, locale)},
+                ),
             )
 
         if data.recipient_phone and not is_valid_nigerian_phone(data.recipient_phone):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["recipient_phone"],
-                prompt=render_message("airtime.validation.missing_fields", locale, {"missing": "phone number"}),
+                prompt=render_message("airtime.validation.invalid_phone", locale),
             )
 
         if data.amount <= 0:

@@ -365,6 +365,21 @@ async def test_airtime_validation_requests_network_when_phone_present() -> None:
 
 
 @pytest.mark.asyncio
+async def test_airtime_validation_missing_fields_uses_locale_field_labels() -> None:
+    step = ValidationStep()
+    payload = AirtimePayload()
+    context = AirtimeContext(phone_number="2348000000000", language="yo")
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace()
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["recipient_phone", "amount"]
+    assert result.prompt == "Jowo fi nomba foonu ati iye owo ranse."
+
+
+@pytest.mark.asyncio
 async def test_airtime_validation_rejects_invalid_phone_shape() -> None:
     step = ValidationStep()
     payload = AirtimePayload(amount=5000, recipient_phone="816251", network="MTN")
@@ -376,6 +391,22 @@ async def test_airtime_validation_rejects_invalid_phone_shape() -> None:
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["recipient_phone"]
+    assert result.prompt == "Please enter a valid Nigerian phone number."
+
+
+@pytest.mark.asyncio
+async def test_airtime_validation_invalid_phone_uses_locale_copy() -> None:
+    step = ValidationStep()
+    payload = AirtimePayload(amount=5000, recipient_phone="816251", network="MTN")
+    context = AirtimeContext(phone_number="2348000000000", language="pcm")
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace()
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["recipient_phone"]
+    assert result.prompt == "Abeg enter correct Naija phone number."
 
 
 @pytest.mark.asyncio

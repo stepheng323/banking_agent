@@ -3,9 +3,14 @@
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.formatters.currency import coerce_amount, format_naira
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext, render_personalized_message
 
 
-def format_airtime_summary(data: dict, locale: str = "en") -> str:
+def format_airtime_summary(
+    data: dict,
+    locale: str = "en",
+    personality_context: PersonalityContext | None = None,
+) -> str:
     """
     Format a WhatsApp-friendly airtime purchase confirmation summary.
 
@@ -23,10 +28,11 @@ def format_airtime_summary(data: dict, locale: str = "en") -> str:
     source_account = str(data.get("sourceAccount") or "")
 
     lines = [
-        render_message(
+        render_personalized_message(
             "airtime.format.summary.title",
             locale,
             {"amount": format_naira(amount), "recipient_display": recipient_phone},
+            personality_context,
         ),
         render_message("airtime.format.summary.network_line", locale, {"network": network}),
     ]

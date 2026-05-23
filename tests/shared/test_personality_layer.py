@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from shared.formatters.airtime import format_airtime_summary
+from shared.formatters.data import format_data_summary
 from shared.formatters.transfer import (
     format_transfer_pending_message,
     format_transfer_success_message,
@@ -149,8 +151,143 @@ def test_transfer_formatters_pick_expected_variants_with_context() -> None:
     assert trusted_confirmation_summary.splitlines()[0] == "*Ready, please review: ₦50,000 to Tolu Adebayo*"
 
 
+def test_airtime_and_data_formatters_pick_expected_variants_with_context() -> None:
+    airtime_summary = format_airtime_summary(
+        {
+            "amount": 1000,
+            "recipientPhone": "08162511023",
+            "network": "MTN",
+            "sourceBank": "Kuda",
+            "sourceAccount": "0000000001",
+        },
+        locale="en",
+        personality_context=PersonalityContext(moment="confirmation", amount=1000, saved_recipient=True),
+    )
+    data_summary = format_data_summary(
+        {
+            "planName": "MTN 2GB",
+            "amount": 1500,
+            "recipientPhone": "08162511023",
+            "network": "MTN",
+            "sourceBank": "Kuda",
+            "sourceAccount": "0000000001",
+        },
+        locale="en",
+        personality_context=PersonalityContext(moment="confirmation", amount=1500, saved_recipient=True),
+    )
+
+    assert airtime_summary.splitlines()[0] == "*Airtime ready for 08162511023: ₦1,000*"
+    assert data_summary.splitlines()[0] == "*Data ready for 08162511023: MTN 2GB*"
+
+
+def test_airtime_and_data_notification_variants_render() -> None:
+    airtime_success = render_personalized_message(
+        "airtime.executor.success_message",
+        "en",
+        {
+            "amount": "1,000.00",
+            "recipient_phone": "08162511023",
+            "network": "MTN",
+            "reference": "ref-1",
+        },
+        PersonalityContext(moment="success", amount=1000, saved_recipient=True),
+    )
+    data_pending = render_personalized_message(
+        "data.completion.pending_message",
+        "en",
+        {
+            "plan_name": "MTN 2GB",
+            "amount": "1,500.00",
+            "recipient_phone": "08162511023",
+        },
+        PersonalityContext(moment="pending", amount=1500, saved_recipient=True),
+    )
+    data_failure = render_personalized_message(
+        "data.completion.failed_message",
+        "en",
+        {"error_message": "Provider unavailable"},
+        PersonalityContext(moment="failure", amount=1500),
+    )
+
+    assert airtime_success == "Done. ₦1,000.00 airtime has been sent to 08162511023 (MTN).\nRef: ref-1"
+    assert data_pending.startswith("Got it. Your MTN 2GB purchase (₦1,500.00)")
+    assert data_failure == "I couldn't complete the data purchase: Provider unavailable. Please try again."
+
+
+@pytest.mark.parametrize(
+    ("locale", "airtime_marker", "data_pending_marker", "data_failure_marker"),
+    [
+        ("pcm", "don reach", "I don get am", "I no fit complete"),
+        ("yo", "ti lọ si", "Mo ti gba a", "Mi o le pari"),
+        ("ha", "ya tafi zuwa", "Na karba", "Ban iya kammala"),
+        ("ig", "erutela", "Enwetara m ya", "Enweghị m ike"),
+    ],
+)
+def test_airtime_and_data_personality_variants_are_localized(
+    locale: str,
+    airtime_marker: str,
+    data_pending_marker: str,
+    data_failure_marker: str,
+) -> None:
+    airtime_success = render_personalized_message(
+        "airtime.executor.success_message",
+        locale,
+        {
+            "amount": "1,000.00",
+            "recipient_phone": "08162511023",
+            "network": "MTN",
+            "reference": "ref-1",
+        },
+        PersonalityContext(moment="success", amount=1000, saved_recipient=True),
+    )
+    data_pending = render_personalized_message(
+        "data.completion.pending_message",
+        locale,
+        {
+            "plan_name": "MTN 2GB",
+            "amount": "1,500.00",
+            "recipient_phone": "08162511023",
+        },
+        PersonalityContext(moment="pending", amount=1500, saved_recipient=True),
+    )
+    data_failure = render_personalized_message(
+        "data.completion.failed_message",
+        locale,
+        {"error_message": "Provider unavailable"},
+        PersonalityContext(moment="failure", amount=1500),
+    )
+
+    assert airtime_marker in airtime_success
+    assert data_pending_marker in data_pending
+    assert data_failure_marker in data_failure
+
+
 def test_personality_variant_keys_exist_in_all_supported_catalogs() -> None:
     required_keys = {
+        "airtime.execution.message_queued_variants.standard",
+        "airtime.execution.message_queued_variants.warm",
+        "airtime.execution.message_queued_variants.reassuring",
+        "airtime.executor.failure_message_variants.standard",
+        "airtime.executor.failure_message_variants.reassuring",
+        "airtime.executor.success_message_variants.standard",
+        "airtime.executor.success_message_variants.warm",
+        "airtime.executor.success_message_variants.celebratory",
+        "airtime.format.summary.title_variants.standard",
+        "airtime.format.summary.title_variants.warm",
+        "airtime.format.summary.title_variants.careful",
+        "airtime.format.summary.title_variants.trusted_careful",
+        "data.completion.failed_message_variants.standard",
+        "data.completion.failed_message_variants.reassuring",
+        "data.completion.pending_message_variants.standard",
+        "data.completion.pending_message_variants.warm",
+        "data.completion.pending_message_variants.reassuring",
+        "data.completion.success_message_variants.standard",
+        "data.completion.success_message_variants.warm",
+        "data.completion.success_message_variants.celebratory",
+        "data.format.summary.title_variants.standard",
+        "data.format.summary.title_variants.warm",
+        "data.format.summary.title_variants.careful",
+        "data.format.summary.title_variants.trusted_careful",
         "transaction_copy.confirmation.transfer_variants.standard",
         "transaction_copy.confirmation.transfer_variants.warm",
         "transaction_copy.confirmation.transfer_variants.careful",

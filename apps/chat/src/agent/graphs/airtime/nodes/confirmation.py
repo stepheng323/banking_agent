@@ -12,6 +12,7 @@ from apps.chat.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.cache.redis_client import RedisClient
 from shared.formatters.airtime import format_airtime_summary
+from shared.i18n.personality import PersonalityContext
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -47,6 +48,11 @@ class ConfirmationStep(AirtimeStep):
                 "sourceAccount": data.source_account_number,
             },
             locale=context.language,
+            personality_context=PersonalityContext(
+                moment="confirmation",
+                amount=data.amount,
+                saved_recipient=bool(data.beneficiary_id or data.is_self),
+            ),
         )
         schedule_line = format_schedule_confirmation_line(data, context.language)
         if schedule_line:

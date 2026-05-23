@@ -10,6 +10,7 @@ from apps.chat.src.agent.graphs.airtime.models.types import (
 from apps.chat.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext, render_personalized_message
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -76,6 +77,8 @@ class ExecutionStep(AirtimeStep):
                 "source_account_number": data.source_account_number,
                 "source_account_id": data.source_account_id,
                 "source_bank_name": data.source_bank_name,
+                "beneficiary_id": data.beneficiary_id,
+                "is_self": data.is_self,
             }
             async_group = None
             if data.async_group_id and data.async_group_size and data.async_group_kind and data.async_group_index:
@@ -116,7 +119,7 @@ class ExecutionStep(AirtimeStep):
                     "recipient_phone": data.recipient_phone,
                     "network": data.network,
                     "date": render_message("airtime.execution.date_now", locale),
-                    "message": render_message(
+                    "message": render_personalized_message(
                         "airtime.execution.message_queued",
                         locale,
                         {
@@ -124,6 +127,11 @@ class ExecutionStep(AirtimeStep):
                             "recipient_phone": data.recipient_phone,
                             "network": data.network,
                         },
+                        PersonalityContext(
+                            moment="pending",
+                            amount=data.amount,
+                            saved_recipient=bool(data.beneficiary_id or data.is_self),
+                        ),
                     ),
                 },
                 patch={"transaction_id": transaction_id} if transaction_id else {},

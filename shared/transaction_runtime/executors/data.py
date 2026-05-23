@@ -12,6 +12,7 @@ import redis.asyncio as redis
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
 from shared.policy.service import capability_block_message
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.unit_of_work import UnitOfWork
@@ -78,6 +79,19 @@ def _provider_status(result: dict[str, Any]) -> str | None:
 
 def _execution_error_message(locale: str) -> str:
     return render_message("data.error.execution_failed", locale)
+
+
+def _data_personality_context(
+    data_purchase: dict[str, Any],
+    *,
+    amount: float | int | None,
+    moment: TransferMoment,
+) -> PersonalityContext:
+    return PersonalityContext(
+        moment=moment,
+        amount=float(amount) if amount is not None else None,
+        saved_recipient=bool(data_purchase.get("beneficiary_id") or data_purchase.get("is_self")),
+    )
 
 
 class DataExecutor:
@@ -200,10 +214,15 @@ class DataExecutor:
                 await self.delivery_service.deliver_text(
                     phone_number=delivery_target,
                     channel=channel,
-                    text=render_message(
+                    text=render_personalized_message(
                         "data.completion.failed_message",
                         locale,
                         {"error_message": policy_message},
+                        _data_personality_context(
+                            data_purchase,
+                            amount=data_purchase.get("amount"),
+                            moment="failure",
+                        ),
                     ),
                     metadata={"source": "data_executor", "transaction_id": transaction_id},
                     dedupe_key=f"data:failed:{transaction_id}",
@@ -289,7 +308,7 @@ class DataExecutor:
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
                         channel=channel,
-                        text=render_message(
+                        text=render_personalized_message(
                             "data.completion.success_message",
                             locale,
                             {
@@ -300,6 +319,7 @@ class DataExecutor:
                                 "network": network or "",
                                 "transaction_id": provider_reference or transaction_id,
                             },
+                            _data_personality_context(data_purchase, amount=amount, moment="success"),
                         ),
                         metadata={"source": "data_executor", "transaction_id": transaction_id},
                         dedupe_key=f"data:success:{transaction_id}",
@@ -367,10 +387,11 @@ class DataExecutor:
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
                         channel=channel,
-                        text=render_message(
+                        text=render_personalized_message(
                             "data.completion.failed_message",
                             locale,
                             {"error_message": error_msg},
+                            _data_personality_context(data_purchase, amount=amount, moment="failure"),
                         ),
                         metadata={"source": "data_executor", "transaction_id": transaction_id},
                         dedupe_key=f"data:failed:{transaction_id}",

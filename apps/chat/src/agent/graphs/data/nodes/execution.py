@@ -6,6 +6,7 @@ from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates,
 from apps.chat.src.agent.graphs.data.pipeline.base import PipelineStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext, render_personalized_message
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -94,13 +95,15 @@ class ExecutionStep(PipelineStep):
                         "source_account_id": payload.source_account_id,
                         "source_account_number": payload.source_account_number,
                         "source_bank_name": payload.source_bank_name,
+                        "beneficiary_id": payload.beneficiary_id,
+                        "is_self": payload.is_self,
                     },
                     "async_group": async_group,
                 },
             )
 
             recipient_phone = payload.target_phone or ""
-            pending_message = render_message(
+            pending_message = render_personalized_message(
                 "data.completion.pending_message",
                 locale,
                 {
@@ -108,6 +111,11 @@ class ExecutionStep(PipelineStep):
                     "amount": f"{float(payload.amount or 0):,.2f}",
                     "recipient_phone": recipient_phone,
                 },
+                PersonalityContext(
+                    moment="pending",
+                    amount=payload.amount,
+                    saved_recipient=bool(payload.beneficiary_id or payload.is_self),
+                ),
             )
             receipt = {
                 "id": str(key),

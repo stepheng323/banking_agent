@@ -3,6 +3,7 @@
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.formatters.currency import coerce_amount, format_amount_number
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext, render_personalized_message
 
 
 def format_data_plan_suggestion(
@@ -95,7 +96,11 @@ def format_data_plan_list(
     return "\n".join(lines)
 
 
-def format_data_summary(data: dict, locale: str = "en") -> str:
+def format_data_summary(
+    data: dict,
+    locale: str = "en",
+    personality_context: PersonalityContext | None = None,
+) -> str:
     """
     Format a WhatsApp-friendly data purchase confirmation summary.
 
@@ -119,10 +124,11 @@ def format_data_summary(data: dict, locale: str = "en") -> str:
     target_display = render_message("data.format.summary.target_self", locale) if is_self else recipient_phone
 
     lines = [
-        render_message(
+        render_personalized_message(
             "data.format.summary.title",
             locale,
             {"plan_name": plan_name, "target_display": target_display},
+            personality_context,
         ),
         render_message(
             "data.format.summary.network_amount",

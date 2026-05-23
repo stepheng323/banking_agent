@@ -759,22 +759,40 @@
       "unsupported_feature": "Sorry, I can't do {feature_name} airtime transfers yet. I can only do instant transfers defined right now."
     },
     "validation": {
-      "missing_fields": "Please provide the {missing}.",
-      "amount_gt_zero": "The amount must be greater than zero.",
-      "max_amount": "The maximum airtime purchase is ₦50,000. Please enter a lower amount.",
-      "network_not_identified": "I couldn't identify the network for {recipient_phone}. Please check the number."
+      "missing_fields": "Jowo fi {missing} ranse.",
+      "field": {
+        "phone_number": "nomba foonu",
+        "amount": "iye owo"
+      },
+      "join_two": "{first} ati {second}",
+      "join_many": "{head}, ati {last}",
+      "invalid_phone": "Jowo te nomba foonu Naijiria to pe sii.",
+      "amount_gt_zero": "Iye owo gbodo ju zero lo.",
+      "max_amount": "Airtime purchase to po ju ni ₦50,000. Jowo te iye owo kekere sii.",
+      "network_not_identified": "Mi o le mo network fun {recipient_phone}. Jowo sayewo nomba naa."
     },
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
         "title": "*{amount} Airtime → {recipient_display}*",
+        "title_variants": {
+          "standard": "*{amount} Airtime → {recipient_display}*",
+          "warm": "*Airtime ti setan fun {recipient_display}: {amount}*",
+          "careful": "*Ṣayẹwo airtime yii: {amount} fun {recipient_display}*",
+          "trusted_careful": "*Airtime ti setan, jọwọ ṣayẹwo: {amount} fun {recipient_display}*"
+        },
         "network_line": "Network: {network}"
       }
     },
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Your airtime purchase of ₦{amount} for {recipient_phone} ({network}) is being processed.",
+      "message_queued": "Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ.",
+      "message_queued_variants": {
+        "standard": "Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ.",
+        "warm": "Mo ti gba a. Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ.",
+        "reassuring": "Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ. Ijẹrisi provider le gba iṣẹju diẹ."
+      },
       "system_error": "System error during execution."
     },
     "error": {
@@ -784,19 +802,28 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
-      "failure_message": "Airtime purchase failed for {recipient_phone} ({network}).\nReason: {reason}"
+      "success_message": "✓ Airtime ti pari\n\nIye: ₦{amount}\nFoonu: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+      "success_message_variants": {
+        "standard": "✓ Airtime ti pari\n\nIye: ₦{amount}\nFoonu: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+        "warm": "Ti pari. Airtime ₦{amount} ti lọ si {recipient_phone} ({network}).\nRef: {reference}",
+        "celebratory": "O ti setan. Airtime ₦{amount} ti lọ si {recipient_phone} ({network}).\nRef: {reference}"
+      },
+      "failure_message": "Airtime fun {recipient_phone} ({network}) ko pari.\nIdi: {reason}",
+      "failure_message_variants": {
+        "standard": "Airtime fun {recipient_phone} ({network}) ko pari.\nIdi: {reason}",
+        "reassuring": "Mi o le pari airtime fun {recipient_phone} ({network}).\nIdi: {reason}"
+      }
     }
   },
   "data": {
     "resolve": {
-      "ask_target_phone": "Who do you want to calculate data for?",
-      "ask_network": "Which network is {target_phone} on?"
+      "ask_target_phone": "Ta ni ki n ra data fun?",
+      "ask_network": "Network wo ni {target_phone} wa lori?"
     },
     "confirmation": {
-      "buy_network_for_phone": "Buy {network} data for {target_phone}?",
-      "buy_plan_for_phone": "Buy {plan_name} for {target_phone}?",
-      "buy_amount_network_for_phone": "Buy N{amount} of {network} data for {target_phone}?"
+      "buy_network_for_phone": "Ra data {network} fun {target_phone}?",
+      "buy_plan_for_phone": "Ra {plan_name} fun {target_phone}?",
+      "buy_amount_network_for_phone": "Ra data {network} ti ₦{amount} fun {target_phone}?"
     },
     "execution": {
       "receipt_description_plan": "{plan_name} for {target_phone}",
@@ -827,13 +854,33 @@
         "source_bank_fallback": "Account",
         "target_self": "your number",
         "title": "*{plan_name} → {target_display}*",
+        "title_variants": {
+          "standard": "*{plan_name} → {target_display}*",
+          "warm": "*Data ti setan fun {target_display}: {plan_name}*",
+          "careful": "*Ṣayẹwo data yii: {plan_name} fun {target_display}*",
+          "trusted_careful": "*Data ti setan, jọwọ ṣayẹwo: {plan_name} fun {target_display}*"
+        },
         "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
     },
     "completion": {
-      "success_message": "✓ Data purchase successful!\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
-      "pending_message": "⏳ Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support.",
-      "failed_message": "Data purchase failed: {error_message}. Please try again."
+      "success_message": "✓ Data purchase ti pari\n\nPlan: {plan_name}\nIye: ₦{amount}\nRecipient: {recipient_name} ({network})\nFoonu: {recipient_phone}\nTransaction ID: {transaction_id}",
+      "success_message_variants": {
+        "standard": "✓ Data purchase ti pari\n\nPlan: {plan_name}\nIye: ₦{amount}\nRecipient: {recipient_name} ({network})\nFoonu: {recipient_phone}\nTransaction ID: {transaction_id}",
+        "warm": "Ti pari. Data {plan_name} ti ṣiṣẹ fun {recipient_phone} ({network}).\nIye: ₦{amount}\nTransaction ID: {transaction_id}",
+        "celebratory": "O ti setan. Data {plan_name} ti ṣiṣẹ fun {recipient_phone} ({network}).\nIye: ₦{amount}\nTransaction ID: {transaction_id}"
+      },
+      "pending_message": "⏳ {plan_name} purchase (₦{amount}) fun {recipient_phone} n lọ lọwọ.\n\nIwọ yoo gba confirmation laipẹ. Ti ko ba de laarin iṣẹju 5, kan si support.",
+      "pending_message_variants": {
+        "standard": "⏳ {plan_name} purchase (₦{amount}) fun {recipient_phone} n lọ lọwọ.\n\nIwọ yoo gba confirmation laipẹ. Ti ko ba de laarin iṣẹju 5, kan si support.",
+        "warm": "Mo ti gba a. {plan_name} purchase (₦{amount}) fun {recipient_phone} n lọ lọwọ.\n\nIwọ yoo gba confirmation laipẹ.",
+        "reassuring": "{plan_name} purchase (₦{amount}) fun {recipient_phone} n lọ lọwọ. Ijẹrisi provider le gba iṣẹju diẹ."
+      },
+      "failed_message": "Data purchase ko pari: {error_message}. Jọwọ tun gbiyanju.",
+      "failed_message_variants": {
+        "standard": "Data purchase ko pari: {error_message}. Jọwọ tun gbiyanju.",
+        "reassuring": "Mi o le pari data purchase naa: {error_message}. Jọwọ tun gbiyanju."
+      }
     }
   },
   "onboarding": {
@@ -1189,8 +1236,8 @@
       "confirm_airtime": "Just to confirm: {formatted_amount} airtime to {phone_masked} ({network})?",
       "confirm_data": "Just to confirm: {data_plan} data for {phone_masked} ({network})?",
       "transfer_success": "✓ Done! {formatted_amount} has been sent to {recipient_name}.",
-      "airtime_success": "✓ Done! {formatted_amount} airtime sent to {phone_masked}.",
-      "data_success": "✓ Done! {data_plan} data activated for {phone_masked}.",
+      "airtime_success": "✓ Ti pari! Airtime {formatted_amount} ti lọ si {phone_masked}.",
+      "data_success": "✓ Ti pari! Data {data_plan} ti ṣiṣẹ fun {phone_masked}.",
       "insufficient_balance": "You don't have enough balance. Available: {formatted_amount}.",
       "account_not_found": "I couldn't find that account. Please check the account number and try again.",
       "account_validation_failed": "I couldn't verify that account right now. Please try again.",
@@ -1199,8 +1246,8 @@
       "pin_failed": "Incorrect PIN. Please try again.",
       "max_attempts_exceeded": "Maximum attempts exceeded. Please start a new transaction.",
       "transfer_failed": "Transfer failed: {error_message}",
-      "airtime_failed": "Airtime purchase failed: {error_message}",
-      "data_failed": "Data purchase failed: {error_message}",
+      "airtime_failed": "Airtime purchase ko pari: {error_message}",
+      "data_failed": "Data purchase ko pari: {error_message}",
       "invalid_amount": "Invalid amount. {error_message}",
       "invalid_phone_number": "Invalid phone number. Please enter a valid Nigerian number (e.g., 08012345678).",
       "invalid_network": "Invalid network. Please choose from: MTN, Airtel, Glo, or 9mobile.",

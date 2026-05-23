@@ -6,6 +6,7 @@ from apps.chat.src.agent.graphs.data.pipeline.base import PipelineStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.data import format_data_summary
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext
 
 
 class ConfirmationStep(PipelineStep):
@@ -31,6 +32,11 @@ class ConfirmationStep(PipelineStep):
                     "isSelf": payload.is_self,
                 },
                 locale=locale,
+                personality_context=PersonalityContext(
+                    moment="confirmation",
+                    amount=payload.amount,
+                    saved_recipient=bool(payload.beneficiary_id or payload.is_self),
+                ),
             )
             schedule_line = format_schedule_confirmation_line(payload, locale)
             if schedule_line:

@@ -12,6 +12,7 @@ import redis.asyncio as redis
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.i18n import render_message
+from shared.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
 from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.transaction_repository import TransactionRepository
@@ -93,6 +94,19 @@ def _provider_status_is_processing(result: dict[str, Any]) -> bool:
 
 def _execution_error_message(locale: str) -> str:
     return render_message("airtime.error.execution_failed", locale)
+
+
+def _airtime_personality_context(
+    airtime_data: dict[str, Any],
+    *,
+    amount: float | int | None,
+    moment: TransferMoment,
+) -> PersonalityContext:
+    return PersonalityContext(
+        moment=moment,
+        amount=float(amount) if amount is not None else None,
+        saved_recipient=bool(airtime_data.get("beneficiary_id") or airtime_data.get("is_self")),
+    )
 
 
 class AirtimeExecutor:
@@ -259,7 +273,7 @@ class AirtimeExecutor:
                     )
                 elif delivery_target and not is_grouped_async_message(data):
                     ref = provider_reference or render_message("airtime.executor.reference_fallback", locale)
-                    message = render_message(
+                    message = render_personalized_message(
                         "airtime.executor.success_message",
                         locale,
                         {
@@ -268,6 +282,7 @@ class AirtimeExecutor:
                             "network": network or "",
                             "reference": ref,
                         },
+                        _airtime_personality_context(airtime_data, amount=amount, moment="success"),
                     )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
@@ -325,9 +340,15 @@ class AirtimeExecutor:
                     )
                 elif delivery_target and not is_grouped_async_message(data):
                     amount_text = f"{amount:,.2f}" if amount is not None else "0.00"
-                    message = (
-                        f"Your airtime purchase of ₦{amount_text} for {recipient_phone or ''} "
-                        f"({network or ''}) is being processed."
+                    message = render_personalized_message(
+                        "airtime.execution.message_queued",
+                        locale,
+                        {
+                            "amount": amount_text,
+                            "recipient_phone": recipient_phone or "",
+                            "network": network or "",
+                        },
+                        _airtime_personality_context(airtime_data, amount=amount, moment="pending"),
                     )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
@@ -397,7 +418,7 @@ class AirtimeExecutor:
                         dedupe_key=f"airtime:batch:{batch_summary['stage']}:{transaction_id}",
                     )
                 elif delivery_target and not is_grouped_async_message(data):
-                    message = render_message(
+                    message = render_personalized_message(
                         "airtime.executor.failure_message",
                         locale,
                         {
@@ -406,6 +427,7 @@ class AirtimeExecutor:
                             "network": network or "",
                             "reason": error_msg,
                         },
+                        _airtime_personality_context(airtime_data, amount=amount, moment="failure"),
                     )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,

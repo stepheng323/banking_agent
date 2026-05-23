@@ -762,6 +762,12 @@
       "summary": {
         "source_bank_fallback": "Account",
         "title": "*{amount} Airtime → {recipient_display}*",
+        "title_variants": {
+          "standard": "*{amount} Airtime → {recipient_display}*",
+          "warm": "*Airtime ready for {recipient_display}: {amount}*",
+          "careful": "*Review airtime purchase: {amount} for {recipient_display}*",
+          "trusted_careful": "*Airtime ready, please review: {amount} for {recipient_display}*"
+        },
         "network_line": "Network: {network}"
       }
     },
@@ -769,6 +775,11 @@
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
       "message_queued": "Your airtime purchase of ₦{amount} for {recipient_phone} ({network}) is being processed.",
+      "message_queued_variants": {
+        "standard": "Your airtime purchase of ₦{amount} for {recipient_phone} ({network}) is being processed.",
+        "warm": "Got it. Your ₦{amount} airtime for {recipient_phone} ({network}) is processing.",
+        "reassuring": "Your ₦{amount} airtime purchase for {recipient_phone} ({network}) is processing. Provider confirmation can take a few minutes."
+      },
       "system_error": "System error during execution."
     },
     "error": {
@@ -778,6 +789,13 @@
     },
     "validation": {
       "missing_fields": "Please provide the {missing}.",
+      "field": {
+        "phone_number": "phone number",
+        "amount": "amount"
+      },
+      "join_two": "{first} and {second}",
+      "join_many": "{head}, and {last}",
+      "invalid_phone": "Please enter a valid Nigerian phone number.",
       "amount_gt_zero": "The amount must be greater than zero.",
       "max_amount": "The maximum airtime purchase is ₦50,000. Please enter a lower amount.",
       "network_not_identified": "I couldn't identify the network for {recipient_phone}. Please check the number."
@@ -785,18 +803,27 @@
     "executor": {
       "reference_fallback": "N/A",
       "success_message": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
-      "failure_message": "Airtime purchase failed for {recipient_phone} ({network}).\nReason: {reason}"
+      "success_message_variants": {
+        "standard": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+        "warm": "Done. ₦{amount} airtime has been sent to {recipient_phone} ({network}).\nRef: {reference}",
+        "celebratory": "All set. ₦{amount} airtime has been sent to {recipient_phone} ({network}).\nRef: {reference}"
+      },
+      "failure_message": "Airtime purchase failed for {recipient_phone} ({network}).\nReason: {reason}",
+      "failure_message_variants": {
+        "standard": "Airtime purchase failed for {recipient_phone} ({network}).\nReason: {reason}",
+        "reassuring": "I couldn't complete the airtime purchase for {recipient_phone} ({network}).\nReason: {reason}"
+      }
     }
   },
   "data": {
     "resolve": {
-      "ask_target_phone": "Who do you want to calculate data for?",
+      "ask_target_phone": "Who should I buy data for?",
       "ask_network": "Which network is {target_phone} on?"
     },
     "confirmation": {
       "buy_network_for_phone": "Buy {network} data for {target_phone}?",
       "buy_plan_for_phone": "Buy {plan_name} for {target_phone}?",
-      "buy_amount_network_for_phone": "Buy N{amount} of {network} data for {target_phone}?"
+      "buy_amount_network_for_phone": "Buy ₦{amount} of {network} data for {target_phone}?"
     },
     "execution": {
       "receipt_description_plan": "{plan_name} for {target_phone}",
@@ -827,13 +854,33 @@
         "source_bank_fallback": "Account",
         "target_self": "your number",
         "title": "*{plan_name} → {target_display}*",
+        "title_variants": {
+          "standard": "*{plan_name} → {target_display}*",
+          "warm": "*Data ready for {target_display}: {plan_name}*",
+          "careful": "*Review data purchase: {plan_name} for {target_display}*",
+          "trusted_careful": "*Data ready, please review: {plan_name} for {target_display}*"
+        },
         "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
     },
     "completion": {
       "success_message": "✓ Data purchase successful!\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+      "success_message_variants": {
+        "standard": "✓ Data purchase successful!\n\nPlan: {plan_name}\nAmount: ₦{amount}\nRecipient: {recipient_name} ({network})\nPhone: {recipient_phone}\nTransaction ID: {transaction_id}",
+        "warm": "Done. {plan_name} data is active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}",
+        "celebratory": "All set. {plan_name} data is active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}"
+      },
       "pending_message": "⏳ Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support.",
-      "failed_message": "Data purchase failed: {error_message}. Please try again."
+      "pending_message_variants": {
+        "standard": "⏳ Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support.",
+        "warm": "Got it. Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly.",
+        "reassuring": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing. Provider confirmation can take a few minutes."
+      },
+      "failed_message": "Data purchase failed: {error_message}. Please try again.",
+      "failed_message_variants": {
+        "standard": "Data purchase failed: {error_message}. Please try again.",
+        "reassuring": "I couldn't complete the data purchase: {error_message}. Please try again."
+      }
     }
   },
   "funding": {
