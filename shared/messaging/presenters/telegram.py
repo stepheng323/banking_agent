@@ -25,6 +25,34 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _actionable_payload(intent: UiIntent) -> dict[str, Any]:
+    payload = intent.actionable_payload
+    return payload if isinstance(payload, dict) else {}
+
+
+def _is_schedule_update_confirmation(intent: RequestConfirmation) -> bool:
+    payload = _actionable_payload(intent)
+    return (
+        str(payload.get("task_type") or "").strip().lower() == "schedule"
+        and str(payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
+    )
+
+
+def _pin_flow_prefix(intent: RequestAuth | RequestConfirmation) -> str:
+    payload = _actionable_payload(intent)
+    task_type = str(payload.get("task_type") or "").strip().lower()
+    action = str(payload.get("action") or "").strip().lower()
+    if task_type == "schedule" or action in {"edit_scheduled_transaction", "schedule_update"}:
+        return "schedule"
+
+    text = f"{getattr(intent, 'reason', '') or ''}\n{getattr(intent, 'header', '') or ''}\n{intent.summary or ''}"
+    if "Airtime" in text:
+        return "airtime"
+    if "Data" in text:
+        return "data"
+    return "transfer"
+
+
 class TelegramPresenter(Presenter):
     """Present intents via Telegram Bot API."""
 
@@ -195,11 +223,8 @@ class TelegramPresenter(Presenter):
             )
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
 
-        prefix = "transfer"
-        if "Airtime" in (intent.reason or "") or "Airtime" in (intent.summary or ""):
-            prefix = "airtime"
-        elif "Data" in (intent.reason or "") or "Data" in (intent.summary or ""):
-            prefix = "data"
+        prefix = _pin_flow_prefix(intent)
+        cta_text = "Authorize Update" if prefix == "schedule" else "Enter PIN"
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
         html_summary = _format_telegram_html(intent.summary or "Please enter your PIN to proceed.")
@@ -211,7 +236,7 @@ class TelegramPresenter(Presenter):
             flow_config={
                 "header": intent.reason or "Authorize Transaction",
                 "text_body": html_summary,
-                "flow_cta": "Enter PIN",
+                "flow_cta": cta_text,
                 "flow_token": flow_token,
             },
             suppress_typing_indicator=self._suppress_typing(context),
@@ -224,11 +249,18 @@ class TelegramPresenter(Presenter):
         context: PresentationContext,
     ) -> str | None:
         """Present confirmation via inline keyboard buttons."""
-        prefix = "transfer"
-        if "Airtime" in (intent.summary or ""):
-            prefix = "airtime"
-        elif "Data" in (intent.summary or ""):
-            prefix = "data"
+        if _is_schedule_update_confirmation(intent):
+            body = (intent.summary or "").strip()
+            prompt = "Reply yes to confirm this schedule update, or no to cancel."
+            text = f"{intent.header or 'Confirm Schedule Update'}\n\n{body}\n\n{prompt}" if body else prompt
+            resp = await self.client.send_text(
+                to=context.phone_number,
+                text=text,
+                suppress_typing_indicator=self._suppress_typing(context),
+            )
+            return self._extract_message_id(resp)
+
+        prefix = _pin_flow_prefix(intent)
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
         html_summary = _format_telegram_html(intent.summary or "")

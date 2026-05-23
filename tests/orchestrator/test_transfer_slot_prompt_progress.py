@@ -15,7 +15,9 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
+from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup import build_context_frame_followup_response
 from shared.config.settings import settings
+from shared.types.planner import ContextFrameFollowupDecision
 
 
 class _MockNonTransferNeedsInputWorker:
@@ -73,6 +75,77 @@ class _MockTransferNeedsInputWorker:
             prompt=self.prompt,
             details=self.details,
         )
+
+
+class _MockScheduleCountWorker:
+    def __init__(self) -> None:
+        self.last_context: dict | None = None
+        self.last_payload: dict | None = None
+        self.call_count = 0
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del user_message, pin_verified
+        self.call_count += 1
+        self.last_payload = dict(payload)
+        self.last_context = context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="You have 2 pending scheduled transactions.",
+            patch={
+                "is_scheduled_operation": True,
+                "skip_finalize_summary": True,
+                "schedule_context_items": [
+                    {
+                        "entity_id": "sch-transfer",
+                        "label": "Transfer: ₦5,000 Mum • One Time at 8:00 AM Lagos time",
+                        "data": {
+                            "type": "scheduled_transaction",
+                            "schedule_id": "sch-transfer",
+                            "domain": "Transfer",
+                            "domain_key": "transfer",
+                            "amount": "₦5,000",
+                            "target": "Mum",
+                            "recurrence": "One Time",
+                            "schedule_time": "8:00 AM Lagos time",
+                            "status": "active",
+                            "summary": "Transfer: ₦5,000 Mum • One Time at 8:00 AM Lagos time",
+                        },
+                    }
+                ],
+            },
+        )
+
+
+class _MockStallingScheduleWorker:
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> object:
+        del payload, context, user_message, pin_verified
+
+        class _Result:
+            outcome = "deferred"
+            patch: dict = {}
+            response = None
+            receipt = None
+            required_fields: list = []
+            details: dict = {}
+            prompt = None
+            update_message = None
+            confirmation_summary = None
+            confirmation_snapshot = None
+            error = "deferred without interrupt"
+
+        return _Result()
 
 
 class _MockBeneficiaryRepo:
@@ -912,3 +985,127 @@ async def test_finalize_multi_transfer_summary_uses_alias_resolved_with_title_ca
     summary = next(entry["text"] for entry in say_entries if "Transfers Complete" in entry["text"])
     assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
     assert "✓ ₦10,000 → Tolu (Grace Ngozi Adebayo) • Access Bank • 0762511023" in summary
+
+
+async def test_schedule_management_task_bypasses_transfer_mandate_gate() -> None:
+    worker = _MockScheduleCountWorker()
+    state = OrchestratorState(
+        user_id="u_schedule_count",
+        phone_number="2348000000117",
+        channel="telegram",
+        last_message_text="How many scheduled transaction is pending",
+        tasks={
+            "schedule_count": TaskSpec(
+                id="schedule_count",
+                type="schedule",
+                stage=TaskStage.DRAFT,
+                payload={
+                    "action": "list_scheduled_transactions",
+                    "schedule_response_mode": "count",
+                    "instruction": "How many scheduled transaction is pending",
+                },
+            )
+        },
+        waves=[["schedule_count"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "user_id": "user-1",
+            "accounts": [
+                {
+                    "id": "acct-pending",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "pending",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+
+    assert worker.call_count == 1
+    assert worker.last_payload and worker.last_payload["schedule_response_mode"] == "count"
+    assert updates["tasks"]["schedule_count"].stage == TaskStage.COMPLETED
+    assert updates["current_wave_index"] == 1
+    assert updates["outbox"] == [{"type": "say", "text": "You have 2 pending scheduled transactions."}]
+    assert updates["context_frames"][-1].frame_type == ContextFrameType.SCHEDULE_LIST
+    assert updates["context_frames"][-1].items[0].data["target"] == "Mum"
+
+
+def test_schedule_context_frame_followup_can_show_count_items() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_1",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-transfer",
+                label="Transfer: ₦5,000 Mum • One Time at 8:00 AM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-transfer",
+                    "domain": "Transfer",
+                    "amount": "₦5,000",
+                    "target": "Mum",
+                    "recurrence": "One Time",
+                    "schedule_time": "8:00 AM Lagos time",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    state = OrchestratorState(
+        user_id="u_schedule_show",
+        phone_number="2348000000119",
+        context_frames=[frame],
+        loaded_context={"language": "en"},
+    )
+
+    response = build_context_frame_followup_response(
+        state,
+        "show me",
+        decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.9),
+    )
+
+    assert response is not None
+    assert response.response is not None
+    assert "Scheduled Transaction Details" in response.response
+    assert "Mum" in response.response
+    assert "Target:" not in response.response
+    assert "Schedule Id" not in response.response
+    assert "sch-transfer" not in response.response
+    assert response.recent_domain_focus == "schedule"
+
+
+async def test_advance_wave_fails_stalled_schedule_task_instead_of_self_looping() -> None:
+    state = OrchestratorState(
+        user_id="u_schedule_stall",
+        phone_number="2348000000118",
+        channel="telegram",
+        last_message_text="How many scheduled transaction is pending",
+        tasks={
+            "schedule_count": TaskSpec(
+                id="schedule_count",
+                type="schedule",
+                stage=TaskStage.DRAFT,
+                payload={
+                    "action": "list_scheduled_transactions",
+                    "schedule_response_mode": "count",
+                },
+            )
+        },
+        waves=[["schedule_count"]],
+        current_wave_index=0,
+        loaded_context={"language": "en", "user_id": "user-1", "accounts": []},
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": _MockStallingScheduleWorker()}}}
+
+    updates = await advance_wave(state, config)
+
+    task = updates["tasks"]["schedule_count"]
+    assert task.stage == TaskStage.FAILED
+    assert task.payload["error"] == "task made no terminal or blocking progress"
+    assert updates["current_wave_index"] == 1

@@ -47,6 +47,18 @@ class AirtimePayload(BaseModel):
     source_account_number: str | None = None
     source_account_index: int | None = None
 
+    schedule_mode: Literal["one_time", "recurring"] | None = None
+    recurrence_type: Literal["one_time", "daily", "weekly", "monthly"] | None = None
+    schedule_timezone: str | None = None
+    schedule_start_date: str | None = None
+    schedule_time_local: str | None = None
+    schedule_day_of_week: int | None = None
+    schedule_day_of_month: int | None = None
+    schedule_end_date: str | None = None
+    schedule_id: str | None = None
+    schedule_selector: str | None = None
+    schedule_operation_note: str | None = None
+
     idempotency_key: str | None = None
     transaction_id: str | None = None
     narration: str | None = None

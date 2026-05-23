@@ -435,6 +435,7 @@ def build_confirmation_header(
     task_types: Iterable[str],
     locale: str,
     task_count: int,
+    task_actions: Iterable[str] | None = None,
     personality_context: PersonalityContext | None = None,
 ) -> str:
     """Build a context-aware confirmation header."""
@@ -442,15 +443,24 @@ def build_confirmation_header(
         return render_message("transaction_copy.confirmation.mixed", locale)
 
     mix = derive_task_mix(task_types)
+    actions = {str(action or "").strip() for action in (task_actions or [])}
+    if actions & {"edit_scheduled_transaction"}:
+        return render_message("transaction_copy.confirmation.schedule_update", locale)
     if mix == "transfer":
+        if actions & {"schedule_transfer", "recurring_transfer"}:
+            return render_message("transaction_copy.confirmation.scheduled_transfer", locale)
         return render_personalized_message(
             "transaction_copy.confirmation.transfer",
             locale,
             context=personality_context,
         )
     if mix == "airtime":
+        if actions & {"schedule_airtime", "recurring_airtime"}:
+            return render_message("transaction_copy.confirmation.scheduled_airtime", locale)
         return render_message("transaction_copy.confirmation.airtime", locale)
     if mix == "data":
+        if actions & {"schedule_data", "recurring_data"}:
+            return render_message("transaction_copy.confirmation.scheduled_data", locale)
         return render_message("transaction_copy.confirmation.data", locale)
     return render_message("transaction_copy.confirmation.generic", locale)
 

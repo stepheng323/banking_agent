@@ -43,8 +43,10 @@ class TaskParameters(BaseModel):
     recipient_account: str | None = None
     bank_name: str | None = None
     phone: str | None = None
+    target_phone: str | None = None
     budget: str | None = None
     plan: str | None = None
+    plan_name: str | None = None
     is_self: bool = False
 
     schedule: str | None = None
@@ -52,6 +54,7 @@ class TaskParameters(BaseModel):
     recurring: bool | None = None
     schedule_id: str | None = None
     schedule_selector: str | None = None
+    schedule_response_mode: Literal["list", "count"] | None = None
     international: bool | None = None
     alias: str | None = None
     reference: ContextReference | None = None
@@ -79,6 +82,7 @@ class PlannedTask(BaseModel):
         "support",
         "faq",
         "beneficiary",
+        "schedule",
         "orchestrator",
     ]
     instruction: str
@@ -150,6 +154,7 @@ RouterDomainIntent: TypeAlias = Literal[
     "transfer",
     "airtime",
     "data",
+    "schedule",
 ]
 AccountActionHint: TypeAlias = Literal[
     "list",
@@ -176,6 +181,7 @@ SemanticRoutingDecision: TypeAlias = Literal[
     "domain_transfer",
     "domain_airtime",
     "domain_data",
+    "domain_schedule",
     "planner_mixed",
     "planner_ambiguous",
     "cancel",
@@ -218,6 +224,8 @@ ContextFrameFollowupAction: TypeAlias = Literal[
     "select_item",
     "explain_result",
     "replay_tasks",
+    "edit_schedule",
+    "cancel_schedule",
     "start_new_task",
     "completeness_check",
     "entity_lookup",
@@ -534,6 +542,10 @@ class SemanticRouteDecision(BaseModel):
     expected_transaction_executors: list[TransactionExecutor] = Field(
         default_factory=list,
         description="Explicit transaction executors expected from planner, when known",
+    )
+    schedule_response_mode: Literal["list", "count"] | None = Field(
+        default=None,
+        description="For simple scheduled-transaction read intents, whether the user wants a list or count.",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 

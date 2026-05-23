@@ -95,6 +95,17 @@ class TransferPayload(BaseModel):
     schedule_id: str | None = None
     schedule_selector: str | None = None
     schedule_operation_note: str | None = None
+    schedule_response_mode: Literal["list", "count"] | None = None
+    schedule_edit_patch: dict[str, Any] | None = None
+    schedule_edit_requires_auth: bool | None = None
+    schedule_edit_next_run_at_utc: str | None = None
+
+    # Generic schedule-management edit fields for airtime/data schedules.
+    recipient_phone: str | None = None
+    network: str | None = None
+    target_phone: str | None = None
+    plan_code: str | None = None
+    plan_name: str | None = None
 
     @field_validator("transfer_all", mode="before")
     @classmethod

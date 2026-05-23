@@ -312,6 +312,7 @@
       const bootstrapNonce = params.get("boot") || "";
       let flowToken = "";
       let chatId = "";
+      let submitLabel = "Authorize";
 
       const PIN_LENGTH = 6;
       const MAX_ATTEMPTS = 3;
@@ -415,6 +416,7 @@
           }
           flowToken = payload.flow_token || "";
           chatId = payload.chat_id || "";
+          submitLabel = payload.submit_label || submitLabel;
           return { success: true };
         } catch (err) {
           return { success: false, error: "Network error. Please try again." };
@@ -440,7 +442,7 @@
           return;
         }
         pinInput.disabled = false;
-        updateSubmitButton("Authorize", false, false);
+        updateSubmitButton(submitLabel, false, false);
         setTimeout(() => pinInput.focus(), 320);
       }
 
@@ -502,7 +504,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(serverMsg);
-          updateSubmitButton("Authorize", false, false);
+          updateSubmitButton(submitLabel, false, false);
         } catch (e) {
           tg.HapticFeedback.notificationOccurred("error");
           locked = false;
@@ -510,7 +512,7 @@
           pinInput.value = "";
           pinInput.focus();
           showError(e.message || "Network error. Please try again.");
-          updateSubmitButton("Authorize", false, false);
+          updateSubmitButton(submitLabel, false, false);
         }
       }
 

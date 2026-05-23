@@ -73,3 +73,18 @@ class ScheduledInstructionRepository(BaseRepository[ScheduledInstruction]):
         self.db.add(schedule)
         await self.db.flush()
         return schedule
+
+    async def get_active_for_user_for_update(self, schedule_id: str, user_id: str) -> ScheduledInstruction | None:
+        """Get an active schedule for update, locking the row for the transaction."""
+        lookup_schedule_id = self._uuid_or_str(schedule_id)
+        lookup_user_id = self._uuid_or_str(user_id)
+        result = await self.db.execute(
+            select(ScheduledInstruction)
+            .filter(
+                ScheduledInstruction.id == lookup_schedule_id,
+                ScheduledInstruction.user_id == lookup_user_id,
+                ScheduledInstruction.status == ScheduledInstructionStatusEnum.ACTIVE.value,
+            )
+            .with_for_update(nowait=True)
+        )
+        return result.scalars().first()

@@ -107,6 +107,7 @@ async def test_same_day_keeps_existing_session_state(monkeypatch: pytest.MonkeyP
         last_activity_date="2026-03-10",
         tasks={"t1": {"id": "t1", "type": "query", "stage": "draft", "payload": {"message": "more"}}},
         waves=[["t1"]],
+        pending_interrupt={"kind": "input", "task_ids": ["t1"], "fields_by_task": {"t1": ["message"]}},
     )
 
     updates = await ingest_message(state)
@@ -149,7 +150,7 @@ async def test_same_day_clears_terminal_only_stale_state() -> None:
 
 
 @pytest.mark.asyncio
-async def test_same_day_keeps_non_terminal_state() -> None:
+async def test_same_day_keeps_blocked_non_terminal_state() -> None:
     state = OrchestratorState(
         user_id="u_ingest_7",
         phone_number="2348000000007",
@@ -165,9 +166,43 @@ async def test_same_day_keeps_non_terminal_state() -> None:
         },
         waves=[["t_transfer"]],
         current_wave_index=0,
+        pending_interrupt={
+            "kind": "input",
+            "task_ids": ["t_transfer"],
+            "fields_by_task": {"t_transfer": ["recipient_account"]},
+            "prompt": "Please share the account number.",
+        },
     )
 
     updates = await ingest_message(state)
 
     assert "tasks" not in updates
     assert "waves" not in updates
+
+
+@pytest.mark.asyncio
+async def test_same_day_clears_unblocked_non_terminal_state() -> None:
+    state = OrchestratorState(
+        user_id="u_ingest_8",
+        phone_number="2348000000008",
+        channel="telegram",
+        last_message_text="How many scheduled transaction is pending",
+        tasks={
+            "schedule_count": TaskSpec(
+                id="schedule_count",
+                type="schedule",
+                stage=TaskStage.DRAFT,
+                payload={"action": "list_scheduled_transactions"},
+            )
+        },
+        waves=[["schedule_count"]],
+        current_wave_index=0,
+    )
+
+    updates = await ingest_message(state)
+
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["current_wave_index"] == 0
+    assert updates["planner_output"] is None
+    assert updates["normalized_instruction"] is None

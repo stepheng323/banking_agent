@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.chat.src.agent.orchestrator.utils.task_payload import _derive_transfer_schedule_fields
 from shared.formatters.currency import format_naira_compact
 from shared.types.planner import (
     ContextFrameFollowupDecision,
@@ -84,7 +85,12 @@ _SEARCHABLE_DATA_KEYS = (
     "direction",
     "recipient_name",
     "recipient_resolved_name",
+    "target",
     "reference",
+    "schedule_id",
+    "schedule_time",
+    "next_run",
+    "recurrence",
     "status",
     "mandate_status",
     "is_default",
@@ -209,6 +215,8 @@ def _frame_noun(frame_type: ContextFrameType, *, plural: bool) -> str:
         return "saved beneficiaries" if plural else "saved beneficiary"
     if frame_type == ContextFrameType.ACCOUNT_LIST:
         return "linked accounts" if plural else "linked account"
+    if frame_type == ContextFrameType.SCHEDULE_LIST:
+        return "scheduled transactions" if plural else "scheduled transaction"
     if frame_type == ContextFrameType.TRANSACTION_LIST:
         return "transactions or results" if plural else "transaction or result"
     if frame_type == ContextFrameType.TRANSACTION_DETAIL:
@@ -223,6 +231,8 @@ def _frame_domain(frame_type: ContextFrameType) -> str | None:
         return "beneficiary"
     if frame_type == ContextFrameType.ACCOUNT_LIST:
         return "account"
+    if frame_type == ContextFrameType.SCHEDULE_LIST:
+        return "schedule"
     if frame_type in {ContextFrameType.TRANSACTION_LIST, ContextFrameType.TRANSACTION_DETAIL, ContextFrameType.RECEIPT}:
         return "query"
     return None
@@ -232,6 +242,9 @@ def _format_completeness_response(frame: ContextFrame) -> str | None:
     count = len(frame.items)
     if count <= 0:
         return None
+    if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
+        noun = "transaction" if count == 1 else "transactions"
+        return f"You have {count} pending scheduled {noun}."
     if count == 1:
         return f"Yes. That's the only {_frame_noun(frame.frame_type, plural=False)} I found."
     return f"Yes. Those are the {count} {_frame_noun(frame.frame_type, plural=True)} I found."
@@ -267,6 +280,17 @@ def _candidate_detail_fields(entity: ContextEntity) -> list[tuple[str, Any]]:
             "reference",
             "narration",
         )
+    elif entity.data.get("type") == "scheduled_transaction":
+        keys = (
+            "domain",
+            "amount",
+            "target",
+            "recurrence",
+            "schedule_time",
+            "next_run",
+            "source_bank_name",
+            "status",
+        )
     else:
         keys = (
             "summary",
@@ -300,6 +324,23 @@ def _candidate_detail_fields(entity: ContextEntity) -> list[tuple[str, Any]]:
 
 
 def _format_detail_block(entity: ContextEntity, *, ordinal: int | None = None) -> str | None:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    if data.get("type") == "scheduled_transaction":
+        header = entity.label or "Scheduled transaction"
+        if ordinal is not None:
+            header = f"{ordinal}. {header}"
+        lines = [header]
+        next_run = data.get("next_run")
+        source_bank = data.get("source_bank_name")
+        status = data.get("status")
+        if next_run:
+            lines.append(f"Next run: {next_run}")
+        if source_bank:
+            lines.append(f"From: {source_bank}")
+        if status:
+            lines.append(f"Status: {status}")
+        return "\n".join(lines) if len(lines) > 1 else header
+
     header = entity.label or "Item"
     if ordinal is not None:
         header = f"{ordinal}. {header}"
@@ -826,6 +867,8 @@ def _detail_header(frame: ContextFrame) -> str:
         return "Transaction Details"
     if frame.frame_type == ContextFrameType.RECEIPT:
         return "Receipt Details"
+    if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
+        return "Scheduled Transaction Details"
     return "Details"
 
 
@@ -934,6 +977,88 @@ def _canonical_decision(decision: str) -> str:
         "new_task": "start_new_task",
     }
     return aliases.get(decision, decision)
+
+
+def _new_schedule_management_task_id(state: OrchestratorState, allocated_ids: set[str] | None = None) -> str:
+    seen = set(state.tasks.keys()) | set(allocated_ids or set())
+    idx = 1
+    task_id = "context_schedule_management_1"
+    while task_id in seen:
+        idx += 1
+        task_id = f"context_schedule_management_{idx}"
+    return task_id
+
+
+def _schedule_entity_for_management(
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+) -> ContextEntity | None:
+    if frame.frame_type != ContextFrameType.SCHEDULE_LIST:
+        return None
+    if decision.selection_index is not None:
+        idx = decision.selection_index - 1
+        if 0 <= idx < len(frame.items):
+            return frame.items[idx]
+    target_text = _decision_target_text(decision)
+    if target_text:
+        matches = _find_matching_entities(frame, target_text)
+        if len(matches) == 1:
+            return matches[0]
+    if len(frame.items) == 1:
+        return frame.items[0]
+    return None
+
+
+def _build_schedule_management_response(
+    state: OrchestratorState,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+    text: str,
+) -> ContextFrameFollowupResponse | None:
+    semantic_decision = _canonical_decision(decision.decision)
+    if semantic_decision not in {"edit_schedule", "cancel_schedule"}:
+        return None
+    if (
+        frame.frame_type != ContextFrameType.SCHEDULE_LIST
+        or decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE
+    ):
+        return None
+
+    selected = _schedule_entity_for_management(frame, decision)
+    data = selected.data if selected is not None and isinstance(selected.data, dict) else {}
+    schedule_id = str(data.get("schedule_id") or selected.entity_id or "").strip() if selected is not None else ""
+    action = "edit_scheduled_transaction" if semantic_decision == "edit_schedule" else "cancel_scheduled_transaction"
+    payload: dict[str, Any] = {
+        "action": action,
+        "message": text,
+        "instruction": text,
+    }
+    if schedule_id:
+        payload["schedule_selector"] = schedule_id
+        payload["schedule_id"] = schedule_id
+
+    if semantic_decision == "edit_schedule":
+        schedule_fields = _derive_transfer_schedule_fields(
+            text,
+            schedule_text=None,
+            scheduled_text=None,
+            recurring_flag=None,
+        )
+        payload.update(schedule_fields)
+
+    task_id = _new_schedule_management_task_id(state)
+    task = TaskSpec(
+        id=task_id,
+        type="schedule",
+        stage=TaskStage.DRAFT,
+        payload=payload,
+    )
+    return ContextFrameFollowupResponse(
+        recent_domain_focus="schedule",
+        context_frames=_context_frames_after_surface_answer(state, frame, decision),
+        tasks={task_id: task},
+        waves=[[task_id]],
+    )
 
 
 def _format_filter_response(
@@ -1191,6 +1316,8 @@ def _format_frame_clarification_response(frame: ContextFrame) -> str | None:
         return "Are you asking about the linked accounts I just showed?"
     if domain == "query":
         return "Are you asking about the result I just showed?"
+    if domain == "schedule":
+        return "Are you asking about the scheduled transactions I just showed?"
     return "Are you asking about the items I just showed?"
 
 
@@ -1338,6 +1465,8 @@ def _frame_supports_decision(frame: ContextFrame, decision: ContextFrameFollowup
     semantic_decision = _canonical_decision(decision.decision)
     if semantic_decision in {"start_new_task", "unclear", "answer_completeness", "compare_items", "replay_tasks"}:
         return True
+    if semantic_decision in {"edit_schedule", "cancel_schedule"}:
+        return frame.frame_type == ContextFrameType.SCHEDULE_LIST
     if semantic_decision in {"show_details", "select_item", "filter_items", "lookup_entity", "explain_result"}:
         if _decision_has_entity_match(frame, decision):
             return True
@@ -1878,6 +2007,9 @@ class SurfaceAnswerEngine:
                 request.text,
                 replay_modifier=request.replay_modifier,
             )
+
+        if _canonical_decision(decision.decision) in {"edit_schedule", "cancel_schedule"}:
+            return _build_schedule_management_response(request.state, frame, decision, request.text)
 
         response = _format_semantic_decision_response(frame, decision, text=request.text)
         if not response:

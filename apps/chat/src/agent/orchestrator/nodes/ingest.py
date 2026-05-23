@@ -21,6 +21,18 @@ def _all_tasks_terminal(state: OrchestratorState) -> bool:
     return all(task.stage in _TERMINAL_TASK_STAGES for task in state.tasks.values())
 
 
+def _has_unblocked_nonterminal_wave(state: OrchestratorState) -> bool:
+    if not state.tasks or state.pending_interrupt is not None:
+        return False
+    if not state.waves or state.current_wave_index >= len(state.waves):
+        return False
+    current_wave = state.waves[state.current_wave_index]
+    return any(
+        (task := state.tasks.get(task_id)) is not None and task.stage not in _TERMINAL_TASK_STAGES
+        for task_id in current_wave
+    )
+
+
 async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
     """Entry point. Setup state for the new turn."""
     logger.info("ingest_message", user=state.phone_number, text=state.last_message_text)
@@ -73,6 +85,36 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
             phone_number=state.phone_number,
             task_count=len(state.tasks),
             wave_count=len(state.waves),
+        )
+        updates.update(
+            {
+                "tasks": {},
+                "waves": [],
+                "current_wave_index": 0,
+                "task_results": {},
+                "planner_output": None,
+                "normalized_instruction": None,
+                "session_stack": [],
+                "active_domain": None,
+                "pin_verified": False,
+            }
+        )
+    elif _has_unblocked_nonterminal_wave(state):
+        logger.warning(
+            "ingest_unblocked_nonterminal_state_reset",
+            phone_number=state.phone_number,
+            current_wave_index=state.current_wave_index,
+            wave_count=len(state.waves),
+            task_shapes=[
+                {
+                    "task_id": task_id,
+                    "type": state.tasks[task_id].type,
+                    "stage": state.tasks[task_id].stage.value,
+                    "action": state.tasks[task_id].payload.get("action"),
+                }
+                for task_id in state.waves[state.current_wave_index]
+                if task_id in state.tasks and state.tasks[task_id].stage not in _TERMINAL_TASK_STAGES
+            ],
         )
         updates.update(
             {

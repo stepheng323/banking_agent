@@ -38,7 +38,7 @@
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_followup": "If you want, I still fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope_firm": "Make we switch back to banking. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
-    "clarify": "I no catch the banking request well. Tell me wetin you wan do, like transfer, buy airtime, or check transactions.",
+    "clarify": "I fit help with banking tasks. Try: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "I don get am.",
       "settled": "No wahala, that one don settle.",
@@ -842,6 +842,10 @@
         "careful": "Check Transfer Well",
         "trusted_careful": "Review Transfer"
       },
+      "scheduled_transfer": "Confirm Scheduled Transfer",
+      "scheduled_airtime": "Confirm Scheduled Airtime Purchase",
+      "scheduled_data": "Confirm Scheduled Data Purchase",
+      "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
       "data": "Confirm Data Purchase",
       "mixed": "Confirm Transactions",

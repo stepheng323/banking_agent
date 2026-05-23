@@ -917,6 +917,8 @@ async def test_message_consumer_accepts_receipt_image_choice(
     orchestrator.deps = SimpleNamespace(actionable_message_repo=repo)
 
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "load_channel_identity_user", AsyncMock(return_value=None))
+    monkeypatch.setattr(message_consumer_module, "store_channel_identity_user", AsyncMock())
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
         "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
@@ -964,6 +966,8 @@ async def test_message_consumer_accepts_telegram_receipt_image_choice_removes_bu
     orchestrator.deps = SimpleNamespace(actionable_message_repo=repo)
 
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "load_channel_identity_user", AsyncMock(return_value=None))
+    monkeypatch.setattr(message_consumer_module, "store_channel_identity_user", AsyncMock())
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
         "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
@@ -1165,6 +1169,34 @@ async def test_pin_verified_event_resumes_once_after_claim(monkeypatch: pytest.M
         }
     ]
     assert len(sent_payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_pin_verified_event_accepts_schedule_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    auth_service = _AuthorizationServiceStub(
+        AuthorizationResult(verified=True, user_id="u1", transaction_type="schedule"),
+        claim_results=[True],
+    )
+
+    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+
+    await consumer.process_flow_event(_pin_verified_event(flow_type="schedule"))
+
+    assert orchestrator.resume_calls == [
+        {
+            "phone_number": "2348162511023",
+            "flow_type": "schedule",
+            "pin_verified": "True",
+            "channel": "whatsapp",
+        }
+    ]
 
 
 @pytest.mark.asyncio

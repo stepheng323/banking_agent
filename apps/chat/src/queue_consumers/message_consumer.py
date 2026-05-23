@@ -47,7 +47,7 @@ from shared.utils.logging import get_logger, log_fingerprint
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
-_TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data"}
+_TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data", "schedule"}
 _TELEGRAM_CHANNEL = "telegram"
 _WHATSAPP_CHANNEL = "whatsapp"
 _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"

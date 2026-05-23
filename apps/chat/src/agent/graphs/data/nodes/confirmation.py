@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.graphs.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.graphs.data.pipeline.base import PipelineStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -31,6 +32,9 @@ class ConfirmationStep(PipelineStep):
                 },
                 locale=locale,
             )
+            schedule_line = format_schedule_confirmation_line(payload)
+            if schedule_line:
+                summary = f"{summary}\n\n{schedule_line}"
         else:
             summary = render_message(
                 "data.confirmation.buy_network_for_phone",

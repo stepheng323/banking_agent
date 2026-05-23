@@ -29,9 +29,18 @@ _TRANSFER_CANCEL_SCHEDULE_RE = re.compile(
     r"\b(cancel|stop|delete|remove)\b[\w\s]{0,40}\b(schedule|scheduled|recurring|auto)\b",
     re.IGNORECASE,
 )
+_TRANSFER_EDIT_SCHEDULE_RE = re.compile(
+    r"\b(change|edit|update|move|shift|reschedule)\b[\w\s]{0,60}\b(schedule|scheduled|recurring|auto|transfer|airtime|data)\b"
+    r"|\b(schedule|scheduled|recurring|auto)\b[\w\s]{0,60}\b(change|edit|update|move|shift|reschedule)\b",
+    re.IGNORECASE,
+)
+_TRANSFER_LIST_SCHEDULE_RE = re.compile(
+    r"\b(show|list|find|view|check)\b[\w\s]{0,40}\b(schedule|scheduled|recurring|auto)\b",
+    re.IGNORECASE,
+)
 _TRANSFER_RECURRING_RE = re.compile(r"\b(every|daily|weekly|monthly|recurring)\b", re.IGNORECASE)
 _TRANSFER_SCHEDULE_RE = re.compile(
-    r"\b(schedule|scheduled|tomorrow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b",
+    r"\b(schedule|scheduled|tomorrow|tommorow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b",
     re.IGNORECASE,
 )
 
@@ -101,11 +110,22 @@ def _build_transaction_extractor_context(
 def _infer_transfer_switch_action(text: str, feature_tokens: set[str]) -> str:
     if _TRANSFER_CANCEL_SCHEDULE_RE.search(text):
         return "cancel_scheduled_transfer"
+    if _TRANSFER_EDIT_SCHEDULE_RE.search(text):
+        return "edit_scheduled_transaction"
+    if _TRANSFER_LIST_SCHEDULE_RE.search(text):
+        return "list_scheduled_transactions"
     if "RECURRING" in feature_tokens or _TRANSFER_RECURRING_RE.search(text):
         return "recurring_transfer"
     if "SCHEDULED" in feature_tokens or _TRANSFER_SCHEDULE_RE.search(text):
         return "schedule_transfer"
     return "send_money"
+
+def _map_schedule_action_for_domain(action: str, target_intent: str) -> str:
+    if target_intent == "airtime" and action in {"schedule_transfer", "recurring_transfer"}:
+        return "recurring_airtime" if action == "recurring_transfer" else "schedule_airtime"
+    if target_intent == "data" and action in {"schedule_transfer", "recurring_transfer"}:
+        return "recurring_data" if action == "recurring_transfer" else "schedule_data"
+    return action
 
 async def _extract_interrupt_switch_entities(
     *,
@@ -248,10 +268,10 @@ async def _seed_airtime_switch_payload(
     interrupt: Any,
     text: str,
     services: dict[str, Any],
-) -> tuple[TaskParameters, dict[str, Any], bool]:
+) -> tuple[TaskParameters, dict[str, Any], str, bool]:
     parameters = TaskParameters()
     payload_seed: dict[str, Any] = {}
-    entities, _features, _acknowledgment = await _extract_interrupt_switch_entities(
+    entities, features, _acknowledgment = await _extract_interrupt_switch_entities(
         state=state,
         interrupt=interrupt,
         text=text,
@@ -293,8 +313,11 @@ async def _seed_airtime_switch_payload(
     if network:
         payload_seed["network"] = network
 
-    preseeded = bool(entities or payload_seed)
-    return parameters, payload_seed, preseeded
+    action = _map_schedule_action_for_domain(_infer_transfer_switch_action(text, features), "airtime")
+    if action == "send_money":
+        action = "buy_airtime"
+    preseeded = bool(features or entities or payload_seed)
+    return parameters, payload_seed, action, preseeded
 
 async def _seed_data_switch_payload(
     *,
@@ -302,10 +325,10 @@ async def _seed_data_switch_payload(
     interrupt: Any,
     text: str,
     services: dict[str, Any],
-) -> tuple[TaskParameters, dict[str, Any], bool]:
+) -> tuple[TaskParameters, dict[str, Any], str, bool]:
     parameters = TaskParameters()
     payload_seed: dict[str, Any] = {}
-    entities, _features, _acknowledgment = await _extract_interrupt_switch_entities(
+    entities, features, _acknowledgment = await _extract_interrupt_switch_entities(
         state=state,
         interrupt=interrupt,
         text=text,
@@ -338,8 +361,11 @@ async def _seed_data_switch_payload(
     if recipient_name:
         parameters.recipient_name = recipient_name
 
-    preseeded = bool(entities or payload_seed)
-    return parameters, payload_seed, preseeded
+    action = _map_schedule_action_for_domain(_infer_transfer_switch_action(text, features), "data")
+    if action == "send_money":
+        action = "buy_data"
+    preseeded = bool(features or entities or payload_seed)
+    return parameters, payload_seed, action, preseeded
 
 async def _build_enriched_transaction_switch_tasks(
     *,
@@ -357,21 +383,19 @@ async def _build_enriched_transaction_switch_tasks(
             services=services,
         )
     elif target_intent == "airtime":
-        parameters, payload_seed, preseeded = await _seed_airtime_switch_payload(
+        parameters, payload_seed, action, preseeded = await _seed_airtime_switch_payload(
             state=state,
             interrupt=interrupt,
             text=text,
             services=services,
         )
-        action = "buy_airtime"
     else:
-        parameters, payload_seed, preseeded = await _seed_data_switch_payload(
+        parameters, payload_seed, action, preseeded = await _seed_data_switch_payload(
             state=state,
             interrupt=interrupt,
             text=text,
             services=services,
         )
-        action = "buy_data"
 
     base_task_id = _next_interrupt_task_id(state=state, target_intent=target_intent)
     planned_tasks = [

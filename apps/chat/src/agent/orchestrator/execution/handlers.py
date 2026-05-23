@@ -282,6 +282,43 @@ def _push_account_list_frame(ctx: ExecutionContext, accounts: list[dict[str, Any
     logger.info("context_frame_pushed", type="account_list", count=len(entities))
 
 
+def _push_schedule_list_frame(ctx: ExecutionContext, items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+
+    entities: list[ContextEntity] = []
+    for idx, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        data = item.get("data")
+        if not isinstance(data, dict):
+            data = {}
+        label = str(item.get("label") or data.get("summary") or f"Scheduled transaction {idx}").strip()
+        entities.append(
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id=str(item.get("entity_id") or data.get("schedule_id") or idx),
+                label=label,
+                data=data,
+            )
+        )
+
+    if not entities:
+        return
+
+    frame = ContextFrame(
+        frame_id=f"schedule_list_{int(time.time())}",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=entities,
+        focus_index=0,
+        created_at_ts=int(time.time()),
+        source_message_id=ctx.state.last_message_id,
+    )
+    OrchestratorContextManager().push_frame(ctx.state, frame)
+    ctx.agg.updates["context_frames"] = ctx.state.context_frames
+    logger.info("context_frame_pushed", type="schedule_list", count=len(entities))
+
+
 def _push_query_surface_frame(ctx: ExecutionContext, query_result: Any) -> None:
     if query_result is None:
         return
@@ -448,6 +485,7 @@ def _handle_transaction_outcome(
     elif result.outcome == TransactionOutcome.NEEDS_AUTH:
         task.stage = TaskStage.AWAITING_AUTH
         agg.needs_auth_tasks.append(task_id)
+        _set_confirmation(task, result, gate_on=confirmation_gate)
 
     elif result.outcome == TransactionOutcome.FAILED:
         task.stage = TaskStage.FAILED
@@ -603,6 +641,10 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
     )
 
     _apply_result_patch(task, result)
+    if isinstance(result.patch, dict):
+        schedule_items = result.patch.get("schedule_context_items")
+        if isinstance(schedule_items, list):
+            _push_schedule_list_frame(ctx, [item for item in schedule_items if isinstance(item, dict)])
     if result.response:
         ctx.agg.say(result.response)
 
@@ -648,6 +690,66 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         if stack and stack[-1].domain == "transfer":
             stack.pop()
             ctx.agg.updates["session_stack"] = stack
+
+
+async def handle_schedule_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    """Run scheduled transaction management through the transfer scheduler worker.
+
+    Schedule management is planner-owned and can be read-only. It must not pass
+    through the transfer mandate gate just because the implementation currently
+    lives on the transfer worker.
+    """
+
+    worker = _get_worker(
+        ctx.services,
+        "transfer",
+        task,
+        log_key="schedule_worker_missing",
+        error_message=render_message("orchestrator.error.transfer_worker_unavailable", _state_locale(ctx.state)),
+    )
+    if not worker:
+        return
+
+    context_data = {
+        "phone_number": ctx.state.phone_number,
+        "channel": ctx.state.channel,
+        "channel_identity": ctx.state.channel_identity,
+        "user_id": ctx.state.loaded_context.get("user_id"),
+        "accounts": ctx.state.loaded_context.get("accounts", []),
+        "all_accounts": ctx.state.loaded_context.get("accounts", []),
+        "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "language": _state_locale(ctx.state),
+        "required_fields": [],
+        "previous_response": None,
+        "confirmation_task_count": None,
+        "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
+    }
+    user_msg = _maybe_user_message(task, ctx.state)
+    logger.info("schedule_worker_start", payload=task.payload, task_id=task_id)
+    result = await worker.run(
+        payload=task.payload,
+        context=context_data,
+        user_message=user_msg,
+        pin_verified=ctx.state.pin_verified,
+    )
+    logger.info("schedule_worker_returned", outcome=result.outcome, task_id=task_id)
+
+    _apply_result_patch(task, result)
+    if isinstance(result.patch, dict):
+        schedule_items = result.patch.get("schedule_context_items")
+        if isinstance(schedule_items, list):
+            _push_schedule_list_frame(ctx, [item for item in schedule_items if isinstance(item, dict)])
+    if result.response:
+        ctx.agg.say(result.response)
+
+    _handle_transaction_outcome(
+        task,
+        task_id,
+        result,
+        ctx.agg,
+        confirmation_gate="snapshot",
+        default_error=None,
+    )
 
 
 async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:

@@ -27,10 +27,34 @@
         "recurring_transfer": {
           "supported": true
         },
+        "schedule_airtime": {
+          "supported": true
+        },
+        "recurring_airtime": {
+          "supported": true
+        },
+        "schedule_data": {
+          "supported": true
+        },
+        "recurring_data": {
+          "supported": true
+        },
         "cancel_scheduled_transfer": {
           "supported": true
         },
         "list_scheduled_transfers": {
+          "supported": true
+        },
+        "list_scheduled_transactions": {
+          "supported": true
+        },
+        "find_scheduled_transaction": {
+          "supported": true
+        },
+        "cancel_scheduled_transaction": {
+          "supported": true
+        },
+        "edit_scheduled_transaction": {
           "supported": true
         }
       }

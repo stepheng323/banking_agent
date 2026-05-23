@@ -159,6 +159,8 @@ def test_transfer_scheduling_rules_present() -> None:
     assert "recurring_transfer" in runtime_prompt
     assert "list_scheduled_transfers" in runtime_prompt
     assert "cancel_scheduled_transfer" in runtime_prompt
+    assert "count/existence->schedule_response_mode=count" in runtime_prompt
+    assert "schedule_response_mode=count" in runtime_prompt
 
 
 def test_money_move_fallback_examples_present() -> None:
@@ -260,9 +262,11 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     """Semantic-router prompt should require all explicit mixed transaction executors."""
     assert "direct_context_answer" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "domain_query" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "domain_schedule" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "domain_account" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "planner_mixed" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "expected_transaction_executors" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "schedule_response_mode" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "explicit mixed transaction requests" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "include every mentioned executor" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '["transfer","airtime"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
@@ -285,6 +289,24 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     assert '"Where did we stop?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"What are we doing again?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Show my last transaction" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "Scheduled/recurring instruction management is not transaction-history query" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "never use this for scheduled/recurring instruction status or counts; use domain_schedule" in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert '"How many scheduled transactions are pending" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"How many scheduled transactions are pending" -> domain_schedule, schedule_response_mode=count' in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert '"Do I have any pending scheduled transactions?" -> domain_schedule, schedule_response_mode=count' in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert '"Do i have any pending scheduled transsction" -> domain_schedule, schedule_response_mode=count' in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert '"How many scheduled transaction is pending" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Wetin be my scheduled payments" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Elo ni scheduled payments mi" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Montre mes paiements programmés" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Show my beneficiaries" -> domain_beneficiary' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Send 5k to Mum" -> domain_transfer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Buy 2k airtime for 08031234567" -> domain_airtime' in SEMANTIC_ROUTER_SYSTEM_PROMPT

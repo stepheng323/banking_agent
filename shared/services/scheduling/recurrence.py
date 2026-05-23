@@ -10,6 +10,29 @@ SCHEDULE_TIMEZONE = "Africa/Lagos"
 DEFAULT_SCHEDULE_TIME_TEXT = "09:00"
 DEFAULT_SCHEDULE_TIME_LOCAL = time(hour=9, minute=0)
 _TIME_PATTERN = "%H:%M"
+_LAGOS_ZONE = ZoneInfo(SCHEDULE_TIMEZONE)
+
+
+def now_lagos(now_utc: datetime | None = None) -> datetime:
+    """Return the current time in Africa/Lagos."""
+    if now_utc is None:
+        return datetime.now(_LAGOS_ZONE)
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=UTC)
+    return now_utc.astimezone(_LAGOS_ZONE)
+
+
+def today_lagos(now_utc: datetime | None = None) -> date:
+    """Return the current Africa/Lagos date."""
+    return now_lagos(now_utc).date()
+
+
+def format_lagos_schedule_datetime(next_run_at_utc: datetime) -> str:
+    """Format a UTC schedule timestamp for user-facing Lagos-time copy."""
+    if next_run_at_utc.tzinfo is None:
+        next_run_at_utc = next_run_at_utc.replace(tzinfo=UTC)
+    local = next_run_at_utc.astimezone(_LAGOS_ZONE)
+    return local.strftime("%B %d, %Y at %I:%M %p").replace(" 0", " ") + " WAT"
 
 
 def normalize_time_local(value: str | None) -> str | None:
@@ -67,9 +90,12 @@ def compute_initial_next_run_utc(
     now_utc: datetime | None = None,
 ) -> datetime | None:
     """Compute first run timestamp from schedule metadata."""
-    now_utc = (now_utc or datetime.now(UTC)).astimezone(UTC).replace(tzinfo=None)
+    now_anchor = now_utc or datetime.now(UTC)
+    if now_anchor.tzinfo is None:
+        now_anchor = now_anchor.replace(tzinfo=UTC)
+    now_utc = now_anchor.astimezone(UTC).replace(tzinfo=None)
     base_time = _parse_local_time(local_time) or DEFAULT_SCHEDULE_TIME_LOCAL
-    local_start = _parse_local_date(start_date) or now_utc.date()
+    local_start = _parse_local_date(start_date) or today_lagos(now_utc)
     recurrence = (recurrence_type or "").strip().lower()
 
     if recurrence == "one_time":

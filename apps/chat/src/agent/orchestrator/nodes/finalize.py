@@ -581,7 +581,7 @@ async def _handle_completed_tasks(
         and len(visible_tasks[0].payload.get("recipients", [])) <= 1
     )
 
-    read_only_task_types = {"account", "query", "faq", "support", "beneficiary"}
+    read_only_task_types = {"account", "query", "faq", "support", "beneficiary", "schedule"}
     all_read_only = all(task.type in read_only_task_types for task in visible_tasks)
 
     is_async_transaction = len(visible_tasks) == 1 and visible_tasks[0].type in ("airtime", "data")

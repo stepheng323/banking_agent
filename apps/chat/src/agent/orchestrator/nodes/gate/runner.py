@@ -19,6 +19,10 @@ from apps.chat.src.agent.orchestrator.nodes.planner.context import (
     TurnContextSummary,
     build_router_context_from_summary,
 )
+from apps.chat.src.agent.orchestrator.utils.task_payload import (
+    _derive_transfer_schedule_fields,
+    _infer_schedule_action_from_text,
+)
 from shared.branding import brand_name_aliases, legacy_brand_names, normalize_brand_name
 from shared.i18n import LocaleManager
 from shared.i18n.message_keys import MessageKey
@@ -574,8 +578,9 @@ def _semantic_route_mode(route: Any) -> str | None:
 def _build_direct_domain_task(
     *,
     state: OrchestratorState,
-    domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data"],
+    domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule"],
     mode: str | None = None,
+    schedule_response_mode: Literal["list", "count"] | None = None,
 ) -> tuple[str, TaskSpec]:
     if domain == "query":
         task_id = _next_direct_query_task_id(state.tasks)
@@ -589,10 +594,33 @@ def _build_direct_domain_task(
     if domain == "query":
         if mode == "new":
             payload["force_new_query"] = True
+    elif domain in {"transfer", "airtime", "data"}:
+        inferred_schedule_action = _infer_schedule_action_from_text(str(state.last_message_text or ""))
+        if inferred_schedule_action:
+            domain_schedule_action = {
+                "transfer": inferred_schedule_action,
+                "airtime": "recurring_airtime"
+                if inferred_schedule_action == "recurring_transfer"
+                else "schedule_airtime",
+                "data": "recurring_data" if inferred_schedule_action == "recurring_transfer" else "schedule_data",
+            }[domain]
+            payload["action"] = domain_schedule_action
+            payload.update(
+                _derive_transfer_schedule_fields(
+                    str(state.last_message_text or ""),
+                    schedule_text=None,
+                    scheduled_text=None,
+                    recurring_flag=domain_schedule_action.startswith("recurring_"),
+                )
+            )
     elif domain == "beneficiary":
         payload["action"] = "list_beneficiaries"
         payload["intent"] = "list_beneficiaries"
         payload["list_intent"] = True
+    elif domain == "schedule":
+        payload["action"] = "list_scheduled_transactions"
+        if schedule_response_mode in {"list", "count"}:
+            payload["schedule_response_mode"] = schedule_response_mode
 
     spec = TaskSpec(
         id=task_id,

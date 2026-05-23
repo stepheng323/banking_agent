@@ -2,9 +2,14 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
+from apps.chat.src.agent.graphs.__shared__.scheduling import (
+    SCHEDULE_FIELD_NAMES,
+    parse_schedule_slot_patch,
+    schedule_required_prompt,
+)
 from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.graphs.data.pipeline.base import PipelineStep
-from apps.chat.src.agent.orchestrator.models.domain import TransactionResult
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -64,6 +69,27 @@ class ExtractionStep(PipelineStep):
         raw_required_fields = getattr(worker_context, "required_fields", [])
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         waiting_for_source_account = "source_account_id" in required_fields
+        schedule_required_fields = [field for field in required_fields if field in SCHEDULE_FIELD_NAMES]
+        if schedule_required_fields:
+            schedule_patch, remaining_schedule_fields = parse_schedule_slot_patch(
+                self.user_message,
+                schedule_required_fields,
+            )
+            if schedule_patch:
+                for field, value in schedule_patch.items():
+                    if field == "confirmation":
+                        payload.confirmation = value
+                    elif hasattr(payload, field):
+                        setattr(payload, field, value)
+                payload.skip_extraction = False
+                return None
+            if len(schedule_required_fields) == len(required_fields):
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=remaining_schedule_fields or schedule_required_fields,
+                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields),
+                    patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
+                )
         numeric_patch = try_extract_numeric_index(self.user_message, "data") if waiting_for_source_account else None
         if numeric_patch:
             payload.source_account_index = numeric_patch["source_account_index"]

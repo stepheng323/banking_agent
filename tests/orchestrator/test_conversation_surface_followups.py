@@ -1719,6 +1719,61 @@ async def test_completed_transfer_replay_applies_structured_modifier_extraction(
 
 
 @pytest.mark.asyncio
+async def test_gate_context_frame_display_shortcut_avoids_llm_for_schedule_show_me() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_1",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "domain": "Transfer",
+                    "amount": "₦20,000",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "recurrence": "One Time",
+                    "schedule_time": "2:00 PM Lagos time",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _SurfaceFollowupPlanner(ContextFrameFollowupDecision(decision="unclear", confidence=0.0))
+    state = OrchestratorState(
+        user_id="u_schedule_show_gate",
+        phone_number="2348000000026",
+        channel="telegram",
+        last_message_text="show me",
+        context_frames=[frame],
+    )
+    ctx = GateContext(
+        state=state,
+        config=_config(planner),
+        redis_client=None,
+        task_planner=planner,
+        conversation_responder=None,
+        message_text=state.last_message_text or "",
+        current_locale="en",
+        gate_updates={},
+        live_pending_interrupt=False,
+        phrase_heavy_fastpath_allowed=True,
+    )
+
+    updates = await _stage_context_frame_followup(ctx)
+
+    assert updates is not None
+    assert updates["final_response"]
+    assert "Scheduled Transaction Details" in updates["final_response"]
+    assert "FATIMA ZAHRA MUSA" in updates["final_response"]
+    assert "Target:" not in updates["final_response"]
+    assert planner.last_frame_context is None
+
+
+@pytest.mark.asyncio
 async def test_gate_context_frame_replay_applies_structured_modifier_extraction() -> None:
     frame = ContextFrame(
         frame_id="tx_gate_replay_structured_modifier",

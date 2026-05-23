@@ -292,7 +292,7 @@ async def test_send_text_streamed_skips_draft_when_feature_disabled(monkeypatch:
 @pytest.mark.asyncio
 async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.narya.ai")
+    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.example.test")
     client = TelegramClient()
 
     calls: list[dict[str, object]] = []
@@ -352,7 +352,7 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
 @pytest.mark.asyncio
 async def test_send_mini_app_keeps_pin_details_in_chat_not_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.narya.ai")
+    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.example.test")
     client = TelegramClient()
 
     bootstraps: list[dict[str, object]] = []
@@ -390,7 +390,7 @@ async def test_send_mini_app_keeps_pin_details_in_chat_not_bootstrap(monkeypatch
             "chat_id": "12345",
             "flow_token": "transfer-pin-idem-12345",
             "endpoint": "pin",
-            "extra": {},
+            "extra": {"submit_label": "Authorize"},
         }
     ]
 

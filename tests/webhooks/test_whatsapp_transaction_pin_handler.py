@@ -70,6 +70,15 @@ def test_parse_transaction_pin_flow_token_accepts_transaction_prefix_without_typ
     assert parsed.phone_hint == "2348162511023"
 
 
+def test_parse_transaction_pin_flow_token_accepts_schedule_prefix() -> None:
+    parsed = parse_transaction_pin_flow_token("schedule-pin-idem-1-2348162511023")
+
+    assert parsed is not None
+    assert parsed.transaction_type == "schedule"
+    assert parsed.idempotency_key == "idem-1"
+    assert parsed.phone_hint == "2348162511023"
+
+
 @pytest.mark.asyncio
 async def test_whatsapp_transaction_pin_rejects_missing_flow_token() -> None:
     response = await handle_transaction_pin(

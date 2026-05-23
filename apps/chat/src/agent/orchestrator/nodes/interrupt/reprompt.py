@@ -22,6 +22,7 @@ from shared.formatters.prompts import format_auth_reason, sanitize_recipient_dis
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transaction_copy import build_confirmation_header
 from shared.i18n import render_message
+from shared.i18n.personality import transfer_personality_context_from_payload
 from shared.types.planner import (
     InterruptRouteDecision,
 )
@@ -73,6 +74,12 @@ def _build_confirmation_reprompt_outbox(
 
     confirmation_payload = first_task.payload.get("confirmation") or {}
     snapshot = confirmation_payload.get("snapshot") or {}
+    confirmation_personality_context = None
+    if len(task_ids) == 1 and first_task.type == "transfer":
+        confirmation_personality_context = transfer_personality_context_from_payload(
+            first_task.payload,
+            moment="confirmation",
+        )
     return [
         {
             "type": "request_confirmation",
@@ -81,6 +88,12 @@ def _build_confirmation_reprompt_outbox(
                 task_types=[state.tasks[task_id].type for task_id in task_ids if task_id in state.tasks],
                 locale=locale,
                 task_count=len(task_ids),
+                task_actions=[
+                    str(state.tasks[task_id].payload.get("action") or "")
+                    for task_id in task_ids
+                    if task_id in state.tasks
+                ],
+                personality_context=confirmation_personality_context,
             ),
             "summary": summary,
             "snapshot": snapshot,

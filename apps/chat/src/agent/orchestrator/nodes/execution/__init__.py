@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.execution.handlers import (
     handle_faq_task,
     handle_orchestrator_task,
     handle_query_task,
+    handle_schedule_task,
     handle_support_task,
     handle_transfer_task,
 )
@@ -42,6 +43,7 @@ from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transaction_copy import build_confirmation_header, format_amount_compact
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_intent_line
 from shared.i18n import render_message
+from shared.i18n.personality import transfer_personality_context_from_payload
 from shared.services.funding.coordinator import BatchFundingCoordinator, SourceAffinity, TransferDemand
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
@@ -121,6 +123,28 @@ def _gate_task_ids(
         ],
         current_wave,
     )
+
+
+def _non_terminal_wave_task_ids(state: OrchestratorState, current_wave: list[str]) -> list[str]:
+    return [
+        task_id
+        for task_id in current_wave
+        if (task := state.tasks.get(task_id)) is not None and task.stage not in TERMINAL_STAGES
+    ]
+
+
+def _fail_stalled_wave_tasks(
+    *,
+    state: OrchestratorState,
+    current_wave: list[str],
+    reason: str,
+) -> list[str]:
+    stalled_task_ids = _non_terminal_wave_task_ids(state, current_wave)
+    for task_id in stalled_task_ids:
+        task = state.tasks[task_id]
+        task.stage = TaskStage.FAILED
+        task.payload["error"] = reason
+    return stalled_task_ids
 
 
 def _is_source_selection_reply(state: OrchestratorState, task_id: str) -> bool:
@@ -497,6 +521,14 @@ def _compact_confirmation_update_message(update_messages: list[str], locale: str
 
 
 def _auth_header_for_tasks(state: OrchestratorState, task_ids: list[str], *, locale: str) -> str:
+    for task_id in task_ids:
+        task = state.tasks.get(task_id)
+        payload = task.payload if task is not None and isinstance(task.payload, dict) else {}
+        if (
+            str(payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
+            and payload.get("schedule_edit_requires_auth") is True
+        ):
+            return "Authorize Schedule Update"
     task_types = {state.tasks[task_id].type for task_id in task_ids if task_id in state.tasks}
     if len(task_types) == 1:
         return format_auth_reason(next(iter(task_types)), locale=locale)
@@ -811,6 +843,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         "data": handle_data_task,
         "faq": handle_faq_task,
         "support": handle_support_task,
+        "schedule": handle_schedule_task,
         "orchestrator": handle_orchestrator_task,
     }
 
@@ -1264,6 +1297,18 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             stage=TaskStage.AWAITING_CONFIRMATION,
         )
         if not confirm_task_ids:
+            stalled = _fail_stalled_wave_tasks(
+                state=state,
+                current_wave=current_wave,
+                reason="confirmation gate produced no actionable tasks",
+            )
+            logger.error(
+                "advance_wave_confirmation_gate_stalled",
+                wave=current_wave,
+                stalled_tasks=stalled,
+                candidate_task_ids=agg.needs_confirm_tasks,
+            )
+            updates["current_wave_index"] = state.current_wave_index + 1
             return cast(dict[str, Any], updates)
         accounts_raw = state.loaded_context.get("accounts") or []
         accounts = [account for account in accounts_raw if isinstance(account, dict)]
@@ -1297,6 +1342,15 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         if update_msg:
             outbox.append({"type": "say", "text": update_msg})
 
+        confirmation_personality_context = None
+        if len(confirm_task_ids) == 1:
+            confirmation_task = state.tasks.get(confirm_task_ids[0])
+            if confirmation_task and confirmation_task.type == "transfer":
+                confirmation_personality_context = transfer_personality_context_from_payload(
+                    confirmation_task.payload,
+                    moment="confirmation",
+                )
+
         outbox.append(
             {
                 "type": "request_confirmation",
@@ -1305,6 +1359,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     task_types=[state.tasks[task_id].type for task_id in confirm_task_ids if task_id in state.tasks],
                     locale=locale,
                     task_count=len(confirm_task_ids),
+                    task_actions=[
+                        str(state.tasks[task_id].payload.get("action") or "")
+                        for task_id in confirm_task_ids
+                        if task_id in state.tasks
+                    ],
+                    personality_context=confirmation_personality_context,
                 ),
                 "summary": summ,
                 "snapshot": snap,
@@ -1331,6 +1391,18 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             stage=TaskStage.AWAITING_AUTH,
         )
         if not auth_task_ids:
+            stalled = _fail_stalled_wave_tasks(
+                state=state,
+                current_wave=current_wave,
+                reason="auth gate produced no actionable tasks",
+            )
+            logger.error(
+                "advance_wave_auth_gate_stalled",
+                wave=current_wave,
+                stalled_tasks=stalled,
+                candidate_task_ids=agg.needs_auth_tasks,
+            )
+            updates["current_wave_index"] = state.current_wave_index + 1
             return cast(dict[str, Any], updates)
 
         first_task = state.tasks[auth_task_ids[0]]
@@ -1382,6 +1454,28 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             break
 
     if all_terminal and "current_wave_index" not in updates:
+        updates["current_wave_index"] = state.current_wave_index + 1
+    elif not all_terminal and "pending_interrupt" not in updates:
+        stalled = _fail_stalled_wave_tasks(
+            state=state,
+            current_wave=current_wave,
+            reason="task made no terminal or blocking progress",
+        )
+        logger.error(
+            "advance_wave_stalled_without_stop_condition",
+            wave=current_wave,
+            stalled_tasks=stalled,
+            task_shapes=[
+                {
+                    "task_id": task_id,
+                    "type": state.tasks[task_id].type,
+                    "stage": state.tasks[task_id].stage.value,
+                    "action": state.tasks[task_id].payload.get("action"),
+                }
+                for task_id in stalled
+                if task_id in state.tasks
+            ],
+        )
         updates["current_wave_index"] = state.current_wave_index + 1
 
     return cast(dict[str, Any], updates)

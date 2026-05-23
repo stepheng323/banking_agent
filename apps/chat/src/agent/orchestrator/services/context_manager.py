@@ -126,6 +126,15 @@ class OrchestratorContextManager:
                     items.append(f"[{idx}] {label} ({amount_text})")
                 items_str = ", ".join(items)
 
+            elif frame.frame_type == ContextFrameType.SCHEDULE_LIST:
+                items = []
+                for idx, item in enumerate(preview_items, 1):
+                    target = item.data.get("target", "")
+                    label = _clip_text(item.label or "Scheduled transaction", CONTEXT_FRAME_LABEL_MAX_CHARS)
+                    target_text = _clip_text(str(target), CONTEXT_FRAME_DETAILS_MAX_CHARS)
+                    items.append(f"[{idx}] {label} ({target_text})")
+                items_str = ", ".join(items)
+
             elif frame.frame_type == ContextFrameType.RECEIPT:
                 receipt_item = frame.items[0] if frame.items else None
                 if receipt_item:

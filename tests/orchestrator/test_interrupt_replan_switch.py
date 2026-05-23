@@ -3,6 +3,7 @@
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
@@ -158,6 +159,23 @@ class _FailIfRouterCalledPlanner:
         raise AssertionError("route_semantic_turn should not be called for callback auto-approve")
 
 
+class _ScheduleReadInterruptPlanner(_FailIfRouterCalledPlanner):
+    def __init__(self, route: SemanticRouteDecision) -> None:
+        self._route = route
+        self.schedule_read_calls = 0
+
+    async def route_schedule_read_turn(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        path_label: str = "interrupt_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, path_label
+        self.schedule_read_calls += 1
+        return self._route
+
+
 class _PendingEditOnlyPlanner(_FailIfRouterCalledPlanner):
     def __init__(self, decision: PendingActionEditDecision) -> None:
         self._decision = decision
@@ -221,6 +239,82 @@ class _TransferConfirmationRenderWorker:
                 "sourceAccount": "0000009384",
             },
         )
+
+
+@pytest.mark.asyncio
+async def test_pending_schedule_confirmation_allows_read_only_schedule_view() -> None:
+    planner = _ScheduleReadInterruptPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="new",
+            target_intent="schedule",
+            confidence=0.93,
+            detected_language="English",
+            expected_transaction_executors=[],
+            schedule_response_mode="list",
+            reason="show scheduled transactions",
+        )
+    )
+    frame = ContextFrame(
+        frame_id="schedule_list_existing",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "domain": "Transfer",
+                    "amount": "₦20,000",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "recurrence": "One Time",
+                    "schedule_time": "2:00 PM Lagos time",
+                    "next_run": "May 23, 2026 at 2:00 PM Lagos time",
+                    "source_bank_name": "Access Bank",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=9_999_999_999,
+    )
+    interrupt = PendingInterrupt(kind="confirmation", task_ids=["t_schedule"], prompt="Confirm Schedule Update")
+    state = OrchestratorState(
+        user_id="u_pending_schedule_read",
+        phone_number="2348011111199",
+        channel="whatsapp",
+        last_message_text="show my scheduled transaction",
+        pending_interrupt=interrupt,
+        tasks={
+            "t_schedule": TaskSpec(
+                id="t_schedule",
+                type="schedule",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "action": "edit_scheduled_transaction",
+                    "confirmation": {
+                        "summary": "Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 9:00 AM Lagos time"
+                    },
+                },
+            )
+        },
+        context_frames=[frame],
+    )
+
+    updates = await handle_pending_interrupt(
+        state,
+        {"configurable": {"task_planner": planner}},
+    )
+
+    assert planner.schedule_read_calls == 1
+    assert updates["pending_interrupt"] == interrupt
+    assert updates["semantic_path_shape"] == "interrupt_schedule_read_context"
+    assert updates["routing_target_domain"] == "schedule"
+    response = updates["outbox"][0]["text"]
+    assert "Scheduled Transaction Details" in response
+    assert "2:00 PM Lagos time" in response
+    assert "Confirm Schedule Update" not in response
 
 
 @pytest.mark.asyncio
@@ -1984,6 +2078,117 @@ async def test_callback_pin_verified_auto_approves_confirmation_without_router_c
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
     assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_schedule_update_confirmation_without_auth_advances_to_execution() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_schedule_no_auth",
+        phone_number="2348010101013",
+        channel="whatsapp",
+        last_message_text="yes",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"], prompt="Confirm Schedule Update"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="schedule",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "action": "edit_scheduled_transaction",
+                    "schedule_edit_requires_auth": False,
+                    "confirmation": {"summary": "Confirm schedule update", "confirmed": False},
+                },
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.92,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="explicit approval",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
+    assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_schedule_update_confirmation_with_auth_waits_for_pin() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_schedule_auth",
+        phone_number="2348010101014",
+        channel="whatsapp",
+        last_message_text="yes",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"], prompt="Confirm Schedule Update"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="schedule",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "action": "edit_scheduled_transaction",
+                    "schedule_edit_requires_auth": True,
+                    "confirmation": {"summary": "Confirm schedule update", "confirmed": False},
+                },
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.92,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="explicit approval",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_AUTH
+    assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_callback_pin_verified_auto_approves_schedule_auth_without_router_call() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_schedule_pin",
+        phone_number="2348010101015",
+        channel="whatsapp",
+        last_message_text=None,
+        last_callback={"pin_verified": True, "flow_type": "schedule"},
+        pin_verified=True,
+        pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin", prompt="Enter PIN"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="schedule",
+                stage=TaskStage.AWAITING_AUTH,
+                payload={
+                    "action": "edit_scheduled_transaction",
+                    "schedule_edit_requires_auth": True,
+                    "confirmation": {"summary": "Confirm schedule update", "confirmed": True},
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
 
 
 @pytest.mark.asyncio

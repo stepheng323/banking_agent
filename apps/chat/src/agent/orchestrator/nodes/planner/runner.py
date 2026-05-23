@@ -41,7 +41,7 @@ SAFE_CAPABILITY_FALLBACK = render_safe_capability_fallback("en")
 QUOTED_REPLAY_MIN_CONFIDENCE = _QUOTED_REPLAY_MIN_CONFIDENCE
 _UNEXPECTED_ROUTE_RECOVERY_MIN_CONFIDENCE = 0.5
 
-_PLANNER_DOMAIN_TARGETS = {"query", "account", "support", "beneficiary", "transfer", "airtime", "data"}
+_PLANNER_DOMAIN_TARGETS = {"query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule"}
 _PLANNER_TRANSFER_PREFIXES = ("send", "transfer", "pay", "remit")
 
 

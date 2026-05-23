@@ -1,26 +1,22 @@
 """Prompt atoms for planner system prompt compilation."""
 
 PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
-- Return only PlannerOutput JSON.
-- greet|thanks|checkin -> conversational,tasks=[].
-- banking -> task+.
-- mixed asks: clauses[] first, then tasks[].
-- clauses[] item = {clause_index,text,intent_family,extracted_fields,task_ids}.
-- tasks may set source_clause_index.
-- transfer: send_money|schedule_transfer|recurring_transfer|list_scheduled_transfers|cancel_scheduled_transfer.
-- beneficiary: list_beneficiaries|add_beneficiary|delete_beneficiary|update_beneficiary|save_beneficiary.
-- query: transaction_list|transaction_search|analytics_summary|time_comparison|beneficiary_summary|affordability.
-- beneficiary_route: beneficiary_list|recipient_ranking|none.
-- save_beneficiary only with suggestion context.
-- people transfer batch -> one task + recipient_allocations[].
-- funding split -> explicit_split.
-- mixed asks may emit multiple tasks with depends_on preserving order."""
+- PlannerOutput JSON only.
+- greet|thanks|checkin -> conversational,tasks=[]; banking/missing -> task+.
+- mixed asks: clauses[] before tasks[]; tasks may set source_clause_index.
+- transfer: send_money|schedule_transfer|recurring_transfer.
+- schedule executor: list/find/cancel/edit_scheduled_transaction(s); count/existence->schedule_response_mode=count.
+- aliases: list_scheduled_transfers|cancel_scheduled_transfer.
+- airtime: buy_airtime|schedule_airtime|recurring_airtime; data: buy_data|schedule_data|recurring_data.
+- beneficiary: list/add/delete/update/save; query: list/search/analytics/time/beneficiary/affordability.
+- beneficiary_route: beneficiary_list|recipient_ranking|none; people batch->recipient_allocations[].
+- funding split->explicit_split; mixed->depends_on."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed.
 - Selector refs: {"selector":"previous"} or {"selector":"index","index":N}.
 - Preserve transactional corrections and follow-up slot updates.
-- Preserve scheduling semantics for future/repeating transfer requests.
+- Preserve scheduling semantics for future/repeating transfer, airtime, and data requests.
 - Keep explicit_split only for source-account funding splits, never recipient names.
 - Precision-first: never guess ambiguous fields."""
 
@@ -70,8 +66,12 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R19_TRANSFER_FIDELITY": "transfer_recipient_keep_exact_text",
     "R20_TRANSFER_ACCOUNT_BANK": "account+bank_together->recipient_account+bank_name",
     "R21_TRANSFER_SCHEDULING": (
-        "future|repeat|list|cancel->schedule_transfer|recurring_transfer|"
-        "list_scheduled_transfers|cancel_scheduled_transfer"
+        "future|repeat transfer->schedule_transfer|recurring_transfer;"
+        "future|repeat airtime->schedule_airtime|recurring_airtime;"
+        "future|repeat data->schedule_data|recurring_data;"
+        "list|count|find|cancel|delete|edit scheduled->"
+        "list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|edit_scheduled_transaction;"
+        "count|existence scheduled->schedule_response_mode=count"
     ),
     "R22_MIXED_MONEY_MOVE": (
         "mix transfer+airtime+data->emit tasks in order;"
@@ -169,6 +169,8 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
     "- Active transfer flow + \"make it 20k\" -> send_money amount=20000.\n"
     "- Send 10k to Mum tomorrow 9am -> schedule_transfer amount=10000, recipient_name=Mum.\n"
     "- Send it to her every Friday -> recurring_transfer with selector={\"selector\":\"previous\"}.\n"
+    "- Buy 2k airtime tomorrow 8am -> schedule_airtime amount=2000.\n"
+    "- Buy 1GB data every Friday 8am -> recurring_data.\n"
     "- Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.\n"
     "- Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN."
 )

@@ -57,19 +57,32 @@ class _FakeUow:
         self.committed = True
 
 
-def _schedule_fixture() -> SimpleNamespace:
-    return SimpleNamespace(
-        id="sch-1",
-        user_id="user-1",
-        next_run_at_utc=datetime(2026, 3, 5, 10, 0),
-        recurrence_type="one_time",
-        local_time="09:00",
-        day_of_month=None,
-        timezone="Africa/Lagos",
-        status="active",
-        channel="whatsapp",
-        channel_identity="2348000000000",
-        payload_snapshot={
+def _schedule_fixture(domain: str = "transfer") -> SimpleNamespace:
+    payload_snapshot: dict[str, object]
+    if domain == "airtime":
+        payload_snapshot = {
+            "amount": 2000,
+            "recipient_phone": "08162511023",
+            "network": "MTN",
+            "source_account_id": "acc-1",
+            "source_account_number": "1234567890",
+            "source_bank_name": "Zenith",
+            "language": "en",
+        }
+    elif domain == "data":
+        payload_snapshot = {
+            "amount": 1500,
+            "target_phone": "08162511023",
+            "network": "MTN",
+            "plan_code": "mtn-1gb",
+            "plan_name": "1GB Daily",
+            "source_account_id": "acc-1",
+            "source_account_number": "1234567890",
+            "source_bank_name": "Zenith",
+            "language": "en",
+        }
+    else:
+        payload_snapshot = {
             "amount": 10000,
             "recipient_account": "8162511023",
             "recipient_bank_code": "033",
@@ -81,7 +94,20 @@ def _schedule_fixture() -> SimpleNamespace:
             "narration": "Family support",
             "language": "en",
             "source_account_name": "Main",
-        },
+        }
+    return SimpleNamespace(
+        id="sch-1",
+        user_id="user-1",
+        domain=domain,
+        next_run_at_utc=datetime(2026, 3, 5, 10, 0),
+        recurrence_type="one_time",
+        local_time="09:00",
+        day_of_month=None,
+        timezone="Africa/Lagos",
+        status="active",
+        channel="whatsapp",
+        channel_identity="2348000000000",
+        payload_snapshot=payload_snapshot,
     )
 
 
@@ -117,6 +143,39 @@ async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch)
     assert schedule.status == "completed"
     publisher.publish.assert_awaited_once()
     assert publisher.publish.await_args.kwargs["topic"] == "transaction.execute"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("domain", "job_type", "payload_key"),
+    [
+        ("airtime", "execute_airtime", "airtime_data"),
+        ("data", "execute_data", "data_purchase"),
+    ],
+)
+async def test_dispatcher_enqueues_due_airtime_and_data_schedules(
+    monkeypatch: pytest.MonkeyPatch,
+    domain: str,
+    job_type: str,
+    payload_key: str,
+) -> None:
+    schedule = _schedule_fixture(domain)
+    fake_uow = _FakeUow(schedule)
+    monkeypatch.setattr(
+        "apps.chat.src.schedulers.transfer_schedule_dispatcher.UnitOfWork",
+        lambda: fake_uow,
+    )
+
+    publisher = SimpleNamespace(publish=AsyncMock())
+    dispatcher = TransferScheduleDispatcher(publisher=publisher, max_due_per_tick=10)
+    stats = await dispatcher.dispatch_due()
+
+    assert stats == {"processed": 1, "skipped": 0}
+    message = publisher.publish.await_args.kwargs["message"]
+    assert message["type"] == job_type
+    assert payload_key in message
+    assert message["scheduled_meta"]["schedule_id"] == "sch-1"
+    assert message["scheduled_meta"]["schedule_run_id"] == "run-1"
 
 
 @pytest.mark.asyncio

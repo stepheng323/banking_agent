@@ -5,6 +5,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from apps.chat.src.agent.graphs.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.graphs.transfer.models.types import (
     TransferContext,
     TransferGates,
@@ -448,6 +449,7 @@ def build_confirmation(
     display_narration = _display_narration(payload)
     effective_narration = _effective_narration(payload)
     description = _derived_description(payload, recipient_display_name)
+    schedule_line = format_schedule_confirmation_line(payload)
     snap = {
         "amount": payload.amount,
         "recipient_name": recipient_display_name,
@@ -459,6 +461,9 @@ def build_confirmation(
         "narration": effective_narration,
         "description": description,
         "user_note": payload.user_note,
+        "schedule_start_date": payload.schedule_start_date,
+        "schedule_time_local": payload.schedule_time_local,
+        "schedule_line": schedule_line,
     }
     update_message = _resolve_transition_update_message(
         payload=payload,
@@ -489,6 +494,8 @@ def build_confirmation(
         warning_lines.append(payload.name_mismatch_warning)
     if payload.high_risk_warning:
         warning_lines.append(payload.high_risk_warning)
+    if schedule_line:
+        base_summary = f"{base_summary}\n\n{schedule_line}"
     summary = "\n\n".join([*warning_lines, base_summary]) if warning_lines else base_summary
 
     funding_plan = payload.funding_plan or {}

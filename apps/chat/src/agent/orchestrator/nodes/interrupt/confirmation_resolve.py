@@ -302,7 +302,16 @@ def _approve_confirmation_updates(state: OrchestratorState, interrupt: Any) -> d
         task = new_tasks[tid].model_copy(deep=True)
         task.payload.setdefault("confirmation", {})
         task.payload["confirmation"]["confirmed"] = True
-        task.stage = TaskStage.EXECUTING if state.pin_verified else TaskStage.AWAITING_AUTH
+        schedule_edit_without_auth = (
+            task.type == "schedule"
+            and str(task.payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
+            and task.payload.get("schedule_edit_requires_auth") is False
+        )
+        task.stage = (
+            TaskStage.EXECUTING
+            if state.pin_verified or schedule_edit_without_auth
+            else TaskStage.AWAITING_AUTH
+        )
         new_tasks[tid] = task
     return {
         "pending_interrupt": None,

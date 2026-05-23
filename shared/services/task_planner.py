@@ -27,6 +27,8 @@ from shared.services.task_planner_router_prompts import (
     PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE,
     QUOTED_REPLAY_SYSTEM_PROMPT,
     QUOTED_REPLAY_USER_PROMPT_TEMPLATE,
+    SCHEDULE_READ_ROUTER_SYSTEM_PROMPT,
+    SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE,
     SEMANTIC_ROUTER_SYSTEM_PROMPT,
     SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE,
 )
@@ -88,6 +90,10 @@ class TaskPlanner:
             method="function_calling",
         )
         self.structured_semantic_router = _with_structured_output(
+            self.semantic_router_llm,
+            SemanticRouteDecision,
+        )
+        self.structured_schedule_read_router = _with_structured_output(
             self.semantic_router_llm,
             SemanticRouteDecision,
         )
@@ -217,6 +223,39 @@ class TaskPlanner:
             context_mode="compact" if context == "None" else "full",
         )
         self._log_latency_span(span="semantic_router_llm", duration_ms=duration_ms, path_label=path_label)
+        if isinstance(result, SemanticRouteDecision):
+            return result
+        return cast(SemanticRouteDecision, SemanticRouteDecision.model_validate(result))
+
+    async def route_schedule_read_turn(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        path_label: str = "direct_path",
+    ) -> SemanticRouteDecision:
+        """Small semantic classifier for read-only scheduled-transaction list/count turns."""
+        user_prompt = SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+        )
+        system_prompt = SCHEDULE_READ_ROUTER_SYSTEM_PROMPT
+        start = time.perf_counter()
+        result = await self.structured_schedule_read_router.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "schedule_read_router_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.semantic_router_llm),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
+        )
+        self._log_latency_span(span="schedule_read_router_llm", duration_ms=duration_ms, path_label=path_label)
         if isinstance(result, SemanticRouteDecision):
             return result
         return cast(SemanticRouteDecision, SemanticRouteDecision.model_validate(result))

@@ -17,8 +17,16 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
     "schedule": {
         "schedule_transfer",
         "recurring_transfer",
+        "schedule_airtime",
+        "recurring_airtime",
+        "schedule_data",
+        "recurring_data",
         "cancel_scheduled_transfer",
         "list_scheduled_transfers",
+        "list_scheduled_transactions",
+        "find_scheduled_transaction",
+        "cancel_scheduled_transaction",
+        "edit_scheduled_transaction",
     },
     "account": {
         "list_accounts",

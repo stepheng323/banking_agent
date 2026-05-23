@@ -1242,6 +1242,313 @@ async def test_gate_non_structural_query_phrase_falls_through_without_semantic_r
     assert updates["routing_decision"] == "planner_handoff"
 
 
+async def test_gate_semantic_schedule_domain_hands_off_to_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="new",
+            target_intent="schedule",
+            confidence=0.95,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="scheduled task management",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_domain_1",
+        phone_number="2348999999916",
+        channel="whatsapp",
+        last_message_text="How many scheduled tramsaction is pending",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["semantic_path_shape"] == "semantic_router_schedule_planner_handoff"
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["routing_target_domain"] == "schedule"
+
+
+async def test_gate_semantic_schedule_target_vetoes_direct_context_answer() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_context_answer",
+            mode="new",
+            target_intent="schedule",
+            confidence=0.72,
+            detected_language="English",
+            response="There is no active transfer flow right now. Start a transfer and I will guide you.",
+            expected_transaction_executors=[],
+            reason="misclassified schedule status as flow recap",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_direct_answer_veto_1",
+        phone_number="2348999999917",
+        channel="whatsapp",
+        last_message_text="How many scheduled transaction is pending",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates.get("direct_path_triggered") is None
+    assert "final_response" not in updates
+    assert updates["semantic_path_shape"] == "semantic_router_schedule_planner_handoff"
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["routing_target_domain"] == "schedule"
+
+
+async def test_gate_semantic_schedule_count_skips_planner() -> None:
+    planner = _ScheduleReadPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="continuation",
+            target_intent="schedule",
+            confidence=0.95,
+            detected_language="English",
+            expected_transaction_executors=[],
+            schedule_response_mode="count",
+            reason="scheduled task count",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_count_direct_1",
+        phone_number="2348999999918",
+        channel="whatsapp",
+        last_message_text="How many scheduled transaction is pending",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "schedule_read_router_direct"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_target_domain"] == "schedule"
+    assert planner.plan_calls == 0
+    task = updates["tasks"]["direct_schedule"]
+    assert task.type == "schedule"
+    assert task.payload["action"] == "list_scheduled_transactions"
+    assert task.payload["schedule_response_mode"] == "count"
+
+
+async def test_gate_schedule_read_router_skips_broad_semantic_router() -> None:
+    planner = _ScheduleReadPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="new",
+            target_intent="schedule",
+            confidence=0.94,
+            detected_language="English",
+            expected_transaction_executors=[],
+            schedule_response_mode="count",
+            reason="scheduled count read",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_read_router_1",
+        phone_number="2348999999918",
+        channel="whatsapp",
+        last_message_text="Do i have any pending scheduled transsction",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "schedule_read_router_direct"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["route_source"] == "schedule_read_router"
+    assert planner.schedule_read_calls == 1
+    assert planner.route_calls == 0
+    task = updates["tasks"]["direct_schedule"]
+    assert task.payload["action"] == "list_scheduled_transactions"
+    assert task.payload["schedule_response_mode"] == "count"
+
+
+async def test_gate_schedule_count_ignores_existing_schedule_frame() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_existing",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _ScheduleReadPlanner(
+        SemanticRouteDecision(
+            decision="domain_schedule",
+            mode="continuation",
+            target_intent="schedule",
+            confidence=0.95,
+            detected_language="English",
+            expected_transaction_executors=[],
+            schedule_response_mode="count",
+            reason="scheduled task count",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_count_existing_frame_1",
+        phone_number="2348999999919",
+        channel="whatsapp",
+        last_message_text="How many scheduled transaction is pending",
+        loaded_context={"language": "en"},
+        context_frames=[frame],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "schedule_read_router_direct"
+    assert planner.frame_followup_calls == 0
+    assert planner.schedule_read_calls == 1
+    task = updates["tasks"]["direct_schedule"]
+    assert task.type == "schedule"
+    assert task.payload["schedule_response_mode"] == "count"
+
+
+async def test_gate_schedule_terse_followup_uses_context_frame_before_router() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_existing",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "domain": "Transfer",
+                    "amount": "₦20,000",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "recurrence": "One Time",
+                    "schedule_time": "2:00 PM Lagos time",
+                    "next_run": "May 23, 2026 at 2:00 PM Lagos time",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            mode="new",
+            target_intent=None,
+            confidence=0.1,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="router should not be called",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.91),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_terse_followup_1",
+        phone_number="2348999999920",
+        channel="whatsapp",
+        last_message_text="which one",
+        loaded_context={"language": "en"},
+        context_frames=[frame],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "schedule"
+    assert "Scheduled Transaction Details" in updates["final_response"]
+    assert "FATIMA ZAHRA MUSA" in updates["final_response"]
+    assert "Target:" not in updates["final_response"]
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+
+
+async def test_gate_schedule_edit_followup_uses_context_frame_task() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_list_existing",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sch-1",
+                label="Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 2:00 PM Lagos time",
+                data={
+                    "type": "scheduled_transaction",
+                    "schedule_id": "sch-1",
+                    "domain": "Transfer",
+                    "target": "FATIMA ZAHRA MUSA",
+                    "schedule_time": "2:00 PM Lagos time",
+                    "next_run": "May 23, 2026 at 2:00 PM Lagos time",
+                    "status": "active",
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            mode="new",
+            target_intent=None,
+            confidence=0.1,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="router should not be called",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="edit_schedule",
+            confidence=0.9,
+            detected_language="Pidgin",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_schedule_edit_followup_1",
+        phone_number="2348999999921",
+        channel="whatsapp",
+        last_message_text="i been wan change the time to 9am",
+        loaded_context={"language": "en"},
+        context_frames=[frame],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert updates["routing_target_domain"] == "schedule"
+    assert planner.frame_followup_calls == 1
+    assert planner.route_calls == 0
+    task = updates["tasks"]["context_schedule_management_1"]
+    assert task.type == "schedule"
+    assert task.payload["action"] == "edit_scheduled_transaction"
+    assert task.payload["schedule_selector"] == "sch-1"
+    assert task.payload["schedule_time_local"] == "09:00"
+
+
 async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -3241,6 +3548,27 @@ async def test_gate_amount_only_transfer_fastpath_still_routes_to_transfer_worke
     assert task.payload["message"] == "Send 10k"
 
 
+async def test_gate_date_only_scheduled_transfer_fastpath_keeps_schedule_action_without_default_time() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_router_scheduled_transfer",
+        phone_number="23489999999185",
+        channel="whatsapp",
+        last_message_text="Send 20k to mum by tommorow",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["action"] == "schedule_transfer"
+    assert task.payload["schedule_start_date"]
+    assert "schedule_time_local" not in task.payload
+
+
 async def test_gate_account_number_transfer_command_is_not_bank_details_only() -> None:
     state = OrchestratorState(
         user_id="u_gate_router_account_number_transfer",
@@ -3890,6 +4218,32 @@ class _RouteTurnPlanner:
         del args, kwargs
         self.plan_calls += 1
         raise AssertionError("planner should not run when gate returns a direct router answer")
+
+
+class _ScheduleReadPlanner(_RouteTurnPlanner):
+    def __init__(self, schedule_read_decision: SemanticRouteDecision) -> None:
+        super().__init__(
+            SemanticRouteDecision(
+                decision="planner_ambiguous",
+                confidence=0.1,
+                detected_language="English",
+                expected_transaction_executors=[],
+                reason="broad router should not run",
+            )
+        )
+        self._schedule_read_decision = schedule_read_decision
+        self.schedule_read_calls = 0
+
+    async def route_schedule_read_turn(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        path_label: str = "direct_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, path_label
+        self.schedule_read_calls += 1
+        return self._schedule_read_decision
 
 
 class _TrackingRedis:

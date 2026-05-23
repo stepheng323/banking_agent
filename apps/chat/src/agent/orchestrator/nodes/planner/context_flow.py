@@ -90,6 +90,16 @@ def _has_transaction_intent_hint(text: str) -> bool:
     return False
 
 
+def _looks_like_terse_context_frame_followup(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip())
+    if not normalized:
+        return False
+    if len(normalized) > 80:
+        return False
+    tokens = re.findall(r"[\w']+", normalized, re.UNICODE)
+    return len(tokens) <= 4
+
+
 def _should_use_minimal_planner_context(
     *,
     state: OrchestratorState,
@@ -211,7 +221,10 @@ async def _build_planner_context(
     task_planner: Any | None = None,
 ) -> PlannerContextBuildResult:
     frame = OrchestratorContextManager().latest_active_frame(state)
-    if frame and callable(getattr(task_planner, "interpret_context_frame_followup", None)):
+    if (
+        frame
+        and callable(getattr(task_planner, "interpret_context_frame_followup", None))
+    ):
         shortcut = resolve_query_shortcut(text, state.loaded_context.get("language"))
         if shortcut is not None and shortcut.kind == "pagination":
             logger.info(

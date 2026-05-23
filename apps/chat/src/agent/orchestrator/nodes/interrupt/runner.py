@@ -1,9 +1,11 @@
+import re
 import time
 from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.cancellation import (
     build_cancellation_reset_updates,
@@ -51,13 +53,17 @@ from apps.chat.src.agent.orchestrator.nodes.interrupt.router import (
     _route_interrupt,
     _shortcut_miss_category,
 )
+from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup import (
+    build_context_frame_followup_response,
+)
+from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.services.interrupt_shortcuts import (
     resolve_interrupt_shortcut_with_reason,
     resolve_shortcut_locale,
 )
 from shared.config.settings import settings
 from shared.i18n import LocaleManager, render_message
-from shared.types.planner import InterruptRouteDecision
+from shared.types.planner import ContextFrameFollowupDecision, InterruptRouteDecision
 
 TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
 NON_TRANSACTION_SWITCH_INTENTS = {"query", "account", "faq", "support", "beneficiary"}
@@ -69,6 +75,24 @@ INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS = 700
 INTERRUPT_REQUIRED_FIELDS_COMPACT_MAX_CHARS = 240
 INTERRUPT_PROMPT_COMPACT_MAX_CHARS = 160
 INTERRUPT_ACTIVE_TASK_STATE_COMPACT_MAX_CHARS = 320
+_SCHEDULE_INTERRUPT_READ_CANDIDATE_RE = re.compile(
+    r"(?iu)(?:"
+    r"\bschedul\w*\b|\brecurr\w*\b|\bpending\b.*\b(?:transaction|payment|transfer|airtime|data)\w*\b|"
+    r"\bprogram(?:me|med|mes|ar|ado|ada|ados|adas|mé|mée|mées|més)\w*\b|"
+    r"\betal[eè]\b|\betalement\b|\bprogramm[ée]s?\b|"
+    r"\beto\b.*\b(?:isanwo|owo|transaction)\b|"
+    r"\b(?:ti a se eto|san nigbamii|sisanwo ti n bo)\b|"
+    r"\b(?:tsara|jadawali|maimaitawa|biyan)\b.*\b(?:kudi|ciniki|biya)\b|"
+    r"\b(?:haziri|ugwo|mbufe|azumahia)\b.*\b(?:emechaa|na-abia|oge)\b"
+    r")"
+)
+
+
+def _could_be_schedule_interrupt_read_request(text: str) -> bool:
+    normalized = " ".join((text or "").split())
+    if not normalized or len(normalized) > 180:
+        return False
+    return bool(_SCHEDULE_INTERRUPT_READ_CANDIDATE_RE.search(normalized))
 
 
 async def _remove_or_cancel_confirmation_tasks(
@@ -876,6 +900,87 @@ async def _resolve_semantic_pending_action_edit_updates(
     return None
 
 
+async def _resolve_schedule_read_during_pending_confirmation(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    text: str,
+    task_planner: Any,
+    current_task_types: set[str],
+) -> dict[str, Any] | None:
+    """Answer read-only schedule asks without replaying a pending schedule confirmation."""
+    if getattr(interrupt, "kind", None) != "confirmation":
+        return None
+    if "schedule" not in current_task_types:
+        return None
+    if not callable(getattr(task_planner, "route_schedule_read_turn", None)):
+        return None
+    if not _could_be_schedule_interrupt_read_request(text):
+        return None
+
+    try:
+        route = await task_planner.route_schedule_read_turn(
+            state.phone_number,
+            text,
+            path_label="interrupt_path",
+        )
+    except TypeError:
+        route = await task_planner.route_schedule_read_turn(state.phone_number, text)
+    except Exception as exc:
+        logger.warning("interrupt_schedule_read_router_failed", error=str(exc))
+        return None
+
+    decision = str(getattr(route, "decision", "") or "").strip()
+    schedule_response_mode = getattr(route, "schedule_response_mode", None)
+    confidence = float(getattr(route, "confidence", 0.0) or 0.0)
+    if decision != "domain_schedule" or schedule_response_mode not in {"list", "count"} or confidence < 0.72:
+        return None
+
+    frame = OrchestratorContextManager().latest_active_frame(state)
+    if frame is None or frame.frame_type != ContextFrameType.SCHEDULE_LIST:
+        return None
+
+    if schedule_response_mode == "count":
+        count = len(frame.items)
+        noun = "transaction" if count == 1 else "transactions"
+        response = f"You have {count} pending scheduled {noun}."
+        context_frames = state.context_frames
+    else:
+        frame_response = build_context_frame_followup_response(
+            state,
+            text,
+            decision=ContextFrameFollowupDecision(
+                decision="show_details",
+                confidence=0.95,
+                detected_language=getattr(route, "detected_language", None),
+                reason="pending schedule confirmation read-only schedule request",
+            ),
+        )
+        if frame_response is None or not frame_response.response:
+            return None
+        response = frame_response.response
+        context_frames = frame_response.context_frames or state.context_frames
+
+    logger.info(
+        "interrupt_schedule_read_context_answer",
+        schedule_response_mode=schedule_response_mode,
+        confidence=round(confidence, 2),
+        pending_task_ids=getattr(interrupt, "task_ids", None),
+    )
+    return {
+        "pending_interrupt": interrupt,
+        "last_interrupt": interrupt,
+        "context_frames": context_frames,
+        "outbox": [{"type": "say", "text": response}],
+        "final_response": response,
+        "semantic_path_shape": "interrupt_schedule_read_context",
+        "routing_owner": "interrupt",
+        "routing_decision": "domain_schedule",
+        "routing_target_domain": "schedule",
+        "route_source": "schedule_read_router",
+    }
+
+
 def _pending_transaction_interrupt_expiry(interrupt: Any, current_task_types: set[str]) -> float | None:
     if not current_task_types.intersection(TRANSACTION_INTENTS):
         return None
@@ -1153,6 +1258,16 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             else None,
         )
         return _continue_flow_updates(state, interrupt)
+
+    schedule_read_updates = await _resolve_schedule_read_during_pending_confirmation(
+        state=state,
+        interrupt=interrupt,
+        text=text,
+        task_planner=task_planner,
+        current_task_types=current_task_types,
+    )
+    if schedule_read_updates is not None:
+        return schedule_read_updates
 
     semantic_edit_updates = await _resolve_semantic_pending_action_edit_updates(
         state=state,

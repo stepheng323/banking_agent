@@ -92,6 +92,7 @@ class TransferPayload(BaseModel):
     schedule_end_date: str | None = None
     schedule_id: str | None = None
     schedule_selector: str | None = None
+    schedule_response_mode: Literal["list", "count"] | None = None
 
     # Confirmation sub-state
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
@@ -114,7 +115,18 @@ class TaskSpec(BaseModel):
     """
 
     id: str
-    type: Literal["transfer", "query", "airtime", "data", "account", "support", "faq", "beneficiary", "orchestrator"]
+    type: Literal[
+        "transfer",
+        "query",
+        "airtime",
+        "data",
+        "account",
+        "support",
+        "faq",
+        "beneficiary",
+        "schedule",
+        "orchestrator",
+    ]
     depends_on: list[str] = Field(default_factory=list)
     stage: TaskStage = TaskStage.DRAFT
     payload: dict[str, Any] = Field(default_factory=dict)
