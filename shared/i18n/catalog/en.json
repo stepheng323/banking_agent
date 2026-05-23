@@ -32,6 +32,7 @@
     "appreciation": "Anytime. What should we handle next?",
     "checkin": "I'm here. What would you like to do?",
     "identity": "I'm {app_name}. I execute real banking tasks fast and carefully.",
+    "identity_correction": "Not {addressed_name} 😄 I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "brand_origin": "{app_name} is inspired by {app_brand_inspiration}.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
     "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",

@@ -17,13 +17,31 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.gate.runner import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
+    classify_deterministic_meta_response,
+    session_gate_direct_path,
+)
+from shared.config.settings import settings
 from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
 from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 
 def _apply_updates(state: OrchestratorState, updates: dict[str, object]) -> OrchestratorState:
     return state.model_copy(update=updates)
+
+
+def _assert_meta_response(
+    message_text: str,
+    response_key: str,
+    *,
+    response_locale: str | None = None,
+    params: dict[str, object] | None = None,
+) -> None:
+    response = classify_deterministic_meta_response(message_text)
+    assert response is not None
+    assert response.response_key == response_key
+    assert response.response_locale == response_locale
+    assert response.params == params
 
 
 class _MockTransferNeedsInputWorker:
@@ -63,6 +81,127 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert updates["routing_owner"] == "guardrail"
     assert updates["routing_decision"] == "meta_direct"
+
+
+def test_addressed_greeting_uses_current_brand_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    non_canonical_name = "Old Assistant"
+    monkeypatch.setattr(settings, "app_name", "Aurora Pay")
+    monkeypatch.setattr(settings, "app_name_short", "Aurora")
+    monkeypatch.setattr(settings, "app_name_aliases", ())
+    monkeypatch.setattr(settings, "app_legacy_names", ())
+
+    _assert_meta_response("Hi Aurora", "conversational.greeting")
+    _assert_meta_response("Hi, Aurora Pay", "conversational.greeting")
+    _assert_meta_response(
+        f"Hi {non_canonical_name}",
+        "conversational.identity_correction",
+        params={"addressed_name": non_canonical_name},
+    )
+
+    monkeypatch.setattr(settings, "app_name_aliases", (non_canonical_name,))
+    _assert_meta_response(f"Hi {non_canonical_name}", "conversational.greeting")
+
+    monkeypatch.setattr(settings, "app_name_aliases", ())
+    monkeypatch.setattr(settings, "app_legacy_names", (non_canonical_name,))
+    _assert_meta_response(
+        f"Hi {non_canonical_name}",
+        "conversational.identity_correction",
+        params={"addressed_name": non_canonical_name},
+    )
+
+
+def test_addressed_greeting_distinguishes_generic_and_wrong_names() -> None:
+    _assert_meta_response(f"Hi {settings.app_name_short}", "conversational.greeting")
+    _assert_meta_response(f"Hi, {settings.app_name}", "conversational.greeting")
+    _assert_meta_response("hello there", "conversational.greeting")
+    _assert_meta_response(
+        "Hi, xara",
+        "conversational.identity_correction",
+        params={"addressed_name": "Xara"},
+    )
+    _assert_meta_response(
+        "hi claude code",
+        "conversational.identity_correction",
+        params={"addressed_name": "Claude Code"},
+    )
+    assert classify_deterministic_meta_response("Hi I want to send money") is None
+
+
+def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    _assert_meta_response(f"What is the meaning of {settings.app_name_short}", "conversational.brand_origin")
+    _assert_meta_response(f"meaning of {settings.app_name_short}", "conversational.brand_origin")
+    _assert_meta_response(f"why are you called {settings.app_name}", "conversational.brand_origin")
+    _assert_meta_response(f"where did the name {settings.app_name_short} come from", "conversational.brand_origin")
+    _assert_meta_response("Who are you", "conversational.identity")
+    assert classify_deterministic_meta_response("what is the meaning of xara") is None
+
+    monkeypatch.setattr(settings, "app_name", "Aurora Pay")
+    monkeypatch.setattr(settings, "app_name_short", "Aurora")
+    monkeypatch.setattr(settings, "app_name_aliases", ())
+    monkeypatch.setattr(settings, "app_legacy_names", ())
+
+    _assert_meta_response("what is the meaning of Aurora", "conversational.brand_origin")
+    assert classify_deterministic_meta_response("what is the meaning of xara") is None
+
+
+async def test_gate_wrong_addressed_name_uses_light_identity_correction_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.95,
+            detected_language="English",
+            response_key="conversational.greeting",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for wrong addressed name",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_wrong_addressed_name",
+        phone_number="2348777777717",
+        channel="whatsapp",
+        last_message_text="Hi, xara",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message(
+        "conversational.identity_correction",
+        "en",
+        {"addressed_name": "Xara"},
+    )
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_brand_meaning_uses_brand_origin_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.95,
+            detected_language="English",
+            response_key="conversational.identity",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for brand meaning",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_brand_meaning",
+        phone_number="2348777777718",
+        channel="whatsapp",
+        last_message_text=f"What is the meaning of {settings.app_name_short}",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.brand_origin", "en")
+    assert updates["routing_owner"] == "guardrail"
 
 
 async def test_gate_handles_pidgin_social_greeting_deterministically() -> None:

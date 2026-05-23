@@ -506,7 +506,8 @@ class OrchestratorGraphHandler:
                 elif not context.quoted_message_id:
                     pre_route_meta_response = classify_deterministic_meta_response(context.text)
                     if pre_route_meta_response:
-                        response_key, response_locale = pre_route_meta_response
+                        response_key = pre_route_meta_response.response_key
+                        response_locale = pre_route_meta_response.response_locale
                         path_label = "direct_path"
                         hydration_profile_mode = "minimal"
                         hydration_account_mode = "cache_only"

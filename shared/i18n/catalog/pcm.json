@@ -32,6 +32,7 @@
     "appreciation": "No wahala. Wetin we go handle next?",
     "checkin": "I dey here. Wetin you wan make I help you do?",
     "identity": "I be {app_name}. I dey run real banking tasks fast and sharp.",
+    "identity_correction": "No be {addressed_name} 😄 I be {app_name}. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
     "brand_origin": "{app_name} get inspiration from {app_brand_inspiration}.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",

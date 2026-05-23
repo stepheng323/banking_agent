@@ -32,6 +32,7 @@
     "appreciation": "Ko to nnkan. Iṣẹ wo ni a o ṣe lẹ́yìn eyi?",
     "checkin": "Mo wa nibi. Iṣẹ owo wo ni o fẹ ki a ṣe?",
     "identity": "Emi ni {app_name}. Mo n ṣiṣẹ awọn iṣẹ banking gidi ni kiakia ati pẹkipẹki.",
+    "identity_correction": "Kii se {addressed_name} 😄 Emi ni {app_name}. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction. Kini o fẹ ṣe?",
     "brand_origin": "{app_name} ni ìmísí lati {app_brand_inspiration}.",
     "capability_question": "Mo le ran ọ lọwọ pẹlu gbigbe owo, rira airtime/data, ayẹwo balance, ati ibeere transaction.",
     "out_of_scope": "Mo n dojukọ iṣẹ banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",

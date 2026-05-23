@@ -32,6 +32,7 @@
     "appreciation": "Babu komai. Wane aiki za mu yi na gaba?",
     "checkin": "Ina nan. Wane aikin kudi za mu fara?",
     "identity": "Ni ne {app_name}. Ina gudanar da ainihin ayyukan banking da sauri kuma cikin kulawa.",
+    "identity_correction": "Ba {addressed_name} ba ne 😄 Ni ne {app_name}. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction. Me kake so mu yi?",
     "brand_origin": "{app_name} ya samo wahayi daga {app_brand_inspiration}.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",

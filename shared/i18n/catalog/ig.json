@@ -32,6 +32,7 @@
     "appreciation": "Nnoo. Kedu ọrụ ọzọ ka anyị ga-eme ugbu a?",
     "checkin": "Anọ m ebe a. Kedu mmegharị ego ka anyị ga-eme?",
     "identity": "Abụ m {app_name}. Ana m arụ ọrụ banking nke ọma, ngwa ngwa, ma nlezianya.",
+    "identity_correction": "Ọ bụghị {addressed_name} 😄 Abụ m {app_name}. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction. Kedu ihe ịchọrọ ime?",
     "brand_origin": "{app_name} sitere n'ike mmụọ nsọ {app_brand_inspiration}.",
     "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
     "out_of_scope": "Ana m elekwasị anya na ọrụ banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
