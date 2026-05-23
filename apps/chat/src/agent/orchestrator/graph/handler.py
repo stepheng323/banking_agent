@@ -371,14 +371,14 @@ class OrchestratorGraphHandler:
         turn_id: str,
         enable_initial_typing: bool,
     ) -> None:
-        del channel_identity
         deduped_progress_keys: set[str] = set()
+        delivery_target = channel_identity if channel != "whatsapp" and channel_identity else phone_number
 
         if enable_initial_typing:
             try:
                 await enqueue_outbox_typing(
                     self.publisher,
-                    phone_number,
+                    delivery_target,
                     channel,
                     metadata={
                         "inbound_message_id": inbound_message_id,
@@ -433,7 +433,7 @@ class OrchestratorGraphHandler:
                 }
                 delivery_task = asyncio.create_task(
                     self._deliver_progress_update(
-                        phone_number=phone_number,
+                        phone_number=delivery_target,
                         channel=channel,
                         text=text,
                         metadata=metadata,
@@ -572,6 +572,7 @@ class OrchestratorGraphHandler:
                         tracker=progress_tracker,
                         phone_number=phone_number,
                         channel=context.channel,
+                        channel_identity=context.channel_identity,
                         inbound_message_id=context.message_id,
                         thread_id=thread_id,
                         turn_id=turn_id,
