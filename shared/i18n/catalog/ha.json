@@ -839,6 +839,96 @@
       "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "schedule": {
+    "prompt": {
+      "time": "Wani lokaci zan schedule shi?",
+      "date": "Wace rana zan schedule shi?",
+      "future_date_time": "Ka turo future date da time don schedule din."
+    },
+    "confirmation": {
+      "today": "Yau",
+      "tomorrow": "Gobe",
+      "line": "An schedule shi don: {date}, {time} WAT"
+    },
+    "recurrence": {
+      "one_time": "Sau daya",
+      "daily": "Kullum",
+      "weekly": "Kowane mako",
+      "monthly": "Kowane wata"
+    },
+    "domain": {
+      "transfer": "Transfer",
+      "airtime": "Airtime",
+      "data": "Data"
+    },
+    "fallback": {
+      "time_not_set": "time bai set ba",
+      "not_set": "bai set ba",
+      "recipient": "recipient",
+      "data_plan": "data",
+      "scheduled": "schedule"
+    },
+    "target": {
+      "airtime_with_network": "{network} airtime for {phone}",
+      "airtime": "airtime for {phone}",
+      "data_with_network": "{plan} {network} data for {phone}",
+      "data": "{plan} for {phone}"
+    },
+    "time": {
+      "with_timezone": "{time} WAT"
+    },
+    "row": {
+      "basic": "{index}. {domain}: {amount} {target} • {recurrence} da {time} WAT",
+      "with_id": "{row} (ID: {schedule_id})"
+    },
+    "list": {
+      "count": "Kana da schedules {count} masu pending.",
+      "empty": "Babu active schedules.",
+      "header": "Scheduled transactions naka:"
+    },
+    "find": {
+      "not_found": "Ban samu active scheduled transaction da ya dace da wannan ba.",
+      "header": "Schedules da suka dace:"
+    },
+    "cancel": {
+      "none": "Babu active schedules da za a cancel.",
+      "success": "Scheduled transaction an cancel."
+    },
+    "edit": {
+      "ask_change": "Me zan canza a wannan scheduled transaction?",
+      "stale": "Wannan schedule yana processing ko kuma baya active yanzu. Ka sake gwadawa.",
+      "success": "Schedule an update: {changes}. Next run: {next_run}.",
+      "change": {
+        "separator": "; ",
+        "amount_from_to": "amount ya canza daga {old} zuwa {new}",
+        "amount_to": "amount ya canza zuwa {new}",
+        "time_from_to": "time ya canza daga {old} zuwa {new} WAT",
+        "date_from_to": "date ya canza daga {old} zuwa {new}",
+        "recurrence_from_to": "repeat pattern ya canza daga {old} zuwa {new}",
+        "target_updated": "recipient details an update",
+        "source_updated": "source account an update",
+        "narration_updated": "narration an update",
+        "details_updated": "details an update"
+      }
+    },
+    "update": {
+      "time_pending": "Scheduled time yana pending"
+    },
+    "disambiguation": {
+      "not_found_for_action": "Ban samu active scheduled transaction to {action} ba.",
+      "prompt": "Amsa da schedule number don {action}:"
+    },
+    "created": {
+      "transfer": "Scheduled transfer an shirya: {amount} zuwa {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "airtime": "Scheduled airtime an shirya: {amount} for {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "data": "Scheduled data an shirya: {amount} {plan} for {target} ({recurrence}) in {timezone}. Next run: {next_run}."
+    },
+    "unavailable": {
+      "transfer": "Scheduled transfers basa available yanzu. Za ka iya send wannan transfer yanzu.",
+      "airtime": "Scheduled airtime purchases basa available yanzu. Za ka iya buy airtime yanzu.",
+      "data": "Scheduled data purchases basa available yanzu. Za ka iya buy data yanzu."
+    }
+  },
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",

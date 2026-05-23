@@ -12,6 +12,7 @@ from typing import Any, cast
 from apps.chat.src.agent.graphs.__shared__.scheduling import (
     base_schedule_fields,
     missing_schedule_fields,
+    schedule_recurrence_label,
     schedule_required_prompt,
 )
 from apps.chat.src.agent.graphs.data.models.types import (
@@ -60,14 +61,14 @@ class DataScheduleRequirementsStep(PipelineStep):
         gates: DataGates,
         worker_context: Any,
     ) -> TransactionResult | None:
-        del context, gates, worker_context
+        del gates, worker_context
         missing_fields = missing_schedule_fields(payload)
         if not missing_fields:
             return None
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=missing_fields,
-            prompt=schedule_required_prompt(missing_fields),
+            prompt=schedule_required_prompt(missing_fields, context.language),
             patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
         )
 
@@ -219,7 +220,7 @@ class DataWorker:
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=missing_fields,
-                prompt=schedule_required_prompt(missing_fields),
+                prompt=schedule_required_prompt(missing_fields, locale),
                 patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
             )
 
@@ -235,7 +236,7 @@ class DataWorker:
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["schedule_start_date", "schedule_time_local"],
-                prompt="Please provide a future schedule date and time.",
+                prompt=render_message("schedule.prompt.future_date_time", locale),
                 patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
             )
 
@@ -282,12 +283,20 @@ class DataWorker:
             await uow.commit()
 
         amount = format_naira(data.amount)
-        target = data.target_phone or "recipient"
-        plan = data.plan_name or "data"
+        target = data.target_phone or render_message("schedule.fallback.recipient", locale)
+        plan = data.plan_name or render_message("schedule.fallback.data_plan", locale)
         next_run_text = format_lagos_schedule_datetime(next_run_at)
-        response = (
-            f"Scheduled data purchase created: {amount} {plan} for {target} "
-            f"({recurrence_type.replace('_', ' ')}) in {timezone}. Next run: {next_run_text}."
+        response = render_message(
+            "schedule.created.data",
+            locale,
+            {
+                "amount": amount,
+                "plan": plan,
+                "target": target,
+                "recurrence": schedule_recurrence_label(recurrence_type, locale),
+                "timezone": timezone,
+                "next_run": next_run_text,
+            },
         )
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -344,7 +353,7 @@ class DataWorker:
         action = str(payload.get("action") or "buy_data")
         locale = LocaleManager.normalize(context.get("language")).value
         if action in SCHEDULING_ACTIONS and not settings.enable_transfer_scheduling:
-            message = "Scheduled data purchases are currently unavailable. You can buy data now."
+            message = render_message("schedule.unavailable.data", locale)
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
                 error=message,

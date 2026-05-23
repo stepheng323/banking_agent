@@ -97,7 +97,7 @@ class _MockScheduleCountWorker:
         self.last_context = context
         return TransactionResult(
             outcome=TransactionOutcome.OK,
-            response="You have 2 pending scheduled transactions.",
+            response="Pending scheduled transactions: 2.",
             patch={
                 "is_scheduled_operation": True,
                 "skip_finalize_summary": True,
@@ -1012,7 +1012,7 @@ async def test_schedule_management_task_bypasses_transfer_mandate_gate() -> None
     assert worker.last_payload and worker.last_payload["schedule_response_mode"] == "count"
     assert updates["tasks"]["schedule_count"].stage == TaskStage.COMPLETED
     assert updates["current_wave_index"] == 1
-    assert updates["outbox"] == [{"type": "say", "text": "You have 2 pending scheduled transactions."}]
+    assert updates["outbox"] == [{"type": "say", "text": "Pending scheduled transactions: 2."}]
     assert updates["context_frames"][-1].frame_type == ContextFrameType.SCHEDULE_LIST
     assert updates["context_frames"][-1].items[0].data["target"] == "Mum"
 

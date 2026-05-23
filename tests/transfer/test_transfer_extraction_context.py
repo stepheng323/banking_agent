@@ -778,7 +778,7 @@ async def test_schedule_time_reply_fills_required_time_without_extractor() -> No
     worker_context = SimpleNamespace(
         extractor=capture_extractor,
         required_fields=["schedule_time_local"],
-        previous_response="What time should I send it?",
+        previous_response="What time should I schedule it?",
     )
 
     result = await step.execute(payload, context, TransferGates(), worker_context)
@@ -841,7 +841,7 @@ async def test_monthly_schedule_weekday_time_reply_fills_date_and_time() -> None
     worker_context = SimpleNamespace(
         extractor=capture_extractor,
         required_fields=["schedule_time_local"],
-        previous_response="What time should I send it?",
+        previous_response="What time should I schedule it?",
     )
 
     result = await step.execute(payload, context, TransferGates(), worker_context)
@@ -861,7 +861,7 @@ async def test_schedule_weekday_reply_fills_required_date_without_extractor() ->
     worker_context = SimpleNamespace(
         extractor=capture_extractor,
         required_fields=["schedule_start_date"],
-        previous_response="What date should I send it?",
+        previous_response="What date should I schedule it?",
     )
 
     result = await step.execute(payload, context, TransferGates(), worker_context)
@@ -880,14 +880,14 @@ async def test_invalid_schedule_time_reply_reprompts_without_extractor() -> None
     worker_context = SimpleNamespace(
         extractor=capture_extractor,
         required_fields=["schedule_time_local"],
-        previous_response="What time should I send it?",
+        previous_response="What time should I schedule it?",
     )
 
     result = await step.execute(payload, context, TransferGates(), worker_context)
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["schedule_time_local"]
-    assert result.prompt == "What time should I send it?"
+    assert result.prompt == "What time should I schedule it?"
     assert capture_extractor.last_user_message is None
 
 

@@ -839,6 +839,96 @@
       "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "schedule": {
+    "prompt": {
+      "time": "Kedu time ka m schedule ya?",
+      "date": "Kedu date ka m schedule ya?",
+      "future_date_time": "Biko zitere future date na time maka schedule a."
+    },
+    "confirmation": {
+      "today": "Taa",
+      "tomorrow": "Echi",
+      "line": "A schedule ya maka: {date}, {time} WAT"
+    },
+    "recurrence": {
+      "one_time": "Otu ugboro",
+      "daily": "Kwa ubochi",
+      "weekly": "Kwa izu",
+      "monthly": "Kwa onwa"
+    },
+    "domain": {
+      "transfer": "Transfer",
+      "airtime": "Airtime",
+      "data": "Data"
+    },
+    "fallback": {
+      "time_not_set": "time adighi set",
+      "not_set": "adighi set",
+      "recipient": "recipient",
+      "data_plan": "data",
+      "scheduled": "schedule"
+    },
+    "target": {
+      "airtime_with_network": "{network} airtime for {phone}",
+      "airtime": "airtime for {phone}",
+      "data_with_network": "{plan} {network} data for {phone}",
+      "data": "{plan} for {phone}"
+    },
+    "time": {
+      "with_timezone": "{time} WAT"
+    },
+    "row": {
+      "basic": "{index}. {domain}: {amount} {target} • {recurrence} na {time} WAT",
+      "with_id": "{row} (ID: {schedule_id})"
+    },
+    "list": {
+      "count": "I nwere schedules {count} na-eche.",
+      "empty": "I nweghi active schedules.",
+      "header": "Scheduled transactions gi:"
+    },
+    "find": {
+      "not_found": "Ahughi m active scheduled transaction kwekọrọ na nke ahụ.",
+      "header": "Schedules kwekọrọ:"
+    },
+    "cancel": {
+      "none": "I nweghi active schedules ka a cancel.",
+      "success": "Scheduled transaction a kagburu."
+    },
+    "edit": {
+      "ask_change": "Gini ka m gbanwee na scheduled transaction a?",
+      "stale": "Schedule a na processing ma obu o kwusighi active. Biko nwaa ozo.",
+      "success": "Schedule emelitela: {changes}. Next run: {next_run}.",
+      "change": {
+        "separator": "; ",
+        "amount_from_to": "amount gbanwere site na {old} gaa {new}",
+        "amount_to": "amount gbanwere gaa {new}",
+        "time_from_to": "time gbanwere site na {old} gaa {new} WAT",
+        "date_from_to": "date gbanwere site na {old} gaa {new}",
+        "recurrence_from_to": "repeat pattern gbanwere site na {old} gaa {new}",
+        "target_updated": "recipient details emelitela",
+        "source_updated": "source account emelitela",
+        "narration_updated": "narration emelitela",
+        "details_updated": "details emelitela"
+      }
+    },
+    "update": {
+      "time_pending": "Scheduled time ka na-eche"
+    },
+    "disambiguation": {
+      "not_found_for_action": "Ahughi m active scheduled transaction to {action}.",
+      "prompt": "Zaa na schedule number ka m {action}:"
+    },
+    "created": {
+      "transfer": "Scheduled transfer adila ready: {amount} to {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "airtime": "Scheduled airtime adila ready: {amount} for {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "data": "Scheduled data adila ready: {amount} {plan} for {target} ({recurrence}) in {timezone}. Next run: {next_run}."
+    },
+    "unavailable": {
+      "transfer": "Scheduled transfers adighi available ugbu a. I nwere ike send transfer a now.",
+      "airtime": "Scheduled airtime purchases adighi available ugbu a. I nwere ike buy airtime now.",
+      "data": "Scheduled data purchases adighi available ugbu a. I nwere ike buy data now."
+    }
+  },
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",

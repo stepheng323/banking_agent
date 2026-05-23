@@ -25,7 +25,7 @@ async def test_date_only_scheduled_transfer_asks_for_time_before_confirmation() 
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["schedule_time_local"]
-    assert result.prompt == "What time should I send it?"
+    assert result.prompt == "What time should I schedule it?"
 
 
 async def test_scheduled_transfer_with_date_and_time_reaches_confirmation() -> None:
@@ -69,7 +69,29 @@ async def test_monthly_scheduled_transfer_without_time_asks_only_for_time() -> N
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["schedule_time_local"]
-    assert result.prompt == "What time should I send it?"
+    assert result.prompt == "What time should I schedule it?"
+
+
+async def test_scheduled_transfer_time_prompt_uses_locale_catalog() -> None:
+    step = ScheduleRequirementsStep()
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Mum",
+        recipient_account="0034575515",
+        recipient_bank_name="Gtb",
+        schedule_mode="one_time",
+        recurrence_type="one_time",
+        schedule_start_date="2026-05-22",
+    )
+
+    result = await step.execute(
+        payload,
+        TransferContext(phone_number="2348000000999", language="pcm"),
+        TransferGates(),
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.prompt == "Which time make I schedule am?"
 
 
 def test_scheduled_transfer_confirmation_copy_is_schedule_specific() -> None:

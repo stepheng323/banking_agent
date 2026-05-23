@@ -873,6 +873,96 @@
       "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "schedule": {
+    "prompt": {
+      "time": "What time should I schedule it?",
+      "date": "What date should I schedule it?",
+      "future_date_time": "Please provide a future schedule date and time."
+    },
+    "confirmation": {
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "line": "Scheduled for: {date}, {time} WAT"
+    },
+    "recurrence": {
+      "one_time": "One Time",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly"
+    },
+    "domain": {
+      "transfer": "Transfer",
+      "airtime": "Airtime",
+      "data": "Data"
+    },
+    "fallback": {
+      "time_not_set": "time not set",
+      "not_set": "not set",
+      "recipient": "recipient",
+      "data_plan": "data",
+      "scheduled": "Scheduled"
+    },
+    "target": {
+      "airtime_with_network": "{network} airtime for {phone}",
+      "airtime": "airtime for {phone}",
+      "data_with_network": "{plan} {network} data for {phone}",
+      "data": "{plan} for {phone}"
+    },
+    "time": {
+      "with_timezone": "{time} WAT"
+    },
+    "row": {
+      "basic": "{index}. {domain}: {amount} {target} • {recurrence} at {time} WAT",
+      "with_id": "{row} (ID: {schedule_id})"
+    },
+    "list": {
+      "count": "Pending scheduled transactions: {count}.",
+      "empty": "You have no active scheduled transactions.",
+      "header": "Scheduled transactions:"
+    },
+    "find": {
+      "not_found": "I couldn't find an active scheduled transaction matching that.",
+      "header": "Matching scheduled transactions:"
+    },
+    "cancel": {
+      "none": "You have no active scheduled transactions to cancel.",
+      "success": "Scheduled transaction cancelled."
+    },
+    "edit": {
+      "ask_change": "What should I change on this scheduled transaction?",
+      "stale": "This schedule is already being processed or is no longer active. Please try again.",
+      "success": "Schedule updated: {changes}. Next run: {next_run}.",
+      "change": {
+        "separator": "; ",
+        "amount_from_to": "amount changed from {old} to {new}",
+        "amount_to": "amount changed to {new}",
+        "time_from_to": "time changed from {old} to {new} WAT",
+        "date_from_to": "date changed from {old} to {new}",
+        "recurrence_from_to": "recurrence changed from {old} to {new}",
+        "target_updated": "target details updated",
+        "source_updated": "source account updated",
+        "narration_updated": "narration updated",
+        "details_updated": "details updated"
+      }
+    },
+    "update": {
+      "time_pending": "Scheduled time pending"
+    },
+    "disambiguation": {
+      "not_found_for_action": "I couldn't find an active scheduled transaction to {action}.",
+      "prompt": "Reply with the schedule number to {action}:"
+    },
+    "created": {
+      "transfer": "Scheduled transfer created: {amount} to {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "airtime": "Scheduled airtime purchase created: {amount} for {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "data": "Scheduled data purchase created: {amount} {plan} for {target} ({recurrence}) in {timezone}. Next run: {next_run}."
+    },
+    "unavailable": {
+      "transfer": "Scheduled transfers are currently unavailable. You can send this transfer now.",
+      "airtime": "Scheduled airtime purchases are currently unavailable. You can buy airtime now.",
+      "data": "Scheduled data purchases are currently unavailable. You can buy data now."
+    }
+  },
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",

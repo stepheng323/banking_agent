@@ -32,7 +32,7 @@ class ConfirmationStep(PipelineStep):
                 },
                 locale=locale,
             )
-            schedule_line = format_schedule_confirmation_line(payload)
+            schedule_line = format_schedule_confirmation_line(payload, locale)
             if schedule_line:
                 summary = f"{summary}\n\n{schedule_line}"
         else:

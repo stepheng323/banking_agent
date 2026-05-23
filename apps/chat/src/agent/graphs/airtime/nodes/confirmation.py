@@ -48,7 +48,7 @@ class ConfirmationStep(AirtimeStep):
             },
             locale=context.language,
         )
-        schedule_line = format_schedule_confirmation_line(data)
+        schedule_line = format_schedule_confirmation_line(data, context.language)
         if schedule_line:
             summary = f"{summary}\n\n{schedule_line}"
 

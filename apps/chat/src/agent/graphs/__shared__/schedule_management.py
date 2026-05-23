@@ -6,12 +6,16 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
-from apps.chat.src.agent.graphs.__shared__.scheduling import format_schedule_confirmation_line
+from apps.chat.src.agent.graphs.__shared__.scheduling import (
+    format_schedule_confirmation_line,
+    schedule_recurrence_label,
+)
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.enums import ScheduledInstructionStatusEnum
 from shared.formatters.currency import format_naira
+from shared.i18n import MessageKey, render_message
 from shared.services.scheduling.recurrence import (
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,
@@ -20,11 +24,6 @@ from shared.services.scheduling.recurrence import (
     today_lagos,
 )
 
-_DOMAIN_LABELS = {
-    "transfer": "Transfer",
-    "airtime": "Airtime",
-    "data": "Data",
-}
 _SCHEDULE_FIELDS = {
     "schedule_mode",
     "recurrence_type",
@@ -126,67 +125,101 @@ def _domain(schedule: Any) -> str:
     return str(getattr(schedule, "domain", None) or payload.get("domain") or "transfer").strip().lower()
 
 
-def _recurrence_label(schedule: Any) -> str:
-    recurrence = str(getattr(schedule, "recurrence_type", None) or "one_time")
-    return recurrence.replace("_", " ").title()
+def _dynamic_message_key(key: str, locale: str, *, fallback_en: str) -> str:
+    return render_message(cast(MessageKey, key), locale, fallback_en=fallback_en)
 
 
-def _time_label(schedule: Any) -> str:
+def _domain_label(domain: str, locale: str = "en") -> str:
+    return _dynamic_message_key(f"schedule.domain.{domain}", locale, fallback_en=domain.title())
+
+
+def _recurrence_value_label(recurrence: Any, locale: str = "en") -> str:
+    return schedule_recurrence_label(recurrence, locale)
+
+
+def _recurrence_label(schedule: Any, locale: str = "en") -> str:
+    return _recurrence_value_label(getattr(schedule, "recurrence_type", None), locale)
+
+
+def _time_label(schedule: Any, locale: str = "en") -> str:
     local_time = str(getattr(schedule, "local_time", "") or _payload(schedule).get("schedule_time_local") or "")
     normalized = normalize_time_local(local_time) or local_time
     try:
         return datetime.strptime(normalized, "%H:%M").strftime("%I:%M %p").lstrip("0")
     except ValueError:
-        return normalized or "time not set"
+        return normalized or render_message("schedule.fallback.time_not_set", locale)
 
 
-def _time_value_label(value: Any) -> str:
+def _time_value_label(value: Any, locale: str = "en") -> str:
     normalized = normalize_time_local(str(value or "")) or str(value or "")
     try:
         return datetime.strptime(normalized, "%H:%M").strftime("%I:%M %p").lstrip("0")
     except ValueError:
-        return normalized or "not set"
+        return normalized or render_message("schedule.fallback.not_set", locale)
 
 
-def _target_label(schedule: Any) -> str:
+def _target_label(schedule: Any, locale: str = "en") -> str:
     payload = _payload(schedule)
     domain = _domain(schedule)
     if domain == "airtime":
-        phone = payload.get("recipient_phone") or payload.get("phone") or "recipient"
+        phone = payload.get("recipient_phone") or payload.get("phone") or render_message("schedule.fallback.recipient", locale)
         network = payload.get("network")
-        return f"{network} airtime for {phone}" if network else f"airtime for {phone}"
+        if network:
+            return render_message(
+                "schedule.target.airtime_with_network",
+                locale,
+                {"network": str(network), "phone": str(phone)},
+            )
+        return render_message("schedule.target.airtime", locale, {"phone": str(phone)})
     if domain == "data":
-        phone = payload.get("target_phone") or payload.get("recipient_phone") or "recipient"
-        plan = payload.get("plan_name") or payload.get("plan") or "data"
+        phone = payload.get("target_phone") or payload.get("recipient_phone") or render_message(
+            "schedule.fallback.recipient",
+            locale,
+        )
+        plan = payload.get("plan_name") or payload.get("plan") or render_message("schedule.fallback.data_plan", locale)
         network = payload.get("network")
-        return f"{plan} {network} data for {phone}" if network else f"{plan} for {phone}"
+        if network:
+            return render_message(
+                "schedule.target.data_with_network",
+                locale,
+                {"plan": str(plan), "network": str(network), "phone": str(phone)},
+            )
+        return render_message("schedule.target.data", locale, {"plan": str(plan), "phone": str(phone)})
     return (
         str(payload.get("recipient_resolved_name") or payload.get("recipient_name") or "").strip()
         or str(payload.get("recipient_account") or "").strip()
-        or "recipient"
+        or render_message("schedule.fallback.recipient", locale)
     )
 
 
-def _amount_label(schedule: Any) -> str:
+def _amount_label(schedule: Any, locale: str = "en") -> str:
     payload = _payload(schedule)
     amount = payload.get("amount")
     if isinstance(amount, (int, float)) and float(amount) > 0:
         return format_naira(float(amount))
-    return "Scheduled"
+    return render_message("schedule.fallback.scheduled", locale)
 
 
-def format_schedule_row(index: int, schedule: Any, *, include_id: bool = False) -> str:
-    domain = _DOMAIN_LABELS.get(_domain(schedule), _domain(schedule).title())
-    line = (
-        f"{index}. {domain}: {_amount_label(schedule)} {_target_label(schedule)} "
-        f"• {_recurrence_label(schedule)} at {_time_label(schedule)} WAT"
+def format_schedule_row(index: int, schedule: Any, *, include_id: bool = False, locale: str = "en") -> str:
+    domain = _domain_label(_domain(schedule), locale)
+    line = render_message(
+        "schedule.row.basic",
+        locale,
+        {
+            "index": index,
+            "domain": domain,
+            "amount": _amount_label(schedule, locale),
+            "target": _target_label(schedule, locale),
+            "recurrence": _recurrence_label(schedule, locale),
+            "time": _time_label(schedule, locale),
+        },
     )
     if include_id:
-        line = f"{line} (ID: {schedule.id})"
+        line = render_message("schedule.row.with_id", locale, {"row": line, "schedule_id": str(schedule.id)})
     return line
 
 
-def build_schedule_context_items(schedules: list[Any]) -> list[dict[str, Any]]:
+def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") -> list[dict[str, Any]]:
     """Build serializable context-frame rows for scheduled transaction follow-ups."""
     items: list[dict[str, Any]] = []
     for index, schedule in enumerate(schedules, start=1):
@@ -199,18 +232,18 @@ def build_schedule_context_items(schedules: list[Any]) -> list[dict[str, Any]]:
             if isinstance(next_run_at_utc, datetime)
             else None
         )
-        row = format_schedule_row(index, schedule, include_id=False)
+        row = format_schedule_row(index, schedule, include_id=False, locale=locale)
         label = row.split(". ", 1)[1] if row.startswith(f"{index}. ") else row
         data: dict[str, Any] = {
             "type": "scheduled_transaction",
             "schedule_id": str(getattr(schedule, "id", "")),
-            "domain": _DOMAIN_LABELS.get(_domain(schedule), _domain(schedule).title()),
+            "domain": _domain_label(_domain(schedule), locale),
             "domain_key": _domain(schedule),
             "amount": amount,
             "amount_value": float(amount_raw) if isinstance(amount_raw, (int, float)) else None,
-            "target": _target_label(schedule),
-            "recurrence": _recurrence_label(schedule),
-            "schedule_time": f"{_time_label(schedule)} WAT",
+            "target": _target_label(schedule, locale),
+            "recurrence": _recurrence_label(schedule, locale),
+            "schedule_time": render_message("schedule.time.with_timezone", locale, {"time": _time_label(schedule, locale)}),
             "next_run": next_run,
             "status": str(getattr(schedule, "status", "") or "active"),
             "source_bank_name": payload.get("source_bank_name"),
@@ -351,7 +384,12 @@ def _merged_schedule_state(schedule: Any, edit_patch: dict[str, Any]) -> dict[st
     }
 
 
-def build_schedule_update_summary(schedule: Any, edit_patch: dict[str, Any]) -> tuple[str, dict[str, Any], datetime | None]:
+def build_schedule_update_summary(
+    schedule: Any,
+    edit_patch: dict[str, Any],
+    *,
+    locale: str = "en",
+) -> tuple[str, dict[str, Any], datetime | None]:
     merged = _merged_schedule_state(schedule, edit_patch)
     next_run_at = compute_initial_next_run_utc(
         recurrence_type=merged["recurrence_type"],
@@ -366,7 +404,10 @@ def build_schedule_update_summary(schedule: Any, edit_patch: dict[str, Any]) -> 
         schedule_time_local=merged["local_time"],
         recurrence_type=merged["recurrence_type"],
     )
-    schedule_line = format_schedule_confirmation_line(confirmation_data) or "Scheduled time pending"
+    schedule_line = format_schedule_confirmation_line(confirmation_data, locale) or render_message(
+        "schedule.update.time_pending",
+        locale,
+    )
     payload = merged["payload"]
     preview = SimpleNamespace(
         id=getattr(schedule, "id", None),
@@ -378,7 +419,7 @@ def build_schedule_update_summary(schedule: Any, edit_patch: dict[str, Any]) -> 
     )
     summary = "\n".join(
         [
-            format_schedule_row(1, preview, include_id=False).removeprefix("1. "),
+            format_schedule_row(1, preview, include_id=False, locale=locale).removeprefix("1. "),
             schedule_line,
         ]
     )
@@ -391,7 +432,13 @@ def build_schedule_update_summary(schedule: Any, edit_patch: dict[str, Any]) -> 
     return summary, snapshot, next_run_at
 
 
-def build_schedule_edit_success_message(schedule: Any, edit_patch: dict[str, Any], next_run_at: datetime) -> str:
+def build_schedule_edit_success_message(
+    schedule: Any,
+    edit_patch: dict[str, Any],
+    next_run_at: datetime,
+    *,
+    locale: str = "en",
+) -> str:
     """Render a concise success message that states what changed."""
     payload = _payload(schedule)
     changes: list[str] = []
@@ -400,27 +447,51 @@ def build_schedule_edit_success_message(schedule: Any, edit_patch: dict[str, Any
         old_amount = payload.get("amount")
         new_amount = edit_patch.get("amount")
         if isinstance(old_amount, (int, float)) and isinstance(new_amount, (int, float)):
-            changes.append(f"amount changed from {format_naira(float(old_amount))} to {format_naira(float(new_amount))}")
+            changes.append(
+                render_message(
+                    "schedule.edit.change.amount_from_to",
+                    locale,
+                    {"old": format_naira(float(old_amount)), "new": format_naira(float(new_amount))},
+                )
+            )
         elif new_amount is not None:
-            changes.append(f"amount changed to {new_amount}")
+            changes.append(render_message("schedule.edit.change.amount_to", locale, {"new": str(new_amount)}))
 
     if "schedule_time_local" in edit_patch:
         old_time = getattr(schedule, "local_time", None)
         new_time = edit_patch.get("schedule_time_local")
         if str(old_time or "") != str(new_time or ""):
-            changes.append(f"time changed from {_time_value_label(old_time)} to {_time_value_label(new_time)} WAT")
+            changes.append(
+                render_message(
+                    "schedule.edit.change.time_from_to",
+                    locale,
+                    {"old": _time_value_label(old_time, locale), "new": _time_value_label(new_time, locale)},
+                )
+            )
 
     if "schedule_start_date" in edit_patch:
         old_date = getattr(schedule, "start_date", None)
         new_date = edit_patch.get("schedule_start_date")
         if str(old_date or "") != str(new_date or ""):
-            changes.append(f"date changed from {old_date or 'not set'} to {new_date}")
+            changes.append(
+                render_message(
+                    "schedule.edit.change.date_from_to",
+                    locale,
+                    {"old": str(old_date or render_message("schedule.fallback.not_set", locale)), "new": str(new_date)},
+                )
+            )
 
     if "recurrence_type" in edit_patch:
-        old_recurrence = str(getattr(schedule, "recurrence_type", None) or "one_time").replace("_", " ").title()
-        new_recurrence = str(edit_patch.get("recurrence_type") or "one_time").replace("_", " ").title()
+        old_recurrence = _recurrence_value_label(getattr(schedule, "recurrence_type", None), locale)
+        new_recurrence = _recurrence_value_label(edit_patch.get("recurrence_type"), locale)
         if old_recurrence != new_recurrence:
-            changes.append(f"recurrence changed from {old_recurrence} to {new_recurrence}")
+            changes.append(
+                render_message(
+                    "schedule.edit.change.recurrence_from_to",
+                    locale,
+                    {"old": old_recurrence, "new": new_recurrence},
+                )
+            )
 
     target_fields = (
         "recipient_name",
@@ -434,7 +505,7 @@ def build_schedule_edit_success_message(schedule: Any, edit_patch: dict[str, Any
         "plan_code",
     )
     if any(field in edit_patch for field in target_fields):
-        changes.append("target details updated")
+        changes.append(render_message("schedule.edit.change.target_updated", locale))
 
     source_fields = (
         "source_account_id",
@@ -444,15 +515,22 @@ def build_schedule_edit_success_message(schedule: Any, edit_patch: dict[str, Any
         "source_account_index",
     )
     if any(field in edit_patch for field in source_fields):
-        changes.append("source account updated")
+        changes.append(render_message("schedule.edit.change.source_updated", locale))
 
     if "narration" in edit_patch:
-        changes.append("narration updated")
+        changes.append(render_message("schedule.edit.change.narration_updated", locale))
 
     if not changes:
-        changes.append("details updated")
+        changes.append(render_message("schedule.edit.change.details_updated", locale))
 
-    return f"Schedule updated: {'; '.join(changes)}. Next run: {format_lagos_schedule_datetime(next_run_at)}."
+    return render_message(
+        "schedule.edit.success",
+        locale,
+        {
+            "changes": render_message("schedule.edit.change.separator", locale).join(changes),
+            "next_run": format_lagos_schedule_datetime(next_run_at),
+        },
+    )
 
 
 def apply_schedule_edit(schedule: Any, edit_patch: dict[str, Any], next_run_at: datetime) -> None:
@@ -475,15 +553,16 @@ def disambiguation_result(
     *,
     action_label: str,
     required_field: str = "schedule_selector",
+    locale: str = "en",
 ) -> TransactionResult:
     if not schedules:
         return TransactionResult(
             outcome=TransactionOutcome.OK,
-            response=f"I couldn't find an active scheduled transaction to {action_label}.",
+            response=render_message("schedule.disambiguation.not_found_for_action", locale, {"action": action_label}),
             patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
         )
-    lines = [f"Reply with the schedule number to {action_label}:"]
-    lines.extend(format_schedule_row(index, schedule) for index, schedule in enumerate(schedules, start=1))
+    lines = [render_message("schedule.disambiguation.prompt", locale, {"action": action_label})]
+    lines.extend(format_schedule_row(index, schedule, locale=locale) for index, schedule in enumerate(schedules, start=1))
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=[required_field],

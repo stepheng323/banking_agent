@@ -839,6 +839,96 @@
       "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "schedule": {
+    "prompt": {
+      "time": "Akoko wo ni ki n schedule e?",
+      "date": "Date wo ni ki n schedule e?",
+      "future_date_time": "Jowo fi future date ati time ranse fun schedule naa."
+    },
+    "confirmation": {
+      "today": "Oni",
+      "tomorrow": "Ola",
+      "line": "A schedule fun: {date}, {time} WAT"
+    },
+    "recurrence": {
+      "one_time": "Igba kan",
+      "daily": "Ojoojumo",
+      "weekly": "Loseeti",
+      "monthly": "Lososu"
+    },
+    "domain": {
+      "transfer": "Transfer",
+      "airtime": "Airtime",
+      "data": "Data"
+    },
+    "fallback": {
+      "time_not_set": "time ko ti set",
+      "not_set": "ko ti set",
+      "recipient": "olugba",
+      "data_plan": "data",
+      "scheduled": "schedule"
+    },
+    "target": {
+      "airtime_with_network": "{network} airtime fun {phone}",
+      "airtime": "airtime fun {phone}",
+      "data_with_network": "{plan} {network} data fun {phone}",
+      "data": "{plan} fun {phone}"
+    },
+    "time": {
+      "with_timezone": "{time} WAT"
+    },
+    "row": {
+      "basic": "{index}. {domain}: {amount} {target} • {recurrence} ni {time} WAT",
+      "with_id": "{row} (ID: {schedule_id})"
+    },
+    "list": {
+      "count": "O ni {count} schedules to n duro.",
+      "empty": "O ko ni active schedules.",
+      "header": "Awon scheduled transactions re:"
+    },
+    "find": {
+      "not_found": "Mi o ri active scheduled transaction to ba eyi mu.",
+      "header": "Awon schedules to ba mu:"
+    },
+    "cancel": {
+      "none": "O ko ni active schedules lati cancel.",
+      "success": "Scheduled transaction ti cancel."
+    },
+    "edit": {
+      "ask_change": "Kini ki n change lori scheduled transaction yii?",
+      "stale": "Schedule yii n process tele tabi ko active mo. Jowo try again.",
+      "success": "Schedule ti update: {changes}. Next run: {next_run}.",
+      "change": {
+        "separator": "; ",
+        "amount_from_to": "amount yipada lati {old} si {new}",
+        "amount_to": "amount yipada si {new}",
+        "time_from_to": "time yipada lati {old} si {new} WAT",
+        "date_from_to": "date yipada lati {old} si {new}",
+        "recurrence_from_to": "repeat pattern yipada lati {old} si {new}",
+        "target_updated": "recipient details ti update",
+        "source_updated": "source account ti update",
+        "narration_updated": "narration ti update",
+        "details_updated": "details ti update"
+      }
+    },
+    "update": {
+      "time_pending": "Scheduled time si n duro"
+    },
+    "disambiguation": {
+      "not_found_for_action": "Mi o ri active scheduled transaction lati {action}.",
+      "prompt": "Fesi pelu schedule number lati {action}:"
+    },
+    "created": {
+      "transfer": "Scheduled transfer ti set: {amount} si {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "airtime": "Scheduled airtime ti set: {amount} fun {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "data": "Scheduled data ti set: {amount} {plan} fun {target} ({recurrence}) in {timezone}. Next run: {next_run}."
+    },
+    "unavailable": {
+      "transfer": "Scheduled transfers ko available bayi. O le send transfer yii now.",
+      "airtime": "Scheduled airtime purchases ko available bayi. O le buy airtime now.",
+      "data": "Scheduled data purchases ko available bayi. O le buy data now."
+    }
+  },
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",

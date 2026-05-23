@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
+from shared.i18n import MessageKey, render_message
 from shared.services.scheduling.recurrence import (
     SCHEDULE_TIMEZONE,
     normalize_time_local,
@@ -153,13 +154,23 @@ def parse_schedule_slot_patch(user_message: str, required_fields: list[str]) -> 
     return patch, remaining
 
 
-def schedule_required_prompt(missing_fields: list[str]) -> str:
+def schedule_required_prompt(missing_fields: list[str], locale: str = "en") -> str:
     fields = set(missing_fields)
     if fields == {"schedule_time_local"}:
-        return "What time should I send it?"
+        return render_message("schedule.prompt.time", locale)
     if fields == {"schedule_start_date"}:
-        return "What date should I send it?"
-    return "Please provide a future schedule date and time."
+        return render_message("schedule.prompt.date", locale)
+    return render_message("schedule.prompt.future_date_time", locale)
+
+
+def schedule_recurrence_label(recurrence_type: Any, locale: str = "en") -> str:
+    normalized = str(recurrence_type or "one_time").strip().lower()
+    recurrence_key = f"schedule.recurrence.{normalized}"
+    return render_message(
+        cast(MessageKey, recurrence_key),
+        locale,
+        fallback_en=normalized.replace("_", " ").title(),
+    )
 
 
 def missing_schedule_fields(data: Any) -> list[str]:
@@ -172,7 +183,7 @@ def missing_schedule_fields(data: Any) -> list[str]:
     return missing
 
 
-def format_schedule_confirmation_line(data: Any) -> str | None:
+def format_schedule_confirmation_line(data: Any, locale: str = "en") -> str | None:
     schedule_time_local = getattr(data, "schedule_time_local", None)
     if not schedule_time_local:
         return None
@@ -186,14 +197,14 @@ def format_schedule_confirmation_line(data: Any) -> str | None:
         if schedule_date is not None:
             today = today_lagos()
             if schedule_date == today:
-                date_text = "Today"
+                date_text = render_message("schedule.confirmation.today", locale)
             elif schedule_date == today + timedelta(days=1):
-                date_text = "Tomorrow"
+                date_text = render_message("schedule.confirmation.tomorrow", locale)
             else:
                 date_text = schedule_date.strftime("%Y-%m-%d")
     recurrence_type = getattr(data, "recurrence_type", None)
     if not date_text and recurrence_type and recurrence_type != "one_time":
-        date_text = str(recurrence_type).replace("_", " ").title()
+        date_text = schedule_recurrence_label(recurrence_type, locale)
     if not date_text:
         return None
 
@@ -201,7 +212,7 @@ def format_schedule_confirmation_line(data: Any) -> str | None:
         time_text = datetime.strptime(str(schedule_time_local), "%H:%M").strftime("%I:%M %p").lstrip("0")
     except ValueError:
         time_text = str(schedule_time_local)
-    return f"Scheduled for: {date_text}, {time_text} WAT"
+    return render_message("schedule.confirmation.line", locale, {"date": date_text, "time": time_text})
 
 
 def base_schedule_fields(data: Any) -> dict[str, Any]:

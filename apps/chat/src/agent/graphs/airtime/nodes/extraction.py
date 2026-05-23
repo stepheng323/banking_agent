@@ -184,7 +184,7 @@ class ExtractionStep(AirtimeStep):
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=remaining_schedule_fields or schedule_required_fields,
-                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields),
+                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields, context.language),
                     patch=_with_skip_patch({"is_scheduled_operation": True, "skip_finalize_summary": True}),
                 )
         numeric_patch = try_extract_numeric_index(self.user_message, "airtime") if waiting_for_source_account else None

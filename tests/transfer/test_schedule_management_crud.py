@@ -163,9 +163,41 @@ async def test_schedule_management_count_mode_reports_pending_count(monkeypatch:
     )
 
     assert result.outcome == TransactionOutcome.OK
-    assert result.response == "You have 2 pending scheduled transactions."
+    assert result.response == "Pending scheduled transactions: 2."
     assert result.patch["schedule_context_items"][0]["label"].startswith("Transfer:")
     assert result.patch["schedule_context_items"][1]["data"]["domain_key"] == "airtime"
+
+
+@pytest.mark.asyncio
+async def test_schedule_management_empty_list_uses_locale_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _FakeScheduleRepo([])
+    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await _worker()._list_schedules(user_id="user-1", locale="pcm")
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response == "You no get active schedules."
+
+
+@pytest.mark.asyncio
+async def test_schedule_management_list_uses_locale_row_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _FakeScheduleRepo(
+        [
+            _schedule(
+                "sch-airtime",
+                domain="airtime",
+                payload_snapshot={"amount": 1000, "recipient_phone": "08162511023", "network": "MTN"},
+            ),
+        ]
+    )
+    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await _worker()._list_schedules(user_id="user-1", locale="pcm")
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response is not None
+    assert result.response.startswith("Your scheduled transactions:")
+    assert "One time by 8:00 AM WAT" in result.response
 
 
 @pytest.mark.asyncio
@@ -292,6 +324,47 @@ async def test_schedule_management_time_only_edit_updates_after_confirmation_wit
     assert schedule.local_time == "09:30"
     assert schedule.next_run_at_utc == expected_next_run_at
     assert uow.committed is True
+
+
+@pytest.mark.asyncio
+async def test_schedule_management_time_edit_success_uses_locale_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule = _schedule(
+        "sch-transfer",
+        domain="transfer",
+        payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
+    )
+    uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
+    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
+    worker = _worker()
+    payload = TransferPayload(
+        schedule_selector="1",
+        schedule_time_local="09:30",
+    )
+
+    confirmation = await worker._edit_schedule(
+        data=payload,
+        user_id="user-1",
+        locale="ha",
+        user_message="change scheduled transfer to 9:30am",
+        gates=TransferGates(),
+    )
+
+    assert confirmation.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+
+    updated = await worker._edit_schedule(
+        data=payload.model_copy(update=confirmation.patch),
+        user_id="user-1",
+        locale="ha",
+        user_message="yes",
+        gates=TransferGates(confirmation_confirmed=True),
+    )
+
+    assert updated.outcome == TransactionOutcome.OK
+    assert updated.response is not None
+    assert "Schedule an update:" in updated.response
+    assert "time ya canza daga 8:00 AM zuwa 9:30 AM WAT" in updated.response
 
 
 @pytest.mark.asyncio

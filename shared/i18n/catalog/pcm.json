@@ -839,6 +839,96 @@
       "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "schedule": {
+    "prompt": {
+      "time": "Which time make I schedule am?",
+      "date": "Which date make I schedule am?",
+      "future_date_time": "Send future date and time for the schedule."
+    },
+    "confirmation": {
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "line": "Scheduled for: {date}, {time} WAT"
+    },
+    "recurrence": {
+      "one_time": "One time",
+      "daily": "Every day",
+      "weekly": "Every week",
+      "monthly": "Every month"
+    },
+    "domain": {
+      "transfer": "Transfer",
+      "airtime": "Airtime",
+      "data": "Data"
+    },
+    "fallback": {
+      "time_not_set": "time never set",
+      "not_set": "not set",
+      "recipient": "recipient",
+      "data_plan": "data",
+      "scheduled": "scheduled item"
+    },
+    "target": {
+      "airtime_with_network": "{network} airtime for {phone}",
+      "airtime": "airtime for {phone}",
+      "data_with_network": "{plan} {network} data for {phone}",
+      "data": "{plan} for {phone}"
+    },
+    "time": {
+      "with_timezone": "{time} WAT"
+    },
+    "row": {
+      "basic": "{index}. {domain}: {amount} {target} • {recurrence} by {time} WAT",
+      "with_id": "{row} (ID: {schedule_id})"
+    },
+    "list": {
+      "count": "You get {count} pending schedules.",
+      "empty": "You no get active schedules.",
+      "header": "Your scheduled transactions:"
+    },
+    "find": {
+      "not_found": "I no find active scheduled transaction wey match that one.",
+      "header": "Schedules wey match:"
+    },
+    "cancel": {
+      "none": "You no get active schedules to cancel.",
+      "success": "Scheduled transaction don cancel."
+    },
+    "edit": {
+      "ask_change": "Wetin make I change for this scheduled transaction?",
+      "stale": "This schedule dey process already or e no active again. Try again.",
+      "success": "Schedule don update: {changes}. Next run: {next_run}.",
+      "change": {
+        "separator": "; ",
+        "amount_from_to": "amount change from {old} to {new}",
+        "amount_to": "amount change to {new}",
+        "time_from_to": "time change from {old} to {new} WAT",
+        "date_from_to": "date change from {old} to {new}",
+        "recurrence_from_to": "repeat pattern change from {old} to {new}",
+        "target_updated": "recipient details don update",
+        "source_updated": "source account don update",
+        "narration_updated": "narration don update",
+        "details_updated": "details don update"
+      }
+    },
+    "update": {
+      "time_pending": "Scheduled time still dey pending"
+    },
+    "disambiguation": {
+      "not_found_for_action": "I no find active scheduled transaction to {action}.",
+      "prompt": "Fesi with the schedule number make I {action}:"
+    },
+    "created": {
+      "transfer": "Scheduled transfer don ready: {amount} to {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "airtime": "Scheduled airtime don ready: {amount} for {recipient} ({recurrence}) in {timezone}. Next run: {next_run}.",
+      "data": "Scheduled data don ready: {amount} {plan} for {target} ({recurrence}) in {timezone}. Next run: {next_run}."
+    },
+    "unavailable": {
+      "transfer": "Scheduled transfers no dey available now. You fit send this transfer now.",
+      "airtime": "Scheduled airtime purchases no dey available now. You fit buy airtime now.",
+      "data": "Scheduled data purchases no dey available now. You fit buy data now."
+    }
+  },
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",

@@ -732,7 +732,7 @@ class ExtractionStep(TransferStep):
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=remaining_schedule_fields or schedule_required_fields,
-                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields),
+                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields, context.language),
                     patch=_with_skip_patch({}),
                 )
         if (
