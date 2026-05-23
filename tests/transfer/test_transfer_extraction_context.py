@@ -285,6 +285,48 @@ async def test_extraction_step_accepts_numeric_referent_recipient_selection() ->
     assert result.patch["referent_recipient_candidates"] == []
 
 
+async def test_extraction_step_reuses_amount_and_source_account_referents() -> None:
+    step = ExtractionStep(user_message="do it again from same account")
+    payload = TransferPayload(recipient_name="him")
+    context = TransferContext(
+        phone_number="2348000000999",
+        language="en",
+        beneficiaries=[],
+        accounts=[],
+        resolved_referents={
+            "amount": {
+                "status": "resolved",
+                "item": {"label": "5000", "data": {"amount": 5000}},
+            },
+            "source_account": {
+                "status": "resolved",
+                "item": {
+                    "label": "Kuda",
+                    "data": {
+                        "source_account_id": "acc-kuda",
+                        "source_bank_name": "Kuda",
+                        "source_account_name": "Kuda Main",
+                        "source_account_number": "0000000001",
+                    },
+                },
+            },
+        },
+    )
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["amount", "source_account_id"],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 5000
+    assert result.patch["source_account_id"] == "acc-kuda"
+    assert result.patch["source_bank_name"] == "Kuda"
+    assert result.patch["confirmation"]["confirmed"] is False
+
+
 async def test_extraction_step_accepts_unique_bank_label_for_beneficiary_selection() -> None:
     first_id = str(uuid4())
     second_id = str(uuid4())

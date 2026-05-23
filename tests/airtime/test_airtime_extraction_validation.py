@@ -178,6 +178,117 @@ async def test_airtime_extraction_reuses_resolved_phone_referent_without_extract
 
 
 @pytest.mark.asyncio
+async def test_airtime_extraction_reuses_repeat_amount_and_source_referents_without_extractor() -> None:
+    step = ExtractionStep("buy airtime for that number again from same account")
+    payload = AirtimePayload()
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        resolved_referents={
+            "phone": {
+                "status": "resolved",
+                "item": {"label": "Mum", "data": {"phone": "08162511023", "network": "mtn"}},
+            },
+            "amount": {
+                "status": "resolved",
+                "item": {"label": "2000", "data": {"amount": 2000}},
+            },
+            "source_account": {
+                "status": "resolved",
+                "item": {
+                    "label": "Kuda",
+                    "data": {
+                        "source_account_id": "acc-kuda",
+                        "source_bank_name": "Kuda",
+                        "source_account_name": "Kuda Main",
+                        "source_account_number": "0000000001",
+                    },
+                },
+            },
+        },
+    )
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["recipient_phone", "amount"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {
+        "recipient_phone": "08162511023",
+        "network": "MTN",
+        "amount": 2000,
+        "source_account_id": "acc-kuda",
+        "source_bank_name": "Kuda",
+        "source_account_name": "Kuda Main",
+        "source_account_number": "0000000001",
+        "source_account_index": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_airtime_extraction_ambiguous_phone_referent_prompts_with_candidates() -> None:
+    step = ExtractionStep("buy airtime for that number")
+    payload = AirtimePayload(amount=1000)
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        resolved_referents={
+            "phone": {
+                "status": "ambiguous",
+                "candidates": [
+                    {"label": "Mum", "data": {"phone": "08162511023", "network": "mtn"}},
+                    {"label": "Dad", "data": {"phone": "08031234567", "network": "airtel"}},
+                ],
+            }
+        },
+    )
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["recipient_phone"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["referent_phone_id"]
+    assert "Which number" in str(result.prompt)
+    assert "Reply with the number" in str(result.prompt)
+    assert result.patch["referent_phone_candidates"][0]["recipient_phone"] == "08162511023"
+
+
+@pytest.mark.asyncio
+async def test_airtime_extraction_accepts_numeric_referent_phone_selection() -> None:
+    step = ExtractionStep("2")
+    payload = AirtimePayload(
+        amount=1000,
+        referent_phone_candidates=[
+            {
+                "index": 1,
+                "option_id": "phone:08162511023",
+                "label": "Mum • 08162511023 • MTN",
+                "recipient_phone": "08162511023",
+                "network": "MTN",
+            },
+            {
+                "index": 2,
+                "option_id": "phone:08031234567",
+                "label": "Dad • 08031234567 • AIRTEL",
+                "recipient_phone": "08031234567",
+                "network": "AIRTEL",
+            },
+        ],
+    )
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["referent_phone_id"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_phone"] == "08031234567"
+    assert result.patch["network"] == "AIRTEL"
+    assert result.patch["referent_phone_candidates"] == []
+
+
+@pytest.mark.asyncio
 async def test_airtime_extraction_passes_compact_context_to_extractor() -> None:
     step = ExtractionStep("08162511023")
     payload = AirtimePayload(amount=5000, recipient_name="Mum")

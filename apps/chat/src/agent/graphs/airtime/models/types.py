@@ -39,6 +39,7 @@ class AirtimePayload(BaseModel):
 
     recipient_name: str | None = None
     beneficiary_id: str | None = None
+    referent_phone_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_self: bool = False
 
     source_account_id: str | None = None

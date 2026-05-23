@@ -13,6 +13,7 @@ class DataPayload(BaseModel):
     amount: float | None = None
     network: str | None = None
     beneficiary_id: str | None = None
+    referent_phone_candidates: list[dict[str, Any]] = Field(default_factory=list)
     target_phone: str | None = None
     plan_code: str | None = None
     plan_name: str | None = None

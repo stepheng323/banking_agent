@@ -366,6 +366,56 @@ def _parse_amount_input(user_message: str) -> float | None:
     return amount
 
 
+def _resolved_referent_data(context: TransferContext, referent_type: str) -> dict[str, Any] | None:
+    resolution = context.resolved_referents.get(referent_type)
+    if not isinstance(resolution, dict) or resolution.get("status") != "resolved":
+        return None
+    item = resolution.get("item")
+    if not isinstance(item, dict):
+        return None
+    data = item.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _resolved_amount_referent(context: TransferContext) -> float | None:
+    data = _resolved_referent_data(context, "amount")
+    if not data:
+        return None
+    try:
+        amount = float(data.get("amount"))
+    except (TypeError, ValueError):
+        return None
+    return amount if amount > 0 else None
+
+
+def _build_resolved_referent_patch(data: TransferPayload, context: TransferContext) -> dict[str, Any]:
+    patch: dict[str, Any] = {}
+    amount = _resolved_amount_referent(context)
+    if amount is not None and data.amount is None and not data.transfer_all and data.transfer_percentage is None:
+        patch.update(
+            {
+                "amount": amount,
+                "suggested_amount": None,
+                "transfer_percentage": None,
+                "transfer_all": False,
+            }
+        )
+
+    if not (data.source_account_id or data.source_bank_name or data.source_account_number or data.source_account_index):
+        source_account = _resolved_referent_data(context, "source_account")
+        if source_account:
+            source_patch = build_source_account_patch(source_account)
+            if any(
+                source_patch.get(field)
+                for field in ("source_account_id", "source_bank_name", "source_account_number")
+            ):
+                patch.update(source_patch)
+
+    if patch:
+        patch["confirmation"] = {"confirmed": False}
+    return patch
+
+
 def _parse_simple_transfer_command(
     user_message: str,
     current_payload: TransferPayload,
@@ -819,6 +869,17 @@ class ExtractionStep(TransferStep):
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 patch=_with_skip_patch(confirmation_edit_patch),
+            )
+
+        referent_patch = _build_resolved_referent_patch(data, context)
+        if referent_patch:
+            logger.info(
+                "deterministic_transfer_referent_fastpath",
+                fields=sorted(referent_patch.keys()),
+            )
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_with_skip_patch(referent_patch),
             )
 
         # Optimization: Phase 4 (Planner-as-Extractor)

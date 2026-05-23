@@ -70,6 +70,114 @@ async def test_data_extraction_reuses_resolved_phone_referent_without_extractor(
 
 
 @pytest.mark.asyncio
+async def test_data_extraction_reuses_repeat_referents_without_extractor() -> None:
+    step = ExtractionStep("buy data for that number again from same account")
+    payload = DataPayload()
+    context = DataContext(
+        phone_number="2348000000000",
+        language="en",
+        resolved_referents={
+            "phone": {
+                "status": "resolved",
+                "item": {"label": "Mum", "data": {"phone": "08162511023", "network": "mtn"}},
+            },
+            "amount": {
+                "status": "resolved",
+                "item": {"label": "1500", "data": {"amount": 1500}},
+            },
+            "source_account": {
+                "status": "resolved",
+                "item": {
+                    "label": "Kuda",
+                    "data": {
+                        "source_account_id": "acc-kuda",
+                        "source_bank_name": "Kuda",
+                        "source_account_name": "Kuda Main",
+                        "source_account_number": "0000000001",
+                    },
+                },
+            },
+        },
+    )
+    gates = DataGates()
+    worker_context = SimpleNamespace(required_fields=["target_phone"], extractor=None)
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is None
+    assert payload.target_phone == "08162511023"
+    assert payload.network == "MTN"
+    assert payload.amount == 1500
+    assert payload.source_account_id == "acc-kuda"
+    assert payload.source_bank_name == "Kuda"
+    assert payload.source_account_name == "Kuda Main"
+    assert payload.source_account_number == "0000000001"
+
+
+@pytest.mark.asyncio
+async def test_data_extraction_ambiguous_phone_referent_prompts_with_candidates() -> None:
+    step = ExtractionStep("buy data for that number")
+    payload = DataPayload()
+    context = DataContext(
+        phone_number="2348000000000",
+        language="en",
+        resolved_referents={
+            "phone": {
+                "status": "ambiguous",
+                "candidates": [
+                    {"label": "Mum", "data": {"phone": "08162511023", "network": "mtn"}},
+                    {"label": "Dad", "data": {"phone": "08031234567", "network": "airtel"}},
+                ],
+            }
+        },
+    )
+    gates = DataGates()
+    worker_context = SimpleNamespace(required_fields=["target_phone"], extractor=None)
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is not None
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["referent_phone_id"]
+    assert "Which number" in str(result.prompt)
+    assert "Reply with the number" in str(result.prompt)
+    assert result.patch["referent_phone_candidates"][1]["target_phone"] == "08031234567"
+
+
+@pytest.mark.asyncio
+async def test_data_extraction_accepts_numeric_referent_phone_selection() -> None:
+    step = ExtractionStep("1")
+    payload = DataPayload(
+        referent_phone_candidates=[
+            {
+                "index": 1,
+                "option_id": "phone:08162511023",
+                "label": "Mum • 08162511023 • MTN",
+                "target_phone": "08162511023",
+                "network": "MTN",
+            },
+            {
+                "index": 2,
+                "option_id": "phone:08031234567",
+                "label": "Dad • 08031234567 • AIRTEL",
+                "target_phone": "08031234567",
+                "network": "AIRTEL",
+            },
+        ],
+    )
+    context = DataContext(phone_number="2348000000000", language="en")
+    gates = DataGates()
+    worker_context = SimpleNamespace(required_fields=["referent_phone_id"], extractor=None)
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is None
+    assert payload.target_phone == "08162511023"
+    assert payload.network == "MTN"
+    assert payload.referent_phone_candidates == []
+
+
+@pytest.mark.asyncio
 async def test_data_extraction_passes_compact_context_to_extractor() -> None:
     step = ExtractionStep("08162511023")
     payload = DataPayload(network="MTN")

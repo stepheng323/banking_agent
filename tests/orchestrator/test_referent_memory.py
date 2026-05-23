@@ -10,8 +10,10 @@ from apps.chat.src.agent.orchestrator.context.referent_memory import (
     remember_referents_from_completed_task,
     remember_referents_from_frame,
     remember_referents_from_stashed_session,
+    resolve_amount_reference,
     resolve_phone_reference,
     resolve_recipient_reference,
+    resolve_source_account_reference,
 )
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
@@ -268,3 +270,78 @@ def test_build_resolved_referents_includes_only_referenced_types() -> None:
 
     assert resolved["recipient"]["status"] == "resolved"
     assert "amount" not in resolved
+
+
+def test_referent_memory_resolves_repeat_amount_when_no_explicit_amount() -> None:
+    state = _state()
+    state.referent_memory.items = [
+        ReferentMemoryItem(
+            referent_type="amount",
+            source="completed_task",
+            label="5000",
+            data={"amount": 5000},
+            confidence=0.94,
+        )
+    ]
+
+    result = resolve_amount_reference(state, "do it again")
+
+    assert result.status == "resolved"
+    assert result.item is not None
+    assert result.item.data["amount"] == 5000
+
+
+def test_referent_memory_does_not_reuse_amount_when_message_has_explicit_amount() -> None:
+    state = _state()
+    state.referent_memory.items = [
+        ReferentMemoryItem(
+            referent_type="amount",
+            source="completed_task",
+            label="5000",
+            data={"amount": 5000},
+            confidence=0.94,
+        )
+    ]
+
+    result = resolve_amount_reference(state, "send him 7k again")
+
+    assert result.status == "none"
+    assert result.reason == "explicit_amount_present"
+
+
+def test_referent_memory_resolves_pidgin_recipient_reference() -> None:
+    state = _state()
+    state.referent_memory.items = [
+        ReferentMemoryItem(
+            referent_type="recipient",
+            source="completed_task",
+            label="Emeka",
+            data={"recipient_name": "Emeka", "recipient_account": "1234567890"},
+            confidence=0.94,
+        )
+    ]
+
+    result = resolve_recipient_reference(state, "send am 5k")
+
+    assert result.status == "resolved"
+    assert result.item is not None
+    assert result.item.label == "Emeka"
+
+
+def test_referent_memory_resolves_source_account_reference() -> None:
+    state = _state()
+    state.referent_memory.items = [
+        ReferentMemoryItem(
+            referent_type="source_account",
+            source="completed_task",
+            label="Kuda",
+            data={"source_account_id": "acc-1", "source_bank_name": "Kuda"},
+            confidence=0.9,
+        )
+    ]
+
+    result = resolve_source_account_reference(state, "use same account")
+
+    assert result.status == "resolved"
+    assert result.item is not None
+    assert result.item.data["source_account_id"] == "acc-1"

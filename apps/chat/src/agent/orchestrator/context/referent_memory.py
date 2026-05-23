@@ -20,20 +20,35 @@ MAX_REFERENT_ITEMS = 20
 _SENSITIVE_KEY_FRAGMENTS = ("pin", "otp", "password", "token", "secret", "auth", "callback")
 _RECIPIENT_REFERENCE_RE = re.compile(
     r"\b(?:him|her|them|that\s+(?:person|recipient)|this\s+(?:person|recipient)|"
-    r"same\s+(?:person|recipient)|previous\s+(?:person|recipient)|the\s+previous\s+one)\b",
+    r"that\s+(?:guy|babe|customer)|same\s+(?:person|recipient|guy|babe|customer)|"
+    r"previous\s+(?:person|recipient|guy|babe|customer)|the\s+previous\s+one|"
+    r"(?:send|transfer|pay)\s+am\b|(?:to|for)\s+am\b)\b",
     re.IGNORECASE,
 )
 _PHONE_REFERENCE_RE = re.compile(
     r"\b(?:that\s+(?:number|line)|this\s+(?:number|line)|same\s+(?:number|line)|"
-    r"previous\s+(?:number|line))\b",
+    r"previous\s+(?:number|line)|that\s+sim|same\s+sim|"
+    r"(?:buy|purchase|top\s*up)\s+(?:airtime|data)\s+(?:for\s+)?am\b)\b",
     re.IGNORECASE,
 )
 _AMOUNT_REFERENCE_RE = re.compile(
-    r"\b(?:same\s+amount|that\s+amount|this\s+amount|previous\s+amount|same\s+again)\b",
+    r"\b(?:same\s+(?:amount|money|thing)|that\s+(?:amount|money)|this\s+(?:amount|money)|"
+    r"previous\s+(?:amount|money)|same\s+again|do\s+(?:it\s+)?again|send\s+(?:it\s+)?again|"
+    r"buy\s+(?:it\s+)?again|purchase\s+(?:it\s+)?again|repeat(?:\s+(?:it|that))?|again)\b",
     re.IGNORECASE,
 )
 _SOURCE_ACCOUNT_REFERENCE_RE = re.compile(
-    r"\b(?:same\s+account|that\s+account|this\s+account|previous\s+account)\b",
+    r"\b(?:same\s+(?:account|bank|source|debit\s+account)|that\s+(?:account|bank|source|debit\s+account)|"
+    r"this\s+(?:account|bank|source|debit\s+account)|previous\s+(?:account|bank|source|debit\s+account)|"
+    r"(?:from|using|use|with|debit(?:ing)?|charge)\s+(?:the\s+)?same\s+(?:account|bank))\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_AMOUNT_RE = re.compile(
+    r"(?:₦|ngn)\s*\d|"
+    r"\b\d[\d,]*(?:\.\d+)?\s*[kKhH]\b|"
+    r"\b(?:send|transfer|pay|remit|buy|purchase|top\s*up)\s+"
+    r"(?:me\s+|him\s+|her\s+|them\s+|am\s+|airtime\s+|data\s+)?"
+    r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?(?:\s*[kKhH])?\b",
     re.IGNORECASE,
 )
 
@@ -821,6 +836,8 @@ def resolve_phone_reference(state: Any, text: str | None) -> ReferentResolution:
 
 
 def resolve_amount_reference(state: Any, text: str | None) -> ReferentResolution:
+    if _EXPLICIT_AMOUNT_RE.search(text or ""):
+        return ReferentResolution(status="none", referent_type="amount", reason="explicit_amount_present")
     return _resolve_reference(
         state,
         text=text,

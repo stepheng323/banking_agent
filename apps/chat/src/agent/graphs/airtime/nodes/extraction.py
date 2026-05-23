@@ -17,6 +17,7 @@ from apps.chat.src.agent.graphs.airtime.models.types import (
 )
 from apps.chat.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
@@ -100,7 +101,11 @@ def _skip_override_reason(payload: AirtimePayload, message: str) -> str | None:
 
 
 def _resolved_phone_referent(context: AirtimeContext) -> dict[str, Any] | None:
-    resolution = context.resolved_referents.get("phone")
+    return _resolved_referent_data(context, "phone")
+
+
+def _resolved_referent_data(context: AirtimeContext, referent_type: str) -> dict[str, Any] | None:
+    resolution = context.resolved_referents.get(referent_type)
     if not isinstance(resolution, dict) or resolution.get("status") != "resolved":
         return None
     item = resolution.get("item")
@@ -110,23 +115,139 @@ def _resolved_phone_referent(context: AirtimeContext) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def _ambiguous_phone_referent_prompt(context: AirtimeContext) -> str | None:
+def _add_resolved_referent_patch(
+    patch: dict[str, Any],
+    payload: AirtimePayload,
+    context: AirtimeContext,
+) -> None:
+    if not patch.get("recipient_phone") and not payload.recipient_phone:
+        phone_referent = _resolved_phone_referent(context)
+        phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
+        if phone:
+            patch["recipient_phone"] = phone
+            if not patch.get("network") and not payload.network and phone_referent and phone_referent.get("network"):
+                normalized_network = normalize_network_name(str(phone_referent["network"]))
+                patch["network"] = normalized_network or str(phone_referent["network"]).strip().upper()
+
+    if "amount" not in patch and payload.amount is None:
+        amount_referent = _resolved_referent_data(context, "amount")
+        if amount_referent:
+            try:
+                amount = float(amount_referent.get("amount"))
+            except (TypeError, ValueError):
+                amount = None
+            if amount is not None and amount > 0:
+                patch["amount"] = amount
+
+    source_has_value = any(
+        (
+            patch.get("source_account_id"),
+            patch.get("source_bank_name"),
+            patch.get("source_account_number"),
+            payload.source_account_id,
+            payload.source_bank_name,
+            payload.source_account_number,
+            payload.source_account_index is not None,
+        )
+    )
+    if source_has_value:
+        return
+    source_referent = _resolved_referent_data(context, "source_account")
+    if not source_referent:
+        return
+    account_id = source_referent.get("source_account_id") or source_referent.get("account_id")
+    bank_name = source_referent.get("source_bank_name") or source_referent.get("bank_name")
+    account_name = source_referent.get("source_account_name") or source_referent.get("account_name")
+    account_number = source_referent.get("source_account_number") or source_referent.get("account_number")
+    if not (account_id or bank_name or account_number):
+        return
+    patch["source_account_id"] = str(account_id).strip() if account_id else None
+    patch["source_bank_name"] = bank_name
+    patch["source_account_name"] = account_name
+    patch["source_account_number"] = account_number
+    patch["source_account_index"] = None
+
+
+def _referent_phone_candidates(context: AirtimeContext) -> list[dict[str, Any]]:
     resolution = context.resolved_referents.get("phone")
     if not isinstance(resolution, dict) or resolution.get("status") != "ambiguous":
-        return None
+        return []
     raw_candidates = resolution.get("candidates")
-    candidates = raw_candidates if isinstance(raw_candidates, list) else []
-    lines: list[str] = []
-    for idx, item in enumerate(candidates[:5], start=1):
+    raw_items = raw_candidates if isinstance(raw_candidates, list) else []
+    candidates: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw_items[:5], start=1):
         if not isinstance(item, dict):
             continue
         data = item.get("data") if isinstance(item.get("data"), dict) else {}
-        phone = str(data.get("phone") or data.get("recipient_phone") or item.get("label") or "").strip()
+        phone = normalize_nigerian_phone(str(data.get("phone") or data.get("recipient_phone") or item.get("label") or ""))
         if phone:
-            lines.append(f"{idx}. {phone}")
+            network = data.get("network")
+            label = str(item.get("label") or data.get("recipient_name") or phone).strip()
+            display = f"{label} • {phone}" if label and label != phone else phone
+            if network:
+                display = f"{display} • {str(network).strip().upper()}"
+            candidates.append(
+                {
+                    "index": idx,
+                    "option_id": f"phone:{phone}",
+                    "label": display,
+                    "recipient_phone": phone,
+                    "network": str(network).strip().upper() if network else None,
+                    "recipient_name": data.get("recipient_name") or item.get("label"),
+                }
+            )
+    return candidates
+
+
+def _ambiguous_phone_referent_prompt(candidates: list[dict[str, Any]], locale: str) -> str | None:
+    lines = [f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)]
     if not lines:
         return None
-    return "Which number did you mean?\n" + "\n".join(lines)
+    prompt = render_message("referent.phone.which_number", locale)
+    reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
+    return f"{prompt}\n" + "\n".join(lines) + f"\n{reply_hint}"
+
+
+def _resolve_referent_phone_selection_from_input(
+    user_message: str,
+    existing_candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
+    clean_msg = user_message.strip()
+    if not clean_msg or not existing_candidates:
+        return None, None
+
+    selected: dict[str, Any] | None = None
+    if clean_msg.isdigit():
+        selected_index = int(clean_msg)
+        for candidate in existing_candidates:
+            try:
+                candidate_index = int(candidate.get("index", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if candidate_index == selected_index:
+                selected = candidate
+                break
+        if selected is None:
+            return None, existing_candidates
+    else:
+        normalized_input = clean_msg.lower()
+        for candidate in existing_candidates:
+            option_id = str(candidate.get("option_id") or "").strip().lower()
+            if option_id and normalized_input == option_id:
+                selected = candidate
+                break
+        if selected is None:
+            return None, None
+
+    patch = {
+        "recipient_phone": selected.get("recipient_phone"),
+        "referent_phone_candidates": [],
+    }
+    if selected.get("network"):
+        patch["network"] = selected["network"]
+    if selected.get("recipient_name"):
+        patch["recipient_name"] = selected["recipient_name"]
+    return patch, None
 
 
 class ExtractionStep(AirtimeStep):
@@ -161,14 +282,43 @@ class ExtractionStep(AirtimeStep):
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         waiting_for_source_account = "source_account_id" in required_fields
         waiting_for_recipient_phone = "recipient_phone" in required_fields or "phone_number" in required_fields
+        waiting_for_referent_phone = "referent_phone_id" in required_fields
         schedule_required_fields = [field for field in required_fields if field in SCHEDULE_FIELD_NAMES]
+        if waiting_for_referent_phone:
+            referent_patch, invalid_referents = _resolve_referent_phone_selection_from_input(
+                self.user_message,
+                data.referent_phone_candidates,
+            )
+            if referent_patch:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(referent_patch),
+                )
+            if invalid_referents:
+                retry_prompt = _ambiguous_phone_referent_prompt(invalid_referents, context.language)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["referent_phone_id"],
+                    prompt=retry_prompt,
+                    patch=_with_skip_patch({"referent_phone_candidates": invalid_referents}),
+                    details={
+                        "ambiguity": "MULTIPLE_REFERENT_PHONES",
+                        "candidates": invalid_referents,
+                    },
+                )
         if not data.recipient_phone:
-            ambiguity_prompt = _ambiguous_phone_referent_prompt(context)
+            phone_candidates = _referent_phone_candidates(context)
+            ambiguity_prompt = _ambiguous_phone_referent_prompt(phone_candidates, context.language)
             if ambiguity_prompt:
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
-                    required_fields=["recipient_phone"],
+                    required_fields=["referent_phone_id"],
                     prompt=ambiguity_prompt,
+                    patch=_with_skip_patch({"referent_phone_candidates": phone_candidates}),
+                    details={
+                        "ambiguity": "MULTIPLE_REFERENT_PHONES",
+                        "candidates": phone_candidates,
+                    },
                 )
         if schedule_required_fields:
             schedule_patch, remaining_schedule_fields = parse_schedule_slot_patch(
@@ -194,6 +344,15 @@ class ExtractionStep(AirtimeStep):
                 patch=_with_skip_patch(numeric_patch),
             )
 
+        referent_patch: dict[str, Any] = {}
+        _add_resolved_referent_patch(referent_patch, data, context)
+        if skip_requested and referent_patch:
+            logger.info("deterministic_airtime_referent_fastpath", fields=sorted(referent_patch.keys()))
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_with_skip_patch(referent_patch),
+            )
+
         if skip_requested:
             override_reason = _skip_override_reason(data, self.user_message)
             if override_reason is None:
@@ -204,14 +363,8 @@ class ExtractionStep(AirtimeStep):
         extractor = worker_context.extractor
         if not extractor:
             logger.warning("airtime_extractor_missing")
-            phone_referent = _resolved_phone_referent(context)
-            phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
-            patch = {}
-            if phone and not data.recipient_phone:
-                patch["recipient_phone"] = phone
-                if not data.network and phone_referent and phone_referent.get("network"):
-                    normalized_network = normalize_network_name(str(phone_referent["network"]))
-                    patch["network"] = normalized_network or str(phone_referent["network"]).strip().upper()
+            patch: dict[str, Any] = {}
+            _add_resolved_referent_patch(patch, data, context)
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 patch=_with_skip_patch(patch),
@@ -304,6 +457,8 @@ class ExtractionStep(AirtimeStep):
                     patch["source_bank_name"] = (
                         str(matched_account.get("bank_name") or bank_hint) if matched_account else bank_hint
                     )
+
+            _add_resolved_referent_patch(patch, data, context)
 
             return TransactionResult(
                 outcome=TransactionOutcome.OK,

@@ -10,6 +10,7 @@ from apps.chat.src.agent.graphs.__shared__.scheduling import (
 from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.graphs.data.pipeline.base import PipelineStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -52,7 +53,11 @@ def _skip_override_reason(payload: DataPayload, message: str) -> str | None:
 
 
 def _resolved_phone_referent(context: DataContext) -> dict[str, Any] | None:
-    resolution = context.resolved_referents.get("phone")
+    return _resolved_referent_data(context, "phone")
+
+
+def _resolved_referent_data(context: DataContext, referent_type: str) -> dict[str, Any] | None:
+    resolution = context.resolved_referents.get(referent_type)
     if not isinstance(resolution, dict) or resolution.get("status") != "resolved":
         return None
     item = resolution.get("item")
@@ -62,23 +67,133 @@ def _resolved_phone_referent(context: DataContext) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def _ambiguous_phone_referent_prompt(context: DataContext) -> str | None:
+def _apply_resolved_referents(payload: DataPayload, context: DataContext) -> bool:
+    changed = False
+    if not payload.target_phone:
+        phone_referent = _resolved_phone_referent(context)
+        phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
+        if phone:
+            payload.target_phone = phone
+            changed = True
+            if not payload.network and phone_referent and phone_referent.get("network"):
+                normalized_network = normalize_network_name(str(phone_referent["network"]))
+                payload.network = normalized_network or str(phone_referent["network"]).strip().upper()
+
+    if payload.amount is None:
+        amount_referent = _resolved_referent_data(context, "amount")
+        if amount_referent:
+            try:
+                amount = float(amount_referent.get("amount"))
+            except (TypeError, ValueError):
+                amount = None
+            if amount is not None and amount > 0:
+                payload.amount = amount
+                changed = True
+
+    source_has_value = any(
+        (
+            payload.source_account_id,
+            payload.source_bank_name,
+            payload.source_account_number,
+            payload.source_account_index is not None,
+        )
+    )
+    if not source_has_value:
+        source_referent = _resolved_referent_data(context, "source_account")
+        if source_referent:
+            account_id = source_referent.get("source_account_id") or source_referent.get("account_id")
+            bank_name = source_referent.get("source_bank_name") or source_referent.get("bank_name")
+            account_name = source_referent.get("source_account_name") or source_referent.get("account_name")
+            account_number = source_referent.get("source_account_number") or source_referent.get("account_number")
+            if account_id or bank_name or account_number:
+                payload.source_account_id = str(account_id).strip() if account_id else None
+                payload.source_bank_name = bank_name
+                payload.source_account_name = account_name
+                payload.source_account_number = account_number
+                payload.source_account_index = None
+                changed = True
+
+    return changed
+
+
+def _referent_phone_candidates(context: DataContext) -> list[dict[str, Any]]:
     resolution = context.resolved_referents.get("phone")
     if not isinstance(resolution, dict) or resolution.get("status") != "ambiguous":
-        return None
+        return []
     raw_candidates = resolution.get("candidates")
-    candidates = raw_candidates if isinstance(raw_candidates, list) else []
-    lines: list[str] = []
-    for idx, item in enumerate(candidates[:5], start=1):
+    raw_items = raw_candidates if isinstance(raw_candidates, list) else []
+    candidates: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw_items[:5], start=1):
         if not isinstance(item, dict):
             continue
         data = item.get("data") if isinstance(item.get("data"), dict) else {}
-        phone = str(data.get("phone") or data.get("target_phone") or item.get("label") or "").strip()
+        phone = normalize_nigerian_phone(str(data.get("phone") or data.get("target_phone") or item.get("label") or ""))
         if phone:
-            lines.append(f"{idx}. {phone}")
+            network = data.get("network")
+            label = str(item.get("label") or data.get("recipient_name") or phone).strip()
+            display = f"{label} • {phone}" if label and label != phone else phone
+            if network:
+                display = f"{display} • {str(network).strip().upper()}"
+            candidates.append(
+                {
+                    "index": idx,
+                    "option_id": f"phone:{phone}",
+                    "label": display,
+                    "target_phone": phone,
+                    "network": str(network).strip().upper() if network else None,
+                    "recipient_name": data.get("recipient_name") or item.get("label"),
+                }
+            )
+    return candidates
+
+
+def _ambiguous_phone_referent_prompt(candidates: list[dict[str, Any]], locale: str) -> str | None:
+    lines = [f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)]
     if not lines:
         return None
-    return "Which number did you mean?\n" + "\n".join(lines)
+    prompt = render_message("referent.phone.which_number", locale)
+    reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
+    return f"{prompt}\n" + "\n".join(lines) + f"\n{reply_hint}"
+
+
+def _resolve_referent_phone_selection_from_input(
+    user_message: str,
+    existing_candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
+    clean_msg = user_message.strip()
+    if not clean_msg or not existing_candidates:
+        return None, None
+
+    selected: dict[str, Any] | None = None
+    if clean_msg.isdigit():
+        selected_index = int(clean_msg)
+        for candidate in existing_candidates:
+            try:
+                candidate_index = int(candidate.get("index", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if candidate_index == selected_index:
+                selected = candidate
+                break
+        if selected is None:
+            return None, existing_candidates
+    else:
+        normalized_input = clean_msg.lower()
+        for candidate in existing_candidates:
+            option_id = str(candidate.get("option_id") or "").strip().lower()
+            if option_id and normalized_input == option_id:
+                selected = candidate
+                break
+        if selected is None:
+            return None, None
+
+    patch = {
+        "target_phone": selected.get("target_phone"),
+        "referent_phone_candidates": [],
+    }
+    if selected.get("network"):
+        patch["network"] = selected["network"]
+    return patch, None
 
 
 class ExtractionStep(PipelineStep):
@@ -99,14 +214,47 @@ class ExtractionStep(PipelineStep):
         raw_required_fields = getattr(worker_context, "required_fields", [])
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         waiting_for_source_account = "source_account_id" in required_fields
-        if not payload.target_phone:
-            ambiguity_prompt = _ambiguous_phone_referent_prompt(context)
-            if ambiguity_prompt:
+        waiting_for_referent_phone = "referent_phone_id" in required_fields
+        if waiting_for_referent_phone:
+            referent_patch, invalid_referents = _resolve_referent_phone_selection_from_input(
+                self.user_message,
+                payload.referent_phone_candidates,
+            )
+            if referent_patch:
+                for field, value in referent_patch.items():
+                    if hasattr(payload, field):
+                        setattr(payload, field, value)
+                payload.stage = "extracted"
+                return None
+            if invalid_referents:
+                prompt = _ambiguous_phone_referent_prompt(invalid_referents, context.language)
+                patch = payload.model_dump(exclude_none=True)
+                patch["referent_phone_candidates"] = invalid_referents
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
-                    required_fields=["target_phone"],
+                    required_fields=["referent_phone_id"],
+                    prompt=prompt,
+                    patch=patch,
+                    details={
+                        "ambiguity": "MULTIPLE_REFERENT_PHONES",
+                        "candidates": invalid_referents,
+                    },
+                )
+        if not payload.target_phone:
+            phone_candidates = _referent_phone_candidates(context)
+            ambiguity_prompt = _ambiguous_phone_referent_prompt(phone_candidates, context.language)
+            if ambiguity_prompt:
+                patch = payload.model_dump(exclude_none=True)
+                patch["referent_phone_candidates"] = phone_candidates
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["referent_phone_id"],
                     prompt=ambiguity_prompt,
-                    patch=payload.model_dump(exclude_none=True),
+                    patch=patch,
+                    details={
+                        "ambiguity": "MULTIPLE_REFERENT_PHONES",
+                        "candidates": phone_candidates,
+                    },
                 )
         schedule_required_fields = [field for field in required_fields if field in SCHEDULE_FIELD_NAMES]
         if schedule_required_fields:
@@ -135,9 +283,14 @@ class ExtractionStep(PipelineStep):
             payload.stage = "extracted"
             return None
 
+        referent_applied = _apply_resolved_referents(payload, context)
         if payload.skip_extraction:
             override_reason = _skip_override_reason(payload, self.user_message)
             payload.skip_extraction = False
+            if referent_applied:
+                logger.info("deterministic_data_referent_fastpath")
+                payload.stage = "extracted"
+                return None
             if override_reason is None:
                 logger.info("skip_redundant_extraction", task="data", reason="no_override_signal")
                 return None
@@ -146,13 +299,7 @@ class ExtractionStep(PipelineStep):
         extractor = worker_context.extractor
         if not extractor:
             logger.info("data_extraction_skipped", reason="extractor_unavailable")
-            phone_referent = _resolved_phone_referent(context)
-            phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
-            if phone and not payload.target_phone:
-                payload.target_phone = phone
-                if not payload.network and phone_referent and phone_referent.get("network"):
-                    normalized_network = normalize_network_name(str(phone_referent["network"]))
-                    payload.network = normalized_network or str(phone_referent["network"]).strip().upper()
+            _apply_resolved_referents(payload, context)
             return None
         extraction_result = await extractor.extract(
             self.user_message,
@@ -186,6 +333,8 @@ class ExtractionStep(PipelineStep):
             if phone_referent and phone_referent.get("network"):
                 normalized_network = normalize_network_name(str(phone_referent["network"]))
                 payload.network = normalized_network or str(phone_referent["network"]).strip().upper()
+
+        _apply_resolved_referents(payload, context)
 
         # TODO: Handle 'amount' or 'budget' text to float mapping more robustly if needed
         # For now assuming simple mapping usually happens in resolution or prior
