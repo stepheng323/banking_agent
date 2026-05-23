@@ -3,10 +3,10 @@
 from datetime import UTC, date, datetime, time
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.enums import TransactionTypeEnum
+from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
 from shared.database.models import Transaction
 from shared.repositories.base import BaseRepository
 
@@ -24,13 +24,25 @@ class TransactionRepository(BaseRepository[Transaction]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, Transaction)
 
+    @staticmethod
+    def _coerce_user_id(user_id: str) -> UUID | str:
+        try:
+            return UUID(user_id)
+        except ValueError:
+            return user_id
+
+    @staticmethod
+    def _coerce_transaction_id(transaction_id: str | None) -> UUID | None:
+        if not transaction_id:
+            return None
+        try:
+            return UUID(transaction_id)
+        except ValueError:
+            return None
+
     async def get_by_user(self, user_id: str, limit: int = 20) -> list[Transaction]:
         """Get all transactions for a user, ordered by created_at descending."""
-        lookup_id: UUID | str = user_id
-        try:
-            lookup_id = UUID(user_id)
-        except ValueError:
-            pass
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
 
         result = await self.db.execute(
             select(Transaction)
@@ -49,11 +61,7 @@ class TransactionRepository(BaseRepository[Transaction]):
         limit: int = 200,
     ) -> list[Transaction]:
         """Get transactions for a user whose local lifecycle touches a date window."""
-        lookup_id: UUID | str = user_id
-        try:
-            lookup_id = UUID(user_id)
-        except ValueError:
-            pass
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
 
         window_start = datetime.combine(start_date, time.min)
         window_end = datetime.combine(end_date, time.max)
@@ -76,11 +84,7 @@ class TransactionRepository(BaseRepository[Transaction]):
 
     async def get_by_status(self, user_id: str, status: str) -> list[Transaction]:
         """Get transactions for a user by status."""
-        lookup_id: UUID | str = user_id
-        try:
-            lookup_id = UUID(user_id)
-        except ValueError:
-            pass
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
 
         result = await self.db.execute(
             select(Transaction)
@@ -105,11 +109,7 @@ class TransactionRepository(BaseRepository[Transaction]):
 
     async def get_recent_unresolved(self, user_id: str, limit: int = 5) -> list[Transaction]:
         """Get recent pending or failed transactions for a user."""
-        lookup_id: UUID | str = user_id
-        try:
-            lookup_id = UUID(user_id)
-        except ValueError:
-            pass
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
 
         result = await self.db.execute(
             select(Transaction)
@@ -129,11 +129,7 @@ class TransactionRepository(BaseRepository[Transaction]):
         limit: int = 500,
     ) -> list[Transaction]:
         """Get successful transfer transactions since a timestamp."""
-        lookup_id: UUID | str = user_id
-        try:
-            lookup_id = UUID(user_id)
-        except ValueError:
-            pass
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
 
         since = normalize_db_timestamp(since)
 
@@ -159,11 +155,7 @@ class TransactionRepository(BaseRepository[Transaction]):
         if not recipient_name:
             return None
 
-        lookup_id: UUID | str = user_id
-        try:
-            lookup_id = UUID(user_id)
-        except ValueError:
-            pass
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
 
         pattern = f"%{recipient_name.strip()}%"
         result = await self.db.execute(
@@ -178,6 +170,55 @@ class TransactionRepository(BaseRepository[Transaction]):
             .limit(1)
         )
         return result.scalars().first()
+
+    async def get_successful_transfer_personality_stats(
+        self,
+        user_id: str,
+        *,
+        recipient_account_number: str | None = None,
+        recipient_name: str | None = None,
+        recipient_since: datetime | None = None,
+        exclude_transaction_id: str | None = None,
+        exclude_idempotency_key: str | None = None,
+    ) -> dict[str, int | float]:
+        """Return prior successful transfer stats for rendering-only personality signals."""
+        lookup_id = self._coerce_user_id(user_id)
+        filters = [
+            Transaction.user_id == lookup_id,
+            Transaction.transaction_type == TransactionTypeEnum.TRANSFER.value,
+            Transaction.status == TransactionStatusEnum.SUCCESSFUL.value,
+        ]
+        excluded_id = self._coerce_transaction_id(exclude_transaction_id)
+        if excluded_id is not None:
+            filters.append(Transaction.id != excluded_id)
+        if exclude_idempotency_key:
+            filters.append(Transaction.idempotency_key != exclude_idempotency_key)
+
+        aggregate_result = await self.db.execute(
+            select(func.count(Transaction.id), func.max(Transaction.amount)).filter(*filters)
+        )
+        prior_count, prior_max = aggregate_result.one()
+
+        recipient_filters = list(filters)
+        if recipient_since is not None:
+            recipient_filters.append(Transaction.created_at >= normalize_db_timestamp(recipient_since))
+        if recipient_account_number:
+            recipient_filters.append(Transaction.recipient_account_number == recipient_account_number)
+        elif recipient_name:
+            recipient_filters.append(Transaction.recipient_name.ilike(f"%{recipient_name.strip()}%"))
+        else:
+            recipient_filters = []
+
+        recipient_count = 0
+        if recipient_filters:
+            recipient_result = await self.db.execute(select(func.count(Transaction.id)).filter(*recipient_filters))
+            recipient_count = int(recipient_result.scalar() or 0)
+
+        return {
+            "prior_successful_transfer_count": int(prior_count or 0),
+            "prior_max_successful_transfer_amount": float(prior_max or 0.0),
+            "recipient_success_count_90d": recipient_count,
+        }
 
     async def update_status(
         self,

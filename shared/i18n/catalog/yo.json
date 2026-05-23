@@ -620,11 +620,19 @@
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "O sọ pe ki n fi ranṣẹ si {requested_name}, ṣugbọn account naa fihan {resolved_name}.",
-      "high_risk_unsaved_warning": "⚠️ Eyi jẹ transfer ewu-giga: {amount} si olugba ti a ko fipamọ. Jọwọ jẹrisi alaye naa dáadáa."
+      "high_risk_unsaved_warning": "⚠️ Eyi jẹ transfer ewu-giga: {amount} si olugba ti a ko fipamọ. Jọwọ jẹrisi alaye naa dáadáa.",
+      "high_risk_unsaved_warning_variants": {
+        "standard": "⚠️ Eyi jẹ transfer ewu-giga: {amount} si olugba ti a ko fipamọ. Jọwọ jẹrisi alaye naa dáadáa.",
+        "careful": "⚠️ Jọwọ ṣayẹwo transfer ewu-giga yii dáadáa: {amount} n lọ si olugba ti a ko fipamọ."
+      }
     },
     "funding": {
       "plan_failed": "Failed to plan funding.",
-      "insufficient_funds": "Insufficient funds."
+      "insufficient_funds": "Insufficient funds.",
+      "insufficient_funds_variants": {
+        "standard": "Insufficient funds.",
+        "reassuring": "Balance ko to fun transfer yii. O le dinku iye naa, fi owo kun, tabi yan account miiran."
+      }
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
@@ -653,6 +661,12 @@
         "recipient_fallback": "Recipient",
         "last4_fallback": "????",
         "title": "*{amount} → {recipient_name}*",
+        "title_variants": {
+          "standard": "*{amount} → {recipient_name}*",
+          "warm": "*Ṣetan: {amount} si {recipient_name}*",
+          "careful": "*Ṣayẹwo dáadáa: {amount} si {recipient_name}*",
+          "trusted_careful": "*Ṣetan, jọwọ ṣayẹwo: {amount} si {recipient_name}*"
+        },
         "recipient_line": "{recipient_bank} • {recipient_account}",
         "user_note": "Narration: {user_note}",
         "source_line": "From: {source_bank} (···{last4})"
@@ -693,18 +707,40 @@
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+        "success_variants": {
+          "standard": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+          "warm": "Ó ti ṣe. {amount} ti lọ si {recipient_name}.",
+          "celebratory": "Ó ti pari. {amount} ti lọ si {recipient_name}."
+        },
         "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending_variants": {
+          "standard": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "warm": "Mo ti gba. Transfer {amount} si {recipient_name} n ṣiṣẹ.\n\nIwọ yoo gba ìmúdájú laipẹ.",
+          "reassuring": "Transfer {amount} si {recipient_name} n ṣiṣẹ. Ìmúdájú banki le gba iṣẹju diẹ."
+        },
         "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
       }
     },
     "execution": {
       "date_now": "Now",
-      "failed": "Execution failed: {error}"
+      "failed": "Execution failed: {error}",
+      "failed_variants": {
+        "standard": "Execution failed: {error}",
+        "reassuring": "Mi o le pari transfer naa: {error}. Jọwọ gbiyanju lẹẹkansi tabi kan si support ti o ba tẹsiwaju."
+      }
     },
     "error": {
       "execution_failed": "Transfer could not be completed. Please try again.",
+      "execution_failed_variants": {
+        "standard": "Transfer could not be completed. Please try again.",
+        "reassuring": "Transfer ko le pari ni bayi. Jọwọ gbiyanju lẹẹkansi."
+      },
       "pipeline_failed": "Pipeline failed: {error}",
-      "provider_failed": "Transfer failed at provider"
+      "provider_failed": "Transfer failed at provider",
+      "provider_failed_variants": {
+        "standard": "Transfer failed at provider",
+        "reassuring": "Provider ko le pari transfer naa ni bayi."
+      }
     }
   },
   "airtime": {
@@ -800,6 +836,12 @@
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",
+      "transfer_variants": {
+        "standard": "Confirm Transfer",
+        "warm": "Review Transfer",
+        "careful": "Ṣayẹwo Transfer Dáadáa",
+        "trusted_careful": "Review Transfer"
+      },
       "airtime": "Confirm Airtime Purchase",
       "data": "Confirm Data Purchase",
       "mixed": "Confirm Transactions",

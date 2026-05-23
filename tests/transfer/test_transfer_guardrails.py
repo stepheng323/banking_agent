@@ -8,6 +8,7 @@ from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import prepare
 from apps.chat.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from shared.formatters.confirmation import build_confirmation_summary
+from shared.i18n.personality import PersonalityContext
 
 
 class _MockBankingProvider:
@@ -183,6 +184,27 @@ async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     assert "You asked to send to David" in result.confirmation_summary
     assert "₦5,000 → David (Mercy Johnson)" in result.confirmation_summary
     assert "Mercy Johnson" in result.confirmation_summary
+
+
+async def test_confirmation_summary_uses_trusted_careful_for_large_saved_recipient() -> None:
+    payload = TransferPayload(
+        amount=70000,
+        recipient_name="Mum",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        beneficiary_id="ben-1",
+        resolved_from_saved_beneficiary=True,
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(
+        payload,
+        ctx,
+        personality_context=PersonalityContext(moment="confirmation", amount=70000, saved_recipient=True),
+    )
+
+    assert result.confirmation_summary is not None
+    assert result.confirmation_summary.startswith("*Ready, please review: ₦70,000 to Mum*")
 
 
 async def test_payout_preparation_skips_single_source_funding_plan() -> None:

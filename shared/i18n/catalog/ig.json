@@ -620,11 +620,19 @@
   "transfer": {
     "confirmation": {
       "name_mismatch_warning": "Ị sịrị ka m zipu na {requested_name}, mana account ahụ pụtara {resolved_name}.",
-      "high_risk_unsaved_warning": "⚠️ Nke a bụ transfer dị ize ndụ: {amount} gaa na onye a na-echekwabeghị. Biko nyochaa nkọwa tupu ikwenye."
+      "high_risk_unsaved_warning": "⚠️ Nke a bụ transfer dị ize ndụ: {amount} gaa na onye a na-echekwabeghị. Biko nyochaa nkọwa tupu ikwenye.",
+      "high_risk_unsaved_warning_variants": {
+        "standard": "⚠️ Nke a bụ transfer dị ize ndụ: {amount} gaa na onye a na-echekwabeghị. Biko nyochaa nkọwa tupu ikwenye.",
+        "careful": "⚠️ Biko lelee transfer dị ize ndụ a nke ọma: {amount} ga-aga onye a na-echekwabeghị."
+      }
     },
     "funding": {
       "plan_failed": "Failed to plan funding.",
-      "insufficient_funds": "Insufficient funds."
+      "insufficient_funds": "Insufficient funds.",
+      "insufficient_funds_variants": {
+        "standard": "Insufficient funds.",
+        "reassuring": "Balance ezughị maka transfer a. Ị nwere ike belata ego ahụ, tinye ego, ma ọ bụ họrọ account ọzọ."
+      }
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
@@ -653,6 +661,12 @@
         "recipient_fallback": "Recipient",
         "last4_fallback": "????",
         "title": "*{amount} → {recipient_name}*",
+        "title_variants": {
+          "standard": "*{amount} → {recipient_name}*",
+          "warm": "*Njikere: {amount} na {recipient_name}*",
+          "careful": "*Lelee nke ọma: {amount} na {recipient_name}*",
+          "trusted_careful": "*Njikere, biko lelee: {amount} na {recipient_name}*"
+        },
         "recipient_line": "{recipient_bank} • {recipient_account}",
         "user_note": "Narration: {user_note}",
         "source_line": "From: {source_bank} (···{last4})"
@@ -693,18 +707,40 @@
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+        "success_variants": {
+          "standard": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+          "warm": "Emechaala. E zigala {amount} na {recipient_name}.",
+          "celebratory": "Ọ dịla njikere. E zigala {amount} na {recipient_name}."
+        },
         "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending_variants": {
+          "standard": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "warm": "Aghọtala m. Transfer {amount} na {recipient_name} na-aga n'ihu.\n\nỊ ga-enweta nkwado n'oge na-adịghị anya.",
+          "reassuring": "Transfer {amount} na {recipient_name} na-aga n'ihu. Nkwado banki nwere ike were nkeji ole na ole."
+        },
         "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
       }
     },
     "execution": {
       "date_now": "Now",
-      "failed": "Execution failed: {error}"
+      "failed": "Execution failed: {error}",
+      "failed_variants": {
+        "standard": "Execution failed: {error}",
+        "reassuring": "Enweghị m ike mezue transfer ahụ: {error}. Biko nwaa ọzọ ma ọ bụ kpọtụrụ support ma ọ bụrụ na ọ gara n'ihu."
+      }
     },
     "error": {
       "execution_failed": "Transfer could not be completed. Please try again.",
+      "execution_failed_variants": {
+        "standard": "Transfer could not be completed. Please try again.",
+        "reassuring": "Transfer ahụ enweghị ike imecha ugbu a. Biko nwaa ọzọ."
+      },
       "pipeline_failed": "Pipeline failed: {error}",
-      "provider_failed": "Transfer failed at provider"
+      "provider_failed": "Transfer failed at provider",
+      "provider_failed_variants": {
+        "standard": "Transfer failed at provider",
+        "reassuring": "Provider enweghị ike imecha transfer ahụ ugbu a."
+      }
     }
   },
   "airtime": {
@@ -800,6 +836,12 @@
   "transaction_copy": {
     "confirmation": {
       "transfer": "Confirm Transfer",
+      "transfer_variants": {
+        "standard": "Confirm Transfer",
+        "warm": "Review Transfer",
+        "careful": "Lelee Transfer Nke Ọma",
+        "trusted_careful": "Review Transfer"
+      },
       "airtime": "Confirm Airtime Purchase",
       "data": "Confirm Data Purchase",
       "mixed": "Confirm Transactions",

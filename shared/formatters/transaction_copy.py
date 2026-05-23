@@ -10,6 +10,7 @@ from typing import Any
 from shared.formatters.currency import format_amount_number, format_naira, format_naira_compact
 from shared.formatters.recipient_display import format_summary_recipient_display_label
 from shared.i18n import MessageKey, render_message
+from shared.i18n.personality import PersonalityContext, render_personalized_message
 
 
 def format_amount_compact(amount: float | int | str | None) -> str:
@@ -429,14 +430,24 @@ def build_copy_context(
     return context
 
 
-def build_confirmation_header(*, task_types: Iterable[str], locale: str, task_count: int) -> str:
+def build_confirmation_header(
+    *,
+    task_types: Iterable[str],
+    locale: str,
+    task_count: int,
+    personality_context: PersonalityContext | None = None,
+) -> str:
     """Build a context-aware confirmation header."""
     if task_count > 1:
         return render_message("transaction_copy.confirmation.mixed", locale)
 
     mix = derive_task_mix(task_types)
     if mix == "transfer":
-        return render_message("transaction_copy.confirmation.transfer", locale)
+        return render_personalized_message(
+            "transaction_copy.confirmation.transfer",
+            locale,
+            context=personality_context,
+        )
     if mix == "airtime":
         return render_message("transaction_copy.confirmation.airtime", locale)
     if mix == "data":

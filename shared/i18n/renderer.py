@@ -63,6 +63,22 @@ def _get_by_dotted_key(payload: dict[str, Any], dotted_key: str) -> str | None:
     return node if isinstance(node, str) else None
 
 
+def message_key_exists(message_key: str, locale: str | LocaleCode) -> bool:
+    """Return whether a message key has a string template in locale or English."""
+    from shared.i18n.locale import LocaleManager
+
+    resolved_locale = LocaleManager.normalize(locale)
+    locale_catalog = _read_catalog(resolved_locale)
+    if _get_by_dotted_key(locale_catalog, message_key) is not None:
+        return True
+
+    if resolved_locale == LocaleCode.EN:
+        return False
+
+    en_catalog = _read_catalog(LocaleCode.EN)
+    return _get_by_dotted_key(en_catalog, message_key) is not None
+
+
 def _flatten_string_leaves(payload: dict[str, Any], prefix: str = "") -> dict[str, str]:
     leaves: dict[str, str] = {}
     for key, value in payload.items():

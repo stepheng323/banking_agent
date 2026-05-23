@@ -12,6 +12,7 @@ from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.i18n import render_message
+from shared.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
 from shared.services.funding.planner import FundingPlanner
 from shared.utils.logging import get_logger
 
@@ -34,6 +35,14 @@ class FundingStep(TransferStep):
 
 
 logger = get_logger(__name__)
+
+
+def _insufficient_funds_message(payload: TransferPayload, locale: str) -> str:
+    return render_personalized_message(
+        "transfer.funding.insufficient_funds",
+        locale,
+        context=transfer_personality_context_from_payload(payload, moment="insufficient_funds"),
+    )
 
 
 class AccountAdapter:
@@ -105,19 +114,19 @@ async def plan_transaction_funding(
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["explicit_split", "source_accounts"],
-                prompt=plan.error or render_message("transfer.funding.insufficient_funds", locale),
+                prompt=plan.error or _insufficient_funds_message(payload, locale),
                 patch={"funding_plan": None},
             )
         if plan.is_pending_mandate:
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
-                error=plan.error or render_message("transfer.funding.insufficient_funds", locale),
+                error=plan.error or _insufficient_funds_message(payload, locale),
                 patch={"is_pending_mandate": True, "funding_plan": None},
             )
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["amount"],
-            prompt=plan.error or render_message("transfer.funding.insufficient_funds", locale),
+            prompt=plan.error or _insufficient_funds_message(payload, locale),
             patch={"funding_plan": None},
         )
 

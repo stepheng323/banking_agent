@@ -16,13 +16,25 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, FundedTransfer)
 
+    @staticmethod
+    def _coerce_user_id(user_id: str) -> UUID | str:
+        try:
+            return UUID(user_id)
+        except ValueError:
+            return user_id
+
+    @staticmethod
+    def _coerce_transfer_id(transfer_id: str | None) -> UUID | None:
+        if not transfer_id:
+            return None
+        try:
+            return UUID(transfer_id)
+        except ValueError:
+            return None
+
     async def get_by_user(self, user_id: str, limit: int = 20) -> list[FundedTransfer]:
         """Get all funded transfers for a user, ordered by created_at descending."""
-        lookup_id: UUID | str = user_id
-        try:
-            lookup_id = UUID(user_id)
-        except ValueError:
-            pass
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
 
         result = await self.db.execute(
             select(FundedTransfer)
@@ -55,6 +67,28 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
     async def get_refunding(self) -> list[FundedTransfer]:
         """Get transfers being refunded."""
         return await self.get_by_status(FundedTransferStatusEnum.REFUNDING.value)
+
+    async def has_prior_completed_pooled_transfer(
+        self,
+        user_id: str,
+        *,
+        exclude_transfer_id: str | None = None,
+        exclude_idempotency_key: str | None = None,
+    ) -> bool:
+        """Return whether the user has a previous completed multi-account transfer."""
+        lookup_id = self._coerce_user_id(user_id)
+        filters = [
+            FundedTransfer.user_id == lookup_id,
+            FundedTransfer.status == FundedTransferStatusEnum.COMPLETED.value,
+        ]
+        excluded_id = self._coerce_transfer_id(exclude_transfer_id)
+        if excluded_id is not None:
+            filters.append(FundedTransfer.id != excluded_id)
+        if exclude_idempotency_key:
+            filters.append(FundedTransfer.idempotency_key != exclude_idempotency_key)
+
+        result = await self.db.execute(select(FundedTransfer.id).filter(*filters).limit(1))
+        return result.scalars().first() is not None
 
     async def update_status(
         self, transfer_id: str, status: str, error_message: str | None = None

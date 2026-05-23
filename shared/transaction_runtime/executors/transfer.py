@@ -14,10 +14,12 @@ from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitPro
 from shared.database.enums import TransactionStatusEnum
 from shared.formatters.transfer import format_transfer_pending_message, format_transfer_success_message
 from shared.i18n import render_message
+from shared.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
 from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
 from shared.receipts.choice import build_receipt_choice_intent
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.async_completion import (
@@ -27,6 +29,7 @@ from shared.services.async_completion import (
 )
 from shared.services.delivery_service import DeliveryService
 from shared.services.failure_categories import classify_failure_category
+from shared.transaction_runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -49,6 +52,14 @@ def _transaction_provider_reference(transaction: Any) -> str:
     ).strip()
 
 
+def _transaction_user_id(transaction: Any) -> str | None:
+    value = getattr(transaction, "user_id", None)
+    text = str(value or "").strip()
+    if not text or text.startswith("<"):
+        return None
+    return text
+
+
 def _execution_error_message(locale: str) -> str:
     return render_message("transfer.error.execution_failed", locale)
 
@@ -64,6 +75,7 @@ class TransferExecutor:
         publisher: QueuePublisher | None = None,
         delivery_service: DeliveryService | None = None,
         redis_client: redis.Redis | None = None,
+        funded_transfer_repo: FundedTransferRepository | None = None,
     ):
         self.direct_debit_provider = direct_debit_provider
         self.account_repo = account_repo
@@ -71,6 +83,7 @@ class TransferExecutor:
         self.publisher = publisher
         self.delivery_service = delivery_service
         self.redis_client = redis_client
+        self.funded_transfer_repo = funded_transfer_repo
 
     def _resolve_delivery_service(self) -> DeliveryService | None:
         if self.delivery_service is not None:
@@ -369,6 +382,9 @@ class TransferExecutor:
             if not amount or float(amount) <= 0:
                 raise ValueError("invalid_transfer_amount")
             amount_value = float(amount)
+            success_context = transfer_personality_context_from_payload(transfer_data, moment="success")
+            pending_context = transfer_personality_context_from_payload(transfer_data, moment="pending")
+            failure_context = transfer_personality_context_from_payload(transfer_data, moment="failure")
 
             source_account = await self.account_repo.get_by_id(str(source_account_id))
             if not source_account or not source_account.mandate_id:
@@ -384,7 +400,7 @@ class TransferExecutor:
             )
 
             if result.success and result.status == DebitStatus.SUCCESSFUL:
-                await self.transaction_repo.update_status(
+                successful_transaction = await self.transaction_repo.update_status(
                     transaction_id,
                     TransactionStatusEnum.SUCCESSFUL.value,
                     provider_transaction_id=result.debit_id,
@@ -422,6 +438,17 @@ class TransferExecutor:
                         recipient.get("name")
                         or render_message("transfer.format.summary.recipient_fallback", locale)
                     )
+                    success_context = await enrich_transfer_personality_context(
+                        success_context,
+                        user_id=_transaction_user_id(successful_transaction)
+                        or _transaction_user_id(existing_transaction)
+                        or data.get("user_id"),
+                        transaction_repo=self.transaction_repo,
+                        funded_transfer_repo=self.funded_transfer_repo,
+                        payload=transfer_data,
+                        transaction_id=transaction_id,
+                        idempotency_key=data.get("idempotency_key"),
+                    )
                     await self._deliver_text(
                         data=data,
                         text=format_transfer_success_message(
@@ -429,6 +456,7 @@ class TransferExecutor:
                             recipient_name=recipient_name,
                             transaction_id=result.debit_id or result.reference or transaction_id,
                             locale=locale,
+                            personality_context=success_context,
                         ),
                         dedupe_key=f"transfer:success:{transaction_id}",
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
@@ -474,13 +502,18 @@ class TransferExecutor:
                             amount=amount_value,
                             recipient_name=recipient_name,
                             locale=locale,
+                            personality_context=pending_context,
                         ),
                         dedupe_key=f"transfer:pending:{transaction_id}",
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
                 logger.info("transfer_processing", transaction_id=transaction_id, ref=result.reference)
             else:
-                error_msg = result.error_message or render_message("transfer.error.provider_failed", locale)
+                error_msg = result.error_message or render_personalized_message(
+                    "transfer.error.provider_failed",
+                    locale,
+                    context=failure_context,
+                )
                 provider_error_code = self._provider_error_code(result)
                 failure_category = classify_failure_category(
                     message=error_msg,
@@ -536,7 +569,12 @@ class TransferExecutor:
                 elif not is_grouped_async_message(data) and not is_scheduled:
                     await self._deliver_text(
                         data=data,
-                        text=render_message("transfer.execution.failed", locale, {"error": error_msg}),
+                        text=render_personalized_message(
+                            "transfer.execution.failed",
+                            locale,
+                            {"error": error_msg},
+                            failure_context,
+                        ),
                         dedupe_key=f"transfer:failed:{transaction_id}",
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
@@ -580,7 +618,12 @@ class TransferExecutor:
             elif not is_grouped_async_message(data):
                 await self._deliver_text(
                     data=data,
-                    text=render_message("transfer.execution.failed", locale, {"error": error_msg}),
+                    text=render_personalized_message(
+                        "transfer.execution.failed",
+                        locale,
+                        {"error": error_msg},
+                        transfer_personality_context_from_payload(transfer_data, moment="failure"),
+                    ),
                     dedupe_key=f"transfer:failed:{transaction_id}",
                     metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                 )
