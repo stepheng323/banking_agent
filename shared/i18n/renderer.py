@@ -85,15 +85,9 @@ def _render_template(template: str, params: dict[str, object] | None) -> str:
 
 
 def _default_template_params() -> dict[str, object]:
-    from shared.config.settings import settings
+    from shared.branding import brand_template_params
 
-    return {
-        "app_name": settings.app_name,
-        "app_name_short": settings.app_name_short,
-        "app_creator": settings.app_creator,
-        "app_brand_inspiration": settings.app_brand_inspiration,
-        "app_public_base_url": settings.app_public_base_url,
-    }
+    return brand_template_params()
 
 
 def render_message(

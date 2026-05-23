@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from shared.assistant_profile.models import AssistantProfile
+from shared.branding import render_brand_template
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
@@ -33,13 +34,7 @@ def _load_json_payload(path: str) -> dict[str, Any]:
 
 def _apply_brand_overrides(value: Any) -> Any:
     if isinstance(value, str):
-        return value.format(
-            app_name=settings.app_name,
-            app_name_short=settings.app_name_short,
-            app_creator=settings.app_creator,
-            app_brand_inspiration=settings.app_brand_inspiration,
-            app_public_base_url=settings.app_public_base_url,
-        )
+        return render_brand_template(value)
     if isinstance(value, list):
         return [_apply_brand_overrides(item) for item in value]
     if isinstance(value, dict):

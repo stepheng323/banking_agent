@@ -2,11 +2,11 @@
 
 ## How do I link my bank account?
 
-Ask Narya AI to link an account or start onboarding. You will choose your bank and complete a secure bank-approved or provider-approved authorization flow before the account can be used for transfers.
+Ask {app_name} to link an account or start onboarding. You will choose your bank and complete a secure bank-approved or provider-approved authorization flow before the account can be used for transfers.
 
 ## Which banks can I link?
 
-Supported banks depend on the active account-linking provider. Narya AI shows the available bank list during the linking flow and validates your selected bank before continuing.
+Supported banks depend on the active account-linking provider. {app_name} shows the available bank list during the linking flow and validates your selected bank before continuing.
 
 ## What is a direct debit mandate?
 
@@ -18,11 +18,11 @@ Yes. Multiple linked accounts can help you choose which account to pay from, use
 
 ## How do I set a default account?
 
-Ask Narya AI to use a specific linked account as your default. The default account is selected automatically for eligible transactions unless you choose another account.
+Ask {app_name} to use a specific linked account as your default. The default account is selected automatically for eligible transactions unless you choose another account.
 
 ## How do I unlink an account?
 
-Ask Narya AI to unlink the account or contact support. The available flow depends on the account status and provider requirements.
+Ask {app_name} to unlink the account or contact support. The available flow depends on the account status and provider requirements.
 
 ## Why was my account linking rejected?
 
@@ -30,8 +30,8 @@ Account linking may be rejected if the bank is not supported, the authorization 
 
 ## Is there a minimum balance required?
 
-Your linked account needs enough available balance to cover the transaction amount and any applicable charges. Narya AI checks balance when possible before processing.
+Your linked account needs enough available balance to cover the transaction amount and any applicable charges. {app_name} checks balance when possible before processing.
 
 ## How do I check my linked accounts?
 
-Ask "show my accounts" or "which accounts are linked" to see linked accounts that Narya AI can access for the current profile.
+Ask "show my accounts" or "which accounts are linked" to see linked accounts that {app_name} can access for the current profile.

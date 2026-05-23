@@ -74,8 +74,9 @@ class NoopPublisher:
 
 
 def _smoke_turns(scenario: ScenarioName) -> list[SmokeTurn]:
+    app_name_hint = settings.app_name_short.lower()
     query = [
-        SmokeTurn("Hi", expect_any=("what would you like", "help", "narya")),
+        SmokeTurn("Hi", expect_any=("what would you like", "help", app_name_hint)),
         SmokeTurn("Show my recent transactions", expect_any=("transaction", "showing", "sent", "received")),
         SmokeTurn("Show the 25k one", expect_any=("25,000", "transaction details", "adebayo", "bank")),
         SmokeTurn("What bank was that?", expect_any=("bank", "zenith", "first", "gtbank", "access")),
@@ -94,7 +95,7 @@ def _smoke_turns(scenario: ScenarioName) -> list[SmokeTurn]:
         SmokeTurn("Why are Zenith transactions missing?", expect_any=("zenith", "coverage", "authorization", "sync")),
     ]
     quick = [
-        SmokeTurn("Hi", expect_any=("what would you like", "help", "narya")),
+        SmokeTurn("Hi", expect_any=("what would you like", "help", app_name_hint)),
         SmokeTurn("Show my beneficiaries", expect_any=("beneficiar", "tolu")),
         SmokeTurn("Is that all?", expect_any=("3", "beneficiar", "saved")),
         SmokeTurn("Show my accounts", expect_any=("account", "bank")),
@@ -110,7 +111,7 @@ def _smoke_turns(scenario: ScenarioName) -> list[SmokeTurn]:
         return query_deep
 
     return [
-        SmokeTurn("Hi", expect_any=("what would you like", "help", "narya")),
+        SmokeTurn("Hi", expect_any=("what would you like", "help", app_name_hint)),
         SmokeTurn("Show my beneficiaries", expect_any=("beneficiar", "tolu")),
         SmokeTurn("Is that all?", expect_any=("3", "beneficiar", "saved")),
         SmokeTurn("Show my accounts", expect_any=("account", "bank")),
@@ -333,7 +334,7 @@ async def _run_smoke(args: argparse.Namespace) -> int:
         elapsed_ms = (time.perf_counter() - started) * 1000
         rendered = _render_orchestrator_result(response)
         passed, errors = _assert_turn(turn, rendered)
-        print(f"NARYA ({elapsed_ms:.0f}ms):\n{rendered or '[no visible response]'}")
+        print(f"{settings.app_name_short.upper()} ({elapsed_ms:.0f}ms):\n{rendered or '[no visible response]'}")
 
         if turn.pin_after:
             pin_response = await agent.resume_transaction(

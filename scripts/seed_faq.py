@@ -26,6 +26,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from apps.chat.src.agent.graphs.faq.retrieval.embeddings import EmbeddingService
+from shared.branding import render_brand_template
 from shared.database.connection import get_db_session
 from shared.database.models import FAQEntry
 from shared.repositories.faq_repository import FAQRepository
@@ -142,7 +143,7 @@ def extract_tags(category: str, question: str) -> list[str]:
 
 def parse_markdown_file(filepath: Path) -> list[FAQEntryPayload]:
     """Parse one FAQ markdown file into repository payloads."""
-    content = filepath.read_text(encoding="utf-8")
+    content = render_brand_template(filepath.read_text(encoding="utf-8"))
 
     category_match = re.search(r"^# Category:\s*(.+)$", content, re.MULTILINE)
     if not category_match:

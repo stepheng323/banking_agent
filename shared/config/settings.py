@@ -88,15 +88,20 @@ class Settings:
         self.project_name: str = os.getenv("PROJECT_NAME", "banking-agent")
         self.app_host: str = os.getenv("APP_HOST", "0.0.0.0")
         self.app_port: int = int(os.getenv("APP_PORT", "8000"))
-        self.app_name: str = os.getenv("APP_NAME", "Narya AI").strip() or "Narya AI"
+        self.app_name: str = os.getenv("APP_NAME", "Nenya AI").strip() or "Nenya AI"
         self.app_name_short: str = os.getenv("APP_NAME_SHORT", "").strip() or self.app_name.split()[0]
-        self.app_creator: str = os.getenv("APP_CREATOR", "Narya AI team").strip() or "Narya AI team"
+        self.app_name_aliases: tuple[str, ...] = self._parse_csv(os.getenv("APP_NAME_ALIASES", ""))
+        self.app_legacy_names: tuple[str, ...] = self._parse_csv(os.getenv("APP_LEGACY_NAMES", ""))
+        self.app_creator: str = os.getenv("APP_CREATOR", "Nenya AI team").strip() or "Nenya AI team"
         self.app_brand_inspiration: str = (
-            os.getenv("APP_BRAND_INSPIRATION", "Narya from The Lord of the Rings").strip()
-            or "Narya from The Lord of the Rings"
+            os.getenv(
+                "APP_BRAND_INSPIRATION",
+                "Nenya, the Ring of Water worn by Galadriel in The Lord of the Rings",
+            ).strip()
+            or "Nenya, the Ring of Water worn by Galadriel in The Lord of the Rings"
         )
         self.app_public_base_url: str = (
-            os.getenv("APP_PUBLIC_BASE_URL", "https://narya.ai").strip().rstrip("/") or "https://narya.ai"
+            os.getenv("APP_PUBLIC_BASE_URL", "https://nenya.ai").strip().rstrip("/") or "https://nenya.ai"
         )
 
         self.database_url: str = os.getenv("DATABASE_URL", "sqlite:///./test.db")
@@ -186,6 +191,13 @@ class Settings:
 
         self._validate_critical_runtime_config()
         self._validate_whatsapp_config()
+
+    @staticmethod
+    def _parse_csv(raw: str | None) -> tuple[str, ...]:
+        """Parse comma-separated env vars into a stable tuple."""
+        if not raw:
+            return ()
+        return tuple(value.strip() for value in raw.split(",") if value.strip())
 
     @staticmethod
     def _parse_optional_bool(raw: str | None) -> bool | None:
