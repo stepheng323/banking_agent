@@ -635,6 +635,16 @@
       "high_risk_unsaved_warning_variants": {
         "standard": "⚠️ Nke a bụ transfer dị ize ndụ: {amount} gaa na onye a na-echekwabeghị. Biko nyochaa nkọwa tupu ikwenye.",
         "careful": "⚠️ Biko lelee transfer dị ize ndụ a nke ọma: {amount} ga-aga onye a na-echekwabeghị."
+      },
+      "change": {
+        "join_two": "{first} na {second}",
+        "join_many": "{head}, na {last}",
+        "amount_to": "amount to {amount}",
+        "recipient_to": "recipient to {recipient}",
+        "bank_to": "bank to {bank}",
+        "account_to": "account to {account}",
+        "narration_to": "narration to {narration}",
+        "details_fallback": "your transfer details"
       }
     },
     "funding": {
@@ -714,7 +724,8 @@
         "suggested_header": "*Suggested breakdown:*",
         "suggested_item": "• {bank}: *{amount}*",
         "divider": "─────────────",
-        "total_line": "*Total:* {amount}"
+        "total_line": "*Total:* {amount}",
+        "credit_after_debits": "Recipient ga-enweta ego once funding debits niile succeed."
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
@@ -735,6 +746,7 @@
     "execution": {
       "date_now": "Now",
       "failed": "Execution failed: {error}",
+      "funding_setup_failed": "Funding setup failed",
       "failed_variants": {
         "standard": "Execution failed: {error}",
         "reassuring": "Enweghị m ike mezue transfer ahụ: {error}. Biko nwaa ọzọ ma ọ bụ kpọtụrụ support ma ọ bụrụ na ọ gara n'ihu."
@@ -1041,7 +1053,24 @@
       "failure_reason": "  Reason: {reason}",
       "other_completed_line": "* {task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
-      "success_footer": "_All transactions completed successfully_"
+      "success_footer": "_All transactions completed successfully_",
+      "update_header": {
+        "transfer": "*Transfer Update*",
+        "transfer_plural": "*Transfers Update*",
+        "airtime": "*Airtime Update*",
+        "data": "*Data Update*",
+        "generic": "*Transaction Update*"
+      },
+      "processing_footer": {
+        "success_failed": "Ụfọdụ transactions emechala, ụfọdụ dara, ndị ọzọ ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara.",
+        "success": "Ụfọdụ transactions emechala successfully. Ndị ọzọ ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara.",
+        "failed": "Ụfọdụ transactions dara. Ndị ọzọ ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara.",
+        "all_processing": "Ụfọdụ transactions ka na-eche confirmation provider. Anyị ga-eme ka ị mara mgbe final update bịara."
+      },
+      "failed_footer": {
+        "partial": "Ụfọdụ transactions emechala, mana ndị ọzọ dara.",
+        "all_failed": "Transactions niile dara."
+      }
     },
     "intent": {
       "transfer_recipient_fallback": "Recipient",

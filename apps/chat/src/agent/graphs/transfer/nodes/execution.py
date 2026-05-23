@@ -132,7 +132,11 @@ class ExecutionStep(TransferStep):
                 if not funded_transfer_id:
                     return TransactionResult(
                         outcome=TransactionOutcome.FAILED,
-                        error=render_message("transfer.execution.failed", locale, {"error": "Funding setup failed"}),
+                        error=render_message(
+                            "transfer.execution.failed",
+                            locale,
+                            {"error": render_message("transfer.execution.funding_setup_failed", locale)},
+                        ),
                         retryable=True,
                     )
                 await publisher.publish(

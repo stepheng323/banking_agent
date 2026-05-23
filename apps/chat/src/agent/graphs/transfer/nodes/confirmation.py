@@ -273,14 +273,22 @@ def _changed_transition_fields(previous_snapshot: dict[str, Any], current_snapsh
     return changed
 
 
-def _join_parts(parts: list[str]) -> str:
+def _join_parts(parts: list[str], locale: str) -> str:
     if not parts:
         return ""
     if len(parts) == 1:
         return parts[0]
     if len(parts) == 2:
-        return f"{parts[0]} and {parts[1]}"
-    return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+        return render_message(
+            "transfer.confirmation.change.join_two",
+            locale,
+            {"first": parts[0], "second": parts[1]},
+        )
+    return render_message(
+        "transfer.confirmation.change.join_many",
+        locale,
+        {"head": ", ".join(parts[:-1]), "last": parts[-1]},
+    )
 
 
 def _build_change_text(changed_fields: list[str], current_snapshot: dict[str, Any], locale: str) -> str:
@@ -288,29 +296,33 @@ def _build_change_text(changed_fields: list[str], current_snapshot: dict[str, An
     if "amount" in changed_fields:
         formatted_amount = _format_naira(current_snapshot.get("amount"))
         if formatted_amount:
-            parts.append(f"amount to {formatted_amount}")
+            parts.append(render_message("transfer.confirmation.change.amount_to", locale, {"amount": formatted_amount}))
     if "recipient_name" in changed_fields:
         recipient_name = str(
             current_snapshot.get("recipient_name")
             or render_message("response.common.recipient_fallback", locale)
         ).strip()
         if recipient_name:
-            parts.append(f"recipient to {recipient_name}")
+            parts.append(
+                render_message("transfer.confirmation.change.recipient_to", locale, {"recipient": recipient_name})
+            )
     if "recipient_bank" in changed_fields:
         recipient_bank = str(current_snapshot.get("recipient_bank") or "").strip()
         if recipient_bank:
-            parts.append(f"bank to {recipient_bank}")
+            parts.append(render_message("transfer.confirmation.change.bank_to", locale, {"bank": recipient_bank}))
     if "recipient_account" in changed_fields:
         recipient_account = str(current_snapshot.get("recipient_account") or "").strip()
         if recipient_account:
-            parts.append(f"account to {recipient_account}")
+            parts.append(
+                render_message("transfer.confirmation.change.account_to", locale, {"account": recipient_account})
+            )
     if "narration" in changed_fields:
         narration = str(current_snapshot.get("narration") or "").strip()
         if narration:
-            parts.append(f"narration to {narration}")
+            parts.append(render_message("transfer.confirmation.change.narration_to", locale, {"narration": narration}))
     if not parts:
-        parts.append("your transfer details")
-    return _join_parts(parts)
+        parts.append(render_message("transfer.confirmation.change.details_fallback", locale))
+    return _join_parts(parts, locale)
 
 
 def _has_specific_value_reference(
@@ -449,7 +461,7 @@ def build_confirmation(
     display_narration = _display_narration(payload)
     effective_narration = _effective_narration(payload)
     description = _derived_description(payload, recipient_display_name)
-    schedule_line = format_schedule_confirmation_line(payload)
+    schedule_line = format_schedule_confirmation_line(payload, ctx.language)
     snap = {
         "amount": payload.amount,
         "recipient_name": recipient_display_name,
@@ -502,6 +514,7 @@ def build_confirmation(
     if isinstance(funding_plan, dict) and not funding_plan.get("is_single_source", True):
         steps = funding_plan.get("steps", [])
         if isinstance(steps, list) and steps:
+            credit_note = render_message("transfer.format.funding_plan.credit_after_debits", ctx.language)
             primary_bank = (
                 funding_plan.get("primary_bank_name")
                 or steps[0].get("bank_name")
@@ -524,11 +537,11 @@ def build_confirmation(
                     [
                         *warning_lines,
                         funding_summary,
-                        "Recipient will be credited once after all funding debits succeed.",
+                        credit_note,
                     ]
                 )
             else:
-                summary = f"{funding_summary}\n\nRecipient will be credited once after all funding debits succeed."
+                summary = f"{funding_summary}\n\n{credit_note}"
 
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_CONFIRMATION,

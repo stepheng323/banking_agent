@@ -635,6 +635,16 @@
       "high_risk_unsaved_warning_variants": {
         "standard": "⚠️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm.",
         "careful": "⚠️ Abeg check this high-risk transfer well: {amount} dey go person wey you never save."
+      },
+      "change": {
+        "join_two": "{first} and {second}",
+        "join_many": "{head}, and {last}",
+        "amount_to": "amount to {amount}",
+        "recipient_to": "recipient to {recipient}",
+        "bank_to": "bank to {bank}",
+        "account_to": "account to {account}",
+        "narration_to": "narration to {narration}",
+        "details_fallback": "your transfer details"
       }
     },
     "funding": {
@@ -714,7 +724,8 @@
         "suggested_header": "*Suggested breakdown:*",
         "suggested_item": "• {bank}: *{amount}*",
         "divider": "─────────────",
-        "total_line": "*Total:* {amount}"
+        "total_line": "*Total:* {amount}",
+        "credit_after_debits": "Recipient go receive the money once all funding debits succeed."
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
@@ -735,6 +746,7 @@
     "execution": {
       "date_now": "Now",
       "failed": "Execution failed: {error}",
+      "funding_setup_failed": "Funding setup failed",
       "failed_variants": {
         "standard": "Execution failed: {error}",
         "reassuring": "I no fit complete the transfer: {error}. Abeg try again or contact support if e continue."
@@ -1041,7 +1053,24 @@
       "failure_reason": "  Reason: {reason}",
       "other_completed_line": "*{task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
-      "success_footer": "_All transactions completed successfully_"
+      "success_footer": "_All transactions completed successfully_",
+      "update_header": {
+        "transfer": "*Transfer Update*",
+        "transfer_plural": "*Transfers Update*",
+        "airtime": "*Airtime Update*",
+        "data": "*Data Update*",
+        "generic": "*Transaction Update*"
+      },
+      "processing_footer": {
+        "success_failed": "Some transactions complete, some fail, and others still dey wait for provider confirmation. I go notify you when final update land.",
+        "success": "Some transactions complete successfully. Others still dey wait for provider confirmation. I go notify you when final update land.",
+        "failed": "Some transactions fail. Others still dey wait for provider confirmation. I go notify you when final update land.",
+        "all_processing": "Some transactions still dey wait for provider confirmation. I go notify you when final update land."
+      },
+      "failed_footer": {
+        "partial": "Some transactions complete, but others fail.",
+        "all_failed": "All transactions fail."
+      }
     },
     "intent": {
       "transfer_recipient_fallback": "Recipient",

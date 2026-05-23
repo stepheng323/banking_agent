@@ -635,6 +635,16 @@
       "high_risk_unsaved_warning_variants": {
         "standard": "⚠️ Eyi jẹ transfer ewu-giga: {amount} si olugba ti a ko fipamọ. Jọwọ jẹrisi alaye naa dáadáa.",
         "careful": "⚠️ Jọwọ ṣayẹwo transfer ewu-giga yii dáadáa: {amount} n lọ si olugba ti a ko fipamọ."
+      },
+      "change": {
+        "join_two": "{first} ati {second}",
+        "join_many": "{head}, ati {last}",
+        "amount_to": "amount si {amount}",
+        "recipient_to": "recipient si {recipient}",
+        "bank_to": "bank si {bank}",
+        "account_to": "account si {account}",
+        "narration_to": "narration si {narration}",
+        "details_fallback": "transfer details rẹ"
       }
     },
     "funding": {
@@ -714,7 +724,8 @@
         "suggested_header": "*Suggested breakdown:*",
         "suggested_item": "• {bank}: *{amount}*",
         "divider": "─────────────",
-        "total_line": "*Total:* {amount}"
+        "total_line": "*Total:* {amount}",
+        "credit_after_debits": "Recipient yoo gba owo naa once gbogbo funding debits ba succeed."
       },
       "notifications": {
         "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
@@ -735,6 +746,7 @@
     "execution": {
       "date_now": "Now",
       "failed": "Execution failed: {error}",
+      "funding_setup_failed": "Funding setup failed",
       "failed_variants": {
         "standard": "Execution failed: {error}",
         "reassuring": "Mi o le pari transfer naa: {error}. Jọwọ gbiyanju lẹẹkansi tabi kan si support ti o ba tẹsiwaju."
@@ -1041,7 +1053,24 @@
       "failure_reason": "  Reason: {reason}",
       "other_completed_line": "*{task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
-      "success_footer": "_All transactions completed successfully_"
+      "success_footer": "_All transactions completed successfully_",
+      "update_header": {
+        "transfer": "*Transfer Update*",
+        "transfer_plural": "*Transfers Update*",
+        "airtime": "*Airtime Update*",
+        "data": "*Data Update*",
+        "generic": "*Transaction Update*"
+      },
+      "processing_footer": {
+        "success_failed": "Diẹ ninu transactions ti pari, diẹ kuna, awọn miran si n duro de confirmation provider. A o fi to ọ leti nigbati final update ba de.",
+        "success": "Diẹ ninu transactions ti pari successfully. Awọn miran ṣi n duro de confirmation provider. A o fi to ọ leti nigbati final update ba de.",
+        "failed": "Diẹ ninu transactions kuna. Awọn miran ṣi n duro de confirmation provider. A o fi to ọ leti nigbati final update ba de.",
+        "all_processing": "Diẹ ninu transactions ṣi n duro de confirmation provider. A o fi to ọ leti nigbati final update ba de."
+      },
+      "failed_footer": {
+        "partial": "Diẹ ninu transactions pari, ṣugbọn awọn miran kuna.",
+        "all_failed": "Gbogbo transactions kuna."
+      }
     },
     "intent": {
       "transfer_recipient_fallback": "Recipient",

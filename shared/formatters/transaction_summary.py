@@ -93,15 +93,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
     task_mix = derive_task_mix(task_types)
 
     if any_processing:
-        if task_mix == "transfer":
-            header = "*Transfers Update*" if len(completed_tasks) > 1 else "*Transfer Update*"
-        elif task_mix == "airtime":
-            header = "*Airtime Update*"
-        elif task_mix == "data":
-            header = "*Data Update*"
-        else:
-            header = "*Transaction Update*"
-        lines = [header, ""]
+        lines = [_processing_update_header(task_mix, len(completed_tasks), locale), ""]
 
     # Group by task type
     transfer_tasks = [t for t in completed_tasks if t.type == "transfer"]
@@ -266,27 +258,20 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
 
     if any_processing:
         if any_succeeded and any_failed:
-            footer = (
-                "Some transactions completed, some failed, and others are still awaiting provider confirmation. "
-                "You'll be notified when the final update arrives."
-            )
+            footer = render_message("transaction_summary.multi.processing_footer.success_failed", locale)
         elif any_succeeded:
-            footer = (
-                "Some transactions completed successfully. Others are still awaiting provider confirmation. "
-                "You'll be notified when the final update arrives."
-            )
+            footer = render_message("transaction_summary.multi.processing_footer.success", locale)
         elif any_failed:
-            footer = (
-                "Some transactions failed. Others are still awaiting provider confirmation. "
-                "You'll be notified when the final update arrives."
-            )
+            footer = render_message("transaction_summary.multi.processing_footer.failed", locale)
         else:
-            footer = (
-                "Some transactions are still awaiting provider confirmation. "
-                "You'll be notified when the final update arrives."
-            )
+            footer = render_message("transaction_summary.multi.processing_footer.all_processing", locale)
     elif any_failed:
-        footer = "Some transactions completed, but others failed." if any_succeeded else "All transactions failed."
+        footer_key = (
+            "transaction_summary.multi.failed_footer.partial"
+            if any_succeeded
+            else "transaction_summary.multi.failed_footer.all_failed"
+        )
+        footer = render_message(footer_key, locale)
 
     lines.append(footer)
 
@@ -310,6 +295,22 @@ def _failure_reason(payload: dict[str, Any]) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _processing_update_header(task_mix: str, task_count: int, locale: str) -> str:
+    if task_mix == "transfer":
+        key = (
+            "transaction_summary.multi.update_header.transfer_plural"
+            if task_count > 1
+            else "transaction_summary.multi.update_header.transfer"
+        )
+    elif task_mix == "airtime":
+        key = "transaction_summary.multi.update_header.airtime"
+    elif task_mix == "data":
+        key = "transaction_summary.multi.update_header.data"
+    else:
+        key = "transaction_summary.multi.update_header.generic"
+    return render_message(key, locale)
 
 
 def _format_failure_reason(reason: str, locale: str, *, task_type: str | None = None) -> str:

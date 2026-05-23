@@ -47,6 +47,25 @@ def _airtime_task(
     )
 
 
+def _data_task(
+    *,
+    task_id: str,
+    amount: float,
+    phone_number: str,
+    plan_name: str,
+) -> TaskSpec:
+    return TaskSpec(
+        id=task_id,
+        type="data",
+        stage=TaskStage.COMPLETED,
+        payload={
+            "amount": amount,
+            "phone_number": phone_number,
+            "plan_name": plan_name,
+        },
+    )
+
+
 def test_multi_action_summary_uses_compact_transfer_line_with_alias_and_resolved() -> None:
     tasks = [
         _transfer_task(
@@ -221,6 +240,44 @@ def test_multi_action_summary_processing_transfer_uses_update_copy() -> None:
     assert "*Total Spent:* ₦10,000" in summary
     assert "awaiting provider confirmation" in summary
     assert "You'll be notified when the final update arrives." in summary
+
+
+def test_multi_action_summary_processing_footer_uses_locale_catalog() -> None:
+    data_task = _data_task(
+        task_id="d1",
+        amount=1500,
+        phone_number="08162511023",
+        plan_name="MTN 2GB",
+    )
+    data_task.payload["final_status"] = "processing"
+    tasks = [
+        _transfer_task(
+            task_id="t1",
+            amount=5000,
+            recipient_name="Tolu",
+            recipient_resolved_name="TOLU ADEDAYO",
+            bank="First Bank",
+            account="0760505261",
+        ),
+        data_task,
+    ]
+
+    summary = format_multi_action_summary(tasks, locale="pcm")
+
+    assert "*Transaction Update*" in summary
+    assert "Others still dey wait for provider confirmation" in summary
+    assert "I go notify you when final update land." in summary
+
+
+def test_multi_action_summary_failed_footer_uses_locale_catalog() -> None:
+    task = _airtime_task(task_id="a1", amount=2000, recipient_phone="08162511023", network="MTN")
+    task.payload["final_status"] = "failed"
+    task.payload["error_message"] = "Provider is temporarily unavailable"
+
+    summary = format_multi_action_summary([task], locale="ha")
+
+    assert "Duk transactions sun kasa." in summary
+
 
 def test_batch_confirmation_summary_uses_compact_total_amount() -> None:
     summary = format_batch_transfer_summary(

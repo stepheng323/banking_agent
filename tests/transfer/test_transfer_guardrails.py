@@ -372,8 +372,38 @@ async def test_multi_source_funding_confirmation_does_not_duplicate_plain_summar
     assert result.confirmation_summary is not None
     assert "Your Access Bank has *₦30,000*" in result.confirmation_summary
     assert "Suggested breakdown:" in result.confirmation_summary
+    assert "The recipient will be credited once all funding debits succeed." in result.confirmation_summary
+    assert "Recipient will be credited once after all funding debits succeed." not in result.confirmation_summary
     assert result.confirmation_summary.count("₦35,000 → Tolu Adebayo") == 1
     assert "Access Bank • 2010000001" not in result.confirmation_summary
+
+
+async def test_multi_source_funding_confirmation_uses_locale_credit_note() -> None:
+    payload = TransferPayload(
+        amount=35000,
+        recipient_name="Tolu Adebayo",
+        recipient_resolved_name="Tolu Adebayo",
+        recipient_account="2010000001",
+        recipient_bank_name="Access Bank",
+        source_bank_name="Access Bank",
+        source_account_number="6000000003",
+        funding_plan={
+            "is_single_source": False,
+            "transfer_amount": 35000,
+            "primary_bank_name": "Access Bank",
+            "primary_available_balance": 30000,
+            "steps": [
+                {"account_id": "access", "amount": 30000, "bank_name": "Access Bank", "sequence": 1},
+                {"account_id": "first", "amount": 5000, "bank_name": "First Bank", "sequence": 2},
+            ],
+        },
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="pcm", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.confirmation_summary is not None
+    assert "Recipient go receive the money once all funding debits succeed." in result.confirmation_summary
 
 
 def test_multi_source_confirmation_summary_does_not_append_single_from_line() -> None:
@@ -439,6 +469,33 @@ async def test_confirmation_update_message_falls_back_to_amount_template_when_ac
     assert result.update_message is not None
     assert "amount" in result.update_message.lower()
     assert "₦20,000" in result.update_message
+
+
+async def test_confirmation_update_message_uses_locale_change_parts_for_vague_ack() -> None:
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Mum",
+        recipient_account="9999999999",
+        recipient_bank_name="GTBank",
+        narration="School fees",
+        previous_confirmation_snapshot={
+            "amount": 20000,
+            "recipient_name": "Mum",
+            "recipient_bank": "Access Bank",
+            "recipient_account": "1234567890",
+            "narration": None,
+        },
+        transition_acknowledgment="Updated.",
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="yo", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.update_message is not None
+    assert "bank si GTBank" in result.update_message
+    assert "account si 9999999999" in result.update_message
+    assert "narration si School fees" in result.update_message
+    assert ", ati narration si School fees" in result.update_message
 
 
 async def test_confirmation_update_message_falls_back_to_recipient_template() -> None:
