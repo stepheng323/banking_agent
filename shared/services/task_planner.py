@@ -5,6 +5,12 @@ from typing import Any, Literal, cast
 
 from langchain_openai import ChatOpenAI
 
+from shared.services.confirmation_decision import (
+    ConfirmationDecision,
+    ConfirmationDecisionOutput,
+    ConfirmationPromptKind,
+    classify_confirmation_reply,
+)
 from shared.services.task_planner_normalizer import normalize_planner_transaction_output
 from shared.services.task_planner_prompts import (
     PLANNER_PROMPT_BASELINE_RESULT,
@@ -33,6 +39,12 @@ from shared.services.task_planner_router_prompts import (
     SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE,
 )
 from shared.services.task_queue.service import TaskQueueService
+from shared.services.unsupported_capabilities import (
+    UnsupportedBoundaryTurnOutput,
+    UnsupportedCapabilitySemanticOutput,
+    classify_unsupported_boundary_turn_semantic,
+    classify_unsupported_capability_semantic,
+)
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameReplayModifier,
@@ -116,6 +128,18 @@ class TaskPlanner:
         self.structured_pending_action_edit = _with_structured_output(
             self.interrupt_llm,
             PendingActionEditDecision,
+        )
+        self.structured_confirmation_decision = _with_structured_output(
+            self.interrupt_llm,
+            ConfirmationDecisionOutput,
+        )
+        self.structured_unsupported_capability = _with_structured_output(
+            self.semantic_router_llm,
+            UnsupportedCapabilitySemanticOutput,
+        )
+        self.structured_unsupported_boundary_turn = _with_structured_output(
+            self.semantic_router_llm,
+            UnsupportedBoundaryTurnOutput,
         )
         self.task_queue_service = task_queue_service
         if not self.uses_dedicated_interrupt_model:
@@ -302,6 +326,117 @@ class TaskPlanner:
         if isinstance(result, InterruptRouteDecision):
             return result
         return cast(InterruptRouteDecision, InterruptRouteDecision.model_validate(result))
+
+    async def classify_confirmation_reply(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        prompt_kind: ConfirmationPromptKind,
+        locale: str | None = None,
+        context: str = "None",
+        path_label: str = "interrupt_path",
+    ) -> ConfirmationDecision:
+        """Bounded LLM fallback for prompt-scoped approval/rejection replies."""
+        del phone_number
+        start = time.perf_counter()
+        result = await classify_confirmation_reply(
+            text,
+            prompt_kind=prompt_kind,
+            locale=locale,
+            context=context,
+            structured_llm=self.structured_confirmation_decision,
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "confirmation_decision_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.interrupt_llm),
+            action=result.action,
+            source=result.source,
+            confidence=result.confidence,
+            prompt_kind=prompt_kind,
+            context_chars=len(context),
+        )
+        self._log_latency_span(span="confirmation_decision_llm", duration_ms=duration_ms, path_label=path_label)
+        return result
+
+    async def classify_unsupported_capability(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        locale: str | None = None,
+        context: str = "None",
+        path_label: str = "direct_path",
+    ) -> UnsupportedCapabilitySemanticOutput:
+        """Bounded semantic classifier for unsupported capability boundaries."""
+        del phone_number
+        start = time.perf_counter()
+        result = await classify_unsupported_capability_semantic(
+            text,
+            locale=locale,
+            context=context,
+            structured_llm=self.structured_unsupported_capability,
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "unsupported_capability_semantic_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.semantic_router_llm),
+            action=result.action,
+            capability_key=result.capability_key,
+            confidence=result.confidence,
+            context_chars=len(context),
+        )
+        self._log_latency_span(
+            span="unsupported_capability_semantic_llm",
+            duration_ms=duration_ms,
+            path_label=path_label,
+        )
+        return result
+
+    async def classify_unsupported_boundary_turn(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        boundary_key: str,
+        boundary_label: str,
+        followup_count: int = 0,
+        locale: str | None = None,
+        context: str = "None",
+        path_label: str = "direct_path",
+    ) -> UnsupportedBoundaryTurnOutput:
+        """Bounded semantic classifier for turns after an unsupported capability refusal."""
+        del phone_number
+        start = time.perf_counter()
+        result = await classify_unsupported_boundary_turn_semantic(
+            text,
+            boundary_key=boundary_key,
+            boundary_label=boundary_label,
+            followup_count=followup_count,
+            locale=locale,
+            context=context,
+            structured_llm=self.structured_unsupported_boundary_turn,
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "unsupported_boundary_turn_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=self._model_name(self.semantic_router_llm),
+            action=result.action,
+            capability_key=result.capability_key,
+            confidence=result.confidence,
+            boundary_key=boundary_key,
+            context_chars=len(context),
+        )
+        self._log_latency_span(
+            span="unsupported_boundary_turn_llm",
+            duration_ms=duration_ms,
+            path_label=path_label,
+        )
+        return result
 
     async def interpret_context_frame_followup(
         self,

@@ -48,6 +48,7 @@ class ConversationScenarioResult:
 
 _PER_TURN_RESET: dict[str, Any] = {
     "final_response": None,
+    "policy_notice": None,
     "direct_path_triggered": False,
     "semantic_path_shape": None,
     "routing_owner": None,

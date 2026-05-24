@@ -2,6 +2,13 @@ import pytest
 
 from shared.i18n import render_message
 from shared.services.conversation_responder import ConversationResponder
+from shared.services.unsupported_capabilities import get_unsupported_capability, unsupported_capability_params
+
+
+def _unsupported_params(key: str) -> dict[str, object]:
+    capability = get_unsupported_capability(key)
+    assert capability is not None
+    return unsupported_capability_params(capability)
 
 
 class _FakeLLM:
@@ -409,3 +416,82 @@ async def test_conversation_responder_contextual_worker_followup_rejects_action_
     )
 
     assert reply == render_message("conversational.contextual_worker_followup.settled", "en")
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_unsupported_capability_followup_is_bounded() -> None:
+    llm = _FakeLLM("I get why you're asking, but I can't lend money or arrange loans here.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "Just a small amount please",
+        {
+            "language": "en",
+            "history": [],
+            "profile": {},
+            "unsupported_capability": {
+                "key": "lending",
+                "label": "loans or lending",
+                "followup_count": 1,
+                "supported_alternatives": "transfers, airtime/data, balances, and transaction queries",
+            },
+        },
+        intent="unsupported_capability_followup",
+    )
+
+    assert reply == "I get why you're asking, but I can't lend money or arrange loans here."
+    assert llm.messages is not None
+    assert "unsupported capability: loans or lending" in llm.messages[0]["content"]
+    assert "Do not mention or use stale transfer" in llm.messages[0]["content"]
+    assert "Unsupported follow-up count: 1" in llm.messages[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_unsupported_capability_rejects_loan_promises() -> None:
+    responder = ConversationResponder(_FakeLLM("I can arrange that loan for you."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "Just a small amount please",
+        {
+            "language": "en",
+            "history": [],
+            "profile": {},
+            "unsupported_capability": {
+                "key": "lending",
+                "label": "loans or lending",
+                "followup_count": 1,
+            },
+        },
+        intent="unsupported_capability_followup",
+    )
+
+    assert reply == render_message("capability.unsupported_unavailable_followup", "en", _unsupported_params("lending"))
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_unsupported_capability_rejects_crypto_promises() -> None:
+    responder = ConversationResponder(_FakeLLM("I can buy bitcoin for you."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "2348000000001",
+        "Just small bitcoin please",
+        {
+            "language": "en",
+            "history": [],
+            "profile": {},
+            "unsupported_capability": {
+                "key": "investments",
+                "label": "investments or crypto",
+                "followup_count": 1,
+            },
+        },
+        intent="unsupported_capability_followup",
+    )
+
+    assert reply == render_message(
+        "capability.unsupported_unavailable_followup",
+        "en",
+        _unsupported_params("investments"),
+    )

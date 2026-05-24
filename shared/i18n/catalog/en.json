@@ -7,13 +7,33 @@
   "capability": {
     "blocked_with_alternative": "{action} isn't available yet. I can help with {alternative}. Reply with what you want me to continue with.",
     "blocked_no_alternative": "{action} isn't available yet. I can help with supported banking tasks only. Tell me what you want to do next.",
-    "generic_blocked": "That action isn't available yet. I can help with supported banking tasks. What would you like to do next?"
+    "generic_blocked": "That action isn't available yet. I can help with supported banking tasks. What would you like to do next?",
+    "unsupported_unavailable": "I can't help with {capability}. I can help with {supported}.",
+    "unsupported_unavailable_followup": "I hear you, but I can't help with {capability}. I can help with {supported}.",
+    "unsupported_unavailable_firm": "I can't help with {capability}. Let's switch back to banking: {supported}."
   },
   "planner": {
     "policy_notice_with_alternative": "I can proceed with {supported}. I can't handle {unsupported} here. I can help with {alternative} instead. Reply with your choice.",
     "policy_notice_no_alternative": "I can proceed with {supported}. I can't handle {unsupported} here. Reply with what you want me to continue with.",
+    "mixed_supported_unsupported_notice": "I can help with {supported}. I can't help with {unsupported} here.",
     "cancelled": "Cancelled.",
     "conversational_bank_focus": "I prioritize banking services."
+  },
+  "transaction_slots": {
+    "transfer": {
+      "amount_for_recipient": "I found {recipient_name}. How much should I send?",
+      "recipient_for_amount": "Got {amount}. Who should I send it to?",
+      "account_bank_for_amount_recipient": "Got {amount} for {recipient_name}. Please share the account number and bank.",
+      "account_bank_for_recipient": "Please share the account number and bank for {recipient_name}.",
+      "bank_for_account": "I have account {account}. Which bank is it?"
+    },
+    "data": {
+      "request_amount_network": "{amount} {network} data",
+      "request_network": "{network} data",
+      "request_amount": "{amount} data",
+      "target_phone_for_request": "Got the {request}. Which line should I buy it for?",
+      "network_for_phone": "I have {target_phone}. Which network is it on?"
+    }
   },
   "locale": {
     "switched": "Language updated.",
@@ -523,7 +543,8 @@
       "data_recipient": "Do you want to buy data? If yes, whose line is it for?",
       "support_transaction": "Which transaction do you want me to check?",
       "account_query": "Do you want to check your balance or look up a transaction?",
-      "generic": "Tell me the banking action you want me to help with."
+      "generic": "Tell me the banking action you want me to help with.",
+      "mixed_supported_unsupported": "I can help with {supported}, but I can't help with {unsupported} here. Which supported request should I handle first?"
     },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",

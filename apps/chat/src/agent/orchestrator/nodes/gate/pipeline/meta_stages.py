@@ -4,6 +4,7 @@ from apps.chat.src.agent.orchestrator.banking_ambiguity import (
     classify_banking_coded_ambiguity,
     render_banking_coded_ambiguity_prompt,
 )
+from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 from apps.chat.src.agent.orchestrator.nodes.cancellation import clear_query_session
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.helpers import _build_bounded_conversational_reply
@@ -22,6 +23,11 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
 )
 from shared.i18n.renderer import render_message
 from shared.services.conversation_responder import is_contextual_casual_followup_turn
+from shared.services.unsupported_capabilities import (
+    detect_unsupported_capability,
+    get_unsupported_capability,
+    unsupported_capability_params,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -79,12 +85,26 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         await clear_query_session(ctx.redis_client, ctx.state.phone_number)
     if exit_updates:
         logger.info("gate_query_session_exited_on_direct_reply", had_pending_clarification=False)
+    capability_boundary_updates: dict[str, Any] = {}
+    render_params = deterministic_meta.params
+    if response_key == "capability.unsupported_unavailable":
+        capability = None
+        if deterministic_meta.params:
+            capability = get_unsupported_capability(str(deterministic_meta.params.get("capability_key") or ""))
+        capability = capability or detect_unsupported_capability(ctx.message_text)
+        if capability is not None:
+            render_params = unsupported_capability_params(capability, locale=locale)
+            capability_boundary_updates["capability_boundary"] = CapabilityBoundary(
+                key=capability.key,
+                label=capability.label,
+            )
     return {
         **ctx.gate_updates,
         **exit_updates,
         **locale_updates,
+        **capability_boundary_updates,
         "direct_path_triggered": True,
-        "final_response": render_message(response_key, locale, deterministic_meta.params),
+        "final_response": render_message(response_key, locale, render_params),
         "semantic_path_shape": "meta_direct",
         **_route_observability_updates(owner="guardrail", decision="meta_direct"),
     }

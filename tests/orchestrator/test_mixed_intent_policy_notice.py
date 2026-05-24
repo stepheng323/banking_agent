@@ -204,7 +204,7 @@ async def test_mixed_intent_outbox_contains_notice_then_transfer_prompt() -> Non
 
     outbox = state.outbox
     assert len(outbox) >= 2
-    assert "Investments" in outbox[0]["text"]
+    assert "investments or crypto" in outbox[0]["text"]
     assert "I can proceed with money transfer" in outbox[0]["text"]
     assert "I can help with send money or review recent transactions instead." in outbox[0]["text"]
     assert "account number for tolu" in outbox[1]["text"].lower()

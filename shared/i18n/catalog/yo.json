@@ -7,13 +7,33 @@
   "capability": {
     "blocked_with_alternative": "Mi o le ṣe {action} nibi. Mo le ran ọ lọwọ pẹlu {alternative}. Dahun ohun ti o fẹ ki n tẹsiwaju pẹlu.",
     "blocked_no_alternative": "Mi o le ṣe {action} nibi. Mo le ran ọ lọwọ pẹlu awọn iṣẹ banking to wa nikan. Sọ ohun to fẹ ṣe nigbamii.",
-    "generic_blocked": "Iṣe yẹn ko si sibẹ. Mo le ran ọ lọwọ pẹlu awọn iṣẹ banking to wa. Kini o fẹ ṣe nigbamii?"
+    "generic_blocked": "Iṣe yẹn ko si sibẹ. Mo le ran ọ lọwọ pẹlu awọn iṣẹ banking to wa. Kini o fẹ ṣe nigbamii?",
+    "unsupported_unavailable": "Mi o le ran ọ lọwọ pẹlu {capability}. Mo le ran ọ lọwọ pẹlu {supported}.",
+    "unsupported_unavailable_followup": "Mo gbọ ọ, ṣugbọn mi o le ran ọ lọwọ pẹlu {capability}. Mo le ran ọ lọwọ pẹlu {supported}.",
+    "unsupported_unavailable_firm": "Mi o le ran ọ lọwọ pẹlu {capability}. Jẹ ki a pada si banking: {supported}."
   },
   "planner": {
     "policy_notice_with_alternative": "Mo le tẹsiwaju pẹlu {supported}. Mi o le ṣe {unsupported} nibi. Mo le ran ọ lọwọ pẹlu {alternative} dipo. Dahun yiyan rẹ.",
     "policy_notice_no_alternative": "Mo le tẹsiwaju pẹlu {supported}. Mi o le ṣe {unsupported} nibi. Dahun ohun ti o fẹ ki n tẹsiwaju pẹlu.",
+    "mixed_supported_unsupported_notice": "Mo le ran ọ lọwọ pẹlu {supported}. Mi o le ran ọ lọwọ pẹlu {unsupported} nibi.",
     "cancelled": "Ti fagile.",
     "conversational_bank_focus": "Mo n dojukọ iṣẹ banking nikan."
+  },
+  "transaction_slots": {
+    "transfer": {
+      "amount_for_recipient": "Mo ti ri {recipient_name}. Elo ni ki n fi ranṣẹ?",
+      "recipient_for_amount": "Mo ti gba {amount}. Ta ni ki n ranṣẹ si?",
+      "account_bank_for_amount_recipient": "Mo ti gba {amount} fun {recipient_name}. Jọwọ fi account number ati bank ranṣẹ.",
+      "account_bank_for_recipient": "Jọwọ fi account number ati bank fun {recipient_name} ranṣẹ.",
+      "bank_for_account": "Mo ni account {account}. Bank wo ni?"
+    },
+    "data": {
+      "request_amount_network": "{amount} data {network}",
+      "request_network": "data {network}",
+      "request_amount": "{amount} data",
+      "target_phone_for_request": "Mo ti gba ibeere {request}. Line wo ni ki n ra fun?",
+      "network_for_phone": "Mo ni {target_phone}. Network wo ni o wa lori?"
+    }
   },
   "locale": {
     "switched": "A ti yi ede pada.",
@@ -523,7 +543,8 @@
       "data_recipient": "Se o fe ra data? Ti bee ni, ila tani?",
       "support_transaction": "Transaction wo ni ki n check?",
       "account_query": "Se o fe check balance tabi wa transaction kan?",
-      "generic": "So banking action ti o fe ki n ran e lowo pelu."
+      "generic": "So banking action ti o fe ki n ran e lowo pelu.",
+      "mixed_supported_unsupported": "Mo le ran ọ lọwọ pẹlu {supported}, ṣugbọn mi o le ran ọ lọwọ pẹlu {unsupported} nibi. Ibeere supported wo ni ki n kọkọ ṣe?"
     },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",

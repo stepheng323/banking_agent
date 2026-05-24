@@ -1,3 +1,7 @@
+from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.capability_boundary_stages import (
+    _stage_capability_boundary_followup,
+    _stage_semantic_unsupported_capability,
+)
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context_frame_stages import _stage_context_frame_followup
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.contextual_followup_stages import (
@@ -23,6 +27,9 @@ from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.meta_stages import (
     _stage_deterministic_domains,
     _stage_deterministic_meta,
 )
+from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.mixed_capability_stages import (
+    _stage_mixed_supported_unsupported_capability,
+)
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.resume_stages import _stage_resume_prompt_action
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage import (
     _stage_schedule_read_router,
@@ -39,6 +46,9 @@ _GATE_STAGES = (
     _stage_language_switch,
     _stage_cancel,
     _stage_gibberish_filter,
+    _stage_mixed_supported_unsupported_capability,
+    _stage_capability_boundary_followup,
+    _stage_semantic_unsupported_capability,
     _stage_schedule_read_router,
     _stage_resume_prompt_action,
     _stage_context_frame_followup,

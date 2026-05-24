@@ -13,6 +13,10 @@ from langchain_openai import ChatOpenAI
 from shared.assistant_profile.voice import build_conversation_voice_block
 from shared.i18n import LocaleManager, render_message, render_text
 from shared.i18n.message_keys import as_message_key
+from shared.services.unsupported_capabilities import (
+    localized_supported_alternatives,
+    unsupported_capability_params,
+)
 
 _LANGUAGE_LABELS = {
     "en": "English",
@@ -73,9 +77,23 @@ _BANKING_JOKE_FALLBACKS = (
     "Why was the debit card calm? It knew how to keep its balance.",
 )
 _CONTEXTUAL_WORKER_FOLLOWUP_INTENT = "contextual_worker_followup"
+_UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT = "unsupported_capability_followup"
 _CONTEXTUAL_ACTION_PROMISE_RE = re.compile(
     r"\b(?:i(?:'ll| will)|let me|i can)\s+"
     r"(?:retry|resend|send|transfer|buy|purchase|create|open|raise|submit|reverse|refund)\b",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_CAPABILITY_PROMISE_RE = re.compile(
+    r"\b(?:"
+    r"(?:i(?:'ll| will)|let me|i can|we can)\s+"
+    r"(?:lend|loan|borrow|arrange|approve|process|give|sort|buy|sell|trade|invest|export|download|send)|"
+    r"(?:loan|lend|borrow|credit|investment|crypto|bitcoin|stock|pdf|csv)\s+"
+    r"(?:approved|available|processing|coming|ready|sent)|"
+    r"(?:buy|sell|trade|recommend)\s+(?:bitcoin|crypto|stocks?|shares?|investments?)|"
+    r"(?:export|download|generate)\s+(?:a\s+)?(?:pdf|csv|statement|spreadsheet)|"
+    r"(?:send|transfer)\s+(?:money\s+)?(?:abroad|internationally)|"
+    r"i\s+can\s+do\s+that"
+    r")\b",
     re.IGNORECASE,
 )
 _CONTEXTUAL_UNGROUNDED_PREFACE_RE = re.compile(
@@ -226,6 +244,20 @@ def contextual_worker_fallback_reply(
     return _contextual_worker_message("generic", resolved_locale)
 
 
+def _unsupported_capability_fallback_reply(user_ctx: dict[str, Any] | None, locale: str) -> str:
+    unsupported = user_ctx.get("unsupported_capability") if isinstance(user_ctx, dict) else None
+    if not isinstance(unsupported, dict):
+        unsupported = {
+            "capability": "that capability",
+            "supported": localized_supported_alternatives(locale),
+        }
+    return render_message(
+        "capability.unsupported_unavailable_followup",
+        locale,
+        unsupported_capability_params(unsupported, locale=locale),
+    )
+
+
 def is_banking_refusal_reply(raw_text: str | None, *, locale: str) -> bool:
     if not raw_text:
         return False
@@ -355,11 +387,16 @@ class ConversationResponder:
         language = _locale_to_language_label(locale)
         history = user_ctx.get("history") or []
         is_contextual_worker_followup = intent == _CONTEXTUAL_WORKER_FOLLOWUP_INTENT
+        is_unsupported_capability_followup = intent == _UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT
         now = datetime.now(ZoneInfo("Africa/Lagos"))
         casual_streak = self._count_trailing_casual_replies(history, locale=locale)
         redirect_text = self._redirect_text(locale, casual_streak=casual_streak)
         prefers_banking_humor = bool(_JOKE_PATTERN_RE.search(text))
-        if not is_contextual_worker_followup and casual_streak >= _MAX_CASUAL_REPLY_STREAK:
+        if (
+            not is_contextual_worker_followup
+            and not is_unsupported_capability_followup
+            and casual_streak >= _MAX_CASUAL_REPLY_STREAK
+        ):
             return redirect_text
 
         history_text = self._recent_history_text(history)
@@ -367,6 +404,7 @@ class ConversationResponder:
         is_joke_turn = self._is_joke_turn(text, history)
         is_banking_reaction = (
             not is_contextual_worker_followup
+            and not is_unsupported_capability_followup
             and casual_streak == 0
             and _is_banking_result_reaction(text, history)
         )
@@ -391,6 +429,40 @@ class ConversationResponder:
                 "- No markdown, no emojis.\n"
                 "- If no specific grounded acknowledgement is possible, return an empty string.\n"
             )
+        elif is_unsupported_capability_followup:
+            unsupported = user_ctx.get("unsupported_capability")
+            if isinstance(unsupported, dict):
+                capability = unsupported.get("label") or unsupported.get("capability")
+            else:
+                capability = None
+            supported = (
+                unsupported.get("supported_alternatives") or unsupported.get("supported")
+                if isinstance(unsupported, dict)
+                else None
+            )
+            safety_note = unsupported.get("safety_note") if isinstance(unsupported, dict) else None
+            capability = str(capability or "that unsupported capability")
+            supported = str(supported or localized_supported_alternatives(locale))
+            system = (
+                build_conversation_voice_block(locale=language, channel="WhatsApp")
+                + f"Reply in {language}.\n"
+                f"The user is continuing to ask for an unsupported capability: {capability}.\n"
+                "Write ONLY a short bounded reply.\n"
+                "Rules:\n"
+                "- Keep it to 1 or 2 short sentences.\n"
+                "- Acknowledge briefly, but do not negotiate or keep the topic open.\n"
+                f"- Say the assistant cannot help with {capability}.\n"
+                f"- Redirect to supported tasks: {supported}.\n"
+                "- Do not mention or use stale transfer, recipient, amount, account, or transaction context.\n"
+                "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
+                "- Do not provide financial advice, trading/investment/crypto recommendations, lender suggestions, "
+                "loan approvals, international transfer execution, export downloads, or unsupported history "
+                "retrieval.\n"
+                "- No markdown, no emojis.\n"
+                "- If the reply would promise or enable the unsupported capability, return an empty string.\n"
+            )
+            if safety_note:
+                system += f"- {safety_note}\n"
         else:
             system = (
                 build_conversation_voice_block(locale=language, channel="WhatsApp")
@@ -416,7 +488,7 @@ class ConversationResponder:
                     "- The user is reacting to recent banking information. Give only the short empathetic "
                     "reply; no generic banking redirect.\n"
                 )
-        if not is_contextual_worker_followup and casual_streak >= 2:
+        if not is_contextual_worker_followup and not is_unsupported_capability_followup and casual_streak >= 2:
             system += "- The user has stayed in casual-chat mode for several turns, so keep the reply extra short.\n"
 
         user_parts = [
@@ -427,7 +499,23 @@ class ConversationResponder:
         contextual_summary = user_ctx.get(_CONTEXTUAL_WORKER_FOLLOWUP_INTENT)
         if is_contextual_worker_followup and contextual_summary:
             user_parts.append(f"Recent banking context: {contextual_summary}")
-        if not is_contextual_worker_followup and (prefers_banking_humor or is_joke_turn):
+        unsupported = user_ctx.get("unsupported_capability")
+        if is_unsupported_capability_followup and isinstance(unsupported, dict):
+            user_parts.append(
+                f"Unsupported capability: {unsupported.get('label') or unsupported.get('capability') or 'unknown'}"
+            )
+            capability_key = unsupported.get("key")
+            if capability_key:
+                user_parts.append(f"Unsupported capability key: {capability_key}")
+            user_parts.append(f"Unsupported follow-up count: {unsupported.get('followup_count') or 0}")
+            alternatives = unsupported.get("supported_alternatives") or unsupported.get("supported")
+            if alternatives:
+                user_parts.append(f"Supported alternatives: {alternatives}")
+        if (
+            not is_contextual_worker_followup
+            and not is_unsupported_capability_followup
+            and (prefers_banking_humor or is_joke_turn)
+        ):
             user_parts.append("Use a banking-related joke or money-themed playful line if you answer with humor.")
         if name:
             user_parts.append(f"User name: {name}")
@@ -452,12 +540,18 @@ class ConversationResponder:
         if not preface:
             if is_contextual_worker_followup:
                 return contextual_worker_fallback_reply(text, user_ctx, locale=locale)
+            if is_unsupported_capability_followup:
+                return _unsupported_capability_fallback_reply(user_ctx, locale)
             if is_joke_turn:
                 return f"{self._deterministic_joke_fallback(casual_streak=casual_streak)}\n{redirect_text}"
             return redirect_text
         if is_contextual_worker_followup:
             if _CONTEXTUAL_ACTION_PROMISE_RE.search(preface) or _CONTEXTUAL_UNGROUNDED_PREFACE_RE.search(preface):
                 return contextual_worker_fallback_reply(text, user_ctx, locale=locale)
+            return preface
+        if is_unsupported_capability_followup:
+            if _CONTEXTUAL_ACTION_PROMISE_RE.search(preface) or _UNSUPPORTED_CAPABILITY_PROMISE_RE.search(preface):
+                return _unsupported_capability_fallback_reply(user_ctx, locale)
             return preface
         if is_banking_reaction:
             return preface

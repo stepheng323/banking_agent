@@ -8,11 +8,17 @@ These rules are intentionally narrow and high-precision:
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from shared.i18n import LocaleManager
 from shared.i18n.models import LocaleCode
+from shared.services.confirmation_decision import (
+    CANCEL_PHRASES_BY_LOCALE,
+    classify_confirmation_reply_sync,
+    confirmation_approve_phrases,
+    confirmation_reject_phrases,
+    normalize_confirmation_text,
+)
 from shared.types.planner import InterruptRouteDecision
 
 SUPPORTED_SHORTCUT_LOCALES = {
@@ -39,28 +45,10 @@ _LOCALE_ALIASES: dict[str, LocaleCode] = {
     "ibo": LocaleCode.IG,
 }
 
-CONFIRM_APPROVE_PHRASES: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"yes", "ok", "okay", "proceed", "go ahead", "confirm"},
-    LocaleCode.PCM: {"yes na", "abeg proceed", "ok na"},
-    LocaleCode.YO: {"beeni", "o dara", "siwaju"},
-    LocaleCode.HA: {"na'am", "naam", "eh"},
-    LocaleCode.IG: {"ee", "kwe", "ga n'ihu"},
-}
-
-CONFIRM_REJECT_PHRASES: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"no", "not now", "later", "do not proceed", "don't proceed"},
-    LocaleCode.PCM: {"no o", "no abeg", "not now", "later"},
-    LocaleCode.YO: {"rara", "ma se", "dawoduro"},
-    LocaleCode.HA: {"a'a", "a a", "dakatar", "ba yanzu ba"},
-    LocaleCode.IG: {"mba", "kwusi", "ugbua a"},
-}
-
+CONFIRM_APPROVE_PHRASES: dict[LocaleCode, set[str]] = confirmation_approve_phrases("transaction_confirmation")
+CONFIRM_REJECT_PHRASES: dict[LocaleCode, set[str]] = confirmation_reject_phrases("transaction_confirmation")
 CANCEL_PHRASES: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"cancel", "abort", "stop", "nevermind", "never mind"},
-    LocaleCode.PCM: {"cancel", "abort", "stop", "commot", "no do again"},
-    LocaleCode.YO: {"fagile", "da duro", "ma se", "dawoduro"},
-    LocaleCode.HA: {"soke", "dakatar"},
-    LocaleCode.IG: {"kagbuo", "kwusi"},
+    locale: set(phrases) for locale, phrases in CANCEL_PHRASES_BY_LOCALE.items()
 }
 
 STATUS_RECAP_PHRASES: dict[LocaleCode, set[str]] = {
@@ -97,12 +85,8 @@ STATUS_REQUIREMENTS_PHRASES: dict[LocaleCode, set[str]] = {
     LocaleCode.IG: {"gini ka ichoro n'aka m", "gini foduru"},
 }
 
-_UPDATE_HINT_RE = re.compile(r"\b(change|update|edit|instead|amount|bank|account|recipient|beneficiary)\b")
-
-
 def _normalize_text(text: str) -> str:
-    compact = re.sub(r"\s+", " ", text.strip().lower())
-    return compact.strip('.,!?;:"`~()[]{}')
+    return normalize_confirmation_text(text)
 
 
 def _detected_language(locale: LocaleCode) -> str:
@@ -184,24 +168,19 @@ def _resolve_interrupt_shortcut(
     if interrupt_kind != "confirmation":
         return None, "no_match"
 
-    tokens = normalized.split()
-    if len(tokens) > 6 or len(normalized) > 64:
-        return None, "ambiguous"
-    if re.search(r"\d", normalized):
-        return None, "guardrail_blocked"
-    if _UPDATE_HINT_RE.search(normalized):
-        return None, "guardrail_blocked"
-
-    if normalized in CONFIRM_APPROVE_PHRASES.get(locale, set()):
+    decision = classify_confirmation_reply_sync(text, prompt_kind="transaction_confirmation", locale=locale)
+    if decision.action == "approve":
         return (
             _build_decision(locale=locale, decision="approve_flow", reason="shortcut_confirmation_approve"),
             "matched",
         )
-    if normalized in CONFIRM_REJECT_PHRASES.get(locale, set()):
+    if decision.action == "reject":
         return (
             _build_decision(locale=locale, decision="reject_flow", reason="shortcut_confirmation_reject"),
             "matched",
         )
+    if decision.action in {"modify", "new_request"}:
+        return None, "guardrail_blocked"
 
     return None, "no_match"
 
@@ -242,16 +221,5 @@ def resolve_shortcut_locale(value: str | LocaleCode | None) -> LocaleCode | None
 
 def is_explicit_confirmation_approval(text: str, locale: LocaleCode | None) -> bool:
     """Return True when text is an explicit confirmation approval phrase."""
-    normalized = _normalize_text(text)
-    if not normalized:
-        return False
-
-    # Fallback so explicit approvals still work even when locale metadata is unavailable.
-    locales_to_check: list[LocaleCode] = (
-        [locale] if locale in SUPPORTED_SHORTCUT_LOCALES else [LocaleCode.EN]
-    )
-
-    for candidate_locale in locales_to_check:
-        if normalized in CONFIRM_APPROVE_PHRASES.get(candidate_locale, set()):
-            return True
-    return False
+    decision = classify_confirmation_reply_sync(text, prompt_kind="transaction_confirmation", locale=locale)
+    return decision.action == "approve" and decision.source == "fastpath"

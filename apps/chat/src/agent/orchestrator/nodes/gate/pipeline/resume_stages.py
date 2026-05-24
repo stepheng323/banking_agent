@@ -7,31 +7,54 @@ from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
 from apps.chat.src.agent.orchestrator.nodes.gate.runner import _route_observability_updates
+from shared.services.confirmation_decision import (
+    ConfirmationDecision,
+    classify_confirmation_reply_sync,
+    normalize_confirmation_locale,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_RESUME_PHRASES = {
-    "yes",
-    "continue",
-    "continue it",
-    "resume",
-    "resume it",
-    "go back",
-    "that transfer",
-    "continue the transfer",
-}
-_DISMISS_PHRASES = {
-    "no",
-    "leave it",
-    "dismiss",
-    "cancel that",
-    "forget it",
-}
-
 
 def _normalize_resume_reply(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower()).strip(" .,!?:;")
+
+
+def _resume_reply_locale(ctx: GateContext) -> str | None:
+    locale = normalize_confirmation_locale(ctx.current_locale)
+    if locale is not None:
+        return locale.value
+    loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    loaded_locale = normalize_confirmation_locale(str(loaded_context.get("language") or ""))
+    return loaded_locale.value if loaded_locale is not None else None
+
+
+async def _classify_resume_prompt_reply(ctx: GateContext) -> ConfirmationDecision:
+    locale = _resume_reply_locale(ctx)
+    decision = classify_confirmation_reply_sync(ctx.message_text, prompt_kind="resume_prompt", locale=locale)
+    if decision.action != "unclear" or decision.reason != "no_match":
+        return decision
+
+    classifier = getattr(ctx.task_planner, "classify_confirmation_reply", None)
+    if not callable(classifier):
+        return decision
+
+    intent = "transaction"
+    if ctx.state.stashed_sessions:
+        intent = str(ctx.state.stashed_sessions[-1].get("intent") or "transaction")
+    try:
+        return await classifier(
+            ctx.state.phone_number,
+            ctx.message_text,
+            prompt_kind="resume_prompt",
+            locale=locale,
+            context=f"We asked whether to continue a stashed {intent} session.",
+            path_label="direct_path",
+        )
+    except Exception as exc:
+        logger.warning("resume_prompt_confirmation_classifier_failed", error=str(exc))
+        return decision
 
 
 def _has_live_resume_prompt_frame(ctx: GateContext) -> bool:
@@ -86,15 +109,16 @@ async def _stage_resume_prompt_action(ctx: GateContext) -> dict[str, Any] | None
         return None
 
     normalized = _normalize_resume_reply(ctx.message_text)
-    if normalized in _RESUME_PHRASES:
-        logger.info("gate_resume_prompt_accept", phrase=normalized)
+    decision = await _classify_resume_prompt_reply(ctx)
+    if decision.action == "approve":
+        logger.info("gate_resume_prompt_accept", phrase=normalized, source=decision.source)
         return _build_resume_action_updates(
             ctx,
             action="resume_session",
             semantic_path_shape="resume_session_direct",
         )
-    if normalized in _DISMISS_PHRASES:
-        logger.info("gate_resume_prompt_dismiss", phrase=normalized)
+    if decision.action == "reject":
+        logger.info("gate_resume_prompt_dismiss", phrase=normalized, source=decision.source)
         return _build_resume_action_updates(
             ctx,
             action="dismiss_resume_session",

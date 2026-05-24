@@ -27,6 +27,11 @@ from shared.branding import brand_name_aliases, legacy_brand_names, normalize_br
 from shared.i18n import LocaleManager
 from shared.i18n.message_keys import MessageKey
 from shared.policy.service import capability_block_message
+from shared.services.confirmation_decision import classify_confirmation_reply_sync
+from shared.services.unsupported_capabilities import (
+    detect_unsupported_capability,
+    unsupported_capability_params,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -400,31 +405,6 @@ EXPLICIT_CANCEL_PATTERNS = (
 _BENEFICIARY_SUGGESTION_ALIAS_MAX_CHARS = 64
 _BENEFICIARY_ALIAS_MARKERS = (" as ", " alias ", " name ", " called ", " oruko ", " suna ", " aha ", " nom ")
 _BENEFICIARY_BARE_ALIAS_MAX_WORDS = 3
-_BENEFICIARY_SAVE_AFFIRMATIONS = {
-    "yes",
-    "yes please",
-    "ok",
-    "okay",
-    "sure",
-    "proceed",
-    "go ahead",
-    "confirm",
-    "save",
-    "save it",
-    "save am",
-    "save this",
-    "save beneficiary",
-    "yes na",
-    "ok na",
-    "biko",
-    "na'am",
-    "naam",
-    "ee",
-    "beeni",
-    "oui",
-    "d'accord",
-    "daccord",
-}
 _BENEFICIARY_DISMISS_PHRASES = {
     "no",
     "no thanks",
@@ -825,6 +805,12 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
         return _meta_response("conversational.identity")
     if normalized in DETERMINISTIC_BRAND_ORIGIN_EXACT or _is_brand_origin_lookup(normalized):
         return _meta_response("conversational.brand_origin")
+    unsupported_capability = detect_unsupported_capability(normalized)
+    if unsupported_capability is not None:
+        return _meta_response(
+            "capability.unsupported_unavailable",
+            params=unsupported_capability_params(unsupported_capability),
+        )
     if normalized in DETERMINISTIC_CAPABILITY_EXACT:
         return _meta_response("conversational.capability_question")
     if any(pattern.match(normalized) for pattern in DETERMINISTIC_CAPABILITY_PATTERNS):
@@ -1196,7 +1182,7 @@ def _resolve_beneficiary_suggestion_reply(
     locale: str,
     suggestion_payload: dict[str, Any] | None,
 ) -> BeneficiarySuggestionDecision:
-    del locale, suggestion_payload
+    del suggestion_payload
     normalized = _normalize_suggestion_text(message_text)
     if not normalized:
         return BeneficiarySuggestionDecision(action="dismiss", reason="empty_message")
@@ -1204,7 +1190,12 @@ def _resolve_beneficiary_suggestion_reply(
     if _is_transaction_like_message(normalized):
         return BeneficiarySuggestionDecision(action="dismiss", reason="transaction_guard")
 
-    if normalized in _BENEFICIARY_DISMISS_PHRASES:
+    confirmation_decision = classify_confirmation_reply_sync(
+        message_text,
+        prompt_kind="beneficiary_save",
+        locale=locale,
+    )
+    if confirmation_decision.action == "reject" or normalized in _BENEFICIARY_DISMISS_PHRASES:
         return BeneficiarySuggestionDecision(action="dismiss", reason="explicit_dismiss")
 
     has_save_intent = bool(_BENEFICIARY_SAVE_INTENT_RE.search(normalized))
@@ -1214,7 +1205,7 @@ def _resolve_beneficiary_suggestion_reply(
     if has_save_intent:
         return BeneficiarySuggestionDecision(action="save_default", reason="explicit_save")
 
-    if normalized in _BENEFICIARY_SAVE_AFFIRMATIONS:
+    if confirmation_decision.action == "approve":
         return BeneficiarySuggestionDecision(action="save_default", reason="pure_affirmation")
 
     bare_alias = _cleanup_alias(message_text)

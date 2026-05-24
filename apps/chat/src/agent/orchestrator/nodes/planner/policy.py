@@ -7,6 +7,12 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.i18n import LocaleManager, render_message, render_policy_notice
 from shared.policy.service import capability_block_message
+from shared.services.unsupported_capabilities import (
+    detect_unsupported_capabilities,
+    format_planner_alternatives,
+    get_unsupported_capability_by_policy_label,
+    unsupported_capability_label,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,6 +27,52 @@ SUPPORTED_EXECUTOR_LABELS = {
     "faq": "banking help",
     "beneficiary": "beneficiary management",
     "schedule": "scheduled transaction management",
+}
+SUPPORTED_EXECUTOR_LABELS_BY_LOCALE = {
+    "pcm": {
+        "transfer": "money transfer",
+        "airtime": "airtime purchase",
+        "data": "data purchase",
+        "query": "transaction query",
+        "account": "account actions",
+        "support": "support request",
+        "faq": "banking help",
+        "beneficiary": "beneficiary management",
+        "schedule": "scheduled transaction management",
+    },
+    "yo": {
+        "transfer": "transfer owo",
+        "airtime": "rira airtime",
+        "data": "rira data",
+        "query": "wiwa transaction",
+        "account": "account actions",
+        "support": "support request",
+        "faq": "banking help",
+        "beneficiary": "beneficiary management",
+        "schedule": "scheduled transaction management",
+    },
+    "ha": {
+        "transfer": "transfer kudi",
+        "airtime": "sayan airtime",
+        "data": "sayan data",
+        "query": "binciken transaction",
+        "account": "account actions",
+        "support": "support request",
+        "faq": "banking help",
+        "beneficiary": "beneficiary management",
+        "schedule": "scheduled transaction management",
+    },
+    "ig": {
+        "transfer": "transfer ego",
+        "airtime": "izuta airtime",
+        "data": "izuta data",
+        "query": "nyocha transaction",
+        "account": "account actions",
+        "support": "support request",
+        "faq": "banking help",
+        "beneficiary": "beneficiary management",
+        "schedule": "scheduled transaction management",
+    },
 }
 
 TRANSACTION_DEFAULT_ACTIONS = {
@@ -63,63 +115,46 @@ META_RESPONSE_KEY_TO_INTENT: dict[str, MetaIntent] = {
     "conversational.out_of_scope": MetaIntent.LIMITS,
 }
 
-UNSUPPORTED_CAPABILITY_PATTERNS: dict[str, list[str]] = {
-    "Financial advice": ["advice", "advise", "what should i do", "recommendation"],
-    "Investments": ["invest", "investment", "stocks", "mutual fund", "crypto"],
-    "International transfers": ["international transfer", "send abroad", "swift", "dollar transfer", "usd"],
-    "Scheduled or recurring transfers": ["schedule", "scheduled", "recurring", "every week", "every month"],
-    "All-time transaction history": ["all-time", "all time", "entire history", "lifetime history"],
-    "PDF exports": ["pdf", "export statement", "download statement"],
-    "CSV exports": ["csv", "export csv", "download csv"],
-}
-
-UNSUPPORTED_CAPABILITY_ALTERNATIVES: dict[str, list[str]] = {
-    "Financial advice": ["review recent transactions", "check balances"],
-    "Investments": ["send money", "review recent transactions"],
-    "International transfers": ["send money"],
-    "Scheduled or recurring transfers": ["one-time transfer"],
-    "All-time transaction history": ["review recent transactions"],
-    "PDF exports": ["review recent transactions"],
-    "CSV exports": ["review recent transactions"],
-}
-
 
 def _detect_unsupported_capabilities(message_text: str) -> list[str]:
     """Resolve unsupported capabilities from planner-owned phrase patterns."""
-    text = message_text.lower().strip()
-
-    if not text:
-        return []
-
     profile = get_cached_assistant_profile()
     configured_unsupported = profile.unsupported_capabilities
-    pattern_map = UNSUPPORTED_CAPABILITY_PATTERNS
-
-    detected_set: set[str] = set()
-    for capability, patterns in pattern_map.items():
-        if not patterns:
-            continue
-        normalized_patterns = [p.lower().strip() for p in patterns if p and p.strip()]
-        if any(pattern in text for pattern in normalized_patterns):
-            detected_set.add(capability)
+    detected_set = {
+        capability.policy_label
+        for capability in detect_unsupported_capabilities(
+            message_text,
+            allowed_policy_labels=configured_unsupported,
+        )
+    }
 
     # Deterministic order for stable output/tests.
     ordered_detected = [cap for cap in configured_unsupported if cap in detected_set]
     return ordered_detected
 
 
-def _resolve_unsupported_alternatives(unsupported: list[str]) -> list[str]:
-    """Resolve up to two unique alternatives for planner notices."""
-    alternatives: list[str] = []
+def _locale_key(locale: str | None) -> str:
+    key = (locale or "en").strip().split("-")[0].casefold()
+    return key if key in SUPPORTED_EXECUTOR_LABELS_BY_LOCALE else "en"
 
-    for capability in unsupported:
-        cap_alts = UNSUPPORTED_CAPABILITY_ALTERNATIVES.get(capability, [])
-        for alt in cap_alts:
-            if alt and alt not in alternatives:
-                alternatives.append(alt)
-            if len(alternatives) >= 2:
-                return alternatives
-    return alternatives
+
+def _supported_executor_label(executor: str, locale: str) -> str:
+    return SUPPORTED_EXECUTOR_LABELS_BY_LOCALE.get(_locale_key(locale), {}).get(
+        executor,
+        SUPPORTED_EXECUTOR_LABELS[executor],
+    )
+
+
+def _unsupported_policy_label(label: str, locale: str) -> str:
+    capability = get_unsupported_capability_by_policy_label(label)
+    if capability is None:
+        return label
+    return unsupported_capability_label(capability, locale)
+
+
+def _resolve_unsupported_alternatives(unsupported: list[str], *, locale: str | None = None) -> list[str]:
+    """Resolve up to two unique alternatives for planner notices."""
+    return format_planner_alternatives(unsupported, locale=locale)
 
 
 def _build_locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
@@ -149,14 +184,14 @@ def _build_policy_notice(message_text: str, planner_output: Any, locale: str = "
 
     supported_labels = []
     for executor in {t.executor for t in planner_output.tasks if t.executor in SUPPORTED_EXECUTOR_LABELS}:
-        supported_labels.append(SUPPORTED_EXECUTOR_LABELS[executor])
+        supported_labels.append(_supported_executor_label(executor, locale))
 
     if not supported_labels:
         return None
 
     supported_text = ", ".join(sorted(supported_labels))
-    unsupported_text = ", ".join(unsupported)
-    alternatives = _resolve_unsupported_alternatives(unsupported)
+    unsupported_text = ", ".join(_unsupported_policy_label(label, locale) for label in unsupported)
+    alternatives = _resolve_unsupported_alternatives(unsupported, locale=locale)
     return cast(
         str,
         render_policy_notice(

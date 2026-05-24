@@ -7,13 +7,33 @@
   "capability": {
     "blocked_with_alternative": "I no fit do {action} here. I fit help with {alternative}. Reply wetin you want make I continue with.",
     "blocked_no_alternative": "I no fit do {action} here. Na only supported banking tasks I fit handle. Tell me wetin you wan do next.",
-    "generic_blocked": "That action never dey available yet. I fit help with supported banking tasks. Wetin you wan do next?"
+    "generic_blocked": "That action never dey available yet. I fit help with supported banking tasks. Wetin you wan do next?",
+    "unsupported_unavailable": "I no fit help with {capability}. I fit help with {supported}.",
+    "unsupported_unavailable_followup": "I hear you, but I no fit help with {capability}. I fit help with {supported}.",
+    "unsupported_unavailable_firm": "I no fit help with {capability}. Make we return to banking: {supported}."
   },
   "planner": {
     "policy_notice_with_alternative": "I fit continue with {supported}. I no fit handle {unsupported} here. I fit help with {alternative} instead. Reply your choice.",
     "policy_notice_no_alternative": "I fit continue with {supported}. I no fit handle {unsupported} here. Reply wetin you want make I continue with.",
+    "mixed_supported_unsupported_notice": "I fit help with {supported}. I no fit help with {unsupported} here.",
     "cancelled": "Don cancel.",
     "conversational_bank_focus": "I dey focus on banking services."
+  },
+  "transaction_slots": {
+    "transfer": {
+      "amount_for_recipient": "I don find {recipient_name}. How much make I send?",
+      "recipient_for_amount": "I get {amount}. Who make I send am to?",
+      "account_bank_for_amount_recipient": "I get {amount} for {recipient_name}. Share the account number and bank.",
+      "account_bank_for_recipient": "Share the account number and bank for {recipient_name}.",
+      "bank_for_account": "I get account {account}. Which bank be that?"
+    },
+    "data": {
+      "request_amount_network": "{amount} {network} data",
+      "request_network": "{network} data",
+      "request_amount": "{amount} data",
+      "target_phone_for_request": "I get the {request} request. Which line make I buy am for?",
+      "network_for_phone": "I get {target_phone}. Which network e dey on?"
+    }
   },
   "locale": {
     "switched": "Language don change.",
@@ -523,7 +543,8 @@
       "data_recipient": "You wan buy data? If yes, na whose line?",
       "support_transaction": "Which transaction you wan make I check?",
       "account_query": "You wan check balance or look up transaction?",
-      "generic": "Tell me the banking action wey you want make I help with."
+      "generic": "Tell me the banking action wey you want make I help with.",
+      "mixed_supported_unsupported": "I fit help with {supported}, but I no fit help with {unsupported} here. Which supported request you want make I handle first?"
     },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",

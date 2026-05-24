@@ -15,7 +15,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, OrchestratorState
 from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     classify_deterministic_meta_response,
@@ -23,6 +23,13 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
 )
 from shared.config.settings import settings
 from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
+from shared.services.confirmation_decision import ConfirmationDecision
+from shared.services.unsupported_capabilities import (
+    UnsupportedBoundaryTurnOutput,
+    UnsupportedCapabilitySemanticOutput,
+    get_unsupported_capability,
+    unsupported_capability_params,
+)
 from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 
@@ -42,6 +49,12 @@ def _assert_meta_response(
     assert response.response_key == response_key
     assert response.response_locale == response_locale
     assert response.params == params
+
+
+def _unsupported_params(key: str, *, locale: str | None = None) -> dict[str, object]:
+    capability = get_unsupported_capability(key)
+    assert capability is not None
+    return unsupported_capability_params(capability, locale=locale)
 
 
 class _MockTransferNeedsInputWorker:
@@ -144,6 +157,45 @@ def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.Mo
     assert classify_deterministic_meta_response("what is the meaning of xara") is None
 
 
+@pytest.mark.parametrize(
+    "message_text",
+    [
+        "Can you borrow me money?",
+        "Can you lend me 5k?",
+        "abeg borrow me money",
+        "I need a loan",
+    ],
+)
+def test_lending_requests_use_capability_boundary(message_text: str) -> None:
+    _assert_meta_response(
+        message_text,
+        "capability.unsupported_unavailable",
+        params=_unsupported_params("lending"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("message_text", "expected_key"),
+    [
+        ("Buy bitcoin for me", "investments"),
+        ("What stock should I buy?", "financial_advice"),
+        ("Can you send money abroad?", "international_transfers"),
+        ("Export my statement as PDF", "pdf_exports"),
+        ("Download CSV for my transactions", "csv_exports"),
+        ("Show my all-time transaction history", "all_time_history"),
+    ],
+)
+def test_unsupported_capability_registry_requests_use_generic_boundary(
+    message_text: str,
+    expected_key: str,
+) -> None:
+    _assert_meta_response(
+        message_text,
+        "capability.unsupported_unavailable",
+        params=_unsupported_params(expected_key),
+    )
+
+
 async def test_gate_wrong_addressed_name_uses_light_identity_correction_without_semantic_router() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -202,6 +254,696 @@ async def test_gate_brand_meaning_uses_brand_origin_without_semantic_router() ->
     assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == render_message("conversational.brand_origin", "en")
     assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_lending_request_uses_capability_boundary_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            confidence=0.95,
+            detected_language="English",
+            target_intent="support",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for unsupported lending request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_lending_boundary",
+        phone_number="2348777777719",
+        channel="whatsapp",
+        last_message_text="Can you borrow me money?",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable",
+        "en",
+        _unsupported_params("lending"),
+    )
+    assert isinstance(updates["capability_boundary"], CapabilityBoundary)
+    assert updates["capability_boundary"].key == "lending"
+    assert updates["capability_boundary"].label == "loans or lending"
+    assert updates["capability_boundary"].followup_count == 0
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_investment_request_uses_capability_boundary_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            confidence=0.95,
+            detected_language="English",
+            target_intent="support",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for unsupported investment request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_investment_unavailable",
+        phone_number="2348777777729",
+        channel="whatsapp",
+        last_message_text="Buy bitcoin for me",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable",
+        "en",
+        _unsupported_params("investments"),
+    )
+    assert isinstance(updates["capability_boundary"], CapabilityBoundary)
+    assert updates["capability_boundary"].key == "investments"
+
+
+async def test_gate_localized_unsupported_request_uses_locale_params() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_support",
+            confidence=0.95,
+            detected_language="Yoruba",
+            target_intent="support",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for localized unsupported investment request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_localized_unsupported",
+        phone_number="2348777777737",
+        channel="whatsapp",
+        last_message_text="ra bitcoin fun mi",
+        loaded_context={"language": "yo"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable",
+        "yo",
+        _unsupported_params("investments", locale="yo"),
+    )
+    assert isinstance(updates["capability_boundary"], CapabilityBoundary)
+    assert updates["capability_boundary"].key == "investments"
+
+
+async def test_gate_semantic_unsupported_request_sets_capability_boundary_without_router() -> None:
+    planner = _UnsupportedCapabilityPlanner(
+        UnsupportedCapabilitySemanticOutput(
+            action="unsupported",
+            capability_key="investments",
+            confidence=0.93,
+            reason="wealth_growth_in_stocks",
+        ),
+        route_decision=SemanticRouteDecision(decision="direct_reply", response="should not be used"),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_semantic_unsupported",
+        phone_number="2348777777738",
+        channel="whatsapp",
+        last_message_text="can you help my money yield better returns",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.unsupported_calls == 1
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "semantic_unsupported_capability"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable",
+        "en",
+        _unsupported_params("investments"),
+    )
+    assert isinstance(updates["capability_boundary"], CapabilityBoundary)
+    assert updates["capability_boundary"].key == "investments"
+
+
+async def test_gate_low_confidence_semantic_unsupported_falls_through_to_router() -> None:
+    planner = _UnsupportedCapabilityPlanner(
+        UnsupportedCapabilitySemanticOutput(
+            action="unsupported",
+            capability_key="investments",
+            confidence=0.62,
+            reason="low_confidence",
+        ),
+        route_decision=SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.9,
+            response="semantic path",
+            expected_transaction_executors=[],
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_semantic_unsupported_low_confidence",
+        phone_number="2348777777739",
+        channel="whatsapp",
+        last_message_text="can you help me grow my money somehow",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.unsupported_calls == 1
+    assert planner.route_calls == 1
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["final_response"] == "semantic path"
+    assert "capability_boundary" not in updates
+
+
+async def test_gate_mixed_transfer_and_investment_routes_supported_transfer_with_policy_notice() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_mixed_transfer_crypto",
+        phone_number="2348777777731",
+        channel="whatsapp",
+        last_message_text="send 5k to Ada and buy bitcoin for me",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_decision"] == "mixed_supported_unsupported"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["capability_boundary"] is None
+    assert updates["policy_notice"] == render_message(
+        "planner.mixed_supported_unsupported_notice",
+        "en",
+        {"supported": "money transfer", "unsupported": "investments or crypto"},
+    )
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "transfer"
+    assert task.payload["message"] == "send 5k to Ada"
+    assert task.payload["instruction"] == "send 5k to Ada"
+
+
+async def test_gate_mixed_transfer_and_semantic_unsupported_routes_supported_transfer() -> None:
+    planner = _UnsupportedCapabilityPlanner(
+        UnsupportedCapabilitySemanticOutput(
+            action="unsupported",
+            capability_key="investments",
+            confidence=0.91,
+            reason="semantic_investment_clause",
+        ),
+        route_decision=SemanticRouteDecision(decision="direct_reply", response="should not be used"),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_mixed_transfer_semantic_unsupported",
+        phone_number="2348777777740",
+        channel="whatsapp",
+        last_message_text="send 5k to Ada and help my money yield better returns",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.unsupported_calls == 1
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["policy_notice"] == render_message(
+        "planner.mixed_supported_unsupported_notice",
+        "en",
+        {"supported": "money transfer", "unsupported": "investments or crypto"},
+    )
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "transfer"
+    assert task.payload["message"] == "send 5k to Ada"
+
+
+async def test_gate_mixed_balance_and_investment_routes_supported_balance_with_policy_notice() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_mixed_balance_crypto",
+        phone_number="2348777777732",
+        channel="whatsapp",
+        last_message_text="what is my access balance and buy bitcoin",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
+    assert updates["routing_target_domain"] == "account"
+    assert updates["policy_notice"] == render_message(
+        "planner.mixed_supported_unsupported_notice",
+        "en",
+        {"supported": "balance or account action", "unsupported": "investments or crypto"},
+    )
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "account"
+    assert task.payload["action"] == "check_balance"
+    assert task.payload["message"] == "what is my access balance"
+
+
+async def test_gate_mixed_data_and_pdf_export_routes_supported_data_with_policy_notice() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_mixed_data_pdf",
+        phone_number="2348777777733",
+        channel="whatsapp",
+        last_message_text="buy data for me and export my statement as PDF",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "mixed_capability_supported_direct"
+    assert updates["routing_target_domain"] == "data"
+    assert updates["policy_notice"] == render_message(
+        "planner.mixed_supported_unsupported_notice",
+        "en",
+        {"supported": "data purchase", "unsupported": "PDF exports"},
+    )
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "data"
+    assert task.payload["message"] == "buy data for me"
+
+
+async def test_gate_mixed_multiple_supported_clauses_asks_for_clarification() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_mixed_multiple_supported",
+        phone_number="2348777777734",
+        channel="whatsapp",
+        last_message_text="send 5k to Ada and what is my balance and buy bitcoin",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "mixed_capability_clarify"
+    assert updates["routing_decision"] == "mixed_supported_unsupported_clarify"
+    assert "Which supported request" in updates["final_response"]
+    assert "capability_boundary" in updates and updates["capability_boundary"] is None
+
+
+async def test_gate_same_clause_unsupported_account_language_remains_unsupported_boundary() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_same_clause_crypto_account",
+        phone_number="2348777777735",
+        channel="whatsapp",
+        last_message_text="buy bitcoin with my Access account",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable",
+        "en",
+        _unsupported_params("investments"),
+    )
+    assert updates["capability_boundary"].key == "investments"
+
+
+async def test_gate_international_transfer_request_remains_unsupported_boundary() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_international_transfer",
+        phone_number="2348777777736",
+        channel="whatsapp",
+        last_message_text="send dollars abroad",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable",
+        "en",
+        _unsupported_params("international_transfers"),
+    )
+    assert updates["capability_boundary"].key == "international_transfers"
+
+
+async def test_gate_lending_followup_uses_capability_boundary_before_context_frame() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.95,
+            detected_language="English",
+            response="semantic path",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for lending follow-up",
+        ),
+        frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.96),
+    )
+    responder = _FakeConversationResponder(
+        "I hear you, but I can't lend money here. I can help with transfers, balances, and transactions."
+    )
+    state = OrchestratorState(
+        user_id="u_gate_lending_followup",
+        phone_number="2348777777720",
+        channel="whatsapp",
+        last_message_text="Just a small amount please",
+        loaded_context={"language": "en"},
+        capability_boundary=CapabilityBoundary(key="lending", label="loans or lending"),
+        context_frames=[
+            ContextFrame(
+                frame_id="stale_transfer_frame",
+                frame_type=ContextFrameType.TRANSACTION_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.TRANSACTION,
+                        entity_id="tx-stale",
+                        label="₦2,000 transfer to Tolu Adebayo",
+                        data={"task_type": "transfer", "amount": 2000, "recipient_name": "Tolu Adebayo"},
+                    )
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["final_response"] == responder.reply
+    assert updates["capability_boundary"].followup_count == 1
+    assert responder.calls[0]["intent"] == "unsupported_capability_followup"
+    assert responder.calls[0]["user_ctx"]["unsupported_capability"]["key"] == "lending"
+    assert responder.calls[0]["user_ctx"]["unsupported_capability"]["label"] == "loans or lending"
+
+
+async def test_gate_investment_followup_stays_in_capability_boundary() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(decision="direct_reply", response="semantic path"),
+        frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.96),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_crypto_followup",
+        phone_number="2348777777730",
+        channel="whatsapp",
+        last_message_text="Just small bitcoin please",
+        loaded_context={"language": "en"},
+        capability_boundary=CapabilityBoundary(key="investments", label="investments or crypto"),
+        context_frames=[
+            ContextFrame(
+                frame_id="stale_transfer_frame",
+                frame_type=ContextFrameType.TRANSACTION_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.TRANSACTION,
+                        entity_id="tx-stale",
+                        label="₦2,000 transfer to Tolu Adebayo",
+                        data={"task_type": "transfer", "amount": 2000, "recipient_name": "Tolu Adebayo"},
+                    )
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable_followup",
+        "en",
+        _unsupported_params("investments"),
+    )
+    assert updates["capability_boundary"].key == "investments"
+    assert updates["capability_boundary"].followup_count == 1
+
+
+async def test_gate_lending_followup_history_compatibility_guard() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(decision="direct_reply", response="semantic path"),
+        frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.96),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_lending_history_guard",
+        phone_number="2348777777721",
+        channel="whatsapp",
+        last_message_text="Just a small amount please",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Can you borrow me money?"},
+                {
+                    "role": "assistant",
+                    "content": render_message(
+                        "capability.unsupported_unavailable",
+                        "en",
+                        _unsupported_params("lending"),
+                    ),
+                },
+            ],
+        },
+        context_frames=[
+            ContextFrame(
+                frame_id="stale_transfer_frame",
+                frame_type=ContextFrameType.TRANSACTION_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.TRANSACTION,
+                        entity_id="tx-stale",
+                        label="₦2,000 transfer to Tolu Adebayo",
+                        data={"task_type": "transfer", "amount": 2000, "recipient_name": "Tolu Adebayo"},
+                    )
+                ],
+                created_at_ts=int(time.time()),
+                ttl_seconds=600,
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable_followup",
+        "en",
+        _unsupported_params("lending"),
+    )
+    assert updates["capability_boundary"].key == "lending"
+    assert updates["capability_boundary"].followup_count == 1
+
+
+async def test_gate_lending_history_compatibility_uses_only_latest_assistant_reply() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.9,
+            detected_language="English",
+            response="semantic path",
+            expected_transaction_executors=[],
+            reason="no live lending boundary",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_lending_history_latest_only",
+        phone_number="2348777777728",
+        channel="whatsapp",
+        last_message_text="Just a small amount please",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Can you borrow me money?"},
+                {
+                    "role": "assistant",
+                    "content": render_message(
+                        "capability.unsupported_unavailable",
+                        "en",
+                        _unsupported_params("lending"),
+                    ),
+                },
+                {"role": "user", "content": "what is my access balance"},
+                {"role": "assistant", "content": "Your Access Bank account has a balance of ₦30,000.00."},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["final_response"] == "semantic path"
+    assert "capability_boundary" not in updates
+
+
+async def test_gate_lending_followup_gets_firm_redirect_after_two_followups() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_lending_firm",
+        phone_number="2348777777722",
+        channel="whatsapp",
+        last_message_text="Even 2k please",
+        loaded_context={"language": "en"},
+        capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=2),
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable_firm",
+        "en",
+        _unsupported_params("lending"),
+    )
+    assert updates["capability_boundary"].followup_count == 3
+
+
+async def test_gate_lending_payback_followup_stays_in_capability_boundary() -> None:
+    planner = _BoundaryTurnPlanner(
+        UnsupportedBoundaryTurnOutput(
+            action="same_unsupported",
+            capability_key="lending",
+            confidence=0.91,
+            reason="repayment promise continues lending boundary",
+        ),
+        route_decision=SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.9,
+            detected_language="English",
+            response="semantic path",
+            expected_transaction_executors=[],
+            reason="semantic router should not run",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_lending_payback_followup",
+        phone_number="2348777777729",
+        channel="whatsapp",
+        last_message_text="I will pay back",
+        loaded_context={"language": "en"},
+        capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.boundary_calls == 1
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable_followup",
+        "en",
+        _unsupported_params("lending"),
+    )
+    assert updates["capability_boundary"].key == "lending"
+    assert updates["capability_boundary"].followup_count == 2
+
+
+async def test_gate_boundary_classifier_clears_for_unrelated_turn() -> None:
+    planner = _BoundaryTurnPlanner(
+        UnsupportedBoundaryTurnOutput(
+            action="unrelated",
+            capability_key=None,
+            confidence=0.9,
+            reason="new_casual_turn",
+        ),
+        route_decision=SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.9,
+            detected_language="English",
+            response="semantic path",
+            expected_transaction_executors=[],
+            reason="normal routing resumes",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_gate_boundary_unrelated",
+        phone_number="2348777777738",
+        channel="whatsapp",
+        last_message_text="that makes sense",
+        loaded_context={"language": "en"},
+        capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.boundary_calls == 1
+    assert planner.route_calls == 1
+    assert updates["capability_boundary"] is None
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["final_response"] == "semantic path"
+
+
+async def test_gate_supported_transfer_clears_lending_boundary() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id="u_gate_lending_to_transfer",
+        phone_number="2348777777723",
+        channel="whatsapp",
+        last_message_text="send 5k to Ada",
+        loaded_context={"language": "en"},
+        capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["capability_boundary"] is None
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert next(iter(updates["tasks"].values())).type == "transfer"
+    assert planner.route_calls == 0
+
+
+async def test_gate_supported_balance_clears_lending_boundary() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_lending_to_balance",
+        phone_number="2348777777724",
+        channel="whatsapp",
+        last_message_text="what is my access balance",
+        loaded_context={"language": "en"},
+        capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["capability_boundary"] is None
+    assert updates["semantic_path_shape"] == "balance_direct"
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "account"
+    assert task.payload["action"] == "check_balance"
 
 
 async def test_gate_handles_pidgin_social_greeting_deterministically() -> None:
@@ -4220,6 +4962,52 @@ class _RouteTurnPlanner:
         raise AssertionError("planner should not run when gate returns a direct router answer")
 
 
+class _ConfirmationDecisionPlanner(_RouteTurnPlanner):
+    def __init__(self, confirmation_decision: ConfirmationDecision) -> None:
+        super().__init__(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+        self.confirmation_decision = confirmation_decision
+        self.confirmation_calls = 0
+
+    async def classify_confirmation_reply(self, *args: object, **kwargs: object) -> ConfirmationDecision:
+        del args, kwargs
+        self.confirmation_calls += 1
+        return self.confirmation_decision
+
+
+class _UnsupportedCapabilityPlanner(_RouteTurnPlanner):
+    def __init__(
+        self,
+        unsupported_decision: UnsupportedCapabilitySemanticOutput,
+        *,
+        route_decision: SemanticRouteDecision,
+    ) -> None:
+        super().__init__(route_decision)
+        self.unsupported_decision = unsupported_decision
+        self.unsupported_calls = 0
+
+    async def classify_unsupported_capability(self, *args: object, **kwargs: object) -> UnsupportedCapabilitySemanticOutput:
+        del args, kwargs
+        self.unsupported_calls += 1
+        return self.unsupported_decision
+
+
+class _BoundaryTurnPlanner(_RouteTurnPlanner):
+    def __init__(
+        self,
+        boundary_decision: UnsupportedBoundaryTurnOutput,
+        *,
+        route_decision: SemanticRouteDecision,
+    ) -> None:
+        super().__init__(route_decision)
+        self.boundary_decision = boundary_decision
+        self.boundary_calls = 0
+
+    async def classify_unsupported_boundary_turn(self, *args: object, **kwargs: object) -> UnsupportedBoundaryTurnOutput:
+        del args, kwargs
+        self.boundary_calls += 1
+        return self.boundary_decision
+
+
 def _resume_prompt_frame() -> ContextFrame:
     return ContextFrame(
         frame_id="resume-frame",
@@ -4256,7 +5044,7 @@ def _stashed_transfer_session() -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("message", ["yes", "continue", "that transfer"])
+@pytest.mark.parametrize("message", ["yes", "yes please", "sure", "continue", "continue please", "that transfer"])
 async def test_gate_resume_prompt_accepts_terse_replies_without_semantic_router(message: str) -> None:
     planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
     state = OrchestratorState(
@@ -4278,7 +5066,45 @@ async def test_gate_resume_prompt_accepts_terse_replies_without_semantic_router(
     assert task.payload["action"] == "resume_session"
 
 
-@pytest.mark.parametrize("message", ["no", "leave it"])
+@pytest.mark.parametrize(
+    ("locale", "message"),
+    [
+        ("pcm", "yes na"),
+        ("pcm", "continue am"),
+        ("yo", "beeni"),
+        ("yo", "tesiwaju"),
+        ("ha", "na'am"),
+        ("ha", "ci gaba"),
+        ("ig", "ee"),
+        ("ig", "ga n'ihu"),
+    ],
+)
+async def test_gate_resume_prompt_accepts_localized_replies_without_semantic_router(
+    locale: str,
+    message: str,
+) -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id=f"u_gate_resume_{locale}",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        last_message_text=message,
+        loaded_context={"language": locale},
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "resume_session_direct"
+    assert planner.route_calls == 0
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "orchestrator"
+    assert task.payload["action"] == "resume_session"
+
+
+@pytest.mark.parametrize("message", ["no", "no thanks", "leave it"])
 async def test_gate_resume_prompt_dismisses_terse_replies_without_semantic_router(message: str) -> None:
     planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
     state = OrchestratorState(
@@ -4297,6 +5123,68 @@ async def test_gate_resume_prompt_dismisses_terse_replies_without_semantic_route
     assert planner.route_calls == 0
     task = next(iter(updates["tasks"].values()))
     assert task.payload["action"] == "dismiss_resume_session"
+
+
+@pytest.mark.parametrize(
+    ("locale", "message"),
+    [
+        ("pcm", "no abeg"),
+        ("yo", "rara"),
+        ("ha", "ba yanzu ba"),
+        ("ig", "mba"),
+    ],
+)
+async def test_gate_resume_prompt_dismisses_localized_replies_without_semantic_router(
+    locale: str,
+    message: str,
+) -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    state = OrchestratorState(
+        user_id=f"u_gate_resume_dismiss_{locale}",
+        phone_number="2348000000101",
+        channel="whatsapp",
+        last_message_text=message,
+        loaded_context={"language": locale},
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "dismiss_resume_session_direct"
+    assert planner.route_calls == 0
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["action"] == "dismiss_resume_session"
+
+
+async def test_gate_resume_prompt_uses_guarded_classifier_fallback_without_semantic_router() -> None:
+    planner = _ConfirmationDecisionPlanner(
+        ConfirmationDecision(
+            action="approve",
+            source="llm",
+            confidence=0.94,
+            reason="natural_resume_reply",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_resume_llm",
+        phone_number="2348000000103",
+        channel="whatsapp",
+        last_message_text="make we continue that one",
+        loaded_context={"language": "pcm"},
+        context_frames=[_resume_prompt_frame()],
+        stashed_sessions=[_stashed_transfer_session()],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "resume_session_direct"
+    assert planner.confirmation_calls == 1
+    assert planner.route_calls == 0
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["action"] == "resume_session"
 
 
 async def test_gate_resume_prompt_does_not_capture_fresh_transfer_request() -> None:

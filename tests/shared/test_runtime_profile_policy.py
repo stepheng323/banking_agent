@@ -175,8 +175,18 @@ def test_policy_notice_acknowledges_supported_and_unsupported_mix() -> None:
 
     assert notice is not None
     assert "money transfer" in notice
-    assert "Investments" in notice
+    assert "investments or crypto" in notice
     assert "send money or review recent transactions" in notice
+
+
+def test_policy_notice_localizes_unsupported_registry_labels() -> None:
+    planner_output = SimpleNamespace(tasks=[SimpleNamespace(executor="transfer")])
+    notice = _build_policy_notice("send 10k to tolu and ra bitcoin", planner_output, locale="yo")
+
+    assert notice is not None
+    assert "transfer owo" in notice
+    assert "idoko owo tabi crypto" in notice
+    assert "transfer owo or wiwa recent transactions" in notice
 
 
 def test_policy_validation_raises_when_required_action_missing() -> None:

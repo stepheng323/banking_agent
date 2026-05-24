@@ -7,13 +7,33 @@
   "capability": {
     "blocked_with_alternative": "Enweghị m ike ime {action} ebe a. Enwere m ike inyere gị aka na {alternative}. Zaghachi ihe ịchọrọ ka m gaa n'ihu na ya.",
     "blocked_no_alternative": "Enweghị m ike ime {action} ebe a. Enwere m ike inyere gị aka naanị na ọrụ banking akwadoro. Gwa m ihe ịchọrọ ime ọzọ.",
-    "generic_blocked": "Omume ahụ adịghị ugbu a. Enwere m ike inyere gị aka na ọrụ banking akwadoro. Kedu ihe ịchọrọ ime ọzọ?"
+    "generic_blocked": "Omume ahụ adịghị ugbu a. Enwere m ike inyere gị aka na ọrụ banking akwadoro. Kedu ihe ịchọrọ ime ọzọ?",
+    "unsupported_unavailable": "Enweghị m ike inyere aka na {capability}. Enwere m ike inyere gị aka na {supported}.",
+    "unsupported_unavailable_followup": "Aghọtara m, mana enweghị m ike inyere aka na {capability}. Enwere m ike inyere gị aka na {supported}.",
+    "unsupported_unavailable_firm": "Enweghị m ike inyere aka na {capability}. Ka anyị laghachi na banking: {supported}."
   },
   "planner": {
     "policy_notice_with_alternative": "Enwere m ike ịga n'ihu na {supported}. Enweghị m ike ime {unsupported} ebe a. Enwere m ike inyere gị aka na {alternative} kama. Zaghachi nhọrọ gị.",
     "policy_notice_no_alternative": "Enwere m ike ịga n'ihu na {supported}. Enweghị m ike ime {unsupported} ebe a. Zaghachi ihe ịchọrọ ka m gaa n'ihu na ya.",
+    "mixed_supported_unsupported_notice": "Enwere m ike inyere aka na {supported}. Enweghị m ike inyere aka na {unsupported} ebe a.",
     "cancelled": "A kagburu.",
     "conversational_bank_focus": "Ana m elekwasị anya na ọrụ banking."
+  },
+  "transaction_slots": {
+    "transfer": {
+      "amount_for_recipient": "Ahụrụ m {recipient_name}. Ego ole ka m ga-eziga?",
+      "recipient_for_amount": "Enwetara m {amount}. Onye ka m ga-ezigara ya?",
+      "account_bank_for_amount_recipient": "Enwetara m {amount} maka {recipient_name}. Biko ziga account number na bank.",
+      "account_bank_for_recipient": "Biko ziga account number na bank maka {recipient_name}.",
+      "bank_for_account": "Enwere m account {account}. Kedu bank ọ bụ?"
+    },
+    "data": {
+      "request_amount_network": "{amount} data {network}",
+      "request_network": "data {network}",
+      "request_amount": "{amount} data",
+      "target_phone_for_request": "Enwetara m arịrịọ {request}. Kedu line ka m ga-azụrụ ya?",
+      "network_for_phone": "Enwere m {target_phone}. Kedu network ọ nọ na ya?"
+    }
   },
   "locale": {
     "switched": "A gbanwere asụsụ.",
@@ -523,7 +543,8 @@
       "data_recipient": "Ichoro izu data? O buru ee, o bu line onye?",
       "support_transaction": "Kedu transaction ichoro ka m lelee?",
       "account_query": "Ichoro ile balance gi ma obu icho transaction?",
-      "generic": "Gwa m banking action ichoro ka m nyere gi aka."
+      "generic": "Gwa m banking action ichoro ka m nyere gi aka.",
+      "mixed_supported_unsupported": "Enwere m ike inyere aka na {supported}, mana enweghị m ike inyere aka na {unsupported} ebe a. Kedu supported request ka m buru ụzọ mee?"
     },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",

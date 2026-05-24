@@ -7,13 +7,33 @@
   "capability": {
     "blocked_with_alternative": "Ba zan iya yin {action} a nan ba. Zan iya taimakawa da {alternative}. Ka amsa abin da kake so na ci gaba da shi.",
     "blocked_no_alternative": "Ba zan iya yin {action} a nan ba. Zan iya taimakawa da ayyukan banking da ake goyon baya kawai. Ka fada abin da kake son yi na gaba.",
-    "generic_blocked": "Wannan aikin bai samu ba tukuna. Zan iya taimakawa da ayyukan banking da ake goyon baya. Me kake son yi na gaba?"
+    "generic_blocked": "Wannan aikin bai samu ba tukuna. Zan iya taimakawa da ayyukan banking da ake goyon baya. Me kake son yi na gaba?",
+    "unsupported_unavailable": "Ba zan iya taimakawa da {capability} ba. Zan iya taimakawa da {supported}.",
+    "unsupported_unavailable_followup": "Na gane, amma ba zan iya taimakawa da {capability} ba. Zan iya taimakawa da {supported}.",
+    "unsupported_unavailable_firm": "Ba zan iya taimakawa da {capability} ba. Mu koma banking: {supported}."
   },
   "planner": {
     "policy_notice_with_alternative": "Zan iya ci gaba da {supported}. Ba zan iya yin {unsupported} a nan ba. Zan iya taimakawa da {alternative} maimakon haka. Ka amsa zabinka.",
     "policy_notice_no_alternative": "Zan iya ci gaba da {supported}. Ba zan iya yin {unsupported} a nan ba. Ka amsa abin da kake so na ci gaba da shi.",
+    "mixed_supported_unsupported_notice": "Zan iya taimakawa da {supported}. Ba zan iya taimakawa da {unsupported} a nan ba.",
     "cancelled": "An soke.",
     "conversational_bank_focus": "Ina mayar da hankali kan ayyukan banking."
+  },
+  "transaction_slots": {
+    "transfer": {
+      "amount_for_recipient": "Na sami {recipient_name}. Nawa zan tura?",
+      "recipient_for_amount": "Na samu {amount}. Wa zan tura wa?",
+      "account_bank_for_amount_recipient": "Na samu {amount} don {recipient_name}. Ka turo account number da bank.",
+      "account_bank_for_recipient": "Ka turo account number da bank na {recipient_name}.",
+      "bank_for_account": "Ina da account {account}. Wane bank ne?"
+    },
+    "data": {
+      "request_amount_network": "{amount} data na {network}",
+      "request_network": "data na {network}",
+      "request_amount": "{amount} data",
+      "target_phone_for_request": "Na samu bukatar {request}. Wace line zan siya wa?",
+      "network_for_phone": "Ina da {target_phone}. Wane network ne?"
+    }
   },
   "locale": {
     "switched": "An canza yare.",
@@ -523,7 +543,8 @@
       "data_recipient": "Kana son sayen data? Idan haka ne, layin wa?",
       "support_transaction": "Wane transaction kake so in duba?",
       "account_query": "Kana son duba balance ko neman transaction?",
-      "generic": "Fadi banking action da kake so in taimaka da shi."
+      "generic": "Fadi banking action da kake so in taimaka da shi.",
+      "mixed_supported_unsupported": "Zan iya taimakawa da {supported}, amma ba zan iya taimakawa da {unsupported} a nan ba. Wane supported request zan fara yi?"
     },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",
