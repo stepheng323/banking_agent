@@ -327,6 +327,46 @@ async def test_extraction_step_reuses_amount_and_source_account_referents() -> N
     assert result.patch["confirmation"]["confirmed"] is False
 
 
+async def test_extraction_step_bank_only_reply_sets_missing_bank_without_extractor() -> None:
+    step = ExtractionStep(user_message="GTB")
+    payload = TransferPayload(recipient_name="Tolu", recipient_account="2010000002")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["recipient_bank_name"],
+        previous_response="I have account 2010000002. Which bank is it?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_bank_name"] == "GTB"
+    assert result.patch["recipient_bank_code"] is None
+    assert result.patch["recipient_bank_code_provider"] is None
+    assert result.patch["recipient_resolution_provider"] is None
+    assert result.patch["recipient_resolved_name"] is None
+    assert result.patch["confirmation"] == {"confirmed": False}
+
+
+async def test_extraction_step_recipient_reply_sets_missing_recipient_without_extractor() -> None:
+    step = ExtractionStep(user_message="it's Tolu")
+    payload = TransferPayload(amount=5000)
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="Got ₦5,000.00. Who should I send it to?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_name"] == "Tolu"
+    assert result.patch["beneficiary_id"] is None
+    assert result.patch["beneficiary_candidates"] == []
+    assert result.patch["confirmation"] == {"confirmed": False}
+
+
 async def test_extraction_step_accepts_unique_bank_label_for_beneficiary_selection() -> None:
     first_id = str(uuid4())
     second_id = str(uuid4())

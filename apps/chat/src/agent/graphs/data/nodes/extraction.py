@@ -18,6 +18,15 @@ logger = get_logger(__name__)
 _NETWORK_CANONICAL = {"MTN", "AIRTEL", "GLO", "9MOBILE"}
 _PHONE_CANDIDATE_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
 _NETWORK_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+_SELF_TARGET_RE = re.compile(
+    r"^(?:for\s+)?(?:me|my\s+(?:line|number|phone)|mine|myself|this\s+line)$",
+    re.IGNORECASE,
+)
+_NETWORK_REPLY_BLOCK_RE = re.compile(
+    r"\b(send|transfer|pay|buy|data|airtime|bundle|balance|statement|transaction|transactions|"
+    r"account|support|faq|cancel|stop|show|list|check)\b",
+    re.IGNORECASE,
+)
 
 
 def _has_phone_signal(message: str) -> bool:
@@ -32,6 +41,28 @@ def _has_network_signal(message: str) -> bool:
         if token.strip().upper() in _NETWORK_CANONICAL:
             return True
     return False
+
+
+def _first_normalized_phone(message: str) -> str | None:
+    for candidate in _PHONE_CANDIDATE_PATTERN.findall(message):
+        normalized = normalize_nigerian_phone(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _self_target_phone(message: str, context: DataContext) -> str | None:
+    if not _SELF_TARGET_RE.fullmatch(message.strip()):
+        return None
+    return normalize_nigerian_phone(context.phone_number) or context.phone_number or None
+
+
+def _network_reply(message: str) -> str | None:
+    text = message.strip()
+    if not text or "?" in text or _NETWORK_REPLY_BLOCK_RE.search(text):
+        return None
+    normalized = normalize_network_name(text)
+    return normalized or (text.upper() if text.upper() in _NETWORK_CANONICAL else None)
 
 
 def _has_resolved_network(network: str | None) -> bool:
@@ -215,6 +246,24 @@ class ExtractionStep(PipelineStep):
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         waiting_for_source_account = "source_account_id" in required_fields
         waiting_for_referent_phone = "referent_phone_id" in required_fields
+        waiting_for_target_phone = bool({"target_phone", "recipient_phone", "phone"} & set(required_fields))
+        waiting_for_network = set(required_fields) == {"network"}
+        if waiting_for_target_phone:
+            self_phone = _self_target_phone(self.user_message, context)
+            normalized_phone = self_phone or _first_normalized_phone(self.user_message)
+            if normalized_phone:
+                payload.target_phone = normalized_phone
+                payload.is_self = bool(self_phone)
+                payload.skip_extraction = False
+                payload.stage = "extracted"
+                return None
+        if waiting_for_network:
+            network = _network_reply(self.user_message)
+            if network:
+                payload.network = network
+                payload.skip_extraction = False
+                payload.stage = "extracted"
+                return None
         if waiting_for_referent_phone:
             referent_patch, invalid_referents = _resolve_referent_phone_selection_from_input(
                 self.user_message,

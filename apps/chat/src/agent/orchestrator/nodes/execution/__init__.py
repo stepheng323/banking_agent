@@ -38,6 +38,7 @@ from shared.formatters.prompts import (
     format_missing_details_prompt,
     format_single_transfer_recipient_prompt,
     format_source_repair_prompt,
+    format_transaction_slot_prompt,
 )
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transaction_copy import build_confirmation_header, format_amount_compact
@@ -1122,6 +1123,17 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                         just_resolved_name=just_resolved_name,
                         just_resolved_bank=just_resolved_bank,
                         found_names=found_names,
+                        locale=locale,
+                    )
+                if (
+                    len(current_wave) == 1
+                    and not ("beneficiary_id" in focused_missing_fields or has_structured_options)
+                ):
+                    prompt_text = format_transaction_slot_prompt(
+                        task_type=focused_task.type,
+                        payload=focused_task.payload,
+                        missing_fields=focused_missing_fields,
+                        fallback_prompt=prompt_text,
                         locale=locale,
                     )
                 prompt_text = _append_acknowledgements_to_prompt(

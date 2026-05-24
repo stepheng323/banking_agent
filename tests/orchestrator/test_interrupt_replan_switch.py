@@ -544,6 +544,100 @@ async def test_interrupt_input_with_beneficiary_bank_label_continues_flow_withou
 
 
 @pytest.mark.asyncio
+async def test_interrupt_input_bank_only_reply_continues_transfer_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_bank_only_slot",
+        phone_number="2348022222301",
+        channel="whatsapp",
+        last_message_text="GTB",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_bank_name"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.RESOLVED,
+                payload={
+                    "recipient_name": "Tolu",
+                    "recipient_account": "2010000002",
+                    "idempotency_key": "old-key",
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
+async def test_interrupt_input_self_line_reply_continues_data_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_self_line_slot",
+        phone_number="2348022222302",
+        channel="whatsapp",
+        last_message_text="my line",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["target_phone"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="data",
+                stage=TaskStage.RESOLVED,
+                payload={"network": "MTN", "idempotency_key": "old-key"},
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
+async def test_interrupt_input_network_reply_continues_data_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_network_slot",
+        phone_number="2348022222303",
+        channel="whatsapp",
+        last_message_text="MTN",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["network"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="data",
+                stage=TaskStage.RESOLVED,
+                payload={"target_phone": "08162511023", "idempotency_key": "old-key"},
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
 async def test_interrupt_input_stashes_transfer_and_routes_new_single_transfer_directly() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_3",
@@ -1860,6 +1954,72 @@ async def test_confirmation_switch_to_account_uses_user_message_for_balance_exec
 
 
 @pytest.mark.asyncio
+async def test_confirmation_balance_query_switches_to_account_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_7c_balance",
+        phone_number="2348077777780",
+        channel="whatsapp",
+        last_message_text="Whats my access balance",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"confirmation": {"summary": "Confirm transfer"}},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_INPUT", interrupt_policy="CONFIRM")],
+        active_domain="transfer",
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert len(updates["stashed_sessions"]) == 1
+    task_ids = list(updates["tasks"].keys())
+    assert len(task_ids) == 1
+    assert updates["tasks"][task_ids[0]].type == "account"
+    assert updates["tasks"][task_ids[0]].payload["message"] == "Whats my access balance"
+
+
+@pytest.mark.asyncio
+async def test_auth_balance_query_switches_to_account_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_7d_balance",
+        phone_number="2348077777781",
+        channel="whatsapp",
+        last_message_text="What my balance in access bank",
+        pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_AUTH,
+                payload={"confirmation": {"summary": "Authorize transfer"}},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_AUTH", interrupt_policy="BLOCK")],
+        active_domain="transfer",
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert len(updates["stashed_sessions"]) == 1
+    task_ids = list(updates["tasks"].keys())
+    assert len(task_ids) == 1
+    assert updates["tasks"][task_ids[0]].type == "account"
+    assert updates["tasks"][task_ids[0]].payload["message"] == "What my balance in access bank"
+
+
+@pytest.mark.asyncio
 async def test_confirmation_same_flow_switch_intent_shortcuts_back_to_continue_flow() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_same_flow_1",
@@ -2018,6 +2178,78 @@ async def test_confirmation_reject_flow_cancels_task() -> None:
 
 
 @pytest.mark.asyncio
+async def test_confirmation_guarded_router_approval_advances_confirmation() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_guarded_approve",
+        phone_number="2348088888898",
+        channel="whatsapp",
+        last_message_text="make we proceed now",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"confirmation": {"summary": "Confirm transfer", "confirmed": False}},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.93,
+            detected_language="Pidgin",
+            target_intent=None,
+            target_mode=None,
+            reason="guarded approval",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_AUTH
+    assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_confirmation_guarded_router_approval_blocks_modification_text() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_guarded_approve_block",
+        phone_number="2348088888899",
+        channel="whatsapp",
+        last_message_text="make it 10k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"confirmation": {"summary": "Confirm transfer", "confirmed": False}},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="unsafe approval",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload.get("confirmation", {}).get("confirmed") is not True
+
+
+@pytest.mark.asyncio
 async def test_auth_approve_flow_advances_non_pin_auth_to_executing() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_9",
@@ -2050,6 +2282,41 @@ async def test_auth_approve_flow_advances_non_pin_auth_to_executing() -> None:
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
+
+
+@pytest.mark.asyncio
+async def test_pin_auth_approval_text_does_not_authorize_transfer() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_pin_text_guard",
+        phone_number="2348099999998",
+        channel="whatsapp",
+        last_message_text="yes please",
+        pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin", prompt="Enter PIN"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_AUTH,
+                payload={},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.99,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="text approval cannot authorize pin",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_AUTH
 
 
 @pytest.mark.asyncio

@@ -26,7 +26,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, T
 from shared.database.models import Beneficiary
 from shared.formatters.currency import format_naira
 from shared.i18n import render_message
-from shared.services.affirmation.service import AffirmationService
+from shared.services.confirmation_decision import classify_confirmation_reply_sync
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import normalize_bank_account_number
 
@@ -44,6 +44,30 @@ _BANK_LABEL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _BANK_DETAIL_INLINE_NON_BANK_RE = re.compile(r"\b(?:send|transfer|pay|remit)\b", re.IGNORECASE)
+_BANK_ONLY_SLOT_REPLY_BLOCK_RE = re.compile(
+    r"\b(send|transfer|pay|buy|airtime|data|bundle|balance|statement|transaction|transactions|"
+    r"account\s+balance|support|faq|cancel|stop|show|list|check)\b",
+    re.IGNORECASE,
+)
+_BANK_ONLY_SLOT_REPLY_RE = re.compile(
+    r"^(?:(?:it'?s|its|it is|bank is|the bank is|use)\s+)?(?P<bank>[a-z0-9&' .-]+?)(?:\s+bank)?$",
+    re.IGNORECASE,
+)
+_RECIPIENT_SLOT_REPLY_PREFIX_RE = re.compile(
+    r"^(?:(?:it'?s|its|it is|this is)\s+)?(?:(?:to|for|send(?:\s+it)?\s+to)\s+)?(?P<recipient>.+?)$",
+    re.IGNORECASE,
+)
+_RECIPIENT_SLOT_REPLY_BLOCK_RE = re.compile(
+    r"\b(and|also|plus|then|while|cancel|stop|show|list|check|buy|help|support|faq|balance|"
+    r"statement|spend|spent|transaction|transactions|airtime|data|beneficiar(?:y|ies)|"
+    r"account(?:s)?|week|month|today|tomorrow|yesterday)\b",
+    re.IGNORECASE,
+)
+_RECIPIENT_SLOT_REPLY_QUESTION_RE = re.compile(r"^(what|how|why|when|where|who|which)\b", re.IGNORECASE)
+_RECIPIENT_SLOT_REPLY_META_RE = re.compile(
+    r"^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no)$",
+    re.IGNORECASE,
+)
 _AMOUNT_REPLY_PATTERN = re.compile(
     r"^\s*(?:₦|ngn)?\s*(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKhH]?)\s*$",
     re.IGNORECASE,
@@ -105,6 +129,48 @@ def _canonical_beneficiary_id(value: str) -> str:
     if text.startswith("bene:"):
         return text.split(":", 1)[1].strip()
     return text
+
+
+def _parse_bank_name_slot_reply(user_message: str | None) -> str | None:
+    text = (user_message or "").strip()
+    if not text or "?" in text:
+        return None
+    if _BANK_ONLY_SLOT_REPLY_BLOCK_RE.search(text):
+        return None
+    match = _BANK_ONLY_SLOT_REPLY_RE.fullmatch(text)
+    if match is None:
+        return None
+    bank = (match.group("bank") or "").strip(" \t\r\n.,;:\"'()[]{}")
+    if not bank or bank.isdigit():
+        return None
+    tokens = bank.split()
+    if not tokens or len(tokens) > 4 or any(len(token) < 2 for token in tokens):
+        return None
+    return bank
+
+
+def _parse_recipient_name_slot_reply(user_message: str | None) -> str | None:
+    text = (user_message or "").strip()
+    if not text or "?" in text:
+        return None
+    if _RECIPIENT_SLOT_REPLY_META_RE.fullmatch(text):
+        return None
+    if _RECIPIENT_SLOT_REPLY_QUESTION_RE.search(text) or _RECIPIENT_SLOT_REPLY_BLOCK_RE.search(text):
+        return None
+    if _parse_account_and_bank_input(text):
+        return None
+    match = _RECIPIENT_SLOT_REPLY_PREFIX_RE.fullmatch(text)
+    if match is None:
+        return None
+    recipient = (match.group("recipient") or "").strip(" \t\r\n.,;:\"'()[]{}")
+    if not recipient or recipient.isdigit():
+        return None
+    tokens = recipient.split()
+    if not tokens or len(tokens) > 4 or any(len(token) < 2 for token in tokens):
+        return None
+    if len(tokens) <= 2 and recipient.casefold().endswith(" bank"):
+        return None
+    return recipient
 
 
 def _extract_media_caption_narration(user_message: str) -> str | None:
@@ -818,8 +884,12 @@ class ExtractionStep(TransferStep):
                         }
                     ),
                 )
-            affirmation = AffirmationService.classify_sync(self.user_message)
-            if affirmation.is_approval:
+            confirmation_decision = classify_confirmation_reply_sync(
+                self.user_message,
+                prompt_kind="amount_suggestion",
+                locale=context.language,
+            )
+            if confirmation_decision.is_approval:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
                     patch=_with_skip_patch(
@@ -830,7 +900,7 @@ class ExtractionStep(TransferStep):
                         }
                     ),
                 )
-            if affirmation.is_rejection:
+            if confirmation_decision.is_rejection:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
                     patch=_with_skip_patch(
@@ -894,6 +964,48 @@ class ExtractionStep(TransferStep):
         waiting_for_beneficiary = "beneficiary_id" in required_fields
         waiting_for_referent_recipient = "referent_recipient_id" in required_fields
         waiting_for_source_account = "source_account_id" in required_fields
+        waiting_for_recipient_bank_only = set(required_fields) == {"recipient_bank_name"}
+        waiting_for_recipient_identity = (
+            not data.recipient_name
+            and not waiting_for_beneficiary
+            and not waiting_for_referent_recipient
+            and not waiting_for_source_account
+            and "recipient_account" in required_fields
+            and "recipient_bank_name" in required_fields
+        )
+        if waiting_for_recipient_bank_only:
+            bank_name = _parse_bank_name_slot_reply(self.user_message)
+            if bank_name:
+                logger.info("deterministic_recipient_bank_slot_fastpath", bank=bank_name)
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(
+                        {
+                            "recipient_bank_name": bank_name,
+                            "recipient_bank_code": None,
+                            "recipient_bank_code_provider": None,
+                            "recipient_resolution_provider": None,
+                            "recipient_resolved_name": None,
+                            "confirmation": {"confirmed": False},
+                        }
+                    ),
+                )
+        if waiting_for_recipient_identity:
+            recipient_name = _parse_recipient_name_slot_reply(self.user_message)
+            if recipient_name:
+                logger.info("deterministic_recipient_name_slot_fastpath", recipient=recipient_name)
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(
+                        {
+                            "recipient_name": recipient_name,
+                            "recipient_resolved_name": None,
+                            "beneficiary_id": None,
+                            "beneficiary_candidates": [],
+                            "confirmation": {"confirmed": False},
+                        }
+                    ),
+                )
         if waiting_for_referent_recipient:
             referent_patch, invalid_referents = _resolve_referent_recipient_selection_from_input(
                 self.user_message,

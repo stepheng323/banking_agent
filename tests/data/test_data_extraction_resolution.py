@@ -115,6 +115,55 @@ async def test_data_extraction_reuses_repeat_referents_without_extractor() -> No
 
 
 @pytest.mark.asyncio
+async def test_data_extraction_self_line_reply_sets_context_phone_without_extractor() -> None:
+    step = ExtractionStep("my line")
+    payload = DataPayload(network="MTN")
+    context = DataContext(phone_number="2348162511023", language="en")
+    gates = DataGates()
+    worker_context = SimpleNamespace(required_fields=["target_phone"], extractor=None)
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is None
+    assert payload.target_phone == "08162511023"
+    assert payload.is_self is True
+    assert payload.skip_extraction is False
+    assert payload.stage == "extracted"
+
+
+@pytest.mark.asyncio
+async def test_data_extraction_phone_reply_sets_target_phone_without_extractor() -> None:
+    step = ExtractionStep("0816 251 1023")
+    payload = DataPayload(network="MTN")
+    context = DataContext(phone_number="2348000000000", language="en")
+    gates = DataGates()
+    worker_context = SimpleNamespace(required_fields=["target_phone"], extractor=None)
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is None
+    assert payload.target_phone == "08162511023"
+    assert payload.is_self is False
+    assert payload.stage == "extracted"
+
+
+@pytest.mark.asyncio
+async def test_data_extraction_network_reply_sets_network_without_extractor() -> None:
+    step = ExtractionStep("MTN")
+    payload = DataPayload(target_phone="08162511023")
+    context = DataContext(phone_number="2348000000000", language="en")
+    gates = DataGates()
+    worker_context = SimpleNamespace(required_fields=["network"], extractor=None)
+
+    result = await step.run(payload, context, gates, worker_context)
+
+    assert result is None
+    assert payload.network == "MTN"
+    assert payload.skip_extraction is False
+    assert payload.stage == "extracted"
+
+
+@pytest.mark.asyncio
 async def test_data_extraction_ambiguous_phone_referent_prompts_with_candidates() -> None:
     step = ExtractionStep("buy data for that number")
     payload = DataPayload()
@@ -179,7 +228,7 @@ async def test_data_extraction_accepts_numeric_referent_phone_selection() -> Non
 
 @pytest.mark.asyncio
 async def test_data_extraction_passes_compact_context_to_extractor() -> None:
-    step = ExtractionStep("08162511023")
+    step = ExtractionStep("buy it for mum")
     payload = DataPayload(network="MTN")
     context = DataContext(
         phone_number="2348000000000",

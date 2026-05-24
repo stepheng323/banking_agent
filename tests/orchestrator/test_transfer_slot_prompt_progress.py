@@ -4,6 +4,7 @@ import time
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.graphs.transfer.worker import TransferWorker
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
@@ -274,6 +275,41 @@ async def test_grouped_prompt_when_account_and_bank_missing() -> None:
     assert "I need account details for Tolu." not in text
 
 
+async def test_transfer_known_amount_missing_recipient_prompt_is_natural() -> None:
+    worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
+    state = _build_state()
+    state.tasks["t1"].payload = {"amount": 5000}
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "Got ₦5,000.00. Who should I send it to?"
+
+
+async def test_transfer_known_recipient_missing_amount_prompt_is_natural() -> None:
+    worker = _MockTransferNeedsInputWorker(["amount"], prompt="How much would you like to send?")
+    state = _build_state()
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "I found Tolu. How much should I send?"
+
+
+async def test_transfer_known_amount_and_recipient_missing_account_prompt_is_natural() -> None:
+    worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
+    state = _build_state()
+    state.tasks["t1"].payload["amount"] = 5000
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "Got ₦5,000.00 for Tolu. Please share the account number and bank."
+
+
 async def test_prompt_only_account_number_when_bank_already_provided() -> None:
     worker = _MockTransferNeedsInputWorker(["recipient_account"])
     state = _build_state()
@@ -296,6 +332,80 @@ async def test_prompt_only_bank_when_account_number_already_provided() -> None:
 
     assert "Which bank is that for?" in text
     assert "account number for Tolu" not in text
+
+
+async def test_data_known_network_missing_phone_prompt_is_natural() -> None:
+    worker = _MockNonTransferNeedsInputWorker(["target_phone"], "Which line should I buy data for?")
+    state = OrchestratorState(
+        user_id="u_data_prompt_network",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "MTN"},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"data": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "Got the MTN data. Which line should I buy it for?"
+
+
+async def test_data_known_phone_missing_network_prompt_is_natural() -> None:
+    worker = _MockNonTransferNeedsInputWorker(["network"], "Which network is it on?")
+    state = OrchestratorState(
+        user_id="u_data_prompt_phone",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={"target_phone": "08162511023"},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"data": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "I have 08162511023. Which network is it on?"
 
 
 async def test_bank_only_follow_up_prompts_for_account_number() -> None:
@@ -641,6 +751,112 @@ async def test_transfer_handler_resolves_focused_beneficiary_referent_to_worker(
     data = resolved.get("item", {}).get("data", {})
     assert resolved.get("status") == "resolved"
     assert data.get("account_number") == "8162511023"
+
+
+async def test_ambiguous_beneficiary_referent_blocks_confirmation() -> None:
+    worker = TransferWorker(
+        validation_service=None,
+        publisher=None,
+        extractor=None,
+        resolver_provider=None,
+        bank_cache=None,
+        transaction_repo=None,
+    )
+    state = OrchestratorState(
+        user_id="u_prompt_referent_ambiguity",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        last_message_text="Send her 6k",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "recipient_name": "her",
+                    "amount": 6000,
+                    "source_account_id": "acct-1",
+                    "skip_extraction": True,
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Access Bank",
+                    "account_number": "2010000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    now = int(time.time())
+    frame = ContextFrame(
+        frame_id="frame_tolu_beneficiaries",
+        frame_type=ContextFrameType.BENEFICIARY_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.BENEFICIARY,
+                entity_id="bene-access",
+                label="Tolu Access",
+                data={
+                    "id": "bene-access",
+                    "alias": "Tolu Access",
+                    "account_name": "Tolu Adebayo",
+                    "account_number": "2010000001",
+                    "bank_name": "Access Bank",
+                    "bank_code": "044",
+                    "beneficiary_type": "transfer",
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.BENEFICIARY,
+                entity_id="bene-gtb",
+                label="Tolu GTB",
+                data={
+                    "id": "bene-gtb",
+                    "alias": "Tolu GTB",
+                    "account_name": "Tolu Adeyemi",
+                    "account_number": "2010000002",
+                    "bank_name": "GTBank",
+                    "bank_code": "058",
+                    "beneficiary_type": "transfer",
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.BENEFICIARY,
+                entity_id="bene-first",
+                label="Tolu First",
+                data={
+                    "id": "bene-first",
+                    "alias": "Tolu First",
+                    "account_name": "Tolulope Johnson",
+                    "account_number": "2010000003",
+                    "bank_name": "First Bank",
+                    "bank_code": "011",
+                    "beneficiary_type": "transfer",
+                },
+            ),
+        ],
+        created_at_ts=now,
+        ttl_seconds=600,
+    )
+    OrchestratorContextManager().push_frame(state, frame)
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["pending_interrupt"].fields_by_task == {"t1": ["referent_recipient_id"]}
+    assert updates["outbox"][0]["type"] == "show_options"
+    assert updates["outbox"][0]["title"] == "Which recipient did you mean?"
+    assert [option["id"] for option in updates["outbox"][0]["options"]] == ["referent:1", "referent:2", "referent:3"]
+    assert not any(entry.get("type") == "request_confirmation" for entry in updates["outbox"])
 
 
 async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> None:
