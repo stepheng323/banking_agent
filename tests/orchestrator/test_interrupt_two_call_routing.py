@@ -944,7 +944,7 @@ async def test_auth_switch_intent_routes_once_and_stashes_transaction_flow() -> 
 
     updates = await handle_pending_interrupt(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     task_ids = list(updates["tasks"].keys())
     assert len(task_ids) == 1

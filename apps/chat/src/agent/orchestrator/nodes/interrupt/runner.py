@@ -63,6 +63,7 @@ from apps.chat.src.agent.orchestrator.services.interrupt_shortcuts import (
 )
 from shared.config.settings import settings
 from shared.i18n import LocaleManager, render_message
+from shared.services.confirmation_decision import APPROVAL_CONFIDENCE_THRESHOLD, is_safe_guarded_approval_text
 from shared.types.planner import ContextFrameFollowupDecision, InterruptRouteDecision
 
 TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
@@ -86,6 +87,16 @@ _SCHEDULE_INTERRUPT_READ_CANDIDATE_RE = re.compile(
     r"\b(?:haziri|ugwo|mbufe|azumahia)\b.*\b(?:emechaa|na-abia|oge)\b"
     r")"
 )
+_ACCOUNT_BALANCE_INTERRUPT_RE = re.compile(
+    r"\b(?:balance|account\s+balance|check\s+my\s+balance|"
+    r"what(?:'s| is)?\s+my\s+.+?\bbalance\b|"
+    r"how\s+much\s+(?:do\s+i\s+have|is\s+in\s+my\s+account))\b",
+    re.IGNORECASE,
+)
+_ACCOUNT_BALANCE_TRANSACTION_HINT_RE = re.compile(
+    r"\b(?:send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",
+    re.IGNORECASE,
+)
 
 
 def _could_be_schedule_interrupt_read_request(text: str) -> bool:
@@ -93,6 +104,15 @@ def _could_be_schedule_interrupt_read_request(text: str) -> bool:
     if not normalized or len(normalized) > 180:
         return False
     return bool(_SCHEDULE_INTERRUPT_READ_CANDIDATE_RE.search(normalized))
+
+
+def _is_account_balance_interrupt_switch(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", (text or "").strip().lower()).strip("?.!, ")
+    if not normalized or len(normalized) > 180:
+        return False
+    if _ACCOUNT_BALANCE_TRANSACTION_HINT_RE.search(normalized):
+        return False
+    return bool(_ACCOUNT_BALANCE_INTERRUPT_RE.search(normalized))
 
 
 async def _remove_or_cancel_confirmation_tasks(
@@ -1213,6 +1233,36 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             redis_client=redis_client,
         )
 
+    if (
+        interrupt.kind in {"confirmation", "auth"}
+        and current_task_types
+        and current_task_types.issubset(TRANSACTION_INTENTS)
+        and _is_account_balance_interrupt_switch(text)
+    ):
+        logger.info(
+            "interrupt_deterministic_account_balance_switch",
+            kind=interrupt.kind,
+            active_type=active_type,
+            tasks=interrupt.task_ids,
+        )
+        return await _handle_switch_intent_route(
+            state=state,
+            interrupt=interrupt,
+            route=InterruptRouteDecision(
+                decision="switch_intent",
+                confidence=1.0,
+                detected_language=None,
+                target_intent="account",
+                target_mode="new",
+                reason="deterministic account balance request during transaction interrupt",
+            ),
+            task_planner=task_planner,
+            text=text,
+            active_type=active_type,
+            current_task_types=current_task_types,
+            services=services,
+        )
+
     input_shortcut_route = _resolve_deterministic_input_selection_route(
         state=state,
         interrupt=interrupt,
@@ -1424,10 +1474,16 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
 
     if route.decision == "approve_flow":
         if interrupt.kind == "confirmation":
-            if not _is_explicit_confirmation_approval_text(state, text):
+            explicit_approval = _is_explicit_confirmation_approval_text(state, text)
+            guarded_llm_approval = (
+                route.confidence >= APPROVAL_CONFIDENCE_THRESHOLD
+                and is_safe_guarded_approval_text(text, prompt_kind="transaction_confirmation")
+            )
+            if not (explicit_approval or guarded_llm_approval):
                 logger.info(
                     "confirmation_approve_blocked_non_explicit_text",
                     tasks=interrupt.task_ids,
+                    confidence=route.confidence,
                 )
                 return _continue_flow_updates(state, interrupt)
             return _approve_confirmation_updates(state, interrupt)
