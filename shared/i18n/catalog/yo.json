@@ -517,6 +517,14 @@
     "fallback": {
       "processing_error": "I'm sorry, I'm having trouble processing that right now."
     },
+    "ambiguity": {
+      "transfer_recipient": "Se o fe fi owo ranse? Ti bee ni, ta ni recipient?",
+      "airtime_recipient": "Se o fe ra airtime? Ti bee ni, ila tani?",
+      "data_recipient": "Se o fe ra data? Ti bee ni, ila tani?",
+      "support_transaction": "Transaction wo ni ki n check?",
+      "account_query": "Se o fe check balance tabi wa transaction kan?",
+      "generic": "So banking action ti o fe ki n ran e lowo pelu."
+    },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",
       "account_worker_unavailable": "System error: Account worker unavailable",

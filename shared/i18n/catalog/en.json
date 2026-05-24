@@ -517,6 +517,14 @@
     "fallback": {
       "processing_error": "I'm sorry, I'm having trouble processing that right now."
     },
+    "ambiguity": {
+      "transfer_recipient": "Do you want to send money? If yes, who is the recipient?",
+      "airtime_recipient": "Do you want to buy airtime? If yes, whose line is it for?",
+      "data_recipient": "Do you want to buy data? If yes, whose line is it for?",
+      "support_transaction": "Which transaction do you want me to check?",
+      "account_query": "Do you want to check your balance or look up a transaction?",
+      "generic": "Tell me the banking action you want me to help with."
+    },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",
       "account_worker_unavailable": "System error: Account worker unavailable",

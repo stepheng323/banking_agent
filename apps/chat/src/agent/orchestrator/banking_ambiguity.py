@@ -6,6 +6,7 @@ import re
 from typing import Literal
 
 from apps.chat.src.agent.shared.routing_signals import looks_like_explicit_transaction_query_shape
+from shared.i18n.renderer import render_message
 
 AmbiguousBankingDomain = Literal["transfer", "airtime", "data", "support", "account_query"]
 
@@ -78,16 +79,15 @@ def classify_banking_coded_ambiguity(text: str | None) -> AmbiguousBankingDomain
 
 
 def render_banking_coded_ambiguity_prompt(text: str | None, *, locale: str) -> str:
-    del locale
     domain = classify_banking_coded_ambiguity(text)
     if domain == "transfer":
-        return "Do you want to send money? If yes, who is the recipient?"
+        return render_message("orchestrator.ambiguity.transfer_recipient", locale)
     if domain == "airtime":
-        return "Do you want to buy airtime? If yes, whose line is it for?"
+        return render_message("orchestrator.ambiguity.airtime_recipient", locale)
     if domain == "data":
-        return "Do you want to buy data? If yes, whose line is it for?"
+        return render_message("orchestrator.ambiguity.data_recipient", locale)
     if domain == "support":
-        return "Which transaction do you want me to check?"
+        return render_message("orchestrator.ambiguity.support_transaction", locale)
     if domain == "account_query":
-        return "Do you want to check your balance or look up a transaction?"
-    return "Tell me the banking action you want me to help with."
+        return render_message("orchestrator.ambiguity.account_query", locale)
+    return render_message("orchestrator.ambiguity.generic", locale)

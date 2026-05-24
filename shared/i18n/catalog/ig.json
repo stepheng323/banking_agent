@@ -517,6 +517,14 @@
     "fallback": {
       "processing_error": "I'm sorry, I'm having trouble processing that right now."
     },
+    "ambiguity": {
+      "transfer_recipient": "Ichoro iziga ego? O buru ee, onye ka i na-ezigara?",
+      "airtime_recipient": "Ichoro izu airtime? O buru ee, o bu line onye?",
+      "data_recipient": "Ichoro izu data? O buru ee, o bu line onye?",
+      "support_transaction": "Kedu transaction ichoro ka m lelee?",
+      "account_query": "Ichoro ile balance gi ma obu icho transaction?",
+      "generic": "Gwa m banking action ichoro ka m nyere gi aka."
+    },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",
       "account_worker_unavailable": "System error: Account worker unavailable",

@@ -517,6 +517,14 @@
     "fallback": {
       "processing_error": "I'm sorry, I'm having trouble processing that right now."
     },
+    "ambiguity": {
+      "transfer_recipient": "Kana son aika kudi? Idan haka ne, wa zai karba?",
+      "airtime_recipient": "Kana son sayen airtime? Idan haka ne, layin wa?",
+      "data_recipient": "Kana son sayen data? Idan haka ne, layin wa?",
+      "support_transaction": "Wane transaction kake so in duba?",
+      "account_query": "Kana son duba balance ko neman transaction?",
+      "generic": "Fadi banking action da kake so in taimaka da shi."
+    },
     "error": {
       "transfer_worker_unavailable": "System error: Transfer worker unavailable",
       "account_worker_unavailable": "System error: Account worker unavailable",
