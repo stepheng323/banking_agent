@@ -74,7 +74,7 @@ async def test_run_worker_starts_and_stops_stream_loop(monkeypatch: pytest.Monke
     stop_event = asyncio.Event()
 
     monkeypatch.setattr(worker_main, "warm_runtime", AsyncMock())
-    monkeypatch.setattr(worker_main, "setup_core_consumers", lambda: (message_consumer, stream_consumer))
+    monkeypatch.setattr(worker_main, "setup_chat_consumers", lambda: (message_consumer, stream_consumer))
     monkeypatch.setattr(worker_main, "_run_stream_loop", loop_probe.run)
 
     task = asyncio.create_task(worker_main.run_worker(stop_event=stop_event))

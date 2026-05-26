@@ -349,8 +349,3 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         group_name=f"{settings.project_name}-chat-worker-{settings.runtime.infrastructure_environment}",
     )
     return message_consumer, redis_stream_consumer
-
-
-def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
-    """Compatibility alias for the renamed chat worker dependency entrypoint."""
-    return setup_chat_consumers()

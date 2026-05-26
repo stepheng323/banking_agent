@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.chat.src.runtime import core_chat_dependencies
+from apps.chat.src.runtime import chat_worker_dependencies
 
 
 def test_resolve_role_model_warns_when_query_matches_planner(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -10,17 +10,17 @@ def test_resolve_role_model_warns_when_query_matches_planner(monkeypatch: pytest
     infos: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "warning",
         lambda event, **kwargs: warnings.append((event, kwargs)),
     )
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "info",
         lambda event, **kwargs: infos.append((event, kwargs)),
     )
 
-    model = core_chat_dependencies._resolve_role_model(
+    model = chat_worker_dependencies._resolve_role_model(
         role="query",
         configured_model="gpt-4o-mini",
         planner_model="gpt-4o-mini",
@@ -49,17 +49,17 @@ def test_resolve_role_model_logs_dedicated_interrupt_router_model(monkeypatch: p
     infos: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "warning",
         lambda event, **kwargs: warnings.append((event, kwargs)),
     )
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "info",
         lambda event, **kwargs: infos.append((event, kwargs)),
     )
 
-    model = core_chat_dependencies._resolve_role_model(
+    model = chat_worker_dependencies._resolve_role_model(
         role="interrupt_router",
         configured_model="gpt-5.4-nano",
         planner_model="gpt-4o-mini",
@@ -88,17 +88,17 @@ def test_resolve_role_model_logs_dedicated_semantic_router_model(monkeypatch: py
     infos: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "warning",
         lambda event, **kwargs: warnings.append((event, kwargs)),
     )
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "info",
         lambda event, **kwargs: infos.append((event, kwargs)),
     )
 
-    model = core_chat_dependencies._resolve_role_model(
+    model = chat_worker_dependencies._resolve_role_model(
         role="semantic_router",
         configured_model="gpt-5.4-nano",
         planner_model="gpt-4o-mini",
@@ -127,17 +127,17 @@ def test_resolve_role_model_logs_dedicated_extractor_model(monkeypatch: pytest.M
     infos: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "warning",
         lambda event, **kwargs: warnings.append((event, kwargs)),
     )
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "info",
         lambda event, **kwargs: infos.append((event, kwargs)),
     )
 
-    model = core_chat_dependencies._resolve_role_model(
+    model = chat_worker_dependencies._resolve_role_model(
         role="extractor",
         configured_model="gpt-5.4-mini",
         planner_model="gpt-4o-mini",
@@ -165,13 +165,13 @@ def test_resolve_role_model_blank_config_logs_fallback_then_overlap(monkeypatch:
     warnings: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(
-        core_chat_dependencies.logger,
+        chat_worker_dependencies.logger,
         "warning",
         lambda event, **kwargs: warnings.append((event, kwargs)),
     )
-    monkeypatch.setattr(core_chat_dependencies.logger, "info", lambda event, **kwargs: None)
+    monkeypatch.setattr(chat_worker_dependencies.logger, "info", lambda event, **kwargs: None)
 
-    model = core_chat_dependencies._resolve_role_model(
+    model = chat_worker_dependencies._resolve_role_model(
         role="interrupt_router",
         configured_model="",
         planner_model="gpt-4o-mini",

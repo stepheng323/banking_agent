@@ -229,7 +229,6 @@ module = [
     "shared.clients.providers.flutterwave.*",
     "shared.transaction_runtime.*",
     "apps.gateway.api.webhooks.*",
-    "apps.chat.src.agent.executors.*",
     "apps.chat.src.agent.graphs.transfer.*",
     "apps.chat.src.agent.graphs.airtime.*",
     "apps.chat.src.agent.graphs.data.*",

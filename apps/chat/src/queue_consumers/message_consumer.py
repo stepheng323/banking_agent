@@ -917,6 +917,7 @@ class MessageConsumer:
                     quoted_message_id=message.quoted_message_id,
                     channel=message.channel,
                     channel_identity=channel_user_id,
+                    channel_metadata=message.channel_metadata,
                     user=user,
                 )
             except Exception as exc:

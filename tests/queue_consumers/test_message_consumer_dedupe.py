@@ -130,6 +130,7 @@ class _OrchestratorStub:
         self.invoke_calls = 0
         self.last_user: Any | None = None
         self.last_mime_type: str | None = None
+        self.last_channel_metadata: dict[str, Any] | None = None
         self.resume_calls: list[dict[str, str]] = []
 
     async def invoke(
@@ -144,9 +145,11 @@ class _OrchestratorStub:
         quoted_message_id: str | None = None,
         channel: str = "whatsapp",
         channel_identity: str | None = None,
+        channel_metadata: dict[str, Any] | None = None,
         user: Any | None = None,
     ) -> dict[str, Any]:
         del phone_number, text, message_id, message_type, media_id, quoted_message_id, channel, channel_identity
+        self.last_channel_metadata = dict(channel_metadata or {})
         self.invoke_calls += 1
         self.last_user = user
         self.last_mime_type = mime_type
@@ -323,6 +326,36 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
     assert second["status"] == "duplicate_ignored"
     assert orchestrator.invoke_calls == 1
     assert len(enqueue_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_passes_channel_metadata_to_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-meta").model_copy(
+        update={"channel_metadata": {"sender_display_name": "Gaines Abiodun"}}
+    )
+
+    result = await consumer._handle_message(message)
+
+    assert result is not None
+    assert result["status"] == "success"
+    assert orchestrator.last_channel_metadata == {"sender_display_name": "Gaines Abiodun"}
 
 
 @pytest.mark.asyncio

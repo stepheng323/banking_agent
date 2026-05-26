@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.executors.transfer import TransferExecutor
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import TransactionStatusEnum
 from shared.policy.loader import get_cached_policy, load_policy
+from shared.transaction_runtime.executors.transfer import TransferExecutor
 
 CAPABILITY_POLICY_PATH = "config/capability_policy.json"
 SCHEDULE_DISABLED_MESSAGE = (
