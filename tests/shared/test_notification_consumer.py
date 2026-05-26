@@ -49,7 +49,7 @@ async def test_notification_consumer_delivers_payload_with_metadata_and_dedupe_k
 
 
 @pytest.mark.asyncio
-async def test_notification_consumer_supports_wrapped_payload() -> None:
+async def test_notification_consumer_rejects_wrapped_payload() -> None:
     delivery_service = SimpleNamespace(deliver_intents=AsyncMock(return_value=SimpleNamespace(status="delivered")))
     consumer = NotificationJobConsumer(delivery_service=delivery_service)
 
@@ -66,14 +66,7 @@ async def test_notification_consumer_supports_wrapped_payload() -> None:
         }
     )
 
-    delivery_service.deliver_intents.assert_awaited_once_with(
-        phone_number="chat-1",
-        channel="telegram",
-        intents=[{"type": "typing"}],
-        metadata={"source": "progress"},
-        dedupe_key="typing-1",
-        strict_actionable=False,
-    )
+    delivery_service.deliver_intents.assert_not_awaited()
 
 
 @pytest.mark.asyncio

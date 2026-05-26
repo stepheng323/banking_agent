@@ -666,7 +666,7 @@ class FundingPlanner:
         bank_name: str = getattr(account, "bank_name", "") or ""
 
         if destinations:
-            svc = MandateService(queue=None)
+            svc = MandateService()
             return svc.build_mandate_auth_message(
                 account_number=account_number,
                 bank_name=bank_name,

@@ -48,13 +48,6 @@ class AccountRepository(BaseRepository[Account]):
         await self.db.flush()
         return account
 
-    async def deactivate_account(self, account_id: str) -> Account | None:
-        """Deactivate an account (doesn't commit)."""
-        account = await self.get_by_account_id(account_id)
-        # Account model doesn't have is_active, this was a legacy check.
-        # If we need it, we should add it to the model.
-        return account
-
     async def get_default_account(self, user_id: str) -> Account | None:
         """Get user's default account."""
         user_uuid: str | UUID = user_id

@@ -37,10 +37,7 @@ class ReceiptJobConsumer:
 
     @staticmethod
     def _extract_payload(job: dict[str, Any]) -> dict[str, Any]:
-        """Support both legacy wrapped payload and direct payload job formats."""
-        payload = job.get("payload")
-        if isinstance(payload, dict):
-            return payload
+        """Return the current direct receipt job payload."""
         return job
 
     @staticmethod
@@ -132,7 +129,7 @@ class ReceiptJobConsumer:
     async def _process_job(self, job: dict[str, Any]) -> None:
         """Process a single receipt job with retry logic."""
         payload = self._extract_payload(job)
-        signal_key = self._extract_signal_key(job, payload)
+        signal_key: str | None = None
         phone_number = payload.get("phone_number")
         channel_identity = payload.get("channel_identity")
         outbox_phone = channel_identity or phone_number
@@ -144,6 +141,7 @@ class ReceiptJobConsumer:
                 logger.error("receipt_job_missing_phone_number", job=job)
                 return
 
+            signal_key = self._extract_signal_key(job, payload)
             try:
                 transfer_data = self._extract_transfer_data(payload)
             except ValueError as e:

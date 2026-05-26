@@ -65,7 +65,7 @@ class UnifiedTransactionRecord:
         """Return the dict shape consumed by query filters and presentation."""
         identifier = self.provider_reference or self.local_transaction_id or self.bank_transaction_id or ""
         narration = str(self.metadata.get("narration") or "").strip()
-        counterparty = self.counterparty or str(self.metadata.get("recipient_name") or "").strip()
+        counterparty = self.counterparty or str(self.metadata.get("recipient_name") or "").strip() or None
         if not narration:
             narration = counterparty or "Transaction"
         return {
@@ -238,32 +238,22 @@ def _local_mobile_values(tx: Any, transaction_type: str) -> dict[str, str | None
     mobile_network = _clean(_tx_attr(tx, "mobile_network"))
     biller_item_name = _clean(_tx_attr(tx, "biller_item_name"))
 
-    if transaction_type in {"airtime", "data"}:
-        target_phone = target_phone or _clean(_tx_attr(tx, "recipient_account_number"))
-        mobile_network = mobile_network or _clean(_tx_attr(tx, "recipient_bank_name")) or _clean(
-            _tx_attr(tx, "recipient_bank_code")
-        )
-
     if transaction_type == "airtime":
-        legacy_name = _clean(service_metadata.get("recipient_name")) or _clean(_tx_attr(tx, "recipient_name"))
-        counterparty = _mobile_target_display(legacy_name, target_phone, mobile_network)
+        recipient_name = _clean(service_metadata.get("recipient_name"))
+        counterparty = _mobile_target_display(recipient_name, target_phone, mobile_network)
         return {
-            "counterparty": counterparty or legacy_name or None,
-            "recipient_name": legacy_name or counterparty or None,
+            "counterparty": counterparty or recipient_name or None,
+            "recipient_name": recipient_name or counterparty or None,
             "target_phone_number": target_phone or None,
             "mobile_network": mobile_network or None,
             "biller_item_name": None,
         }
 
     if transaction_type == "data":
-        plan_name = biller_item_name or _clean(_tx_attr(tx, "recipient_name"))
+        plan_name = biller_item_name
         if not plan_name:
             plan_name = _clean(service_metadata.get("plan_name"))
         target_name = _clean(service_metadata.get("recipient_name"))
-        if not target_name and biller_item_name:
-            candidate_name = _clean(_tx_attr(tx, "recipient_name"))
-            if candidate_name and candidate_name not in {plan_name, target_phone}:
-                target_name = candidate_name
         target_display = (
             _mobile_target_display(target_name, target_phone, mobile_network) if target_name else target_phone
         )
@@ -293,7 +283,8 @@ def _local_to_record(tx: Any) -> UnifiedTransactionRecord:
     if status == "unknown" and provider_status != "unknown":
         status = provider_status
     transaction_type = _clean(_tx_attr(tx, "transaction_type")) or "transfer"
-    recipient = _clean(_tx_attr(tx, "recipient_name"))
+    is_mobile_transaction = transaction_type in {"airtime", "data"}
+    recipient = "" if is_mobile_transaction else _clean(_tx_attr(tx, "recipient_name"))
     mobile_values = _local_mobile_values(tx, transaction_type)
     display_recipient = str(mobile_values.get("recipient_name") or recipient or "").strip()
     counterparty = str(mobile_values.get("counterparty") or recipient or "").strip()
@@ -325,9 +316,9 @@ def _local_to_record(tx: Any) -> UnifiedTransactionRecord:
         metadata={
             "narration": _tx_attr(tx, "narration"),
             "recipient_name": display_recipient or None,
-            "recipient_account_number": _tx_attr(tx, "recipient_account_number"),
-            "recipient_bank_name": _tx_attr(tx, "recipient_bank_name"),
-            "recipient_bank_code": _tx_attr(tx, "recipient_bank_code"),
+            "recipient_account_number": None if is_mobile_transaction else _tx_attr(tx, "recipient_account_number"),
+            "recipient_bank_name": None if is_mobile_transaction else _tx_attr(tx, "recipient_bank_name"),
+            "recipient_bank_code": None if is_mobile_transaction else _tx_attr(tx, "recipient_bank_code"),
             "target_phone_number": mobile_values.get("target_phone_number"),
             "mobile_network": mobile_values.get("mobile_network"),
             "biller_code": _tx_attr(tx, "biller_code"),

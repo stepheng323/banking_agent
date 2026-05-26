@@ -1,7 +1,5 @@
 """Response Synthesizer - Unified response generation for all subgraphs."""
 
-import re
-
 from langchain_core.runnables import Runnable
 
 from shared.i18n import MessageKey, render_message
@@ -39,7 +37,7 @@ class ResponseSynthesizer:
         Returns:
             Natural language response string
         """
-        template = get_template(context.intent, context.language, context.recipient_name)
+        template = get_template(context.intent, context.recipient_name)
         if template:
             try:
                 response = self._render_template(template, context)
@@ -72,13 +70,7 @@ class ResponseSynthesizer:
         if template.startswith("response."):
             return render_message(as_message_key(template), context.language, variables)
 
-        # Legacy literal-template path (kept for compatibility during migration).
-        def replace_var(match):
-            var_name = match.group(1)
-            value = variables.get(var_name, "")
-            return str(value) if value is not None else ""
-
-        return re.sub(r"\{(\w+)\}", replace_var, template)
+        return render_message(as_message_key(template), context.language, variables)
 
     def _build_template_variables(self, context: ResponseContext) -> dict[str, object]:
         """Build interpolation variables for deterministic template rendering."""

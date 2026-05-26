@@ -148,7 +148,7 @@ def format_transaction_evidence_line(
     if "amount" not in used_fields:
         parts.append(_format_amount_plain(amount))
     if "date" not in used_fields:
-        date_text = _format_short_date(date_value, locale=locale)
+        date_text = _format_short_date(date_value)
         if date_text:
             parts.append(date_text)
     if "counterparty" not in used_fields and counterparty:
@@ -295,8 +295,7 @@ def _format_support_amount_value(amount: Any) -> str:
     return format_amount_number(amount)
 
 
-def _format_short_date(value: Any, *, locale: str) -> str:
-    del locale
+def _format_short_date(value: Any) -> str:
     if isinstance(value, datetime):
         value = value.date()
     if isinstance(value, date):

@@ -39,7 +39,7 @@ class DataEntityExtractor:
         return "full"
 
     def _build_context_string(self, smart_context: dict[str, Any] | None) -> str:
-        """Build context string from SmartContext or legacy dict format."""
+        """Build context string from SmartContext or context dict format."""
         if not smart_context:
             return ""
 

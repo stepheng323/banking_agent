@@ -148,7 +148,6 @@ class MonoWebhookService:
                     await uow.funding_steps.update_status(
                         step_id=str(step.id),
                         status=funding_status,
-                        provider_response=data,
                     )
                     await uow.commit()
 

@@ -27,6 +27,20 @@ router = APIRouter(prefix="/webhook", tags=["telegram"])
 logger = get_logger(__name__)
 
 _service_instance: TelegramWebhookService | None = None
+_TRANSACTION_PIN_FLOW_PREFIXES = frozenset({"transfer", "airtime", "data", "schedule"})
+
+
+def _parse_typed_pin_flow_token(flow_token: str | None) -> tuple[str, str, str] | None:
+    token = str(flow_token or "").strip()
+    if "-pin-" not in token:
+        return None
+    flow_type, remainder = token.split("-pin-", 1)
+    if flow_type not in _TRANSACTION_PIN_FLOW_PREFIXES or not remainder:
+        return None
+    idem_key, separator, token_channel_id = remainder.rpartition("-")
+    if not separator or not idem_key or not token_channel_id:
+        return None
+    return flow_type, idem_key, token_channel_id
 
 
 def _token_fingerprint(flow_token: str | None) -> str:
@@ -419,9 +433,10 @@ async def telegram_onboarding_complete(
         try:
             from shared.services.onboarding import session_manager
 
-            session = await session_manager.get_session(data.flow_token)
-            cta_message_id = (session or {}).get("cta_message_id")
-            cta_chat_id = (session or {}).get("cta_chat_id")
+            read_result = await session_manager.read_session(data.flow_token)
+            session = read_result.data or {}
+            cta_message_id = session.get("cta_message_id")
+            cta_chat_id = session.get("cta_chat_id")
 
             if cta_message_id and cta_chat_id:
                 telegram_client = TelegramClient()
@@ -558,27 +573,19 @@ async def telegram_pin_submit(
 
         return {"success": True}
 
-    # --- Parse flow_token: "{type}-pin-{idempotency_key}-{phone}" ---
-    parts = data.flow_token.split("-", 2)
-    flow_type = parts[0] if parts else "unknown"
+    parsed_pin_token = _parse_typed_pin_flow_token(data.flow_token)
+    if not parsed_pin_token:
+        return {"success": False, "error": "Session expired. Please start a new transaction."}
 
-    # Extract idempotency_key (everything between "-pin-" and the last "-{phone}")
-    idem_key: str | None = None
-    if "-pin-" in data.flow_token:
-        after_pin = data.flow_token.split("-pin-", 1)[1]  # "{idem_key}-{phone}"
-        # The last segment is the phone/chat_id
-        idem_parts = after_pin.rsplit("-", 1)
-        idem_key = idem_parts[0] if len(idem_parts) > 1 else after_pin
-        token_channel_id = idem_parts[1] if len(idem_parts) > 1 else ""
-        if token_channel_id and token_channel_id != init_user_id:
-            logger.warning(
-                "telegram_pin_submit_token_owner_mismatch",
-                flow_token_hash=_token_fingerprint(data.flow_token),
-                token_channel_id_hash=_token_fingerprint(token_channel_id),
-                init_user_id_hash=_token_fingerprint(init_user_id),
-            )
-            return {"success": False, "error": "This PIN request is not valid for this Telegram account."}
-    token_remainder = data.flow_token.split("-pin-", 1)[-1] if "-pin-" in data.flow_token else data.flow_token
+    flow_type, idem_key, token_channel_id = parsed_pin_token
+    if token_channel_id != init_user_id:
+        logger.warning(
+            "telegram_pin_submit_token_owner_mismatch",
+            flow_token_hash=_token_fingerprint(data.flow_token),
+            token_channel_id_hash=_token_fingerprint(token_channel_id),
+            init_user_id_hash=_token_fingerprint(init_user_id),
+        )
+        return {"success": False, "error": "This PIN request is not valid for this Telegram account."}
 
     # --- Look up the real phone_number from Redis (chat_id != phone for Telegram) ---
     from shared.cache.redis_client import RedisClient
@@ -588,21 +595,10 @@ async def telegram_pin_submit(
 
     # Resolve real phone number from transaction token stored during flow creation
     phone_number: str | None = None
-    if idem_key:
-        for prefix in ("transaction", "transfer", "airtime", "data"):
-            phone_number = await redis_client.get(f"{prefix}:token:{idem_key}:phone")
-            if phone_number:
-                break
+    phone_number = await redis_client.get(f"{flow_type}:token:{idem_key}:phone")
 
     if not phone_number:
-        # Fallback: the last segment of flow_token might be the phone on WhatsApp,
-        # but on Telegram it's the chat_id. Try to look up user by channel identity.
-        user_repo = UserRepository(db)
-        user = await user_repo.get_by_channel_identity("telegram", data.chat_id)
-        if user and user.phone_number:
-            phone_number = str(user.phone_number)
-        else:
-            return {"success": False, "error": "Session expired. Please start a new transaction."}
+        return {"success": False, "error": "Session expired. Please start a new transaction."}
 
     safe_phone_number = str(phone_number)
 
@@ -610,14 +606,14 @@ async def telegram_pin_submit(
     auth_result = await auth_service.verify_pin(
         phone_number=safe_phone_number,
         pin=str(data.pin),
-        idempotency_key=idem_key or token_remainder,
-        transaction_type=flow_type if flow_type != "unknown" else None,
+        idempotency_key=idem_key,
+        transaction_type=flow_type,
     )
 
     if not auth_result.transaction_type:
         auth_result.transaction_type = flow_type
 
-    await auth_service.store_pin_verification_result(idem_key or token_remainder, auth_result)
+    await auth_service.store_pin_verification_result(idem_key, auth_result)
 
     if not auth_result.verified:
         logger.info(
@@ -638,7 +634,7 @@ async def telegram_pin_submit(
         event_type=FlowEventType.PIN_VERIFIED,
         phone_number=safe_phone_number,
         flow_type=resolved_flow_type,
-        idempotency_key=idem_key or token_remainder,
+        idempotency_key=idem_key,
         success=True,
         channel="telegram",
         extra_data={"source": "telegram_mini_app_rest", "chat_id": data.chat_id},

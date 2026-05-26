@@ -62,11 +62,6 @@ class UserRepository(BaseRepository[User]):
         await self.db.flush()
         return identity
 
-    async def get_by_whatsapp_id(self, whatsapp_id: str) -> User | None:
-        """Get user by WhatsApp ID."""
-        # This is a legacy method, mapping to channel identity
-        return await self.get_by_channel_identity("whatsapp", whatsapp_id)
-
     async def is_registered(self, phone_number: str) -> bool:
         """Check if a user is registered."""
         user = await self.get_by_phone(phone_number)

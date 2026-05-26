@@ -3,13 +3,11 @@
 import inspect
 import os
 import secrets
-from datetime import datetime
 
 import aioboto3
 from botocore.exceptions import ClientError
 
 from shared.config.settings import settings
-from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -24,24 +22,17 @@ class S3Client:
         self.receipt_prefix = settings.s3_receipt_prefix
         self.session = aioboto3.Session()
 
-    async def upload_receipt_image(
-        self, image_bytes: bytes, transaction_id: str, timestamp: datetime | None = None
-    ) -> str:
+    async def upload_receipt_image(self, image_bytes: bytes, transaction_id: str) -> str:
         """
         Upload receipt image privately to S3 and return a short-lived GET URL.
 
         Args:
             image_bytes: PNG image bytes
             transaction_id: Transaction ID used only for a non-reversible key prefix
-            timestamp: Accepted for compatibility; receipt keys use random nonces
 
         Returns:
             Short-lived presigned GET URL for the uploaded image
         """
-        if timestamp is None:
-            timestamp = utc_now_naive()
-        del timestamp
-
         transaction_hash = log_fingerprint(transaction_id, length=24)
         nonce = secrets.token_urlsafe(16)
         s3_key = f"{self.receipt_prefix}/{transaction_hash}/{nonce}.png"
@@ -91,20 +82,16 @@ class S3Client:
             )
             raise
 
-    async def get_receipt_url(self, transaction_id: str, timestamp: datetime | None = None) -> str | None:
+    async def get_receipt_url(self, transaction_id: str) -> str | None:
         """
         Get S3 URL for a receipt (if it exists).
 
         Args:
             transaction_id: Transaction ID
-            timestamp: Optional timestamp (defaults to most recent)
 
         Returns:
             Short-lived presigned GET URL if found, None otherwise
         """
-        # Note: timestamp parameter reserved for future filtering
-        _ = timestamp  # Suppress unused parameter warning
-
         s3_key_prefix = f"{self.receipt_prefix}/{log_fingerprint(transaction_id, length=24)}/"
 
         try:

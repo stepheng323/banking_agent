@@ -116,6 +116,10 @@ async def flow_webhook(
                 iv_bytes=iv_bytes,
             )
 
+        if screen is None and _has_pin_submission_data(data) and not flow_token:
+            logger.warning("whatsapp_flow_pin_submit_missing_flow_token", action=action, version=version)
+            return JSONResponse(content={"error": "Missing flow token"}, status_code=400)
+
         if screen is None and flow_token and _has_pin_submission_data(data):
             logger.info(
                 "whatsapp_flow_pin_screen_inferred",

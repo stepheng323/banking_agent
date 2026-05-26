@@ -65,8 +65,9 @@ async def verify_whatsapp_flow_session_owner(
         )
         return FlowOwnerCheck(ok=False, reason="missing_provider_identity")
 
-    session = await session_manager.get_session(flow_token)
-    if not session:
+    read_result = await session_manager.read_session(flow_token)
+    session = read_result.data or {}
+    if not read_result.found:
         logger.warning(
             "whatsapp_flow_session_owner_missing_session",
             screen=screen,

@@ -168,6 +168,9 @@ class WhatsAppWebhookService:
             enum_type = MessageType.TEXT
 
         priority = MessagePriority.HIGH if msg_type == "interactive" else MessagePriority.NORMAL
+        channel_metadata = {}
+        if msg.contact_profile_name:
+            channel_metadata["sender_display_name"] = msg.contact_profile_name
 
         return ChannelMessage(
             message_id=msg.id or "",
@@ -178,6 +181,7 @@ class WhatsAppWebhookService:
             media_id=msg.media_id,
             mime_type=msg.mime_type,
             quoted_message_id=msg.quoted.message_id if msg.quoted else None,
+            channel_metadata=channel_metadata,
             timestamp=utc_now_naive(),
             priority=priority,
         )

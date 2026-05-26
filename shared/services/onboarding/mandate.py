@@ -20,14 +20,7 @@ logger = get_logger(__name__)
 class MandateService:
     """Handles mandate creation, reinitiation, and notifications."""
 
-    def __init__(
-        self,
-        publisher: object | None = None,
-        delivery_service: "DeliveryService | None" = None,
-        queue: object | None = None,
-    ) -> None:
-        # publisher/queue are retained for backwards compatibility with older call sites.
-        del publisher, queue
+    def __init__(self, delivery_service: "DeliveryService | None" = None) -> None:
         self.delivery_service = delivery_service
 
     def _get_delivery_service(self) -> "DeliveryService":
@@ -84,10 +77,8 @@ class MandateService:
         account_id: str,
         account_number: str,
         bank_code: str,
-        bank_name: str,
     ) -> dict:
         """Create a new mandate for an account."""
-        del bank_name
         mandate_reference = f"FP-{uuid_module.uuid4().hex[:12].upper()}"
         start_date = utc_now_naive().strftime("%Y-%m-%d")
         end_date = (utc_now_naive() + timedelta(days=365)).strftime("%Y-%m-%d")

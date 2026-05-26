@@ -1,7 +1,7 @@
 """Onboarding services package.
 
 This package contains the modular onboarding flow components:
-- SessionManager: Redis session management
+- FlowSessionManager: Redis session management
 - BvnVerificationService: BVN lookup and OTP verification
 - MandateService: Mandate creation and reinitiation
 - AccountLinkingService: Account selection and onboarding completion
@@ -11,11 +11,13 @@ This package contains the modular onboarding flow components:
 from dataclasses import dataclass
 from typing import Optional
 
+from shared.cache.flow_session_manager import FlowSessionManager
+
 from .account_add import AccountAddService
 from .account_linking import AccountLinkingService
 from .bvn_verification import BvnVerificationService
 from .mandate import MandateService
-from .session import OnboardingSession, OnboardingStep, SessionManager
+from .session import OnboardingSession, OnboardingStep
 
 
 @dataclass
@@ -27,7 +29,7 @@ class ServiceResult:
     error: str | None = None
 
 
-_session_manager = SessionManager(key_prefix="onboarding")
+_session_manager = FlowSessionManager(key_prefix="onboarding")
 _mandate_service = MandateService()
 _bvn_service = BvnVerificationService(_session_manager)
 _account_service = AccountLinkingService(_session_manager, _mandate_service)
@@ -35,7 +37,7 @@ _account_add_service = AccountAddService(_session_manager, _mandate_service)
 
 
 __all__ = [
-    "SessionManager",
+    "FlowSessionManager",
     "BvnVerificationService",
     "MandateService",
     "AccountLinkingService",

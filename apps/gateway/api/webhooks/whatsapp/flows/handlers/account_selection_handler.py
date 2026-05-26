@@ -53,7 +53,11 @@ async def handle_account_selection(
     if not owner_check.ok:
         return format_owner_error_response("ACCOUNT_SELECTION", request_was_encrypted, aes_key_bytes, iv_bytes)
 
-    session = owner_check.session or await session_manager.get_session(flow_token)
+    if owner_check.session is not None:
+        session = owner_check.session
+    else:
+        read_result = await session_manager.read_session(flow_token)
+        session = read_result.data or {}
     is_account_linking = session.get("is_account_linking", False) if session else False
 
     if is_account_linking:

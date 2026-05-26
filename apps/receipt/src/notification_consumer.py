@@ -39,9 +39,6 @@ class NotificationJobConsumer:
 
     @staticmethod
     def _extract_payload(job: dict[str, Any]) -> dict[str, Any]:
-        payload = job.get("payload")
-        if isinstance(payload, dict):
-            return payload
         return job
 
     @staticmethod

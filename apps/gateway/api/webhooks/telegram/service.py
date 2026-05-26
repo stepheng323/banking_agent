@@ -125,7 +125,8 @@ class TelegramWebhookService:
             from shared.services.onboarding import session_manager
 
             flow_token = await _get_telegram_onboarding_token(msg.chat_id)
-            session = await session_manager.get_session(flow_token) if flow_token else {}
+            session_result = await session_manager.read_session(flow_token) if flow_token else None
+            session = (session_result.data or {}) if session_result and session_result.found else {}
             if session and session.get("phone_number") and session.get("step") != "complete":
                 # They already shared their contact, they just need to finish the Mini App
                 logger.info("telegram_unlinked_user_onboarding", chat_id_hash=log_fingerprint(msg.chat_id))
@@ -147,9 +148,10 @@ class TelegramWebhookService:
                 # Store the CTA message_id so we can disable the button after completion
                 cta_msg_id = (cta_result or {}).get("result", {}).get("message_id")
                 if cta_msg_id:
-                    await session_manager.update_session(
+                    await session_manager.update_session_strict(
                         flow_token,
                         {"cta_message_id": str(cta_msg_id), "cta_chat_id": msg.chat_id},
+                        verify=True,
                     )
                 return True
 
@@ -301,7 +303,7 @@ class TelegramWebhookService:
             # downstream services (bvn_verification, account_linking) can find it.
 
             flow_token = _new_onboarding_flow_token()
-            await session_manager.update_session(
+            await session_manager.update_session_strict(
                 flow_token,
                 {
                     "phone_number": phone,
@@ -309,6 +311,7 @@ class TelegramWebhookService:
                     "channel_user_id": msg.chat_id,
                     "step": OnboardingStep.BVN_ENTRY.value,
                 },
+                verify=True,
             )
             await _store_telegram_onboarding_token(msg.chat_id, flow_token)
 
@@ -341,9 +344,10 @@ class TelegramWebhookService:
             )
             cta_msg_id = (cta_result or {}).get("result", {}).get("message_id")
             if cta_msg_id:
-                await session_manager.update_session(
+                await session_manager.update_session_strict(
                     flow_token,
                     {"cta_message_id": str(cta_msg_id), "cta_chat_id": msg.chat_id},
+                    verify=True,
                 )
 
         return True
@@ -484,6 +488,8 @@ class TelegramWebhookService:
         metadata = {}
         if msg.contact_phone_number:
             metadata["phone_number"] = msg.contact_phone_number
+        if msg.from_first_name:
+            metadata["sender_display_name"] = msg.from_first_name
 
         return ChannelMessage(
             message_id=str(msg.message_id),

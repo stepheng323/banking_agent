@@ -63,7 +63,7 @@ class _PublisherStub:
 
 class _RedisStub:
     async def get(self, key: str) -> str | None:
-        if key == "transaction:token:idem-1:phone":
+        if key == "transfer:token:idem-1:phone":
             return "2348162511023"
         return None
 
@@ -247,7 +247,7 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
             assert phone_number == "2348162511023"
             assert pin == "123456"
             assert idempotency_key == "idem-1"
-            assert transaction_type == "transaction"
+            assert transaction_type == "transfer"
             return AuthorizationResult(
                 verified=True,
                 user_id="user-1",
@@ -267,7 +267,7 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: publisher)
 
     result = await router_module.telegram_pin_submit(
-        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="123456", chat_id="927331985"),
+        PinSubmitInput(flow_token="transfer-pin-idem-1-927331985", pin="123456", chat_id="927331985"),
         user_data={"user": '{"id": 927331985}'},
         db=_DbStub(),  # type: ignore[arg-type]
     )
@@ -377,9 +377,20 @@ async def test_telegram_pin_submit_requires_init_user_for_transaction_pin() -> N
 
 
 @pytest.mark.asyncio
+async def test_telegram_pin_submit_rejects_transaction_pin_prefix() -> None:
+    result = await router_module.telegram_pin_submit(
+        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="123456", chat_id="927331985"),
+        user_data={"user": '{"id": 927331985}'},
+        db=_DbStub(),  # type: ignore[arg-type]
+    )
+
+    assert result == {"success": False, "error": "Session expired. Please start a new transaction."}
+
+
+@pytest.mark.asyncio
 async def test_telegram_pin_submit_rejects_mismatched_chat_id_for_transaction_pin() -> None:
     result = await router_module.telegram_pin_submit(
-        PinSubmitInput(flow_token="transaction-pin-idem-1-927331985", pin="123456", chat_id="attacker-chat"),
+        PinSubmitInput(flow_token="transfer-pin-idem-1-927331985", pin="123456", chat_id="attacker-chat"),
         user_data={"user": '{"id": 927331985}'},
         db=_DbStub(),  # type: ignore[arg-type]
     )
@@ -390,7 +401,7 @@ async def test_telegram_pin_submit_rejects_mismatched_chat_id_for_transaction_pi
 @pytest.mark.asyncio
 async def test_telegram_pin_submit_rejects_flow_token_bound_to_other_chat_id() -> None:
     result = await router_module.telegram_pin_submit(
-        PinSubmitInput(flow_token="transaction-pin-idem-1-111111", pin="123456", chat_id="927331985"),
+        PinSubmitInput(flow_token="transfer-pin-idem-1-111111", pin="123456", chat_id="927331985"),
         user_data={"user": '{"id": 927331985}'},
         db=_DbStub(),  # type: ignore[arg-type]
     )

@@ -84,8 +84,9 @@ async def complete_channel_link_with_pin(
             error="Invalid link authorization token.",
         )
 
-    session = await session_manager.get_session(session_token)
-    if not session or session.get("purpose") != CHANNEL_LINK_SESSION_PURPOSE:
+    read_result = await session_manager.read_session(session_token)
+    session = read_result.data or {}
+    if not read_result.found or session.get("purpose") != CHANNEL_LINK_SESSION_PURPOSE:
         return ChannelLinkPinResult(
             success=False,
             status="expired",

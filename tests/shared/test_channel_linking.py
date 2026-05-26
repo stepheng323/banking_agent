@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from shared.cache.flow_session_manager import SessionReadResult
 from shared.services import channel_linking as channel_linking_module
 from shared.services.auth import AuthorizationResult
 from shared.services.channel_linking import build_channel_link_pin_token, complete_channel_link_with_pin
@@ -13,8 +14,11 @@ class _SessionManagerStub:
         self.sessions = sessions or {}
         self.deleted: list[str] = []
 
-    async def get_session(self, flow_token: str) -> dict[str, Any]:
-        return self.sessions.get(flow_token, {})
+    async def read_session(self, flow_token: str) -> SessionReadResult:
+        session = self.sessions.get(flow_token)
+        if session is None:
+            return SessionReadResult(status="missing")
+        return SessionReadResult(status="found", data=session)
 
     async def delete_session(self, flow_token: str) -> None:
         self.deleted.append(flow_token)

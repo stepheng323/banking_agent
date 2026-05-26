@@ -32,6 +32,7 @@ class ParsedMessage(BaseModel):
     flow_data: dict[str, Any] | None = None
     media_id: str | None = None
     mime_type: str | None = None
+    contact_profile_name: str | None = None
     quoted: QuotedMessage | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
 
@@ -65,6 +66,18 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                 sender = message.get("from")
                 if not sender and contacts:
                     sender = contacts[0].get("wa_id")
+                contact_profile_name = None
+                for contact in contacts:
+                    if not isinstance(contact, dict):
+                        continue
+                    if sender and str(contact.get("wa_id") or "") != str(sender):
+                        continue
+                    profile = contact.get("profile")
+                    if isinstance(profile, dict):
+                        raw_name = profile.get("name")
+                        if isinstance(raw_name, str) and raw_name.strip():
+                            contact_profile_name = raw_name.strip()
+                            break
 
                 if message_type == "text":
                     text_content: dict[str, Any] = message.get("text", {})
@@ -140,6 +153,7 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                             "flow_data": flow_data,
                             "media_id": media_id,
                             "mime_type": mime_type,
+                            "contact_profile_name": contact_profile_name,
                             "quoted": quoted,
                             "raw": message,
                         }

@@ -97,15 +97,12 @@ class BaseSQSHandler:
     def _extract_payload(self, record: dict[str, Any]) -> dict[str, Any]:
         """Extract JSON payload from SQS record.
 
-        With RawMessageDelivery=true the body is the raw JSON message.
-        Legacy SNS→SQS envelopes (TopicArn/Message wrapper) are also handled.
+        The body must be the raw JSON message.
         """
         body = record.get("body", "{}")
         try:
             data = json.loads(body)
-            if isinstance(data, dict) and "Message" in data and "TopicArn" in data:
-                return json.loads(data["Message"])
-            return data
+            return data if isinstance(data, dict) else {}
         except json.JSONDecodeError:
             logger.warning(f"{self.name}_json_decode_error", body=body[:100])
             return {}

@@ -1,12 +1,7 @@
-"""Onboarding session types and backwards-compatible exports."""
+"""Onboarding session types."""
 
 from dataclasses import dataclass
 from enum import Enum
-
-from shared.cache.flow_session_manager import FlowSessionManager
-
-# Re-export FlowSessionManager as SessionManager for backwards compatibility
-SessionManager = FlowSessionManager
 
 
 class OnboardingStep(str, Enum):

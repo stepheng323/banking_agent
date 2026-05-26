@@ -101,19 +101,14 @@ class FundingStepRepository(BaseRepository[FundingStep]):
         self,
         step_id: str,
         status: str,
-        provider_response: dict | None = None,
         provider_reference: str | None = None,
         provider_debit_id: str | None = None,
         error_message: str | None = None,
     ) -> FundingStep | None:
         """Update funding step status and provider details."""
-        del provider_response
         step = await self.get_by_id(step_id)
         if step:
             step.status = status
-            # FundingStep currently has no provider_response JSON column.
-            # We keep the argument for API compatibility, but only persist
-            # normalized metadata fields (status, references, debit_id, errors).
             if provider_reference:
                 step.provider_reference = provider_reference
             if provider_debit_id:

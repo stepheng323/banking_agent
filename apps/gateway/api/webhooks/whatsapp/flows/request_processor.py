@@ -75,19 +75,8 @@ def _extract_whatsapp_authorizer(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _extract_flow_token(payload: dict[str, Any], data: dict[str, Any]) -> str | None:
-    token = _string_identity(payload.get("flow_token"))
-    if token:
-        return token
-
-    # Some Flow JSONs pass the token through screen data instead of preserving
-    # Meta's top-level flow_token. Use this only as a compatibility fallback;
-    # identity binding still comes from provider metadata, not screen data.
-    for field in ("flow_token", "flowToken"):
-        token = _string_identity(data.get(field))
-        if token:
-            return token
-    return None
+def _extract_flow_token(payload: dict[str, Any]) -> str | None:
+    return _string_identity(payload.get("flow_token"))
 
 
 class ProcessedRequest:
@@ -204,7 +193,7 @@ async def process_flow_request(req: Request) -> tuple[ProcessedRequest | None, R
         screen = _string_identity(decrypted.get("screen"))
         data = decrypted.get("data", {})
         data = data if isinstance(data, dict) else {}
-        flow_token = _extract_flow_token(decrypted, data)
+        flow_token = _extract_flow_token(decrypted)
         action = _string_identity(decrypted.get("action"))
         version = _string_identity(decrypted.get("version")) or "3.0"
         authorizing_channel_user_id = _extract_whatsapp_authorizer(decrypted)
@@ -214,7 +203,7 @@ async def process_flow_request(req: Request) -> tuple[ProcessedRequest | None, R
         screen = _string_identity(body.get("screen"))
         data = body.get("data", {})
         data = data if isinstance(data, dict) else {}
-        flow_token = _extract_flow_token(body, data)
+        flow_token = _extract_flow_token(body)
         action = _string_identity(body.get("action"))
         version = _string_identity(body.get("version")) or "3.0"
         authorizing_channel_user_id = _extract_whatsapp_authorizer(body)

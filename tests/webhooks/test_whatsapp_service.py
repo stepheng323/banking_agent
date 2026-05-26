@@ -5,6 +5,7 @@ import pytest
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
 from apps.gateway.api.webhooks.whatsapp.message import service as service_module
 from apps.gateway.api.webhooks.whatsapp.message.service import WhatsAppWebhookService
+from shared.cache.flow_session_manager import SessionReadResult
 
 
 class _PublisherStub:
@@ -29,8 +30,11 @@ class _SessionManagerStub:
         self.sessions = sessions or {}
         self.deleted: list[str] = []
 
-    async def get_session(self, flow_token: str) -> dict[str, Any]:
-        return self.sessions.get(flow_token, {})
+    async def read_session(self, flow_token: str) -> SessionReadResult:
+        session = self.sessions.get(flow_token)
+        if session is None:
+            return SessionReadResult(status="missing")
+        return SessionReadResult(status="found", data=session)
 
     async def delete_session(self, flow_token: str) -> None:
         self.deleted.append(flow_token)
@@ -105,6 +109,41 @@ def test_parse_payload_maps_image_document_to_image_media() -> None:
     assert parsed[0].text == "use this account"
     assert parsed[0].media_id == "media-doc"
     assert parsed[0].mime_type == "image/jpeg"
+
+
+def test_whatsapp_contact_profile_name_reaches_channel_metadata() -> None:
+    parsed = parse_payload(
+        {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "contacts": [
+                                    {"wa_id": "2348162511023", "profile": {"name": "Gaines Abiodun"}}
+                                ],
+                                "messages": [
+                                    {
+                                        "id": "wamid-text",
+                                        "from": "2348162511023",
+                                        "type": "text",
+                                        "text": {"body": "hi"},
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    assert parsed[0].contact_profile_name == "Gaines Abiodun"
+
+    service = WhatsAppWebhookService.__new__(WhatsAppWebhookService)
+    channel_message = service._build_message(parsed[0])
+
+    assert channel_message.channel_metadata["sender_display_name"] == "Gaines Abiodun"
 
 
 @pytest.mark.asyncio

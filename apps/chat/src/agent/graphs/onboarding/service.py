@@ -2,10 +2,11 @@ import secrets
 
 from apps.chat.src.agent.orchestrator.models.intents import ShowFlow
 from apps.chat.src.messaging.outbox import enqueue_outbox_intents
+from shared.cache.flow_session_manager import FlowSessionManager
 from shared.config.settings import settings
 from shared.i18n import render_message
 from shared.queue.adapter import QueuePublisher
-from shared.services.onboarding import OnboardingStep, SessionManager
+from shared.services.onboarding import OnboardingStep
 from shared.services.onboarding import session_manager as default_session_manager
 from shared.utils.logging import get_logger
 
@@ -13,7 +14,7 @@ logger = get_logger(__name__)
 
 
 class OnboardingService:
-    def __init__(self, publisher: QueuePublisher, session_manager: SessionManager | None = None):
+    def __init__(self, publisher: QueuePublisher, session_manager: FlowSessionManager | None = None):
         self.publisher = publisher
         self.session_manager = session_manager or default_session_manager
 

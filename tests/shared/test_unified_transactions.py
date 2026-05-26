@@ -220,7 +220,7 @@ def test_unified_local_data_uses_mobile_recipient_name_for_display() -> None:
     assert query["mobile_network"] == "MTN"
 
 
-def test_unified_local_legacy_data_rows_fall_back_to_packed_transfer_fields() -> None:
+def test_unified_local_data_requires_mobile_biller_fields_for_display() -> None:
     record = UnifiedTransactionService.reconcile(
         [
             _local(
@@ -239,8 +239,8 @@ def test_unified_local_legacy_data_rows_fall_back_to_packed_transfer_fields() ->
 
     query = record.to_query_dict()
 
-    assert query["counterparty"] == "MTN 5 GB data bundle for 08162511023"
-    assert query["target_phone_number"] == "08162511023"
-    assert query["mobile_network"] == "MTN"
-    assert query["biller_item_name"] == "MTN 5 GB data bundle"
-    assert query["recipient_account_number"] == "08162511023"
+    assert query["counterparty"] is None
+    assert query["target_phone_number"] is None
+    assert query["mobile_network"] is None
+    assert query["biller_item_name"] is None
+    assert query["recipient_account_number"] is None

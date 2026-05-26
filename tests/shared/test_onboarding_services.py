@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.graphs.onboarding import service as onboarding_service_module
+from shared.cache.flow_session_manager import SessionReadResult
 from shared.clients.providers.mono.models import BankAccount, BvnLookupData, BvnMethod, Institution
 from shared.services.onboarding.account_add import AccountAddService
 from shared.services.onboarding.account_linking import AccountLinkingService
@@ -17,14 +18,11 @@ class _SessionStub:
         self.data = data or {}
         self.strict_calls: list[tuple[str, dict[str, Any], bool]] = []
 
-    async def get_session(self, flow_token: str) -> dict[str, Any]:
+    async def read_session(self, flow_token: str) -> SessionReadResult:
         del flow_token
-        return self.data
-
-    async def update_session(self, flow_token: str, updates: dict[str, Any]) -> bool:
-        del flow_token
-        self.data.update(updates)
-        return True
+        if not self.data:
+            return SessionReadResult(status="missing")
+        return SessionReadResult(status="found", data=self.data)
 
     async def update_session_strict(
         self,

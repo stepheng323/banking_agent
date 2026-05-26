@@ -6,6 +6,7 @@ import pytest
 from apps.gateway.adapters.telegram import parse_update
 from apps.gateway.api.webhooks.telegram import service as telegram_service_module
 from apps.gateway.api.webhooks.telegram.service import TelegramWebhookService
+from shared.cache.flow_session_manager import SessionReadResult
 
 
 class _PublisherStub:
@@ -27,6 +28,25 @@ class _UserRepositoryStub:
         return SimpleNamespace(id="user-1")
 
 
+def test_telegram_first_name_reaches_channel_metadata() -> None:
+    parsed = parse_update(
+        {
+            "message": {
+                "message_id": 42,
+                "chat": {"id": 12345},
+                "from": {"id": 12345, "first_name": "Gaines"},
+                "text": "hi",
+            }
+        }
+    )
+    assert parsed is not None
+
+    service = TelegramWebhookService.__new__(TelegramWebhookService)
+    channel_message = service._build_message(parsed)
+
+    assert channel_message.channel_metadata["sender_display_name"] == "Gaines"
+
+
 class _RedisStub:
     def __init__(self, values: dict[str, str] | None = None) -> None:
         self.values = values or {}
@@ -46,10 +66,6 @@ class _SessionManagerStub:
         self.sessions: dict[str, dict[str, Any]] = {}
         self.deleted: list[str] = []
 
-    async def update_session(self, flow_token: str, updates: dict[str, Any]) -> bool:
-        self.sessions.setdefault(flow_token, {}).update(updates)
-        return True
-
     async def update_session_strict(
         self,
         flow_token: str,
@@ -61,8 +77,11 @@ class _SessionManagerStub:
         self.sessions.setdefault(flow_token, {}).update(updates)
         return True
 
-    async def get_session(self, flow_token: str) -> dict[str, Any]:
-        return self.sessions.get(flow_token, {})
+    async def read_session(self, flow_token: str) -> SessionReadResult:
+        session = self.sessions.get(flow_token)
+        if session is None:
+            return SessionReadResult(status="missing")
+        return SessionReadResult(status="found", data=session)
 
     async def delete_session(self, flow_token: str) -> None:
         self.deleted.append(flow_token)
