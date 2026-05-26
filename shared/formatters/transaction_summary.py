@@ -6,6 +6,7 @@ from shared.formatters.currency import format_naira
 from shared.formatters.recipient_display import format_summary_recipient_display_label
 from shared.formatters.transaction_copy import build_completion_frame, derive_task_mix, format_amount_compact
 from shared.i18n import render_message
+from shared.utils.network_utils import format_network_display_name
 from shared.utils.user_error import safe_user_error_message
 
 
@@ -193,7 +194,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
             phone = str(raw_phone).strip() if raw_phone else ""
             if not phone:
                 phone = render_message("transaction_summary.multi.phone_fallback", locale)
-            network = str(task.payload.get("network") or "")
+            network = format_network_display_name(task.payload.get("network"))
             if status == "success":
                 total_spent += amount
             icon = _status_icon(status)

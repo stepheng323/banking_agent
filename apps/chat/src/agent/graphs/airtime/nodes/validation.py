@@ -9,6 +9,7 @@ from apps.chat.src.agent.graphs.airtime.models.types import (
 )
 from apps.chat.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.formatters.prompts import format_transaction_slot_prompt
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import is_valid_nigerian_phone, normalize_network_name
@@ -64,13 +65,20 @@ class ValidationStep(AirtimeStep):
             required_fields.append("amount")
 
         if missing:
+            fallback_prompt = render_message(
+                "airtime.validation.missing_fields",
+                locale,
+                {"missing": _join_missing_fields(missing, locale)},
+            )
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=required_fields,
-                prompt=render_message(
-                    "airtime.validation.missing_fields",
-                    locale,
-                    {"missing": _join_missing_fields(missing, locale)},
+                prompt=format_transaction_slot_prompt(
+                    task_type="airtime",
+                    payload=data,
+                    missing_fields=required_fields,
+                    fallback_prompt=fallback_prompt,
+                    locale=locale,
                 ),
             )
 

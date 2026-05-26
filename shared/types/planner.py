@@ -47,6 +47,10 @@ class TaskParameters(BaseModel):
     budget: str | None = None
     plan: str | None = None
     plan_name: str | None = None
+    size_preference: str | None = None
+    validity_preference: str | None = None
+    selection_preference: str | None = None
+    usage_intent: str | None = None
     is_self: bool = False
 
     schedule: str | None = None
@@ -273,6 +277,7 @@ PendingActionEditOperation: TypeAlias = Literal[
     "cancel_all",
     "status_query",
     "switch_intent",
+    "show_options",
     "unclear",
 ]
 
@@ -302,6 +307,11 @@ class PendingActionFieldUpdates(BaseModel):
     )
     phone: str | None = Field(default=None, description="Updated airtime/data phone number")
     network: str | None = Field(default=None, description="Updated airtime/data network")
+    size_preference: str | None = Field(default=None, description="Updated data-plan size preference")
+    validity_preference: str | None = Field(default=None, description="Updated data-plan validity preference")
+    selection_preference: str | None = Field(default=None, description="Updated data-plan selection preference")
+    usage_intent: str | None = Field(default=None, description="Updated data-plan usage intent")
+    show_options: bool | None = Field(default=None, description="Whether to show alternate data-plan options")
 
 
 class PendingActionTargetedUpdate(BaseModel):
@@ -389,6 +399,11 @@ class PendingActionEditDecision(BaseModel):
     )
     phone: str | None = Field(default=None, description="Updated airtime/data phone number")
     network: str | None = Field(default=None, description="Updated airtime/data network")
+    size_preference: str | None = Field(default=None, description="Updated data-plan size preference")
+    validity_preference: str | None = Field(default=None, description="Updated data-plan validity preference")
+    selection_preference: str | None = Field(default=None, description="Updated data-plan selection preference")
+    usage_intent: str | None = Field(default=None, description="Updated data-plan usage intent")
+    show_options: bool | None = Field(default=None, description="Whether to show alternate data-plan options")
     add_instruction: str | None = Field(
         default=None,
         description="Fresh user instruction to route when operation=add_tasks",
@@ -418,6 +433,11 @@ class PendingActionEditDecision(BaseModel):
             funding_splits=self.funding_splits,
             phone=self.phone,
             network=self.network,
+            size_preference=self.size_preference,
+            validity_preference=self.validity_preference,
+            selection_preference=self.selection_preference,
+            usage_intent=self.usage_intent,
+            show_options=self.show_options,
         )
 
 

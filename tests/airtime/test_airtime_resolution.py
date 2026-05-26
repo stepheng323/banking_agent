@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -50,7 +51,12 @@ async def test_airtime_resolution_self_uses_context_phone_when_recipient_missing
     result = await step.execute(payload, context, gates, SimpleNamespace())
 
     assert result.outcome == TransactionOutcome.OK
-    assert result.patch == {"recipient_phone": "08162511023", "recipient_name": "My Number", "network": "MTN"}
+    assert result.patch == {
+        "recipient_phone": "08162511023",
+        "recipient_name": "My Number",
+        "is_self": True,
+        "network": "MTN",
+    }
 
 
 @pytest.mark.asyncio
@@ -63,4 +69,131 @@ async def test_airtime_resolution_self_does_not_override_explicit_recipient_phon
     result = await step.execute(payload, context, gates, SimpleNamespace())
 
     assert result.outcome == TransactionOutcome.OK
-    assert result.patch == {"recipient_phone": "08081234567", "network": "AIRTEL"}
+    assert result.patch == {"recipient_phone": "08081234567", "is_self": False, "network": "AIRTEL"}
+
+
+@pytest.mark.asyncio
+async def test_airtime_resolution_bare_purchase_defaults_to_user_line() -> None:
+    step = ResolutionStep()
+    payload = AirtimePayload()
+    context = AirtimeContext(phone_number="+2348162511023", language="en")
+    gates = AirtimeGates()
+
+    result = await step.execute(payload, context, gates, SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {
+        "recipient_phone": "08162511023",
+        "recipient_name": "My Number",
+        "is_self": True,
+        "network": "MTN",
+    }
+
+
+@pytest.mark.asyncio
+async def test_airtime_resolution_explicit_network_does_not_relabel_mismatched_user_line() -> None:
+    step = ResolutionStep()
+    payload = AirtimePayload(network="Airtel")
+    context = AirtimeContext(phone_number="+2348162511023", language="en")
+    gates = AirtimeGates()
+
+    result = await step.execute(payload, context, gates, SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {"network": "AIRTEL"}
+
+
+@pytest.mark.asyncio
+async def test_airtime_resolution_saved_mobile_beneficiary_sets_phone_network_and_id() -> None:
+    beneficiary_id = uuid4()
+    step = ResolutionStep()
+    payload = AirtimePayload(recipient_name="Mum")
+    context = AirtimeContext(
+        phone_number="+2348162511023",
+        language="en",
+        beneficiaries=[
+            {
+                "id": beneficiary_id,
+                "beneficiary_type": "airtime",
+                "alias": "Mum",
+                "account_name": "Mum",
+                "account_number": "08081234567",
+                "bank_name": "Airtel",
+            }
+        ],
+    )
+    gates = AirtimeGates()
+
+    result = await step.execute(payload, context, gates, SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {
+        "recipient_phone": "08081234567",
+        "recipient_name": "Mum",
+        "beneficiary_id": str(beneficiary_id),
+        "is_self": False,
+        "network": "AIRTEL",
+    }
+
+
+@pytest.mark.asyncio
+async def test_airtime_resolution_requested_network_does_not_reuse_mismatched_saved_beneficiary() -> None:
+    beneficiary_id = uuid4()
+    step = ResolutionStep()
+    payload = AirtimePayload(amount=1000, network="Airtel", recipient_name="Mum")
+    context = AirtimeContext(
+        phone_number="+2348162511023",
+        language="en",
+        beneficiaries=[
+            {
+                "id": beneficiary_id,
+                "beneficiary_type": "airtime",
+                "alias": "Mum",
+                "account_name": "Mum",
+                "account_number": "08162511023",
+                "bank_name": "MTN",
+            }
+        ],
+    )
+    gates = AirtimeGates()
+
+    result = await step.execute(payload, context, gates, SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["recipient_phone"]
+    assert result.prompt == "Got ₦1,000.00 Airtel airtime. Which Airtel line should I buy it for?"
+    assert result.patch["network"] == "AIRTEL"
+    assert result.patch["is_self"] is False
+    assert "recipient_phone" not in result.patch
+    assert "beneficiary_id" not in result.patch
+    assert result.details == {
+        "conflict": "NETWORK_BENEFICIARY_MISMATCH",
+        "beneficiary_network": "MTN",
+        "provided_network": "AIRTEL",
+    }
+
+
+@pytest.mark.asyncio
+async def test_airtime_resolution_ignores_transfer_beneficiary_with_same_alias() -> None:
+    step = ResolutionStep()
+    payload = AirtimePayload(recipient_name="Mum")
+    context = AirtimeContext(
+        phone_number="+2348162511023",
+        language="en",
+        beneficiaries=[
+            {
+                "id": uuid4(),
+                "beneficiary_type": "transfer",
+                "alias": "Mum",
+                "account_name": "Mum",
+                "account_number": "2010000001",
+                "bank_name": "GTBank",
+            }
+        ],
+    )
+    gates = AirtimeGates()
+
+    result = await step.execute(payload, context, gates, SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {}

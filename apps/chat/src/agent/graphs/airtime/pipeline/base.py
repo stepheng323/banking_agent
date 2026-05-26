@@ -53,17 +53,8 @@ class AirtimePipeline:
             if result.outcome != TransactionOutcome.OK:
                 if accumulated_patch:
                     final_patch = result.patch or {}
-                    final_patch = {**accumulated_patch, **final_patch}
-
-                    return TransactionResult(
-                        outcome=result.outcome,
-                        patch=final_patch,
-                        error=result.error,
-                        prompt=result.prompt,
-                        required_fields=result.required_fields,
-                        details=result.details,
-                        confirmation_summary=result.confirmation_summary,
-                    )
+                    result.patch = {**accumulated_patch, **final_patch}
+                    return result
                 return result
 
         if accumulated_patch:

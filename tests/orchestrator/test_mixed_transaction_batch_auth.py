@@ -217,6 +217,32 @@ class _InterruptAirtimeExtractor:
         )
 
 
+class _InterruptDataExtractor:
+    async def extract(self, text: str, smart_context: dict | None = None) -> object:
+        del text, smart_context
+        return _ExtractionObject(
+            entities={
+                "budget": 1000,
+                "recipient_phone": "08162511023",
+                "network": "mtn",
+                "size_preference": "1GB",
+            }
+        )
+
+
+class _InterruptTransferExtractor:
+    async def extract(self, text: str, smart_context: dict | None = None) -> object:
+        del text, smart_context
+        return _ExtractionObject(
+            entities={
+                "amount": 2000,
+                "recipient_name": "Tolu",
+                "recipient_account": "2010000001",
+                "bank_name": "Access Bank",
+            }
+        )
+
+
 class _AmountOnlyInterruptAirtimeExtractor:
     async def extract(self, text: str, smart_context: dict | None = None) -> object:
         del text, smart_context
@@ -224,6 +250,8 @@ class _AmountOnlyInterruptAirtimeExtractor:
 
 
 class _TransferNeedsConfirmationWorker:
+    extractor = _InterruptTransferExtractor()
+
     async def run(
         self,
         payload: dict,
@@ -313,6 +341,30 @@ class _AirtimeNeedsConfirmationWorker:
             confirmation_snapshot={
                 "amount": payload.get("amount", 0),
                 "recipient_phone": payload.get("recipient_phone"),
+                "sourceBank": "Zenith Bank",
+                "sourceAccount": "0000009384",
+            },
+        )
+
+
+class _DataNeedsConfirmationWorker:
+    extractor = _InterruptDataExtractor()
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            confirmation_summary="Confirm data task",
+            confirmation_snapshot={
+                "amount": payload.get("amount", 0),
+                "target_phone": payload.get("target_phone"),
+                "network": payload.get("network"),
                 "sourceBank": "Zenith Bank",
                 "sourceAccount": "0000009384",
             },
@@ -825,6 +877,8 @@ async def test_mixed_transfer_airtime_uses_single_confirmation_and_single_auth_g
     assert first_updates["pending_interrupt"].kind == "confirmation"
     assert set(first_updates["pending_interrupt"].task_ids) == {"t_transfer", "t_airtime"}
     assert set(confirmation_entry["task_ids"]) == {"t_transfer", "t_airtime"}
+    assert "*Transfer*" in confirmation_entry["summary"]
+    assert "*Airtime*" in confirmation_entry["summary"]
     assert "Confirm transfer task" in confirmation_entry["summary"]
     assert "Confirm airtime task" in confirmation_entry["summary"]
     assert confirmation_entry["summary"].count(SHARED_SOURCE_LINE) == 1
@@ -843,6 +897,8 @@ async def test_mixed_transfer_airtime_uses_single_confirmation_and_single_auth_g
     assert set(auth_updates["pending_interrupt"].task_ids) == {"t_transfer", "t_airtime"}
     assert set(auth_entry["task_ids"]) == {"t_transfer", "t_airtime"}
     assert auth_entry["header"] == "Authorize Transaction"
+    assert "*Transfer*" in auth_entry["summary"]
+    assert "*Airtime*" in auth_entry["summary"]
     assert "Confirm transfer task" in auth_entry["summary"]
     assert "Confirm airtime task" in auth_entry["summary"]
     assert auth_entry["summary"].count(SHARED_SOURCE_LINE) == 1
@@ -2738,6 +2794,421 @@ async def test_semantic_pending_action_edit_adds_airtime_to_single_transfer_conf
     assert set(confirmation_entry["task_ids"]) == {"t_transfer", added_airtime_id}
     assert "Confirm transfer" in confirmation_entry["summary"]
     assert "airtime" in confirmation_entry["summary"].lower()
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_edit_adds_data_to_single_transfer_confirmation() -> None:
+    state = OrchestratorState(
+        user_id="u_single_confirm_add_data",
+        phone_number="2348000000933",
+        channel="whatsapp",
+        last_message_text="Also buy me 1k MTN data",
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 2000,
+                    "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 2000}},
+                    "idempotency_key": "idem-transfer",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="add_tasks",
+                    confidence=0.94,
+                    detected_language="English",
+                    target_types=["data"],
+                    add_instruction="buy me 1k MTN data",
+                )
+            ),
+            "services": {
+                "transfer": _TransferNeedsConfirmationWorker(),
+                "data": _DataNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    interrupt_updates = await handle_pending_interrupt(state, config)
+
+    assert interrupt_updates["pending_interrupt"] is None
+    added_data_ids = [task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "data"]
+    assert len(added_data_ids) == 1
+    added_data_id = added_data_ids[0]
+    assert interrupt_updates["waves"] == [["t_transfer", added_data_id]]
+    assert interrupt_updates["tasks"]["t_transfer"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert interrupt_updates["tasks"][added_data_id].payload["amount"] == 1000
+    assert interrupt_updates["tasks"][added_data_id].payload["source_account_id"] == "acct-access"
+
+    state = _apply(state, interrupt_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert wave_updates["pending_interrupt"].kind == "confirmation"
+    assert set(wave_updates["pending_interrupt"].task_ids) == {"t_transfer", added_data_id}
+    confirmation_entry = next(entry for entry in wave_updates["outbox"] if entry["type"] == "request_confirmation")
+    assert set(confirmation_entry["task_ids"]) == {"t_transfer", added_data_id}
+    assert "Confirm transfer" in confirmation_entry["summary"]
+    assert "data" in confirmation_entry["summary"].lower()
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_edit_adds_transfer_to_single_data_confirmation() -> None:
+    state = OrchestratorState(
+        user_id="u_single_data_confirm_add_transfer",
+        phone_number="2348000000934",
+        channel="whatsapp",
+        last_message_text="Also send 2k to Tolu",
+        waves=[["t_data"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_data"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "plan_code": "MD101",
+                    "plan_name": "MTN 1GB",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "0000000003",
+                    "confirmation": {"summary": "Confirm data", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-data",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="add_tasks",
+                    confidence=0.94,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    add_instruction="send 2k to Tolu",
+                )
+            ),
+            "services": {
+                "data": _DataNeedsConfirmationWorker(),
+                "transfer": _TransferNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    interrupt_updates = await handle_pending_interrupt(state, config)
+
+    added_transfer_ids = [
+        task_id
+        for task_id, task in interrupt_updates["tasks"].items()
+        if task.type == "transfer" and task_id != "t_data"
+    ]
+    assert len(added_transfer_ids) == 1
+    added_transfer_id = added_transfer_ids[0]
+    assert interrupt_updates["waves"] == [["t_data", added_transfer_id]]
+    assert interrupt_updates["tasks"]["t_data"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert interrupt_updates["tasks"][added_transfer_id].payload["amount"] == 2000
+    assert interrupt_updates["tasks"][added_transfer_id].payload["recipient_name"] == "Tolu"
+    assert interrupt_updates["tasks"][added_transfer_id].payload["source_account_id"] == "acct-access"
+
+    state = _apply(state, interrupt_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert wave_updates["pending_interrupt"].kind == "confirmation"
+    assert set(wave_updates["pending_interrupt"].task_ids) == {"t_data", added_transfer_id}
+    confirmation_entry = next(entry for entry in wave_updates["outbox"] if entry["type"] == "request_confirmation")
+    assert set(confirmation_entry["task_ids"]) == {"t_data", added_transfer_id}
+    assert "Confirm data" in confirmation_entry["summary"]
+    assert "transfer" in confirmation_entry["summary"].lower()
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_edit_adds_airtime_to_single_data_confirmation() -> None:
+    state = OrchestratorState(
+        user_id="u_single_data_confirm_add_airtime",
+        phone_number="2348000000936",
+        channel="whatsapp",
+        last_message_text="Also buy me 1k airtime",
+        waves=[["t_data"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_data"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "plan_code": "MD101",
+                    "plan_name": "MTN 1GB",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "0000000003",
+                    "confirmation": {"summary": "Confirm data", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-data",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="add_tasks",
+                    confidence=0.94,
+                    detected_language="English",
+                    target_types=["airtime"],
+                    add_instruction="buy me 1k airtime",
+                )
+            ),
+            "services": {
+                "data": _DataNeedsConfirmationWorker(),
+                "airtime": _AirtimeNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    interrupt_updates = await handle_pending_interrupt(state, config)
+
+    added_airtime_ids = [task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"]
+    assert len(added_airtime_ids) == 1
+    added_airtime_id = added_airtime_ids[0]
+    assert interrupt_updates["waves"] == [["t_data", added_airtime_id]]
+    assert interrupt_updates["tasks"]["t_data"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert interrupt_updates["tasks"][added_airtime_id].payload["amount"] == 1000
+    assert interrupt_updates["tasks"][added_airtime_id].payload["source_account_id"] == "acct-access"
+
+    state = _apply(state, interrupt_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert wave_updates["pending_interrupt"].kind == "confirmation"
+    assert set(wave_updates["pending_interrupt"].task_ids) == {"t_data", added_airtime_id}
+    confirmation_entry = next(entry for entry in wave_updates["outbox"] if entry["type"] == "request_confirmation")
+    assert set(confirmation_entry["task_ids"]) == {"t_data", added_airtime_id}
+    assert "Confirm data" in confirmation_entry["summary"]
+    assert "airtime" in confirmation_entry["summary"].lower()
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_edit_adds_data_to_single_airtime_confirmation() -> None:
+    state = OrchestratorState(
+        user_id="u_single_airtime_confirm_add_data",
+        phone_number="2348000000935",
+        channel="whatsapp",
+        last_message_text="Also buy me 1k MTN data",
+        waves=[["t_airtime"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_airtime"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "0000000003",
+                    "confirmation": {"summary": "Confirm airtime", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-airtime",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="add_tasks",
+                    confidence=0.94,
+                    detected_language="English",
+                    target_types=["data"],
+                    add_instruction="buy me 1k MTN data",
+                )
+            ),
+            "services": {
+                "airtime": _AirtimeNeedsConfirmationWorker(),
+                "data": _DataNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    interrupt_updates = await handle_pending_interrupt(state, config)
+
+    added_data_ids = [task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "data"]
+    assert len(added_data_ids) == 1
+    added_data_id = added_data_ids[0]
+    assert interrupt_updates["waves"] == [["t_airtime", added_data_id]]
+    assert interrupt_updates["tasks"]["t_airtime"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert interrupt_updates["tasks"][added_data_id].payload["amount"] == 1000
+    assert interrupt_updates["tasks"][added_data_id].payload["source_account_id"] == "acct-access"
+
+    state = _apply(state, interrupt_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert wave_updates["pending_interrupt"].kind == "confirmation"
+    assert set(wave_updates["pending_interrupt"].task_ids) == {"t_airtime", added_data_id}
+    confirmation_entry = next(entry for entry in wave_updates["outbox"] if entry["type"] == "request_confirmation")
+    assert set(confirmation_entry["task_ids"]) == {"t_airtime", added_data_id}
+    assert "Confirm airtime" in confirmation_entry["summary"]
+    assert "data" in confirmation_entry["summary"].lower()
+
+
+@pytest.mark.asyncio
+async def test_semantic_pending_action_edit_adds_transfer_to_single_airtime_confirmation() -> None:
+    state = OrchestratorState(
+        user_id="u_single_airtime_confirm_add_transfer",
+        phone_number="2348000000937",
+        channel="whatsapp",
+        last_message_text="Also send 2k to Tolu",
+        waves=[["t_airtime"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_airtime"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "0000000003",
+                    "confirmation": {"summary": "Confirm airtime", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-airtime",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingActionEditPlanner(
+                PendingActionEditDecision(
+                    operation="add_tasks",
+                    confidence=0.94,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    add_instruction="send 2k to Tolu",
+                )
+            ),
+            "services": {
+                "airtime": _AirtimeNeedsConfirmationWorker(),
+                "transfer": _TransferNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    interrupt_updates = await handle_pending_interrupt(state, config)
+
+    added_transfer_ids = [
+        task_id
+        for task_id, task in interrupt_updates["tasks"].items()
+        if task.type == "transfer" and task_id != "t_airtime"
+    ]
+    assert len(added_transfer_ids) == 1
+    added_transfer_id = added_transfer_ids[0]
+    assert interrupt_updates["waves"] == [["t_airtime", added_transfer_id]]
+    assert interrupt_updates["tasks"]["t_airtime"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert interrupt_updates["tasks"][added_transfer_id].payload["amount"] == 2000
+    assert interrupt_updates["tasks"][added_transfer_id].payload["recipient_name"] == "Tolu"
+    assert interrupt_updates["tasks"][added_transfer_id].payload["source_account_id"] == "acct-access"
+
+    state = _apply(state, interrupt_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert wave_updates["pending_interrupt"].kind == "confirmation"
+    assert set(wave_updates["pending_interrupt"].task_ids) == {"t_airtime", added_transfer_id}
+    confirmation_entry = next(entry for entry in wave_updates["outbox"] if entry["type"] == "request_confirmation")
+    assert set(confirmation_entry["task_ids"]) == {"t_airtime", added_transfer_id}
+    assert "Confirm airtime" in confirmation_entry["summary"]
+    assert "transfer" in confirmation_entry["summary"].lower()
 
 
 @pytest.mark.asyncio

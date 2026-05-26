@@ -138,7 +138,13 @@ def _compact_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[
         "recipient_name",
         "recipient_resolved_name",
         "recipient_phone",
+        "target_phone",
         "network",
+        "is_self",
+        "plan_code",
+        "plan_name",
+        "plan_size_gb",
+        "plan_validity_days",
         "beneficiary_id",
         "source_account_id",
         "source_bank_name",
@@ -167,6 +173,13 @@ def _compact_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[
                     "amount",
                     "recipient_name",
                     "recipient_phone",
+                    "target_phone",
+                    "network",
+                    "is_self",
+                    "plan_code",
+                    "plan_name",
+                    "plan_size_gb",
+                    "plan_validity_days",
                     "recipient_account",
                     "recipient_bank_name",
                     "sourceBank",
@@ -186,7 +199,12 @@ def _minimal_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[
         "recipient_name",
         "recipient_resolved_name",
         "recipient_phone",
+        "target_phone",
         "network",
+        "is_self",
+        "plan_name",
+        "plan_size_gb",
+        "plan_validity_days",
         "source_bank_name",
     ):
         value = payload.get(field)
@@ -198,7 +216,18 @@ def _minimal_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[
         if isinstance(snapshot, dict):
             summary_view = {
                 key: snapshot.get(key)
-                for key in ("amount", "recipient_name", "recipient_phone", "recipient_bank_name")
+                for key in (
+                    "amount",
+                    "recipient_name",
+                    "recipient_phone",
+                    "target_phone",
+                    "network",
+                    "is_self",
+                    "plan_name",
+                    "plan_size_gb",
+                    "plan_validity_days",
+                    "recipient_bank_name",
+                )
                 if key in snapshot and isinstance(snapshot.get(key), (str, int, float, bool))
             }
             if summary_view:

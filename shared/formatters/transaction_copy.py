@@ -457,12 +457,39 @@ def build_confirmation_header(
     if mix == "airtime":
         if actions & {"schedule_airtime", "recurring_airtime"}:
             return render_message("transaction_copy.confirmation.scheduled_airtime", locale)
-        return render_message("transaction_copy.confirmation.airtime", locale)
+        return render_personalized_message(
+            "transaction_copy.confirmation.airtime",
+            locale,
+            context=personality_context,
+        )
     if mix == "data":
         if actions & {"schedule_data", "recurring_data"}:
             return render_message("transaction_copy.confirmation.scheduled_data", locale)
-        return render_message("transaction_copy.confirmation.data", locale)
+        return render_personalized_message(
+            "transaction_copy.confirmation.data",
+            locale,
+            context=personality_context,
+        )
     return render_message("transaction_copy.confirmation.generic", locale)
+
+
+def build_confirmation_section_label(task_type: str, *, locale: str) -> str:
+    """Return the short section label for one task inside a mixed confirmation."""
+    normalized = str(task_type or "").strip().lower()
+    if normalized not in {"transfer", "airtime", "data"}:
+        normalized = "generic"
+    return render_message(f"transaction_copy.confirmation.section.{normalized}", locale)
+
+
+def format_confirmation_section(*, task_type: str, summary: str, locale: str) -> str:
+    """Prefix a task summary with a readable label for mixed confirmations."""
+    cleaned = str(summary or "").strip()
+    if not cleaned:
+        return ""
+    label = build_confirmation_section_label(task_type, locale=locale).strip()
+    if not label:
+        return cleaned
+    return f"{label}\n{cleaned}"
 
 
 def build_completion_frame(*, task_types: Iterable[str], locale: str, task_count: int) -> tuple[str, str]:

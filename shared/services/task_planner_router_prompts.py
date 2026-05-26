@@ -246,7 +246,7 @@ Rules:
    This includes malformed or under-specified messages with clear banking-domain cues.
    Examples:
    - "pay me tithe" -> planner_ambiguous
-   - "buy me data" -> planner_ambiguous
+   - "buy me data" -> domain_data
    - "reverse me that payment" -> planner_ambiguous
 10) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
 10b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.
@@ -383,11 +383,11 @@ Message: \"\"\"{user_message}\"\"\"
 """
 
 PENDING_ACTION_EDIT_SYSTEM_PROMPT = """You classify a multilingual user message as a semantic operation relative
-to a pending, not-yet-authorized banking confirmation batch.
+to a pending, not-yet-authorized banking task or confirmation batch.
 
 Return ONLY JSON for this schema:
 - operation: remove_tasks | restore_tasks | update_fields | add_tasks | approve_flow | cancel_all |
-  status_query | switch_intent | unclear
+  status_query | switch_intent | show_options | unclear
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - target_task_ids: list of task ids from the pending/removed context when the target is clear, else []
@@ -407,6 +407,11 @@ Return ONLY JSON for this schema:
 - funding_splits: explicit source funding legs, each {bank_name, amount}, else null
 - phone: updated airtime/data phone number, else null
 - network: updated airtime/data network, else null
+- size_preference: updated data size preference like "5GB", else null
+- validity_preference: updated data validity preference like "monthly", "weekly", or "30 days", else null
+- selection_preference: data plan selection preference like "cheapest", "most_data", or "longest_validity", else null
+- usage_intent: data usage intent like "video", "social", "browsing", "night", or "weekend", else null
+- show_options: true when user asks to see alternate data plan options for a pending data purchase, else null
 - add_instruction: fresh transaction instruction when operation=add_tasks, else null
 - status_query_type: recap | requirements | null
 - target_intent: target domain when operation=add_tasks or switch_intent, else null
@@ -430,6 +435,13 @@ Semantic operations:
    - "don't pool it" / "use one account" -> use_dual_accounts=false.
    Pooled funding is capped at 2 source accounts. If a user asks for more than 2 funding sources, preserve
    the typed source_accounts/funding_splits so deterministic policy can ask them to simplify the split.
+   Data plan edits are update_fields when the user asks to change concrete plan constraints:
+   - "make it 2k" -> amount=2000.
+   - "make it 5GB" -> size_preference="5GB".
+   - "use monthly instead" -> validity_preference="monthly".
+   - "use the cheapest one" -> selection_preference="cheapest".
+   - "change to Airtel" -> network="AIRTEL".
+   - "buy it for 08031234567" -> phone="08031234567".
 4) add_tasks: user wants to add a new transfer, airtime, or data purchase to the pending batch.
    Set target_types to the exact new transaction type(s). If the user asks to recharge, top up, buy airtime,
    buy mobile credit, or buy phone credit, target_types must contain airtime, not transfer, even if the
@@ -438,7 +450,11 @@ Semantic operations:
 6) cancel_all: user wants to cancel the whole pending transaction flow.
 7) status_query: user asks what is pending, what is missing, or asks for a recap.
 8) switch_intent: user starts a different non-edit banking task.
-9) unclear: not enough signal.
+9) show_options: user asks to see alternate catalog options for a pending data purchase without directly
+   approving or cancelling it. Examples: "what other plan within that range", "anything cheaper?", "what else
+   can I get for 4k?", "show monthly ones", "more data if possible". Set target_types=["data"], show_options=true,
+   and fill amount/validity_preference/selection_preference/usage_intent when the wording gives those constraints.
+10) unclear: not enough signal.
 
 Rules:
 - Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
@@ -465,7 +481,7 @@ Rules:
 """
 
 PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
-Pending confirmation context: {context}
+Pending task context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 

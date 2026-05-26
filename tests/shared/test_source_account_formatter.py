@@ -79,6 +79,22 @@ def test_airtime_summary_uses_shared_source_line_formatter() -> None:
     assert "From: First Bank (···7890)" in summary
 
 
+def test_airtime_summary_displays_network_label_naturally() -> None:
+    summary = format_airtime_summary(
+        {
+            "amount": 1000,
+            "recipientPhone": "08012345678",
+            "network": "AIRTEL",
+            "sourceBank": "First Bank",
+            "sourceAccount": "1234567890",
+        },
+        locale="en",
+    )
+
+    assert "Network: Airtel" in summary
+    assert "Network: AIRTEL" not in summary
+
+
 def test_data_summary_uses_shared_source_line_formatter() -> None:
     summary = format_data_summary(
         {
@@ -94,7 +110,24 @@ def test_data_summary_uses_shared_source_line_formatter() -> None:
     assert "From: First Bank (···7890)" in summary
 
 
-def test_airtime_summary_ignores_recipient_name_for_display() -> None:
+def test_data_summary_displays_network_label_naturally() -> None:
+    summary = format_data_summary(
+        {
+            "planName": "Airtel 2GB",
+            "amount": 1500,
+            "recipientPhone": "08012345678",
+            "network": "AIRTEL",
+            "sourceBank": "First Bank",
+            "sourceAccount": "1234567890",
+        },
+        locale="en",
+    )
+
+    assert "Network: Airtel" in summary
+    assert "Network: AIRTEL" not in summary
+
+
+def test_airtime_summary_uses_recipient_name_for_display() -> None:
     summary = format_airtime_summary(
         {
             "amount": 500,
@@ -107,8 +140,7 @@ def test_airtime_summary_ignores_recipient_name_for_display() -> None:
         locale="en",
     )
 
-    assert "Airtime → 08162511023" in summary
-    assert "Tolu" not in summary
+    assert "airtime for Tolu (08162511023)" in summary
 
 
 def test_transfer_summary_narration_is_plain_text_without_markdown_italics() -> None:

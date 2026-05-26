@@ -3,6 +3,10 @@
 import re
 from typing import Any
 
+from apps.chat.src.agent.graphs.__shared__.account_selection.reference import (
+    build_source_account_patch,
+    match_source_account_reference,
+)
 from apps.chat.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
 from apps.chat.src.agent.graphs.__shared__.scheduling import (
     SCHEDULE_FIELD_NAMES,
@@ -26,7 +30,19 @@ logger = get_logger(__name__)
 _NETWORK_CANONICAL = {"MTN", "AIRTEL", "GLO", "9MOBILE"}
 _PHONE_CANDIDATE_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
 _NETWORK_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+_AMOUNT_REPLY_PATTERN = re.compile(
+    r"^\s*(?:₦|ngn)?\s*(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKhH]?)"
+    r"\s*(?:naira|ngn)?\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
 _SOURCE_BANK_PREFIX_RE = r"(?:from|using|use|with|debit(?:ing)?|charge)"
+_SOURCE_ACCOUNT_PATCH_FIELDS = {
+    "source_account_id",
+    "source_bank_name",
+    "source_account_name",
+    "source_account_number",
+    "source_account_index",
+}
 
 
 def _matches_self_airtime_phrase(message: str) -> bool:
@@ -62,6 +78,22 @@ def _has_resolved_network(network: str | None) -> bool:
     return network.strip().upper() in _NETWORK_CANONICAL
 
 
+def _parse_amount_reply(message: str) -> float | None:
+    match = _AMOUNT_REPLY_PATTERN.fullmatch(message.strip())
+    if not match:
+        return None
+    try:
+        amount = float(match.group("amount").replace(",", ""))
+    except ValueError:
+        return None
+    suffix = match.group("suffix").lower()
+    if suffix == "k":
+        amount *= 1000
+    elif suffix == "h":
+        amount *= 100
+    return amount if amount > 0 else None
+
+
 def _source_bank_terms(bank_name: str) -> list[str]:
     terms = {term.strip().lower() for term in get_bank_search_terms(bank_name) if term.strip()}
     normalized = bank_name.strip().lower()
@@ -87,6 +119,11 @@ def _extract_source_bank_hint(message: str, accounts: list[dict[str, Any]]) -> s
             if re.search(rf"\b{_SOURCE_BANK_PREFIX_RE}\s+(?:my\s+)?{escaped}(?:\s+(?:account|acct|bank))?\b", normalized_message):
                 return bank_name
     return None
+
+
+def _build_mobile_source_account_patch(account: dict[str, Any]) -> dict[str, Any]:
+    patch = build_source_account_patch(account)
+    return {field: patch.get(field) for field in _SOURCE_ACCOUNT_PATCH_FIELDS if field in patch}
 
 
 def _skip_override_reason(payload: AirtimePayload, message: str) -> str | None:
@@ -282,8 +319,17 @@ class ExtractionStep(AirtimeStep):
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         waiting_for_source_account = "source_account_id" in required_fields
         waiting_for_recipient_phone = "recipient_phone" in required_fields or "phone_number" in required_fields
+        waiting_for_amount = "amount" in required_fields
         waiting_for_referent_phone = "referent_phone_id" in required_fields
+        waiting_for_network = "network" in required_fields
         schedule_required_fields = [field for field in required_fields if field in SCHEDULE_FIELD_NAMES]
+        if waiting_for_amount and data.amount is None:
+            amount = _parse_amount_reply(self.user_message)
+            if amount is not None:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch({"amount": amount}),
+                )
         if waiting_for_referent_phone:
             referent_patch, invalid_referents = _resolve_referent_phone_selection_from_input(
                 self.user_message,
@@ -337,11 +383,26 @@ class ExtractionStep(AirtimeStep):
                     prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields, context.language),
                     patch=_with_skip_patch({"is_scheduled_operation": True, "skip_finalize_summary": True}),
                 )
-        numeric_patch = try_extract_numeric_index(self.user_message, "airtime") if waiting_for_source_account else None
+        source_account = None
+        if waiting_for_source_account:
+            source_account = match_source_account_reference(
+                self.user_message,
+                [account for account in (context.all_accounts or context.accounts) if isinstance(account, dict)],
+            )
+        numeric_patch = None
+        if waiting_for_source_account and not (
+            self.user_message.strip().isdigit() and len(self.user_message.strip()) >= 4
+        ):
+            numeric_patch = try_extract_numeric_index(self.user_message, "airtime")
         if numeric_patch:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 patch=_with_skip_patch(numeric_patch),
+            )
+        if source_account:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_with_skip_patch(_build_mobile_source_account_patch(source_account)),
             )
 
         referent_patch: dict[str, Any] = {}
@@ -365,6 +426,16 @@ class ExtractionStep(AirtimeStep):
             logger.warning("airtime_extractor_missing")
             patch: dict[str, Any] = {}
             _add_resolved_referent_patch(patch, data, context)
+            if waiting_for_recipient_phone and not (patch.get("recipient_phone") or data.recipient_phone):
+                fallback_phone = normalize_nigerian_phone(self.user_message)
+                if fallback_phone:
+                    patch["recipient_phone"] = fallback_phone
+                elif _matches_self_airtime_phrase(self.user_message):
+                    patch["is_self"] = True
+            if waiting_for_network and not _has_resolved_network(str(patch.get("network") or data.network or "")):
+                fallback_network = normalize_network_name(self.user_message)
+                if fallback_network:
+                    patch["network"] = fallback_network
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 patch=_with_skip_patch(patch),
@@ -437,6 +508,15 @@ class ExtractionStep(AirtimeStep):
                 fallback_phone = normalize_nigerian_phone(self.user_message)
                 if fallback_phone:
                     patch["recipient_phone"] = fallback_phone
+
+            # [NARROW FALLBACK]
+            # If this turn is explicitly waiting for the mobile network, accept only
+            # exact network names/aliases so fresh requests still route elsewhere.
+            existing_network = patch.get("network") or data.network
+            if waiting_for_network and not _has_resolved_network(str(existing_network or "")):
+                fallback_network = normalize_network_name(self.user_message)
+                if fallback_network:
+                    patch["network"] = fallback_network
 
             raw_is_self = entities.get("is_self")
             if raw_is_self is True:

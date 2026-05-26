@@ -7,6 +7,7 @@ from shared.formatters.accounts import format_accounts_list
 from shared.formatters.transaction_summary import format_amount
 from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n import MessageKey, render_message
+from shared.utils.network_utils import format_network_display_name
 
 _UNSAFE_RECIPIENT_TOKENS = {
     "send",
@@ -262,6 +263,10 @@ def _clean_payload_text(payload: Any, key: str) -> str | None:
     return value or None
 
 
+def _display_network(value: str | None) -> str | None:
+    return format_network_display_name(value) or None
+
+
 def _specific_transfer_recipient(payload: Any, locale: str) -> str | None:
     recipient = _clean_payload_text(payload, "recipient_resolved_name") or _clean_payload_text(
         payload, "recipient_name"
@@ -327,7 +332,7 @@ def _format_transfer_slot_prompt(
 
 
 def _data_request_label(payload: Any, locale: str) -> str | None:
-    network = _clean_payload_text(payload, "network")
+    network = _display_network(_clean_payload_text(payload, "network"))
     amount = _formatted_payload_amount(payload)
     if amount and network:
         return render_message(
@@ -342,6 +347,90 @@ def _data_request_label(payload: Any, locale: str) -> str | None:
     return None
 
 
+def _airtime_request_label(payload: Any, locale: str) -> str | None:
+    network = _display_network(_clean_payload_text(payload, "network"))
+    amount = _formatted_payload_amount(payload)
+    if amount and network:
+        return render_message(
+            "transaction_slots.airtime.request_amount_network",
+            locale,
+            {"amount": amount, "network": network},
+        )
+    if network:
+        return render_message("transaction_slots.airtime.request_network", locale, {"network": network})
+    if amount:
+        return render_message("transaction_slots.airtime.request_amount", locale, {"amount": amount})
+    return None
+
+
+def _format_airtime_slot_prompt(
+    *,
+    payload: Any,
+    missing_fields: set[str],
+    fallback_prompt: str,
+    locale: str,
+) -> str:
+    recipient_phone = _clean_payload_text(payload, "recipient_phone") or _clean_payload_text(payload, "phone")
+    network = _display_network(_clean_payload_text(payload, "network"))
+    is_self = bool(_payload_get(payload, "is_self"))
+    amount = _formatted_payload_amount(payload)
+
+    if missing_fields == {"recipient_phone", "amount"} or missing_fields == {"phone", "amount"}:
+        if network:
+            return render_message(
+                "transaction_slots.airtime.phone_amount_for_network",
+                locale,
+                {"network": network},
+            )
+        return render_message("transaction_slots.airtime.phone_amount", locale)
+
+    if missing_fields == {"amount"} and is_self:
+        if network:
+            return render_message(
+                "transaction_slots.airtime.amount_for_self_network",
+                locale,
+                {"network": network},
+            )
+        return render_message("transaction_slots.airtime.amount_for_self", locale)
+
+    if missing_fields == {"amount"} and recipient_phone:
+        return render_message(
+            "transaction_slots.airtime.amount_for_phone",
+            locale,
+            {"recipient_phone": recipient_phone},
+        )
+
+    if missing_fields & {"recipient_phone", "phone"}:
+        request = _airtime_request_label(payload, locale)
+        if request:
+            if network:
+                return render_message(
+                    "transaction_slots.airtime.phone_for_network_request",
+                    locale,
+                    {"request": request, "network": network},
+                )
+            return render_message(
+                "transaction_slots.airtime.phone_for_request",
+                locale,
+                {"request": request},
+            )
+
+    if "network" in missing_fields and recipient_phone:
+        if amount:
+            return render_message(
+                "transaction_slots.airtime.network_for_amount_phone",
+                locale,
+                {"amount": amount, "recipient_phone": recipient_phone},
+            )
+        return render_message(
+            "transaction_slots.airtime.network_for_phone",
+            locale,
+            {"recipient_phone": recipient_phone},
+        )
+
+    return fallback_prompt
+
+
 def _format_data_slot_prompt(
     *,
     payload: Any,
@@ -350,9 +439,20 @@ def _format_data_slot_prompt(
     locale: str,
 ) -> str:
     target_phone = _clean_payload_text(payload, "target_phone") or _clean_payload_text(payload, "recipient_phone")
+    if "data_plan_preference" in missing_fields:
+        return fallback_prompt
     if missing_fields & {"target_phone", "recipient_phone", "phone"}:
+        if _clean_payload_text(payload, "plan_code") and _clean_payload_text(payload, "plan_name"):
+            return fallback_prompt
         request = _data_request_label(payload, locale)
         if request:
+            network = _display_network(_clean_payload_text(payload, "network"))
+            if network:
+                return render_message(
+                    "transaction_slots.data.target_phone_for_network_request",
+                    locale,
+                    {"request": request, "network": network},
+                )
             return render_message(
                 "transaction_slots.data.target_phone_for_request",
                 locale,
@@ -390,6 +490,13 @@ def format_transaction_slot_prompt(
         )
     if task_type == "data":
         return _format_data_slot_prompt(
+            payload=payload,
+            missing_fields=normalized_fields,
+            fallback_prompt=fallback_prompt,
+            locale=locale,
+        )
+    if task_type == "airtime":
+        return _format_airtime_slot_prompt(
             payload=payload,
             missing_fields=normalized_fields,
             fallback_prompt=fallback_prompt,

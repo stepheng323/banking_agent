@@ -26,6 +26,7 @@ from shared.i18n.personality import transfer_personality_context_from_payload
 from shared.types.planner import (
     InterruptRouteDecision,
 )
+from shared.utils.network_utils import format_network_display_name
 
 TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
 NON_TRANSACTION_SWITCH_INTENTS = {"query", "account", "faq", "support", "beneficiary"}
@@ -238,22 +239,38 @@ def _format_task_details_for_status(task: TaskSpec, task_type: str) -> str:
     if task_type == "airtime":
         phone = payload.get("phone") or payload.get("recipient_phone")
         amount = payload.get("amount")
+        network = format_network_display_name(payload.get("network"))
+        source_bank = payload.get("source_bank_name")
         parts = []
         formatted_amount = _fmt_amount(amount)
         if formatted_amount:
             parts.append(f"amount {formatted_amount}")
+        if network:
+            parts.append(f"network {network}")
         if phone:
             parts.append(f"line {phone}")
+        if source_bank:
+            parts.append(f"source {source_bank}")
         if parts:
             return "Known details: " + ", ".join(parts) + "."
     if task_type == "data":
-        phone = payload.get("phone") or payload.get("recipient_phone")
-        plan = payload.get("plan")
+        phone = payload.get("target_phone") or payload.get("phone") or payload.get("recipient_phone")
+        plan = payload.get("plan_name") or payload.get("biller_item_name") or payload.get("plan")
+        amount = payload.get("amount")
+        network = format_network_display_name(payload.get("network"))
+        source_bank = payload.get("source_bank_name")
         parts = []
         if plan:
             parts.append(f"plan {plan}")
+        formatted_amount = _fmt_amount(amount)
+        if formatted_amount:
+            parts.append(f"amount {formatted_amount}")
+        if network:
+            parts.append(f"network {network}")
         if phone:
             parts.append(f"line {phone}")
+        if source_bank:
+            parts.append(f"source {source_bank}")
         if parts:
             return "Known details: " + ", ".join(parts) + "."
     return ""
@@ -442,7 +459,11 @@ def _build_status_query_response(
             lines.append(detail_line)
     if required_fields:
         needed = ", ".join(_friendly_required_field(field) for field in required_fields)
-        lines.append(f"Next step: provide {needed}.")
+        hint = _build_requirements_hint(required_fields, interrupt.kind)
+        if hint:
+            lines.append(f"Next step: provide {needed}. {hint}")
+        else:
+            lines.append(f"Next step: provide {needed}.")
     elif interrupt.kind == "confirmation":
         lines.append("Next step: confirm to continue.")
     elif interrupt.kind == "auth":
@@ -455,6 +476,12 @@ def _friendly_required_field(field: str) -> str:
         "recipient_name": "recipient name",
         "recipient_account": "recipient account number",
         "recipient_bank_name": "recipient bank name",
+        "recipient_phone": "phone line",
+        "target_phone": "phone line",
+        "phone": "phone line",
+        "network": "mobile network",
+        "data_plan_id": "data plan choice",
+        "data_plan_preference": "budget or data size",
         "beneficiary_id": "beneficiary selection",
         "source_account_id": "source account selection",
         "amount": "amount",
@@ -468,6 +495,14 @@ def _build_requirements_hint(required_fields: list[str], interrupt_kind: str) ->
     hints: list[str] = []
     if "beneficiary_id" in required_fields:
         hints.append("Pick a beneficiary option by tapping it or replying with the number.")
+    if "data_plan_id" in required_fields:
+        hints.append("Pick a data plan by replying with the option number.")
+    if "data_plan_preference" in required_fields:
+        hints.append("Reply with a budget or size, like 2k or 5GB.")
+    if any(field in required_fields for field in ("recipient_phone", "target_phone", "phone")):
+        hints.append("Reply with the phone number, or say my line if it is for you.")
+    if "network" in required_fields:
+        hints.append("Reply with the network, like MTN, Airtel, Glo, or 9mobile.")
     if "source_account_id" in required_fields:
         hints.append("Pick the source account by tapping it or replying with the number.")
     if "amount" in required_fields:

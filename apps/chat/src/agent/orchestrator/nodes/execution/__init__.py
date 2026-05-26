@@ -41,10 +41,14 @@ from shared.formatters.prompts import (
     format_transaction_slot_prompt,
 )
 from shared.formatters.recipient_display import format_recipient_display_label
-from shared.formatters.transaction_copy import build_confirmation_header, format_amount_compact
+from shared.formatters.transaction_copy import (
+    build_confirmation_header,
+    format_amount_compact,
+    format_confirmation_section,
+)
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_intent_line
 from shared.i18n import render_message
-from shared.i18n.personality import transfer_personality_context_from_payload
+from shared.i18n.personality import PersonalityContext, transfer_personality_context_from_payload
 from shared.services.funding.coordinator import BatchFundingCoordinator, SourceAffinity, TransferDemand
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
@@ -61,6 +65,10 @@ INPUT_MUTABLE_STAGES = {
     TaskStage.VALIDATED,
 }
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
+
+
+def _is_read_only_data_plan_query(task: Any) -> bool:
+    return task.type == "data" and task.payload.get("action") == "data_plan_query"
 
 
 def _build_mandate_gate_error(accounts: list[dict], locale: str) -> str:
@@ -463,12 +471,12 @@ def _build_confirmation_gate_summary(
             locale=locale,
         )
 
-    summaries = [
-        _render_task_confirmation_summary(task=state.tasks[tid], locale=locale, accounts=accounts)
+    task_summaries = [
+        (state.tasks[tid], _render_task_confirmation_summary(task=state.tasks[tid], locale=locale, accounts=accounts))
         for tid in task_ids
         if tid in state.tasks
     ]
-    non_empty = [summary for summary in summaries if summary]
+    non_empty = [(task, summary) for task, summary in task_summaries if summary]
     if not non_empty:
         return ""
 
@@ -489,12 +497,22 @@ def _build_confirmation_gate_summary(
             source_infos.append(source_info)
 
     if source_infos and len(set(source_infos)) == 1 and len(non_empty) > 1:
-        stripped = [strip_source_account_info_lines(summary, locale=locale) for summary in non_empty]
+        stripped = [
+            format_confirmation_section(
+                task_type=task.type,
+                summary=strip_source_account_info_lines(summary, locale=locale),
+                locale=locale,
+            )
+            for task, summary in non_empty
+        ]
         stripped_non_empty = [summary for summary in stripped if summary]
         merged = "\n\n".join(stripped_non_empty)
         return append_source_account_info(merged, source_infos[0], locale=locale)
 
-    return "\n\n".join(non_empty)
+    return "\n\n".join(
+        format_confirmation_section(task_type=task.type, summary=summary, locale=locale)
+        for task, summary in non_empty
+    )
 
 
 def _compact_confirmation_update_message(update_messages: list[str], locale: str) -> str | None:
@@ -908,7 +926,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         if not handler:
             continue
 
-        if task.type in TRANSACTION_TASK_TYPES:
+        if task.type in TRANSACTION_TASK_TYPES and not _is_read_only_data_plan_query(task):
             accounts = (state.loaded_context or {}).get("transaction_accounts") or []
             has_ready = any(isinstance(a, dict) and a.get("mandate_status") == "ready" for a in accounts)
             if not has_ready:
@@ -1183,12 +1201,16 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 outbox_entries[0]["prompt_kind"] = "pending_input"
                 if queue_meta is not None:
                     outbox_entries[0]["queue"] = queue_meta
-                return {
+                updates: dict[str, Any] = {
                     "pending_interrupt": interrupt,
                     "tasks": state.tasks,
                     "outbox": _with_policy_notice(state, outbox_entries),
                     "policy_notice": None,
                 }
+                for key in ("context_frames", "referent_memory"):
+                    if key in agg.updates:
+                        updates[key] = agg.updates[key]
+                return updates
 
             # [UX] Smart Unified Prompt (Found X, Missing Y) — multiple blockers or no single focus
             found_names = []
@@ -1287,12 +1309,16 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         fallback_outbox_entries[0]["prompt_kind"] = "pending_input"
         if fallback_queue_meta is not None:
             fallback_outbox_entries[0]["queue"] = fallback_queue_meta
-        return {
+        updates = {
             "pending_interrupt": interrupt,
             "tasks": state.tasks,
             "outbox": _with_policy_notice(state, fallback_outbox_entries),
             "policy_notice": None,
         }
+        for key in ("context_frames", "referent_memory"):
+            if key in agg.updates:
+                updates[key] = agg.updates[key]
+        return updates
 
     updates = agg.updates
     if state.policy_notice:
@@ -1361,6 +1387,15 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 confirmation_personality_context = transfer_personality_context_from_payload(
                     confirmation_task.payload,
                     moment="confirmation",
+                )
+            elif confirmation_task and confirmation_task.type in {"airtime", "data"}:
+                confirmation_personality_context = PersonalityContext(
+                    moment="confirmation",
+                    amount=confirmation_task.payload.get("amount"),
+                    saved_recipient=bool(
+                        confirmation_task.payload.get("beneficiary_id")
+                        or confirmation_task.payload.get("is_self")
+                    ),
                 )
 
         outbox.append(

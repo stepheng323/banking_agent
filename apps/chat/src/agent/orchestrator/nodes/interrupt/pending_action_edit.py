@@ -41,7 +41,7 @@ def _task_label(task: TaskSpec) -> str:
     if task.type in {"airtime", "data"}:
         phone = payload.get("phone") or payload.get("recipient_phone") or payload.get("target_phone")
         network = payload.get("network")
-        plan = payload.get("plan")
+        plan = payload.get("plan") or payload.get("plan_name")
         return " ".join(str(part) for part in (task.type, phone, network, plan) if part)
     return task.type
 
@@ -60,7 +60,13 @@ def _task_context_entry(task_id: str, task: TaskSpec) -> dict[str, Any]:
         "recipient_bank_name": payload.get("recipient_bank_name") or payload.get("bank_name"),
         "phone": payload.get("phone") or payload.get("recipient_phone") or payload.get("target_phone"),
         "network": payload.get("network"),
-        "plan": payload.get("plan"),
+        "is_self": payload.get("is_self"),
+        "plan": payload.get("plan") or payload.get("plan_name"),
+        "plan_code": payload.get("plan_code"),
+        "size_preference": payload.get("size_preference") or payload.get("plan_size_gb"),
+        "validity_preference": payload.get("validity_preference") or payload.get("plan_validity_days"),
+        "selection_preference": payload.get("selection_preference"),
+        "usage_intent": payload.get("usage_intent"),
         "source_bank_name": payload.get("source_bank_name"),
         "source_account_number": payload.get("source_account_number"),
         "narration": payload.get("narration") or payload.get("authored_narration") or payload.get("user_note"),
@@ -73,6 +79,34 @@ def _removed_task_from_entry(entry: Any) -> TaskSpec | None:
     if isinstance(task, dict):
         task = TaskSpec.model_validate(task)
     return task if isinstance(task, TaskSpec) else None
+
+
+def _is_supported_input_edit_interrupt(state: OrchestratorState, interrupt: Any) -> bool:
+    """Allow semantic edits for data input prompts that are really plan-choice moments."""
+    if getattr(interrupt, "kind", None) != "input":
+        return False
+    fields_by_task = getattr(interrupt, "fields_by_task", None) or {}
+    if not isinstance(fields_by_task, dict):
+        return False
+    active_task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
+    if len(active_task_ids) != 1:
+        return False
+    task_id = active_task_ids[0]
+    task = state.tasks.get(task_id)
+    if task is None or task.type != "data":
+        return False
+    required_fields = {str(field) for field in fields_by_task.get(task_id, []) if isinstance(field, str)}
+    return bool(
+        required_fields
+        & {
+            "data_plan_id",
+            "data_plan_preference",
+            "target_phone",
+            "phone",
+            "recipient_phone",
+            "network",
+        }
+    )
 
 
 def build_pending_action_edit_context(state: OrchestratorState, interrupt: Any) -> str:
@@ -117,7 +151,8 @@ class PendingActionEditEngine:
         text: str,
         task_planner: Any,
     ) -> PendingActionEditResolution | None:
-        if getattr(interrupt, "kind", None) != "confirmation":
+        interrupt_kind = getattr(interrupt, "kind", None)
+        if interrupt_kind != "confirmation" and not _is_supported_input_edit_interrupt(state, interrupt):
             return None
         if task_planner is None or not hasattr(task_planner, "interpret_pending_action_edit"):
             return None

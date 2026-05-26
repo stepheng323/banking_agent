@@ -22,6 +22,7 @@ from shared.i18n.bridge import render_locale_switched
 # Explicit imports from gate.py helpers
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
+from shared.services.confirmation_decision import classify_confirmation_reply_sync
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -125,6 +126,9 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
     """PIN verified but no active session (checkpoint was cleaned)."""
     if not ctx.state.pin_verified or ctx.live_pending_interrupt:
         return None
+    ctx.gate_updates["pin_verified"] = False
+    if not _stale_pin_message_targets_missing_session(ctx):
+        return None
     logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")
     return {
         **ctx.gate_updates,
@@ -139,3 +143,24 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
         ),
         **_route_observability_updates(owner="guardrail", decision="expired_pin_session"),
     }
+
+
+def _stale_pin_message_targets_missing_session(ctx: GateContext) -> bool:
+    callback = ctx.state.last_callback if isinstance(ctx.state.last_callback, dict) else {}
+    if callback.get("pin_verified"):
+        return True
+
+    transaction_decision = classify_confirmation_reply_sync(
+        ctx.message_text,
+        prompt_kind="transaction_confirmation",
+        locale=ctx.current_locale,
+    )
+    if transaction_decision.action in {"approve", "reject", "modify"}:
+        return True
+
+    resume_decision = classify_confirmation_reply_sync(
+        ctx.message_text,
+        prompt_kind="resume_prompt",
+        locale=ctx.current_locale,
+    )
+    return resume_decision.action in {"approve", "reject"}

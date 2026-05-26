@@ -41,6 +41,7 @@ from apps.chat.src.agent.orchestrator.nodes.interrupt.input_resolve import (
 )
 from apps.chat.src.agent.orchestrator.nodes.interrupt.pending_action_edit import PendingActionEditEngine
 from apps.chat.src.agent.orchestrator.nodes.interrupt.reprompt import (
+    _build_compact_transfer_input_reprompt,
     _reprompt_updates,
     _status_query_updates,
 )
@@ -65,6 +66,12 @@ from shared.config.settings import settings
 from shared.i18n import LocaleManager, render_message
 from shared.services.confirmation_decision import APPROVAL_CONFIDENCE_THRESHOLD, is_safe_guarded_approval_text
 from shared.types.planner import ContextFrameFollowupDecision, InterruptRouteDecision
+from shared.utils.network_utils import (
+    format_network_display_name,
+    normalize_network_name,
+    normalize_nigerian_phone,
+    resolve_network_from_phone,
+)
 
 TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
 NON_TRANSACTION_SWITCH_INTENTS = {"query", "account", "faq", "support", "beneficiary"}
@@ -97,6 +104,10 @@ _ACCOUNT_BALANCE_TRANSACTION_HINT_RE = re.compile(
     r"\b(?:send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",
     re.IGNORECASE,
 )
+_INPUT_INTERRUPT_GREETING_RE = re.compile(
+    r"(?iu)^\s*(?:hi+|hello|hey|good\s+(?:morning|afternoon|evening)|"
+    r"how\s+far|sannu|ndewo|pele(?:\s+o)?|pẹlẹ(?:\s+o)?)\s*[.!?]*\s*$"
+)
 
 
 def _could_be_schedule_interrupt_read_request(text: str) -> bool:
@@ -113,6 +124,74 @@ def _is_account_balance_interrupt_switch(text: str) -> bool:
     if _ACCOUNT_BALANCE_TRANSACTION_HINT_RE.search(normalized):
         return False
     return bool(_ACCOUNT_BALANCE_INTERRUPT_RE.search(normalized))
+
+
+def _is_input_interrupt_greeting(text: str) -> bool:
+    return bool(_INPUT_INTERRUPT_GREETING_RE.fullmatch(text or ""))
+
+
+def _input_interrupt_required_fields(interrupt: Any) -> set[str]:
+    fields_by_task = getattr(interrupt, "fields_by_task", None) or {}
+    if not isinstance(fields_by_task, dict):
+        return set()
+    fields: set[str] = set()
+    for task_fields in fields_by_task.values():
+        if isinstance(task_fields, list):
+            fields.update(str(field) for field in task_fields if isinstance(field, str))
+    return fields
+
+
+def _input_greeting_reprompt_text(
+    state: OrchestratorState,
+    interrupt: Any,
+    current_task_types: set[str] | None = None,
+) -> str:
+    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    required_fields = _input_interrupt_required_fields(interrupt)
+    task_types = current_task_types or _current_task_types(state, getattr(interrupt, "task_ids", []))
+    first_task = None
+    task_ids = getattr(interrupt, "task_ids", []) or []
+    if isinstance(task_ids, list) and task_ids:
+        first_task = state.tasks.get(str(task_ids[0]))
+    first_payload = first_task.payload if first_task and isinstance(first_task.payload, dict) else {}
+    network = format_network_display_name(first_payload.get("network"))
+    if task_types == {"transfer"}:
+        if transfer_reprompt := _build_compact_transfer_input_reprompt(state, interrupt):
+            return transfer_reprompt
+    if required_fields == {"data_plan_id"}:
+        if task_types == {"data"} and network:
+            return render_message(
+                "orchestrator.execution.input_greeting_data_plan_network",
+                locale,
+                {"network": network},
+            )
+        return render_message("orchestrator.execution.input_greeting_data_plan", locale)
+    if required_fields == {"data_plan_preference"} and task_types == {"data"}:
+        if network:
+            return render_message(
+                "orchestrator.execution.input_greeting_data_preference_network",
+                locale,
+                {"network": network},
+            )
+        return render_message("orchestrator.execution.input_greeting_data_preference", locale)
+    if task_types == {"airtime"}:
+        if required_fields == {"amount"}:
+            if network:
+                return render_message(
+                    "orchestrator.execution.input_greeting_airtime_amount_network",
+                    locale,
+                    {"network": network},
+                )
+            return render_message("orchestrator.execution.input_greeting_airtime_amount", locale)
+        if required_fields in ({"recipient_phone", "amount"}, {"phone", "amount"}):
+            if network:
+                return render_message(
+                    "orchestrator.execution.input_greeting_airtime_line_amount_network",
+                    locale,
+                    {"network": network},
+                )
+            return render_message("orchestrator.execution.input_greeting_airtime_line_amount", locale)
+    return render_message("orchestrator.execution.input_greeting", locale)
 
 
 async def _remove_or_cancel_confirmation_tasks(
@@ -217,8 +296,25 @@ def _pending_edit_target_task_ids(
     return []
 
 
+_DATA_PLAN_EDIT_FIELDS = {
+    "size_preference",
+    "validity_preference",
+    "selection_preference",
+    "usage_intent",
+    "show_options",
+}
+
+
 def _field_can_apply_collectively(field: str) -> bool:
-    return field in {"amount", "narration", "phone", "network", "source_accounts", "use_dual_accounts"}
+    return field in {
+        "amount",
+        "narration",
+        "phone",
+        "network",
+        "source_accounts",
+        "use_dual_accounts",
+        *_DATA_PLAN_EDIT_FIELDS,
+    }
 
 
 def _field_applies_to_task(field: str, task_type: str) -> bool:
@@ -236,6 +332,8 @@ def _field_applies_to_task(field: str, task_type: str) -> bool:
         return task_type == "transfer"
     if field in {"phone", "network"}:
         return task_type in {"airtime", "data"}
+    if field in _DATA_PLAN_EDIT_FIELDS:
+        return task_type == "data"
     return False
 
 
@@ -502,22 +600,87 @@ def _account_switch_source_overrides(
     )
 
 
-def _phone_patch(task_type: str, value: Any) -> dict[str, Any] | None:
-    phone = str(value or "").strip()
+def _phone_patch(
+    task_type: str,
+    value: Any,
+    *,
+    payload: dict[str, Any] | None = None,
+    user_phone: str | None = None,
+) -> dict[str, Any] | None:
+    phone = normalize_nigerian_phone(str(value or "").strip()) or str(value or "").strip()
     if not phone:
         return None
+    normalized_user_phone = normalize_nigerian_phone(user_phone or "")
+    is_self = bool(normalized_user_phone and phone == normalized_user_phone)
     if task_type == "airtime":
-        return {"confirmation": {"confirmed": False}, "recipient_phone": phone, "phone": phone}
+        patch = {
+            "confirmation": {"confirmed": False},
+            "recipient_phone": phone,
+            "phone": phone,
+            "recipient_name": None,
+            "beneficiary_id": None,
+            "is_self": is_self,
+        }
+        if inferred_network := resolve_network_from_phone(phone):
+            patch["network"] = inferred_network
+        return patch
     if task_type == "data":
-        return {"confirmation": {"confirmed": False}, "target_phone": phone, "phone": phone}
+        patch: dict[str, Any] = {
+            "confirmation": {"confirmed": False},
+            "target_phone": phone,
+            "phone": phone,
+            "recipient_name": None,
+            "beneficiary_id": None,
+            "is_self": is_self,
+        }
+        inferred_network = resolve_network_from_phone(phone)
+        current_network = normalize_network_name((payload or {}).get("network")) if payload else None
+        if inferred_network and inferred_network != current_network:
+            patch["network"] = inferred_network
+            patch.update(_data_plan_reset_patch())
+        return patch
     return None
 
 
-def _network_patch(value: Any) -> dict[str, Any] | None:
+def _network_patch(
+    task_type: str,
+    value: Any,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     network = str(value or "").strip()
     if not network:
         return None
-    return {"confirmation": {"confirmed": False}, "network": network}
+    patch: dict[str, Any] = {"confirmation": {"confirmed": False}, "network": network}
+    normalized_network = normalize_network_name(network)
+    if task_type == "airtime":
+        current_phone = normalize_nigerian_phone((payload or {}).get("recipient_phone") or (payload or {}).get("phone"))
+        inferred_network = resolve_network_from_phone(current_phone or "")
+        if normalized_network and inferred_network and inferred_network != normalized_network:
+            patch.update(
+                {
+                    "recipient_phone": None,
+                    "phone": None,
+                    "recipient_name": None,
+                    "beneficiary_id": None,
+                    "is_self": False,
+                }
+            )
+    if task_type == "data":
+        current_phone = normalize_nigerian_phone((payload or {}).get("target_phone") or (payload or {}).get("phone"))
+        inferred_network = resolve_network_from_phone(current_phone or "")
+        if normalized_network and inferred_network and inferred_network != normalized_network:
+            patch.update(
+                {
+                    "target_phone": None,
+                    "phone": None,
+                    "recipient_name": None,
+                    "beneficiary_id": None,
+                    "is_self": False,
+                }
+            )
+        patch.update(_data_plan_reset_patch())
+    return patch
 
 
 def _recipient_patch(field: str, value: Any) -> dict[str, Any] | None:
@@ -599,7 +762,7 @@ def _pending_edit_payload_overrides_from_fields(
             if field == "narration" and task.type == "transfer":
                 patch = _narration_patch(value)
             elif field == "amount" and task.type in TRANSACTION_INTENTS:
-                patch = _typed_amount_patch(value)
+                patch = _typed_amount_patch(value, task_type=task.type)
             elif field in {"recipient_name", "recipient_account", "recipient_bank_name"} and task.type == "transfer":
                 patch = _recipient_patch(str(field), value)
             elif field == "source_bank_name" and task.type in TRANSACTION_INTENTS:
@@ -613,9 +776,11 @@ def _pending_edit_payload_overrides_from_fields(
             elif field == "funding_splits" and task.type == "transfer":
                 patch = _funding_splits_patch(value)
             elif field == "phone" and task.type in {"airtime", "data"}:
-                patch = _phone_patch(task.type, value)
+                patch = _phone_patch(task.type, value, payload=task.payload, user_phone=state.phone_number)
             elif field == "network" and task.type in {"airtime", "data"}:
-                patch = _network_patch(value)
+                patch = _network_patch(task.type, value, payload=task.payload)
+            elif field in _DATA_PLAN_EDIT_FIELDS and task.type == "data":
+                patch = _data_plan_preference_patch(str(field), value, task.payload)
             if patch:
                 overrides[task_id] = {**overrides.get(task_id, {}), **patch}
 
@@ -648,7 +813,52 @@ def _pending_edit_payload_overrides_from_decision(
     return overrides
 
 
-def _typed_amount_patch(value: Any) -> dict[str, Any]:
+def _data_plan_reset_patch() -> dict[str, Any]:
+    return {
+        "plan_code": None,
+        "plan_name": None,
+        "biller_code": None,
+        "plan_size_gb": None,
+        "plan_validity_days": None,
+        "plan_tags": [],
+        "data_plan_candidates": [],
+        "show_plan_options": False,
+        "data_plan_exclude_codes": [],
+        "catalog_cache_stale": False,
+    }
+
+
+def _data_plan_preference_patch(field: str, value: Any, payload: dict[str, Any]) -> dict[str, Any] | None:
+    if value in (None, "") and field != "show_options":
+        return None
+
+    patch: dict[str, Any] = {"confirmation": {"confirmed": False}}
+    patch.update(_data_plan_reset_patch())
+
+    if field == "show_options":
+        if value is False:
+            return None
+        current_plan_code = str(payload.get("plan_code") or "").strip()
+        patch["show_plan_options"] = True
+        patch["data_plan_exclude_codes"] = [current_plan_code] if current_plan_code else []
+        return patch
+
+    normalized_value = str(value).strip()
+    if not normalized_value:
+        return None
+    patch[field] = normalized_value
+    if field == "selection_preference" and normalized_value.lower() in {
+        "show_options",
+        "options",
+        "alternatives",
+    }:
+        current_plan_code = str(payload.get("plan_code") or "").strip()
+        patch["show_plan_options"] = True
+        patch["data_plan_exclude_codes"] = [current_plan_code] if current_plan_code else []
+    return patch
+
+
+def _typed_amount_patch(value: Any, *, task_type: str | None = None) -> dict[str, Any]:
     amount = 0.0
     try:
         amount = float(value)
@@ -656,6 +866,13 @@ def _typed_amount_patch(value: Any) -> dict[str, Any]:
         return {}
     if amount <= 0:
         return {}
+    if task_type == "data":
+        patch: dict[str, Any] = {"confirmation": {"confirmed": False}, "amount": amount}
+        patch.update(_data_plan_reset_patch())
+        patch["size_preference"] = None
+        return patch
+    if task_type == "airtime":
+        return {"confirmation": {"confirmed": False}, "amount": amount}
     return _amount_patch(amount)
 
 
@@ -784,7 +1001,9 @@ async def _resolve_semantic_pending_action_edit_updates(
                 task_ids_to_restore=task_ids,
             )
 
-    if decision.operation == "update_fields":
+    if decision.operation in {"update_fields", "show_options"}:
+        if decision.operation == "show_options" and getattr(decision, "show_options", None) is None:
+            decision.show_options = True
         overrides = _pending_edit_payload_overrides_from_decision(
             state=state,
             interrupt=interrupt,
@@ -796,6 +1015,8 @@ async def _resolve_semantic_pending_action_edit_updates(
                 interrupt,
                 precomputed_payload_overrides=overrides,
             )
+        if getattr(interrupt, "kind", None) != "confirmation":
+            return None
         if _pending_edit_has_fields(decision):
             return _confirmation_edit_clarification_updates(state, interrupt)
         return None
@@ -1144,13 +1365,23 @@ async def _reprompt_or_reset_updates(
     state: OrchestratorState,
     interrupt: Any,
     redis_client: Any | None,
+    *,
+    prompt_override: str | None = None,
 ) -> dict[str, Any]:
     if getattr(interrupt, "kind", None) != "input":
         return _reprompt_updates(state, interrupt)
 
     next_attempts = max(int(getattr(interrupt, "attempts", 0) or 0) + 1, 1)
     if next_attempts < INPUT_INTERRUPT_MAX_ATTEMPTS:
-        return _reprompt_updates(state, interrupt.model_copy(update={"attempts": next_attempts}))
+        next_interrupt = interrupt.model_copy(update={"attempts": next_attempts})
+        if prompt_override:
+            return {
+                "pending_interrupt": next_interrupt,
+                "last_interrupt": next_interrupt,
+                "tasks": state.tasks,
+                "outbox": [{"type": "say", "text": prompt_override}],
+            }
+        return _reprompt_updates(state, next_interrupt)
 
     locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
     reset_updates = await build_cancellation_reset_updates(state, redis_client)
@@ -1290,6 +1521,23 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             reason=input_slot_shortcut_route.reason,
         )
         return _continue_flow_updates(state, interrupt)
+
+    if (
+        interrupt.kind == "input"
+        and _is_input_interrupt_greeting(text)
+        and current_task_types.intersection(TRANSACTION_INTENTS)
+    ):
+        logger.info(
+            "interrupt_input_greeting_nudge",
+            task_ids=interrupt.task_ids,
+            required_fields=sorted(_input_interrupt_required_fields(interrupt)),
+        )
+        return await _reprompt_or_reset_updates(
+            state,
+            interrupt,
+            redis_client,
+            prompt_override=_input_greeting_reprompt_text(state, interrupt, current_task_types),
+        )
 
     repeat_shortcut_route = _resolve_deterministic_confirmation_repeat_route(
         state=state,

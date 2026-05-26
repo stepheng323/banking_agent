@@ -56,7 +56,7 @@ def classify_banking_coded_ambiguity(text: str | None) -> AmbiguousBankingDomain
     if _TRANSFER_SELF_DIRECTED_RE.search(normalized):
         return "transfer"
     if _DATA_SELF_DIRECTED_RE.search(normalized):
-        return "data"
+        return None
     if _AIRTIME_SELF_DIRECTED_RE.search(normalized):
         if _AMOUNT_RE.search(normalized):
             return None

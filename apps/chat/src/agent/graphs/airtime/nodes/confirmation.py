@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.chat.src.agent.graphs.__shared__.confirmation_updates import build_airtime_confirmation_update_message
 from apps.chat.src.agent.graphs.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.graphs.airtime.models.types import (
     AirtimeContext,
@@ -32,6 +33,9 @@ class ConfirmationStep(AirtimeStep):
             "amount": data.amount,
             "recipient_phone": data.recipient_phone,
             "network": data.network,
+            "recipient_name": data.recipient_name,
+            "source_bank_name": data.source_bank_name,
+            "source_account_number": data.source_account_number,
             "source_account": data.source_account_number,
         }
 
@@ -44,6 +48,7 @@ class ConfirmationStep(AirtimeStep):
                 "recipientPhone": data.recipient_phone,
                 "network": data.network,
                 "recipientName": data.recipient_name,
+                "isSelf": data.is_self,
                 "sourceBank": data.source_bank_name,
                 "sourceAccount": data.source_account_number,
             },
@@ -86,4 +91,9 @@ class ConfirmationStep(AirtimeStep):
             outcome=TransactionOutcome.NEEDS_CONFIRMATION,
             confirmation_summary=summary,
             confirmation_snapshot=snapshot,
+            update_message=build_airtime_confirmation_update_message(
+                previous_snapshot=data.previous_confirmation_snapshot,
+                current_snapshot=snapshot,
+                locale=context.language,
+            ),
         )

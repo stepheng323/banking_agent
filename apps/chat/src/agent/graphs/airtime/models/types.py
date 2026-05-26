@@ -72,6 +72,7 @@ class AirtimePayload(BaseModel):
     correction_value: Any | None = None
 
     confirmation: AirtimeConfirmation = Field(default_factory=AirtimeConfirmation)
+    previous_confirmation_snapshot: dict[str, Any] | None = None
     skip_extraction: bool = False
 
 

@@ -176,8 +176,8 @@ def test_airtime_and_data_formatters_pick_expected_variants_with_context() -> No
         personality_context=PersonalityContext(moment="confirmation", amount=1500, saved_recipient=True),
     )
 
-    assert airtime_summary.splitlines()[0] == "*Airtime ready for 08162511023: ₦1,000*"
-    assert data_summary.splitlines()[0] == "*Data ready for 08162511023: MTN 2GB*"
+    assert airtime_summary.splitlines()[0] == "*₦1,000 airtime for 08162511023*"
+    assert data_summary.splitlines()[0] == "*MTN 2GB for 08162511023*"
 
 
 def test_airtime_and_data_notification_variants_render() -> None:
@@ -187,6 +187,7 @@ def test_airtime_and_data_notification_variants_render() -> None:
         {
             "amount": "1,000.00",
             "recipient_phone": "08162511023",
+            "recipient_target": "Tolu (08162511023)",
             "network": "MTN",
             "reference": "ref-1",
         },
@@ -209,7 +210,7 @@ def test_airtime_and_data_notification_variants_render() -> None:
         PersonalityContext(moment="failure", amount=1500),
     )
 
-    assert airtime_success == "Done. ₦1,000.00 airtime has been sent to 08162511023 (MTN).\nRef: ref-1"
+    assert airtime_success == "Done. ₦1,000.00 airtime has been sent to Tolu (08162511023) (MTN).\nRef: ref-1"
     assert data_pending.startswith("Got it. Your MTN 2GB purchase (₦1,500.00)")
     assert data_failure == "I couldn't complete the data purchase: Provider unavailable. Please try again."
 
@@ -235,6 +236,7 @@ def test_airtime_and_data_personality_variants_are_localized(
         {
             "amount": "1,000.00",
             "recipient_phone": "08162511023",
+            "recipient_target": "Tolu (08162511023)",
             "network": "MTN",
             "reference": "ref-1",
         },

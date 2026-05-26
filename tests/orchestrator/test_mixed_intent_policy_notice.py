@@ -701,7 +701,7 @@ async def test_conversational_banking_coded_transfer_ambiguity_prefers_clarify_o
 
 
 @pytest.mark.asyncio
-async def test_conversational_banking_coded_data_ambiguity_prefers_clarify_over_responder() -> None:
+async def test_conversational_self_data_request_no_longer_uses_ambiguity_prompt() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="I can't help with that.",
@@ -714,7 +714,7 @@ async def test_conversational_banking_coded_data_ambiguity_prefers_clarify_over_
         normalized_instruction="buy me data",
         tasks=[],
     )
-    responder = _FakeConversationResponder("This should not be used.")
+    responder = _FakeConversationResponder("Sure. I can help with data. What budget or data size should I use?")
     state = OrchestratorState(
         user_id="u_meta_banking_ambiguity_data_1",
         phone_number="23489999999882",
@@ -735,8 +735,8 @@ async def test_conversational_banking_coded_data_ambiguity_prefers_clarify_over_
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "Do you want to buy data? If yes, whose line is it for?"
-    assert not responder.calls
+    assert state.final_response == "Sure. I can help with data. What budget or data size should I use?"
+    assert responder.calls
 
 
 @pytest.mark.asyncio

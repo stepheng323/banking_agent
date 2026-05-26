@@ -4,6 +4,7 @@ from shared.formatters.accounts import format_source_account_info_from_account_n
 from shared.formatters.currency import coerce_amount, format_amount_number
 from shared.i18n import render_message
 from shared.i18n.personality import PersonalityContext, render_personalized_message
+from shared.utils.network_utils import format_network_display_name
 
 
 def format_data_plan_suggestion(
@@ -116,12 +117,16 @@ def format_data_summary(
     plan_name = data.get("planName", render_message("data.format.summary.plan_name_fallback", locale))
     amount = coerce_amount(data.get("amount"))
     recipient_phone = str(data.get("recipientPhone") or "")
-    network = str(data.get("network") or "")
+    network = format_network_display_name(data.get("network"))
     source_bank = str(data.get("sourceBank") or render_message("data.format.summary.source_bank_fallback", locale))
     source_account = str(data.get("sourceAccount") or "")
     is_self = data.get("isSelf", False)
 
-    target_display = render_message("data.format.summary.target_self", locale) if is_self else recipient_phone
+    if is_self:
+        self_label = render_message("data.format.summary.target_self", locale)
+        target_display = f"{self_label} ({recipient_phone})" if recipient_phone else self_label
+    else:
+        target_display = recipient_phone
 
     lines = [
         render_personalized_message(

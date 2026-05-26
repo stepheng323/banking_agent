@@ -34,6 +34,10 @@ _INPUT_AMOUNT_COMMAND_REPLY_RE = re.compile(
     r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?\s*[.!?]?$",
     re.IGNORECASE,
 )
+_INPUT_NUMERIC_AMOUNT_REPLY_RE = re.compile(
+    r"^(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?\s*(?:naira|ngn)?\s*[.!?]?$",
+    re.IGNORECASE,
+)
 _NON_TRANSFER_INTENT_HINT_RE = re.compile(
     r"\b(airtime|data|bundle|balance|statement|support|faq|ticket|complaint)\b",
     re.IGNORECASE,
@@ -61,12 +65,34 @@ _INPUT_BANK_REPLY_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _INPUT_SELF_PHONE_REPLY_RE = re.compile(
-    r"^(?:for\s+)?(?:me|my\s+(?:line|number|phone)|mine|myself|this\s+line)$",
+    r"^(?:for\s+)?(?:me|my\s+(?:line|number|phone)|mine|myself|this\s+line)"
+    r"(?:\s+(?:please|pls|abeg|jare|na|now|o|oo))?$",
     re.IGNORECASE,
 )
 _INPUT_NETWORK_REPLY_BLOCK_RE = re.compile(
     r"\b(send|transfer|pay|buy|data|airtime|bundle|balance|statement|transaction|transactions|"
     r"account|support|faq|cancel|stop|show|list|check)\b",
+    re.IGNORECASE,
+)
+_INPUT_DATA_PLAN_SELECTION_REPLY_RE = re.compile(
+    r"^(?:option\s*)?(?P<index>[1-9]\d*)[.!?]?$",
+    re.IGNORECASE,
+)
+_INPUT_DATA_PLAN_BUDGET_REPLY_RE = re.compile(
+    r"^(?:(?:under|within|below|around|about|max(?:imum)?|for)\s+)?"
+    r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kK]?\s*(?:naira|ngn)?\s*[.!?]?$",
+    re.IGNORECASE,
+)
+_INPUT_DATA_PLAN_SIZE_REPLY_RE = re.compile(
+    r"^\d+(?:\.\d+)?\s*(?:gb|g|mb)\s*[.!?]?$",
+    re.IGNORECASE,
+)
+_INPUT_DATA_PLAN_VALIDITY_REPLY_RE = re.compile(
+    r"^(?:daily|weekly|monthly|night|weekend)(?:\s+(?:plan|bundle|one))?\s*[.!?]?$",
+    re.IGNORECASE,
+)
+_INPUT_DATA_PLAN_PREFERENCE_REPLY_RE = re.compile(
+    r"^(?:best|cheapest|most\s+data|highest\s+data|longest\s+validity|best\s+value)\s*[.!?]?$",
     re.IGNORECASE,
 )
 
@@ -173,7 +199,11 @@ def _resolve_deterministic_input_slot_route(
             reason="shortcut_input_account_entry",
         )
 
-    if required_fields in ({"recipient_phone"}, {"phone"}, {"target_phone"}) and 10 <= len(numeric_text) <= 15:
+    phone_fields = {"recipient_phone", "phone", "target_phone"}
+    if (
+        required_fields in ({"recipient_phone"}, {"phone"}, {"target_phone"})
+        or (active_task_type in {"airtime", "data"} and bool(required_fields & phone_fields))
+    ) and 10 <= len(numeric_text) <= 15:
         return InterruptRouteDecision(
             decision="continue_flow",
             confidence=0.99,
@@ -184,7 +214,10 @@ def _resolve_deterministic_input_slot_route(
             reason="shortcut_input_phone_entry",
         )
 
-    if active_task_type == "data" and required_fields in ({"recipient_phone"}, {"phone"}, {"target_phone"}):
+    if active_task_type in {"airtime", "data"} and (
+        required_fields in ({"recipient_phone"}, {"phone"}, {"target_phone"})
+        or bool(required_fields & phone_fields)
+    ):
         if _INPUT_SELF_PHONE_REPLY_RE.fullmatch(stripped_text):
             return InterruptRouteDecision(
                 decision="continue_flow",
@@ -196,7 +229,11 @@ def _resolve_deterministic_input_slot_route(
                 reason="shortcut_input_self_phone_entry",
             )
 
-    if active_task_type == "data" and required_fields == {"network"} and _looks_like_network_reply(stripped_text):
+    if (
+        active_task_type in {"airtime", "data"}
+        and "network" in required_fields
+        and _looks_like_network_reply(stripped_text)
+    ):
         return InterruptRouteDecision(
             decision="continue_flow",
             confidence=0.99,
@@ -207,9 +244,40 @@ def _resolve_deterministic_input_slot_route(
             reason="shortcut_input_network_entry",
         )
 
-    if required_fields == {"amount"} and (
-        _INPUT_SIMPLE_AMOUNT_REPLY_RE.fullmatch(stripped_text)
-        or _INPUT_AMOUNT_COMMAND_REPLY_RE.fullmatch(stripped_text)
+    if active_task_type == "data" and required_fields == {"data_plan_id"}:
+        if _looks_like_data_plan_selection_reply(stripped_text, active_task):
+            return InterruptRouteDecision(
+                decision="continue_flow",
+                confidence=0.99,
+                detected_language="English",
+                target_intent=None,
+                target_mode=None,
+                status_query_type=None,
+                reason="shortcut_input_data_plan_selection",
+            )
+
+    if active_task_type == "data" and "data_plan_preference" in required_fields:
+        if _looks_like_data_plan_preference_reply(stripped_text):
+            return InterruptRouteDecision(
+                decision="continue_flow",
+                confidence=0.99,
+                detected_language="English",
+                target_intent=None,
+                target_mode=None,
+                status_query_type=None,
+                reason="shortcut_input_data_plan_preference",
+            )
+
+    if (
+        required_fields == {"amount"}
+        and (
+            _INPUT_SIMPLE_AMOUNT_REPLY_RE.fullmatch(stripped_text)
+            or _INPUT_AMOUNT_COMMAND_REPLY_RE.fullmatch(stripped_text)
+        )
+    ) or (
+        active_task_type == "airtime"
+        and "amount" in required_fields
+        and _INPUT_NUMERIC_AMOUNT_REPLY_RE.fullmatch(stripped_text)
     ):
         return InterruptRouteDecision(
             decision="continue_flow",
@@ -277,6 +345,45 @@ def _looks_like_network_reply(text: str) -> bool:
     if _INPUT_NETWORK_REPLY_BLOCK_RE.search(stripped_text):
         return False
     return normalize_network_name(stripped_text) is not None
+
+
+def _looks_like_data_plan_selection_reply(text: str, active_task: Any) -> bool:
+    match = _INPUT_DATA_PLAN_SELECTION_REPLY_RE.fullmatch(text.strip())
+    if not match:
+        return False
+    selected_index = int(match.group("index"))
+    if selected_index <= 0:
+        return False
+
+    payload = active_task.payload if active_task is not None and isinstance(active_task.payload, dict) else {}
+    raw_candidates = payload.get("data_plan_candidates")
+    candidates = (
+        [candidate for candidate in raw_candidates if isinstance(candidate, dict)]
+        if isinstance(raw_candidates, list)
+        else []
+    )
+    if not candidates:
+        return selected_index <= 3
+    for candidate in candidates:
+        try:
+            candidate_index = int(candidate.get("index") or 0)
+        except (TypeError, ValueError):
+            continue
+        if candidate_index == selected_index:
+            return True
+    return False
+
+
+def _looks_like_data_plan_preference_reply(text: str) -> bool:
+    stripped_text = text.strip()
+    if not stripped_text or "?" in stripped_text:
+        return False
+    return bool(
+        _INPUT_DATA_PLAN_BUDGET_REPLY_RE.fullmatch(stripped_text)
+        or _INPUT_DATA_PLAN_SIZE_REPLY_RE.fullmatch(stripped_text)
+        or _INPUT_DATA_PLAN_VALIDITY_REPLY_RE.fullmatch(stripped_text)
+        or _INPUT_DATA_PLAN_PREFERENCE_REPLY_RE.fullmatch(stripped_text)
+    )
 
 
 def _looks_like_simple_transfer_recipient_reply(text: str) -> bool:
@@ -378,6 +485,18 @@ def _continue_flow_updates(
                 else:
                     task.payload.pop("pending_user_message", None)
                     task.payload.pop("confirmation_message_scoped", None)
+        elif interrupt.kind == "input" and payload_overrides:
+            logger.info(
+                "input_task_payload_overrides_applied",
+                task_ids=sorted(payload_overrides.keys()),
+            )
+            for task_id in task_ids_to_reset:
+                task = state.tasks.get(task_id)
+                if task is None or task_id not in payload_overrides:
+                    continue
+                task.payload.update(payload_overrides[task_id])
+                task.payload.pop("pending_user_message", None)
+                task.payload.pop("confirmation_message_scoped", None)
         last_interrupt = interrupt
         if interrupt.kind == "confirmation" and task_ids_to_reset != [str(task_id) for task_id in interrupt.task_ids]:
             if hasattr(interrupt, "model_copy"):

@@ -368,7 +368,7 @@ async def test_data_known_network_missing_phone_prompt_is_natural() -> None:
     updates = await advance_wave(state, config)
     text = updates["outbox"][0]["text"]
 
-    assert text == "Got the MTN data. Which line should I buy it for?"
+    assert text == "Got the MTN data. Which MTN line should I buy it for?"
 
 
 async def test_data_known_phone_missing_network_prompt_is_natural() -> None:
@@ -406,6 +406,154 @@ async def test_data_known_phone_missing_network_prompt_is_natural() -> None:
     text = updates["outbox"][0]["text"]
 
     assert text == "I have 08162511023. Which network is it on?"
+
+
+async def test_airtime_known_amount_missing_phone_prompt_is_natural() -> None:
+    worker = _MockNonTransferNeedsInputWorker(["recipient_phone"], "Please provide the phone number.")
+    state = OrchestratorState(
+        user_id="u_airtime_prompt_amount",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 1000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"airtime": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "Got ₦1,000.00 airtime. Which line should I buy it for?"
+
+
+async def test_airtime_known_phone_missing_amount_prompt_is_natural() -> None:
+    worker = _MockNonTransferNeedsInputWorker(["amount"], "Please provide the amount.")
+    state = OrchestratorState(
+        user_id="u_airtime_prompt_phone",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_phone": "08162511023"},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"airtime": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "I have 08162511023. How much airtime should I buy?"
+
+
+async def test_airtime_known_phone_missing_network_prompt_is_natural() -> None:
+    worker = _MockNonTransferNeedsInputWorker(["network"], "Which network is it on?")
+    state = OrchestratorState(
+        user_id="u_airtime_prompt_network",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 1000, "recipient_phone": "08162511023"},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"airtime": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "Got ₦1,000.00 for 08162511023. Which network is it on?"
+
+
+async def test_airtime_bare_purchase_missing_phone_and_amount_prompt_is_natural() -> None:
+    worker = _MockNonTransferNeedsInputWorker(["recipient_phone", "amount"], "Please provide the phone number and amount.")
+    state = OrchestratorState(
+        user_id="u_airtime_prompt_bare",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"airtime": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == "Sure. Who should I buy airtime for, and how much?"
 
 
 async def test_bank_only_follow_up_prompts_for_account_number() -> None:
@@ -859,8 +1007,8 @@ async def test_ambiguous_beneficiary_referent_blocks_confirmation() -> None:
     assert not any(entry.get("type") == "request_confirmation" for entry in updates["outbox"])
 
 
-async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> None:
-    """Airtime/data tasks with non-transfer missing fields should use the worker's own prompt."""
+async def test_non_transfer_task_uses_contextual_airtime_prompt_not_transfer_formatter() -> None:
+    """Airtime tasks should use the airtime slot formatter, not transfer recipient copy."""
     airtime_prompt = "What phone number should I send airtime to?"
     worker = _MockNonTransferNeedsInputWorker(["recipient_phone"], airtime_prompt)
     state = OrchestratorState(
@@ -895,7 +1043,7 @@ async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> 
     updates = await advance_wave(state, config)
     text = updates["outbox"][0]["text"]
 
-    assert text == airtime_prompt
+    assert text == "Got ₦2,000.00 airtime. Which line should I buy it for?"
     assert "account details" not in text
 
 
