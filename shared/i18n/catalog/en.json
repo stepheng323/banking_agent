@@ -64,9 +64,10 @@
   },
   "conversational": {
     "greeting": "Hi, I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
+    "greeting_named": "Hi {display_name}, I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "appreciation": "Anytime. What should we handle next?",
     "checkin": "I'm here. What would you like to do?",
-    "identity": "I'm {app_name}. I execute real banking tasks fast and carefully.",
+    "identity": "I'm {app_name}, a banking assistant that helps you move and check your money through transfers, airtime/data, balances, and transaction queries.",
     "identity_correction": "Not {addressed_name} 😄 I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "brand_origin": "The name {app_name_short} comes from {app_brand_inspiration}. We chose it because {app_brand_symbolism}: the idea behind {app_name} is to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
@@ -86,6 +87,11 @@
         "airtime_purchase": "airtime purchase",
         "data_purchase": "data purchase"
       }
+    },
+    "contextual_meta_followup": {
+      "generic": "Got it.",
+      "brand_origin": "Yeah, that's the idea: flow, clarity, and control around your money.",
+      "product_identity": "Exactly, Nenya is built to help you move and check your money clearly."
     }
   },
   "support": {

@@ -13,7 +13,6 @@ async def _build_bounded_conversational_reply(
         return None
     try:
         return await ctx.conversation_responder.generate_reply(
-            ctx.state.phone_number,
             ctx.message_text,
             {
                 **(ctx.state.loaded_context or {}),

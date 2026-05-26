@@ -64,9 +64,10 @@
   },
   "conversational": {
     "greeting": "Sannu. Ni ne {app_name}. Me kake so mu yi yau?",
+    "greeting_named": "Sannu {display_name}. Ni ne {app_name}. Me kake so mu yi yau?",
     "appreciation": "Babu komai. Wane aiki za mu yi na gaba?",
     "checkin": "Ina nan. Wane aikin kudi za mu fara?",
-    "identity": "Ni ne {app_name}. Ina gudanar da ainihin ayyukan banking da sauri kuma cikin kulawa.",
+    "identity": "Ni ne {app_name}, mataimakin banking da ke taimaka maka motsa da duba kudinka: transfer, airtime/data, balance, da tambayoyin transaction.",
     "identity_correction": "Ba {addressed_name} ba ne 😄 Ni ne {app_name}. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction. Me kake so mu yi?",
     "brand_origin": "Sunan {app_name_short} ya fito daga {app_brand_inspiration}. Mun zabe shi saboda {app_brand_symbolism}: manufar {app_name} ita ce taimaka wa kudinka su motsa cikin sauki, a fili, kuma karkashin ikonka.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
@@ -86,6 +87,11 @@
         "airtime_purchase": "siyan airtime",
         "data_purchase": "siyan data"
       }
+    },
+    "contextual_meta_followup": {
+      "generic": "Na gane.",
+      "brand_origin": "Eh, wannan shi ne manufar: flow, bayyani, da iko akan kudinka.",
+      "product_identity": "Daidai, Nenya na taimaka maka ka motsa da duba kudinka a bayyane."
     }
   },
   "support": {

@@ -99,3 +99,63 @@ async def test_whatsapp_presenter_schedule_auth_uses_schedule_pin_prefix() -> No
     assert message_id == "wa-flow-msg-1"
     assert client.flow_calls[0]["flow_config"]["flow_token"] == "schedule-pin-corr-1-123456789"
     assert client.flow_calls[0]["flow_config"]["flow_cta"] == "Authorize Update"
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_presenter_batch_confirmation_uses_prefix_for_correlation_task() -> None:
+    client = _StubFlowWhatsAppClient()
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+    intent = RequestConfirmation(
+        task_ids=["t_transfer", "t_airtime"],
+        summary="*Transfer*\nConfirm transfer task\n\n*Airtime*\nConfirm airtime task",
+        token="tok-1",
+        correlation_id="idem-transfer",
+        header="Confirm Transactions",
+    )
+    intent.actionable_payload = {
+        "task_type": "batch",
+        "tasks": [
+            {"task_type": "transfer", "idempotency_key": "idem-transfer"},
+            {"task_type": "airtime", "idempotency_key": "idem-airtime"},
+        ],
+    }
+    context = PresentationContext(
+        channel="whatsapp",
+        phone_number="123456789",
+        capabilities={"flows": True},
+    )
+
+    message_id = await presenter._present_confirmation(intent, context)
+
+    assert message_id == "wa-flow-msg-1"
+    assert client.flow_calls[0]["flow_config"]["flow_token"] == "transfer-pin-idem-transfer-123456789"
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_presenter_batch_auth_uses_prefix_for_correlation_task() -> None:
+    client = _StubFlowWhatsAppClient()
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+    intent = RequestAuth(
+        method="pin",
+        task_ids=["t_data", "t_airtime"],
+        correlation_id="idem-data",
+        reason="Authorize Transaction",
+        summary="*Data*\nConfirm data task\n\n*Airtime*\nConfirm airtime task",
+    )
+    intent.actionable_payload = {
+        "task_type": "batch",
+        "tasks": [
+            {"task_type": "data", "idempotency_key": "idem-data"},
+            {"task_type": "airtime", "idempotency_key": "idem-airtime"},
+        ],
+    }
+    context = PresentationContext(
+        channel="whatsapp",
+        phone_number="123456789",
+        capabilities={"flows": True},
+    )
+
+    message_id = await presenter._present_auth(intent, context)
+
+    assert message_id == "wa-flow-msg-1"
+    assert client.flow_calls[0]["flow_config"]["flow_token"] == "data-pin-idem-data-123456789"

@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 from shared.assistant_profile.voice import build_conversation_voice_block
 from shared.i18n import LocaleManager, render_message, render_text
 from shared.i18n.message_keys import as_message_key
+from shared.services.conversation_grounding import build_conversation_grounding, conversation_display_name
 from shared.services.unsupported_capabilities import (
     localized_supported_alternatives,
     unsupported_capability_params,
@@ -77,6 +78,7 @@ _BANKING_JOKE_FALLBACKS = (
     "Why was the debit card calm? It knew how to keep its balance.",
 )
 _CONTEXTUAL_WORKER_FOLLOWUP_INTENT = "contextual_worker_followup"
+_CONTEXTUAL_META_FOLLOWUP_INTENT = "contextual_meta_followup"
 _UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT = "unsupported_capability_followup"
 _CONTEXTUAL_ACTION_PROMISE_RE = re.compile(
     r"\b(?:i(?:'ll| will)|let me|i can)\s+"
@@ -258,6 +260,19 @@ def _unsupported_capability_fallback_reply(user_ctx: dict[str, Any] | None, loca
     )
 
 
+def contextual_meta_fallback_reply(user_ctx: dict[str, Any] | None, *, locale: str | None = None) -> str:
+    resolved_locale = LocaleManager.normalize(locale or (user_ctx or {}).get("language")).value
+    grounding = (user_ctx or {}).get("conversation_grounding")
+    if not isinstance(grounding, dict):
+        grounding = build_conversation_grounding(user_ctx)
+    topic = str(grounding.get("last_topic") or "")
+    if topic == "brand_origin":
+        return render_message("conversational.contextual_meta_followup.brand_origin", resolved_locale)
+    if topic == "product_identity":
+        return render_message("conversational.contextual_meta_followup.product_identity", resolved_locale)
+    return render_message("conversational.contextual_meta_followup.generic", resolved_locale)
+
+
 def is_banking_refusal_reply(raw_text: str | None, *, locale: str) -> bool:
     if not raw_text:
         return False
@@ -373,20 +388,24 @@ class ConversationResponder:
 
     async def generate_reply(
         self,
-        phone_number: str,
         text: str,
         user_ctx: dict[str, Any],
         intent: str | None = None,
     ) -> str:
         """Generate a short safe reply with a deterministic redirect when needed."""
-        del phone_number
         profile = user_ctx.get("profile") or {}
-        name = profile.get("full_name") or profile.get("first_name") if isinstance(profile, dict) else None
+        grounding = user_ctx.get("conversation_grounding")
+        if not isinstance(grounding, dict):
+            grounding = build_conversation_grounding(user_ctx)
+        name = conversation_display_name(user_ctx) or (
+            profile.get("full_name") or profile.get("first_name") if isinstance(profile, dict) else None
+        )
 
         locale = LocaleManager.normalize(user_ctx.get("language")).value
         language = _locale_to_language_label(locale)
         history = user_ctx.get("history") or []
         is_contextual_worker_followup = intent == _CONTEXTUAL_WORKER_FOLLOWUP_INTENT
+        is_contextual_meta_followup = intent == _CONTEXTUAL_META_FOLLOWUP_INTENT
         is_unsupported_capability_followup = intent == _UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT
         now = datetime.now(ZoneInfo("Africa/Lagos"))
         casual_streak = self._count_trailing_casual_replies(history, locale=locale)
@@ -394,6 +413,7 @@ class ConversationResponder:
         prefers_banking_humor = bool(_JOKE_PATTERN_RE.search(text))
         if (
             not is_contextual_worker_followup
+            and not is_contextual_meta_followup
             and not is_unsupported_capability_followup
             and casual_streak >= _MAX_CASUAL_REPLY_STREAK
         ):
@@ -404,6 +424,7 @@ class ConversationResponder:
         is_joke_turn = self._is_joke_turn(text, history)
         is_banking_reaction = (
             not is_contextual_worker_followup
+            and not is_contextual_meta_followup
             and not is_unsupported_capability_followup
             and casual_streak == 0
             and _is_banking_result_reaction(text, history)
@@ -423,6 +444,23 @@ class ConversationResponder:
                 "- Use only the recent context provided.\n"
                 "- Keep it to 1 short sentence.\n"
                 "- Do not ask for a transaction reference.\n"
+                "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
+                "- Do not offer to retry, send money, buy anything, create tickets, refund, or reverse anything.\n"
+                "- No generic banking redirect.\n"
+                "- No markdown, no emojis.\n"
+                "- If no specific grounded acknowledgement is possible, return an empty string.\n"
+            )
+        elif is_contextual_meta_followup:
+            system = (
+                build_conversation_voice_block(locale=language, channel="WhatsApp")
+                + f"Reply in {language}.\n"
+                "The user is reacting to the assistant's previous brand/product explanation.\n"
+                "Write ONLY a short grounded acknowledgement.\n"
+                "Rules:\n"
+                "- Use only the recent context provided.\n"
+                "- Keep it to 1 short sentence.\n"
+                "- If the last topic is brand_origin, briefly connect flow/liquidity/control.\n"
+                "- If the last topic is product_identity, briefly connect to moving/checking money clearly.\n"
                 "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
                 "- Do not offer to retry, send money, buy anything, create tickets, refund, or reverse anything.\n"
                 "- No generic banking redirect.\n"
@@ -488,14 +526,39 @@ class ConversationResponder:
                     "- The user is reacting to recent banking information. Give only the short empathetic "
                     "reply; no generic banking redirect.\n"
                 )
-        if not is_contextual_worker_followup and not is_unsupported_capability_followup and casual_streak >= 2:
+        if (
+            not is_contextual_worker_followup
+            and not is_contextual_meta_followup
+            and not is_unsupported_capability_followup
+            and casual_streak >= 2
+        ):
             system += "- The user has stayed in casual-chat mode for several turns, so keep the reply extra short.\n"
+
+        grounding_turns = grounding.get("recent_turns") if isinstance(grounding, dict) else None
+        grounding_turn_lines: list[str] = []
+        if isinstance(grounding_turns, list):
+            for turn in grounding_turns[-4:]:
+                if not isinstance(turn, dict):
+                    continue
+                role = str(turn.get("role") or "").strip().lower() or "user"
+                content = str(turn.get("content") or "").strip()
+                if content:
+                    grounding_turn_lines.append(f"{role}: {content}")
 
         user_parts = [
             f"Runtime Lagos timestamp: {now.strftime('%A, %B %d, %Y %H:%M %Z')}",
             f"User message: {text.strip()}",
             f"Recent casual streak: {casual_streak}",
         ]
+        if isinstance(grounding, dict):
+            topic = grounding.get("last_topic")
+            if topic:
+                user_parts.append(f"Conversation last topic: {topic}")
+            last_assistant_message = grounding.get("last_assistant_message")
+            if isinstance(last_assistant_message, str) and last_assistant_message.strip():
+                user_parts.append(f"Last assistant message: {last_assistant_message.strip()}")
+            if grounding_turn_lines:
+                user_parts.append("Safe recent turns:\n" + "\n".join(grounding_turn_lines))
         contextual_summary = user_ctx.get(_CONTEXTUAL_WORKER_FOLLOWUP_INTENT)
         if is_contextual_worker_followup and contextual_summary:
             user_parts.append(f"Recent banking context: {contextual_summary}")
@@ -513,6 +576,7 @@ class ConversationResponder:
                 user_parts.append(f"Supported alternatives: {alternatives}")
         if (
             not is_contextual_worker_followup
+            and not is_contextual_meta_followup
             and not is_unsupported_capability_followup
             and (prefers_banking_humor or is_joke_turn)
         ):
@@ -540,6 +604,8 @@ class ConversationResponder:
         if not preface:
             if is_contextual_worker_followup:
                 return contextual_worker_fallback_reply(text, user_ctx, locale=locale)
+            if is_contextual_meta_followup:
+                return contextual_meta_fallback_reply(user_ctx, locale=locale)
             if is_unsupported_capability_followup:
                 return _unsupported_capability_fallback_reply(user_ctx, locale)
             if is_joke_turn:
@@ -548,6 +614,10 @@ class ConversationResponder:
         if is_contextual_worker_followup:
             if _CONTEXTUAL_ACTION_PROMISE_RE.search(preface) or _CONTEXTUAL_UNGROUNDED_PREFACE_RE.search(preface):
                 return contextual_worker_fallback_reply(text, user_ctx, locale=locale)
+            return preface
+        if is_contextual_meta_followup:
+            if _CONTEXTUAL_ACTION_PROMISE_RE.search(preface) or is_banking_refusal_reply(preface, locale=locale):
+                return contextual_meta_fallback_reply(user_ctx, locale=locale)
             return preface
         if is_unsupported_capability_followup:
             if _CONTEXTUAL_ACTION_PROMISE_RE.search(preface) or _UNSUPPORTED_CAPABILITY_PROMISE_RE.search(preface):

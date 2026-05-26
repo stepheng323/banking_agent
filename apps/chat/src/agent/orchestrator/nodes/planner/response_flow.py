@@ -81,7 +81,6 @@ async def _build_non_task_response(
             return None
         try:
             return await conversation_responder.generate_reply(
-                state.phone_number,
                 text,
                 {
                     **(state.loaded_context or {}),

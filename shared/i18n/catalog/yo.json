@@ -64,9 +64,10 @@
   },
   "conversational": {
     "greeting": "Pẹlẹ o. Emi ni {app_name}. Kini o fẹ ki n ṣe fun ọ loni?",
+    "greeting_named": "Pẹlẹ o {display_name}. Emi ni {app_name}. Kini o fẹ ki n ṣe fun ọ loni?",
     "appreciation": "Ko to nnkan. Iṣẹ wo ni a o ṣe lẹ́yìn eyi?",
     "checkin": "Mo wa nibi. Iṣẹ owo wo ni o fẹ ki a ṣe?",
-    "identity": "Emi ni {app_name}. Mo n ṣiṣẹ awọn iṣẹ banking gidi ni kiakia ati pẹkipẹki.",
+    "identity": "Emi ni {app_name}, oluranlọwọ banking ti o ran ọ lọwọ lati gbe ati ṣayẹwo owo rẹ: gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "identity_correction": "Kii se {addressed_name} 😄 Emi ni {app_name}. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction. Kini o fẹ ṣe?",
     "brand_origin": "Orukọ {app_name_short} wa lati {app_brand_inspiration}. A yan an nitori {app_brand_symbolism}: ero lẹhin {app_name} ni lati ran owo rẹ lọwọ lati maa lọ ni irọrun, ni kedere, ati labẹ iṣakoso rẹ.",
     "capability_question": "Mo le ran ọ lọwọ pẹlu gbigbe owo, rira airtime/data, ayẹwo balance, ati ibeere transaction.",
@@ -86,6 +87,11 @@
         "airtime_purchase": "rira airtime",
         "data_purchase": "rira data"
       }
+    },
+    "contextual_meta_followup": {
+      "generic": "Mo ti ye.",
+      "brand_origin": "Bẹẹni, iyẹn ni ero naa: flow, kedere, ati iṣakoso lori owo rẹ.",
+      "product_identity": "Gangan, Nenya wa lati ran ọ lọwọ lati gbe ati ṣayẹwo owo rẹ ni kedere."
     }
   },
   "support": {

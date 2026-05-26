@@ -64,9 +64,10 @@
   },
   "conversational": {
     "greeting": "How far. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
+    "greeting_named": "How far {display_name}. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
     "appreciation": "No wahala. Wetin we go handle next?",
     "checkin": "I dey here. Wetin you wan make I help you do?",
-    "identity": "I be {app_name}. I dey run real banking tasks fast and sharp.",
+    "identity": "I be {app_name}, banking assistant wey dey help you move and check your money: transfer, airtime/data, balance, and transaction gist.",
     "identity_correction": "No be {addressed_name} 😄 I be {app_name}. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
     "brand_origin": "The name {app_name_short} come from {app_brand_inspiration}. We choose am because {app_brand_symbolism}: the idea behind {app_name} na to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
@@ -86,6 +87,11 @@
         "airtime_purchase": "airtime purchase",
         "data_purchase": "data purchase"
       }
+    },
+    "contextual_meta_followup": {
+      "generic": "I don get am.",
+      "brand_origin": "Yes, na the idea be that: flow, clarity, and control for your money.",
+      "product_identity": "Exactly, Nenya dey help you move and check your money clearly."
     }
   },
   "support": {

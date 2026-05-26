@@ -64,9 +64,10 @@
   },
   "conversational": {
     "greeting": "Ndeewo. Abụ m {app_name}. Kedu ihe ịchọrọ ka m mee taa?",
+    "greeting_named": "Ndeewo {display_name}. Abụ m {app_name}. Kedu ihe ịchọrọ ka m mee taa?",
     "appreciation": "Nnoo. Kedu ọrụ ọzọ ka anyị ga-eme ugbu a?",
     "checkin": "Anọ m ebe a. Kedu mmegharị ego ka anyị ga-eme?",
-    "identity": "Abụ m {app_name}. Ana m arụ ọrụ banking nke ọma, ngwa ngwa, ma nlezianya.",
+    "identity": "Abụ m {app_name}, onye enyemaka banking na-enyere gị ịkwaga na ilele ego gị: transfer, airtime/data, balance, na ajụjụ transaction.",
     "identity_correction": "Ọ bụghị {addressed_name} 😄 Abụ m {app_name}. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction. Kedu ihe ịchọrọ ime?",
     "brand_origin": "Aha {app_name_short} sitere na {app_brand_inspiration}. Anyị họọrọ ya n'ihi na {app_brand_symbolism}: echiche dị n'azụ {app_name} bụ inyere ego gị aka ịga nke ọma, nke doro anya, ma nọrọ n'okpuru njikwa gị.",
     "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
@@ -86,6 +87,11 @@
         "airtime_purchase": "ịzụta airtime",
         "data_purchase": "ịzụta data"
       }
+    },
+    "contextual_meta_followup": {
+      "generic": "Aghọtara m.",
+      "brand_origin": "Ee, nke ahụ bụ echiche ya: flow, nghọta, na njikwa ego gị.",
+      "product_identity": "Kpamkpam, Nenya na-enyere gị ịkwaga na ilele ego gị nke ọma."
     }
   },
   "support": {

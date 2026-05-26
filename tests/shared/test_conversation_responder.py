@@ -26,7 +26,6 @@ async def test_conversation_responder_appends_deterministic_banking_redirect() -
     responder = ConversationResponder(_FakeLLM("Today is Thursday, April 09, 2026.") )  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "What's today's date?",
         {"language": "en", "history": [], "profile": {}},
     )
@@ -43,7 +42,6 @@ async def test_conversation_responder_omits_redirect_for_banking_result_reaction
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "So, i am a poor man?",
         {
             "language": "en",
@@ -73,7 +71,6 @@ async def test_conversation_responder_keeps_redirect_for_reaction_without_bankin
     responder = ConversationResponder(_FakeLLM("No, your worth is not defined by money."))  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "So, i am a poor man?",
         {"language": "en", "history": [], "profile": {}},
     )
@@ -89,7 +86,6 @@ async def test_conversation_responder_falls_back_to_redirect_for_unsafe_output()
     responder = ConversationResponder(_FakeLLM("Here is some investment advice: buy this stock immediately."))  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "What should I invest in?",
         {"language": "en", "history": [], "profile": {}},
     )
@@ -102,7 +98,6 @@ async def test_conversation_responder_keeps_harmless_joke_reply_plus_redirect() 
     responder = ConversationResponder(_FakeLLM("Why did the banker bring a ladder? To reach the next interest level."))  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Tell me a joke",
         {"language": "en", "history": [], "profile": {}},
     )
@@ -120,7 +115,6 @@ async def test_conversation_responder_rejects_banking_only_refusal_for_harmless_
     )  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Tell me a joke",
         {"language": "en", "history": [], "profile": {}},
     )
@@ -137,7 +131,6 @@ async def test_conversation_responder_uses_followup_redirect_for_second_casual_t
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Another one",
         {
             "language": "en",
@@ -165,7 +158,6 @@ async def test_conversation_responder_uses_firm_redirect_after_longer_casual_str
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Another one",
         {
             "language": "en",
@@ -198,7 +190,6 @@ async def test_conversation_responder_prompt_prefers_banking_related_humor_for_j
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     await responder.generate_reply(
-        "2348000000001",
         "Tell me a joke",
         {"language": "en", "history": [], "profile": {}},
     )
@@ -216,7 +207,6 @@ async def test_conversation_responder_treats_one_more_as_joke_followup_from_hist
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "One more",
         {
             "language": "en",
@@ -245,7 +235,6 @@ async def test_conversation_responder_uses_deterministic_joke_fallback_when_llm_
     )  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Another one",
         {
             "language": "en",
@@ -272,7 +261,6 @@ async def test_conversation_responder_stops_generating_after_casual_spam_thresho
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Another one",
         {
             "language": "en",
@@ -307,7 +295,6 @@ async def test_conversation_responder_contextual_worker_followup_omits_redirect(
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Ok great",
         {
             "language": "en",
@@ -338,7 +325,6 @@ async def test_conversation_responder_contextual_worker_followup_grounded_failur
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "nice, nice. I thought it failed",
         {
             "language": "en",
@@ -378,7 +364,6 @@ async def test_conversation_responder_contextual_worker_followup_grounded_multil
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         text,
         {
             "language": locale,
@@ -404,7 +389,6 @@ async def test_conversation_responder_contextual_worker_followup_rejects_action_
     responder = ConversationResponder(_FakeLLM("I'll retry it now."))  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Okay great, I thought it failed",
         {
             "language": "en",
@@ -424,7 +408,6 @@ async def test_conversation_responder_unsupported_capability_followup_is_bounded
     responder = ConversationResponder(llm)  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Just a small amount please",
         {
             "language": "en",
@@ -452,7 +435,6 @@ async def test_conversation_responder_unsupported_capability_rejects_loan_promis
     responder = ConversationResponder(_FakeLLM("I can arrange that loan for you."))  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Just a small amount please",
         {
             "language": "en",
@@ -475,7 +457,6 @@ async def test_conversation_responder_unsupported_capability_rejects_crypto_prom
     responder = ConversationResponder(_FakeLLM("I can buy bitcoin for you."))  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
-        "2348000000001",
         "Just small bitcoin please",
         {
             "language": "en",
@@ -495,3 +476,56 @@ async def test_conversation_responder_unsupported_capability_rejects_crypto_prom
         "en",
         _unsupported_params("investments"),
     )
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_contextual_meta_followup_uses_grounded_fallback() -> None:
+    responder = ConversationResponder(_FakeLLM(""))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "Okay, that's mental",
+        {
+            "language": "en",
+            "conversation_grounding": {
+                "display_name": "Gaines",
+                "last_topic": "brand_origin",
+                "last_assistant_message": "The name Nenya comes from the Ring of Water.",
+                "recent_turns": [
+                    {"role": "user", "content": "What is the meaning of Nenya?"},
+                    {"role": "assistant", "content": "The name Nenya comes from the Ring of Water."},
+                ],
+            },
+        },
+        intent="contextual_meta_followup",
+    )
+
+    assert reply == render_message("conversational.contextual_meta_followup.brand_origin", "en")
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_contextual_meta_prompt_includes_safe_grounding() -> None:
+    llm = _FakeLLM("Yeah, that's the flow idea in plain language.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "cool",
+        {
+            "language": "en",
+            "profile": {"first_name": "Gaines"},
+            "conversation_grounding": {
+                "display_name": "Gaines",
+                "last_topic": "brand_origin",
+                "last_assistant_message": "The name Nenya comes from the Ring of Water.",
+                "recent_turns": [
+                    {"role": "assistant", "content": "The name Nenya comes from the Ring of Water."}
+                ],
+            },
+        },
+        intent="contextual_meta_followup",
+    )
+
+    assert reply == "Yeah, that's the flow idea in plain language."
+    assert llm.messages is not None
+    assert "Conversation last topic: brand_origin" in llm.messages[1]["content"]
+    assert "Last assistant message: The name Nenya comes from the Ring of Water." in llm.messages[1]["content"]
+    assert "User name: Gaines" in llm.messages[1]["content"]
