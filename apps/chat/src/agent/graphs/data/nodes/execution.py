@@ -13,6 +13,30 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _data_service_metadata(payload: DataPayload) -> dict[str, Any] | None:
+    metadata: dict[str, Any] = {}
+    for key, value in {
+        "size_gb": payload.plan_size_gb,
+        "validity_days": payload.plan_validity_days,
+        "tags": payload.plan_tags,
+        "selection_preference": payload.selection_preference,
+        "usage_intent": payload.usage_intent,
+        "size_preference": payload.size_preference,
+        "validity_preference": payload.validity_preference,
+        "catalog_cache_stale": payload.catalog_cache_stale,
+        "is_self": payload.is_self,
+        "beneficiary_id": payload.beneficiary_id,
+        "recipient_name": payload.recipient_name,
+    }.items():
+        if isinstance(value, bool):
+            if value:
+                metadata[key] = value
+            continue
+        if value not in (None, "", [], {}):
+            metadata[key] = value
+    return metadata or None
+
+
 class ExecutionStep(PipelineStep):
     """Persist and enqueue the data purchase for async execution."""
 
@@ -23,6 +47,14 @@ class ExecutionStep(PipelineStep):
         locale = context.language
 
         try:
+            if not payload.plan_code or payload.amount is None:
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("data.plan_selection.missing_plan", locale),
+                    response=render_message("data.plan_selection.missing_plan", locale),
+                    patch=payload.model_dump(exclude_none=True),
+                )
+
             transaction_id = None
             key = payload.idempotency_key
 
@@ -40,10 +72,12 @@ class ExecutionStep(PipelineStep):
                         status=TransactionStatusEnum.PENDING.value,
                         user_id=getattr(worker_context, "user_id", None),
                         amount=payload.amount,
-                        recipient_account_number=payload.target_phone or "",
-                        recipient_bank_code=payload.network or "",
-                        recipient_name=payload.plan_name or render_message("data.format.summary.plan_name_fallback", locale),
-                        recipient_bank_name=payload.network or "",
+                        target_phone_number=payload.target_phone,
+                        mobile_network=payload.network,
+                        biller_code=payload.biller_code,
+                        biller_item_code=payload.plan_code,
+                        biller_item_name=payload.plan_name,
+                        service_metadata=_data_service_metadata(payload),
                         source_account_id=payload.source_account_id,
                         source_account_number=payload.source_account_number or "",
                         source_bank_name=payload.source_bank_name or "",
@@ -88,9 +122,11 @@ class ExecutionStep(PipelineStep):
                     "data_purchase": {
                         "plan_code": payload.plan_code,
                         "plan_name": payload.plan_name,
+                        "biller_code": payload.biller_code,
                         "amount": payload.amount,
                         "target_phone": payload.target_phone,
                         "network": payload.network,
+                        "recipient_name": payload.recipient_name,
                         "source": payload.source_account_number or "",
                         "source_account_id": payload.source_account_id,
                         "source_account_number": payload.source_account_number,

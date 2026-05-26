@@ -35,7 +35,11 @@ class _FakeScheduledRunRepo:
 
 
 class _FakeTransactionRepo:
+    def __init__(self) -> None:
+        self.created_kwargs: dict[str, object] | None = None
+
     async def create(self, **kwargs) -> SimpleNamespace:
+        self.created_kwargs = kwargs
         return SimpleNamespace(id="tx-1", **kwargs)
 
 
@@ -76,6 +80,10 @@ def _schedule_fixture(domain: str = "transfer") -> SimpleNamespace:
             "network": "MTN",
             "plan_code": "mtn-1gb",
             "plan_name": "1GB Daily",
+            "biller_code": "BIL104",
+            "plan_size_gb": 1.0,
+            "plan_validity_days": 1,
+            "plan_tags": ["daily"],
             "source_account_id": "acc-1",
             "source_account_number": "1234567890",
             "source_bank_name": "Zenith",
@@ -143,6 +151,13 @@ async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch)
     assert schedule.status == "completed"
     publisher.publish.assert_awaited_once()
     assert publisher.publish.await_args.kwargs["topic"] == "transaction.execute"
+    create_kwargs = fake_uow.transactions.created_kwargs or {}
+    assert create_kwargs["recipient_account_number"] == "8162511023"
+    assert create_kwargs["recipient_bank_code"] == "033"
+    assert create_kwargs["recipient_bank_name"] == "OPay"
+    assert create_kwargs["recipient_name"] == "Mum"
+    assert create_kwargs["target_phone_number"] is None
+    assert create_kwargs["mobile_network"] is None
 
 
 @pytest.mark.asyncio
@@ -176,6 +191,28 @@ async def test_dispatcher_enqueues_due_airtime_and_data_schedules(
     assert payload_key in message
     assert message["scheduled_meta"]["schedule_id"] == "sch-1"
     assert message["scheduled_meta"]["schedule_run_id"] == "run-1"
+    create_kwargs = fake_uow.transactions.created_kwargs or {}
+    assert create_kwargs["recipient_account_number"] is None
+    assert create_kwargs["recipient_bank_code"] is None
+    assert create_kwargs["recipient_bank_name"] is None
+    assert create_kwargs["recipient_name"] is None
+    assert create_kwargs["target_phone_number"] == "08162511023"
+    assert create_kwargs["mobile_network"] == "MTN"
+    if domain == "data":
+        assert create_kwargs["biller_code"] == "BIL104"
+        assert create_kwargs["biller_item_code"] == "mtn-1gb"
+        assert create_kwargs["biller_item_name"] == "1GB Daily"
+        assert create_kwargs["service_metadata"] == {
+            "size_gb": 1.0,
+            "validity_days": 1,
+            "tags": ["daily"],
+        }
+        assert message[payload_key]["biller_code"] == "BIL104"
+    else:
+        assert create_kwargs["biller_code"] is None
+        assert create_kwargs["biller_item_code"] is None
+        assert create_kwargs["biller_item_name"] is None
+        assert create_kwargs["service_metadata"] is None
 
 
 @pytest.mark.asyncio

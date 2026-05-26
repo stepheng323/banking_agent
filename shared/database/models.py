@@ -167,7 +167,7 @@ class Beneficiary(Base):
 
 
 class Transaction(Base):
-    """Transaction database model for logging all transfers."""
+    """Transaction database model for app-initiated financial actions."""
 
     __tablename__ = "transactions"
 
@@ -193,10 +193,16 @@ class Transaction(Base):
     )
     source_account_number = Column(String, nullable=False)
     source_bank_name = Column(String, nullable=False)
-    recipient_account_number = Column(String, nullable=False)
-    recipient_bank_code = Column(String, nullable=False)
-    recipient_bank_name = Column(String, nullable=False)
-    recipient_name = Column(String, nullable=False)
+    recipient_account_number = Column(String, nullable=True)
+    recipient_bank_code = Column(String, nullable=True)
+    recipient_bank_name = Column(String, nullable=True)
+    recipient_name = Column(String, nullable=True)
+    target_phone_number = Column(String, nullable=True)
+    mobile_network = Column(String, nullable=True)
+    biller_code = Column(String, nullable=True)
+    biller_item_code = Column(String, nullable=True)
+    biller_item_name = Column(String, nullable=True)
+    service_metadata = Column(JSON, nullable=True)
     narration = Column(String, nullable=True)
     transaction_id = Column(String, nullable=True)
     idempotency_key = Column(String, unique=True, nullable=False, index=True)

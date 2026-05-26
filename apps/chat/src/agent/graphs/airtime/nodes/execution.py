@@ -17,6 +17,33 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _airtime_service_metadata(data: AirtimePayload) -> dict[str, Any] | None:
+    metadata: dict[str, Any] = {}
+    for key, value in {
+        "recipient_name": data.recipient_name,
+        "beneficiary_id": data.beneficiary_id,
+        "is_self": data.is_self,
+    }.items():
+        if isinstance(value, bool):
+            if value:
+                metadata[key] = value
+            continue
+        if value not in (None, "", [], {}):
+            metadata[key] = value
+    return metadata or None
+
+
+def _airtime_recipient_target(data: AirtimePayload, locale: str) -> str:
+    phone = str(data.recipient_phone or "").strip()
+    if data.is_self:
+        self_label = render_message("airtime.format.summary.target_self", locale)
+        return f"{self_label} ({phone})" if phone else self_label
+    recipient_name = str(data.recipient_name or "").strip()
+    if recipient_name:
+        return f"{recipient_name} ({phone})" if phone else recipient_name
+    return phone
+
+
 class ExecutionStep(AirtimeStep):
     """Executes the airtime purchase."""
 
@@ -49,11 +76,9 @@ class ExecutionStep(AirtimeStep):
                             status=TransactionStatusEnum.PENDING.value,
                             user_id=getattr(worker_context, "user_id", None),
                             amount=data.amount,
-                            recipient_account_number=data.recipient_phone,
-                            recipient_bank_code=data.network,  # Using bank_code field for network
-                            recipient_name=data.recipient_name
-                            or render_message("airtime.execution.recipient_fallback", locale),
-                            recipient_bank_name=data.network,
+                            target_phone_number=data.recipient_phone,
+                            mobile_network=data.network,
+                            service_metadata=_airtime_service_metadata(data),
                             source_account_id=data.source_account_id,
                             source_account_number=data.source_account_number or "",
                             source_bank_name=data.source_bank_name or "",
@@ -74,6 +99,7 @@ class ExecutionStep(AirtimeStep):
                 "amount": data.amount,
                 "phone_number": data.recipient_phone,
                 "network": data.network,
+                "recipient_name": data.recipient_name,
                 "source_account_number": data.source_account_number,
                 "source_account_id": data.source_account_id,
                 "source_bank_name": data.source_bank_name,
@@ -103,6 +129,7 @@ class ExecutionStep(AirtimeStep):
                     "async_group": async_group,
                 },
             )
+            recipient_target = _airtime_recipient_target(data, locale)
             logger.info(
                 "airtime_job_published",
                 transaction_id=transaction_id,
@@ -125,6 +152,7 @@ class ExecutionStep(AirtimeStep):
                         {
                             "amount": f"{data.amount:,.2f}",
                             "recipient_phone": data.recipient_phone,
+                            "recipient_target": recipient_target,
                             "network": data.network,
                         },
                         PersonalityContext(

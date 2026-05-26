@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.graphs.airtime.nodes.execution import ExecutionStep
+from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
+from apps.chat.src.agent.graphs.data.nodes.execution import ExecutionStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 
 
@@ -16,7 +16,7 @@ class _TransactionRepoStub:
 
     async def create(self, **kwargs: object) -> object:
         type(self).created_kwargs = kwargs
-        return SimpleNamespace(id="tx-airtime-1")
+        return SimpleNamespace(id="tx-data-1")
 
 
 class _UnitOfWorkStub:
@@ -32,7 +32,7 @@ class _UnitOfWorkStub:
 
 
 @pytest.mark.asyncio
-async def test_airtime_execution_publishes_channel_identity_and_processing_receipt(
+async def test_data_execution_writes_mobile_biller_fields_without_transfer_recipient_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _TransactionRepoStub.created_kwargs = None
@@ -40,40 +40,47 @@ async def test_airtime_execution_publishes_channel_identity_and_processing_recei
 
     publisher = SimpleNamespace(publish=AsyncMock())
     step = ExecutionStep()
-    payload = AirtimePayload(
-        amount=2000,
-        recipient_phone="08031234567",
-        recipient_name="Tolu",
+    payload = DataPayload(
+        amount=3500,
+        target_phone="08162511023",
         network="MTN",
+        plan_code="MD501",
+        plan_name="MTN 5 GB data bundle",
+        biller_code="BIL104",
+        plan_size_gb=5,
+        plan_validity_days=30,
+        plan_tags=["monthly"],
+        recipient_name="Tolu",
         source_account_id="acc-1",
         source_account_number="1234567890",
-        idempotency_key="airtime-idem-1",
+        idempotency_key="data-idem-1",
     )
-    context = AirtimeContext(phone_number="2348162511023", language="en", channel="telegram")
-    gates = AirtimeGates(pin_verified=True, confirmation_confirmed=True)
+    context = DataContext(phone_number="2348162511023", language="en", channel="telegram")
+    gates = DataGates(pin_verified=True, confirmation_confirmed=True)
     worker_context = SimpleNamespace(user_id="user-1", publisher=publisher, channel_identity="927331985")
 
-    result = await step.execute(payload, context, gates, worker_context)
+    result = await step.run(payload, context, gates, worker_context)
 
+    assert result is not None
     assert result.outcome == TransactionOutcome.OK
-    assert result.receipt is not None
-    assert result.receipt["status"] == "processing"
-    assert result.receipt["message"] == (
-        "Your airtime purchase of ₦2,000.00 for Tolu (08031234567) (MTN) is being processed."
-    )
-
-    publish_message = publisher.publish.await_args.kwargs["message"]
-    assert publish_message["channel"] == "telegram"
-    assert publish_message["phone_number"] == "2348162511023"
-    assert publish_message["channel_identity"] == "927331985"
-    assert publish_message["airtime_data"]["phone_number"] == "08031234567"
-    assert publish_message["airtime_data"]["recipient_name"] == "Tolu"
 
     create_kwargs = _TransactionRepoStub.created_kwargs or {}
-    assert create_kwargs["target_phone_number"] == "08031234567"
+    assert create_kwargs["target_phone_number"] == "08162511023"
     assert create_kwargs["mobile_network"] == "MTN"
-    assert create_kwargs["service_metadata"] == {"recipient_name": "Tolu"}
+    assert create_kwargs["biller_code"] == "BIL104"
+    assert create_kwargs["biller_item_code"] == "MD501"
+    assert create_kwargs["biller_item_name"] == "MTN 5 GB data bundle"
+    assert create_kwargs["service_metadata"] == {
+        "size_gb": 5.0,
+        "validity_days": 30,
+        "tags": ["monthly"],
+        "recipient_name": "Tolu",
+    }
     assert create_kwargs.get("recipient_account_number") is None
     assert create_kwargs.get("recipient_bank_code") is None
     assert create_kwargs.get("recipient_bank_name") is None
     assert create_kwargs.get("recipient_name") is None
+
+    publish_message = publisher.publish.await_args.kwargs["message"]
+    assert publish_message["data_purchase"]["biller_code"] == "BIL104"
+    assert publish_message["data_purchase"]["recipient_name"] == "Tolu"

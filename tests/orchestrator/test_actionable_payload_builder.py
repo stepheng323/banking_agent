@@ -2,10 +2,10 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload
 
 
-def _task(payload: dict) -> TaskSpec:
+def _task(payload: dict, task_type: str = "transfer") -> TaskSpec:
     return TaskSpec(
         id="t1",
-        type="transfer",
+        type=task_type,
         stage=TaskStage.EXTRACTED,
         payload=payload,
     )
@@ -95,3 +95,37 @@ def test_actionable_payload_keeps_recipient_beneficiary_and_source_fields() -> N
     assert payload["final_status"] == "failed"
     assert payload["error_message"] == "Provider down"
     assert payload["failure_category"] == "provider_unavailable"
+
+
+def test_actionable_payload_keeps_data_catalog_fields() -> None:
+    task = _task(
+        {
+            "idempotency_key": "idem-data-1",
+            "action": "buy_data",
+            "amount": 3500,
+            "target_phone": "08162511023",
+            "network": "MTN",
+            "biller_code": "BIL104",
+            "biller_item_code": "MD501",
+            "biller_item_name": "MTN 5 GB data bundle",
+            "plan_code": "MD501",
+            "plan_name": "MTN 5 GB data bundle",
+            "plan_size_gb": 5.0,
+            "plan_validity_days": 30,
+        },
+        task_type="data",
+    )
+
+    payload = build_actionable_payload(task)
+
+    assert payload is not None
+    assert payload["task_type"] == "data"
+    assert payload["target_phone"] == "08162511023"
+    assert payload["network"] == "MTN"
+    assert payload["biller_code"] == "BIL104"
+    assert payload["biller_item_code"] == "MD501"
+    assert payload["biller_item_name"] == "MTN 5 GB data bundle"
+    assert payload["plan_code"] == "MD501"
+    assert payload["plan_name"] == "MTN 5 GB data bundle"
+    assert payload["plan_size_gb"] == 5.0
+    assert payload["plan_validity_days"] == 30

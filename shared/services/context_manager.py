@@ -57,6 +57,30 @@ class ContextManager:
     def _serialize_rows(rows: list[Any]) -> list[dict[str, Any]]:
         return [dict(row) if isinstance(row, dict) else sqlalchemy_to_dict(row) for row in rows]
 
+    @staticmethod
+    def _recent_transaction_display_name(transaction: Any) -> str | None:
+        transaction_type = str(getattr(transaction, "transaction_type", "") or "").strip().lower()
+        target_phone = str(getattr(transaction, "target_phone_number", "") or "").strip()
+        mobile_network = str(getattr(transaction, "mobile_network", "") or "").strip()
+        plan_name = str(getattr(transaction, "biller_item_name", "") or "").strip()
+        recipient_name = str(getattr(transaction, "recipient_name", "") or "").strip()
+        recipient_account = str(getattr(transaction, "recipient_account_number", "") or "").strip()
+        recipient_bank = str(getattr(transaction, "recipient_bank_name", "") or "").strip()
+
+        if transaction_type == "airtime":
+            phone = target_phone or recipient_account
+            network = mobile_network or recipient_bank
+            if phone and network:
+                return f"{phone} ({network})"
+            return phone or network or recipient_name or None
+        if transaction_type == "data":
+            plan = plan_name or recipient_name
+            phone = target_phone or recipient_account
+            if plan and phone:
+                return f"{plan} for {phone}"
+            return plan or phone or mobile_network or None
+        return recipient_name or None
+
     async def _hydrate_user_context_from_cache_snapshot(
         self,
         phone_number: str,
@@ -232,9 +256,12 @@ class ContextManager:
                     {
                         "type": t.transaction_type,
                         "amount": float(t.amount) if t.amount else 0,
-                        "recipient_name": t.recipient_name,
+                        "recipient_name": self._recent_transaction_display_name(t),
                         "recipient_account": t.recipient_account_number,
                         "recipient_bank": t.recipient_bank_name,
+                        "target_phone_number": getattr(t, "target_phone_number", None),
+                        "mobile_network": getattr(t, "mobile_network", None),
+                        "biller_item_name": getattr(t, "biller_item_name", None),
                         "status": t.status,
                         "date": t.created_at.isoformat() if t.created_at else None,
                     }

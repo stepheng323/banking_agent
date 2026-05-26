@@ -109,10 +109,16 @@ class TransactionScheduleDispatcher:
                     status=TransactionStatusEnum.PENDING.value,
                     user_id=schedule.user_id,
                     amount=amount,
-                    recipient_account_number=self._recipient_account_number(domain=domain, payload=payload),
-                    recipient_bank_code=self._recipient_code(domain=domain, payload=payload),
-                    recipient_name=self._recipient_name(domain=domain, payload=payload),
-                    recipient_bank_name=self._recipient_bank_name(domain=domain, payload=payload),
+                    recipient_account_number=self._transfer_recipient_account_number(domain=domain, payload=payload),
+                    recipient_bank_code=self._transfer_recipient_code(domain=domain, payload=payload),
+                    recipient_name=self._transfer_recipient_name(domain=domain, payload=payload),
+                    recipient_bank_name=self._transfer_recipient_bank_name(domain=domain, payload=payload),
+                    target_phone_number=self._target_phone_number(domain=domain, payload=payload),
+                    mobile_network=self._mobile_network(domain=domain, payload=payload),
+                    biller_code=self._data_biller_value(domain=domain, payload=payload, key="biller_code"),
+                    biller_item_code=self._data_biller_value(domain=domain, payload=payload, key="plan_code"),
+                    biller_item_name=self._data_biller_value(domain=domain, payload=payload, key="plan_name"),
+                    service_metadata=self._service_metadata(domain=domain, payload=payload),
                     source_account_id=source_account_id,
                     source_account_number=str(payload.get("source_account_number") or ""),
                     source_bank_name=str(payload.get("source_bank_name") or ""),
@@ -174,32 +180,75 @@ class TransactionScheduleDispatcher:
         return False
 
     @staticmethod
-    def _recipient_account_number(*, domain: str, payload: dict[str, Any]) -> str:
+    def _transfer_recipient_account_number(*, domain: str, payload: dict[str, Any]) -> str | None:
         if domain == "transfer":
-            return str(payload.get("recipient_account") or "")
-        if domain == "airtime":
-            return str(payload.get("recipient_phone") or "")
-        return str(payload.get("target_phone") or "")
+            return str(payload.get("recipient_account") or "") or None
+        return None
 
     @staticmethod
-    def _recipient_code(*, domain: str, payload: dict[str, Any]) -> str:
+    def _transfer_recipient_code(*, domain: str, payload: dict[str, Any]) -> str | None:
         if domain == "transfer":
-            return str(payload.get("recipient_bank_code") or "")
-        return str(payload.get("network") or "")
+            return str(payload.get("recipient_bank_code") or "") or None
+        return None
 
     @staticmethod
-    def _recipient_name(*, domain: str, payload: dict[str, Any]) -> str:
+    def _transfer_recipient_name(*, domain: str, payload: dict[str, Any]) -> str | None:
         if domain == "transfer":
             return str(payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient")
-        if domain == "airtime":
-            return str(payload.get("recipient_name") or "Airtime Recipient")
-        return str(payload.get("plan_name") or "Data Plan")
+        return None
 
     @staticmethod
-    def _recipient_bank_name(*, domain: str, payload: dict[str, Any]) -> str:
+    def _transfer_recipient_bank_name(*, domain: str, payload: dict[str, Any]) -> str | None:
         if domain == "transfer":
-            return str(payload.get("recipient_bank_name") or "")
-        return str(payload.get("network") or "")
+            return str(payload.get("recipient_bank_name") or "") or None
+        return None
+
+    @staticmethod
+    def _target_phone_number(*, domain: str, payload: dict[str, Any]) -> str | None:
+        if domain == "airtime":
+            return str(payload.get("recipient_phone") or "") or None
+        if domain == "data":
+            return str(payload.get("target_phone") or "") or None
+        return None
+
+    @staticmethod
+    def _mobile_network(*, domain: str, payload: dict[str, Any]) -> str | None:
+        if domain in {"airtime", "data"}:
+            return str(payload.get("network") or "") or None
+        return None
+
+    @staticmethod
+    def _data_biller_value(*, domain: str, payload: dict[str, Any], key: str) -> str | None:
+        if domain != "data":
+            return None
+        return str(payload.get(key) or "") or None
+
+    @staticmethod
+    def _service_metadata(*, domain: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        if domain == "airtime":
+            metadata = {
+                "recipient_name": payload.get("recipient_name"),
+                "beneficiary_id": payload.get("beneficiary_id"),
+                "is_self": payload.get("is_self"),
+            }
+        elif domain == "data":
+            metadata = {
+                "size_gb": payload.get("plan_size_gb"),
+                "validity_days": payload.get("plan_validity_days"),
+                "tags": payload.get("plan_tags"),
+                "is_self": payload.get("is_self"),
+            }
+        else:
+            metadata = {}
+        compact: dict[str, Any] = {}
+        for key, value in metadata.items():
+            if isinstance(value, bool):
+                if value:
+                    compact[key] = value
+                continue
+            if value not in (None, "", [], {}):
+                compact[key] = value
+        return compact or None
 
     @staticmethod
     def _narration(*, domain: str, payload: dict[str, Any]) -> str | None:
@@ -253,6 +302,7 @@ class TransactionScheduleDispatcher:
             "data_purchase": {
                 "plan_code": payload.get("plan_code"),
                 "plan_name": payload.get("plan_name"),
+                "biller_code": payload.get("biller_code"),
                 "amount": amount,
                 "target_phone": payload.get("target_phone"),
                 "network": payload.get("network"),

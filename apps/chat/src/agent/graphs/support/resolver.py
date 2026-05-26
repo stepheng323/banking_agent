@@ -353,8 +353,9 @@ class TransactionResolver:
             elif abs(tx.amount - tx_ref.amount) / tx_ref.amount < 0.05:  # Within 5%
                 score += 1.0
 
-        if tx_ref.recipient_name and tx.recipient_name:
-            if tx_ref.recipient_name.lower() in tx.recipient_name.lower():
+        recipient_name = self._display_recipient(tx)
+        if tx_ref.recipient_name and recipient_name:
+            if tx_ref.recipient_name.lower() in recipient_name.lower():
                 score += 2.0
         if tx_ref.date_hint:
             tx_date = tx.created_at.date() if tx.created_at else None
@@ -388,10 +389,35 @@ class TransactionResolver:
 
         return None
 
+    @staticmethod
+    def _display_recipient(tx: Transaction) -> str | None:
+        transaction_type = str(getattr(tx, "transaction_type", "") or "").strip().lower()
+        target_phone = str(getattr(tx, "target_phone_number", "") or "").strip()
+        mobile_network = str(getattr(tx, "mobile_network", "") or "").strip()
+        biller_item_name = str(getattr(tx, "biller_item_name", "") or "").strip()
+        recipient_name = str(getattr(tx, "recipient_name", "") or "").strip()
+        recipient_account = str(getattr(tx, "recipient_account_number", "") or "").strip()
+        recipient_bank = str(getattr(tx, "recipient_bank_name", "") or "").strip()
+
+        if transaction_type == "airtime":
+            phone = target_phone or recipient_account
+            network = mobile_network or recipient_bank
+            if phone and network:
+                return f"{phone} ({network})"
+            return phone or network or recipient_name or None
+        if transaction_type == "data":
+            plan = biller_item_name or recipient_name
+            phone = target_phone or recipient_account
+            if plan and phone:
+                return f"{plan} for {phone}"
+            return plan or phone or mobile_network or recipient_name or None
+        return recipient_name or None
+
     def transaction_to_dict(self, tx: Transaction) -> dict[str, Any]:
         """Convert transaction to dictionary for handlers."""
         if isinstance(tx, dict):
             return dict(tx)
+        recipient_name = self._display_recipient(tx)
         return {
             "id": str(tx.id),
             "transaction_type": tx.transaction_type,
@@ -399,10 +425,16 @@ class TransactionResolver:
             "status": tx.status,
             "amount": tx.amount,
             "currency": tx.currency,
-            "recipient_name": tx.recipient_name,
+            "recipient_name": recipient_name,
             "recipient_account_number": tx.recipient_account_number,
             "recipient_bank_code": tx.recipient_bank_code,
             "recipient_bank_name": tx.recipient_bank_name,
+            "target_phone_number": getattr(tx, "target_phone_number", None),
+            "mobile_network": getattr(tx, "mobile_network", None),
+            "biller_code": getattr(tx, "biller_code", None),
+            "biller_item_code": getattr(tx, "biller_item_code", None),
+            "biller_item_name": getattr(tx, "biller_item_name", None),
+            "service_metadata": getattr(tx, "service_metadata", None) or {},
             "source_bank_name": tx.source_bank_name,
             "narration": tx.narration,
             "error_message": tx.error_message,
