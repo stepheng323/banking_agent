@@ -1774,6 +1774,71 @@ async def test_gate_context_frame_display_shortcut_avoids_llm_for_schedule_show_
 
 
 @pytest.mark.asyncio
+async def test_gate_context_frame_display_formats_data_plan_details_naturally() -> None:
+    frame = ContextFrame(
+        frame_id="data_plan_details",
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD501",
+                label="MTN 5 GB data bundle",
+                data={
+                    "plan_code": "MD501",
+                    "plan_name": "MTN 5 GB data bundle",
+                    "network": "MTN",
+                    "amount": 3500.0,
+                    "validity_days": 30,
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD502",
+                label="MTN 5 GB data bundle",
+                data={
+                    "plan_code": "MD502",
+                    "plan_name": "MTN 5 GB data bundle",
+                    "network": "MTN",
+                    "amount": 3500.0,
+                    "validity_days": 30,
+                },
+            ),
+        ],
+        created_at_ts=int(time.time()),
+    )
+    planner = _SurfaceFollowupPlanner(ContextFrameFollowupDecision(decision="unclear", confidence=0.0))
+    state = OrchestratorState(
+        user_id="u_data_plan_details_gate",
+        phone_number="2348000000026",
+        channel="telegram",
+        last_message_text="details",
+        context_frames=[frame],
+    )
+    ctx = GateContext(
+        state=state,
+        config=_config(planner),
+        redis_client=None,
+        task_planner=planner,
+        conversation_responder=None,
+        message_text=state.last_message_text or "",
+        current_locale="en",
+        gate_updates={},
+        live_pending_interrupt=False,
+        phrase_heavy_fastpath_allowed=True,
+    )
+
+    updates = await _stage_context_frame_followup(ctx)
+
+    assert updates is not None
+    response = updates["final_response"]
+    assert "Data Plan Details" in response
+    assert "MTN 5 GB data bundle is ₦3,500, valid for 30 days." in response
+    assert response.count("MTN 5 GB data bundle") == 1
+    assert "Amount: 3500.0" not in response
+    assert planner.last_frame_context is None
+
+
+@pytest.mark.asyncio
 async def test_gate_context_frame_replay_applies_structured_modifier_extraction() -> None:
     frame = ContextFrame(
         frame_id="tx_gate_replay_structured_modifier",

@@ -500,6 +500,62 @@ def _handle_transaction_outcome(
             task.payload["error"] = result.error or default_error
 
 
+def _push_data_plan_frame(ctx: ExecutionContext, results: Any) -> None:
+    if not isinstance(results, list):
+        return
+    entities: list[ContextEntity] = []
+    for idx, item in enumerate(results[:5], start=1):
+        if not isinstance(item, dict):
+            continue
+        plan_code = str(item.get("plan_code") or item.get("item_code") or item.get("option_id") or "").strip()
+        label = str(item.get("plan_name") or item.get("name") or item.get("label") or f"Data plan {idx}").strip()
+        data = {
+            "plan_code": item.get("plan_code") or item.get("item_code"),
+            "item_code": item.get("item_code") or item.get("plan_code"),
+            "plan_name": item.get("plan_name") or item.get("name") or label,
+            "name": item.get("name") or item.get("plan_name") or label,
+            "network": item.get("network"),
+            "amount": item.get("amount"),
+            "size_gb": item.get("size_gb"),
+            "validity_days": item.get("validity_days"),
+            "biller_code": item.get("biller_code"),
+            "index": item.get("index") or idx,
+            "tags": item.get("tags"),
+        }
+        entities.append(
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id=plan_code or None,
+                label=label,
+                data={key: value for key, value in data.items() if value is not None and value != ""},
+            )
+        )
+    if not entities:
+        return
+
+    frame = ContextFrame(
+        frame_id=f"data_plan_{int(time.time())}",
+        frame_type=ContextFrameType.DATA_PLAN_LIST,
+        items=entities,
+        focus_index=0,
+        created_at_ts=int(time.time()),
+        source_message_id=ctx.state.last_message_id,
+        ttl_seconds=900,
+    )
+    OrchestratorContextManager().push_frame(ctx.state, frame)
+    ctx.agg.updates["context_frames"] = ctx.state.context_frames
+    ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
+
+
+def _push_data_plan_frames_from_result(task: Any, result: Any, ctx: ExecutionContext) -> None:
+    if task.type != "data" or not isinstance(result.patch, dict):
+        return
+    if str(task.payload.get("action") or "") == "data_plan_query":
+        _push_data_plan_frame(ctx, result.patch.get("data_plan_query_results"))
+        return
+    _push_data_plan_frame(ctx, result.patch.get("data_plan_candidates"))
+
+
 async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
     worker = _get_worker(
         ctx.services,
@@ -976,6 +1032,14 @@ async def _handle_purchase_task(
     )
 
     _apply_result_patch(task, result)
+
+    if worker_name == "data" and str(task.payload.get("action") or "") == "data_plan_query":
+        task.payload["skip_finalize_summary"] = True
+        if result.outcome == TransactionOutcome.OK and result.response:
+            ctx.agg.say(result.response)
+
+    if worker_name == "data":
+        _push_data_plan_frames_from_result(task, result, ctx)
 
     _handle_transaction_outcome(
         task,

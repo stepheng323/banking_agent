@@ -1,5 +1,6 @@
 """Dependency loader for transaction worker runtimes."""
 
+from apps.chat.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
@@ -40,11 +41,13 @@ def setup_transaction_worker_consumers() -> tuple[
     if bill_provider is None:
         raise RuntimeError("Bill provider is not configured")
     redis_client = RedisClient.get_client()
+    beneficiary_suggestion_service = BeneficiarySuggestionService(queue_publisher)
     airtime_executor = AirtimeExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
         redis_client=redis_client,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
     transfer_executor = TransferExecutor(
         direct_debit_provider=direct_debit_provider,
@@ -52,11 +55,13 @@ def setup_transaction_worker_consumers() -> tuple[
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
         redis_client=redis_client,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
     data_executor = DataExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         redis_client=redis_client,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
     transaction_consumer = TransactionConsumer(

@@ -28,6 +28,18 @@ class DataPurchaseEntities(BaseModel):
         default=None,
         description="Preferred data size: '1GB', '2GB', '5GB', 'weekly', 'monthly'",
     )
+    validity_preference: str | None = Field(
+        default=None,
+        description="Preferred validity period: 'daily', 'weekly', 'monthly', '7 days', '30 days'",
+    )
+    selection_preference: str | None = Field(
+        default=None,
+        description="Selection style such as 'best_value', 'most_data', 'cheapest', or 'longest_validity'",
+    )
+    usage_intent: str | None = Field(
+        default=None,
+        description="Usage context such as 'video_calls', 'social', 'browsing', 'night', or 'weekend'",
+    )
     is_self: bool | None = Field(
         default=None,
         description="True if user wants data for their own line",

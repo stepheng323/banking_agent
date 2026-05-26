@@ -13,10 +13,23 @@ class DataPayload(BaseModel):
     amount: float | None = None
     network: str | None = None
     beneficiary_id: str | None = None
+    recipient_name: str | None = None
     referent_phone_candidates: list[dict[str, Any]] = Field(default_factory=list)
     target_phone: str | None = None
     plan_code: str | None = None
     plan_name: str | None = None
+    biller_code: str | None = None
+    plan_size_gb: float | None = None
+    plan_validity_days: int | None = None
+    plan_tags: list[str] = Field(default_factory=list)
+    size_preference: str | None = None
+    validity_preference: str | None = None
+    selection_preference: str | None = None
+    usage_intent: str | None = None
+    data_plan_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    show_plan_options: bool = False
+    data_plan_exclude_codes: list[str] = Field(default_factory=list)
+    catalog_cache_stale: bool = False
     is_self: bool = False
     stage: str = "init"
     confirmation: dict[str, Any] = Field(default_factory=dict)
@@ -24,6 +37,7 @@ class DataPayload(BaseModel):
     receipt: dict[str, Any] | None = None
     error: str | None = None
     skip_extraction: bool = False
+    previous_confirmation_snapshot: dict[str, Any] | None = None
     async_group_id: str | None = None
     async_group_size: int | None = None
     async_group_kind: Literal["single", "multi_transfer", "mixed_batch"] | None = None

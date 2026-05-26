@@ -24,11 +24,11 @@ class FlutterwaveBillsClient(BillPaymentProvider):
     }
 
     DATA_BILLERS = {
-        "MTN": {"biller_code": "BIL108"},
-        "AIRTEL": {"biller_code": "BIL109"},
-        "GLO": {"biller_code": "BIL110"},
-        "9MOBILE": {"biller_code": "BIL111"},
-        "ETISALAT": {"biller_code": "BIL111"},
+        "MTN": {"biller_code": "BIL104"},
+        "GLO": {"biller_code": "BIL105"},
+        "AIRTEL": {"biller_code": "BIL106"},
+        "9MOBILE": {"biller_code": "BIL107"},
+        "ETISALAT": {"biller_code": "BIL107"},
     }
 
     def __init__(
@@ -38,6 +38,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         """Initialize Flutterwave bills client with injected client."""
         self._client = client or FlutterwaveClient()
         self.base_url = self._client.base_url
+        self._data_biller_cache: dict[str, str] = {}
 
     @property
     def provider_name(self) -> str:
@@ -152,18 +153,71 @@ class FlutterwaveBillsClient(BillPaymentProvider):
 
         return self._error_response(result.get("error", "Failed to fetch categories"), billers=[])
 
+    @staticmethod
+    def _canonical_network(network: str) -> str:
+        normalized = network.upper().strip()
+        if normalized == "ETISALAT":
+            return "9MOBILE"
+        return normalized
+
+    @staticmethod
+    def _network_from_biller(item: dict[str, Any]) -> str | None:
+        text = " ".join(
+            str(item.get(key) or "")
+            for key in ("name", "description", "short_name", "biller_name", "group_name")
+        ).upper()
+        if "MTN" in text:
+            return "MTN"
+        if "AIRTEL" in text:
+            return "AIRTEL"
+        if "GLO" in text:
+            return "GLO"
+        if "9MOBILE" in text or "ETISALAT" in text:
+            return "9MOBILE"
+        return None
+
+    async def _discover_data_billers(self) -> dict[str, str]:
+        """Discover Nigerian mobile-data billers from Flutterwave."""
+        result = await self._client.request("GET", "/v3/bills/MOBILEDATA/billers?country=NG")
+        if not result.get("success"):
+            logger.warning("flutterwave_data_biller_discovery_failed", error=result.get("error"))
+            return {}
+
+        discovered: dict[str, str] = {}
+        for item in result.get("data") or []:
+            if not isinstance(item, dict):
+                continue
+            network = self._network_from_biller(item)
+            biller_code = str(item.get("biller_code") or "").strip()
+            if network and biller_code:
+                discovered[network] = biller_code
+        if discovered:
+            self._data_biller_cache.update(discovered)
+        return discovered
+
+    async def _resolve_data_biller_code(self, network: str) -> str | None:
+        network_upper = self._canonical_network(network)
+        if cached := self._data_biller_cache.get(network_upper):
+            return cached
+
+        discovered = await self._discover_data_billers()
+        if discovered.get(network_upper):
+            return discovered[network_upper]
+
+        fallback = self.DATA_BILLERS.get(network_upper)
+        return str(fallback.get("biller_code")) if fallback else None
+
     async def get_data_plans(self, network: str) -> dict[str, Any]:
         """Get available data plans for a network from Flutterwave."""
-        network_upper = network.upper().strip()
-        biller_info = self.DATA_BILLERS.get(network_upper)
+        network_upper = self._canonical_network(network)
+        biller_code = await self._resolve_data_biller_code(network_upper)
 
-        if not biller_info:
+        if not biller_code:
             return self._error_response(
                 f"Unsupported network: {network}. Supported: MTN, Airtel, Glo, 9mobile",
                 plans=[],
             )
 
-        biller_code = biller_info["biller_code"]
         endpoint = f"/v3/billers/{biller_code}/items"
 
         result = await self._client.request("GET", endpoint)
@@ -172,12 +226,39 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             items = result.get("data", [])
             plans = []
             for item in items:
+                if not isinstance(item, dict):
+                    continue
                 plans.append(
                     {
                         "item_code": item.get("item_code"),
-                        "name": item.get("name"),
+                        "name": item.get("biller_name") or item.get("short_name") or item.get("name"),
                         "amount": item.get("amount"),
-                        "biller_code": biller_code,
+                        "biller_code": item.get("biller_code") or biller_code,
+                        "biller_name": item.get("biller_name"),
+                        "short_name": item.get("short_name"),
+                        "validity_period": item.get("validity_period"),
+                        "category_name": item.get("category_name"),
+                        "group_name": item.get("group_name"),
+                        "is_data": item.get("is_data"),
+                        "raw_item": {
+                            key: value
+                            for key, value in item.items()
+                            if isinstance(value, str | int | float | bool)
+                            and key
+                            in {
+                                "id",
+                                "item_code",
+                                "biller_code",
+                                "biller_name",
+                                "short_name",
+                                "amount",
+                                "validity_period",
+                                "category_name",
+                                "group_name",
+                                "country",
+                                "is_data",
+                            }
+                        },
                     }
                 )
             return self._success_response(plans=plans, network=network_upper, count=len(plans))
@@ -189,21 +270,20 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         plan_code: str,
         recipient_phone: str,
         network: str,
+        amount: float | None = None,
         reference: str | None = None,
     ) -> dict[str, Any]:
         """Purchase a data plan via Flutterwave Bills Payment API."""
-        data_info = {"plan_code": plan_code, "recipient_phone": recipient_phone, "network": network}
+        data_info = {"plan_code": plan_code, "recipient_phone": recipient_phone, "network": network, "amount": amount}
 
-        network_upper = network.upper().strip()
-        biller_info = self.DATA_BILLERS.get(network_upper)
+        network_upper = self._canonical_network(network)
+        biller_code = await self._resolve_data_biller_code(network_upper)
 
-        if not biller_info:
+        if not biller_code:
             return self._error_response(
                 f"Unsupported network: {network}. Supported: MTN, Airtel, Glo, 9mobile",
                 **data_info,
             )
-
-        biller_code = biller_info["biller_code"]
 
         if not reference:
             reference = f"data-{uuid.uuid4().hex[:12]}"
@@ -216,6 +296,8 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             "customer_id": customer_phone,
             "reference": reference,
         }
+        if amount is not None:
+            payload["amount"] = amount
 
         logger.info(
             "data_purchase_request",

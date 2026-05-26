@@ -9,7 +9,10 @@ DATA_EXTRACTION_PROMPT = (
     "- recipient_phone: Normalize to 11-digit format (08012345678)\\n"
     "- network: MTN, AIRTEL, GLO, 9MOBILE (standardize case)\\n"
     "- budget: Amount user wants to spend (2k→2000, 5h→500). Leave null if unclear\\n"
-    "- size_preference: '1GB', '2GB', '5GB', 'weekly', 'monthly', 'daily'\\n"
+    "- size_preference: Explicit data size only, e.g. '500MB', '1GB', '2GB', '5GB'.\\n"
+    "- validity_preference: Duration preference, e.g. 'daily', 'weekly', 'monthly', '7 days', '30 days'.\\n"
+    "- selection_preference: 'most_data', 'cheapest', 'longest_validity', or 'best_value' when user asks for best/maximum value.\\n"
+    "- usage_intent: Usage context only, e.g. 'video_calls', 'social', 'browsing', 'night', 'weekend'. Do not invent plan facts.\\n"
     "- is_self: true if 'my line', 'for me', 'myself'\\n"
     "- recipient_name: Name/alias if mentioned ('for mum')\\n\\n"
     "AMBIGUITIES (structured with candidates):\\n"
@@ -30,37 +33,37 @@ DATA_EXTRACTION_PROMPT = (
     'User: "buy 2k MTN data"\\n'
     'Output: {"schema_version":1,"intent":"data","intent_confidence":0.95,'
     '"entities":{"recipient_phone":null,"network":"MTN","budget":2000.0,"size_preference":null,'
-    '"is_self":null,"recipient_name":null},'
+    '"validity_preference":null,"selection_preference":null,"usage_intent":null,"is_self":null,"recipient_name":null},'
     '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
     '"requested_features":[]}\\n\\n'
     'User: "buy 1GB data for my line"\\n'
     'Output: {"schema_version":1,"intent":"data","intent_confidence":0.9,'
     '"entities":{"recipient_phone":null,"network":null,"budget":null,"size_preference":"1GB",'
-    '"is_self":true,"recipient_name":null},'
+    '"validity_preference":null,"selection_preference":null,"usage_intent":null,"is_self":true,"recipient_name":null},'
     '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
     '"requested_features":[]}\\n\\n'
     'User: "get 5GB for 08012345678"\\n'
     'Output: {"schema_version":1,"intent":"data","intent_confidence":0.95,'
     '"entities":{"recipient_phone":"08012345678","network":null,"budget":null,"size_preference":"5GB",'
-    '"is_self":null,"recipient_name":null},'
+    '"validity_preference":null,"selection_preference":null,"usage_intent":null,"is_self":null,"recipient_name":null},'
     '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
     '"requested_features":[]}\\n\\n'
     'User: "buy 5 data"\\n'
     'Output: {"schema_version":1,"intent":"data","intent_confidence":0.8,'
     '"entities":{"recipient_phone":null,"network":null,"budget":null,"size_preference":null,'
-    '"is_self":null,"recipient_name":null},'
+    '"validity_preference":null,"selection_preference":null,"usage_intent":null,"is_self":null,"recipient_name":null},'
     '"correction":null,"ambiguities":[{"code":"BUDGET_UNCLEAR","candidates":[5,5000]}],'
     '"references":{"use_recent_purchase":false},"requested_features":[]}\\n\\n'
     'User: "buy 2GB data tomorrow"\\n'
     'Output: {"schema_version":1,"intent":"data","intent_confidence":0.9,'
     '"entities":{"recipient_phone":null,"network":null,"budget":null,"size_preference":"2GB",'
-    '"is_self":null,"recipient_name":null},'
+    '"validity_preference":null,"selection_preference":null,"usage_intent":null,"is_self":null,"recipient_name":null},'
     '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
     '"requested_features":["SCHEDULED"]}\\n\\n'
     'User: "I meant 5k"\\n'
     'Output: {"schema_version":1,"intent":"data","intent_confidence":0.95,'
     '"entities":{"recipient_phone":null,"network":null,"budget":5000.0,"size_preference":null,'
-    '"is_self":null,"recipient_name":null},'
+    '"validity_preference":null,"selection_preference":null,"usage_intent":null,"is_self":null,"recipient_name":null},'
     '"correction":{"field":"budget","new_value":5000},"ambiguities":[],'
     '"references":{"use_recent_purchase":false},"requested_features":[]}\\n'
 )

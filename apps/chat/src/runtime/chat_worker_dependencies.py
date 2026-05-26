@@ -161,6 +161,7 @@ def _build_orchestrator_runtime_bundle(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
+        redis_client=shared_redis,
     )
 
     support_worker = SupportWorker(

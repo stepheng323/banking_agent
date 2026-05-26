@@ -1,4 +1,5 @@
 from shared.utils.network_utils import (
+    format_network_display_name,
     normalize_network_name,
     normalize_nigerian_phone,
     normalize_phone,
@@ -30,3 +31,10 @@ def test_resolve_network_from_phone_supports_spaced_and_no_leading_zero() -> Non
 def test_normalize_network_name_aliases() -> None:
     assert normalize_network_name("Airtel") == "AIRTEL"
     assert normalize_network_name("etisalat") == "9MOBILE"
+
+
+def test_format_network_display_name_uses_human_facing_labels() -> None:
+    assert format_network_display_name("MTN") == "MTN"
+    assert format_network_display_name("AIRTEL") == "Airtel"
+    assert format_network_display_name("glo") == "Glo"
+    assert format_network_display_name("9MOBILE") == "9mobile"

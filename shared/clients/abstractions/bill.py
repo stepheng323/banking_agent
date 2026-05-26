@@ -96,6 +96,7 @@ class BillPaymentProvider(ABC):
         plan_code: str,
         recipient_phone: str,
         network: str,
+        amount: float | None = None,
         reference: str | None = None,
     ) -> dict[str, Any]:
         """
@@ -105,6 +106,7 @@ class BillPaymentProvider(ABC):
             plan_code: The item_code of the data plan
             recipient_phone: Phone number to credit
             network: Network provider (MTN, AIRTEL, GLO, 9MOBILE)
+            amount: Exact catalog amount for the selected plan
             reference: Optional unique transaction reference
 
         Returns:

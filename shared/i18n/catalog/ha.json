@@ -32,7 +32,22 @@
       "request_network": "data na {network}",
       "request_amount": "{amount} data",
       "target_phone_for_request": "Na samu bukatar {request}. Wace line zan siya wa?",
+      "target_phone_for_network_request": "Na samu bukatar {request}. Wace line ta {network} zan siya wa?",
       "network_for_phone": "Ina da {target_phone}. Wane network ne?"
+    },
+    "airtime": {
+      "request_amount_network": "{amount} airtime na {network}",
+      "request_network": "airtime na {network}",
+      "request_amount": "{amount} airtime",
+      "phone_amount": "To. Wace line zan siya wa airtime, kuma nawa?",
+      "phone_amount_for_network": "To. Wace line ta {network} zan siya wa airtime, kuma nawa?",
+      "amount_for_self": "To. Zan yi amfani da number dinka. Nawa airtime zan siya?",
+      "amount_for_self_network": "To. Zan yi amfani da layinka na {network}. Nawa airtime zan siya?",
+      "phone_for_request": "Na samu {request}. Wace line zan siya wa?",
+      "phone_for_network_request": "Na samu {request}. Wace line ta {network} zan siya wa?",
+      "amount_for_phone": "Ina da {recipient_phone}. Nawa airtime zan siya?",
+      "network_for_phone": "Ina da {recipient_phone}. Wane network ne?",
+      "network_for_amount_phone": "Na samu {amount} don {recipient_phone}. Wane network ne?"
     }
   },
   "locale": {
@@ -580,6 +595,15 @@
       "recipient_resolved": "✓ {label} resolved: {resolved}",
       "recipient_resolved_generic": "✓ {label} resolved",
       "input_attempts_exhausted": "Ban iya fahimtar bayanan da nake bukata ba, saboda haka na soke wannan transaction. Mu fara sabo. Me kake son yi?",
+      "input_greeting": "Sannu. Har yanzu ina bukatar amsarka don mu ci gaba. Don Allah amsa tambayar karshe, ko ka ce cancel.",
+      "input_greeting_data_plan": "Sannu. Har yanzu muna zaben data plan. Amsa da lambar option, ko ka ce cancel.",
+      "input_greeting_data_plan_network": "Sannu. Har yanzu muna zaben data plan a {network}. Amsa da lambar option, ko ka ce cancel.",
+      "input_greeting_data_preference": "Sannu. Har yanzu ina bukatar budget ko girman data don mu ci gaba. Amsa kamar 2k ko 5GB, ko ka ce cancel.",
+      "input_greeting_data_preference_network": "Sannu. Har yanzu ina bukatar budget ko girman data don wannan {network} data. Amsa kamar 2k ko 5GB, ko ka ce cancel.",
+      "input_greeting_airtime_amount": "Sannu. Har yanzu ina bukatar adadin airtime don mu ci gaba. Amsa da adadin, ko ka ce cancel.",
+      "input_greeting_airtime_amount_network": "Sannu. Har yanzu ina bukatar adadin airtime don wannan {network} line. Amsa da adadin, ko ka ce cancel.",
+      "input_greeting_airtime_line_amount": "Sannu. Har yanzu ina bukatar line da adadin airtime din nan. Amsa da duka biyun, ko ka ce cancel.",
+      "input_greeting_airtime_line_amount_network": "Sannu. Har yanzu ina bukatar {network} line da adadin airtime. Amsa da duka biyun, ko ka ce cancel.",
       "pin_prompt_default": "Please enter your PIN.",
       "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
@@ -672,14 +696,14 @@
       "not_supported": "Updating beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save as '{alias}'\n- Or send a different name",
-      "ask_save_transfer_default": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "ask_save_phone_default": "Would you like to save {recipient_display} ({network} • {masked_phone}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "no_recent": "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them.",
-      "user_not_found": "User not found.",
+      "ask_save_transfer_with_alias": "Kana so a ajiye {recipient_display} ({bank_display} • {masked_account}) a matsayin beneficiary?\n- Ka rubuta 'save' don ajiye shi da suna '{alias}'\n- Ko ka turo wani suna",
+      "ask_save_transfer_default": "Kana so a ajiye {recipient_display} ({bank_display} • {masked_account}) a matsayin beneficiary?\n- Ka rubuta 'save' don ajiye shi\n- Ko ka turo suna (e.g., 'Mum') don amfani da shi a matsayin alias",
+      "ask_save_phone_default": "Kana so a ajiye {recipient_display} ({network} • {masked_phone}) a matsayin beneficiary?\n- Ka rubuta 'save' don ajiye shi\n- Ko ka turo suna (e.g., 'Mum') don amfani da shi a matsayin alias",
+      "no_recent": "Ban tuna da wani beneficiary suggestion kwanan nan ba. Transaction dole ya kasance na baya-bayan nan kafin a iya ajiye shi.",
+      "user_not_found": "Ba a sami user ba.",
       "default_alias": "My Beneficiary",
-      "saved": "✓ Saved **{alias}** to your beneficiaries.",
-      "save_failed": "Sorry, I couldn't save that beneficiary due to an error."
+      "saved": "✓ An ajiye **{alias}** cikin beneficiaries ɗinka.",
+      "save_failed": "Yi hakuri, ban iya ajiye wannan beneficiary yanzu ba."
     },
     "format": {
       "suggestion": "💡 Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
@@ -827,6 +851,15 @@
     "extraction": {
       "unsupported_feature": "Sorry, I can't do {feature_name} airtime transfers yet. I can only do instant transfers defined right now."
     },
+    "confirmation": {
+      "change": {
+        "amount_to": "To, ina sabunta airtime zuwa {amount}.",
+        "phone_to": "To, zan yi amfani da {phone} don wannan airtime.",
+        "network_to": "To, ina canza network na airtime zuwa {network}.",
+        "source_to": "To, zan yi amfani da {source} don wannan airtime.",
+        "details": "To, ina sabunta bayanan airtime din."
+      }
+    },
     "validation": {
       "missing_fields": "Da fatan za ka aika {missing}.",
       "field": {
@@ -843,12 +876,13 @@
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
-        "title": "*{amount} Airtime → {recipient_display}*",
+        "target_self": "your number",
+        "title": "*{amount} airtime don {recipient_display}*",
         "title_variants": {
-          "standard": "*{amount} Airtime → {recipient_display}*",
-          "warm": "*Airtime ya shirya don {recipient_display}: {amount}*",
+          "standard": "*{amount} airtime don {recipient_display}*",
+          "warm": "*{amount} airtime don {recipient_display}*",
           "careful": "*Duba airtime purchase: {amount} don {recipient_display}*",
-          "trusted_careful": "*Airtime ya shirya, don Allah duba: {amount} don {recipient_display}*"
+          "trusted_careful": "*Don Allah duba: {amount} airtime don {recipient_display}*"
         },
         "network_line": "Network: {network}"
       }
@@ -856,12 +890,13 @@
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Airtime ₦{amount} don {recipient_phone} ({network}) yana processing.",
+      "message_queued": "Airtime ₦{amount} don {recipient_target} ({network}) yana processing.",
       "message_queued_variants": {
-        "standard": "Airtime ₦{amount} don {recipient_phone} ({network}) yana processing.",
-        "warm": "Na karba. Airtime ₦{amount} don {recipient_phone} ({network}) yana processing.",
-        "reassuring": "Airtime ₦{amount} don {recipient_phone} ({network}) yana processing. Confirmation daga provider na iya daukar mintoci kadan."
+        "standard": "Airtime ₦{amount} don {recipient_target} ({network}) yana processing.",
+        "warm": "Na karba. Airtime ₦{amount} don {recipient_target} ({network}) yana processing.",
+        "reassuring": "Airtime ₦{amount} don {recipient_target} ({network}) yana processing. Confirmation daga provider na iya daukar mintoci kadan."
       },
+      "processing_status": "Wannan airtime purchase yana processing har yanzu.",
       "system_error": "System error during execution."
     },
     "error": {
@@ -871,16 +906,16 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "✓ Airtime ya yi nasara\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "✓ Airtime ya yi nasara\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "✓ Airtime ya yi nasara\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
-        "warm": "An gama. Airtime ₦{amount} ya tafi zuwa {recipient_phone} ({network}).\nRef: {reference}",
-        "celebratory": "An daidaita. Airtime ₦{amount} ya tafi zuwa {recipient_phone} ({network}).\nRef: {reference}"
+        "standard": "✓ Airtime ya yi nasara\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "warm": "An gama. Airtime ₦{amount} ya tafi zuwa {recipient_target} ({network}).\nRef: {reference}",
+        "celebratory": "An daidaita. Airtime ₦{amount} ya tafi zuwa {recipient_target} ({network}).\nRef: {reference}"
       },
-      "failure_message": "Airtime purchase ya kasa don {recipient_phone} ({network}).\nDalili: {reason}",
+      "failure_message": "Airtime purchase ya kasa don {recipient_target} ({network}).\nDalili: {reason}",
       "failure_message_variants": {
-        "standard": "Airtime purchase ya kasa don {recipient_phone} ({network}).\nDalili: {reason}",
-        "reassuring": "Ban iya kammala airtime purchase don {recipient_phone} ({network}) ba.\nDalili: {reason}"
+        "standard": "Airtime purchase ya kasa don {recipient_target} ({network}).\nDalili: {reason}",
+        "reassuring": "Ban iya kammala airtime purchase don {recipient_target} ({network}) ba.\nDalili: {reason}"
       }
     }
   },
@@ -892,11 +927,48 @@
     "confirmation": {
       "buy_network_for_phone": "Saya data {network} wa {target_phone}?",
       "buy_plan_for_phone": "Saya {plan_name} wa {target_phone}?",
-      "buy_amount_network_for_phone": "Saya data {network} na ₦{amount} wa {target_phone}?"
+      "buy_amount_network_for_phone": "Saya data {network} na ₦{amount} wa {target_phone}?",
+      "change": {
+        "amount_to": "To, ina sabunta budget din data zuwa {amount}.",
+        "phone_to": "To, zan saya wannan data wa {phone}.",
+        "network_to": "To, ina canza network din data zuwa {network}.",
+        "plan_to": "To, zan yi amfani da {plan_name} a {amount}.",
+        "source_to": "To, zan yi amfani da {source} don wannan data.",
+        "details": "To, ina sabunta bayanan data din."
+      }
     },
     "execution": {
       "receipt_description_plan": "{plan_name} for {target_phone}",
       "receipt_description_network": "{network} data for {target_phone}"
+    },
+    "plan_selection": {
+      "ask_preference": "Wane data plan na {network} zan yi amfani da shi?\n{options}\n{reply_hint}",
+      "ask_preference_self_network": "To. Zan yi amfani da layinka na {network}. Wane budget ko girman data zan yi amfani da shi?",
+      "ask_preference_self_unknown_network": "To. Zan yi amfani da number dinka. Wane network yake amfani da shi, kuma wane budget ko girman data kake so?",
+      "ask_preference_network_without_phone": "To. Wace layin {network} zan saya wa, kuma wane budget ko girman data kake so?",
+      "ask_preference_target_network": "To. Wane budget ko girman data zan yi amfani da shi wa {target_phone} a {network}?",
+      "ask_preference_target_unknown_network": "To. Wane network ne {target_phone} yake amfani da shi, kuma wane budget ko girman data kake so?",
+      "choose_plan": "Na samo wasu data plans da suka dace:\n{options}\n{reply_hint}",
+      "recommendation_ask_phone": "Na samo {plan_name} a ₦{amount}, yana aiki na {validity}. Wace layin {network} zan saya wa?",
+      "reply_with_one": "Amsa da 1.",
+      "reply_with_two": "Amsa da 1 ko 2.",
+      "reply_with_range": "Amsa da 1, 2, ko {count}.",
+      "option": "{index}. {plan_name} — ₦{amount} ({validity})",
+      "missing_plan": "Don Allah zabi ingantaccen data plan kafin mu ci gaba.",
+      "invalid_plan_code": "Ban sami wannan data plan ba. Don Allah zabi daga options da ke akwai.",
+      "catalog_unavailable": "Ban iya dauko data plans yanzu ba. Don Allah sake gwadawa nan gaba kadan.",
+      "no_budget_match": "Ban sami data plan na {network} cikin ₦{budget} ba. Kana iya kara budget ko zabi karamin plan.",
+      "size_budget_conflict": "Ban sami {size} cikin ₦{budget} ba. Plan {size} mafi kusa na ₦{amount}.",
+      "validity_unknown": "validity bai bayyana ba"
+    },
+    "plan_query": {
+      "ask_network": "Wane network zan duba?",
+      "exact_match": "{plan_name} na ₦{amount}, yana aiki na {validity}.",
+      "multiple_matches": "Na samo wasu options da suka dace:\n{options}",
+      "nearest_matches": "Ban sami wannan size din daidai ba. Options mafi kusa sune:\n{options}",
+      "budget_matches": "Da ₦{budget} a {network}, wadannan ne options mafi karfi:\n{options}",
+      "validity_matches": "Wadannan options sun fi kusa da validity da ka tambaya:\n{options}",
+      "generic_matches": "Ga wasu data plans na {network}:\n{options}"
     },
     "error": {
       "execution_failed": "Data purchase could not be completed. Please try again.",
@@ -922,12 +994,12 @@
         "plan_name_fallback": "Data Plan",
         "source_bank_fallback": "Account",
         "target_self": "your number",
-        "title": "*{plan_name} → {target_display}*",
+        "title": "*{plan_name} don {target_display}*",
         "title_variants": {
-          "standard": "*{plan_name} → {target_display}*",
-          "warm": "*Data ya shirya don {target_display}: {plan_name}*",
+          "standard": "*{plan_name} don {target_display}*",
+          "warm": "*{plan_name} don {target_display}*",
           "careful": "*Duba data purchase: {plan_name} don {target_display}*",
-          "trusted_careful": "*Data ya shirya, don Allah duba: {plan_name} don {target_display}*"
+          "trusted_careful": "*Don Allah duba: {plan_name} don {target_display}*"
         },
         "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
@@ -945,6 +1017,7 @@
         "warm": "Na karba. {plan_name} purchase (₦{amount}) don {recipient_phone} yana processing.\n\nZa ka samu confirmation nan bada jimawa ba.",
         "reassuring": "{plan_name} purchase (₦{amount}) don {recipient_phone} yana processing. Confirmation daga provider na iya daukar mintoci kadan."
       },
+      "processing_status": "Wannan data purchase yana processing har yanzu.",
       "failed_message": "Data purchase ya kasa: {error_message}. Don Allah sake gwadawa.",
       "failed_message_variants": {
         "standard": "Data purchase ya kasa: {error_message}. Don Allah sake gwadawa.",
@@ -1064,9 +1137,27 @@
       "scheduled_data": "Confirm Scheduled Data Purchase",
       "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
+      "airtime_variants": {
+        "standard": "Review Airtime Purchase",
+        "warm": "Review Airtime Purchase",
+        "careful": "Duba Airtime Purchase Sosai",
+        "trusted_careful": "Review Airtime Purchase"
+      },
       "data": "Confirm Data Purchase",
+      "data_variants": {
+        "standard": "Review Data Purchase",
+        "warm": "Review Data Purchase",
+        "careful": "Duba Data Purchase Sosai",
+        "trusted_careful": "Review Data Purchase"
+      },
       "mixed": "Confirm Transactions",
-      "generic": "Confirm Transaction"
+      "generic": "Confirm Transaction",
+      "section": {
+        "transfer": "*Transfer*",
+        "airtime": "*Airtime*",
+        "data": "*Data*",
+        "generic": "*Transaction*"
+      }
     },
     "completion": {
       "header": {

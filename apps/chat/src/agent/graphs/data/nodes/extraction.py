@@ -1,6 +1,9 @@
 import re
 from typing import Any
 
+from apps.chat.src.agent.graphs.__shared__.account_selection.reference import (
+    match_source_account_reference,
+)
 from apps.chat.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
 from apps.chat.src.agent.graphs.__shared__.scheduling import (
     SCHEDULE_FIELD_NAMES,
@@ -19,7 +22,8 @@ _NETWORK_CANONICAL = {"MTN", "AIRTEL", "GLO", "9MOBILE"}
 _PHONE_CANDIDATE_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
 _NETWORK_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 _SELF_TARGET_RE = re.compile(
-    r"^(?:for\s+)?(?:me|my\s+(?:line|number|phone)|mine|myself|this\s+line)$",
+    r"^(?:for\s+)?(?:me|my\s+(?:line|number|phone)|mine|myself|this\s+line)"
+    r"(?:\s+(?:please|pls|abeg|jare|na|now|o|oo))?$",
     re.IGNORECASE,
 )
 _NETWORK_REPLY_BLOCK_RE = re.compile(
@@ -27,6 +31,26 @@ _NETWORK_REPLY_BLOCK_RE = re.compile(
     r"account|support|faq|cancel|stop|show|list|check)\b",
     re.IGNORECASE,
 )
+
+
+def _apply_source_account_match(payload: DataPayload, account: dict[str, Any]) -> None:
+    account_id = account.get("id") or account.get("account_id") or account.get("source_account_id")
+    bank_name = account.get("bank_name") or account.get("bank") or account.get("source_bank_name")
+    account_name = account.get("account_name") or account.get("name") or account.get("source_account_name")
+    account_number = account.get("account_number") or account.get("number") or account.get("source_account_number")
+    payload.source_account_id = str(account_id).strip() if account_id else None
+    payload.source_bank_name = str(bank_name).strip() if bank_name else None
+    payload.source_account_name = str(account_name).strip() if account_name else None
+    payload.source_account_number = str(account_number).strip() if account_number else None
+    payload.source_account_index = None
+    payload.confirmation = {"confirmed": False}
+
+
+def _apply_numeric_source_account_patch(payload: DataPayload, patch: dict[str, Any]) -> None:
+    payload.source_account_index = patch.get("source_account_index")
+    payload.source_account_id = patch.get("source_account_id")
+    if isinstance(patch.get("confirmation"), dict):
+        payload.confirmation = patch["confirmation"]
 
 
 def _has_phone_signal(message: str) -> bool:
@@ -100,6 +124,42 @@ def _resolved_referent_data(context: DataContext, referent_type: str) -> dict[st
 
 def _apply_resolved_referents(payload: DataPayload, context: DataContext) -> bool:
     changed = False
+    if not payload.plan_code:
+        plan_referent = _resolved_referent_data(context, "data_plan")
+        if plan_referent:
+            plan_code = plan_referent.get("plan_code") or plan_referent.get("item_code")
+            plan_name = plan_referent.get("plan_name") or plan_referent.get("name")
+            network = plan_referent.get("network")
+            amount = plan_referent.get("amount")
+            biller_code = plan_referent.get("biller_code")
+            size_gb = plan_referent.get("size_gb")
+            validity_days = plan_referent.get("validity_days")
+            tags = plan_referent.get("tags")
+            if plan_code or plan_name:
+                payload.plan_code = str(plan_code).strip() if plan_code else None
+                payload.plan_name = str(plan_name).strip() if plan_name else None
+                payload.biller_code = str(biller_code).strip() if biller_code else None
+                if network and not payload.network:
+                    payload.network = str(network).strip().upper()
+                if amount is not None and payload.amount is None:
+                    try:
+                        payload.amount = float(amount)
+                    except (TypeError, ValueError):
+                        pass
+                if size_gb is not None:
+                    try:
+                        payload.plan_size_gb = float(size_gb)
+                    except (TypeError, ValueError):
+                        pass
+                if validity_days is not None:
+                    try:
+                        payload.plan_validity_days = int(validity_days)
+                    except (TypeError, ValueError):
+                        pass
+                if isinstance(tags, list):
+                    payload.plan_tags = [str(tag) for tag in tags if str(tag).strip()]
+                changed = True
+
     if not payload.target_phone:
         phone_referent = _resolved_phone_referent(context)
         phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
@@ -247,7 +307,7 @@ class ExtractionStep(PipelineStep):
         waiting_for_source_account = "source_account_id" in required_fields
         waiting_for_referent_phone = "referent_phone_id" in required_fields
         waiting_for_target_phone = bool({"target_phone", "recipient_phone", "phone"} & set(required_fields))
-        waiting_for_network = set(required_fields) == {"network"}
+        waiting_for_network = "network" in required_fields
         if waiting_for_target_phone:
             self_phone = _self_target_phone(self.user_message, context)
             normalized_phone = self_phone or _first_normalized_phone(self.user_message)
@@ -326,9 +386,23 @@ class ExtractionStep(PipelineStep):
                     prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields, context.language),
                     patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
                 )
-        numeric_patch = try_extract_numeric_index(self.user_message, "data") if waiting_for_source_account else None
+        source_account = None
+        if waiting_for_source_account:
+            source_account = match_source_account_reference(
+                self.user_message,
+                [account for account in (context.all_accounts or context.accounts) if isinstance(account, dict)],
+            )
+        numeric_patch = None
+        if waiting_for_source_account and not (
+            self.user_message.strip().isdigit() and len(self.user_message.strip()) >= 4
+        ):
+            numeric_patch = try_extract_numeric_index(self.user_message, "data")
         if numeric_patch:
-            payload.source_account_index = numeric_patch["source_account_index"]
+            _apply_numeric_source_account_patch(payload, numeric_patch)
+            payload.stage = "extracted"
+            return None
+        if source_account:
+            _apply_source_account_match(payload, source_account)
             payload.stage = "extracted"
             return None
 
@@ -362,6 +436,7 @@ class ExtractionStep(PipelineStep):
                 "network": payload.network,
                 "plan_name": payload.plan_name,
                 "amount": payload.amount,
+                "usage_intent": payload.usage_intent,
             },
         )
 
@@ -374,6 +449,8 @@ class ExtractionStep(PipelineStep):
             phone = normalize_nigerian_phone(str((phone_referent or {}).get("phone") or ""))
             if phone:
                 payload.target_phone = phone
+        if extraction_result.entities.recipient_name and not payload.recipient_name:
+            payload.recipient_name = extraction_result.entities.recipient_name
 
         if extraction_result.entities.network:
             payload.network = extraction_result.entities.network
@@ -385,8 +462,16 @@ class ExtractionStep(PipelineStep):
 
         _apply_resolved_referents(payload, context)
 
-        # TODO: Handle 'amount' or 'budget' text to float mapping more robustly if needed
-        # For now assuming simple mapping usually happens in resolution or prior
+        if extraction_result.entities.budget is not None and payload.amount is None:
+            payload.amount = float(extraction_result.entities.budget)
+        if extraction_result.entities.size_preference and not payload.size_preference:
+            payload.size_preference = extraction_result.entities.size_preference
+        if extraction_result.entities.validity_preference and not payload.validity_preference:
+            payload.validity_preference = extraction_result.entities.validity_preference
+        if extraction_result.entities.selection_preference and not payload.selection_preference:
+            payload.selection_preference = extraction_result.entities.selection_preference
+        if extraction_result.entities.usage_intent and not payload.usage_intent:
+            payload.usage_intent = extraction_result.entities.usage_intent
 
         payload.stage = "extracted"
         return None  # Continue pipeline

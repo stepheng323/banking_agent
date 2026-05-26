@@ -23,11 +23,13 @@ from apps.chat.src.agent.graphs.data.models.types import (
 from apps.chat.src.agent.graphs.data.nodes.confirmation import ConfirmationStep
 from apps.chat.src.agent.graphs.data.nodes.execution import ExecutionStep
 from apps.chat.src.agent.graphs.data.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.graphs.data.nodes.plan_selection import DataPlanQueryStep, DataPlanSelectionStep
 from apps.chat.src.agent.graphs.data.nodes.resolution import ResolutionStep
 from apps.chat.src.agent.graphs.data.nodes.security import AuthorizationStep
 from apps.chat.src.agent.graphs.data.nodes.selection import SourceSelectionStep
 from apps.chat.src.agent.graphs.data.nodes.validation import ValidationStep
 from apps.chat.src.agent.graphs.data.pipeline.base import DataPipeline, PipelineStep
+from apps.chat.src.agent.graphs.data.plan_service import DataPlanService
 from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
@@ -94,6 +96,7 @@ class DataScheduleCompleteStep(PipelineStep):
 class DataWorkerContext:
     extractor: Any
     bill_provider: Any
+    plan_service: Any
     publisher: Any
     transaction_repo: Any
     user_id: str | None
@@ -111,11 +114,13 @@ class DataWorker:
         bill_provider,
         transaction_repo,
         publisher,
+        redis_client=None,
     ):
         self.extractor = extractor
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.publisher = publisher
+        self.plan_service = DataPlanService(bill_provider, redis_client)
 
     def _ensure_idempotency_key(self, data: DataPayload) -> DataPayload:
         if data.idempotency_key and data.idempotency_key != "no-key":
@@ -159,6 +164,7 @@ class DataWorker:
         return DataWorkerContext(
             extractor=self.extractor,
             bill_provider=self.bill_provider,
+            plan_service=self.plan_service,
             publisher=self.publisher,
             transaction_repo=self.transaction_repo,
             user_id=context.get("user_id"),
@@ -186,7 +192,9 @@ class DataWorker:
     ) -> DataPipeline:
         steps: list[PipelineStep] = [
             ExtractionStep(user_message),
+            DataPlanSelectionStep(user_message),
             ResolutionStep(),
+            DataPlanSelectionStep(user_message),
             SourceSelectionStep(),
             ValidationStep(),
         ]
@@ -198,6 +206,10 @@ class DataWorker:
         else:
             steps.append(DataScheduleCompleteStep())
         return DataPipeline(steps)
+
+    @staticmethod
+    def _build_plan_query_pipeline(user_message: str | None) -> DataPipeline:
+        return DataPipeline([ExtractionStep(user_message), DataPlanQueryStep()])
 
     async def _create_schedule_after_auth(
         self,
@@ -246,6 +258,10 @@ class DataWorker:
             "target_phone": data.target_phone,
             "plan_code": data.plan_code,
             "plan_name": data.plan_name,
+            "biller_code": data.biller_code,
+            "plan_size_gb": data.plan_size_gb,
+            "plan_validity_days": data.plan_validity_days,
+            "plan_tags": data.plan_tags,
             "is_self": data.is_self,
             "source_account_id": data.source_account_id,
             "source_account_number": data.source_account_number,
@@ -390,7 +406,10 @@ class DataWorker:
                     result.patch["idempotency_key"] = data.idempotency_key
                 return result
 
-            result = await pipeline.run(data, ctx, gates, worker_context)
+            if action == "data_plan_query":
+                result = await self._build_plan_query_pipeline(user_message).run(data, ctx, gates, worker_context)
+            else:
+                result = await pipeline.run(data, ctx, gates, worker_context)
             if data.idempotency_key:
                 if result.patch is None:
                     result.patch = {}

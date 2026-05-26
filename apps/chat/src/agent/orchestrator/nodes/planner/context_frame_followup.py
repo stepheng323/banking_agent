@@ -96,6 +96,11 @@ _SEARCHABLE_DATA_KEYS = (
     "is_default",
     "transaction_type",
     "type",
+    "plan_name",
+    "item_code",
+    "plan_code",
+    "size_gb",
+    "validity_days",
 )
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "amount": ("amount",),
@@ -238,6 +243,80 @@ def _frame_domain(frame_type: ContextFrameType) -> str | None:
     return None
 
 
+def _is_data_plan_entity(entity: ContextEntity) -> bool:
+    return entity.entity_type.value == "data_plan"
+
+
+def _is_data_plan_frame(frame: ContextFrame) -> bool:
+    return bool(frame.items) and all(_is_data_plan_entity(entity) for entity in frame.items)
+
+
+def _data_plan_display_key(entity: ContextEntity) -> tuple[str, str, float | None, int | None]:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    amount: float | None
+    try:
+        amount = float(data.get("amount")) if data.get("amount") is not None else None
+    except (TypeError, ValueError):
+        amount = None
+    validity: int | None
+    try:
+        validity = int(float(data.get("validity_days"))) if data.get("validity_days") is not None else None
+    except (TypeError, ValueError):
+        validity = None
+    name = str(data.get("plan_name") or data.get("name") or entity.label or "").strip().casefold()
+    normalized_name = re.sub(r"\b(\d+(?:\.\d+)?)\s*(?:gb|g)\b", r"\1gb", name)
+    normalized_name = re.sub(r"\b(\d+(?:\.\d+)?)\s*(?:mb|m)\b", r"\1mb", normalized_name)
+    normalized_name = re.sub(r"\s+", " ", normalized_name).strip()
+    network = str(data.get("network") or "").strip().upper()
+    return network, normalized_name, amount, validity
+
+
+def _unique_data_plan_entities(entities: list[ContextEntity]) -> list[ContextEntity]:
+    unique: list[ContextEntity] = []
+    seen: set[tuple[str, str, float | None, int | None]] = set()
+    for entity in entities:
+        if not _is_data_plan_entity(entity):
+            unique.append(entity)
+            continue
+        key = _data_plan_display_key(entity)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(entity)
+    return unique
+
+
+def _format_data_plan_validity(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    try:
+        days = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    if days <= 0:
+        return None
+    return f"{days} day" if days == 1 else f"{days} days"
+
+
+def _format_data_plan_detail_block(entity: ContextEntity, *, ordinal: int | None = None) -> str | None:
+    data = entity.data if isinstance(entity.data, dict) else {}
+    name = str(data.get("plan_name") or data.get("name") or entity.label or "Data plan").strip()
+    amount = data.get("amount")
+    amount_text = format_naira_compact(amount) if amount is not None else None
+    validity_text = _format_data_plan_validity(data.get("validity_days"))
+    if amount_text and validity_text:
+        line = f"{name} is {amount_text}, valid for {validity_text}."
+    elif amount_text:
+        line = f"{name} is {amount_text}."
+    elif validity_text:
+        line = f"{name} is valid for {validity_text}."
+    else:
+        line = name
+    if ordinal is not None:
+        return f"{ordinal}. {line}"
+    return line
+
+
 def _format_completeness_response(frame: ContextFrame) -> str | None:
     count = len(frame.items)
     if count <= 0:
@@ -325,6 +404,8 @@ def _candidate_detail_fields(entity: ContextEntity) -> list[tuple[str, Any]]:
 
 def _format_detail_block(entity: ContextEntity, *, ordinal: int | None = None) -> str | None:
     data = entity.data if isinstance(entity.data, dict) else {}
+    if _is_data_plan_entity(entity):
+        return _format_data_plan_detail_block(entity, ordinal=ordinal)
     if data.get("type") == "scheduled_transaction":
         header = entity.label or "Scheduled transaction"
         if ordinal is not None:
@@ -859,6 +940,8 @@ def _pending_account_entities(frame: ContextFrame) -> list[ContextEntity]:
 
 
 def _detail_header(frame: ContextFrame) -> str:
+    if _is_data_plan_frame(frame):
+        return "Data Plan Details"
     if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
         return "Saved Beneficiary Details" if len(frame.items) > 1 else "Beneficiary Details"
     if frame.frame_type == ContextFrameType.ACCOUNT_LIST:
@@ -874,23 +957,24 @@ def _detail_header(frame: ContextFrame) -> str:
 
 def _format_details_response(frame: ContextFrame, text: str) -> str | None:
     del text
-    if len(frame.items) > 1:
+    items = _unique_data_plan_entities(frame.items) if _is_data_plan_frame(frame) else frame.items
+    if len(items) > 1:
         blocks: list[str] = []
-        for idx, entity in enumerate(frame.items[:CONTEXT_READ_LIST_LIMIT], 1):
+        for idx, entity in enumerate(items[:CONTEXT_READ_LIST_LIMIT], 1):
             block = _format_detail_block(entity, ordinal=idx)
             if block:
                 blocks.append(block)
         if not blocks:
             return None
-        overflow = len(frame.items) - len(blocks)
+        overflow = len(items) - len(blocks)
         suffix = (
-            f"\n\nShowing {len(blocks)} of {len(frame.items)} {_frame_noun(frame.frame_type, plural=True)}."
+            f"\n\nShowing {len(blocks)} of {len(items)} {_frame_noun(frame.frame_type, plural=True)}."
             if overflow > 0
             else ""
         )
         return f"{_detail_header(frame)}\n\n" + "\n\n".join(blocks) + suffix
 
-    block = _format_detail_block(frame.items[0])
+    block = _format_detail_block(items[0])
     if block is None:
         return None
     return f"{_detail_header(frame)}\n\n" + block
@@ -899,6 +983,8 @@ def _format_details_response(frame: ContextFrame, text: str) -> str | None:
 def _format_entity_details(frame: ContextFrame, entities: list[ContextEntity]) -> str | None:
     if not entities:
         return None
+    if all(_is_data_plan_entity(entity) for entity in entities):
+        entities = _unique_data_plan_entities(entities)
     if len(entities) == 1:
         block = _format_detail_block(entities[0])
         if block is None:

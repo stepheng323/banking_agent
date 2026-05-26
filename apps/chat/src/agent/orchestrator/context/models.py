@@ -26,6 +26,7 @@ class ContextFrameType(str, Enum):
     BENEFICIARY_LIST = "beneficiary_list"
     ACCOUNT_LIST = "account_list"
     SCHEDULE_LIST = "schedule_list"
+    DATA_PLAN_LIST = "data_plan_list"
     GENERIC = "generic"
 
 

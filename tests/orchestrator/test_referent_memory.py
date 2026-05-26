@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.context.referent_memory import (
     remember_referents_from_frame,
     remember_referents_from_stashed_session,
     resolve_amount_reference,
+    resolve_data_plan_reference,
     resolve_phone_reference,
     resolve_recipient_reference,
     resolve_source_account_reference,
@@ -54,6 +55,40 @@ def test_referent_memory_stores_beneficiary_from_single_frame() -> None:
     recipient = next(item for item in items if item.referent_type == "recipient")
     assert recipient.data["account_number"] == "8162511023"
     assert "pin" not in recipient.data
+
+
+def test_referent_memory_stores_and_resolves_data_plan_from_frame() -> None:
+    state = _state()
+    now = int(time.time())
+    frame = ContextFrame(
+        frame_id="data_plan_single",
+        frame_type=ContextFrameType.DATA_PLAN_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD108",
+                label="MTN 3.5 GB",
+                data={
+                    "plan_code": "MD108",
+                    "plan_name": "MTN 3.5 GB",
+                    "network": "MTN",
+                    "amount": 2000,
+                    "validity_days": 30,
+                    "pin": "1234",
+                },
+            )
+        ],
+        created_at_ts=now,
+    )
+
+    remember_referents_from_frame(state, frame)
+    result = resolve_data_plan_reference(state, "buy it")
+
+    assert result.status == "resolved"
+    assert result.item is not None
+    assert result.item.data["plan_code"] == "MD108"
+    assert result.item.data["amount"] == 2000
+    assert "pin" not in result.item.data
 
 
 def test_referent_memory_resolves_single_recipient_reference() -> None:

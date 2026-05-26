@@ -7,6 +7,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.context.referent_memory import remember_referents_from_frame
 from apps.chat.src.agent.orchestrator.models.domain import (
     ActiveSession,
     PendingInterrupt,
@@ -55,6 +56,336 @@ def _unsupported_params(key: str, *, locale: str | None = None) -> dict[str, obj
     capability = get_unsupported_capability(key)
     assert capability is not None
     return unsupported_capability_params(capability, locale=locale)
+
+
+@pytest.mark.asyncio
+async def test_data_plan_query_routes_as_read_only_data_task() -> None:
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="How much is 3.5GB MTN?",
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "deterministic_data_plan_query"
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "data"
+    assert task.payload["action"] == "data_plan_query"
+    assert task.payload["network"] == "MTN"
+    assert task.payload["size_preference"] == "3.5GB"
+
+
+@pytest.mark.asyncio
+async def test_data_plan_query_preempts_stale_data_plan_context_frame() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(decision="direct_reply", response="should not be used"),
+        frame_followup_decision=ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.96,
+            detected_language="English",
+        ),
+    )
+    state = OrchestratorState(
+        user_id="u_data_query_stale_frame",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="How much is 5gb mtn?",
+        context_frames=[
+            ContextFrame(
+                frame_id="stale_data_plan_frame",
+                frame_type=ContextFrameType.DATA_PLAN_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.DATA_PLAN,
+                        entity_id="MD501",
+                        label="MTN 5 GB data bundle",
+                        data={
+                            "plan_code": "MD501",
+                            "plan_name": "MTN 5 GB data bundle",
+                            "network": "MTN",
+                            "amount": 3500.0,
+                            "validity_days": 30,
+                        },
+                    )
+                ],
+                created_at_ts=int(time.time()),
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.frame_followup_calls == 0
+    assert updates["semantic_path_shape"] == "deterministic_data_plan_query"
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["action"] == "data_plan_query"
+    assert task.payload["network"] == "MTN"
+    assert task.payload["size_preference"] == "5GB"
+
+
+@pytest.mark.asyncio
+async def test_data_plan_buy_it_uses_data_plan_referent() -> None:
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="Buy it",
+    )
+    frame = ContextFrame(
+        frame_id="data_plan_frame",
+        frame_type=ContextFrameType.DATA_PLAN_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD108",
+                label="MTN 3.5 GB",
+                data={"plan_code": "MD108", "plan_name": "MTN 3.5 GB", "network": "MTN", "amount": 2000},
+            )
+        ],
+        created_at_ts=int(time.time()),
+    )
+    remember_referents_from_frame(state, frame)
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "data"
+    assert task.payload["action"] == "buy_data"
+    assert task.payload["plan_code"] == "MD108"
+    assert task.payload["amount"] == 2000
+
+
+@pytest.mark.asyncio
+async def test_data_plan_buy_it_uses_visible_plan_frame_when_memory_missing() -> None:
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="Buy it",
+        context_frames=[
+            ContextFrame(
+                frame_id="data_plan_frame",
+                frame_type=ContextFrameType.DATA_PLAN_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.DATA_PLAN,
+                        entity_id="MD501",
+                        label="MTN 5 GB data bundle",
+                        data={
+                            "index": 1,
+                            "plan_code": "MD501",
+                            "plan_name": "MTN 5 GB data bundle",
+                            "network": "MTN",
+                            "amount": 3500,
+                            "validity_days": 30,
+                        },
+                    )
+                ],
+                created_at_ts=int(time.time()),
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "data"
+    assert task.payload["action"] == "buy_data"
+    assert task.payload["plan_code"] == "MD501"
+    assert task.payload["plan_name"] == "MTN 5 GB data bundle"
+    assert task.payload["amount"] == 3500
+
+
+@pytest.mark.asyncio
+async def test_stale_pin_does_not_steal_greeting_and_clears_pin() -> None:
+    state = OrchestratorState(
+        user_id="u_stale_pin_greeting",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="Hi",
+        pin_verified=True,
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["pin_verified"] is False
+    assert updates["final_response"] == render_message("conversational.greeting", "en")
+    assert updates["routing_decision"] == "meta_direct"
+
+
+@pytest.mark.asyncio
+async def test_stale_pin_continuation_gets_expired_notice_and_clears_pin() -> None:
+    state = OrchestratorState(
+        user_id="u_stale_pin_yes",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="Yes",
+        pin_verified=True,
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["pin_verified"] is False
+    assert updates["final_response"] == render_message("orchestrator.session.transaction_expired", "en")
+    assert updates["routing_decision"] == "expired_pin_session"
+
+
+@pytest.mark.asyncio
+async def test_stale_pin_is_cleared_before_data_plan_reference_purchase() -> None:
+    state = OrchestratorState(
+        user_id="u_stale_pin_data_plan",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="Buy it",
+        pin_verified=True,
+        context_frames=[
+            ContextFrame(
+                frame_id="data_plan_frame",
+                frame_type=ContextFrameType.DATA_PLAN_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.DATA_PLAN,
+                        entity_id="MD501",
+                        label="MTN 5 GB data bundle",
+                        data={
+                            "index": 1,
+                            "plan_code": "MD501",
+                            "plan_name": "MTN 5 GB data bundle",
+                            "network": "MTN",
+                            "amount": 3500,
+                            "validity_days": 30,
+                        },
+                    )
+                ],
+                created_at_ts=int(time.time()),
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["pin_verified"] is False
+    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    assert "final_response" not in updates
+    task = next(iter(updates["tasks"].values()))
+    assert task.type == "data"
+    assert task.payload["plan_code"] == "MD501"
+
+
+@pytest.mark.asyncio
+async def test_data_plan_buy_option_uses_numbered_query_result() -> None:
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348000000000",
+        channel="whatsapp",
+        last_message_text="Buy option 2",
+    )
+    frame = ContextFrame(
+        frame_id="data_plan_frame",
+        frame_type=ContextFrameType.DATA_PLAN_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD107",
+                label="MTN 1.5 GB",
+                data={
+                    "index": 1,
+                    "plan_code": "MD107",
+                    "plan_name": "MTN 1.5 GB",
+                    "network": "MTN",
+                    "amount": 1000,
+                    "validity_days": 30,
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD108",
+                label="MTN 3.5 GB",
+                data={
+                    "index": 2,
+                    "plan_code": "MD108",
+                    "plan_name": "MTN 3.5 GB",
+                    "network": "MTN",
+                    "amount": 2000,
+                    "validity_days": 30,
+                },
+            ),
+        ],
+        created_at_ts=int(time.time()),
+    )
+    remember_referents_from_frame(state, frame)
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["plan_code"] == "MD108"
+    assert task.payload["amount"] == 2000
+
+
+@pytest.mark.asyncio
+async def test_data_plan_monthly_one_for_my_line_uses_validity_referent_and_self_phone() -> None:
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="Get the monthly one for my line",
+    )
+    frame = ContextFrame(
+        frame_id="data_plan_frame",
+        frame_type=ContextFrameType.DATA_PLAN_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD_WEEK",
+                label="MTN 750 MB",
+                data={
+                    "index": 1,
+                    "plan_code": "MD_WEEK",
+                    "plan_name": "MTN 750 MB",
+                    "network": "MTN",
+                    "amount": 500,
+                    "validity_days": 7,
+                },
+            ),
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="MD_MONTH",
+                label="MTN 3.5 GB",
+                data={
+                    "index": 2,
+                    "plan_code": "MD_MONTH",
+                    "plan_name": "MTN 3.5 GB",
+                    "network": "MTN",
+                    "amount": 2000,
+                    "validity_days": 30,
+                },
+            ),
+        ],
+        created_at_ts=int(time.time()),
+    )
+    remember_referents_from_frame(state, frame)
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["semantic_path_shape"] == "data_plan_reference_purchase"
+    task = next(iter(updates["tasks"].values()))
+    assert task.payload["plan_code"] == "MD_MONTH"
+    assert task.payload["target_phone"] == "08162511023"
+    assert task.payload["is_self"] is True
 
 
 class _MockTransferNeedsInputWorker:
@@ -3201,6 +3532,40 @@ async def test_gate_self_airtime_with_amount_routes_instead_of_ambiguity_prompt(
     assert task.payload["message"] == "Buy me 1k airtime"
 
 
+async def test_gate_self_airtime_without_amount_starts_airtime_slot_flow() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_airtime",
+            mode="new",
+            target_intent="airtime",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["airtime"],
+            reason="single-domain airtime request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_self_airtime_no_amount",
+        phone_number="234899999991723",
+        channel="telegram",
+        last_message_text="Buy airtime for me",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_airtime_domain"
+    assert updates["routing_decision"] == "deterministic_airtime_domain"
+    task = updates["tasks"]["direct_airtime"]
+    assert task.type == "airtime"
+    assert task.payload["message"] == "Buy airtime for me"
+
+
 async def test_gate_explicit_send_airtime_to_phone_still_uses_direct_airtime() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -3332,6 +3697,62 @@ async def test_gate_get_sized_data_still_uses_direct_data_shortcut() -> None:
     assert updates["semantic_path_shape"] == "deterministic_data_domain"
     task = updates["tasks"]["direct_data"]
     assert task.type == "data"
+
+
+async def test_gate_self_sized_data_request_uses_direct_data_shortcut() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_data",
+            mode="new",
+            target_intent="data",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["data"],
+            reason="should not be needed for explicit self data request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_data_self_sized",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="Buy me 5gb data",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    task = updates["tasks"]["direct_data"]
+    assert task.type == "data"
+    assert task.payload["size_preference"] == "5GB"
+    assert task.payload["target_phone"] == "08162511023"
+    assert task.payload["is_self"] is True
+
+
+async def test_gate_sized_data_budget_hint_does_not_parse_size_as_amount() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="domain_data", target_intent="data"))
+    state = OrchestratorState(
+        user_id="u_gate_router_data_size_budget",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="Buy 5gb MTN data for 1500",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    task = updates["tasks"]["direct_data"]
+    assert task.payload["network"] == "MTN"
+    assert task.payload["size_preference"] == "5GB"
+    assert task.payload["amount"] == 1500.0
 
 
 async def test_gate_record_data_request_routes_as_query_not_direct_data() -> None:
@@ -3469,7 +3890,7 @@ async def test_gate_banking_coded_transfer_ambiguity_clarifies_before_casual_cha
     assert not responder.calls
 
 
-async def test_gate_banking_coded_data_ambiguity_clarifies_before_direct_data_route() -> None:
+async def test_gate_self_data_request_uses_direct_data_before_router() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_data",
@@ -3480,12 +3901,12 @@ async def test_gate_banking_coded_data_ambiguity_clarifies_before_direct_data_ro
             response_key=None,
             response=None,
             expected_transaction_executors=["data"],
-            reason="should not run for malformed banking-coded data ask",
+            reason="should not run for self data ask",
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_router_data_ambiguous_1",
-        phone_number="23489999999175",
+        user_id="u_gate_router_data_self_1",
+        phone_number="2348162511023",
         channel="whatsapp",
         last_message_text="Buy me data",
         loaded_context={"language": "en"},
@@ -3496,9 +3917,12 @@ async def test_gate_banking_coded_data_ambiguity_clarifies_before_direct_data_ro
 
     assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
-    assert updates["final_response"] == "Do you want to buy data? If yes, whose line is it for?"
-    assert updates["routing_decision"] == "banking_coded_ambiguity_data"
+    assert updates["semantic_path_shape"] == "deterministic_data_domain"
+    assert updates["routing_decision"] == "deterministic_data_domain"
+    task = updates["tasks"]["direct_data"]
+    assert task.type == "data"
+    assert task.payload["target_phone"] == "08162511023"
+    assert task.payload["is_self"] is True
 
 
 async def test_gate_banking_coded_support_ambiguity_clarifies_before_casual_chat() -> None:

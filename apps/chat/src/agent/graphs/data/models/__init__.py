@@ -17,6 +17,11 @@ class DataPlan(BaseModel):
 
     size_gb: float | None = Field(None, description="Data size in GB")
     validity_days: int | None = Field(None, description="Validity period in days")
+    tags: list[str] = Field(default_factory=list, description="Catalog-derived plan tags")
+    raw_metadata: dict[str, str | int | float | bool] = Field(
+        default_factory=dict,
+        description="Safe provider catalog metadata for diagnostics",
+    )
 
     model_config = ConfigDict(frozen=True)
 

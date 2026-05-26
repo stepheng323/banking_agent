@@ -32,7 +32,22 @@
       "request_network": "data {network}",
       "request_amount": "{amount} data",
       "target_phone_for_request": "Mo ti gba ibeere {request}. Line wo ni ki n ra fun?",
+      "target_phone_for_network_request": "Mo ti gba ibeere {request}. Line {network} wo ni ki n ra fun?",
       "network_for_phone": "Mo ni {target_phone}. Network wo ni o wa lori?"
+    },
+    "airtime": {
+      "request_amount_network": "{amount} airtime {network}",
+      "request_network": "airtime {network}",
+      "request_amount": "{amount} airtime",
+      "phone_amount": "Daju. Line wo ni ki n ra airtime fun, ati iye melo?",
+      "phone_amount_for_network": "Daju. Line {network} wo ni ki n ra airtime fun, ati iye melo?",
+      "amount_for_self": "Daju. Emi yoo lo number rẹ. Iye airtime melo ni ki n ra?",
+      "amount_for_self_network": "Daju. Emi yoo lo line {network} rẹ. Iye airtime melo ni ki n ra?",
+      "phone_for_request": "Mo ti gba {request}. Line wo ni ki n ra fun?",
+      "phone_for_network_request": "Mo ti gba {request}. Line {network} wo ni ki n ra fun?",
+      "amount_for_phone": "Mo ni {recipient_phone}. Iye airtime melo ni ki n ra?",
+      "network_for_phone": "Mo ni {recipient_phone}. Network wo ni o wa lori?",
+      "network_for_amount_phone": "Mo ti gba {amount} fun {recipient_phone}. Network wo ni o wa lori?"
     }
   },
   "locale": {
@@ -580,6 +595,15 @@
       "recipient_resolved": "✓ {label} resolved: {resolved}",
       "recipient_resolved_generic": "✓ {label} resolved",
       "input_attempts_exhausted": "Mi ò lè loye alaye tí mo nílò, nítorí náà mo ti pa transaction yẹn rẹ. Ẹ jẹ ká bẹ̀rẹ̀ tuntun. Kini o fẹ ṣe?",
+      "input_greeting": "Pẹlẹ o. Mo ṣi nilo idahun rẹ lati tẹsiwaju. Jọwọ dahun ibeere to kẹhin, tabi sọ cancel.",
+      "input_greeting_data_plan": "Pẹlẹ o. A ṣi n yan eto data. Dahun pẹlu nomba option, tabi sọ cancel.",
+      "input_greeting_data_plan_network": "Pẹlẹ o. A ṣi n yan eto data lori {network}. Dahun pẹlu nomba option, tabi sọ cancel.",
+      "input_greeting_data_preference": "Pẹlẹ o. Mo ṣi nilo budget tabi data size lati tẹsiwaju. Dahun bi 2k tabi 5GB, tabi sọ cancel.",
+      "input_greeting_data_preference_network": "Pẹlẹ o. Mo ṣi nilo budget tabi data size fun data {network} yii. Dahun bi 2k tabi 5GB, tabi sọ cancel.",
+      "input_greeting_airtime_amount": "Pẹlẹ o. Mo ṣi nilo iye airtime lati tẹsiwaju. Dahun pẹlu iye naa, tabi sọ cancel.",
+      "input_greeting_airtime_amount_network": "Pẹlẹ o. Mo ṣi nilo iye airtime fun line {network} yii. Dahun pẹlu iye naa, tabi sọ cancel.",
+      "input_greeting_airtime_line_amount": "Pẹlẹ o. Mo ṣi nilo line ati iye fun airtime yii. Dahun pẹlu mejeeji, tabi sọ cancel.",
+      "input_greeting_airtime_line_amount_network": "Pẹlẹ o. Mo ṣi nilo line {network} ati iye airtime. Dahun pẹlu mejeeji, tabi sọ cancel.",
       "pin_prompt_default": "Please enter your PIN.",
       "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
@@ -672,14 +696,14 @@
       "not_supported": "Updating beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save as '{alias}'\n- Or send a different name",
-      "ask_save_transfer_default": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "ask_save_phone_default": "Would you like to save {recipient_display} ({network} • {masked_phone}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "no_recent": "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them.",
-      "user_not_found": "User not found.",
+      "ask_save_transfer_with_alias": "Ṣe o fẹ́ kí n fi {recipient_display} ({bank_display} • {masked_account}) pamọ́ gẹ́gẹ́ bí beneficiary?\n- Dahun 'save' kí n fi pamọ́ gẹ́gẹ́ bí '{alias}'\n- Tàbí fi orúkọ míì ranṣẹ́",
+      "ask_save_transfer_default": "Ṣe o fẹ́ kí n fi {recipient_display} ({bank_display} • {masked_account}) pamọ́ gẹ́gẹ́ bí beneficiary?\n- Dahun 'save' kí n fi pamọ́\n- Tàbí fi orúkọ ranṣẹ́ (e.g., 'Mum') kí n lo gẹ́gẹ́ bí alias",
+      "ask_save_phone_default": "Ṣe o fẹ́ kí n fi {recipient_display} ({network} • {masked_phone}) pamọ́ gẹ́gẹ́ bí beneficiary?\n- Dahun 'save' kí n fi pamọ́\n- Tàbí fi orúkọ ranṣẹ́ (e.g., 'Mum') kí n lo gẹ́gẹ́ bí alias",
+      "no_recent": "Mi ò rántí beneficiary suggestion kankan laipẹ. Transaction gbọdọ̀ jẹ́ ti laipẹ kí n tó lè fi pamọ́.",
+      "user_not_found": "A kò rí user.",
       "default_alias": "My Beneficiary",
-      "saved": "✓ Saved **{alias}** to your beneficiaries.",
-      "save_failed": "Sorry, I couldn't save that beneficiary due to an error."
+      "saved": "✓ Mo ti fi **{alias}** pamọ́ sí beneficiaries rẹ.",
+      "save_failed": "Pẹ̀lẹ́, mi ò le fi beneficiary yẹn pamọ́ báyìí."
     },
     "format": {
       "suggestion": "💡 Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
@@ -827,6 +851,15 @@
     "extraction": {
       "unsupported_feature": "Sorry, I can't do {feature_name} airtime transfers yet. I can only do instant transfers defined right now."
     },
+    "confirmation": {
+      "change": {
+        "amount_to": "O dara, mo n yi airtime pada si {amount}.",
+        "phone_to": "O dara, emi yoo lo {phone} fun airtime yii.",
+        "network_to": "O dara, mo n yi network airtime pada si {network}.",
+        "source_to": "O dara, emi yoo lo {source} fun airtime yii.",
+        "details": "O dara, mo n se imudojuiwon awon alaye airtime naa."
+      }
+    },
     "validation": {
       "missing_fields": "Jowo fi {missing} ranse.",
       "field": {
@@ -843,12 +876,13 @@
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
-        "title": "*{amount} Airtime → {recipient_display}*",
+        "target_self": "your number",
+        "title": "*{amount} airtime fun {recipient_display}*",
         "title_variants": {
-          "standard": "*{amount} Airtime → {recipient_display}*",
-          "warm": "*Airtime ti setan fun {recipient_display}: {amount}*",
+          "standard": "*{amount} airtime fun {recipient_display}*",
+          "warm": "*{amount} airtime fun {recipient_display}*",
           "careful": "*Ṣayẹwo airtime yii: {amount} fun {recipient_display}*",
-          "trusted_careful": "*Airtime ti setan, jọwọ ṣayẹwo: {amount} fun {recipient_display}*"
+          "trusted_careful": "*Jọwọ ṣayẹwo: {amount} airtime fun {recipient_display}*"
         },
         "network_line": "Network: {network}"
       }
@@ -856,12 +890,13 @@
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ.",
+      "message_queued": "Airtime ₦{amount} fun {recipient_target} ({network}) n lọ lọwọ.",
       "message_queued_variants": {
-        "standard": "Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ.",
-        "warm": "Mo ti gba a. Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ.",
-        "reassuring": "Airtime ₦{amount} fun {recipient_phone} ({network}) n lọ lọwọ. Ijẹrisi provider le gba iṣẹju diẹ."
+        "standard": "Airtime ₦{amount} fun {recipient_target} ({network}) n lọ lọwọ.",
+        "warm": "Mo ti gba a. Airtime ₦{amount} fun {recipient_target} ({network}) n lọ lọwọ.",
+        "reassuring": "Airtime ₦{amount} fun {recipient_target} ({network}) n lọ lọwọ. Ijẹrisi provider le gba iṣẹju diẹ."
       },
+      "processing_status": "Rira airtime yii ṣi n lọ lọwọ.",
       "system_error": "System error during execution."
     },
     "error": {
@@ -871,16 +906,16 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "✓ Airtime ti pari\n\nIye: ₦{amount}\nFoonu: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "✓ Airtime ti pari\n\nIye: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "✓ Airtime ti pari\n\nIye: ₦{amount}\nFoonu: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
-        "warm": "Ti pari. Airtime ₦{amount} ti lọ si {recipient_phone} ({network}).\nRef: {reference}",
-        "celebratory": "O ti setan. Airtime ₦{amount} ti lọ si {recipient_phone} ({network}).\nRef: {reference}"
+        "standard": "✓ Airtime ti pari\n\nIye: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "warm": "Ti pari. Airtime ₦{amount} ti lọ si {recipient_target} ({network}).\nRef: {reference}",
+        "celebratory": "O ti setan. Airtime ₦{amount} ti lọ si {recipient_target} ({network}).\nRef: {reference}"
       },
-      "failure_message": "Airtime fun {recipient_phone} ({network}) ko pari.\nIdi: {reason}",
+      "failure_message": "Airtime fun {recipient_target} ({network}) ko pari.\nIdi: {reason}",
       "failure_message_variants": {
-        "standard": "Airtime fun {recipient_phone} ({network}) ko pari.\nIdi: {reason}",
-        "reassuring": "Mi o le pari airtime fun {recipient_phone} ({network}).\nIdi: {reason}"
+        "standard": "Airtime fun {recipient_target} ({network}) ko pari.\nIdi: {reason}",
+        "reassuring": "Mi o le pari airtime fun {recipient_target} ({network}).\nIdi: {reason}"
       }
     }
   },
@@ -892,11 +927,48 @@
     "confirmation": {
       "buy_network_for_phone": "Ra data {network} fun {target_phone}?",
       "buy_plan_for_phone": "Ra {plan_name} fun {target_phone}?",
-      "buy_amount_network_for_phone": "Ra data {network} ti ₦{amount} fun {target_phone}?"
+      "buy_amount_network_for_phone": "Ra data {network} ti ₦{amount} fun {target_phone}?",
+      "change": {
+        "amount_to": "O dara, mo n yi budget data pada si {amount}.",
+        "phone_to": "O dara, emi yoo ra data yii fun {phone}.",
+        "network_to": "O dara, mo n yi network data pada si {network}.",
+        "plan_to": "O dara, emi yoo lo {plan_name} ni {amount}.",
+        "source_to": "O dara, emi yoo lo {source} fun data yii.",
+        "details": "O dara, mo n se imudojuiwon awon alaye data naa."
+      }
     },
     "execution": {
       "receipt_description_plan": "{plan_name} for {target_phone}",
       "receipt_description_network": "{network} data for {target_phone}"
+    },
+    "plan_selection": {
+      "ask_preference": "Eto data {network} wo ni ki n lo?\n{options}\n{reply_hint}",
+      "ask_preference_self_network": "O dara. Emi yoo lo line {network} re. Budget tabi data size wo ni ki n lo?",
+      "ask_preference_self_unknown_network": "O dara. Emi yoo lo number re. Network wo ni o wa lori, ati budget tabi data size wo ni ki n lo?",
+      "ask_preference_network_without_phone": "O dara. Line {network} wo ni ki n ra fun, ati budget tabi data size wo ni ki n lo?",
+      "ask_preference_target_network": "O dara. Budget tabi data size wo ni ki n lo fun {target_phone} lori {network}?",
+      "ask_preference_target_unknown_network": "O dara. Network wo ni {target_phone} wa lori, ati budget tabi data size wo ni ki n lo?",
+      "choose_plan": "Mo ri awon eto data to baamu:\n{options}\n{reply_hint}",
+      "recommendation_ask_phone": "Mo ri {plan_name} fun ₦{amount}, o wulo fun {validity}. Line {network} wo ni ki n ra a fun?",
+      "reply_with_one": "Dahun pelu 1.",
+      "reply_with_two": "Dahun pelu 1 tabi 2.",
+      "reply_with_range": "Dahun pelu 1, 2, tabi {count}.",
+      "option": "{index}. {plan_name} — ₦{amount} ({validity})",
+      "missing_plan": "Jowo yan eto data to pe ki a to tesiwaju.",
+      "invalid_plan_code": "N ko ri eto data yen. Jowo yan ninu awon option to wa.",
+      "catalog_unavailable": "N ko le gba awon eto data bayii. Jowo tun gbiyanju laipe.",
+      "no_budget_match": "N ko ri eto data {network} laarin ₦{budget}. O le fi budget kun tabi yan eto kekere.",
+      "size_budget_conflict": "N ko ri {size} laarin ₦{budget}. Eto {size} to sunmo ju je ₦{amount}.",
+      "validity_unknown": "akoko ko han"
+    },
+    "plan_query": {
+      "ask_network": "Network wo ni ki n wo?",
+      "exact_match": "{plan_name} je ₦{amount}, o si wulo fun {validity}.",
+      "multiple_matches": "Mo ri awon option die to baamu:\n{options}",
+      "nearest_matches": "N ko ri size yen gan-an. Awon option to sunmo ju niyi:\n{options}",
+      "budget_matches": "Fun ₦{budget} lori {network}, awon option to lagbara ju niyi:\n{options}",
+      "validity_matches": "Awon option yi ni o sunmo akoko ti o beere:\n{options}",
+      "generic_matches": "Awon eto data {network} kan niyi:\n{options}"
     },
     "error": {
       "execution_failed": "Data purchase could not be completed. Please try again.",
@@ -922,12 +994,12 @@
         "plan_name_fallback": "Data Plan",
         "source_bank_fallback": "Account",
         "target_self": "your number",
-        "title": "*{plan_name} → {target_display}*",
+        "title": "*{plan_name} fun {target_display}*",
         "title_variants": {
-          "standard": "*{plan_name} → {target_display}*",
-          "warm": "*Data ti setan fun {target_display}: {plan_name}*",
+          "standard": "*{plan_name} fun {target_display}*",
+          "warm": "*{plan_name} fun {target_display}*",
           "careful": "*Ṣayẹwo data yii: {plan_name} fun {target_display}*",
-          "trusted_careful": "*Data ti setan, jọwọ ṣayẹwo: {plan_name} fun {target_display}*"
+          "trusted_careful": "*Jọwọ ṣayẹwo: {plan_name} fun {target_display}*"
         },
         "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
@@ -945,6 +1017,7 @@
         "warm": "Mo ti gba a. {plan_name} purchase (₦{amount}) fun {recipient_phone} n lọ lọwọ.\n\nIwọ yoo gba confirmation laipẹ.",
         "reassuring": "{plan_name} purchase (₦{amount}) fun {recipient_phone} n lọ lọwọ. Ijẹrisi provider le gba iṣẹju diẹ."
       },
+      "processing_status": "Rira data yii ṣi n lọ lọwọ.",
       "failed_message": "Data purchase ko pari: {error_message}. Jọwọ tun gbiyanju.",
       "failed_message_variants": {
         "standard": "Data purchase ko pari: {error_message}. Jọwọ tun gbiyanju.",
@@ -1064,9 +1137,27 @@
       "scheduled_data": "Confirm Scheduled Data Purchase",
       "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
+      "airtime_variants": {
+        "standard": "Review Airtime Purchase",
+        "warm": "Review Airtime Purchase",
+        "careful": "Ṣayẹwo Airtime Purchase Dáadáa",
+        "trusted_careful": "Review Airtime Purchase"
+      },
       "data": "Confirm Data Purchase",
+      "data_variants": {
+        "standard": "Review Data Purchase",
+        "warm": "Review Data Purchase",
+        "careful": "Ṣayẹwo Data Purchase Dáadáa",
+        "trusted_careful": "Review Data Purchase"
+      },
       "mixed": "Confirm Transactions",
-      "generic": "Confirm Transaction"
+      "generic": "Confirm Transaction",
+      "section": {
+        "transfer": "*Transfer*",
+        "airtime": "*Airtime*",
+        "data": "*Data*",
+        "generic": "*Transaction*"
+      }
     },
     "completion": {
       "header": {

@@ -318,6 +318,7 @@ BENEFICIARY_DOMAIN_PATTERNS = (
 )
 _AIRTIME_DIRECT_PREFIX_RE = re.compile(
     r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:(?:i\s+)?(?:want|need|would\s+like)\s+to\s+)?"
     r"(?:buy|recharge|top\s*up|topup|load|send)\b",
     re.IGNORECASE,
 )
@@ -329,12 +330,15 @@ _AIRTIME_DIRECT_EXPLICIT_HINT_RE = re.compile(
     r"\b(?:airtime|mtn|glo|airtel|9mobile)\b",
     re.IGNORECASE,
 )
+_AIRTIME_DIRECT_EXPLICIT_AIRTIME_RE = re.compile(r"\bairtime\b", re.IGNORECASE)
 _AIRTIME_DIRECT_SEND_PREFIX_RE = re.compile(
     r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*send\b",
     re.IGNORECASE,
 )
+_AIRTIME_DIRECT_DATA_WORD_RE = re.compile(r"\b(?:data|bundle)\b", re.IGNORECASE)
 _DATA_DIRECT_PREFIX_RE = re.compile(
     r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:(?:i\s+)?(?:want|need|would\s+like)\s+to\s+)?"
     r"(?:buy|get|send)\b",
     re.IGNORECASE,
 )
@@ -881,11 +885,15 @@ def _is_obvious_airtime_request(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if not normalized or not _AIRTIME_DIRECT_PREFIX_RE.search(normalized):
         return False
+    if _AIRTIME_DIRECT_DATA_WORD_RE.search(normalized):
+        return False
     if _AIRTIME_DIRECT_SEND_PREFIX_RE.match(normalized) and not _AIRTIME_DIRECT_EXPLICIT_HINT_RE.search(normalized):
         return False
     has_mixed_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
     if has_mixed_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
         return False
+    if _AIRTIME_DIRECT_EXPLICIT_AIRTIME_RE.search(normalized):
+        return True
     return bool(_TRANSFER_DIRECT_AMOUNT_RE.search(normalized) and _AIRTIME_DIRECT_HINT_RE.search(normalized))
 
 
