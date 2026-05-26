@@ -29,6 +29,10 @@ from shared.services.async_completion import (
 )
 from shared.services.delivery_service import DeliveryService
 from shared.services.failure_categories import classify_failure_category
+from shared.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
+    suggest_transfer_beneficiary,
+)
 from shared.transaction_runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.logging import get_logger
 
@@ -76,6 +80,7 @@ class TransferExecutor:
         delivery_service: DeliveryService | None = None,
         redis_client: redis.Redis | None = None,
         funded_transfer_repo: FundedTransferRepository | None = None,
+        beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
     ):
         self.direct_debit_provider = direct_debit_provider
         self.account_repo = account_repo
@@ -84,6 +89,7 @@ class TransferExecutor:
         self.delivery_service = delivery_service
         self.redis_client = redis_client
         self.funded_transfer_repo = funded_transfer_repo
+        self.beneficiary_suggestion_service = beneficiary_suggestion_service
 
     def _resolve_delivery_service(self) -> DeliveryService | None:
         if self.delivery_service is not None:
@@ -209,6 +215,45 @@ class TransferExecutor:
             metadata={"source": "transfer_executor", "transaction_id": data.get("transaction_id")},
             dedupe_key=f"receipt-choice:{data.get('transaction_id')}",
             strict_actionable=True,
+        )
+
+    async def _deliver_transfer_beneficiary_suggestion(
+        self,
+        *,
+        data: dict[str, Any],
+        transfer_data: dict[str, Any],
+        transaction_id: str,
+        locale: str,
+    ) -> None:
+        if is_grouped_async_message(data):
+            return
+        if str(self._scheduled_meta(data).get("run_source") or "") == "scheduled":
+            return
+
+        recipient = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
+        suggestion = await suggest_transfer_beneficiary(
+            self.beneficiary_suggestion_service,
+            phone_number=str(data.get("phone_number") or ""),
+            channel=str(data.get("channel") or "whatsapp"),
+            locale=locale,
+            transaction_id=transaction_id,
+            account_number=recipient.get("account_number"),
+            bank_code=recipient.get("bank_code"),
+            bank_name=recipient.get("bank_name"),
+            recipient_name=recipient.get("name"),
+            original_alias=recipient.get("original_alias"),
+            bank_code_provider=recipient.get("bank_code_provider"),
+            resolution_provider=recipient.get("resolution_provider"),
+            is_self=recipient.get("is_self") or recipient.get("is_own_account"),
+        )
+        if not suggestion:
+            return
+
+        await self._deliver_text(
+            data=data,
+            text=suggestion,
+            dedupe_key=f"beneficiary-suggestion:transfer:{transaction_id}",
+            metadata={"source": "beneficiary_suggestion", "transaction_id": transaction_id},
         )
 
     async def _deliver_text(
@@ -462,6 +507,12 @@ class TransferExecutor:
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
                     await self._offer_transfer_receipt_image(data=data, transfer_data=transfer_data)
+                    await self._deliver_transfer_beneficiary_suggestion(
+                        data=data,
+                        transfer_data=transfer_data,
+                        transaction_id=transaction_id,
+                        locale=locale,
+                    )
                 logger.info("transfer_success", transaction_id=transaction_id, ref=result.reference)
             elif result.success and result.status in (DebitStatus.PENDING, DebitStatus.PROCESSING):
                 await self.transaction_repo.update_status(
@@ -506,6 +557,12 @@ class TransferExecutor:
                         ),
                         dedupe_key=f"transfer:pending:{transaction_id}",
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
+                    )
+                    await self._deliver_transfer_beneficiary_suggestion(
+                        data=data,
+                        transfer_data=transfer_data,
+                        transaction_id=transaction_id,
+                        locale=locale,
                     )
                 logger.info("transfer_processing", transaction_id=transaction_id, ref=result.reference)
             else:

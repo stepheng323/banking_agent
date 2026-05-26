@@ -22,7 +22,13 @@ from shared.services.async_completion import (
 )
 from shared.services.delivery_service import DeliveryService
 from shared.services.failure_categories import classify_failure_category
+from shared.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
+    append_beneficiary_suggestion,
+    suggest_mobile_beneficiary,
+)
 from shared.utils.logging import get_logger
+from shared.utils.network_utils import format_network_display_name
 
 logger = get_logger(__name__)
 
@@ -74,7 +80,20 @@ def _provider_status(result: dict[str, Any]) -> str | None:
             value = nested.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip().lower()
+    for key in ("message", "error", "reason"):
+        value = result.get(key)
+        if isinstance(value, str) and value.strip().lower() in {
+            "pending",
+            "processing",
+            "queued",
+            "bill payment is pending",
+        }:
+            return "pending"
     return None
+
+
+def _provider_status_is_processing(result: dict[str, Any]) -> bool:
+    return _provider_status(result) in {"pending", "processing", "queued"}
 
 
 def _execution_error_message(locale: str) -> str:
@@ -94,6 +113,15 @@ def _data_personality_context(
     )
 
 
+def _data_recipient_display(data_purchase: dict[str, Any], recipient_phone: Any) -> str:
+    if data_purchase.get("is_self"):
+        return "My Number"
+    recipient_name = str(data_purchase.get("recipient_name") or data_purchase.get("name") or "").strip()
+    if recipient_name:
+        return recipient_name
+    return str(recipient_phone or "").strip()
+
+
 class DataExecutor:
     """Executor for Data transactions."""
 
@@ -103,11 +131,13 @@ class DataExecutor:
         transaction_repo: TransactionRepository,
         delivery_service: DeliveryService | None = None,
         redis_client: redis.Redis | None = None,
+        beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.delivery_service = delivery_service or DeliveryService()
         self.redis_client = redis_client
+        self.beneficiary_suggestion_service = beneficiary_suggestion_service
 
     @staticmethod
     def _scheduled_meta(data: dict[str, Any]) -> dict[str, Any]:
@@ -142,6 +172,31 @@ class DataExecutor:
                 await uow.commit()
         except Exception as exc:
             logger.warning("scheduled_data_run_update_failed", schedule_run_id=schedule_run_id, error=str(exc))
+
+    async def _build_data_beneficiary_suggestion(
+        self,
+        *,
+        data: dict[str, Any],
+        data_purchase: dict[str, Any],
+        transaction_id: str,
+        locale: str,
+    ) -> str | None:
+        if is_grouped_async_message(data):
+            return None
+        if str(self._scheduled_meta(data).get("run_source") or "") == "scheduled":
+            return None
+
+        return await suggest_mobile_beneficiary(
+            self.beneficiary_suggestion_service,
+            phone_number=str(data.get("phone_number") or ""),
+            channel=str(data.get("channel") or "whatsapp"),
+            locale=locale,
+            transaction_id=transaction_id,
+            beneficiary_type="data",
+            recipient_phone=data_purchase.get("target_phone"),
+            network=data_purchase.get("network"),
+            recipient_name=data_purchase.get("recipient_name") or data_purchase.get("name"),
+        )
 
     async def handle_data(self, data: dict[str, Any]) -> None:
         """Handle execution of a data transaction."""
@@ -242,6 +297,7 @@ class DataExecutor:
             amount = float(data_purchase.get("amount") or 0)
             recipient_phone = data_purchase.get("target_phone")
             network = data_purchase.get("network")
+            network_display = format_network_display_name(network)
             plan_code = data_purchase.get("plan_code")
             plan_name = data_purchase.get("plan_name") or render_message(
                 "data.format.summary.plan_name_fallback",
@@ -249,10 +305,39 @@ class DataExecutor:
             )
             request_reference = str(data.get("idempotency_key") or transaction_id)
 
+            if not plan_code or amount <= 0:
+                error_msg = render_message("data.plan_selection.missing_plan", locale)
+                await self.transaction_repo.update_status(
+                    transaction_id,
+                    TransactionStatusEnum.FAILED.value,
+                    error_message=error_msg,
+                )
+                await self._update_scheduled_run(
+                    schedule_run_id,
+                    status="failed",
+                    error_message=error_msg,
+                    transaction_id=transaction_id,
+                )
+                if delivery_target and not is_grouped_async_message(data):
+                    await self.delivery_service.deliver_text(
+                        phone_number=delivery_target,
+                        channel=channel,
+                        text=render_personalized_message(
+                            "data.completion.failed_message",
+                            locale,
+                            {"error_message": error_msg},
+                            _data_personality_context(data_purchase, amount=amount, moment="failure"),
+                        ),
+                        metadata={"source": "data_executor", "transaction_id": transaction_id},
+                        dedupe_key=f"data:failed:{transaction_id}",
+                    )
+                return
+
             result = await self.bill_provider.purchase_data(
                 plan_code=str(plan_code or ""),
                 recipient_phone=str(recipient_phone or ""),
                 network=str(network or ""),
+                amount=amount,
                 reference=request_reference,
             )
             provider_reference = _provider_reference(result) or request_reference
@@ -305,26 +390,122 @@ class DataExecutor:
                         dedupe_key=f"data:batch:{batch_summary['stage']}:{transaction_id}",
                     )
                 elif delivery_target and not is_grouped_async_message(data):
+                    message = render_personalized_message(
+                        "data.completion.success_message",
+                        locale,
+                        {
+                            "plan_name": plan_name,
+                            "amount": f"{amount:,.2f}",
+                            "recipient_name": _data_recipient_display(data_purchase, recipient_phone),
+                            "recipient_phone": recipient_phone or "",
+                            "network": network_display,
+                            "transaction_id": provider_reference or transaction_id,
+                        },
+                        _data_personality_context(data_purchase, amount=amount, moment="success"),
+                    )
+                    message = append_beneficiary_suggestion(
+                        message,
+                        await self._build_data_beneficiary_suggestion(
+                            data=data,
+                            data_purchase=data_purchase,
+                            transaction_id=transaction_id,
+                            locale=locale,
+                        ),
+                    )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
                         channel=channel,
-                        text=render_personalized_message(
-                            "data.completion.success_message",
-                            locale,
-                            {
-                                "plan_name": plan_name,
-                                "amount": f"{amount:,.2f}",
-                                "recipient_name": "My Number" if data_purchase.get("is_self") else plan_name,
-                                "recipient_phone": recipient_phone or "",
-                                "network": network or "",
-                                "transaction_id": provider_reference or transaction_id,
-                            },
-                            _data_personality_context(data_purchase, amount=amount, moment="success"),
-                        ),
+                        text=message,
                         metadata={"source": "data_executor", "transaction_id": transaction_id},
                         dedupe_key=f"data:success:{transaction_id}",
                     )
             else:
+                if _provider_status_is_processing(result):
+                    await self.transaction_repo.update_status(
+                        transaction_id,
+                        TransactionStatusEnum.PROCESSING.value,
+                        provider_transaction_id=provider_reference,
+                        provider_status=provider_status,
+                        provider_response=result,
+                    )
+                    logger.info("data_processing", transaction_id=transaction_id, status=_provider_status(result))
+                    await self._update_scheduled_run(
+                        schedule_run_id,
+                        status="processing",
+                        transaction_id=transaction_id,
+                    )
+                    completion_payload = {
+                        "amount": amount,
+                        "phone_number": recipient_phone,
+                        "plan_name": plan_name,
+                        "network": network,
+                        "source_account_id": data_purchase.get("source_account_id"),
+                        "source_account_number": data_purchase.get("source_account_number")
+                        or data_purchase.get("source"),
+                        "source_bank_name": data_purchase.get("source_bank_name"),
+                        "source_affinity_mode": data_purchase.get("source_affinity_mode"),
+                        "final_status": "processing",
+                    }
+                    batch_summary = await record_group_leg_and_maybe_build_summary(
+                        self.redis_client,
+                        message=data,
+                        task_type="data",
+                        payload=completion_payload,
+                        locale=locale,
+                    )
+                    if batch_summary and delivery_target:
+                        await self.delivery_service.deliver_text(
+                            phone_number=delivery_target,
+                            channel=channel,
+                            text=batch_summary["text"],
+                            actionable_payload=batch_summary.get("actionable_payload"),
+                            metadata={
+                                "source": "data_executor",
+                                "transaction_id": transaction_id,
+                                "batched": True,
+                                "summary_stage": batch_summary["stage"],
+                            },
+                            dedupe_key=f"data:batch:{batch_summary['stage']}:{transaction_id}",
+                        )
+                    elif delivery_target and is_scheduled and not is_grouped_async_message(data):
+                        message = render_personalized_message(
+                            "data.completion.pending_message",
+                            locale,
+                            {
+                                "plan_name": plan_name,
+                                "amount": f"{amount:,.2f}",
+                                "recipient_phone": recipient_phone or "",
+                            },
+                            _data_personality_context(data_purchase, amount=amount, moment="pending"),
+                        )
+                        await self.delivery_service.deliver_text(
+                            phone_number=delivery_target,
+                            channel=channel,
+                            text=message,
+                            metadata={"source": "data_executor", "transaction_id": transaction_id},
+                            dedupe_key=f"data:processing:{transaction_id}",
+                        )
+                    elif delivery_target and not is_grouped_async_message(data):
+                        suggestion = await self._build_data_beneficiary_suggestion(
+                            data=data,
+                            data_purchase=data_purchase,
+                            transaction_id=transaction_id,
+                            locale=locale,
+                        )
+                        if suggestion:
+                            message = append_beneficiary_suggestion(
+                                render_message("data.completion.processing_status", locale),
+                                suggestion,
+                            )
+                            await self.delivery_service.deliver_text(
+                                phone_number=delivery_target,
+                                channel=channel,
+                                text=message,
+                                metadata={"source": "data_executor", "transaction_id": transaction_id},
+                                dedupe_key=f"data:processing-suggestion:{transaction_id}",
+                            )
+                    return
+
                 error_msg = _provider_error_message(
                     result,
                     render_message("data.error.provider_failed", locale),

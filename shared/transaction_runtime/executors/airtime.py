@@ -23,7 +23,13 @@ from shared.services.async_completion import (
 )
 from shared.services.delivery_service import DeliveryService
 from shared.services.failure_categories import classify_failure_category
+from shared.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
+    append_beneficiary_suggestion,
+    suggest_mobile_beneficiary,
+)
 from shared.utils.logging import get_logger
+from shared.utils.network_utils import format_network_display_name
 
 logger = get_logger(__name__)
 
@@ -109,6 +115,16 @@ def _airtime_personality_context(
     )
 
 
+def _airtime_recipient_target(airtime_data: dict[str, Any], recipient_phone: Any) -> str:
+    phone = str(recipient_phone or "").strip()
+    if airtime_data.get("is_self"):
+        return f"My Number ({phone})" if phone else "My Number"
+    recipient_name = str(airtime_data.get("recipient_name") or airtime_data.get("name") or "").strip()
+    if recipient_name:
+        return f"{recipient_name} ({phone})" if phone else recipient_name
+    return phone
+
+
 class AirtimeExecutor:
     """Executor for Airtime transactions."""
 
@@ -119,12 +135,14 @@ class AirtimeExecutor:
         publisher: QueuePublisher,
         delivery_service: DeliveryService | None = None,
         redis_client: redis.Redis | None = None,
+        beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.publisher = publisher
         self.delivery_service = delivery_service or DeliveryService()
         self.redis_client = redis_client
+        self.beneficiary_suggestion_service = beneficiary_suggestion_service
 
     @staticmethod
     def _scheduled_meta(data: dict[str, Any]) -> dict[str, Any]:
@@ -159,6 +177,31 @@ class AirtimeExecutor:
                 await uow.commit()
         except Exception as exc:
             logger.warning("scheduled_airtime_run_update_failed", schedule_run_id=schedule_run_id, error=str(exc))
+
+    async def _build_airtime_beneficiary_suggestion(
+        self,
+        *,
+        data: dict[str, Any],
+        airtime_data: dict[str, Any],
+        transaction_id: str,
+        locale: str,
+    ) -> str | None:
+        if is_grouped_async_message(data):
+            return None
+        if str(self._scheduled_meta(data).get("run_source") or "") == "scheduled":
+            return None
+
+        return await suggest_mobile_beneficiary(
+            self.beneficiary_suggestion_service,
+            phone_number=str(data.get("phone_number") or ""),
+            channel=str(data.get("channel") or "whatsapp"),
+            locale=locale,
+            transaction_id=transaction_id,
+            beneficiary_type="airtime",
+            recipient_phone=airtime_data.get("phone_number"),
+            network=airtime_data.get("network"),
+            recipient_name=airtime_data.get("recipient_name") or airtime_data.get("name"),
+        )
 
     async def handle_airtime(self, data: dict[str, Any]) -> None:
         """Handle execution of an airtime transaction."""
@@ -206,6 +249,8 @@ class AirtimeExecutor:
             amount = airtime_data.get("amount")
             recipient_phone = airtime_data.get("phone_number")
             network = airtime_data.get("network")
+            network_display = format_network_display_name(network)
+            recipient_target = _airtime_recipient_target(airtime_data, recipient_phone)
             delivery_target = str(data.get("channel_identity") or data.get("phone_number") or "").strip()
             channel = data.get("channel", "whatsapp")
             logger.info(
@@ -279,10 +324,20 @@ class AirtimeExecutor:
                         {
                             "amount": f"{amount:,.2f}",
                             "recipient_phone": recipient_phone or "",
-                            "network": network or "",
+                            "recipient_target": recipient_target,
+                            "network": network_display,
                             "reference": ref,
                         },
                         _airtime_personality_context(airtime_data, amount=amount, moment="success"),
+                    )
+                    message = append_beneficiary_suggestion(
+                        message,
+                        await self._build_airtime_beneficiary_suggestion(
+                            data=data,
+                            airtime_data=airtime_data,
+                            transaction_id=transaction_id,
+                            locale=locale,
+                        ),
                     )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
@@ -338,7 +393,7 @@ class AirtimeExecutor:
                         },
                         dedupe_key=f"airtime:batch:{batch_summary['stage']}:{transaction_id}",
                     )
-                elif delivery_target and not is_grouped_async_message(data):
+                elif delivery_target and is_scheduled and not is_grouped_async_message(data):
                     amount_text = f"{amount:,.2f}" if amount is not None else "0.00"
                     message = render_personalized_message(
                         "airtime.execution.message_queued",
@@ -346,9 +401,19 @@ class AirtimeExecutor:
                         {
                             "amount": amount_text,
                             "recipient_phone": recipient_phone or "",
-                            "network": network or "",
+                            "recipient_target": recipient_target,
+                            "network": network_display,
                         },
                         _airtime_personality_context(airtime_data, amount=amount, moment="pending"),
+                    )
+                    message = append_beneficiary_suggestion(
+                        message,
+                        await self._build_airtime_beneficiary_suggestion(
+                            data=data,
+                            airtime_data=airtime_data,
+                            transaction_id=transaction_id,
+                            locale=locale,
+                        ),
                     )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
@@ -357,6 +422,25 @@ class AirtimeExecutor:
                         metadata={"source": "airtime_executor", "transaction_id": transaction_id},
                         dedupe_key=f"airtime:processing:{transaction_id}",
                     )
+                elif delivery_target and not is_grouped_async_message(data):
+                    suggestion = await self._build_airtime_beneficiary_suggestion(
+                        data=data,
+                        airtime_data=airtime_data,
+                        transaction_id=transaction_id,
+                        locale=locale,
+                    )
+                    if suggestion:
+                        message = append_beneficiary_suggestion(
+                            render_message("airtime.execution.processing_status", locale),
+                            suggestion,
+                        )
+                        await self.delivery_service.deliver_text(
+                            phone_number=delivery_target,
+                            channel=channel,
+                            text=message,
+                            metadata={"source": "airtime_executor", "transaction_id": transaction_id},
+                            dedupe_key=f"airtime:processing-suggestion:{transaction_id}",
+                        )
                 else:
                     logger.warning("airtime_delivery_target_missing", transaction_id=transaction_id, channel=channel)
             else:
@@ -424,7 +508,8 @@ class AirtimeExecutor:
                         {
                             "amount": f"{amount:,.2f}",
                             "recipient_phone": recipient_phone or "",
-                            "network": network or "",
+                            "recipient_target": recipient_target,
+                            "network": network_display,
                             "reason": error_msg,
                         },
                         _airtime_personality_context(airtime_data, amount=amount, moment="failure"),

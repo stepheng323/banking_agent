@@ -26,6 +26,11 @@ from shared.i18n import (
     render_text,
 )
 from shared.receipts.choice import build_receipt_choice_intent
+from shared.services.post_transaction_beneficiary import (
+    append_beneficiary_suggestion,
+    suggest_mobile_beneficiary,
+    suggest_transfer_beneficiary,
+)
 from shared.utils.logging import get_logger
 from shared.utils.user_error import safe_user_error_message
 
@@ -201,6 +206,29 @@ def _receipt_status(task: TaskSpec) -> str:
 
 def _is_async_transfer_task(task: TaskSpec) -> bool:
     return task.type == "transfer" and _receipt_status(task) in ASYNC_RECEIPT_STATUSES
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_grouped_or_batch_task(task: TaskSpec) -> bool:
+    payload = task.payload
+    if payload.get("is_batch") is True:
+        return True
+    scheduled_meta = payload.get("scheduled_meta")
+    if isinstance(scheduled_meta, dict) and scheduled_meta.get("run_source") == "scheduled":
+        return True
+    recipients = payload.get("recipients")
+    if isinstance(recipients, list) and len(recipients) > 1:
+        return True
+    async_group = payload.get("async_group")
+    if isinstance(async_group, dict) and _int_value(async_group.get("async_group_size")) > 1:
+        return True
+    return _int_value(payload.get("async_group_size")) > 1
 
 
 def _string(value: Any) -> str:
@@ -482,34 +510,11 @@ async def _enqueue_finalize_transfer_receipt(
     config: RunnableConfig,
     locale: str,
 ) -> dict[str, Any] | None:
-    configurable = config.get("configurable", {})
     transaction_reference = task.payload.get("transaction_id")
     if not isinstance(transaction_reference, str) or not transaction_reference.strip():
         return None
 
-    beneficiary_suggestion_message: str | None = None
-    suggestion_service = configurable.get("beneficiary_suggestion_service")
     recipient_account = task.payload.get("recipient_account")
-    recipient_bank_code = task.payload.get("recipient_bank_code")
-    if suggestion_service is not None and recipient_account:
-        beneficiary_suggestion_message = await suggestion_service.check_and_suggest_beneficiary(
-            phone_number=state.phone_number,
-            beneficiary_type="transfer",
-            recipient_data={
-                "account_number": recipient_account,
-                "bank_code": recipient_bank_code,
-                "bank_name": task.payload.get("recipient_bank_name"),
-                "recipient_bank_code_provider": task.payload.get("recipient_bank_code_provider"),
-                "recipient_resolution_provider": task.payload.get("recipient_resolution_provider"),
-                "name": task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"),
-                "original_alias": task.payload.get("recipient_name"),
-            },
-            transaction_id=transaction_reference,
-            send_message=False,
-            channel=state.channel,
-            locale=locale,
-        )
-
     payload: dict[str, Any] = {
         "phone_number": state.phone_number,
         "channel": state.channel,
@@ -533,10 +538,84 @@ async def _enqueue_finalize_transfer_receipt(
         "transaction_reference": transaction_reference,
         "signal_key": f"receipt:{uuid.uuid4()}",
     }
-    if beneficiary_suggestion_message:
-        payload["beneficiary_suggestion_message"] = beneficiary_suggestion_message
 
     return build_receipt_choice_intent(payload, locale).to_dict()
+
+
+async def _build_single_task_beneficiary_suggestion(
+    *,
+    task: TaskSpec,
+    state: OrchestratorState,
+    config: RunnableConfig,
+    locale: str,
+) -> str | None:
+    if _is_grouped_or_batch_task(task):
+        return None
+
+    suggestion_service = config.get("configurable", {}).get("beneficiary_suggestion_service")
+    if suggestion_service is None:
+        return None
+
+    payload = task.payload
+    receipt = payload.get("receipt") if isinstance(payload.get("receipt"), dict) else {}
+    transaction_reference = _completed_transaction_reference(task, payload, receipt)
+
+    if task.type == "transfer":
+        return await suggest_transfer_beneficiary(
+            suggestion_service,
+            phone_number=state.phone_number,
+            channel=state.channel,
+            locale=locale,
+            transaction_id=transaction_reference,
+            account_number=payload.get("recipient_account"),
+            bank_code=payload.get("recipient_bank_code"),
+            bank_name=payload.get("recipient_bank_name"),
+            recipient_name=payload.get("recipient_resolved_name") or payload.get("recipient_name"),
+            original_alias=payload.get("recipient_name"),
+            bank_code_provider=payload.get("recipient_bank_code_provider"),
+            resolution_provider=payload.get("recipient_resolution_provider"),
+            is_self=payload.get("is_self") or payload.get("is_own_account"),
+        )
+
+    if task.type == "airtime":
+        return await suggest_mobile_beneficiary(
+            suggestion_service,
+            phone_number=state.phone_number,
+            channel=state.channel,
+            locale=locale,
+            transaction_id=transaction_reference,
+            beneficiary_type="airtime",
+            recipient_phone=_first_non_empty(
+                payload.get("recipient_phone"),
+                payload.get("phone_number"),
+                payload.get("recipientPhone"),
+                payload.get("phone"),
+                receipt.get("phone"),
+            ),
+            network=_first_non_empty(payload.get("network"), receipt.get("network")),
+            recipient_name=_first_non_empty(payload.get("recipient_name"), payload.get("name")),
+        )
+
+    if task.type == "data":
+        return await suggest_mobile_beneficiary(
+            suggestion_service,
+            phone_number=state.phone_number,
+            channel=state.channel,
+            locale=locale,
+            transaction_id=transaction_reference,
+            beneficiary_type="data",
+            recipient_phone=_first_non_empty(
+                payload.get("target_phone"),
+                payload.get("recipient_phone"),
+                payload.get("phone_number"),
+                payload.get("phone"),
+                receipt.get("phone"),
+            ),
+            network=_first_non_empty(payload.get("network"), receipt.get("network")),
+            recipient_name=_first_non_empty(payload.get("recipient_name"), payload.get("name")),
+        )
+
+    return None
 
 
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -721,6 +800,13 @@ async def _handle_completed_tasks(
             )
             if receipt_offer:
                 outbox.append(receipt_offer)
+            if suggestion := await _build_single_task_beneficiary_suggestion(
+                task=task,
+                state=state,
+                config=config,
+                locale=locale,
+            ):
+                outbox.append({"type": "say", "text": suggestion})
 
     elif len(async_transaction_tasks) > 1:
         logger.info(
@@ -747,16 +833,21 @@ async def _handle_completed_tasks(
 
         logger.info("generating_async_receipt", task_type=task.type, status=status, message=message)
 
-        outbox.append(
-            {
-                "type": "say",
-                "text": render_message(
-                    "orchestrator.finalize.async_status_message",
-                    locale,
-                    {"status": status, "message": message},
-                ),
-            }
+        text = render_message(
+            "orchestrator.finalize.async_status_message",
+            locale,
+            {"status": status, "message": message},
         )
+        if str(receipt.get("status") or "").lower() not in ASYNC_RECEIPT_STATUSES:
+            if suggestion := await _build_single_task_beneficiary_suggestion(
+                task=task,
+                state=state,
+                config=config,
+                locale=locale,
+            ):
+                text = append_beneficiary_suggestion(text, suggestion)
+
+        outbox.append({"type": "say", "text": text})
 
     elif all_read_only:
         pass

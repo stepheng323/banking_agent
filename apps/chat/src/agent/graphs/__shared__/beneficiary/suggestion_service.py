@@ -9,6 +9,7 @@ from shared.i18n import render_message
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
+from shared.utils.network_utils import format_network_display_name
 
 logger = get_logger(__name__)
 
@@ -233,7 +234,7 @@ class BeneficiarySuggestionService:
                             locale,
                             {
                                 "recipient_display": recipient_display,
-                                "network": network,
+                                "network": format_network_display_name(network),
                                 "masked_phone": masked_phone,
                             },
                         )
@@ -304,6 +305,9 @@ class BeneficiarySuggestionService:
                         beneficiary_type="transfer",
                     )
                 elif beneficiary_type in ("airtime", "data"):
+                    # Mobile-line beneficiaries are shared by airtime and data.
+                    # Keep the legacy "airtime" type so duplicate checks and both
+                    # mobile purchase flows see one saved contact.
                     await uow.beneficiaries.create(
                         user_id=user_id,
                         account_number=data["phone_number"],
