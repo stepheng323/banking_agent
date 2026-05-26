@@ -77,11 +77,6 @@ class ConfirmationStep(AirtimeStep):
                     3600,
                     context.phone_number,
                 )
-                await redis_client.setex(
-                    f"transaction:token:{key}:phone",
-                    3600,
-                    context.phone_number,
-                )
             else:
                 logger.warning("redis_client_not_in_context_cannot_persist_airtime_token")
         except Exception as e:

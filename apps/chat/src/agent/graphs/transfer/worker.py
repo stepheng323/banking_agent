@@ -36,6 +36,7 @@ from apps.chat.src.agent.graphs.transfer.nodes.execution import ExecutionStep
 from apps.chat.src.agent.graphs.transfer.nodes.extraction import ExtractionStep
 from apps.chat.src.agent.graphs.transfer.nodes.funding import FundingStep
 from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import PayoutPreparationStep
+from apps.chat.src.agent.graphs.transfer.nodes.pin_token import persist_schedule_pin_token
 from apps.chat.src.agent.graphs.transfer.nodes.resolver import ResolutionStep
 from apps.chat.src.agent.graphs.transfer.nodes.security import AuthorizationStep
 from apps.chat.src.agent.graphs.transfer.nodes.selection import SourceSelectionStep
@@ -391,6 +392,8 @@ class TransferWorker:
         locale: str,
         user_message: str | None,
         gates: TransferGates,
+        phone_number: str | None = None,
+        worker_context: TransferWorkerContext | None = None,
     ) -> TransactionResult:
         schedule_id = (data.schedule_id or data.schedule_selector or "").strip()
         edit_patch = dict(data.schedule_edit_patch or {})
@@ -445,6 +448,12 @@ class TransferWorker:
             next_run_at = next_run_at or computed_next_run
 
             if requires_auth and not gates.pin_verified:
+                if phone_number:
+                    await persist_schedule_pin_token(
+                        idempotency_key=data.idempotency_key,
+                        phone_number=phone_number,
+                        worker_context=worker_context,
+                    )
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_AUTH,
                     confirmation_summary=summary,
@@ -640,6 +649,8 @@ class TransferWorker:
                 locale=locale,
                 user_message=user_message,
                 gates=gates,
+                phone_number=ctx.phone_number,
+                worker_context=worker_context,
             )
 
         pipeline = self._build_pipeline(user_message, include_execution=False, require_schedule_fields=True)

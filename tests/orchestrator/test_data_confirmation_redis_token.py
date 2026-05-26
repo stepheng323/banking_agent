@@ -15,7 +15,7 @@ class _StubRedis:
 
 
 @pytest.mark.asyncio
-async def test_data_confirmation_persists_data_and_generic_transaction_tokens() -> None:
+async def test_data_confirmation_persists_data_token() -> None:
     redis = _StubRedis()
     step = ConfirmationStep()
     payload = DataPayload(
@@ -48,7 +48,6 @@ async def test_data_confirmation_persists_data_and_generic_transaction_tokens() 
     assert result.outcome.value == "needs_confirmation"
     assert redis.calls == [
         ("data:token:data-test-token:phone", 3600, "2348162511023"),
-        ("transaction:token:data-test-token:phone", 3600, "2348162511023"),
     ]
 
 
@@ -83,5 +82,4 @@ async def test_data_confirmation_falls_back_to_global_redis(monkeypatch: pytest.
     assert result.outcome.value == "needs_confirmation"
     assert redis.calls == [
         ("data:token:data-test-token:phone", 3600, "2348162511023"),
-        ("transaction:token:data-test-token:phone", 3600, "2348162511023"),
     ]

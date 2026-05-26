@@ -61,6 +61,14 @@ def _worker() -> TransferWorker:
     )
 
 
+class _StubRedis:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int, str]] = []
+
+    async def setex(self, key: str, ttl: int, value: str) -> None:
+        self.calls.append((key, ttl, value))
+
+
 def _future_schedule_date() -> date:
     return today_lagos() + timedelta(days=1)
 
@@ -276,6 +284,47 @@ async def test_schedule_management_material_edit_requires_pin_without_text_confi
     assert schedule.local_time == "09:30"
     assert schedule.next_run_at_utc == expected_next_run_at
     assert uow.committed is True
+
+
+@pytest.mark.asyncio
+async def test_schedule_management_material_edit_persists_schedule_pin_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = _StubRedis()
+    schedule = _schedule(
+        "sch-transfer",
+        domain="transfer",
+        payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
+    )
+    uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
+    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
+
+    from shared.cache.redis_client import RedisClient
+
+    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
+
+    worker = _worker()
+    payload = TransferPayload(
+        idempotency_key="schedule-test-token",
+        schedule_selector="1",
+        amount=7000,
+        schedule_time_local="09:30",
+    )
+
+    auth = await worker._edit_schedule(
+        data=payload,
+        user_id="user-1",
+        locale="en",
+        user_message="change scheduled transfer to 7k at 9:30am",
+        gates=TransferGates(),
+        phone_number="2348162511023",
+        worker_context=SimpleNamespace(redis_client=None),
+    )
+
+    assert auth.outcome == TransactionOutcome.NEEDS_AUTH
+    assert redis.calls == [
+        ("schedule:token:schedule-test-token:phone", 3600, "2348162511023"),
+    ]
 
 
 @pytest.mark.asyncio

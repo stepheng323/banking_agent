@@ -7,6 +7,7 @@ from apps.chat.src.agent.graphs.transfer.models.types import (
     TransferGates,
     TransferPayload,
 )
+from apps.chat.src.agent.graphs.transfer.nodes.pin_token import persist_transfer_pin_token
 from apps.chat.src.agent.graphs.transfer.nodes.security import require_auth
 from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.chat.src.agent.orchestrator.models.domain import (
@@ -39,17 +40,11 @@ class ExecutionStep(TransferStep):
         res = require_auth(gates)
         if res.outcome != TransactionOutcome.OK:
             if res.outcome == TransactionOutcome.NEEDS_AUTH:
-                try:
-                    key = data.idempotency_key
-                    redis_client = getattr(worker_context, "redis_client", None)
-                    if redis_client:
-                        await redis_client.setex(
-                            f"transfer:token:{key}:phone",
-                            3600,
-                            context.phone_number,
-                        )
-                except Exception:
-                    pass
+                await persist_transfer_pin_token(
+                    idempotency_key=data.idempotency_key,
+                    phone_number=context.phone_number,
+                    worker_context=worker_context,
+                )
             return res
 
         try:

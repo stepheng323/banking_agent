@@ -11,6 +11,7 @@ from apps.chat.src.agent.graphs.transfer.models.types import (
     TransferGates,
     TransferPayload,
 )
+from apps.chat.src.agent.graphs.transfer.nodes.pin_token import persist_transfer_pin_token
 from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.currency import format_naira
@@ -84,26 +85,11 @@ class ConfirmationStep(TransferStep):
         if risk_patch:
             res.patch = {**(res.patch or {}), **risk_patch}
 
-        try:
-            redis_client = getattr(worker_context, "redis_client", None)
-            key = data.idempotency_key
-
-            if redis_client:
-                # Persist tokens
-                await redis_client.setex(
-                    f"transfer:token:{key}:phone",
-                    3600,
-                    context.phone_number,
-                )  # Also write generic transaction token if needed by unified handler
-                await redis_client.setex(
-                    f"transaction:token:{key}:phone",
-                    3600,
-                    context.phone_number,
-                )
-            else:
-                logger.warning("redis_client_not_in_context_cannot_persist_transfer_token")
-        except Exception as e:
-            logger.error("failed_to_persist_token", error=str(e))
+        await persist_transfer_pin_token(
+            idempotency_key=data.idempotency_key,
+            phone_number=context.phone_number,
+            worker_context=worker_context,
+        )
 
         return res
 

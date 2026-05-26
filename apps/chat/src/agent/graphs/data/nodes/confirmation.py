@@ -102,7 +102,6 @@ async def _persist_data_confirmation_token(
 
         if redis_client:
             await redis_client.setex(f"data:token:{key}:phone", 3600, context.phone_number)
-            await redis_client.setex(f"transaction:token:{key}:phone", 3600, context.phone_number)
         else:
             logger.warning("redis_client_not_in_context_cannot_persist_data_token")
     except Exception as exc:
