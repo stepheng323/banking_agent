@@ -427,6 +427,59 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     assert updates["routing_decision"] == "meta_direct"
 
 
+async def test_gate_personalizes_idle_greeting_with_profile_name() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_named_greeting_1",
+        phone_number="2348777777710",
+        channel="whatsapp",
+        last_message_text="hi",
+        loaded_context={"language": "en", "profile": {"first_name": "Gaines"}},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["final_response"] == render_message(
+        "conversational.greeting_named",
+        "en",
+        {"display_name": "Gaines"},
+    )
+
+
+async def test_gate_personalizes_idle_greeting_with_channel_name_when_profile_missing() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_named_greeting_2",
+        phone_number="2348777777711",
+        channel="whatsapp",
+        last_message_text="hi",
+        loaded_context={"language": "en", "channel_metadata": {"sender_display_name": "Gaines Abiodun"}},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["final_response"] == render_message(
+        "conversational.greeting_named",
+        "en",
+        {"display_name": "Gaines"},
+    )
+
+
+async def test_gate_does_not_personalize_greeting_with_unsafe_channel_name() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_named_greeting_3",
+        phone_number="2348777777712",
+        channel="whatsapp",
+        last_message_text="hi",
+        loaded_context={"language": "en", "channel_metadata": {"sender_display_name": "User123"}},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["final_response"] == render_message("conversational.greeting", "en")
+
+
 def test_addressed_greeting_uses_current_brand_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     non_canonical_name = "Old Assistant"
     monkeypatch.setattr(settings, "app_name", "Aurora Pay")
@@ -472,7 +525,10 @@ def test_addressed_greeting_distinguishes_generic_and_wrong_names() -> None:
 
 
 def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    _assert_meta_response(f"What is {settings.app_name_short}", "conversational.identity")
+    _assert_meta_response(f"Tell me about {settings.app_name_short}", "conversational.identity")
     _assert_meta_response(f"What is the meaning of {settings.app_name_short}", "conversational.brand_origin")
+    _assert_meta_response(f"what does {settings.app_name_short} mean", "conversational.brand_origin")
     _assert_meta_response(f"meaning of {settings.app_name_short}", "conversational.brand_origin")
     _assert_meta_response(f"why are you called {settings.app_name}", "conversational.brand_origin")
     _assert_meta_response(f"where did the name {settings.app_name_short} come from", "conversational.brand_origin")
@@ -485,6 +541,7 @@ def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.Mo
     monkeypatch.setattr(settings, "app_legacy_names", ())
 
     _assert_meta_response("what is the meaning of Aurora", "conversational.brand_origin")
+    _assert_meta_response("what is Aurora", "conversational.identity")
     assert classify_deterministic_meta_response("what is the meaning of xara") is None
 
 
@@ -584,6 +641,34 @@ async def test_gate_brand_meaning_uses_brand_origin_without_semantic_router() ->
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == render_message("conversational.brand_origin", "en")
+    assert updates["routing_owner"] == "guardrail"
+
+
+async def test_gate_plain_brand_question_uses_product_identity_without_semantic_router() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.95,
+            detected_language="English",
+            response_key="conversational.brand_origin",
+            expected_transaction_executors=[],
+            reason="semantic router should not run for plain brand identity",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_brand_identity",
+        phone_number="2348777777719",
+        channel="whatsapp",
+        last_message_text=f"What is {settings.app_name_short}",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.identity", "en")
     assert updates["routing_owner"] == "guardrail"
 
 
@@ -1037,107 +1122,6 @@ async def test_gate_investment_followup_stays_in_capability_boundary() -> None:
     assert updates["capability_boundary"].key == "investments"
     assert updates["capability_boundary"].followup_count == 1
 
-
-async def test_gate_lending_followup_history_compatibility_guard() -> None:
-    planner = _RouteTurnPlanner(
-        SemanticRouteDecision(decision="direct_reply", response="semantic path"),
-        frame_followup_decision=ContextFrameFollowupDecision(decision="show_details", confidence=0.96),
-    )
-    state = OrchestratorState(
-        user_id="u_gate_lending_history_guard",
-        phone_number="2348777777721",
-        channel="whatsapp",
-        last_message_text="Just a small amount please",
-        loaded_context={
-            "language": "en",
-            "history": [
-                {"role": "user", "content": "Can you borrow me money?"},
-                {
-                    "role": "assistant",
-                    "content": render_message(
-                        "capability.unsupported_unavailable",
-                        "en",
-                        _unsupported_params("lending"),
-                    ),
-                },
-            ],
-        },
-        context_frames=[
-            ContextFrame(
-                frame_id="stale_transfer_frame",
-                frame_type=ContextFrameType.TRANSACTION_LIST,
-                items=[
-                    ContextEntity(
-                        entity_type=EntityType.TRANSACTION,
-                        entity_id="tx-stale",
-                        label="₦2,000 transfer to Tolu Adebayo",
-                        data={"task_type": "transfer", "amount": 2000, "recipient_name": "Tolu Adebayo"},
-                    )
-                ],
-                created_at_ts=int(time.time()),
-                ttl_seconds=600,
-            )
-        ],
-    )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
-
-    updates = await session_gate_direct_path(state, config)
-
-    assert planner.frame_followup_calls == 0
-    assert planner.route_calls == 0
-    assert updates["semantic_path_shape"] == "capability_boundary_followup"
-    assert updates["final_response"] == render_message(
-        "capability.unsupported_unavailable_followup",
-        "en",
-        _unsupported_params("lending"),
-    )
-    assert updates["capability_boundary"].key == "lending"
-    assert updates["capability_boundary"].followup_count == 1
-
-
-async def test_gate_lending_history_compatibility_uses_only_latest_assistant_reply() -> None:
-    planner = _RouteTurnPlanner(
-        SemanticRouteDecision(
-            decision="direct_reply",
-            confidence=0.9,
-            detected_language="English",
-            response="semantic path",
-            expected_transaction_executors=[],
-            reason="no live lending boundary",
-        )
-    )
-    state = OrchestratorState(
-        user_id="u_gate_lending_history_latest_only",
-        phone_number="2348777777728",
-        channel="whatsapp",
-        last_message_text="Just a small amount please",
-        loaded_context={
-            "language": "en",
-            "history": [
-                {"role": "user", "content": "Can you borrow me money?"},
-                {
-                    "role": "assistant",
-                    "content": render_message(
-                        "capability.unsupported_unavailable",
-                        "en",
-                        _unsupported_params("lending"),
-                    ),
-                },
-                {"role": "user", "content": "what is my access balance"},
-                {"role": "assistant", "content": "Your Access Bank account has a balance of ₦30,000.00."},
-            ],
-        },
-    )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
-
-    updates = await session_gate_direct_path(state, config)
-
-    assert planner.route_calls == 1
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
-    assert updates["final_response"] == "semantic path"
-    assert "capability_boundary" not in updates
-
-
 async def test_gate_lending_followup_gets_firm_redirect_after_two_followups() -> None:
     state = OrchestratorState(
         user_id="u_gate_lending_firm",
@@ -1189,7 +1173,7 @@ async def test_gate_lending_payback_followup_stays_in_capability_boundary() -> N
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.boundary_calls == 1
+    assert planner.boundary_calls == 0
     assert planner.route_calls == 0
     assert updates["semantic_path_shape"] == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
@@ -1199,6 +1183,55 @@ async def test_gate_lending_payback_followup_stays_in_capability_boundary() -> N
     )
     assert updates["capability_boundary"].key == "lending"
     assert updates["capability_boundary"].followup_count == 2
+
+
+async def test_gate_lending_payback_followup_infers_recent_boundary_from_history() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            confidence=0.9,
+            detected_language="English",
+            response="semantic path",
+            expected_transaction_executors=[],
+            reason="semantic router should not run",
+        ),
+    )
+    refusal = render_message("capability.unsupported_unavailable", "en", _unsupported_params("lending"))
+    state = OrchestratorState(
+        user_id="u_gate_lending_history_followup",
+        phone_number="2348777777728",
+        channel="whatsapp",
+        last_message_text="I will pay back",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "Can you borrow me money?"},
+                {
+                    "role": "assistant",
+                    "content": refusal,
+                    "topic": "unsupported_boundary",
+                    "metadata": {"topic": "unsupported_boundary"},
+                },
+            ],
+            "conversation_grounding": {
+                "last_topic": "unsupported_boundary",
+                "last_assistant_message": refusal,
+            },
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "capability_boundary_followup"
+    assert updates["final_response"] == render_message(
+        "capability.unsupported_unavailable_followup",
+        "en",
+        _unsupported_params("lending"),
+    )
+    assert updates["capability_boundary"].key == "lending"
+    assert updates["capability_boundary"].followup_count == 1
 
 
 async def test_gate_boundary_classifier_clears_for_unrelated_turn() -> None:
@@ -4603,6 +4636,60 @@ async def test_gate_contextual_worker_acknowledgement_does_not_steal_active_inte
     assert updates["routing_decision"] == "planner_handoff"
 
 
+async def test_gate_contextual_meta_acknowledgement_uses_brand_grounding() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_contextual_meta_ack_1",
+        phone_number="23489999999190",
+        channel="whatsapp",
+        last_message_text="Okay, that's mental",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "What is the meaning of Nenya?"},
+                {"role": "assistant", "content": render_message("conversational.brand_origin", "en")},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "contextual_meta_followup"
+    assert updates["final_response"] == render_message("conversational.contextual_meta_followup.brand_origin", "en")
+
+
+async def test_gate_contextual_meta_acknowledgement_uses_responder_when_available() -> None:
+    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="should not be used"))
+    responder = _FakeConversationResponder("Exactly - it is about clear, controlled flow for your money.")
+    state = OrchestratorState(
+        user_id="u_gate_contextual_meta_ack_2",
+        phone_number="23489999999191",
+        channel="whatsapp",
+        last_message_text="Mad, that's mental",
+        loaded_context={
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "What is the meaning of Nenya?"},
+                {"role": "assistant", "content": render_message("conversational.brand_origin", "en")},
+            ],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "conversation_responder": responder},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "contextual_meta_followup"
+    assert updates["final_response"] == responder.reply
+    assert responder.calls[0]["intent"] == "contextual_meta_followup"
+    assert responder.calls[0]["user_ctx"]["conversation_grounding"]["last_topic"] == "brand_origin"
+
+
 async def test_gate_contextual_worker_acknowledgement_handles_cross_worker_history() -> None:
     for domain, assistant_text in [
         ("query", "Transactions — Apr 17-May 17\n₦10,000 • Sent — Tolu"),
@@ -5708,14 +5795,12 @@ class _FakeConversationResponder:
 
     async def generate_reply(
         self,
-        phone_number: str,
         text: str,
         user_ctx: dict[str, object],
         intent: str | None = None,
     ) -> str:
         self.calls.append(
             {
-                "phone_number": phone_number,
                 "text": text,
                 "user_ctx": dict(user_ctx),
                 "intent": intent,

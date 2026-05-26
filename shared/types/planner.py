@@ -253,7 +253,6 @@ ContextFrameRequestedField: TypeAlias = Literal[
 
 ContextFrameRank: TypeAlias = Literal["largest", "smallest", "newest", "oldest"]
 
-
 class ContextFrameFollowupFilters(BaseModel):
     """Structured filters for grounding follow-ups against displayed result frames."""
 

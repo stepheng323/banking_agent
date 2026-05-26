@@ -19,6 +19,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
+from shared.cache.flow_session_manager import FlowSessionManager
 from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
@@ -26,7 +27,6 @@ from shared.i18n import LocaleManager, render_message
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
-from shared.services.onboarding import SessionManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -67,7 +67,7 @@ class AccountWorker:
         user_repo: UserRepository,
         llm: BaseChatModel,
         banking_provider: BankDataProvider,
-        session_manager: SessionManager,
+        session_manager: FlowSessionManager,
         direct_debit_provider: DirectDebitProvider,
     ) -> None:
         self.account_repo = account_repo
@@ -102,7 +102,6 @@ class AccountWorker:
             if missing_caps:
                 logger.info("capability_blocked", domain="account", capabilities=[cap.value for cap in missing_caps])
                 response = generate_limitation_message(missing_caps, locale=locale)
-                response = await self._translate_if_needed(response, user_ctx, payload)
                 return AccountResult(outcome=AccountOutcome.OK, response=response)
 
         action = payload.get("action")
@@ -159,12 +158,10 @@ class AccountWorker:
             if missing_caps:
                 logger.info("capability_blocked", domain="account", capabilities=[cap.value for cap in missing_caps])
                 response = generate_limitation_message(missing_caps, locale=locale)
-                response = await self._translate_if_needed(response, user_ctx, payload)
                 return AccountResult(outcome=AccountOutcome.OK, response=response, patch=patch)
 
         if action in ("unlink", "set_default") and not identifier:
             prompt = self._missing_identifier_prompt(action, locale)
-            prompt = await self._translate_if_needed(prompt, user_ctx, payload)
             return AccountResult(
                 outcome=AccountOutcome.NEEDS_INPUT,
                 required_fields=["identifier"],
@@ -176,7 +173,6 @@ class AccountWorker:
         user_id = str(profile.get("id") or context.get("user_id") or "")
         if not user_id and action != "link":
             response = render_message("account.user_not_found", locale)
-            response = await self._translate_if_needed(response, user_ctx, payload)
             return AccountResult(outcome=AccountOutcome.OK, response=response, patch=patch)
 
         if action == "count":
@@ -186,7 +182,6 @@ class AccountWorker:
             count = len(accounts)
             noun = "account" if count == 1 else "accounts"
             response = f"You have {count} linked {noun}."
-            response = await self._translate_if_needed(response, user_ctx, payload)
             return AccountResult(
                 outcome=AccountOutcome.OK,
                 response=response,
@@ -229,7 +224,6 @@ class AccountWorker:
                     response = AccountFormatter.format_account_list(accounts, locale=locale)
                 viewed_accounts = self._serialize_accounts(accounts)
 
-            response = await self._translate_if_needed(response, user_ctx, payload)
             return AccountResult(
                 outcome=AccountOutcome.OK,
                 response=response,
@@ -314,24 +308,10 @@ class AccountWorker:
             return render_message("account.prompt.default_identifier", locale)
         return render_message("account.prompt.which_account", locale)
 
-    async def _translate_if_needed(
-        self,
-        text: str,
-        user_ctx: dict[str, Any],
-        payload: dict[str, Any],
-    ) -> str:
-        del user_ctx, payload
-        return text
-
     @staticmethod
     def _resolve_locale(user_ctx: dict[str, Any], payload: dict[str, Any]) -> str:
         language = user_ctx.get("language") or payload.get("language")
         return LocaleManager.normalize(language).value
-
-    async def _list_accounts(self, user_id: str, *, locale: str = "en") -> str:
-        """List all linked accounts for a user."""
-        accounts = await self.account_repo.get_by_user(user_id)
-        return AccountFormatter.format_account_list(accounts, locale=locale)
 
     @staticmethod
     def _serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:

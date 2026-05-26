@@ -16,7 +16,6 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
 )
 from shared.i18n.renderer import render_message
 from shared.services.unsupported_capabilities import (
-    UNSUPPORTED_CAPABILITY_REGISTRY,
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapability,
     detect_unsupported_capability,
@@ -47,7 +46,7 @@ _GENERIC_CONTINUATION_RE = re.compile(
     re.IGNORECASE,
 )
 _AMOUNT_RE = re.compile(r"(?:₦|ngn|naira)?\s*\d[\d,]*(?:\.\d+)?\s*[km]?\b", re.IGNORECASE)
-_BOUNDARY_LOCALES = ("en", "pcm", "yo", "ha", "ig")
+
 
 def _normalize(text: str | None) -> str:
     return normalize_unsupported_text(text)
@@ -68,42 +67,34 @@ def _coerce_boundary(raw: Any) -> CapabilityBoundary | None:
     return None
 
 
-def _assistant_history_texts(ctx: GateContext) -> list[str]:
-    texts: list[str] = []
-    if ctx.state.final_response:
-        texts.append(str(ctx.state.final_response))
+def _recent_unsupported_boundary(ctx: GateContext) -> CapabilityBoundary | None:
     loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    grounding = loaded_context.get("conversation_grounding")
+    if isinstance(grounding, dict):
+        last_topic = str(grounding.get("last_topic") or "").strip()
+        last_assistant = str(grounding.get("last_assistant_message") or "").strip()
+        if last_topic == "unsupported_boundary" and last_assistant:
+            capability = detect_unsupported_capability(last_assistant)
+            if capability is not None:
+                return CapabilityBoundary(key=capability.key, label=capability.label)
+
     history = loaded_context.get("history")
     if isinstance(history, list):
-        for turn in reversed(history[-6:]):
+        for turn in reversed(history):
             if not isinstance(turn, dict):
                 continue
-            if str(turn.get("role", "")).strip().lower() != "assistant":
+            if str(turn.get("role") or "").strip().casefold() != "assistant":
                 continue
-            content = str(turn.get("content") or "").strip()
-            if content:
-                texts.append(content)
-    return texts
-
-
-def _latest_reply_was_unsupported_boundary(ctx: GateContext) -> UnsupportedCapability | None:
-    assistant_texts = [_normalize(text) for text in _assistant_history_texts(ctx)]
-    if not assistant_texts:
-        return None
-    latest = assistant_texts[0]
-    for capability in UNSUPPORTED_CAPABILITY_REGISTRY:
-        expected = {
-            _normalize(
-                render_message(
-                    "capability.unsupported_unavailable",
-                    locale,
-                    unsupported_capability_params(capability, locale=locale),
-                )
-            )
-            for locale in _BOUNDARY_LOCALES
-        }
-        if latest in expected:
-            return capability
+            topic = str(turn.get("topic") or "").strip()
+            metadata = turn.get("metadata")
+            if not topic and isinstance(metadata, dict):
+                topic = str(metadata.get("topic") or "").strip()
+            if topic != "unsupported_boundary":
+                continue
+            capability = detect_unsupported_capability(str(turn.get("content") or ""))
+            if capability is not None:
+                return CapabilityBoundary(key=capability.key, label=capability.label)
+            return None
     return None
 
 
@@ -152,7 +143,6 @@ async def _semantic_unsupported_capability(
         return None
     try:
         decision = await classifier(
-            ctx.state.phone_number,
             text,
             locale=ctx.current_locale,
             context="None",
@@ -175,7 +165,6 @@ async def _semantic_boundary_turn(
         return None
     try:
         decision = await classifier(
-            ctx.state.phone_number,
             ctx.message_text,
             boundary_key=capability.key,
             boundary_label=capability.label,
@@ -217,18 +206,10 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any
     if boundary is not None and not _is_live_boundary(boundary, now=now):
         ctx.gate_updates["capability_boundary"] = None
         return None
+    if boundary is None:
+        boundary = _recent_unsupported_boundary(ctx)
 
     capability = get_unsupported_capability(boundary.key) if boundary is not None else None
-    if boundary is None:
-        capability = _latest_reply_was_unsupported_boundary(ctx)
-        if capability is not None:
-            boundary = CapabilityBoundary(
-                key=capability.key,
-                label=capability.label,
-                created_at_ts=now,
-                last_updated_ts=now,
-                ttl_seconds=_BOUNDARY_TTL_SECONDS,
-            )
 
     if boundary is None or capability is None:
         return None
@@ -245,7 +226,7 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any
         return None
 
     boundary_decision: UnsupportedBoundaryTurnOutput | None = None
-    if detected_capability is None:
+    if detected_capability is None and not looks_like_followup:
         boundary_decision = await _semantic_boundary_turn(ctx, boundary=boundary, capability=capability)
         if boundary_decision is not None:
             if boundary_decision.action == "same_unsupported":

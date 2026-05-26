@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from apps.chat.src.agent.graphs.query.models import QueryExecutionContract, QueryResultItem
-from apps.chat.src.agent.shared.query_contracts import SurfaceView
 from shared.i18n import render_message
 
 _END_SESSION_PATTERNS = (
@@ -26,12 +24,8 @@ class ContinuationClassifier:
         self,
         *,
         message: str,
-        items: list[QueryResultItem] | None,
-        surface_view: SurfaceView | None,
         language: str,
-        query_contract: QueryExecutionContract | None = None,
     ) -> tuple[str, dict[str, Any]] | None:
-        del items, surface_view, query_contract
         normalized = self._strip_trailing_punctuation(self._normalize_message(message))
         if not normalized:
             return None

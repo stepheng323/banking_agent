@@ -340,7 +340,6 @@ async def fetch_and_filter(
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
     user_id: str | None = None,
-    language: str = "en",
     trace_context: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Fetch transactions and apply filters."""
@@ -351,7 +350,6 @@ async def fetch_and_filter(
         account_ids,
         accounts_info,
         user_id=user_id,
-        language=language,
         trace_context=trace_context,
     )
     if query_contract.time_range:
@@ -374,11 +372,9 @@ async def fetch_transactions_base(
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
     user_id: str | None = None,
-    language: str = "en",
     trace_context: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Fetch transaction base set for the query time/account envelope (no query.filters applied)."""
-    del language
     started_at = perf_counter()
     start, end = resolve_query_date_bounds(query_contract)
     start_bound = date.fromisoformat(start)

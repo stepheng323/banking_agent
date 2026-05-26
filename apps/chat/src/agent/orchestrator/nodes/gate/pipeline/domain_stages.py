@@ -1,4 +1,3 @@
-import json
 import re
 import time
 from typing import Any
@@ -274,17 +273,9 @@ async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | No
     if not suggestion_data:
         return None
 
-    suggestion_payload: dict[str, Any] | None
-    try:
-        parsed_payload = json.loads(suggestion_data)
-        suggestion_payload = parsed_payload if isinstance(parsed_payload, dict) else None
-    except Exception:
-        suggestion_payload = None
-
     decision = _resolve_beneficiary_suggestion_reply(
         ctx.message_text,
         locale=ctx.current_locale,
-        suggestion_payload=suggestion_payload,
     )
     logger.info(
         "beneficiary_suggestion_gate_decision",

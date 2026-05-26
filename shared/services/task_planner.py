@@ -329,7 +329,6 @@ class TaskPlanner:
 
     async def classify_confirmation_reply(
         self,
-        phone_number: str,
         text: str,
         *,
         prompt_kind: ConfirmationPromptKind,
@@ -338,7 +337,6 @@ class TaskPlanner:
         path_label: str = "interrupt_path",
     ) -> ConfirmationDecision:
         """Bounded LLM fallback for prompt-scoped approval/rejection replies."""
-        del phone_number
         start = time.perf_counter()
         result = await classify_confirmation_reply(
             text,
@@ -363,7 +361,6 @@ class TaskPlanner:
 
     async def classify_unsupported_capability(
         self,
-        phone_number: str,
         text: str,
         *,
         locale: str | None = None,
@@ -371,7 +368,6 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> UnsupportedCapabilitySemanticOutput:
         """Bounded semantic classifier for unsupported capability boundaries."""
-        del phone_number
         start = time.perf_counter()
         result = await classify_unsupported_capability_semantic(
             text,
@@ -398,7 +394,6 @@ class TaskPlanner:
 
     async def classify_unsupported_boundary_turn(
         self,
-        phone_number: str,
         text: str,
         *,
         boundary_key: str,
@@ -409,7 +404,6 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> UnsupportedBoundaryTurnOutput:
         """Bounded semantic classifier for turns after an unsupported capability refusal."""
-        del phone_number
         start = time.perf_counter()
         result = await classify_unsupported_boundary_turn_semantic(
             text,

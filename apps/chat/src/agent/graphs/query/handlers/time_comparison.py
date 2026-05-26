@@ -57,7 +57,6 @@ async def handle_time_comparison(
         account_ids,
         accounts_info,
         user_id=user_id,
-        language=language,
     )
     comparison_txns = await fetch_and_filter(
         provider,
@@ -66,7 +65,6 @@ async def handle_time_comparison(
         account_ids,
         accounts_info,
         user_id=user_id,
-        language=language,
     )
 
     # Calculate totals

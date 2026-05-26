@@ -48,6 +48,7 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.context_manager import ContextManager
+from shared.services.conversation_grounding import attach_conversation_grounding, conversation_topic_for_response
 from shared.services.conversation_responder import ConversationResponder
 from shared.services.delivery_service import DeliveryAttemptResult
 from shared.services.task_planner import OrchestratorTaskPlanner
@@ -115,11 +116,6 @@ class OrchestratorGraphHandler:
         self._error_window: deque[int] = deque(maxlen=200)
 
         self.graph: CompiledStateGraph = build_orchestrator_graph(checkpointer=self.checkpointer)
-
-    @staticmethod
-    def _delivery_metadata_from_progress_snapshot(snapshot: Any) -> dict[str, Any]:
-        del snapshot
-        return {}
 
     async def _deliver_progress_update(
         self,
@@ -554,12 +550,14 @@ class OrchestratorGraphHandler:
                     "accounts": user_ctx.get("accounts"),
                     "beneficiaries": user_ctx.get("beneficiaries"),
                     "history": user_ctx.get("history", []),
+                    "channel_metadata": dict(context.channel_metadata or {}),
                     "language": LocaleManager.normalize(user_ctx.get("language")).value,
                     "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
                     "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
                     "account_context_mode": hydration_account_mode,
                     "beneficiary_context_mode": hydration_beneficiary_mode,
                 }
+                loaded_context = attach_conversation_grounding(loaded_context)
 
                 inputs["loaded_context"] = loaded_context
 
@@ -630,7 +628,14 @@ class OrchestratorGraphHandler:
                     "intents": intents,
                     "outbox": outbox,  # Keep raw outbox for logging/debug if needed
                     "locale": resolved_locale,
-                    "delivery_metadata": self._delivery_metadata_from_progress_snapshot(progress_snapshot),
+                    "delivery_metadata": {},
+                    "semantic_path_shape": semantic_path_shape,
+                    "conversation_topic": final_state.get("conversation_topic")
+                    or conversation_topic_for_response(
+                        response_text,
+                        semantic_path_shape=semantic_path_shape,
+                        routing_decision=final_state.get("routing_decision"),
+                    ),
                     "suppress_empty_fallback": bool(final_state.get("suppress_empty_fallback")),
                 }
                 if context.channel == "whatsapp":
@@ -865,6 +870,23 @@ class OrchestratorGraphHandler:
             remaining_seconds = max(remaining_seconds, (created_at + ttl_seconds) - now)
         return max(0, remaining_seconds)
 
+    @staticmethod
+    def _capability_boundary_ttl_seconds(state: dict[str, Any]) -> int:
+        """Return remaining TTL for unsupported-capability follow-up context."""
+        boundary = state.get("capability_boundary")
+        if not boundary:
+            return 0
+
+        last_updated = getattr(boundary, "last_updated_ts", None)
+        ttl_seconds = getattr(boundary, "ttl_seconds", None)
+        if isinstance(boundary, dict):
+            last_updated = boundary.get("last_updated_ts")
+            ttl_seconds = boundary.get("ttl_seconds")
+        if not isinstance(last_updated, int | float) or not isinstance(ttl_seconds, int):
+            return 0
+
+        return max(0, int((float(last_updated) + ttl_seconds) - time.time()))
+
     async def _cleanup_if_idle(self, thread_id: str, state: dict[str, Any]) -> bool:
         """Explicitly delete thread if no active tasks, waves, or interruptions remain."""
         # Check if the state is truly "idle" (nothing pending)
@@ -872,6 +894,7 @@ class OrchestratorGraphHandler:
         waves = state.get("waves", [])
         pending_interrupt = state.get("pending_interrupt")
         stashed_sessions = state.get("stashed_sessions", [])
+        capability_boundary = state.get("capability_boundary")
 
         logger.info(
             "cleanup_check",
@@ -880,12 +903,17 @@ class OrchestratorGraphHandler:
             has_waves=bool(waves),
             has_interrupt=bool(pending_interrupt),
             has_stashed=bool(stashed_sessions),
+            has_capability_boundary=bool(capability_boundary),
             task_count=len(tasks) if tasks else 0,
             wave_count=len(waves) if waves else 0,
         )
 
         if not tasks and not waves and not pending_interrupt and not stashed_sessions:
-            context_frame_ttl = max(self._context_frame_ttl_seconds(state), referent_memory_ttl_seconds(state))
+            context_frame_ttl = max(
+                self._context_frame_ttl_seconds(state),
+                referent_memory_ttl_seconds(state),
+                self._capability_boundary_ttl_seconds(state),
+            )
             if context_frame_ttl > 0:
                 ttl_ok = await self._apply_session_ttl(thread_id, ttl=context_frame_ttl)
                 logger.info(

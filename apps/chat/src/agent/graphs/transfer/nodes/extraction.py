@@ -631,11 +631,7 @@ def _looks_like_explicit_bank_switch(value: str) -> bool:
     )
 
 
-def _parse_single_confirmation_amount_edit(
-    user_message: str,
-    current_payload: TransferPayload,
-) -> dict[str, Any] | None:
-    del current_payload
+def _parse_single_confirmation_amount_edit(user_message: str) -> dict[str, Any] | None:
     normalized = _normalize_user_message(user_message)
     if not normalized:
         return None
@@ -733,11 +729,7 @@ def _parse_single_confirmation_source_bank_edit(
     return patch
 
 
-def _parse_single_confirmation_narration_edit(
-    user_message: str,
-    current_payload: TransferPayload,
-) -> dict[str, Any] | None:
-    del current_payload
+def _parse_single_confirmation_narration_edit(user_message: str) -> dict[str, Any] | None:
     normalized = _normalize_user_message(user_message)
     if not normalized:
         return None
@@ -786,7 +778,7 @@ def _parse_single_confirmation_transfer_edit(
     if not current_payload.previous_confirmation_snapshot:
         return None
 
-    amount_patch = _parse_single_confirmation_amount_edit(user_message, current_payload)
+    amount_patch = _parse_single_confirmation_amount_edit(user_message)
     if amount_patch is not None:
         return amount_patch
 
@@ -795,7 +787,7 @@ def _parse_single_confirmation_transfer_edit(
     if source_bank_patch is not None:
         return source_bank_patch
 
-    return _parse_single_confirmation_narration_edit(user_message, current_payload)
+    return _parse_single_confirmation_narration_edit(user_message)
 
 
 class ExtractionStep(TransferStep):

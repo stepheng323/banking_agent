@@ -7,7 +7,8 @@ from apps.chat.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from shared.i18n import LocaleManager, render_message
-from shared.services.context_manager import OrchestratorContextManager
+from shared.services.context_manager import ContextManager
+from shared.services.conversation_grounding import conversation_topic_for_response
 from shared.services.task_planner import OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task
 
@@ -112,7 +113,7 @@ class OrchestratorAgent:
         self.deps = deps
         self.message_type = "text"
 
-        self.context_manager = OrchestratorContextManager(deps.user_repo, deps.beneficiary_repo, deps.account_repo)
+        self.context_manager = ContextManager(deps.user_repo, deps.beneficiary_repo, deps.account_repo)
         self.task_planner = OrchestratorTaskPlanner(
             planner_llm=deps.llm,
             semantic_router_llm=deps.semantic_router_llm,
@@ -159,6 +160,7 @@ class OrchestratorAgent:
         quoted_message_id: str | None = None,
         channel: str = "whatsapp",
         channel_identity: str | None = None,
+        channel_metadata: dict[str, Any] | None = None,
         user: Any | None = None,
     ) -> dict[str, Any]:
         """Invoke the orchestrator with a user message."""
@@ -207,6 +209,7 @@ class OrchestratorAgent:
             quoted_message_id=quoted_message_id,
             channel=channel,
             channel_identity=channel_identity,
+            channel_metadata=dict(channel_metadata or {}),
             resolved_user=user,
         )
 
@@ -222,8 +225,18 @@ class OrchestratorAgent:
 
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
         if final_response:
+            conversation_topic = result.get("conversation_topic") or conversation_topic_for_response(
+                final_response,
+                semantic_path_shape=result.get("semantic_path_shape"),
+            )
+            assistant_metadata = {"topic": conversation_topic} if conversation_topic else None
             create_background_task(
-                self.context_manager.add_conversation_turn(phone_number, "assistant", final_response)
+                self.context_manager.add_conversation_turn(
+                    phone_number,
+                    "assistant",
+                    final_response,
+                    metadata=assistant_metadata,
+                )
             )
 
         return result

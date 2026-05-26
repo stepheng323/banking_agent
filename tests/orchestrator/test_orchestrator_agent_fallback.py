@@ -14,7 +14,15 @@ class _ContextManagerStub:
     def __init__(self) -> None:
         self.turns: list[tuple[str, str, str]] = []
 
-    async def add_conversation_turn(self, phone_number: str, role: str, text: str) -> None:
+    async def add_conversation_turn(
+        self,
+        phone_number: str,
+        role: str,
+        text: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        del metadata
         self.turns.append((phone_number, role, text))
 
 

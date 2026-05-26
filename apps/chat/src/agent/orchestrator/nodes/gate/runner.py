@@ -749,7 +749,6 @@ def _is_brand_origin_lookup(normalized: str) -> bool:
     for alias in brand_name_aliases() | legacy_brand_names():
         if normalized in {
             f"what does {alias} mean",
-            f"what is {alias}",
             f"what is the meaning of {alias}",
             f"what's the meaning of {alias}",
             f"what s the meaning of {alias}",
@@ -757,6 +756,18 @@ def _is_brand_origin_lookup(normalized: str) -> bool:
             f"why are you called {alias}",
             f"why are you named {alias}",
             f"where did the name {alias} come from",
+        }:
+            return True
+    return False
+
+
+def _is_brand_product_lookup(normalized: str) -> bool:
+    for alias in brand_name_aliases():
+        if normalized in {
+            f"what is {alias}",
+            f"what's {alias}",
+            f"what s {alias}",
+            f"tell me about {alias}",
         }:
             return True
     return False
@@ -806,6 +817,8 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
     if addressed_greeting:
         return addressed_greeting
     if normalized in DETERMINISTIC_IDENTITY_EXACT:
+        return _meta_response("conversational.identity")
+    if _is_brand_product_lookup(normalized):
         return _meta_response("conversational.identity")
     if normalized in DETERMINISTIC_BRAND_ORIGIN_EXACT or _is_brand_origin_lookup(normalized):
         return _meta_response("conversational.brand_origin")
@@ -1188,9 +1201,7 @@ def _resolve_beneficiary_suggestion_reply(
     message_text: str,
     *,
     locale: str,
-    suggestion_payload: dict[str, Any] | None,
 ) -> BeneficiarySuggestionDecision:
-    del suggestion_payload
     normalized = _normalize_suggestion_text(message_text)
     if not normalized:
         return BeneficiarySuggestionDecision(action="dismiss", reason="empty_message")

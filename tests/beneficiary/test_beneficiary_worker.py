@@ -16,7 +16,7 @@ class _FakeBeneficiaryRepo:
         self.created = kwargs
         return SimpleNamespace(**kwargs)
 
-    async def get_all_for_user(self, user_id: str) -> list[Any]:
+    async def get_by_user(self, user_id: str) -> list[Any]:
         del user_id
         return self.existing
 

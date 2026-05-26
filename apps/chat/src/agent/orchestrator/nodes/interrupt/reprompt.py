@@ -316,7 +316,7 @@ async def _status_query_updates(
         )
 
         if semantic_decision == "cancel":
-            return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+            return await _cancel_updates(state, interrupt, redis_client)
 
         if semantic_decision in {"planner_mixed", "planner_ambiguous"}:
             return _build_planner_switch_updates(
@@ -412,8 +412,7 @@ async def _status_query_updates(
         "semantic_path_shape": semantic_path_shape,
     }
 
-def _build_confirmation_scope_clarification_outbox(state: OrchestratorState, interrupt: Any) -> list[dict[str, Any]]:
-    del interrupt
+def _build_confirmation_scope_clarification_outbox(state: OrchestratorState) -> list[dict[str, Any]]:
     locale = _state_locale(state)
     return [{"type": "say", "text": render_message("transfer.resolve.which_recipient", locale)}]
 

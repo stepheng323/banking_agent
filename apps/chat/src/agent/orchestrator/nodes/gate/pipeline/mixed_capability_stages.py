@@ -184,7 +184,6 @@ async def _semantic_unsupported_clause(ctx: GateContext, clause: str) -> Unsuppo
         return None
     try:
         decision = await classifier(
-            ctx.state.phone_number,
             clause,
             locale=ctx.current_locale,
             context="None",

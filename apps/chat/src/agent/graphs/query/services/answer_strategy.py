@@ -158,7 +158,7 @@ def _apply_existence_answer_strategy(
 ) -> QueryResult:
     result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
     result.answer_context = QueryAnswerContext(
-        primary_text=build_existence_answer(result, query_contract=query_contract, locale=locale)
+        primary_text=build_existence_answer(result, query_contract=query_contract)
     )
     return result
 
@@ -505,10 +505,8 @@ def build_existence_answer(
     result: QueryResult,
     *,
     query_contract: QueryExecutionContract,
-    locale: str = "en",
 ) -> str:
     """Build direct yes/no copy for transaction existence questions."""
-    del locale
     items = result.items or []
     count = len(items)
     filters = query_contract.filters

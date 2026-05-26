@@ -985,7 +985,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
 
 
 @pytest.mark.asyncio
-async def test_deduped_progress_attempt_does_not_advance_progress_or_attach_delivery_metadata(
+async def test_deduped_progress_attempt_does_not_advance_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph = _GraphStub()
@@ -1073,6 +1073,4 @@ async def test_deduped_progress_attempt_does_not_advance_progress_or_attach_deli
     progress_task.cancel()
     await asyncio.gather(progress_task, return_exceptions=True)
 
-    snapshot = await tracker.snapshot()
     assert tracker.record_calls == 0
-    assert handler._delivery_metadata_from_progress_snapshot(snapshot) == {}

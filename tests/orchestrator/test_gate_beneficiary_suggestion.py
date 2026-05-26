@@ -41,7 +41,6 @@ def test_beneficiary_suggestion_resolver_extracts_noisy_alias() -> None:
     decision = _resolve_beneficiary_suggestion_reply(
         "abeg yes save am as Mum please",
         locale="pcm",
-        suggestion_payload={"recipient_name": "Tolu"},
     )
     assert decision.action == "save_alias"
     assert decision.alias == "Mum"
@@ -51,7 +50,6 @@ def test_beneficiary_suggestion_resolver_dismisses_transaction_message() -> None
     decision = _resolve_beneficiary_suggestion_reply(
         "Send 10k to mum",
         locale="en",
-        suggestion_payload={"recipient_name": "Tolu"},
     )
     assert decision.action == "dismiss"
     assert decision.reason == "transaction_guard"
@@ -61,7 +59,6 @@ def test_beneficiary_suggestion_resolver_treats_bare_alias_as_save_alias() -> No
     decision = _resolve_beneficiary_suggestion_reply(
         "Tols",
         locale="en",
-        suggestion_payload={"recipient_name": "Mercy Johnson"},
     )
     assert decision.action == "save_alias"
     assert decision.alias == "Tols"
@@ -72,7 +69,6 @@ def test_beneficiary_suggestion_resolver_cleans_bare_alias_trailing_noise() -> N
     decision = _resolve_beneficiary_suggestion_reply(
         "Tols please",
         locale="en",
-        suggestion_payload={"recipient_name": "Mercy Johnson"},
     )
     assert decision.action == "save_alias"
     assert decision.alias == "Tols"
@@ -82,7 +78,6 @@ def test_beneficiary_suggestion_resolver_allows_two_word_bare_alias() -> None:
     decision = _resolve_beneficiary_suggestion_reply(
         "Big Tols",
         locale="en",
-        suggestion_payload={"recipient_name": "Mercy Johnson"},
     )
     assert decision.action == "save_alias"
     assert decision.alias == "Big Tols"

@@ -4,7 +4,7 @@ INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT = """Classify a pending banking-flow repl
 Return ONLY JSON for this schema:
 - decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
 - confidence: 0.0-1.0
-- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
 - target_mode: new | continuation | null
@@ -25,7 +25,7 @@ Rules:
 8) Balance/account-status asks map to target_intent=account.
 9) Spending/history/analytics asks map to target_intent=query.
 10) In confirmation/auth flows, concise corrections stay continue_flow, not switch_intent.
-11) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+11) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
 """
 
 INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL = """You classify pending-input turns for an active banking flow.

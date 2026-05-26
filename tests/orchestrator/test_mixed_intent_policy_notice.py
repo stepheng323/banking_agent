@@ -122,14 +122,12 @@ class _FakeConversationResponder:
 
     async def generate_reply(
         self,
-        phone_number: str,
         text: str,
         user_ctx: dict[str, Any],
         intent: str | None = None,
     ) -> str:
         self.calls.append(
             {
-                "phone_number": phone_number,
                 "text": text,
                 "user_ctx": dict(user_ctx),
                 "intent": intent,

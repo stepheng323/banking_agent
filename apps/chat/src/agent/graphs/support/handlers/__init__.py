@@ -8,7 +8,6 @@ from apps.chat.src.agent.graphs.support.handlers.retry import handle_retry
 from apps.chat.src.agent.graphs.support.handlers.reversal import handle_reversal_status
 from apps.chat.src.agent.graphs.support.handlers.status import handle_pending, handle_transfer_status
 from apps.chat.src.agent.graphs.support.handlers.ticket_status import (
-    handle_any_update,
     handle_ticket_status,
 )
 
@@ -23,5 +22,4 @@ __all__ = [
     "handle_receipt_request",
     "handle_escalation",
     "handle_ticket_status",
-    "handle_any_update",
 ]

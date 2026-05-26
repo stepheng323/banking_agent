@@ -1020,9 +1020,9 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
             message=message,
             today=today,
             language=locale,
+            state=state,
             pending_clarification=pending,
             query_frames=step._load_query_frames(session),
-            state=state,
         )
     )
     logger.info(
@@ -1146,11 +1146,11 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             message=message,
             today=today,
             language=locale,
+            state=state,
             query_contract=session_query_contract,
             items=items,
             surface_view=surface_view,
             query_frames=query_frames,
-            state=state,
         )
     )
     cont_type = decision.continuation_type or "unclear"
@@ -1567,7 +1567,6 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             query_contract=session_query_contract,
             session=session,
             target_text=getattr(decision, "target_text", None),
-            locale=locale,
         )
         return {
             "transaction_outcome": TransactionOutcome.OK,

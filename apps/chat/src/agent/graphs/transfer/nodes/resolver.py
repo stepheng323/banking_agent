@@ -225,10 +225,8 @@ def _compute_missing_recipient_fields(payload: TransferPayload) -> list[str]:
 
 
 def _is_transfer_beneficiary_record(record: dict[str, Any]) -> bool:
-    """Allow transfer beneficiaries and legacy records without a type field."""
+    """Return whether the record is an explicit transfer beneficiary."""
     beneficiary_type = record.get("beneficiary_type")
-    if beneficiary_type is None:
-        return True
     return str(beneficiary_type).strip().lower() == "transfer"
 
 

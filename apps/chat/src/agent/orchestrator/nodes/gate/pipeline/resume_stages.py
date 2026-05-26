@@ -45,7 +45,6 @@ async def _classify_resume_prompt_reply(ctx: GateContext) -> ConfirmationDecisio
         intent = str(ctx.state.stashed_sessions[-1].get("intent") or "transaction")
     try:
         return await classifier(
-            ctx.state.phone_number,
             ctx.message_text,
             prompt_kind="resume_prompt",
             locale=locale,

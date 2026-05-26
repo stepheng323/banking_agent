@@ -39,7 +39,6 @@ async def handle_analytics(
         account_ids,
         accounts_info,
         user_id=user_id,
-        language=language,
     )
 
     if not contract.aggregation:

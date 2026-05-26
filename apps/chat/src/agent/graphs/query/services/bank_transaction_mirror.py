@@ -135,33 +135,15 @@ async def _fetch_provider_page(
     user_id: str | None = None,
     mock_account_slot: int | None = None,
 ) -> TransactionPageData:
-    """Fetch a transaction page from the provider with compatibility fallback."""
-    page_method = getattr(provider, "get_transactions_page", None)
-    if callable(page_method):
-        return await page_method(
-            account_id=account_id,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit,
-            page=page,
-            user_id=user_id,
-            mock_account_slot=mock_account_slot,
-        )
-
-    transactions = await provider.get_transactions(
+    """Fetch a transaction page from the provider."""
+    return await provider.get_transactions_page(
         account_id=account_id,
         start_date=start_date,
         end_date=end_date,
         limit=limit,
+        page=page,
         user_id=user_id,
         mock_account_slot=mock_account_slot,
-    )
-    has_more = len(transactions) >= limit
-    return TransactionPageData(
-        transactions=transactions,
-        page=page,
-        has_more=has_more,
-        next_page=page + 1 if has_more else None,
     )
 
 

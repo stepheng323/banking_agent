@@ -651,6 +651,7 @@ async def test_name_only_single_beneficiary_match_autofills_recipient_details() 
                 "account_number": "2010000002",
                 "bank_name": "GTBank",
                 "bank_code": "058",
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],
@@ -682,6 +683,7 @@ async def test_name_variant_only_single_beneficiary_match_autofills_recipient_de
                 "account_number": "2010000002",
                 "bank_name": "GTBank",
                 "bank_code": "058",
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],
@@ -710,6 +712,7 @@ async def test_saved_beneficiary_without_bank_code_does_not_patch_string_none_wi
                 "account_number": "2010000002",
                 "bank_name": "Access Bank",
                 "bank_code": None,
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],
@@ -736,6 +739,7 @@ async def test_saved_beneficiary_without_bank_code_resolves_through_mono_when_av
                 "account_number": "2010000002",
                 "bank_name": "Access Bank",
                 "bank_code": None,
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],

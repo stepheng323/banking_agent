@@ -955,8 +955,7 @@ def _detail_header(frame: ContextFrame) -> str:
     return "Details"
 
 
-def _format_details_response(frame: ContextFrame, text: str) -> str | None:
-    del text
+def _format_details_response(frame: ContextFrame) -> str | None:
     items = _unique_data_plan_entities(frame.items) if _is_data_plan_frame(frame) else frame.items
     if len(items) > 1:
         blocks: list[str] = []
@@ -1481,7 +1480,7 @@ def _format_semantic_decision_response(
         field_response = _format_field_response(frame, frame.items, field_text)
         if field_response:
             return field_response
-        return _format_details_response(frame, "details")
+        return _format_details_response(frame)
 
     if semantic_decision == "lookup_entity":
         target_text = _decision_target_text(decision)
@@ -2111,7 +2110,7 @@ _SURFACE_ANSWER_ENGINE = SurfaceAnswerEngine()
 
 
 def build_context_frame_followup_context(frame: ContextFrame) -> str:
-    """Compatibility wrapper for existing frame-follow-up callers."""
+    """Build follow-up interpreter context for one frame."""
     return _SURFACE_ANSWER_ENGINE.build_context(frame)
 
 
@@ -2127,7 +2126,7 @@ def build_context_frame_followup_response(
     decision: ContextFrameFollowupDecision | None = None,
     replay_modifier: ContextFrameReplayModifier | None = None,
 ) -> ContextFrameFollowupResponse | None:
-    """Compatibility wrapper around SurfaceAnswerEngine."""
+    """Build a grounded follow-up response from current state and decision."""
     return _SURFACE_ANSWER_ENGINE.answer(
         SurfaceAnswerRequest(
             state=state,

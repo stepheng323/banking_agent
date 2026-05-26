@@ -47,7 +47,6 @@ async def handle_beneficiary_summary(
         account_ids,
         accounts_info,
         user_id=user_id,
-        language=language,
     )
 
     # Filter to actual transfers (exclude bank charges, fees, etc.)

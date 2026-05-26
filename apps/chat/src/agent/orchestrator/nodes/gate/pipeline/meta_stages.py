@@ -22,6 +22,7 @@ from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
     classify_deterministic_meta_response,
 )
 from shared.i18n.renderer import render_message
+from shared.services.conversation_grounding import conversation_display_name, conversation_topic_for_response
 from shared.services.conversation_responder import is_contextual_casual_followup_turn
 from shared.services.unsupported_capabilities import (
     detect_unsupported_capability,
@@ -98,13 +99,30 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
                 key=capability.key,
                 label=capability.label,
             )
+    if (
+        response_key == "conversational.greeting"
+        and not ctx.state.pending_interrupt
+        and not ctx.state.session_stack
+        and not ctx.state.waves
+    ):
+        loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else None
+        display_name = conversation_display_name(loaded_context)
+        if display_name:
+            response_key = "conversational.greeting_named"
+            render_params = {**(render_params or {}), "display_name": display_name}
+    final_response = render_message(response_key, locale, render_params)
     return {
         **ctx.gate_updates,
         **exit_updates,
         **locale_updates,
         **capability_boundary_updates,
         "direct_path_triggered": True,
-        "final_response": render_message(response_key, locale, render_params),
+        "final_response": final_response,
+        "conversation_topic": conversation_topic_for_response(
+            final_response,
+            response_key=response_key,
+            semantic_path_shape="meta_direct",
+        ),
         "semantic_path_shape": "meta_direct",
         **_route_observability_updates(owner="guardrail", decision="meta_direct"),
     }

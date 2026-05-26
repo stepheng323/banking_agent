@@ -182,11 +182,7 @@ def compile_query_fields_from_extraction(
     effective_intent = parser._resolve_effective_intent(extraction)
     query_operation = parser._infer_query_operation(extraction, effective_intent=effective_intent)
     result_reference = parser._infer_result_reference(extraction, query_operation=query_operation)
-    answer_fact_field = parser._infer_answer_fact_field(
-        extraction,
-        effective_intent=effective_intent,
-        query_operation=query_operation,
-    )
+    answer_fact_field = parser._infer_answer_fact_field(extraction)
     result_limit = parser._resolve_result_limit(
         extraction.result_limit,
         effective_intent=effective_intent,
@@ -506,13 +502,7 @@ def normalize_counterparty_filter(placeholders: set[str] | frozenset[str], recip
     return normalized
 
 
-def infer_answer_fact_field(
-    extraction: QueryExtractionResult,
-    *,
-    effective_intent: ExtractionIntent,
-    query_operation: QueryOperation,
-) -> QueryFactField | None:
-    del effective_intent, query_operation
+def infer_answer_fact_field(extraction: QueryExtractionResult) -> QueryFactField | None:
     if extraction.answer_fact_field in {
         "date",
         "counterparty",

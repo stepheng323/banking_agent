@@ -395,7 +395,7 @@ class ContextManager:
             )
             return None
 
-    async def get_conversation_history(self, phone_number: str, limit: int = 10) -> list[dict[str, str]]:
+    async def get_conversation_history(self, phone_number: str, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent conversation history."""
         try:
             redis_client = RedisClient.get_client()
@@ -410,12 +410,26 @@ class ContextManager:
             )
             return []
 
-    async def add_conversation_turn(self, phone_number: str, role: str, content: str) -> None:
+    async def add_conversation_turn(
+        self,
+        phone_number: str,
+        role: str,
+        content: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Add a message to conversation history."""
         try:
             redis_client = RedisClient.get_client()
             key = f"user:{phone_number}:chat_history"
-            message = json.dumps({"role": role, "content": content})
+            payload: dict[str, Any] = {"role": role, "content": content}
+            clean_metadata = {key: value for key, value in (metadata or {}).items() if value is not None}
+            if clean_metadata:
+                payload["metadata"] = clean_metadata
+                topic = clean_metadata.get("topic")
+                if isinstance(topic, str) and topic.strip():
+                    payload["topic"] = topic.strip()
+            message = json.dumps(payload)
             await redis_client.rpush(key, message)
             await redis_client.ltrim(key, -50, -1)
             await redis_client.expire(key, 86400)
@@ -654,7 +668,3 @@ class ContextManager:
         except Exception as e:
             logger.error("increment_mandate_warning_count_error", error=str(e))
             return 1
-
-
-# Alias for backward compatibility
-OrchestratorContextManager = ContextManager

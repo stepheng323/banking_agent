@@ -67,7 +67,7 @@ class BeneficiaryWorker:
     async def _list_beneficiaries(self, user_id: str, context: dict[str, Any]) -> TransactionResult:
         locale = LocaleManager.normalize(context.get("language")).value
         async with UnitOfWork() as uow:
-            beneficiaries = await uow.beneficiaries.get_all_for_user(user_id)
+            beneficiaries = await uow.beneficiaries.get_by_user(user_id)
 
             # Format for context
             simple_list = [
@@ -86,7 +86,11 @@ class BeneficiaryWorker:
                 alias = b.alias or b.account_name
                 account_name = b.account_name
 
-                if alias and account_name and alias.lower() != account_name.lower():
+                if (
+                    isinstance(alias, str)
+                    and isinstance(account_name, str)
+                    and alias.lower() != account_name.lower()
+                ):
                     name_line = f"*{alias}* ({account_name})"
                 else:
                     name_line = f"*{alias}*"
@@ -119,19 +123,22 @@ class BeneficiaryWorker:
     async def _delete_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
         locale = LocaleManager.normalize(context.get("language")).value
         target = payload.get("target_alias") or payload.get("name") or payload.get("alias")
-        if not target:
+        if not isinstance(target, str) or not target.strip():
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
                 error=render_message("beneficiary.delete.missing_target", locale),
             )
 
+        target_lower = target.lower()
         async with UnitOfWork() as uow:
-            all_bens = await uow.beneficiaries.get_all_for_user(user_id)
+            all_bens = await uow.beneficiaries.get_by_user(user_id)
             match = None
 
             for b in all_bens:
-                if (b.alias and b.alias.lower() == target.lower()) or (
-                    b.account_name and b.account_name.lower() == target.lower()
+                alias = b.alias
+                account_name = b.account_name
+                if (isinstance(alias, str) and alias.lower() == target_lower) or (
+                    isinstance(account_name, str) and account_name.lower() == target_lower
                 ):
                     match = b
                     break

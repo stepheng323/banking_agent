@@ -9,6 +9,7 @@ import pytest
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 
 
 class _CheckpointerStub:
@@ -226,6 +227,28 @@ async def test_cleanup_retains_idle_thread_with_fresh_context_frame(monkeypatch:
                 ttl_seconds=600,
             )
         ],
+    }
+
+    ok = await handler._cleanup_if_idle("telegram:2348000000001", state)
+
+    assert ok is True
+    handler._apply_session_ttl.assert_awaited_once()
+    ttl = handler._apply_session_ttl.await_args.kwargs["ttl"]
+    assert 1 <= ttl <= 600
+    handler.checkpointer.adelete_thread.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_retains_idle_thread_with_capability_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    handler = _build_handler(monkeypatch, _RedisStub())
+    handler._apply_session_ttl = AsyncMock(return_value=True)
+    handler.checkpointer.adelete_thread = AsyncMock()
+    state = {
+        "tasks": {},
+        "waves": [],
+        "pending_interrupt": None,
+        "stashed_sessions": [],
+        "capability_boundary": CapabilityBoundary(key="lending", label="loans or lending", ttl_seconds=600),
     }
 
     ok = await handler._cleanup_if_idle("telegram:2348000000001", state)

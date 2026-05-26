@@ -329,10 +329,8 @@ def _is_resumable_interrupt(interrupt: Any) -> bool:
 async def _cancel_updates(
     state: OrchestratorState,
     interrupt: Any,
-    current_task_types: set[str],
     redis_client: Any | None,
 ) -> dict[str, Any]:
-    del current_task_types
     reset_updates = await build_cancellation_reset_updates(state, redis_client)
     return {
         **reset_updates,

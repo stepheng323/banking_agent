@@ -220,10 +220,8 @@ async def build_query_coverage_answer(
     query_contract: QueryExecutionContract | None,
     session: dict[str, Any],
     target_text: str | None,
-    locale: str,
 ) -> str:
     """Build a conservative, read-only coverage answer from account/session state."""
-    del locale
     accounts = [account for account in accounts_info if _account_id(account)]
     if not accounts:
         return "I can show local transaction results, but I do not have linked-account metadata to confirm coverage."

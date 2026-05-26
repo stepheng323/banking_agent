@@ -116,7 +116,7 @@ class QueryParser:
         self,
         extraction: QueryExtractionResult,
     ):
-        return finalize_compiler.derive_ambiguities(self, extraction)
+        return finalize_compiler.derive_ambiguities(extraction)
 
     def _derive_requested_capabilities(
         self,
@@ -403,17 +403,8 @@ class QueryParser:
         return query_compiler.normalize_counterparty_filter(cls._COUNTERPARTY_PLACEHOLDERS, recipient)
 
     @staticmethod
-    def _infer_answer_fact_field(
-        extraction: "QueryExtractionResult",
-        *,
-        effective_intent: ExtractionIntent,
-        query_operation: QueryOperation,
-    ) -> QueryFactField | None:
-        return query_compiler.infer_answer_fact_field(
-            extraction,
-            effective_intent=effective_intent,
-            query_operation=query_operation,
-        )
+    def _infer_answer_fact_field(extraction: "QueryExtractionResult") -> QueryFactField | None:
+        return query_compiler.infer_answer_fact_field(extraction)
 
     @staticmethod
     def _coerce_aggregation_type(agg_type: str) -> Literal["sum", "average", "count", "largest", "smallest", "breakdown"]:

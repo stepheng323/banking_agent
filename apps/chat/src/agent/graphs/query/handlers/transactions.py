@@ -137,7 +137,6 @@ async def handle_transaction_list(
             account_ids,
             accounts_info,
             user_id=user_id,
-            language=language,
             trace_context=trace_context,
         )
     cache_fetched_at_value = cache_fetched_at if can_reuse_cache and cache_fetched_at is not None else time.time()

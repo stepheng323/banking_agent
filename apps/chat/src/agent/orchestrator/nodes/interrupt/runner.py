@@ -208,7 +208,7 @@ async def _remove_or_cancel_confirmation_tasks(
         if str(task_id) in state.tasks
     }
     if active_task_ids and set(task_ids_to_remove) >= active_task_ids:
-        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+        return await _cancel_updates(state, interrupt, redis_client)
     return remove_confirmation_tasks_and_reconfirm_updates(
         state=state,
         interrupt=interrupt,
@@ -939,7 +939,7 @@ def _confirmation_edit_clarification_updates(state: OrchestratorState, interrupt
         "pending_interrupt": interrupt,
         "last_interrupt": interrupt,
         "tasks": state.tasks,
-        "outbox": _build_confirmation_scope_clarification_outbox(state, interrupt),
+        "outbox": _build_confirmation_scope_clarification_outbox(state),
     }
 
 
@@ -1069,7 +1069,7 @@ async def _resolve_semantic_pending_action_edit_updates(
             )
 
     if decision.operation == "cancel_all":
-        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+        return await _cancel_updates(state, interrupt, redis_client)
 
     if decision.operation == "status_query":
         route = InterruptRouteDecision(
@@ -1587,7 +1587,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             kind=interrupt.kind,
             match_kind=deterministic_cancel_kind,
         )
-        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+        return await _cancel_updates(state, interrupt, redis_client)
 
     if interrupt.kind == "auth":
         shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
@@ -1629,7 +1629,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         )
 
         if route.decision in {"cancel", "reject_flow"}:
-            return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+            return await _cancel_updates(state, interrupt, redis_client)
 
         if route.decision == "switch_intent":
             if _is_same_flow_transactional_switch(route=route, interrupt=interrupt, active_type=active_type):
@@ -1715,10 +1715,10 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         )
 
     if route.decision == "cancel":
-        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+        return await _cancel_updates(state, interrupt, redis_client)
 
     if route.decision == "reject_flow":
-        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+        return await _cancel_updates(state, interrupt, redis_client)
 
     if route.decision == "approve_flow":
         if interrupt.kind == "confirmation":

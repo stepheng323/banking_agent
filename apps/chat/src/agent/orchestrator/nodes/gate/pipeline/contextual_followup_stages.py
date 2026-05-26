@@ -14,7 +14,8 @@ from apps.chat.src.agent.orchestrator.nodes.planner.context_frame_followup impor
 )
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.i18n import LocaleCode, LocaleManager
-from shared.services.conversation_responder import contextual_worker_fallback_reply
+from shared.services.conversation_grounding import build_conversation_grounding
+from shared.services.conversation_responder import contextual_meta_fallback_reply, contextual_worker_fallback_reply
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -60,6 +61,7 @@ _CONTEXTUAL_REACTION_RE_BY_LOCALE: dict[LocaleCode, re.Pattern[str]] = {
     LocaleCode.EN: re.compile(
         r"\b(?:"
         r"good\s+to\s+know|makes\s+sense|that\s+helps|all\s+good|"
+        r"that(?:'s| is)\s+mental|that's\s+mad|that\s+is\s+mad|interesting|"
         r"my\s+bad|i\s+(?:thought|assumed|figured|was\s+thinking|was\s+worried)"
         r")\b",
         re.IGNORECASE,
@@ -106,8 +108,6 @@ _ACTION_AFTER_ACK_RE = re.compile(
     r"purchase|recharge|top\s*up|retry|resend|create|open|raise|submit|cancel|stop|use|change|make)\b",
     re.IGNORECASE,
 )
-
-
 def _normalize_text(text: str | None) -> str:
     normalized = unicodedata.normalize("NFKD", text or "")
     without_marks = "".join(char for char in normalized if not unicodedata.combining(char))
@@ -209,7 +209,7 @@ def _contextual_summary_text(ctx: GateContext, support_context: dict[str, Any] |
 
 
 async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] | None:
-    """Route non-actionable acknowledgement/commentary after worker results to conversation."""
+    """Route non-actionable acknowledgement/commentary after prior results to conversation."""
     candidate_locales = _candidate_locales(ctx)
     if (
         ctx.live_pending_interrupt
@@ -226,32 +226,59 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
         return None
 
     support_context = await _support_context_summary(ctx)
-    has_context = bool(
+    has_grounded_context = bool(
         _has_recent_history_context(ctx)
         or _has_state_result_context(ctx)
         or support_context
         or (ctx.turn_summary and (ctx.turn_summary.recent_domain_focus or ctx.turn_summary.recent_answer_focus))
     )
-    if not has_context:
+    if not has_grounded_context:
         return None
 
     context_summary = _contextual_summary_text(ctx, support_context)
+    loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    grounding = loaded_context.get("conversation_grounding")
+    if not isinstance(grounding, dict):
+        grounding = build_conversation_grounding(loaded_context)
+
+    last_topic = str(grounding.get("last_topic") or "")
+    if last_topic in {"brand_origin", "product_identity"}:
+        responder_intent = "contextual_meta_followup"
+    else:
+        responder_intent = "contextual_worker_followup"
+
     fallback_user_ctx = {
-        **(ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}),
+        **loaded_context,
         "language": ctx.current_locale,
-        "contextual_worker_followup": context_summary,
+        "conversation_grounding": grounding,
     }
+    if responder_intent == "contextual_worker_followup":
+        fallback_user_ctx["contextual_worker_followup"] = context_summary
+    extra_user_ctx: dict[str, object] = {"conversation_grounding": grounding}
+    if responder_intent == "contextual_worker_followup":
+        extra_user_ctx["contextual_worker_followup"] = context_summary
     reply = await _build_bounded_conversational_reply(
         ctx,
         ctx.current_locale,
-        intent="contextual_worker_followup",
-        extra_user_ctx={"contextual_worker_followup": context_summary},
+        intent=responder_intent,
+        extra_user_ctx=extra_user_ctx,
     )
-    final_response = reply or contextual_worker_fallback_reply(
-        ctx.message_text,
-        fallback_user_ctx,
-        locale=ctx.current_locale,
-    )
+    if reply:
+        final_response = reply
+    elif responder_intent == "contextual_meta_followup":
+        final_response = contextual_meta_fallback_reply(fallback_user_ctx, locale=ctx.current_locale)
+    elif responder_intent == "contextual_worker_followup":
+        final_response = contextual_worker_fallback_reply(
+            ctx.message_text,
+            fallback_user_ctx,
+            locale=ctx.current_locale,
+        )
+    else:
+        final_response = contextual_worker_fallback_reply(
+            ctx.message_text,
+            fallback_user_ctx,
+            locale=ctx.current_locale,
+        )
 
     logger.info("gate_contextual_worker_followup_hit")
     return {
@@ -259,11 +286,12 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
         **(ctx.summary_updates or {}),
         "direct_path_triggered": True,
         "final_response": final_response,
-        "semantic_path_shape": "contextual_worker_followup",
+        "conversation_topic": last_topic or "casual",
+        "semantic_path_shape": responder_intent,
         **_route_observability_updates(
             owner="guardrail",
-            decision="contextual_worker_followup",
-            route_source="contextual_worker_followup",
+            decision=responder_intent,
+            route_source=responder_intent,
             heuristic_type="guardrail_shortcut",
             heuristic_name="worker_acknowledgement",
         ),

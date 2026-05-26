@@ -198,7 +198,7 @@ class BeneficiarySuggestionService:
 
                     if has_beneficiary_repo:
                         try:
-                            exists_in_beneficiaries = not await uow.beneficiaries.should_suggest_airtime_beneficiary(
+                            exists_in_beneficiaries = not await uow.beneficiaries.should_suggest_mobile_beneficiary(
                                 user_id, recipient_phone, network
                             )
                         except Exception:
@@ -305,16 +305,13 @@ class BeneficiarySuggestionService:
                         beneficiary_type="transfer",
                     )
                 elif beneficiary_type in ("airtime", "data"):
-                    # Mobile-line beneficiaries are shared by airtime and data.
-                    # Keep the legacy "airtime" type so duplicate checks and both
-                    # mobile purchase flows see one saved contact.
                     await uow.beneficiaries.create(
                         user_id=user_id,
                         account_number=data["phone_number"],
                         bank_name=data["network"],
                         account_name=data.get("recipient_name", data["phone_number"]),
                         alias=final_alias,
-                        beneficiary_type="airtime",
+                        beneficiary_type=beneficiary_type,
                     )
 
                 await uow.commit()

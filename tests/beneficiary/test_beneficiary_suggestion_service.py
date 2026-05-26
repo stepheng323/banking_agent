@@ -66,7 +66,7 @@ class _FakeBeneficiaries:
         )
         return self.should_suggest
 
-    async def should_suggest_airtime_beneficiary(
+    async def should_suggest_mobile_beneficiary(
         self,
         user_id: str,
         phone_number: str,
@@ -77,7 +77,7 @@ class _FakeBeneficiaries:
                 "user_id": user_id,
                 "phone_number": phone_number,
                 "network": network,
-                "beneficiary_type": "airtime",
+                "beneficiary_type": "mobile",
             }
         )
         return self.should_suggest
@@ -254,7 +254,7 @@ async def test_mobile_suggestion_uses_human_network_label_but_stores_canonical_n
     assert beneficiaries.should_suggest_calls[-1]["network"] == "AIRTEL"
 
 
-async def test_data_suggestion_save_creates_shared_mobile_beneficiary(monkeypatch) -> None:
+async def test_data_suggestion_save_creates_data_mobile_beneficiary(monkeypatch) -> None:
     redis = _FakeRedis()
     beneficiaries = _FakeBeneficiaries()
     uow = _FakeUnitOfWork(beneficiaries)
@@ -281,5 +281,5 @@ async def test_data_suggestion_save_creates_shared_mobile_beneficiary(monkeypatc
     assert beneficiaries.created["account_number"] == "08031234567"
     assert beneficiaries.created["bank_name"] == "MTN"
     assert beneficiaries.created["account_name"] == "Tolu"
-    assert beneficiaries.created["beneficiary_type"] == "airtime"
+    assert beneficiaries.created["beneficiary_type"] == "data"
     assert ("user:2348011112227:beneficiary_suggestion",) in redis.deleted

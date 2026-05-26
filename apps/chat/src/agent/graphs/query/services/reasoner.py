@@ -552,8 +552,6 @@ class QuerySemanticReasoner:
     def _guardrail_end_session(self, *, message: str, language: str) -> QuerySemanticDecision | None:
         guarded = self._continuation_classifier._guardrail_classify(
             message=message,
-            items=None,
-            surface_view=None,
             language=language,
         )
         if guarded is None or guarded[0] != "end_session":
