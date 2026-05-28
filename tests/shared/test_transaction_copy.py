@@ -3,15 +3,14 @@ from __future__ import annotations
 from datetime import date
 from types import SimpleNamespace
 
-from shared.formatters.transaction_copy import (
-    build_confirmation_header,
+from shared.formatters.query_transaction_copy import (
     build_transaction_detail_lines,
-    format_confirmation_section,
-    format_support_transfer_status_sentence,
     format_transaction_evidence_line,
     format_transaction_list_item,
     format_transaction_status_reply,
 )
+from shared.formatters.support_transaction_copy import format_support_transfer_status_sentence
+from shared.formatters.transaction_confirmation_copy import build_confirmation_header, format_confirmation_section
 from shared.i18n.personality import PersonalityContext
 
 

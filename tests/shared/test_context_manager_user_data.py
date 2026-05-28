@@ -291,16 +291,16 @@ async def test_load_context_parallel_reuses_prefetched_cache_snapshot() -> None:
     )
     manager.data_cache = _FakeUserDataCache({})  # type: ignore[assignment]
 
-    from shared.services import context_manager as context_manager_module
+    import shared.services.context_parallel_loader as context_parallel_module
 
-    original_get_client = context_manager_module.RedisClient.get_client
-    context_manager_module.RedisClient.get_client = staticmethod(lambda: redis_stub)  # type: ignore[method-assign]
+    original_get_client = context_parallel_module.RedisClient.get_client
+    context_parallel_module.RedisClient.get_client = staticmethod(lambda: redis_stub)  # type: ignore[method-assign]
     try:
         user_ctx, conversation_state, last_response, suggestion_data = await manager.load_context_parallel(
             "2348000000100"
         )
     finally:
-        context_manager_module.RedisClient.get_client = original_get_client  # type: ignore[method-assign]
+        context_parallel_module.RedisClient.get_client = original_get_client  # type: ignore[method-assign]
 
     assert conversation_state is None
     assert last_response is None
@@ -334,14 +334,14 @@ async def test_load_context_parallel_backfills_from_session_snapshot() -> None:
     )
     manager.data_cache = cache  # type: ignore[assignment]
 
-    from shared.services import context_manager as context_manager_module
+    import shared.services.context_parallel_loader as context_parallel_module
 
-    original_get_client = context_manager_module.RedisClient.get_client
-    context_manager_module.RedisClient.get_client = staticmethod(lambda: redis_stub)  # type: ignore[method-assign]
+    original_get_client = context_parallel_module.RedisClient.get_client
+    context_parallel_module.RedisClient.get_client = staticmethod(lambda: redis_stub)  # type: ignore[method-assign]
     try:
         user_ctx, _, _, _ = await manager.load_context_parallel("2348000000100")
     finally:
-        context_manager_module.RedisClient.get_client = original_get_client  # type: ignore[method-assign]
+        context_parallel_module.RedisClient.get_client = original_get_client  # type: ignore[method-assign]
 
     assert user_ctx["profile"] == {"id": "user-1"}
     assert user_ctx["accounts"] == [{"id": "acct-snap"}]

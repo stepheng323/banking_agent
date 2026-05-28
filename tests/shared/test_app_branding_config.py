@@ -3,7 +3,7 @@ from __future__ import annotations
 from shared.assistant_profile.loader import load_assistant_profile
 from shared.branding import brand_name_aliases, brand_template_params, legacy_brand_names, render_brand_template
 from shared.config.settings import Settings, settings
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 
 
 def _expected_brand_origin(app_name: str, app_name_short: str, inspiration: str, symbolism: str) -> str:

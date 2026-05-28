@@ -1,5 +1,6 @@
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from shared.formatters.transaction_summary import format_batch_transfer_summary, format_multi_action_summary
+from shared.formatters.batch_transfer_summary import format_batch_transfer_summary
+from shared.formatters.multi_action_summary import format_multi_action_summary
 
 
 def _transfer_task(

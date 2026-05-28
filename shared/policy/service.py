@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.i18n import render_capability_limitation
+from shared.i18n.bridge import render_capability_limitation
 from shared.policy.adapters import (
     is_capability_supported,
     resolve_capability_alternative,

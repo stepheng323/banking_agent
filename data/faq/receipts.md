@@ -26,7 +26,7 @@ Yes, if the transaction is an eligible successful transfer created through {app_
 
 ## Why didn't I receive my receipt?
 
-Receipts are available only after eligible successful transfers. If you did not receive one, ask {app_name} to check the transaction status or resend the receipt if the transfer qualifies.
+Receipts are available only after eligible successful transfers. If you did not receive one, ask {app_name} to check the transaction status, identify the eligible transfer, or send the receipt again if the transfer qualifies.
 
 ## Can I download my receipt as a PDF?
 

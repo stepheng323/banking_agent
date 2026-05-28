@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from apps.chat.src.agent.graphs.__shared__.scheduling import parse_schedule_date, parse_schedule_slot_patch
+from apps.chat.src.agent.workers.__shared__.scheduling import parse_schedule_date, parse_schedule_slot_patch
 from shared.services.scheduling.recurrence import (
     compute_initial_next_run_utc,
     compute_next_run_utc,

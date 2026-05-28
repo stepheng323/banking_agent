@@ -9,12 +9,9 @@ from typing import Any
 
 import pytest
 
-from shared.services.task_planner import (
-    PLANNER_USER_PROMPT_TEMPLATE,
-    PlannerPromptBuildInput,
-    PlannerPromptSignals,
-    build_planner_system_prompt,
-)
+from shared.services.task_planner import PLANNER_USER_PROMPT_TEMPLATE
+from shared.services.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
+from shared.services.task_planner_prompt_runtime import build_runtime_planner_system_prompt
 from shared.types.planner import PlannerOutput
 
 _CASES_PATH = Path("tests/fixtures/planner_replay_cases.json")
@@ -295,7 +292,7 @@ def test_compact_prompt_remains_bundle_driven() -> None:
         signals=_build_signals(case["signals"]),
     )
 
-    compact = build_planner_system_prompt(prompt_input)
+    compact = build_runtime_planner_system_prompt(prompt_input)
     assert compact.selected_bundle_ids == ("money_move", "context", "executor_coverage_guard")
     assert "TARGETED EXAMPLES (MONEY_MOVE)" in compact.system_prompt
     assert "TARGETED EXAMPLES (CONTEXT)" in compact.system_prompt
@@ -328,7 +325,7 @@ async def test_replay_parity_live_model() -> None:
         signals = _build_signals(case.get("signals", {}))
         prompt_input = PlannerPromptBuildInput(text=case["text"], context=case["context"], signals=signals)
 
-        compact_prompt = build_planner_system_prompt(prompt_input).system_prompt
+        compact_prompt = build_runtime_planner_system_prompt(prompt_input).system_prompt
         user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(
             phone_number="2348011111111",
             user_message=case["text"],

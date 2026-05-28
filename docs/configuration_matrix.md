@@ -2,7 +2,7 @@
 
 ## Source of Truth
 
-For the supported deployment model, runtime configuration comes from the `.env` used by [docker-compose.yml](/home/abiodun/dev/personal/banking_agent/docker-compose.yml).
+For the supported deployment model, runtime configuration comes from the `.env` used by [docker-compose.yml](../docker-compose.yml).
 
 Required baseline infrastructure settings:
 

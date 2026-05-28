@@ -2,8 +2,8 @@
 
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.formatters.currency import coerce_amount, format_naira
-from shared.i18n import render_message
 from shared.i18n.personality import PersonalityContext, render_personalized_message
+from shared.i18n.renderer import render_message
 from shared.utils.network_utils import format_network_display_name
 
 

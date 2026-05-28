@@ -4,17 +4,17 @@ from typing import get_args
 
 import tiktoken
 
-from shared.services.task_planner import (
-    INTERRUPT_ROUTER_SYSTEM_PROMPT,
+from shared.services.task_planner_interrupt_prompts import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT,
     INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
-    PLANNER_PROMPT_BASELINE_RESULT,
-    SEMANTIC_ROUTER_SYSTEM_PROMPT,
-    PlannerPromptBuildInput,
-    PlannerPromptSignals,
-    build_planner_system_prompt,
+    PENDING_ACTION_EDIT_SYSTEM_PROMPT,
 )
-from shared.services.task_planner_router_prompts import PENDING_ACTION_EDIT_SYSTEM_PROMPT
+from shared.services.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
+from shared.services.task_planner_prompt_runtime import (
+    PLANNER_PROMPT_BASELINE_RESULT,
+    build_runtime_planner_system_prompt,
+)
+from shared.services.task_planner_semantic_router_prompts import SEMANTIC_ROUTER_SYSTEM_PROMPT
 from shared.types.planner import ContextReadSubtype
 
 
@@ -23,7 +23,7 @@ def _build_prompt(
     context: str,
     signals: PlannerPromptSignals | None = None,
 ) -> tuple[str, str, tuple[str, ...]]:
-    result = build_planner_system_prompt(
+    result = build_runtime_planner_system_prompt(
         PlannerPromptBuildInput(text=text, context=context, signals=signals or PlannerPromptSignals())
     )
     return result.system_prompt, result.profile, result.selected_bundle_ids
@@ -59,13 +59,13 @@ def test_interrupt_status_query_contract_present() -> None:
     """Interrupt router prompt should include status-query decision + subtype contract."""
     assert (
         "decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query"
-        in INTERRUPT_ROUTER_SYSTEM_PROMPT
+        in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
     )
-    assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
-    assert "decision=status_query" in INTERRUPT_ROUTER_SYSTEM_PROMPT
-    assert '"make it 20k"' in INTERRUPT_ROUTER_SYSTEM_PROMPT
-    assert '"split 20k 70/30 btw mum and gaines"' in INTERRUPT_ROUTER_SYSTEM_PROMPT
-    assert "target_intent=null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
+    assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+    assert "decision=status_query" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+    assert '"make it 20k"' in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+    assert '"split 20k 70/30 btw mum and gaines"' in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+    assert "target_intent=null" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
 
 
 def test_pending_action_edit_contract_present() -> None:

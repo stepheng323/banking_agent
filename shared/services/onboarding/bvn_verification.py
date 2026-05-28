@@ -3,7 +3,8 @@
 import hashlib
 
 from shared.cache.flow_session_manager import FlowSessionManager
-from shared.clients.providers.mono import BankAccount, BvnLookupData, MonoApiError, mono_client
+from shared.clients.providers.mono.client import mono_client
+from shared.clients.providers.mono.models import BankAccount, BvnLookupData, MonoApiError
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger, log_fingerprint
 

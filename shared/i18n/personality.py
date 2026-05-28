@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n import message_key_exists, render_message
 from shared.i18n.message_keys import MessageKey
 from shared.i18n.models import LocaleCode
+from shared.i18n.renderer import (
+    message_key_exists,
+    render_message,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

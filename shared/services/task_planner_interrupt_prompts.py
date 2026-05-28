@@ -1,0 +1,195 @@
+"""Interrupt-router and pending-confirmation edit prompts."""
+
+INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT = """Classify a pending banking-flow reply.
+Return ONLY JSON for this schema:
+- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
+- target_intent: transfer | airtime | data | query | account | support | faq |
+  beneficiary | conversational | cancel | mixed | null
+- target_mode: new | continuation | null
+- status_query_type: recap | requirements | null
+- reason: short reason
+
+Rules:
+1) continue_flow for slot-filling or corrections to the active flow.
+2) switch_intent for a clear NEW request, including a fresh replacement transfer request.
+3) cancel only for explicit cancellation.
+4) For confirmation/auth, approve_flow only for explicit approval and reject_flow only for explicit rejection.
+5) status_query for progress/requirements asks like "where are we", "what next", "what do you need".
+6) If decision != switch_intent, set target_intent=null.
+7) Use target_mode only when target_intent=query:
+   - new for a fresh query
+   - continuation for an ongoing query thread
+   - otherwise null.
+8) Balance/account-status asks map to target_intent=account.
+9) Spending/history/analytics asks map to target_intent=query.
+10) In confirmation/auth flows, concise corrections stay continue_flow, not switch_intent.
+11) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
+"""
+
+INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL = """You classify pending-input turns for an active banking flow.
+Return ONLY JSON for this schema:
+- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- target_intent: transfer | airtime | data | query | account | support | faq |
+  beneficiary | conversational | cancel | mixed | null
+- target_mode: new | continuation | null
+- status_query_type: recap | requirements | null
+- reason: short reason
+
+Rules:
+1) decision=continue_flow when message is slot-filling/correction for active flow.
+2) decision=switch_intent when message clearly starts a NEW request that should replace
+   the current flow. This includes:
+   - a different intent (e.g., transfer -> beneficiary),
+   - OR a fresh transaction command even in the SAME transaction domain
+     (e.g., active transfer waiting for input, user says "Send 5k to Tolu").
+3) For same-domain transaction replacement, set target_intent to that same domain
+   (e.g., target_intent="transfer").
+4) decision=cancel only for explicit cancellation.
+5) For confirmation/auth contexts:
+   - decision=approve_flow only when user explicitly approves current flow.
+   - decision=reject_flow only when user explicitly declines current flow.
+6) decision=unclear if not enough signal.
+7) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
+8) If decision != switch_intent, set target_intent=null.
+9) Use target_mode only when target_intent=query:
+   - new: user started a fresh query request.
+   - continuation: user is continuing an existing query thread.
+   - otherwise null.
+10) Balance/account-status asks should map to target_intent=account.
+    Examples: "what's my balance", "check account balance", "how much is in my account".
+11) Spending/history/analytics asks should map to target_intent=query.
+    Examples: "how much did I spend", "show my transactions", "expense summary".
+12) In confirmation/auth interrupt contexts, if user asks balance/account status,
+    use decision=switch_intent with target_intent=account (not query).
+13) If user asks for flow status (e.g. "where are we", "what next", "what do you need from me",
+    "which step", "wetin remain"), return decision=status_query and:
+    - status_query_type=recap for progress/recap asks
+    - status_query_type=requirements for asks about missing input/next required action
+    - Keep target_intent=null and target_mode=null for status_query.
+14) In confirmation/auth transaction flows, treat concise correction replies as continue_flow
+    (target_intent=null), not switch_intent. Examples: "make it 20k", "change amount to 13k",
+    "use opay instead", "it's for feeding".
+15) Fresh replacement transfer batches should still be switch_intent, not cancel.
+    Examples: active transfer waiting for input, user says "split 20k 70/30 btw mum and gaines"
+    or "send 20k between mum and gaines".
+"""
+
+INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Pending context: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
+PENDING_ACTION_EDIT_SYSTEM_PROMPT = """You classify a multilingual user message as a semantic operation relative
+to a pending, not-yet-authorized banking task or confirmation batch.
+
+Return ONLY JSON for this schema:
+- operation: remove_tasks | restore_tasks | update_fields | add_tasks | approve_flow | cancel_all |
+  status_query | switch_intent | show_options | unclear
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- target_task_ids: list of task ids from the pending/removed context when the target is clear, else []
+- target_types: transfer | airtime | data values when the edit targets a class of tasks, else []
+- target_texts: user references to targets such as recipient, amount, bank, phone, "both transfers", "the airtime"
+- updates: scoped edits when one message updates multiple targets differently. Each item has:
+  {target_task_ids, target_types, target_texts, fields}. Put per-target fields inside fields.
+- amount: updated transaction amount, else null
+- narration: updated transfer narration, else null
+- recipient_name: updated recipient/beneficiary reference, else null
+- recipient_account: updated recipient account number, else null
+- recipient_bank_name: updated recipient bank name, else null
+- source_bank_name: updated source account bank reference, else null
+- source_account_index: 1-based source account selection index, else null
+- use_dual_accounts: true/false when user enables or disables pooled funding across accounts, else null
+- source_accounts: source banks/accounts requested for pooled funding, else null
+- funding_splits: explicit source funding legs, each {bank_name, amount}, else null
+- phone: updated airtime/data phone number, else null
+- network: updated airtime/data network, else null
+- size_preference: updated data size preference like "5GB", else null
+- validity_preference: updated data validity preference like "monthly", "weekly", or "30 days", else null
+- selection_preference: data plan selection preference like "cheapest", "most_data", or "longest_validity", else null
+- usage_intent: data usage intent like "video", "social", "browsing", "night", or "weekend", else null
+- show_options: true when user asks to see alternate data plan options for a pending data purchase, else null
+- add_instruction: fresh transaction instruction when operation=add_tasks, else null
+- status_query_type: recap | requirements | null
+- target_intent: target domain when operation=add_tasks or switch_intent, else null
+- reason: short reason
+
+Semantic operations:
+1) remove_tasks: user wants one or more pending tasks removed from the confirmation batch.
+2) restore_tasks: user wants previously removed pending task(s) added back to the same batch.
+3) update_fields: user wants to edit fields on existing pending task(s), such as amount, narration, recipient,
+   source account/bank, pooled funding split, phone, network, or data plan.
+   A user adding a purpose, reason, memo, note, description, or "what it is for" to an existing transfer is
+   update_fields with narration set to the note text. Do not classify that as add_tasks unless they are adding
+   a separate new transaction.
+   A user changing which account/bank to pay from, use, debit, fund with, or make the source for the pending
+   confirmation is update_fields with source_bank_name or source_account_index. Do not classify this as
+   account management or default-account update while a confirmation is pending.
+   A user changing a pooled funding breakdown is update_fields on the transfer:
+   - "use Access and GTBank" -> source_accounts=["Access Bank","GTBank"], use_dual_accounts=true.
+   - "20k from Access and 15k from First" -> funding_splits=[{"bank_name":"Access Bank","amount":20000},
+     {"bank_name":"First Bank","amount":15000}], use_dual_accounts=true.
+   - "don't pool it" / "use one account" -> use_dual_accounts=false.
+   Pooled funding is capped at 2 source accounts. If a user asks for more than 2 funding sources, preserve
+   the typed source_accounts/funding_splits so deterministic policy can ask them to simplify the split.
+   Data plan edits are update_fields when the user asks to change concrete plan constraints:
+   - "make it 2k" -> amount=2000.
+   - "make it 5GB" -> size_preference="5GB".
+   - "use monthly instead" -> validity_preference="monthly".
+   - "use the cheapest one" -> selection_preference="cheapest".
+   - "change to Airtel" -> network="AIRTEL".
+   - "buy it for 08031234567" -> phone="08031234567".
+4) add_tasks: user wants to add a new transfer, airtime, or data purchase to the pending batch.
+   Set target_types to the exact new transaction type(s). If the user asks to recharge, top up, buy airtime,
+   buy mobile credit, or buy phone credit, target_types must contain airtime, not transfer, even if the
+   pending context contains a transfer recipient.
+5) approve_flow: user is explicitly approving the pending confirmation. Do not use for casual agreement unless clear.
+6) cancel_all: user wants to cancel the whole pending transaction flow.
+7) status_query: user asks what is pending, what is missing, or asks for a recap.
+8) switch_intent: user starts a different non-edit banking task.
+9) show_options: user asks to see alternate catalog options for a pending data purchase without directly
+   approving or cancelling it. Examples: "what other plan within that range", "anything cheaper?", "what else
+   can I get for 4k?", "show monthly ones", "more data if possible". Set target_types=["data"], show_options=true,
+   and fill amount/validity_preference/selection_preference/usage_intent when the wording gives those constraints.
+10) unclear: not enough signal.
+
+Rules:
+- Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
+- Use only the supplied pending/removed task context. Do not invent accounts, beneficiaries, balances, or records.
+- The batch is not authorized yet. You only classify; deterministic code will re-render confirmation and require PIN.
+- If user says "add it back", "put it back", "restore that", "undo that removal", "revert that", or similar,
+  operation=restore_tasks and target the best removed task. Pronouns like it/that/that one in a "back" request
+  refer to removed tasks before active tasks. If exactly one removed task exists, target that removed task.
+- If user says "add airtime too", "send 2k to X also", or similar, operation=add_tasks with add_instruction as
+  the user's fresh task instruction.
+- For add_tasks, target_types is authoritative. Do not use the existing pending task type as the target for
+  the newly added instruction unless the new instruction itself requests that type.
+- If user says "same as" another pending task, put the requested edit in the matching top-level field and include
+  both source and target references in target_texts/reason; deterministic code will validate it.
+- If user asks to update "both transfers" or "all transfers" with the same field values, target_types should
+  contain transfer.
+- If the message can reasonably edit the pending confirmation, prefer update_fields over switch_intent.
+  Use switch_intent only for a clearly separate task outside the pending confirmation.
+- If one message gives different edits for different pending tasks, use updates instead of flattening the edit.
+  Example: "mum is allowance and tolu is transport, make tolu 5k" should return updates for mum narration and
+  tolu narration+amount.
+- Never classify free-text approval as sufficient for money movement unless the text is explicit approval; PIN rules
+  are enforced elsewhere.
+"""
+
+PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Pending task context: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
+__all__ = [
+    "INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT",
+    "INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL",
+    "INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE",
+    "PENDING_ACTION_EDIT_SYSTEM_PROMPT",
+    "PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE",
+]

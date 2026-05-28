@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 
 
 def format_mandate_auth_message(

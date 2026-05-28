@@ -1,11 +1,4 @@
-from shared.clients.abstractions.payment import PayoutProvider
-from shared.clients.factories.providers import ProviderFactory
-from shared.clients.telegram.client import TelegramClient
-from shared.clients.whatsapp.client import WhatsAppClient
+"""Client modules.
 
-__all__ = [
-    "WhatsAppClient",
-    "TelegramClient",
-    "PayoutProvider",
-    "ProviderFactory",
-]
+Import concrete clients, providers, and factories from their modules directly.
+"""

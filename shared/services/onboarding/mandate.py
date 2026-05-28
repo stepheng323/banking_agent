@@ -5,7 +5,8 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from shared.cache.user_data import UserDataCache
-from shared.clients.providers.mono import MonoApiError, mono_client
+from shared.clients.providers.mono.client import mono_client
+from shared.clients.providers.mono.models import MonoApiError
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate_messages import format_mandate_auth_message
 from shared.utils.datetime import utc_now_naive

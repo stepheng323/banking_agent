@@ -12,7 +12,8 @@ from apps.receipt.src.renderer import (
     is_browser_runtime_closed_error,
 )
 from shared.cache.redis_client import Redis
-from shared.i18n import LocaleManager, render_message
+from shared.i18n.locale import LocaleManager
+from shared.i18n.renderer import render_message
 from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger, log_fingerprint
 

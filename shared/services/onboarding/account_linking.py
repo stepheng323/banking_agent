@@ -3,7 +3,7 @@
 import asyncio
 
 from shared.cache.flow_session_manager import FlowSessionManager
-from shared.clients.providers.mono import mono_client
+from shared.clients.providers.mono.client import mono_client
 from shared.models.account import CreateAccount
 from shared.models.user import UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork

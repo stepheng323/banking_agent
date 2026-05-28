@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import pytest
 
-from shared.i18n import LanguageDetectionSignal, LocaleCode, LocaleManager, render_message, render_text
+from shared.i18n.locale import LocaleManager
 from shared.i18n.message_keys import ALL_MESSAGE_KEYS
-from shared.i18n.renderer import _flatten_string_leaves, _read_catalog, validate_catalog_completeness
+from shared.i18n.models import (
+    LanguageDetectionSignal,
+    LocaleCode,
+)
+from shared.i18n.renderer import (
+    _flatten_string_leaves,
+    _read_catalog,
+    render_message,
+    render_text,
+    validate_catalog_completeness,
+)
 
 
 class _FakeRedis:

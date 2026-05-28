@@ -16,6 +16,15 @@ class OnboardingStep(str, Enum):
 
 
 @dataclass
+class ServiceResult:
+    """Result from service operations."""
+
+    success: bool
+    data: dict | None = None
+    error: str | None = None
+
+
+@dataclass
 class OnboardingSession:
     """Onboarding session state (typed wrapper for dict data)."""
 

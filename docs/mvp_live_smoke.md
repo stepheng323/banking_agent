@@ -27,7 +27,9 @@ Use the automated smoke runner when you do not have a tester available. It runs 
 your configured DB, Redis, providers, and LLMs, but it does not send Telegram or WhatsApp messages.
 
 ```bash
-PYTHONPATH=. uv run --extra all python -m scripts.live_smoke \
+PYTHONPATH=. uv run --extra all python -m scripts.readiness \
+  --mode dry-run \
+  --scenario quick \
   --phone 2348162511023 \
   --channel telegram \
   --seed \
@@ -37,7 +39,8 @@ PYTHONPATH=. uv run --extra all python -m scripts.live_smoke \
 For the longer mixed-transaction path:
 
 ```bash
-PYTHONPATH=. uv run --extra all python -m scripts.live_smoke \
+PYTHONPATH=. uv run --extra all python -m scripts.readiness \
+  --mode dry-run \
   --phone 2348162511023 \
   --channel telegram \
   --scenario mvp \
@@ -48,7 +51,8 @@ PYTHONPATH=. uv run --extra all python -m scripts.live_smoke \
 For the query-only conversational path:
 
 ```bash
-PYTHONPATH=. uv run --extra all python -m scripts.live_smoke \
+PYTHONPATH=. uv run --extra all python -m scripts.readiness \
+  --mode dry-run \
   --phone 2348162511023 \
   --channel telegram \
   --scenario query \
@@ -56,10 +60,23 @@ PYTHONPATH=. uv run --extra all python -m scripts.live_smoke \
   --reset-session
 ```
 
+For the FAQ/support boundary path:
+
+```bash
+PYTHONPATH=. uv run --extra all python -m scripts.readiness \
+  --mode dry-run \
+  --scenario faq \
+  --phone 2348162511023 \
+  --channel telegram \
+  --seed \
+  --reset-session
+```
+
 For the deeper query hardening path:
 
 ```bash
-PYTHONPATH=. uv run --extra all python -m scripts.live_smoke \
+PYTHONPATH=. uv run --extra all python -m scripts.readiness \
+  --mode dry-run \
   --phone 2348162511023 \
   --channel telegram \
   --scenario query-deep \
@@ -78,6 +95,17 @@ signals to inspect the transcript, not as a replacement for final human channel 
    - Expected: banking capability response.
 3. Send a casual non-banking message.
    - Expected: brief conversational response plus banking redirect.
+
+## FAQ And Support Boundary
+
+1. Send: `What are transfer fees?`
+   - Expected: concise FAQ answer from seeded banking help, no support ticket or transaction lookup.
+2. Send an unrelated banking-help question that is not in the FAQ.
+   - Expected: uncertainty response asking for a rephrase or support, not a fabricated answer.
+3. Send: `Why did my transfer fail?`
+   - Expected: same-turn support flow asks for or resolves the transaction reference; it should not only send a generic FAQ handoff.
+4. Send: `What is my latest support ticket status?`
+   - Expected: support ticket lookup path uses the latest ticket context or asks for the ticket code.
 
 ## Beneficiaries
 

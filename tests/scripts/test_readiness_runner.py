@@ -4,18 +4,24 @@ import json
 
 import pytest
 
-from scripts import live_smoke, readiness
-from scripts.readiness_runner import (
+from scripts import readiness
+from scripts.readiness_assertions import (
+    assert_readiness_turn,
+    task_types_from_response,
+)
+from scripts.readiness_models import (
     ReadinessExpectation,
     ReadinessInvocation,
     ReadinessScenario,
     ReadinessTurn,
-    assert_readiness_turn,
+)
+from scripts.readiness_rendering import (
     duplicate_visible_blocks,
     render_orchestrator_result,
+)
+from scripts.readiness_report import write_json_report
+from scripts.readiness_sequence import (
     run_readiness_sequence,
-    task_types_from_response,
-    write_json_report,
 )
 
 
@@ -213,11 +219,3 @@ def test_readiness_cli_parses_expected_flags() -> None:
     assert args.seed is True
     assert args.reset_session is True
     assert args.json_output == ".readiness/latest.json"
-
-
-def test_live_smoke_keeps_compatibility_parser() -> None:
-    args = live_smoke.parse_args(["--phone", "2348162511023", "--scenario", "query-deep", "--stop-on-fail"])
-
-    assert args.phone == "2348162511023"
-    assert args.scenario == "query-deep"
-    assert args.stop_on_fail is True

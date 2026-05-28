@@ -40,7 +40,7 @@ def _coverage_guard_section(expected_executors: tuple[str, ...]) -> str:
     return PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT.format(expected_executors=", ".join(expected_executors))
 
 
-def build_planner_system_prompt(
+def compile_planner_system_prompt(
     *,
     prompt_input: PlannerPromptBuildInput,
     policy_block: str,
@@ -87,4 +87,4 @@ def build_planner_system_prompt(
     )
 
 
-__all__ = ["build_planner_system_prompt"]
+__all__ = ["compile_planner_system_prompt"]

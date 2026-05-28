@@ -34,9 +34,17 @@ Automated chat help is available whenever the service is online. Bank and bill-p
 
 Say "I need help" or describe the issue in chat. {app_name} can check transaction information, ask for the needed reference, and create or escalate a support ticket when the issue needs follow-up.
 
+## How do support tickets work?
+
+When an issue cannot be resolved immediately in chat, {app_name} can create a support ticket with the relevant transaction details and issue summary. You can ask for your ticket status later by sharing the ticket code or asking about your latest support ticket.
+
 ## Is there a fee to use {app_name}?
 
 Creating a chat profile and linking a supported bank account is not charged by {app_name}. Transaction fees, provider charges, or bank charges may apply, and when available they are shown before you confirm a transaction.
+
+## Can I export my transactions as PDF or CSV?
+
+PDF and CSV exports are not supported in chat right now. You can still ask {app_name} to show transaction details, recent transactions, balances, and receipt images for eligible successful transfers.
 
 ## Can I use {app_name} outside Nigeria?
 

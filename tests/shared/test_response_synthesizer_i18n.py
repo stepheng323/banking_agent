@@ -1,6 +1,6 @@
-from apps.chat.src.agent.graphs.__shared__.response.context import ResponseContext
-from apps.chat.src.agent.graphs.__shared__.response.intent import ResponseIntent
-from apps.chat.src.agent.graphs.__shared__.response.synthesizer import ResponseSynthesizer
+from apps.chat.src.agent.workers.__shared__.response.context import ResponseContext
+from apps.chat.src.agent.workers.__shared__.response.intent import ResponseIntent
+from apps.chat.src.agent.workers.__shared__.response.synthesizer import ResponseSynthesizer
 
 
 async def test_response_synthesizer_renders_keyed_template() -> None:

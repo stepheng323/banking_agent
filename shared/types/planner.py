@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContextReference(BaseModel):
@@ -284,7 +284,7 @@ PendingActionEditOperation: TypeAlias = Literal[
 class PendingActionFieldUpdates(BaseModel):
     """Allowed pending confirmation field updates from semantic classification.
 
-    This model is intentionally closed for OpenAI structured-output compatibility.
+    This model is intentionally closed for OpenAI structured-output schemas.
     The LLM may classify requested edits into these slots; deterministic code still
     validates whether each slot is applicable to the targeted task(s).
     """
@@ -344,22 +344,6 @@ class PendingActionEditDecision(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_legacy_fields_object(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        fields = data.pop("fields", None)
-        if fields is None:
-            return data
-        if hasattr(fields, "model_dump"):
-            fields = fields.model_dump(exclude_none=True)
-        if isinstance(fields, dict):
-            for key, value in fields.items():
-                if value is not None and key not in data:
-                    data[key] = value
-        return data
 
     operation: PendingActionEditOperation = Field(
         default="unclear",

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.graphs.onboarding import service as onboarding_service_module
+from apps.chat.src.agent.workers.onboarding import service as onboarding_service_module
 from shared.cache.flow_session_manager import SessionReadResult
 from shared.clients.providers.mono.models import BankAccount, BvnLookupData, BvnMethod, Institution
 from shared.services.onboarding.account_add import AccountAddService

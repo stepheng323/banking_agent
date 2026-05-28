@@ -9,13 +9,14 @@ from typing import Any
 
 import redis.asyncio as redis
 
+import shared.transaction_runtime.provider_results as provider_results
+import shared.transaction_runtime.scheduled_runs as scheduled_runs
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.i18n import render_message
 from shared.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
+from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
 from shared.repositories.transaction_repository import TransactionRepository
-from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.async_completion import (
     is_grouped_async_message,
     record_group_leg_and_maybe_build_summary,
@@ -31,69 +32,6 @@ from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 
 logger = get_logger(__name__)
-
-
-def _provider_error_message(result: dict[str, Any], fallback: str) -> str:
-    for key in ("message", "error", "reason"):
-        value = result.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return fallback
-
-
-def _provider_error_code(result: dict[str, Any]) -> str | None:
-    for key in ("response_code", "responseCode", "error_code", "code"):
-        value = result.get(key)
-        if value is not None:
-            return str(value)
-    return None
-
-
-def _provider_reference(result: dict[str, Any]) -> str | None:
-    for key in ("transaction_id", "reference", "ref", "provider_reference"):
-        value = result.get(key)
-        if value is not None and str(value).strip():
-            return str(value).strip()
-
-    for nested_key in ("data", "raw_response"):
-        nested = result.get(nested_key)
-        if not isinstance(nested, dict):
-            continue
-        for key in ("transaction_id", "reference", "ref", "provider_reference"):
-            value = nested.get(key)
-            if value is not None and str(value).strip():
-                return str(value).strip()
-    return None
-
-
-def _provider_status(result: dict[str, Any]) -> str | None:
-    for key in ("status", "provider_status", "transaction_status", "tx_status"):
-        value = result.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip().lower()
-
-    for nested_key in ("data", "raw_response"):
-        nested = result.get(nested_key)
-        if not isinstance(nested, dict):
-            continue
-        for key in ("status", "provider_status", "transaction_status", "tx_status"):
-            value = nested.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip().lower()
-    for key in ("message", "error", "reason"):
-        value = result.get(key)
-        if isinstance(value, str) and value.strip().lower() in {
-            "pending",
-            "processing",
-            "queued",
-            "bill payment is pending",
-        }:
-            return "pending"
-    return None
-
-
-def _provider_status_is_processing(result: dict[str, Any]) -> bool:
-    return _provider_status(result) in {"pending", "processing", "queued"}
 
 
 def _execution_error_message(locale: str) -> str:
@@ -139,40 +77,6 @@ class DataExecutor:
         self.redis_client = redis_client
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
 
-    @staticmethod
-    def _scheduled_meta(data: dict[str, Any]) -> dict[str, Any]:
-        raw = data.get("scheduled_meta")
-        return raw if isinstance(raw, dict) else {}
-
-    async def _update_scheduled_run(
-        self,
-        schedule_run_id: str | None,
-        *,
-        status: str,
-        error_message: str | None = None,
-        transaction_id: str | None = None,
-    ) -> None:
-        if not schedule_run_id:
-            return
-        try:
-            async with UnitOfWork() as uow:
-                if not uow.scheduled_runs:
-                    return
-                run = await uow.scheduled_runs.get_by_id(schedule_run_id)
-                if not run:
-                    return
-                run.status = status
-                run.error_message = error_message
-                run.transaction_id = transaction_id or run.transaction_id
-                if status in {"successful", "failed"}:
-                    from datetime import UTC, datetime
-
-                    run.completed_at = datetime.now(UTC).replace(tzinfo=None)
-                uow.db.add(run)
-                await uow.commit()
-        except Exception as exc:
-            logger.warning("scheduled_data_run_update_failed", schedule_run_id=schedule_run_id, error=str(exc))
-
     async def _build_data_beneficiary_suggestion(
         self,
         *,
@@ -183,7 +87,7 @@ class DataExecutor:
     ) -> str | None:
         if is_grouped_async_message(data):
             return None
-        if str(self._scheduled_meta(data).get("run_source") or "") == "scheduled":
+        if scheduled_runs.is_scheduled_run(scheduled_runs.scheduled_meta(data)):
             return None
 
         return await suggest_mobile_beneficiary(
@@ -203,9 +107,9 @@ class DataExecutor:
         transaction_id = data.get("transaction_id")
         data_purchase = data.get("data_purchase", {})
         locale = data.get("language", "en")
-        scheduled_meta = self._scheduled_meta(data)
-        schedule_run_id = str(scheduled_meta.get("schedule_run_id")) if scheduled_meta.get("schedule_run_id") else None
-        is_scheduled = str(scheduled_meta.get("run_source") or "") == "scheduled"
+        scheduled_meta = scheduled_runs.scheduled_meta(data)
+        schedule_run_id = scheduled_runs.schedule_run_id(scheduled_meta)
+        is_scheduled = scheduled_runs.is_scheduled_run(scheduled_meta)
 
         if not transaction_id:
             logger.error("data_execution_error", error="missing_transaction_id")
@@ -220,11 +124,12 @@ class DataExecutor:
             else None
         ) or capability_block_message(domain="data", action="buy_data", locale=locale):
             logger.info("data_execution_capability_blocked", transaction_id=transaction_id)
-            await self._update_scheduled_run(
+            await scheduled_runs.update_scheduled_run(
                 schedule_run_id,
                 status="failed",
                 error_message=policy_message,
                 transaction_id=transaction_id,
+                warning_event="scheduled_data_run_update_failed",
             )
             await self.transaction_repo.update_status(
                 transaction_id,
@@ -287,10 +192,11 @@ class DataExecutor:
         logger.info("executing_data", transaction_id=transaction_id)
 
         try:
-            await self._update_scheduled_run(
+            await scheduled_runs.update_scheduled_run(
                 schedule_run_id,
                 status="processing",
                 transaction_id=transaction_id,
+                warning_event="scheduled_data_run_update_failed",
             )
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
@@ -312,11 +218,12 @@ class DataExecutor:
                     TransactionStatusEnum.FAILED.value,
                     error_message=error_msg,
                 )
-                await self._update_scheduled_run(
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="failed",
                     error_message=error_msg,
                     transaction_id=transaction_id,
+                    warning_event="scheduled_data_run_update_failed",
                 )
                 if delivery_target and not is_grouped_async_message(data):
                     await self.delivery_service.deliver_text(
@@ -340,8 +247,8 @@ class DataExecutor:
                 amount=amount,
                 reference=request_reference,
             )
-            provider_reference = _provider_reference(result) or request_reference
-            provider_status = _provider_status(result)
+            provider_reference = provider_results.provider_reference(result) or request_reference
+            provider_status = provider_results.provider_status(result)
 
             if result.get("success"):
                 await self.transaction_repo.update_status(
@@ -352,10 +259,11 @@ class DataExecutor:
                     provider_response=result,
                 )
                 logger.info("data_success", transaction_id=transaction_id, ref=provider_reference)
-                await self._update_scheduled_run(
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="successful",
                     transaction_id=transaction_id,
+                    warning_event="scheduled_data_run_update_failed",
                 )
                 completion_payload = {
                     "amount": amount,
@@ -420,7 +328,7 @@ class DataExecutor:
                         dedupe_key=f"data:success:{transaction_id}",
                     )
             else:
-                if _provider_status_is_processing(result):
+                if provider_results.provider_status_is_processing(result):
                     await self.transaction_repo.update_status(
                         transaction_id,
                         TransactionStatusEnum.PROCESSING.value,
@@ -428,11 +336,16 @@ class DataExecutor:
                         provider_status=provider_status,
                         provider_response=result,
                     )
-                    logger.info("data_processing", transaction_id=transaction_id, status=_provider_status(result))
-                    await self._update_scheduled_run(
+                    logger.info(
+                        "data_processing",
+                        transaction_id=transaction_id,
+                        status=provider_results.provider_status(result),
+                    )
+                    await scheduled_runs.update_scheduled_run(
                         schedule_run_id,
                         status="processing",
                         transaction_id=transaction_id,
+                        warning_event="scheduled_data_run_update_failed",
                     )
                     completion_payload = {
                         "amount": amount,
@@ -506,7 +419,7 @@ class DataExecutor:
                             )
                     return
 
-                error_msg = _provider_error_message(
+                error_msg = provider_results.provider_error_message(
                     result,
                     render_message("data.error.provider_failed", locale),
                 )
@@ -514,17 +427,18 @@ class DataExecutor:
                     transaction_id,
                     TransactionStatusEnum.FAILED.value,
                     error_message=error_msg,
-                    provider_transaction_id=_provider_reference(result),
+                    provider_transaction_id=provider_results.provider_reference(result),
                     provider_status=provider_status,
                     provider_response=result,
-                    provider_error_code=_provider_error_code(result),
+                    provider_error_code=provider_results.provider_error_code(result),
                 )
                 logger.error("data_failed", transaction_id=transaction_id, error=error_msg)
-                await self._update_scheduled_run(
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="failed",
                     error_message=error_msg,
                     transaction_id=transaction_id,
+                    warning_event="scheduled_data_run_update_failed",
                 )
                 completion_payload = {
                     "amount": amount,
@@ -539,7 +453,7 @@ class DataExecutor:
                     "error_message": error_msg,
                     "failure_category": classify_failure_category(
                         message=error_msg,
-                        code=_provider_error_code(result),
+                        code=provider_results.provider_error_code(result),
                         context="provider",
                     ),
                 }
@@ -584,11 +498,12 @@ class DataExecutor:
             await self.transaction_repo.update_status(
                 transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
             )
-            await self._update_scheduled_run(
+            await scheduled_runs.update_scheduled_run(
                 schedule_run_id,
                 status="failed",
                 error_message=error_msg,
                 transaction_id=transaction_id,
+                warning_event="scheduled_data_run_update_failed",
             )
             completion_payload = {
                 "amount": data_purchase.get("amount"),

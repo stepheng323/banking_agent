@@ -20,6 +20,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "transfer",
             "data",
             "airtime",
+            "faq",
             "unsupported",
             "schedule",
             "quick",

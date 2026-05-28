@@ -70,8 +70,8 @@ Follow-up questions like `"show details"`, `"how is that 50k?"`, or `"what about
 ```text
 User (WhatsApp / Telegram)
   → Gateway ingress (webhook validation, message routing)
-  → Core chat worker (orchestrator + domain graph dispatch)
-  → Domain graphs (query, transfer, airtime, data, beneficiary, account, support, FAQ)
+  → Core chat worker (orchestrator graph + domain worker dispatch)
+  → Domain workers (query, transfer, airtime, data, beneficiary, account, support, FAQ)
   → Financial execution (idempotent workers, provider abstraction)
   → Receipt generation + notification delivery
 ```
@@ -81,7 +81,7 @@ User (WhatsApp / Telegram)
 | Service | Responsibility |
 |---------|---------------|
 | `apps/gateway/` | Ingress endpoints, webhook routing, channel adapters (WhatsApp, Telegram) |
-| `apps/chat/` | Orchestration, agent graphs, task planning, shared financial logic |
+| `apps/chat/` | Orchestration, domain workers, task planning, shared financial logic |
 | `apps/transaction/` | Transaction worker runtime, async financial worker entrypoints |
 | `apps/receipt/` | Receipt rendering and async worker entrypoints |
 | `shared/` | Contracts, provider clients, database models, i18n, runtime config |
@@ -111,7 +111,7 @@ The main engineering work is around making LLM-driven financial flows behave pre
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Python 3.13 |
+| Language | Python 3.11+; checked against Python 3.12 |
 | API | FastAPI + Uvicorn |
 | Orchestration | LangGraph / LangChain |
 | Database | PostgreSQL 16 |
@@ -133,12 +133,14 @@ The main engineering work is around making LLM-driven financial flows behave pre
 banking_agent/
 ├── apps/
 │   ├── gateway/         # ingress, webhooks, channel adapters
-│   ├── core/            # orchestration, domain graphs, shared financial logic
+│   ├── chat/            # orchestration, domain workers, task planning
 │   ├── transaction/     # transaction worker runtime app
 │   └── receipt/         # receipt rendering and worker entrypoints
 ├── shared/              # shared contracts, config, clients, repositories
 ├── tests/               # 1,000+ regression and integration tests
 ├── docs/                # runtime ownership, configuration, policy docs
+├── data/                # FAQ and runtime seed content
+├── alembic/             # database migrations
 ├── infrastructure/      # AWS / deployment configuration
 ├── docker-compose.yml   # canonical runtime stack for VPS and local parity
 ├── deploy-stack.sh      # canonical stack entrypoint for local + VPS runtime shape
@@ -188,8 +190,8 @@ If you are evaluating this repository for hiring or technical partnership, the s
 
 | Area | Path |
 |------|------|
-| Query orchestration | `apps/chat/src/agent/graphs/query/` |
-| Transfer engine | `apps/chat/src/agent/graphs/transfer/` |
+| Query orchestration | `apps/chat/src/agent/workers/query/` |
+| Transfer engine | `apps/chat/src/agent/workers/transfer/` |
 | Task planner + guardrails | `apps/chat/src/agent/orchestrator/` |
 | Account linking | `shared/services/onboarding/` |
 | Query regression tests | `tests/query/` |

@@ -1,4 +1,4 @@
-# Shared configuration
-from .settings import Settings, settings
+"""Configuration modules.
 
-__all__ = ["Settings", "settings"]
+Import settings from ``shared.config.settings``.
+"""

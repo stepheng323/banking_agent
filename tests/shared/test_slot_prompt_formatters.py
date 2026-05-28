@@ -1,4 +1,4 @@
-from shared.formatters.prompts import format_transaction_slot_prompt
+from shared.formatters.transaction_slot_prompts import format_transaction_slot_prompt
 
 
 def test_transfer_known_amount_asks_for_recipient_naturally() -> None:

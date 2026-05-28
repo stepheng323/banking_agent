@@ -37,7 +37,7 @@ web = [
     "python-multipart>=0.0.9",
 ]
 
-# Core app - AI/Agent dependencies
+# Chat/agent dependencies
 core = [
     "langchain>=1.2.0",
     "langchain-community>=0.4.1",
@@ -172,7 +172,7 @@ ignore = [
 "__init__.py" = ["F401", "F403"]  # Allow unused/star imports in __init__.py files
 "shared/services/task_planner.py" = ["E501"]  # Long LLM prompts
 "shared/services/funding/planner.py" = ["E501"]  # Long error messages
-"apps/chat/src/agent/graphs/**" = ["E501"]  # Long nodes/prompts
+"apps/chat/src/agent/workers/**" = ["E501"]  # Long nodes/prompts
 "apps/chat/src/agent/orchestrator/models/**" = ["E501"]  # Long field descriptions
 "scripts/**" = ["E402"]  # Allow sys.path modifications before imports
 "**/tests/**" = ["B", "SIM", "E501"]  # Ignore some rules and line length in tests
@@ -229,14 +229,14 @@ module = [
     "shared.clients.providers.flutterwave.*",
     "shared.transaction_runtime.*",
     "apps.gateway.api.webhooks.*",
-    "apps.chat.src.agent.graphs.transfer.*",
-    "apps.chat.src.agent.graphs.airtime.*",
-    "apps.chat.src.agent.graphs.data.*",
-    "apps.chat.src.agent.graphs.faq.*",
-    "apps.chat.src.agent.graphs.account.*",
-    "apps.chat.src.agent.graphs.support.*",
-    "apps.chat.src.agent.graphs.beneficiary.*",
-    "apps.chat.src.agent.graphs.__shared__.*",
+    "apps.chat.src.agent.workers.transfer.*",
+    "apps.chat.src.agent.workers.airtime.*",
+    "apps.chat.src.agent.workers.data.*",
+    "apps.chat.src.agent.workers.faq.*",
+    "apps.chat.src.agent.workers.account.*",
+    "apps.chat.src.agent.workers.support.*",
+    "apps.chat.src.agent.workers.beneficiary.*",
+    "apps.chat.src.agent.workers.__shared__.*",
     "apps.chat.src.agent.orchestrator.*",
     "apps.chat.src.queue_consumers.*",
     "apps.chat.src.messaging.*",

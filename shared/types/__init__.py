@@ -1,8 +1,4 @@
-"""Types for the application."""
+"""Type modules.
 
-from shared.types.agent_types import IntentType, SecurityLevel
-
-__all__ = [
-    "IntentType",
-    "SecurityLevel",
-]
+Import types from their concrete modules.
+"""

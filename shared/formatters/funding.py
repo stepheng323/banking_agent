@@ -3,7 +3,7 @@
 from typing import Any
 
 from shared.formatters.currency import format_naira
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 
 
 def format_insufficient_funds(

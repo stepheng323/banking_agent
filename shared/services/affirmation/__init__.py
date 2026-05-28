@@ -1,5 +1,4 @@
-"""Unified affirmation/decline detection service."""
+"""Affirmation service modules.
 
-from .service import AffirmationResult, AffirmationService
-
-__all__ = ["AffirmationService", "AffirmationResult"]
+Import concrete services directly, e.g. ``shared.services.affirmation.service``.
+"""

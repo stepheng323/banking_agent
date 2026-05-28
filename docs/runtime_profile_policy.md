@@ -66,9 +66,11 @@ Coverage is validated at startup/tests by `validate_policy_coverage`.
 
 - `transfer`: `send_money`
 - `airtime`: `buy_airtime`
-- `data`: `buy_data`
+- `data`: `buy_data`, `data_plan_query`
+- `schedule`: `schedule_transfer`, `recurring_transfer`, `schedule_airtime`, `recurring_airtime`, `schedule_data`, `recurring_data`, `cancel_scheduled_transfer`, `list_scheduled_transfers`, `list_scheduled_transactions`, `find_scheduled_transaction`, `cancel_scheduled_transaction`, `edit_scheduled_transaction`
 - `account`: `list_accounts`, `link_account`, `unlink_account`, `set_default`, `close_account`, `change_bvn`, `add_joint_holder`
-- `support`: `lookup_transaction`, `explain_status`, `retry_payout`, `initiate_refund`, `queue_refund_request`, `collect_details`, `create_ticket`, `escalate`
+- `support`: `lookup_transaction`, `lookup_ticket`, `explain_status`, `retry_payout`, `initiate_refund`, `queue_refund_request`, `collect_details`, `create_ticket`, `escalate`
+- `faq`: `answer_question`
 - `query`: `filter_recipient`, `filter_amount`, `filter_category`, `filter_tx_type`, `filter_bank`, `search_narration_keyword`, `search_narration_fuzzy`, `time_relative`, `time_all`, `aggregate_sum`, `aggregate_group`, `time_comparison`, `export_pdf`, `export_csv`
 
 ## Consistency Rules

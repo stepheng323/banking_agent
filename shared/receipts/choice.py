@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 from shared.messaging.intents import ShowOptions
 
 RECEIPT_IMAGE_ACTION_ID = "rcpt:send"

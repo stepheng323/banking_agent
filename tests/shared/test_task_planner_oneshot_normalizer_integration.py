@@ -21,7 +21,13 @@ class _FakeLLM:
     def __init__(self, planner_output: PlannerOutput) -> None:
         self._planner_output = planner_output
 
-    def with_structured_output(self, schema: Any) -> _StructuredResponder:
+    def with_structured_output(
+        self,
+        schema: Any,
+        *,
+        method: str | None = None,
+    ) -> _StructuredResponder:
+        del method
         schema_name = getattr(schema, "__name__", "")
         if schema_name == "PlannerOutput":
             return _StructuredResponder(self._planner_output)

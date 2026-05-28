@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from shared.services.auth import AuthorizationService
+from shared.services.auth.authorization import AuthorizationService
 from shared.utils.hash import is_valid_pin_format
 
 
