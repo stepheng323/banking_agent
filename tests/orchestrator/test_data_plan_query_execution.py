@@ -7,9 +7,9 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
-from apps.chat.src.agent.orchestrator.nodes.gate.runner import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 
 
 def _apply_updates(state: OrchestratorState, updates: dict[str, Any]) -> OrchestratorState:

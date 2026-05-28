@@ -5,7 +5,6 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.graphs.airtime.worker import AirtimeWorker
 from apps.chat.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
@@ -14,13 +13,15 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
-from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
-from apps.chat.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 from shared.formatters.accounts import format_source_account_info_from_account_number
-from shared.i18n import render_cancelled_prompt, render_message
+from shared.i18n.bridge import render_cancelled_prompt
+from shared.i18n.renderer import render_message
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
@@ -42,9 +43,20 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         return self._output
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
 
 class _SequentialPlanner:
@@ -52,7 +64,7 @@ class _SequentialPlanner:
         self._outputs = outputs
         self._idx = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         if not self._outputs:
             raise AssertionError("expected at least one planner output")
@@ -67,8 +79,11 @@ class _SequentialPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, context
+        del phone_number, context, path_label, prompt_mode
         if text.strip().lower() == "cancel":
             return InterruptRouteDecision(
                 decision="cancel",
@@ -82,6 +97,17 @@ class _SequentialPlanner:
             detected_language="English",
             reason="slot continuation",
         )
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
 
 class _PendingActionEditPlanner:
@@ -145,8 +171,11 @@ class _PendingActionEditThenRoutePlanner(_PendingActionEditPlanner):
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text, context, path_label, prompt_mode
         self.route_calls += 1
         return self._route
 
@@ -2182,7 +2211,7 @@ async def test_pending_account_switch_with_bank_reference_updates_confirmation_s
 
 
 @pytest.mark.asyncio
-async def test_router_account_switch_does_not_bypass_pending_action_edit_engine() -> None:
+async def test_pending_action_edit_ambiguity_blocks_account_switch_router() -> None:
     state = OrchestratorState(
         user_id="u_mixed_confirm_account_switch_router_block",
         phone_number="2348000000941",
@@ -2254,7 +2283,7 @@ async def test_router_account_switch_does_not_bypass_pending_action_edit_engine(
 
     updates = await handle_pending_interrupt(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert updates["tasks"] == state.tasks
     assert updates["tasks"]["t_transfer"].payload["source_bank_name"] == "Access Bank"
@@ -2264,7 +2293,7 @@ async def test_router_account_switch_does_not_bypass_pending_action_edit_engine(
 
 
 @pytest.mark.asyncio
-async def test_router_same_flow_switch_does_not_bypass_pending_action_edit_engine() -> None:
+async def test_pending_action_edit_ambiguity_blocks_same_flow_switch_router() -> None:
     state = OrchestratorState(
         user_id="u_mixed_confirm_same_flow_router_block",
         phone_number="2348000000942",
@@ -2307,7 +2336,7 @@ async def test_router_same_flow_switch_does_not_bypass_pending_action_edit_engin
 
     updates = await handle_pending_interrupt(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert updates["tasks"] == state.tasks
     assert updates["tasks"]["t_transfer"].stage == TaskStage.AWAITING_CONFIRMATION

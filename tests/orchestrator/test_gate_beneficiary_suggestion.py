@@ -4,10 +4,10 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.beneficiary_suggestions import (
     _resolve_beneficiary_suggestion_reply,
-    session_gate_direct_path,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
 from shared.types.planner import SemanticRouteDecision
 
 
@@ -31,8 +31,15 @@ class _RouteTurnPlanner:
         self._decision = decision
         self.route_calls = 0
 
-    async def route_semantic_turn(self, phone_number: str, text: str, context: str = "None") -> SemanticRouteDecision:
-        del phone_number, text, context
+    async def route_semantic_turn(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "direct_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, context, path_label
         self.route_calls += 1
         return self._decision
 

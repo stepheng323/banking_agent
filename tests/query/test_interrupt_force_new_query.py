@@ -4,9 +4,9 @@ from datetime import date
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.models import QueryExtractionResult
-from apps.chat.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.query.models.extraction import QueryExtractionResult
+from apps.chat.src.agent.workers.query.nodes.extraction import ExtractionStep
 
 
 class _DummyStructured:

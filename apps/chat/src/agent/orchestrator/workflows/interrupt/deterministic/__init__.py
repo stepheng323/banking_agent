@@ -1,0 +1,1 @@
+"""Deterministic interrupt shortcut package."""

@@ -5,8 +5,13 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent, QueryIR, TimeRange
-from apps.chat.src.agent.graphs.query.services.coverage import build_query_coverage_answer
+from apps.chat.src.agent.workers.query.models.domain import (
+    QueryExecutionContract,
+    QueryIntent,
+    QueryIR,
+    TimeRange,
+)
+from apps.chat.src.agent.workers.query.services.answers.coverage import build_query_coverage_answer
 
 
 class _CoverageRepo:

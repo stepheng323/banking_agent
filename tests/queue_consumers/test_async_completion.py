@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from shared.services.async_completion import get_recent_batch_reference, record_group_leg_and_maybe_build_summary
+from shared.services.async_completion import record_group_leg_and_maybe_build_summary
+from shared.services.async_group_recent_batch import get_recent_batch_reference
 
 
 class _RedisStub:

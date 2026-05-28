@@ -2,11 +2,11 @@
 
 from types import SimpleNamespace
 
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
-from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import prepare_payout_recipient
-from apps.chat.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
+from apps.chat.src.agent.workers.transfer.nodes.payout_preparation import prepare_payout_recipient
+from apps.chat.src.agent.workers.transfer.resolution.resolver import resolve_beneficiary
 from shared.formatters.confirmation import build_confirmation_summary
 from shared.i18n.personality import PersonalityContext
 

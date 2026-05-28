@@ -1,7 +1,7 @@
 import time
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
-from apps.chat.src.agent.orchestrator.context.referent_memory import remember_referents_from_frame
+from apps.chat.src.agent.orchestrator.context.referents.frame_memory import remember_referents_from_frame
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
 

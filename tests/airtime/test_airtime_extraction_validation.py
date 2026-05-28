@@ -3,13 +3,13 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.graphs.airtime.nodes.confirmation import ConfirmationStep
-from apps.chat.src.agent.graphs.airtime.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.graphs.airtime.nodes.selection import SourceSelectionStep
-from apps.chat.src.agent.graphs.airtime.nodes.validation import ValidationStep
-from apps.chat.src.agent.graphs.airtime.worker import AirtimeWorker
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from apps.chat.src.agent.workers.airtime.nodes.confirmation import ConfirmationStep
+from apps.chat.src.agent.workers.airtime.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.workers.airtime.nodes.selection import SourceSelectionStep
+from apps.chat.src.agent.workers.airtime.nodes.validation import ValidationStep
+from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 
 
 class _ExtractorStub:

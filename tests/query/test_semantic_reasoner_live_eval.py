@@ -8,22 +8,24 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.models import (
+from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
+from apps.chat.src.agent.workers.query.models.domain import (
     Filters,
-    PendingClarificationState,
     QueryExecutionContract,
-    QueryExtractionResult,
     QueryIntent,
     QueryIR,
     QueryResultItem,
     TimeRange,
 )
-from apps.chat.src.agent.graphs.query.services.reasoner import (
+from apps.chat.src.agent.workers.query.models.extraction import (
+    PendingClarificationState,
+    QueryExtractionResult,
+)
+from apps.chat.src.agent.workers.query.services.reasoning.models import (
     QuerySemanticDecision,
-    QuerySemanticReasoner,
     SemanticReasonerContext,
 )
-from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
+from apps.chat.src.agent.workers.query.services.reasoning.reasoner import QuerySemanticReasoner
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

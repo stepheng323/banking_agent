@@ -2,13 +2,12 @@ from typing import Any, cast
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.intents import ShowOptions
-from apps.chat.src.messaging.presenters.base import PresentationContext
-from apps.chat.src.messaging.presenters.telegram import TelegramPresenter
-from apps.chat.src.messaging.presenters.whatsapp import WhatsAppPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
-from shared.i18n import render_message
-from shared.messaging.intents import Say
+from shared.i18n.renderer import render_message
+from shared.messaging.intents import Say, ShowOptions
+from shared.messaging.presenters.base import PresentationContext
+from shared.messaging.presenters.telegram import TelegramPresenter
+from shared.messaging.presenters.whatsapp import WhatsAppPresenter
 
 
 class _StubWhatsAppClient:

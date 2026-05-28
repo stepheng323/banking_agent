@@ -6,10 +6,10 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
+from apps.chat.src.agent.orchestrator.graph.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
-from apps.chat.src.agent.orchestrator.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
 from shared.config.settings import settings
-from shared.services.delivery_service import DeliveryAttemptResult
+from shared.services.delivery_models import DeliveryAttemptResult
 
 
 class _CheckpointerStub:
@@ -121,7 +121,7 @@ class _NoopDistributedLock:
 @pytest.fixture(autouse=True)
 def _stub_distributed_lock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.handler.RedisDistributedLock",
+        "apps.chat.src.agent.orchestrator.graph.thread_lock.RedisDistributedLock",
         _NoopDistributedLock,
     )
 
@@ -158,8 +158,7 @@ async def test_graph_handler_invoke_passes_quoted_message_fields(monkeypatch: py
         beneficiary_suggestion_service=SimpleNamespace(),
     )
 
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await handler.invoke(
         MessageContext(
@@ -209,8 +208,7 @@ async def test_graph_handler_resume_flow_clears_quoted_message_fields(monkeypatc
         beneficiary_suggestion_service=SimpleNamespace(),
     )
 
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await handler.resume_flow(
         phone_number="2348000000001",
@@ -272,8 +270,7 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
         publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await handler.invoke(
         MessageContext(
@@ -320,8 +317,7 @@ async def test_graph_handler_uses_lightweight_hydration_for_fresh_transfer(monke
         publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     resolved_user = SimpleNamespace(id="user-1")
     await handler.invoke(
@@ -390,8 +386,7 @@ async def test_graph_handler_cancel_prefastpath_uses_cache_only_hydration(monkey
         publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await handler.invoke(
         MessageContext(
@@ -431,7 +426,7 @@ async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_t
         lambda checkpointer: graph,
     )
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing",
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing",
         typing_mock,
     )
 
@@ -454,8 +449,7 @@ async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_t
         publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await handler.invoke(
         MessageContext(
@@ -535,8 +529,7 @@ async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.Monk
         publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await handler.invoke(
         MessageContext(
@@ -604,8 +597,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_after_visible_progres
         publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     result = await handler.invoke(
         MessageContext(
@@ -665,8 +657,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
         publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
-    handler._cleanup_if_idle = AsyncMock()
-    handler._apply_session_ttl = AsyncMock()
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     result = await handler.invoke(
         MessageContext(
@@ -702,10 +693,10 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
         "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -721,8 +712,8 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -746,7 +737,7 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
 
     tracker = _ProgressTrackerStub(progress_count=0, last_progress_sent_at=None)
     progress_task = asyncio.create_task(
-        handler._run_progress_updates(
+        handler.progress_delivery.run_updates(
             tracker=tracker,
             phone_number="2348000000003",
             channel="whatsapp",
@@ -779,10 +770,10 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
         "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -796,8 +787,8 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -867,7 +858,7 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
 
     tracker = _StageFlippingTracker()
     progress_task = asyncio.create_task(
-        handler._run_progress_updates(
+        handler.progress_delivery.run_updates(
             tracker=tracker,
             phone_number="2348000000004",
             channel="whatsapp",
@@ -899,10 +890,10 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
         "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -916,8 +907,8 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -949,7 +940,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
     tracker_b.record_progress_sent = _stop_after_first_send.__get__(tracker_b, _ProgressTrackerStub)
 
     task_a = asyncio.create_task(
-        handler._run_progress_updates(
+        handler.progress_delivery.run_updates(
             tracker=tracker_a,
             phone_number="2348000000006",
             channel="telegram",
@@ -961,7 +952,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
         )
     )
     task_b = asyncio.create_task(
-        handler._run_progress_updates(
+        handler.progress_delivery.run_updates(
             tracker=tracker_b,
             phone_number="2348000000006",
             channel="telegram",
@@ -997,10 +988,10 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
         "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.seconds_until_progress_eligible", lambda snapshot: 0.0)
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        "apps.chat.src.agent.orchestrator.graph.progress_delivery.next_progress_delay_seconds",
         lambda stage_key, progress_count: 0.0,
     )
 
@@ -1033,8 +1024,8 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
     async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
         return DeliveryAttemptResult(status="delivered")
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -1058,7 +1049,7 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
 
     tracker = _SingleSnapshotTracker()
     progress_task = asyncio.create_task(
-        handler._run_progress_updates(
+        handler.progress_delivery.run_updates(
             tracker=tracker,
             phone_number="2348000000007",
             channel="telegram",

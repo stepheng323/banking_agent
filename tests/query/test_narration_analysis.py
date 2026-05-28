@@ -1,4 +1,4 @@
-from apps.chat.src.agent.graphs.query.services.narration import analyze_transaction_narration
+from apps.chat.src.agent.workers.query.services.analysis.narration import analyze_transaction_narration
 
 
 def test_transfer_narration_extracts_recipient_and_transfer_category() -> None:

@@ -111,7 +111,7 @@ class TransferPayload(BaseModel):
 class TaskSpec(BaseModel):
     """Generic task container.
 
-    The Orchestrator persists this. Subgraphs receive the payload
+    The Orchestrator persists this. Workers receive the payload
     and return patches to it.
     """
 
@@ -159,7 +159,7 @@ class PendingInterrupt(BaseModel):
     attempts: int = 0
 
 
-# --- 4. Subgraph Contracts ---
+# --- 4. Worker Contracts ---
 
 
 class TransactionOutcome(str, Enum):

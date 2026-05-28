@@ -3,18 +3,20 @@ from __future__ import annotations
 import time
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.orchestrator.context.referent_memory import (
-    ReferentMemoryItem,
+from apps.chat.src.agent.orchestrator.context.referents.frame_memory import remember_referents_from_frame
+from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMemoryItem
+from apps.chat.src.agent.orchestrator.context.referents.resolution import (
     build_resolved_referents,
-    forget_stashed_referents,
-    remember_referents_from_completed_task,
-    remember_referents_from_frame,
-    remember_referents_from_stashed_session,
     resolve_amount_reference,
     resolve_data_plan_reference,
     resolve_phone_reference,
     resolve_recipient_reference,
     resolve_source_account_reference,
+)
+from apps.chat.src.agent.orchestrator.context.referents.store import forget_stashed_referents
+from apps.chat.src.agent.orchestrator.context.referents.task_memory import (
+    remember_referents_from_completed_task,
+    remember_referents_from_stashed_session,
 )
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState

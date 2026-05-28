@@ -6,12 +6,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.orchestrator.context.referent_memory import ReferentMemoryItem
-from apps.chat.src.agent.orchestrator.execution.handlers import (
-    ExecutionAggregation,
-    ExecutionContext,
-    handle_orchestrator_task,
-)
+from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMemoryItem
 from apps.chat.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
@@ -20,8 +15,10 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
+from apps.chat.src.agent.orchestrator.task_handlers.session import handle_orchestrator_task
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 
 
 def _resume_frame() -> ContextFrame:

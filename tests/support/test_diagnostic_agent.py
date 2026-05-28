@@ -7,11 +7,13 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from apps.chat.src.agent.graphs.support.diagnostic_agent import (
+from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
+from apps.chat.src.agent.workers.support.diagnostic_agent import (
     SupportDiagnosticAgent,
     build_support_diagnostic_context,
 )
-from apps.chat.src.agent.graphs.support.models import (
+from apps.chat.src.agent.workers.support.diagnostic_routing import SupportDiagnosticRouter
+from apps.chat.src.agent.workers.support.models import (
     ClassificationResult,
     PendingReferenceState,
     SupportContext,
@@ -21,8 +23,7 @@ from apps.chat.src.agent.graphs.support.models import (
     SupportReferenceCandidate,
     TransactionReference,
 )
-from apps.chat.src.agent.graphs.support.worker import SupportWorker
-from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
+from apps.chat.src.agent.workers.support.worker import SupportWorker
 from shared.config.settings import settings
 
 
@@ -249,7 +250,7 @@ async def test_support_worker_diagnostic_retry_blocked_by_policy(monkeypatch: py
 @pytest.mark.asyncio
 async def test_support_worker_diagnostic_retry_allowed_returns_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "enable_support_diagnostic_agent", True)
-    monkeypatch.setattr(SupportWorker, "_policy_block_for_actions", staticmethod(lambda actions, locale: None))
+    monkeypatch.setattr(SupportDiagnosticRouter, "_policy_block_for_actions", staticmethod(lambda actions, locale: None))
     decision = SupportDiagnosticDecision(
         intent=SupportIntent.RETRY_TRANSFER,
         next_action=SupportDiagnosticAction.PREPARE_RETRY_HANDOFF,

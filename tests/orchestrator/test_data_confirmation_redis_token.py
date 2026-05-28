@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.graphs.data.nodes.confirmation import ConfirmationStep
+from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
+from apps.chat.src.agent.workers.data.nodes.confirmation import ConfirmationStep
 
 
 class _StubRedis:

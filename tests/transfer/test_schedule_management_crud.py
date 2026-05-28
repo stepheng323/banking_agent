@@ -3,9 +3,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.graphs.transfer.models.types import TransferGates, TransferPayload
-from apps.chat.src.agent.graphs.transfer.worker import TransferWorker
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.models.types import TransferGates, TransferPayload
+from apps.chat.src.agent.workers.transfer.pipeline_factory import build_transfer_pipeline
+from apps.chat.src.agent.workers.transfer.scheduling import TransferSchedulingHandler
 from shared.services.scheduling.recurrence import (
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,
@@ -50,15 +51,8 @@ class _FakeUnitOfWork:
         self.committed = True
 
 
-def _worker() -> TransferWorker:
-    return TransferWorker(
-        validation_service=None,
-        publisher=None,
-        extractor=None,
-        resolver_provider=None,
-        bank_cache=None,
-        transaction_repo=None,
-    )
+def _scheduling() -> TransferSchedulingHandler:
+    return TransferSchedulingHandler(build_pipeline=build_transfer_pipeline)
 
 
 class _StubRedis:
@@ -132,9 +126,9 @@ async def test_schedule_management_list_shows_transfer_airtime_and_data(monkeypa
             ),
         ]
     )
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
-    result = await _worker()._list_schedules(user_id="user-1", locale="en")
+    result = await _scheduling().list_schedules(user_id="user-1", locale="en")
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response
@@ -162,9 +156,9 @@ async def test_schedule_management_count_mode_reports_pending_count(monkeypatch:
             ),
         ]
     )
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
-    result = await _worker()._list_schedules(
+    result = await _scheduling().list_schedules(
         data=TransferPayload(schedule_response_mode="count"),
         user_id="user-1",
         locale="en",
@@ -179,9 +173,9 @@ async def test_schedule_management_count_mode_reports_pending_count(monkeypatch:
 @pytest.mark.asyncio
 async def test_schedule_management_empty_list_uses_locale_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _FakeScheduleRepo([])
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
-    result = await _worker()._list_schedules(user_id="user-1", locale="pcm")
+    result = await _scheduling().list_schedules(user_id="user-1", locale="pcm")
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response == "You no get active schedules."
@@ -198,9 +192,9 @@ async def test_schedule_management_list_uses_locale_row_copy(monkeypatch: pytest
             ),
         ]
     )
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
-    result = await _worker()._list_schedules(user_id="user-1", locale="pcm")
+    result = await _scheduling().list_schedules(user_id="user-1", locale="pcm")
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response is not None
@@ -218,9 +212,9 @@ async def test_schedule_management_cancel_deletes_by_disabling_active_schedule(
         payload_snapshot={"amount": 1000, "recipient_phone": "08162511023", "network": "MTN"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
 
-    result = await _worker()._cancel_schedule(
+    result = await _scheduling().cancel_schedule(
         data=TransferPayload(schedule_selector="1"),
         user_id="user-1",
         locale="en",
@@ -244,15 +238,15 @@ async def test_schedule_management_material_edit_requires_pin_without_text_confi
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
-    worker = _worker()
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    scheduling = _scheduling()
     payload = TransferPayload(
         schedule_selector="1",
         amount=7000,
         schedule_time_local="09:30",
     )
 
-    auth = await worker._edit_schedule(
+    auth = await scheduling.edit_schedule(
         data=payload,
         user_id="user-1",
         locale="en",
@@ -267,7 +261,7 @@ async def test_schedule_management_material_edit_requires_pin_without_text_confi
     assert auth.patch["schedule_edit_requires_auth"] is True
     assert schedule.payload_snapshot["amount"] == 5000
 
-    updated = await worker._edit_schedule(
+    updated = await scheduling.edit_schedule(
         data=payload.model_copy(update=auth.patch),
         user_id="user-1",
         locale="en",
@@ -297,13 +291,13 @@ async def test_schedule_management_material_edit_persists_schedule_pin_token(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
 
     from shared.cache.redis_client import RedisClient
 
     monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
 
-    worker = _worker()
+    scheduling = _scheduling()
     payload = TransferPayload(
         idempotency_key="schedule-test-token",
         schedule_selector="1",
@@ -311,7 +305,7 @@ async def test_schedule_management_material_edit_persists_schedule_pin_token(
         schedule_time_local="09:30",
     )
 
-    auth = await worker._edit_schedule(
+    auth = await scheduling.edit_schedule(
         data=payload,
         user_id="user-1",
         locale="en",
@@ -337,14 +331,14 @@ async def test_schedule_management_time_only_edit_updates_after_confirmation_wit
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
-    worker = _worker()
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    scheduling = _scheduling()
     payload = TransferPayload(
         schedule_selector="1",
         schedule_time_local="09:30",
     )
 
-    confirmation = await worker._edit_schedule(
+    confirmation = await scheduling.edit_schedule(
         data=payload,
         user_id="user-1",
         locale="en",
@@ -356,7 +350,7 @@ async def test_schedule_management_time_only_edit_updates_after_confirmation_wit
     assert confirmation.patch["schedule_edit_requires_auth"] is False
     assert schedule.local_time == "08:00"
 
-    updated = await worker._edit_schedule(
+    updated = await scheduling.edit_schedule(
         data=payload.model_copy(update=confirmation.patch),
         user_id="user-1",
         locale="en",
@@ -385,14 +379,14 @@ async def test_schedule_management_time_edit_success_uses_locale_copy(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
-    worker = _worker()
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    scheduling = _scheduling()
     payload = TransferPayload(
         schedule_selector="1",
         schedule_time_local="09:30",
     )
 
-    confirmation = await worker._edit_schedule(
+    confirmation = await scheduling.edit_schedule(
         data=payload,
         user_id="user-1",
         locale="ha",
@@ -402,7 +396,7 @@ async def test_schedule_management_time_edit_success_uses_locale_copy(
 
     assert confirmation.outcome == TransactionOutcome.NEEDS_CONFIRMATION
 
-    updated = await worker._edit_schedule(
+    updated = await scheduling.edit_schedule(
         data=payload.model_copy(update=confirmation.patch),
         user_id="user-1",
         locale="ha",
@@ -426,10 +420,10 @@ async def test_schedule_management_narration_only_edit_does_not_require_pin(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum", "narration": "Old note"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
-    worker = _worker()
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    scheduling = _scheduling()
 
-    confirmation = await worker._edit_schedule(
+    confirmation = await scheduling.edit_schedule(
         data=TransferPayload(schedule_selector="1", narration="New note"),
         user_id="user-1",
         locale="en",
@@ -440,7 +434,7 @@ async def test_schedule_management_narration_only_edit_does_not_require_pin(
     assert confirmation.outcome == TransactionOutcome.NEEDS_CONFIRMATION
     assert confirmation.patch["schedule_edit_requires_auth"] is False
 
-    updated = await worker._edit_schedule(
+    updated = await scheduling.edit_schedule(
         data=TransferPayload(schedule_selector="1").model_copy(update=confirmation.patch),
         user_id="user-1",
         locale="en",
@@ -462,10 +456,10 @@ async def test_schedule_management_recurrence_edit_requires_pin(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.transfer.worker.UnitOfWork", lambda: uow)
-    worker = _worker()
+    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    scheduling = _scheduling()
 
-    auth = await worker._edit_schedule(
+    auth = await scheduling.edit_schedule(
         data=TransferPayload(schedule_selector="1", recurrence_type="daily", schedule_time_local="09:30"),
         user_id="user-1",
         locale="en",

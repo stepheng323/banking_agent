@@ -6,10 +6,10 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
-from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
-from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context_frame_stages import _stage_context_frame_followup
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import _stage_context_frame_followup
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameFollowupFilters,
@@ -65,6 +65,7 @@ class _SurfaceFollowupPlanner:
         *,
         context: str = "None",
         prompt_signals: object | None = None,
+    path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         self.plan_calls += 1

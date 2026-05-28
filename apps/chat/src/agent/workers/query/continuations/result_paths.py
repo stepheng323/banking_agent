@@ -1,0 +1,440 @@
+"""Result-navigation continuation branches for active query sessions."""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Any, cast
+
+import apps.chat.src.agent.workers.query.continuations.compiler_paths as compiler_paths
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.query.continuations.aggregate_continuations import (
+    compile_aggregate_continuation_updates,
+)
+from apps.chat.src.agent.workers.query.continuations.aggregate_scope_reply import build_aggregate_scope_reply
+from apps.chat.src.agent.workers.query.continuations.supported_recovery import maybe_recover_supported_followup_query
+from apps.chat.src.agent.workers.query.continuations.time_rescope import (
+    maybe_recover_time_rescope_continuation,
+    resolve_time_delta_range,
+)
+from apps.chat.src.agent.workers.query.continuations.transforms import rebuild_query_contract
+from apps.chat.src.agent.workers.query.models.domain import (
+    Aggregation,
+    Filters,
+    QueryFactField,
+    QueryIntent,
+    QueryResult,
+    QueryResultItem,
+)
+from apps.chat.src.agent.workers.query.presentation.selection_resolver import find_selection_payload
+from apps.chat.src.agent.workers.query.presentation.surface_builder import apply_selection_payload_to_query
+from apps.chat.src.agent.workers.query.services.answers.coverage import build_query_coverage_answer
+
+
+async def resolve_result_continuation_updates(
+    step: Any,
+    *,
+    decision: Any,
+    cont_type: str,
+    followup_intent: str,
+    state: dict[str, Any],
+    session: dict[str, Any],
+    session_query_contract: Any | None,
+    restored_query_result: QueryResult | None,
+    surface_view: Any | None,
+    items: list[QueryResultItem],
+    message: str,
+    today: date,
+    locale: str,
+) -> dict[str, Any]:
+    """Resolve continuation branches that navigate or refine an existing query result."""
+    updates: dict[str, Any] = {
+        "flow_state": "executing",
+        "continuation_type": cont_type,
+        "continuation_delta_type": decision.delta_type,
+        "resolver_message": None,
+        **step._semantic_trace_updates(decision),
+    }
+
+    if cont_type == "show_more":
+        if session_query_contract is None:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        if followup_intent in {"continue_pagination", "previous_pagination"}:
+            if session_query_contract.intent != QueryIntent.TRANSACTION_LIST:
+                return step._ambiguous_followup_updates(locale=locale, session=session)
+            current_page = int(session.get("current_page", 0) or 0)
+            if followup_intent == "previous_pagination":
+                updates["current_page"] = max(current_page - 1, 0)
+            else:
+                updates["current_page"] = current_page + 1
+        elif followup_intent == "refine_existing":
+            updates["query_contract"] = rebuild_query_contract(
+                session_query_contract,
+                intent=QueryIntent.TRANSACTION_LIST,
+                aggregation=None,
+                result_limit=None,
+                result_reference=None,
+                answer_fact_field=None,
+                continuation_type=cont_type,
+                continuation_delta_type=decision.delta_type,
+            )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
+        else:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+
+    elif cont_type == "show_evidence":
+        if session_query_contract is None or session_query_contract.intent != QueryIntent.ANALYTICS_SUMMARY:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        updates["query_contract"] = rebuild_query_contract(
+            session_query_contract,
+            intent=QueryIntent.TRANSACTION_LIST,
+            aggregation=None,
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=None,
+            continuation_type=cont_type,
+            continuation_delta_type=decision.delta_type,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
+
+    elif cont_type == "grouped_total_followup":
+        if session_query_contract is None or session_query_contract.intent != QueryIntent.BENEFICIARY_SUMMARY:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        updates["query_contract"] = rebuild_query_contract(
+            session_query_contract,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=Aggregation(type="sum"),
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=None,
+            continuation_type=cont_type,
+            continuation_delta_type=decision.delta_type,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
+
+    elif cont_type == "time_delta":
+        resolved_time_range, clarification_message = await resolve_time_delta_range(
+            step,
+            decision=decision,
+            message=message,
+            today=today,
+            language=locale,
+            state=state,
+        )
+
+        if session_query_contract is None or resolved_time_range is None:
+            if clarification_message:
+                return {
+                    "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                    "response": clarification_message,
+                    "flow_state": "parsing",
+                    "session_active": True,
+                    "pending_clarification": None,
+                    "show_expanded": bool(session.get("show_expanded", False)),
+                    "current_page": session.get("current_page", 0),
+                }
+            recovered_updates = await maybe_recover_time_rescope_continuation(
+                step,
+                trigger_reason="missing_usable_delta",
+                decision=decision,
+                state=state,
+                session=session,
+                session_query_contract=session_query_contract,
+                message=message,
+                today=today,
+                language=locale,
+            )
+            if recovered_updates is not None:
+                step._log_single_item_followup(
+                    surface_view=surface_view,
+                    continuation_type="time_delta",
+                    followup_outcome="time_rescope_query",
+                    decision=decision.decision,
+                )
+                recovered_updates.update(step._semantic_trace_updates(decision))
+                return recovered_updates
+            step._log_single_item_followup(
+                surface_view=surface_view,
+                continuation_type=cont_type,
+                followup_outcome="clarify",
+                decision=decision.decision,
+            )
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        if followup_intent in {"continue_pagination", "previous_pagination"}:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        if followup_intent == "none":
+            recovered_updates = await maybe_recover_time_rescope_continuation(
+                step,
+                trigger_reason="missing_usable_delta",
+                decision=decision,
+                state=state,
+                session=session,
+                session_query_contract=session_query_contract,
+                message=message,
+                today=today,
+                language=locale,
+            )
+            if recovered_updates is not None:
+                step._log_single_item_followup(
+                    surface_view=surface_view,
+                    continuation_type="time_delta",
+                    followup_outcome="time_rescope_query",
+                    decision=decision.decision,
+                )
+                recovered_updates.update(step._semantic_trace_updates(decision))
+                return recovered_updates
+            step._log_single_item_followup(
+                surface_view=surface_view,
+                continuation_type=cont_type,
+                followup_outcome="clarify",
+                decision=decision.decision,
+            )
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+
+        updates["query_contract"] = rebuild_query_contract(
+            session_query_contract,
+            time_range=resolved_time_range,
+            result_limit=decision.result_limit if decision.result_limit is not None else session_query_contract.result_limit,
+            result_reference=decision.result_reference
+            if decision.result_reference is not None
+            else session_query_contract.result_reference,
+            continuation_type=cont_type,
+            continuation_delta_type=decision.delta_type,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
+        step._log_single_item_followup(
+            surface_view=surface_view,
+            continuation_type=cont_type,
+            followup_outcome="time_rescope_query",
+            decision=decision.decision,
+        )
+
+    elif cont_type == "filter_delta":
+        if followup_intent != "refine_existing" or session_query_contract is None:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+
+        delta_type = decision.delta_type
+        allow_limit = delta_type in (None, "limit", "reference")
+        allow_reference = delta_type in (None, "reference", "limit")
+
+        updates["query_contract"] = rebuild_query_contract(
+            session_query_contract,
+            filters=decision.filters if decision.filters is not None else session_query_contract.filters,
+            merge_filters=decision.filters is not None,
+            result_limit=decision.result_limit
+            if decision.result_limit is not None and allow_limit
+            else session_query_contract.result_limit,
+            result_reference=decision.result_reference
+            if decision.result_reference is not None and allow_reference
+            else session_query_contract.result_reference,
+            continuation_type=cont_type,
+            continuation_delta_type=decision.delta_type,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
+
+    elif cont_type == "expand":
+        if followup_intent != "refine_existing":
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        updates["show_expanded"] = True
+
+    elif cont_type == "conversational":
+        return step._append_query_session_transition(
+            {
+                "transaction_outcome": TransactionOutcome.OK,
+                "response": step._compose_conversational_reply(decision, language=locale),
+                "session_active": False,
+                "flow_state": "complete",
+                **step._semantic_trace_updates(decision),
+            },
+            "exit_query_session_conversational",
+        )
+
+    elif cont_type == "coverage":
+        accounts_raw = state.get("accounts")
+        accounts_info = [account for account in accounts_raw if isinstance(account, dict)] if isinstance(accounts_raw, list) else []
+        response = await build_query_coverage_answer(
+            accounts_info=accounts_info,
+            query_contract=session_query_contract,
+            session=session,
+            target_text=getattr(decision, "target_text", None),
+        )
+        return {
+            "transaction_outcome": TransactionOutcome.OK,
+            "response": response,
+            "session_active": True,
+            "flow_state": "complete",
+            "resolver_message": None,
+            "show_expanded": bool(session.get("show_expanded", False)),
+            "current_page": session.get("current_page", 0),
+            **step._semantic_trace_updates(decision),
+        }
+
+    elif cont_type == "explain_aggregate_scope":
+        response_text = (getattr(decision, "response_text", None) or "").strip()
+        contextual_hint = (getattr(decision, "contextual_hint", None) or "").strip()
+        response = response_text or build_aggregate_scope_reply(
+            session_query_contract=session_query_contract,
+            query_result=restored_query_result,
+            locale=locale,
+        )
+        if contextual_hint:
+            response = f"{response}\n\n{contextual_hint}"
+        return {
+            "transaction_outcome": TransactionOutcome.OK,
+            "response": response,
+            "session_active": True,
+            "flow_state": "complete",
+            "resolver_message": None,
+            "show_expanded": bool(session.get("show_expanded", False)),
+            "current_page": session.get("current_page", 0),
+            **step._semantic_trace_updates(decision),
+        }
+
+    elif cont_type == "drill_down":
+        raw_drill_idx = decision.drill_down_index
+        drill_idx = raw_drill_idx if isinstance(raw_drill_idx, int) and raw_drill_idx >= 0 else None
+        answer_fact_field: QueryFactField | None = None
+        if decision.fact_field in {
+            "date",
+            "amount",
+            "bank",
+            "counterparty",
+            "status",
+            "description",
+            "reference",
+            "account",
+            "direction",
+            "category",
+        }:
+            answer_fact_field = cast(QueryFactField, decision.fact_field)
+
+        selection_payload = None
+        if surface_view is not None and message:
+            selection_payload = find_selection_payload(surface_view, label=message)
+        if selection_payload is None and drill_idx is not None:
+            selection_payload = find_selection_payload(surface_view, index=drill_idx)
+        if (
+            session_query_contract is not None
+            and selection_payload is not None
+            and (
+                selection_payload.selection_kind == "group_bucket"
+                or bool(selection_payload.filters_patch)
+                or selection_payload.time_patch is not None
+            )
+        ):
+            updates["query_contract"] = apply_selection_payload_to_query(
+                session_query_contract,
+                selection_payload,
+                fact_field=answer_fact_field if decision.drill_down_action == "answer_fact" else None,
+                continuation_type=cont_type,
+                continuation_delta_type=decision.delta_type,
+            )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
+            return updates
+
+        if drill_idx is not None and items and 0 <= drill_idx < len(items):
+            updates["selected_item_index"] = drill_idx
+            if selection_payload is not None:
+                updates["selected_payload"] = selection_payload
+            updates["drill_down_action"] = decision.drill_down_action
+            if decision.fact_field:
+                updates["fact_field"] = decision.fact_field
+            if decision.drill_down_action == "answer_fact":
+                updates["_query_session_transition"] = "answer_fact_active_result"
+
+    elif cont_type == "recipient_drill_down":
+        recipient_name = decision.recipient_name
+        if recipient_name and session_query_contract is not None:
+            recipient_answer_fact_field: QueryFactField | None = None
+            if decision.fact_field in {
+                "date",
+                "amount",
+                "bank",
+                "status",
+                "description",
+                "reference",
+                "account",
+                "direction",
+                "category",
+            }:
+                recipient_answer_fact_field = cast(QueryFactField, decision.fact_field)
+            selection_payload = find_selection_payload(surface_view, label=recipient_name)
+            if selection_payload is not None and session_query_contract is not None:
+                updates["query_contract"] = apply_selection_payload_to_query(
+                    session_query_contract,
+                    selection_payload,
+                    fact_field=recipient_answer_fact_field,
+                    continuation_type=cont_type,
+                    continuation_delta_type=decision.delta_type,
+                )
+            else:
+                new_filters = Filters(counterparty=[recipient_name])
+                updates["query_contract"] = rebuild_query_contract(
+                    session_query_contract,
+                    filters=new_filters,
+                    merge_filters=True,
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    aggregation=None,
+                    result_limit=None,
+                    result_reference=None,
+                    answer_fact_field=recipient_answer_fact_field,
+                    continuation_type=cont_type,
+                    continuation_delta_type=decision.delta_type,
+                )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
+
+    elif cont_type == "unclear":
+        supported_query_updates = await maybe_recover_supported_followup_query(
+            step,
+            state=state,
+            today=today,
+            language=locale,
+            has_original_scope=session_query_contract is not None,
+            reasoner_extraction=getattr(decision, "extraction", None),
+            reasoner_confidence=decision.confidence,
+            parse_result_to_updates=compiler_paths.parse_result_to_updates,
+        )
+        if supported_query_updates is not None:
+            supported_query_updates.update(step._semantic_trace_updates(decision))
+            return supported_query_updates
+        recovered_updates = await maybe_recover_time_rescope_continuation(
+            step,
+            trigger_reason="unclear_continuation",
+            decision=decision,
+            state=state,
+            session=session,
+            session_query_contract=session_query_contract,
+            message=message,
+            today=today,
+            language=locale,
+        )
+        if recovered_updates is not None:
+            recovered_updates.update(step._semantic_trace_updates(decision))
+            return recovered_updates
+        return step._ambiguous_followup_updates(locale=locale, session=session)
+
+    elif cont_type == "aggregate":
+        aggregate_updates = await compile_aggregate_continuation_updates(
+            step,
+            decision=decision,
+            state=state,
+            today=today,
+            language=locale,
+            session_query_contract=session_query_contract,
+            parse_result_to_updates=compiler_paths.parse_result_to_updates,
+            parse_reasoner_extraction_to_updates=compiler_paths.parse_reasoner_extraction_to_updates,
+        )
+        if aggregate_updates is not None:
+            return aggregate_updates
+        return step._ambiguous_followup_updates(locale=locale, session=session)
+
+    return updates
+
+
+__all__ = ["resolve_result_continuation_updates"]

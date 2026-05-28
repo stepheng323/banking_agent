@@ -3,17 +3,17 @@
 This state object is the single source of truth for the top-level OrchestratorGraph.
 It manages user context, planning outputs, execution progress, and interrupt gating.
 
-CRITICAL: Orchestrator owns all durable state. Subgraphs are ephemeral workers
-that return structured results. Never let subgraphs maintain competing state.
+CRITICAL: Orchestrator owns all durable state. Domain workers are ephemeral
+and return structured results. Never let workers maintain competing state.
 """
 
 from time import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
-from apps.chat.src.agent.orchestrator.context.referent_memory import ShortTermReferentMemory
+from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 from shared.types.planner import PlannerOutput
 
@@ -27,19 +27,6 @@ class CapabilityBoundary(BaseModel):
     created_at_ts: float = Field(default_factory=time)
     last_updated_ts: float = Field(default_factory=time)
     ttl_seconds: int = 600
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_legacy_topic(cls, data: Any) -> Any:
-        if not isinstance(data, dict) or "key" in data:
-            return data
-        topic = str(data.get("topic") or "").strip()
-        if not topic:
-            return data
-        coerced = dict(data)
-        coerced["key"] = topic
-        coerced["label"] = "loans or lending" if topic == "lending" else topic.replace("_", " ")
-        return coerced
 
 
 class OrchestratorState(BaseModel):

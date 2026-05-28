@@ -1,4 +1,4 @@
-from apps.chat.src.agent.graphs.query.services.query_shortcuts import (
+from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import (
     resolve_query_shortcut_with_reason,
 )
 

@@ -4,16 +4,16 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.handlers.transactions import handle_transaction_list
-from apps.chat.src.agent.graphs.query.models import (
+from apps.chat.src.agent.shared.unified_transactions import UnifiedTransactionService
+from apps.chat.src.agent.workers.query.handlers.transactions import handle_transaction_list
+from apps.chat.src.agent.workers.query.models.domain import (
     Filters,
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
     TimeRange,
 )
-from apps.chat.src.agent.graphs.query.services.formatter import QueryFormatter
-from apps.chat.src.agent.shared.unified_transactions import UnifiedTransactionService
+from apps.chat.src.agent.workers.query.presentation.formatter import QueryFormatter
 from shared.config.settings import settings
 
 
@@ -96,7 +96,10 @@ async def test_today_query_with_no_bank_feed_rows_returns_no_results_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     query_day = date(2026, 3, 6)
-    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.contracts.lagos_today", lambda: query_day)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.workers.query.presentation.presentation_planner.lagos_today",
+        lambda: query_day,
+    )
 
     query = _query_for_today(query_day)
     result = await handle_transaction_list(

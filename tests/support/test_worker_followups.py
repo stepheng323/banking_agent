@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.graphs.support.handlers.failure import handle_failure_reason
-from apps.chat.src.agent.graphs.support.worker import SupportWorker
 from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
+from apps.chat.src.agent.workers.support.handlers.failure import handle_failure_reason
+from apps.chat.src.agent.workers.support.worker import SupportWorker
 from shared.services.async_completion import record_group_leg_and_maybe_build_summary
 
 
@@ -464,7 +464,7 @@ async def test_support_worker_returns_retry_handoff_when_policy_allows_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.graphs.support.capabilities.check_unsupported_actions",
+        "apps.chat.src.agent.workers.support.capabilities.check_unsupported_actions",
         lambda domain, requested_actions: [],
     )
     worker = _worker(
@@ -502,7 +502,7 @@ async def test_support_worker_does_not_retry_replay_modifier_followup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.graphs.support.capabilities.check_unsupported_actions",
+        "apps.chat.src.agent.workers.support.capabilities.check_unsupported_actions",
         lambda domain, requested_actions: [],
     )
     redis = _RedisStub()
@@ -1284,7 +1284,7 @@ async def test_support_worker_recent_failed_retry_uses_category_repair_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.graphs.support.capabilities.check_unsupported_actions",
+        "apps.chat.src.agent.workers.support.capabilities.check_unsupported_actions",
         lambda domain, requested_actions: [],
     )
     redis_client = _RedisStub()

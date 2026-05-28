@@ -1,0 +1,109 @@
+"""State updates for continuing an interrupted input or confirmation flow."""
+
+from typing import Any
+
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted
+from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_selection import (
+    _select_confirmation_continue_flow_task_ids,
+)
+from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_updates import (
+    _stash_previous_confirmation_snapshots,
+    _synth_confirmation_followup_message,
+)
+from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+
+
+def _continue_flow_updates(
+    state: OrchestratorState,
+    interrupt: Any,
+    precomputed_payload_overrides: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    if interrupt.kind in {"input", "confirmation"}:
+        task_ids_to_reset = [str(task_id) for task_id in interrupt.task_ids]
+        selection_reason = "input_flow"
+        matched_task_ids: list[str] = []
+        payload_overrides: dict[str, dict[str, Any]] = dict(precomputed_payload_overrides or {})
+        message_overrides: dict[str, str] = {}
+        if interrupt.kind == "confirmation":
+            task_ids_to_reset, selection_reason, matched_task_ids = _select_confirmation_continue_flow_task_ids(
+                state,
+                interrupt,
+            )
+            original_task_ids = [str(task_id) for task_id in interrupt.task_ids]
+            if payload_overrides:
+                task_ids_to_reset = [task_id for task_id in original_task_ids if task_id in payload_overrides]
+                selection_reason = "precomputed_correction_scope"
+        logger.info(
+            "confirmation_update_detected",
+            tasks=interrupt.task_ids,
+            reset_task_ids=task_ids_to_reset,
+            selection_reason=selection_reason,
+            matched_task_ids=matched_task_ids,
+        )
+        if interrupt.kind == "confirmation":
+            _stash_previous_confirmation_snapshots(state, task_ids_to_reset)
+        reset_tasks_to_extracted(
+            state.tasks,
+            task_ids_to_reset,
+            copy_task=True,
+            clear_idempotency=True,
+        )
+        if interrupt.kind == "confirmation":
+            if payload_overrides:
+                logger.info(
+                    "confirmation_task_payload_overrides_applied",
+                    task_ids=sorted(payload_overrides.keys()),
+                )
+            if message_overrides:
+                logger.info(
+                    "confirmation_task_message_overrides_applied",
+                    task_ids=sorted(message_overrides.keys()),
+                )
+            for task_id in task_ids_to_reset:
+                task = state.tasks.get(task_id)
+                if task is None:
+                    continue
+                if task_id in payload_overrides:
+                    task.payload.update(payload_overrides[task_id])
+                if task_id in message_overrides:
+                    task.payload["pending_user_message"] = message_overrides[task_id]
+                    task.payload["confirmation_message_scoped"] = True
+                elif task_id in payload_overrides:
+                    synthesized = _synth_confirmation_followup_message(task)
+                    if synthesized:
+                        task.payload["pending_user_message"] = synthesized
+                        task.payload["confirmation_message_scoped"] = True
+                    else:
+                        task.payload.pop("pending_user_message", None)
+                        task.payload.pop("confirmation_message_scoped", None)
+                else:
+                    task.payload.pop("pending_user_message", None)
+                    task.payload.pop("confirmation_message_scoped", None)
+        elif interrupt.kind == "input" and payload_overrides:
+            logger.info(
+                "input_task_payload_overrides_applied",
+                task_ids=sorted(payload_overrides.keys()),
+            )
+            for task_id in task_ids_to_reset:
+                task = state.tasks.get(task_id)
+                if task is None or task_id not in payload_overrides:
+                    continue
+                task.payload.update(payload_overrides[task_id])
+                task.payload.pop("pending_user_message", None)
+                task.payload.pop("confirmation_message_scoped", None)
+        last_interrupt = interrupt
+        if interrupt.kind == "confirmation" and task_ids_to_reset != [str(task_id) for task_id in interrupt.task_ids]:
+            if hasattr(interrupt, "model_copy"):
+                last_interrupt = interrupt.model_copy(update={"task_ids": task_ids_to_reset})
+        return {
+            "pending_interrupt": None,
+            "last_interrupt": last_interrupt,
+            "tasks": state.tasks,
+            "pin_verified": False,
+            "last_callback": None,
+        }
+    return (state, interrupt)
+
+
+__all__ = ["_continue_flow_updates"]

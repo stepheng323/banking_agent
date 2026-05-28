@@ -7,12 +7,13 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
-from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
-from apps.chat.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import SAFE_CAPABILITY_FALLBACK
 from shared.config.settings import settings
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -25,7 +26,7 @@ class _MockPlanner:
         self._output = output
         self.planner_llm = planner_llm
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -534,7 +535,10 @@ async def test_conversational_out_of_scope_logs_policy_blocked_breadcrumb(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.planner.response_flow.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.workflows.planner.response.non_task_response.logger.info",
+        _capture,
+    )
 
     planner_output = PlannerOutput(
         primary_intent="conversational",

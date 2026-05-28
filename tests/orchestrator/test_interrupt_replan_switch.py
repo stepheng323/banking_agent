@@ -15,9 +15,10 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
-from shared.i18n import render_cancelled_prompt, render_message
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
+from shared.i18n.bridge import render_cancelled_prompt
+from shared.i18n.renderer import render_message
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
@@ -42,7 +43,7 @@ class _MockPlanner:
         self._semantic_route = semantic_route
         self.route_calls = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -51,8 +52,11 @@ class _MockPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text, context, path_label, prompt_mode
         self.route_calls += 1
         if self._route is None:
             return InterruptRouteDecision(
@@ -64,6 +68,17 @@ class _MockPlanner:
                 reason="default continue",
             )
         return self._route
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
     async def route_semantic_turn(
         self,
@@ -103,10 +118,24 @@ class _RouteOnlyPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text, context, path_label, prompt_mode
         self.route_calls += 1
         return self._route
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
     async def route_semantic_turn(
         self,
@@ -128,7 +157,7 @@ class _RouteOnlyPlanner:
             reason="mock default",
         )
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for direct switch targets")
 
@@ -139,11 +168,25 @@ class _FailIfRouterCalledPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text, context, path_label, prompt_mode
         raise AssertionError("route_pending_input should not be called for callback auto-approve")
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
+
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for callback auto-approve")
 

@@ -1,0 +1,33 @@
+"""Locale updates driven by planner language detection."""
+
+from typing import Any
+
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from shared.i18n.locale import LocaleManager
+from shared.i18n.models import LanguageDetectionSignal
+
+
+async def _resolve_planner_detected_locale(
+    *,
+    state: OrchestratorState,
+    planner_output: Any,
+    current_locale: str,
+    redis_client: Any | None,
+) -> str:
+    detected_language = getattr(planner_output, "detected_language", None)
+    if not detected_language:
+        return current_locale
+
+    if redis_client:
+        signal = LanguageDetectionSignal(
+            locale=LocaleManager.from_detection(detected_language),
+            confidence=float(getattr(planner_output, "confidence", 1.0) or 0.0),
+            source="planner",
+            explicit=False,
+        )
+        resolved_locale = await LocaleManager.update_locale(state.phone_number, signal)
+        return resolved_locale.value
+    return LocaleManager.from_detection(detected_language).value
+
+
+__all__ = ["_resolve_planner_detected_locale"]

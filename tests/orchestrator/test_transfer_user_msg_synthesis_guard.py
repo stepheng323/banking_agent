@@ -3,11 +3,6 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.execution.handlers import (
-    ExecutionAggregation,
-    ExecutionContext,
-    handle_transfer_task,
-)
 from apps.chat.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
@@ -16,6 +11,8 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
+from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
 
 
 class _CaptureTransferWorker:

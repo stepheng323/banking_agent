@@ -5,9 +5,6 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.airtime.worker import AirtimeWorker
-from apps.chat.src.agent.graphs.data.models_extraction import DataExtractionResult, DataPurchaseEntities
-from apps.chat.src.agent.graphs.data.worker import DataWorker
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import (
     AccountOutcome,
@@ -18,10 +15,13 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TaskStage,
 )
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.gate.runner import session_gate_direct_path
-from apps.chat.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
-from shared.services.unsupported_capabilities import UnsupportedBoundaryTurnOutput
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
+from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
+from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult, DataPurchaseEntities
+from apps.chat.src.agent.workers.data.worker import DataWorker
+from shared.services.unsupported_capability_models import UnsupportedBoundaryTurnOutput
 from shared.types.planner import PendingActionEditDecision, SemanticRouteDecision
 from tests.orchestrator.conversation_harness import (
     ConversationScenario,

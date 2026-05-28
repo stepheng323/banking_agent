@@ -2,20 +2,22 @@ from datetime import date
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.models import (
+from apps.chat.src.agent.workers.query.models.domain import (
+    QueryIntent,
+    QueryOperation,
+)
+from apps.chat.src.agent.workers.query.models.extraction import (
     ExtractionIntent,
     FactQueryKind,
     QueryAggregation,
     QueryComparison,
     QueryExtractionResult,
     QueryFilters,
-    QueryIntent,
-    QueryOperation,
     QueryRequestShape,
     QueryTimeRange,
     TimeReference,
 )
-from apps.chat.src.agent.graphs.query.services.parser import QueryParser
+from apps.chat.src.agent.workers.query.services.parsing.parser import QueryParser
 
 
 class _DummyLLM:

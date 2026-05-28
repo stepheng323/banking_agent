@@ -1,9 +1,9 @@
-from apps.chat.src.agent.orchestrator.utils.task_payload import (
-    _derive_recipient_from_user_text,
-    _derive_recipients_from_user_text,
-    _derive_transfer_schedule_fields,
-    build_task_spec_from_plan_item,
+from apps.chat.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import (
+    derive_recipient_from_user_text,
+    derive_recipients_from_user_text,
 )
+from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import derive_transfer_schedule_fields
 from shared.types.planner import PlannedTask, TaskParameters
 
 
@@ -363,32 +363,32 @@ def test_transfer_recipient_derivation_prefers_preposition_target() -> None:
 
 
 def test_transfer_recipient_list_derivation_supports_and_separator() -> None:
-    recipients = _derive_recipients_from_user_text("send 10k to mum and tolu")
+    recipients = derive_recipients_from_user_text("send 10k to mum and tolu")
     assert recipients == ["mum", "tolu"]
 
 
 def test_transfer_recipient_list_derivation_supports_comma_and_and_separator() -> None:
-    recipients = _derive_recipients_from_user_text("send 10k each to mum, tolu and doyin")
+    recipients = derive_recipients_from_user_text("send 10k each to mum, tolu and doyin")
     assert recipients == ["mum", "tolu", "doyin"]
 
 
 def test_transfer_recipient_list_derivation_supports_between_separator() -> None:
-    recipients = _derive_recipients_from_user_text("split 20k 70/30 btw mum and gaines")
+    recipients = derive_recipients_from_user_text("split 20k 70/30 btw mum and gaines")
     assert recipients == ["mum", "gaines"]
 
 
 def test_transfer_single_recipient_derivation_uses_first_candidate_from_list() -> None:
-    recipient = _derive_recipient_from_user_text("Mum and Tolu", "send 10k to mum and tolu")
+    recipient = derive_recipient_from_user_text("Mum and Tolu", "send 10k to mum and tolu")
     assert recipient == "mum"
 
 
 def test_transfer_single_recipient_derivation_prefers_best_matching_candidate() -> None:
-    recipient = _derive_recipient_from_user_text("Tolu Adebayo", "split 10k btw mum and tolu")
+    recipient = derive_recipient_from_user_text("Tolu Adebayo", "split 10k btw mum and tolu")
     assert recipient == "tolu"
 
 
 def test_transfer_single_recipient_derivation_does_not_guess_first_candidate_in_multi_recipient_text() -> None:
-    recipient = _derive_recipient_from_user_text("David Johnson", "split 10k btw mum and tolu")
+    recipient = derive_recipient_from_user_text("David Johnson", "split 10k btw mum and tolu")
     assert recipient is None
 
 
@@ -549,7 +549,7 @@ def test_transfer_possessive_command_verb_is_not_used_as_recipient_name() -> Non
 
 
 def test_schedule_fields_parse_weekly_without_default_time() -> None:
-    fields = _derive_transfer_schedule_fields(
+    fields = derive_transfer_schedule_fields(
         "send 10k to mum every friday",
         schedule_text=None,
         scheduled_text=None,
@@ -562,7 +562,7 @@ def test_schedule_fields_parse_weekly_without_default_time() -> None:
 
 
 def test_schedule_fields_parse_one_time_with_explicit_time() -> None:
-    fields = _derive_transfer_schedule_fields(
+    fields = derive_transfer_schedule_fields(
         "send 10k to mum tomorrow 8pm",
         schedule_text=None,
         scheduled_text=None,
@@ -574,7 +574,7 @@ def test_schedule_fields_parse_one_time_with_explicit_time() -> None:
 
 
 def test_schedule_fields_parse_common_tomorrow_typo() -> None:
-    fields = _derive_transfer_schedule_fields(
+    fields = derive_transfer_schedule_fields(
         "send 10k to mum by tommorow",
         schedule_text=None,
         scheduled_text=None,

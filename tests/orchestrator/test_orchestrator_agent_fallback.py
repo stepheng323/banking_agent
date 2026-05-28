@@ -5,9 +5,11 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
+from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.agent.orchestrator.services.media_service import MediaInterpretation
-from shared.i18n import LocaleCode, LocaleManager, render_message
+from shared.i18n.locale import LocaleManager
+from shared.i18n.models import LocaleCode
+from shared.i18n.renderer import render_message
 
 
 class _ContextManagerStub:
@@ -68,7 +70,7 @@ async def test_invoke_does_not_inject_processing_error_when_flow_exists(monkeypa
         scheduled.append(coro)
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.orchestrator.create_background_task", _fake_create_background_task
+        "apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task
     )
 
     result = await agent.invoke(
@@ -110,7 +112,7 @@ async def test_invoke_keeps_processing_error_when_no_text_or_interaction(monkeyp
         scheduled.append(coro)
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.orchestrator.create_background_task", _fake_create_background_task
+        "apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task
     )
 
     result = await agent.invoke(
@@ -159,7 +161,7 @@ async def test_invoke_allows_silent_async_completion_when_fallback_suppressed(
         scheduled.append(coro)
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.orchestrator.create_background_task", _fake_create_background_task
+        "apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task
     )
 
     result = await agent.invoke(
@@ -205,7 +207,7 @@ async def test_image_caption_and_extraction_become_downstream_text(monkeypatch: 
     monkeypatch.setattr(LocaleManager, "get_effective_locale", classmethod(_effective_locale))
     scheduled: list[Any] = []
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.orchestrator.create_background_task",
+        "apps.chat.src.agent.orchestrator.agent.create_background_task",
         lambda coro: scheduled.append(coro),
     )
 
@@ -270,7 +272,7 @@ async def test_image_only_details_are_described_as_media_text(monkeypatch: pytes
     monkeypatch.setattr(LocaleManager, "get_effective_locale", classmethod(_effective_locale))
     scheduled: list[Any] = []
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.orchestrator.create_background_task",
+        "apps.chat.src.agent.orchestrator.agent.create_background_task",
         lambda coro: scheduled.append(coro),
     )
 
@@ -318,7 +320,7 @@ async def test_failed_image_extraction_without_caption_short_circuits(monkeypatc
     monkeypatch.setattr(LocaleManager, "get_effective_locale", classmethod(_effective_locale))
     scheduled: list[Any] = []
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.orchestrator.create_background_task",
+        "apps.chat.src.agent.orchestrator.agent.create_background_task",
         lambda coro: scheduled.append(coro),
     )
 
@@ -367,7 +369,7 @@ async def test_audio_transcription_combines_with_caption(monkeypatch: pytest.Mon
     monkeypatch.setattr(LocaleManager, "get_effective_locale", classmethod(_effective_locale))
     scheduled: list[Any] = []
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.orchestrator.create_background_task",
+        "apps.chat.src.agent.orchestrator.agent.create_background_task",
         lambda coro: scheduled.append(coro),
     )
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.services.interrupt_shortcuts import (
+from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_interrupt_shortcut,
     resolve_shortcut_locale,
 )

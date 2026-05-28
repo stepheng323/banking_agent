@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.confirmation import ConfirmationStep
-from apps.chat.src.agent.graphs.transfer.nodes.execution import ExecutionStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.confirmation import ConfirmationStep
+from apps.chat.src.agent.workers.transfer.nodes.execution import ExecutionStep
 
 
 class _StubRedis:

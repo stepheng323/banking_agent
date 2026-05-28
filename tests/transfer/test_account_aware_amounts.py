@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.validation import ValidationStep
-from apps.chat.src.agent.graphs.transfer.services.validation import ValidationService
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.validation import ValidationStep
+from apps.chat.src.agent.workers.transfer.validation.service import ValidationService
 from shared.clients.abstractions.direct_debit import BalanceResult
 
 

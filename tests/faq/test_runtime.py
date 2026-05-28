@@ -4,15 +4,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.graphs.faq.models import FAQRetrievalHit
-from apps.chat.src.agent.graphs.faq.nodes.gate import confidence_gate_node
-from apps.chat.src.agent.graphs.faq.nodes.retrieve import create_retrieve_node
-from apps.chat.src.agent.graphs.faq.nodes.validate import validate_intent_node
-from apps.chat.src.agent.graphs.faq.retrieval import hybrid as hybrid_module
-from apps.chat.src.agent.graphs.faq.retrieval.hybrid import HybridRetriever
 from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome
+from apps.chat.src.agent.workers.faq.models import FAQRetrievalHit
+from apps.chat.src.agent.workers.faq.nodes.gate import confidence_gate_node
+from apps.chat.src.agent.workers.faq.nodes.guard import final_guard_node
+from apps.chat.src.agent.workers.faq.nodes.retrieve import create_retrieve_node
+from apps.chat.src.agent.workers.faq.nodes.validate import validate_intent_node
+from apps.chat.src.agent.workers.faq.retrieval import hybrid as hybrid_module
+from apps.chat.src.agent.workers.faq.retrieval.hybrid import HybridRetriever
 from shared.config.settings import settings
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 
 
 @pytest.mark.asyncio
@@ -35,7 +36,7 @@ async def test_retrieve_node_uses_async_session_factory(monkeypatch: pytest.Monk
             assert embedding_service == "embeddings"
 
         async def search(self, query, category=None, limit=5):
-            assert query == "How do transfers work?"
+            assert query == "transfer work"
             assert category == "transfers"
             assert limit == 5
             return (
@@ -53,12 +54,18 @@ async def test_retrieve_node_uses_async_session_factory(monkeypatch: pytest.Monk
             )
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.graphs.faq.nodes.retrieve.HybridRetriever",
+        "apps.chat.src.agent.workers.faq.nodes.retrieve.HybridRetriever",
         FakeRetriever,
     )
 
     node = create_retrieve_node(lambda: session, embedding_service="embeddings")
-    state = await node({"message": "How do transfers work?", "detected_category": "transfers"})
+    state = await node(
+        {
+            "message": "How do transfers work?",
+            "normalized_query": "transfer work",
+            "detected_category": "transfers",
+        }
+    )
 
     assert events == ["enter", "exit"]
     assert state["retrieval_confidence"] == 0.82
@@ -130,11 +137,24 @@ def test_support_like_question_routes_to_support_handoff() -> None:
     assert state["should_route_to_support"]
 
 
+def test_final_guard_replaces_unsafe_faq_response() -> None:
+    state = final_guard_node(
+        {
+            "language": "en",
+            "response": "I can see that your transaction failed.",
+        }
+    )
+
+    assert state["response"] == render_message("faq.uncertainty_response", "en")
+    assert state["response_source"] == "guard_fallback"
+    assert state["error"] == "unsafe_faq_response"
+
+
 @pytest.mark.asyncio
 async def test_faq_worker_forbidden_scope_returns_support_handoff_before_db(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from apps.chat.src.agent.graphs.faq import worker as worker_module
+    from apps.chat.src.agent.workers.faq import worker as worker_module
 
     monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
     monkeypatch.setattr(worker_module, "capability_block_message", lambda **kwargs: None)
@@ -155,8 +175,133 @@ async def test_faq_worker_forbidden_scope_returns_support_handoff_before_db(
 
 
 @pytest.mark.asyncio
+async def test_faq_worker_high_confidence_single_hit_returns_seeded_answer_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.chat.src.agent.workers.faq import worker as worker_module
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+    class FakeRetriever:
+        def __init__(self, db, embedding_service=None):
+            del db, embedding_service
+
+        async def search(self, query, category=None, limit=5):
+            assert query == "transfer fees"
+            assert category == "transfers"
+            assert limit == 5
+            return (
+                [
+                    FAQRetrievalHit(
+                        id="faq_transfer_fees",
+                        category="transfers",
+                        question="Are there any transfer fees?",
+                        answer="Fees are shown before you confirm when they are available.",
+                        score=9.0,
+                        match_type="keyword",
+                    )
+                ],
+                0.86,
+            )
+
+    class FailingLLM:
+        async def ainvoke(self, messages):
+            del messages
+            raise AssertionError("LLM should not be called for a single high-confidence FAQ hit")
+
+    monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
+    monkeypatch.setattr(worker_module, "capability_block_message", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.workers.faq.nodes.retrieve.HybridRetriever",
+        FakeRetriever,
+    )
+
+    faq_worker = worker_module.FAQWorker(llm=FailingLLM(), get_db=lambda: FakeSession())
+    result = await faq_worker.run(
+        payload={},
+        context={"phone_number": "2348000000000", "language": "en"},
+        user_message="What are transfer fees?",
+    )
+
+    assert result.outcome == FAQOutcome.OK
+    assert result.response == "Fees are shown before you confirm when they are available."
+
+
+@pytest.mark.asyncio
+async def test_faq_worker_multi_hit_uses_llm_synthesis(monkeypatch: pytest.MonkeyPatch) -> None:
+    from apps.chat.src.agent.workers.faq import worker as worker_module
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+    class FakeRetriever:
+        def __init__(self, db, embedding_service=None):
+            del db, embedding_service
+
+        async def search(self, query, category=None, limit=5):
+            del query, category, limit
+            return (
+                [
+                    FAQRetrievalHit(
+                        id="faq_receipt",
+                        category="receipts",
+                        question="How do I get a receipt?",
+                        answer="Ask for a receipt for an eligible successful transfer.",
+                        score=9.0,
+                        match_type="keyword",
+                    ),
+                    FAQRetrievalHit(
+                        id="faq_receipt_past",
+                        category="receipts",
+                        question="Can I get receipts for past transfers?",
+                        answer="Past eligible successful transfers can have receipts.",
+                        score=7.0,
+                        match_type="keyword",
+                    ),
+                ],
+                0.82,
+            )
+
+    class FakeLLM:
+        def __init__(self):
+            self.calls = []
+
+        async def ainvoke(self, messages):
+            self.calls.append(messages)
+            return SimpleNamespace(content="You can request receipts for eligible successful transfers.")
+
+    llm = FakeLLM()
+    monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
+    monkeypatch.setattr(worker_module, "capability_block_message", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.workers.faq.nodes.retrieve.HybridRetriever",
+        FakeRetriever,
+    )
+
+    faq_worker = worker_module.FAQWorker(llm=llm, get_db=lambda: FakeSession())
+    result = await faq_worker.run(
+        payload={},
+        context={"phone_number": "2348000000000", "language": "en"},
+        user_message="How do receipts work?",
+    )
+
+    assert result.outcome == FAQOutcome.OK
+    assert result.response == "You can request receipts for eligible successful transfers."
+    assert len(llm.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_faq_worker_disabled_blocks_before_db_or_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    from apps.chat.src.agent.graphs.faq import worker as worker_module
+    from apps.chat.src.agent.workers.faq import worker as worker_module
 
     monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
     monkeypatch.setattr(

@@ -3,19 +3,20 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from apps.chat.src.agent.graphs.transfer.models.entities import TransferEntities
-from apps.chat.src.agent.graphs.transfer.models.extraction import (
+from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEntityExtractor
+from apps.chat.src.agent.workers.transfer.extraction.updates import extract_transfer_update
+from apps.chat.src.agent.workers.transfer.models.entities import TransferEntities
+from apps.chat.src.agent.workers.transfer.models.extraction import (
     Correction,
     CorrectionField,
     TransferExtractionResult,
 )
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.extraction import ExtractionStep, _extract_transfer_update
-from apps.chat.src.agent.graphs.transfer.nodes.validation import ValidationStep
-from apps.chat.src.agent.graphs.transfer.pipeline.base import TransferPipeline
-from apps.chat.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
-from apps.chat.src.agent.graphs.transfer.services.validation import ValidationService
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.workers.transfer.nodes.validation import ValidationStep
+from apps.chat.src.agent.workers.transfer.pipeline.base import TransferPipeline
+from apps.chat.src.agent.workers.transfer.validation.service import ValidationService
 
 
 class _CaptureExtractor:
@@ -97,7 +98,7 @@ async def test_media_caption_narration_hint_fills_missing_extractor_narration() 
         "Extracted from image: recipient_account=8162511023; bank_name=OPay."
     )
 
-    result = await _extract_transfer_update(TransferPayload(), extractor, user_message, {})
+    result = await extract_transfer_update(TransferPayload(), extractor, user_message, {})
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["amount"] == 5000
@@ -126,7 +127,7 @@ async def test_media_caption_amount_overrides_image_receipt_amount() -> None:
         "recipient_name=Spectranet Limited; amount=1500.0."
     )
 
-    result = await _extract_transfer_update(TransferPayload(), extractor, user_message, {})
+    result = await extract_transfer_update(TransferPayload(), extractor, user_message, {})
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["amount"] == 21000.0

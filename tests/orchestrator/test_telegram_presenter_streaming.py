@@ -3,11 +3,11 @@ from typing import Any, cast
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.intents import RequestAuth, RequestConfirmation, Say
-from apps.chat.src.messaging.presenters.base import PresentationContext
-from apps.chat.src.messaging.presenters.telegram import TelegramPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
+from shared.messaging.intents import RequestAuth, RequestConfirmation, Say
 from shared.messaging.presenters import telegram as telegram_presenter_module
+from shared.messaging.presenters.base import PresentationContext
+from shared.messaging.presenters.telegram import TelegramPresenter
 
 
 class _StubStreamingTelegramClient:
@@ -266,7 +266,7 @@ async def test_telegram_presenter_send_typing_intent_emits_typing(monkeypatch: p
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
     client = _StubDelayedTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))
-    from apps.chat.src.agent.orchestrator.models.intents import SendTyping
+    from shared.messaging.intents import SendTyping
 
     await presenter.present(
         [SendTyping()],

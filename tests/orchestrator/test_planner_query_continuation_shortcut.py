@@ -5,7 +5,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 
 
 class _PlannerReturningQueryTask:
@@ -19,6 +19,7 @@ class _PlannerReturningQueryTask:
         *,
         context: str = "None",
         prompt_signals: object | None = None,
+    path_label: str = "planner_path",
     ) -> Any:
         del phone_number, context, prompt_signals
         self.plan_calls += 1
@@ -66,7 +67,7 @@ class _PlannerReturningDirectResponse:
     def __init__(self) -> None:
         self.plan_calls = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> Any:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> Any:
         del phone_number, text, context, prompt_signals
         self.plan_calls += 1
         return type(

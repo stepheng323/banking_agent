@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from shared.clients.abstractions import BalanceResult
-from shared.services.funding import FundingPlanner
+from shared.clients.abstractions.direct_debit import BalanceResult
+from shared.services.funding.planner import FundingPlanner
 
 
 class MockAccount:

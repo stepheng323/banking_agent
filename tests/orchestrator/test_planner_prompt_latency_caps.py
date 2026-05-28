@@ -10,20 +10,21 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner.context import (
-    CONTEXT_ACCOUNT_PREVIEW_LIMIT,
+from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
     PLANNER_CONTEXT_MAX_CHARS,
     _assemble_planner_context,
     _build_query_session_context,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
     _build_user_state_summary,
 )
-from apps.chat.src.agent.orchestrator.nodes.planner.runner import plan_tasks
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from shared.services.task_planner import (
-    PlannerPromptBuildInput,
-    PlannerPromptSignals,
-    build_planner_system_prompt,
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_payload import (
+    CONTEXT_ACCOUNT_PREVIEW_LIMIT,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from shared.services.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
+from shared.services.task_planner_prompt_runtime import build_runtime_planner_system_prompt
 from shared.types.planner import PlannerOutput
 
 _PROMPT_SIZE_BASELINE = {
@@ -82,7 +83,7 @@ def _runtime_prompt_size_report() -> dict[str, int]:
     }
     report: dict[str, int] = {}
     for name, (text, context, signals) in profiles.items():
-        result = build_planner_system_prompt(
+        result = build_runtime_planner_system_prompt(
             PlannerPromptBuildInput(text=text, context=context, signals=signals)
         )
         report[name] = len(result.system_prompt)
@@ -135,7 +136,7 @@ def _runtime_prompt_token_report() -> dict[str, int]:
     }
     report: dict[str, int] = {}
     for name, (text, context, signals) in profiles.items():
-        result = build_planner_system_prompt(
+        result = build_runtime_planner_system_prompt(
             PlannerPromptBuildInput(text=text, context=context, signals=signals)
         )
         report[name] = len(encoding.encode(result.system_prompt))
@@ -151,7 +152,7 @@ class _CapturingPlanner:
         self.last_context: str | None = None
         self.last_prompt_signals: object | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text
         self.last_context = context
         self.last_prompt_signals = prompt_signals

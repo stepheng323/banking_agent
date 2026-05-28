@@ -3,12 +3,12 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.graphs.data.models_extraction import DataExtractionResult, DataPurchaseEntities
-from apps.chat.src.agent.graphs.data.nodes.confirmation import ConfirmationStep
-from apps.chat.src.agent.graphs.data.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.graphs.data.nodes.resolution import ResolutionStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult, DataPurchaseEntities
+from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
+from apps.chat.src.agent.workers.data.nodes.confirmation import ConfirmationStep
+from apps.chat.src.agent.workers.data.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.workers.data.nodes.resolution import ResolutionStep
 
 
 class _ExtractorStub:

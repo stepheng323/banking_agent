@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.graphs.airtime.nodes.resolution import ResolutionStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from apps.chat.src.agent.workers.airtime.nodes.resolution import ResolutionStep
 
 
 @pytest.mark.asyncio

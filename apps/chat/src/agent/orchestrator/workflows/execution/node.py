@@ -1,0 +1,53 @@
+from typing import Any
+
+from langchain_core.runnables import RunnableConfig
+
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_coordination import (
+    _maybe_coordinate_batch_funding,
+)
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_finalize import finalize_execution_wave_updates
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import build_execution_wave_runtime
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_tasks import (
+    execute_current_wave_tasks,
+)
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
+    """Execution Node.
+
+    Iterates through tasks in current wave.
+    Invokes Domain Workers.
+    Aggregates outcomes and sets PendingInterrupt if blocked.
+    """
+    if not state.waves or state.current_wave_index >= len(state.waves):
+        logger.info("advance_wave_skip", index=state.current_wave_index, count=len(state.waves))
+        return {}
+
+    current_wave = state.waves[state.current_wave_index]
+    logger.info(
+        "advance_wave", index=state.current_wave_index, tasks=current_wave, context_frames_len=len(state.context_frames)
+    )
+
+    # [SAFETY] If pending_interrupt is already set (e.g. valid restoration), do NOT execute tasks.
+    # Return it to force graph to stop/route correctly.
+    if state.pending_interrupt:
+        logger.info("advance_wave_blocked_by_interrupt", kind=state.pending_interrupt.kind)
+        return {"pending_interrupt": state.pending_interrupt}
+
+    runtime = build_execution_wave_runtime(state=state, config=config, current_wave=current_wave)
+
+    batch_block = await _maybe_coordinate_batch_funding(
+        state=state,
+        current_wave=current_wave,
+        services=runtime.services,
+        locale=runtime.locale,
+    )
+    if batch_block:
+        return batch_block
+
+    await execute_current_wave_tasks(state=state, runtime=runtime)
+    return finalize_execution_wave_updates(state=state, runtime=runtime)

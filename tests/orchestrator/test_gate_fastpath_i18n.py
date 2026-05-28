@@ -7,7 +7,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.orchestrator.context.referent_memory import remember_referents_from_frame
+from apps.chat.src.agent.orchestrator.context.referents.frame_memory import remember_referents_from_frame
 from apps.chat.src.agent.orchestrator.models.domain import (
     ActiveSession,
     PendingInterrupt,
@@ -17,20 +17,24 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.gate.runner import (
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
     classify_deterministic_meta_response,
-    session_gate_direct_path,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
 from shared.config.settings import settings
-from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
-from shared.services.confirmation_decision import ConfirmationDecision
-from shared.services.unsupported_capabilities import (
+from shared.i18n.bridge import (
+    render_cancelled_prompt,
+    render_locale_switched,
+)
+from shared.i18n.renderer import render_message
+from shared.services.confirmation_models import ConfirmationDecision
+from shared.services.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapabilitySemanticOutput,
-    get_unsupported_capability,
-    unsupported_capability_params,
 )
+from shared.services.unsupported_capability_presentation import unsupported_capability_params
+from shared.services.unsupported_capability_registry import get_unsupported_capability
 from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 
@@ -5446,8 +5450,15 @@ class _RouteTurnPlanner:
         self.last_context: str | None = None
         self.last_frame_context: str | None = None
 
-    async def route_semantic_turn(self, phone_number: str, text: str, context: str = "None") -> SemanticRouteDecision:
-        del phone_number, text
+    async def route_semantic_turn(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "direct_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, path_label
         self.route_calls += 1
         self.last_context = context
         return self._decision
@@ -5880,9 +5891,9 @@ async def test_gate_semantic_router_missing_reply_for_non_banking_turn_falls_bac
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.workflows.gate.node.logger.info", _capture)
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture
+        "apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_direct_response.logger.info", _capture
     )
 
     planner = _RouteTurnPlanner(
@@ -6931,11 +6942,16 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.runner.logger.info", _capture)
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.workflows.gate.node.logger.info", _capture)
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.nodes.gate.pipeline.semantic_router_stage.logger.info", _capture
+        "apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_router_stage.logger.info", _capture
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.gate.pipeline.domain_stages.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_domain_dispatch.logger.info", _capture
+    )
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.workflows.gate.stages.direct_domain_stages.logger.info", _capture
+    )
 
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

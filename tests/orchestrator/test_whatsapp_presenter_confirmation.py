@@ -2,10 +2,10 @@ from typing import Any, cast
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.intents import RequestAuth, RequestConfirmation
-from apps.chat.src.messaging.presenters.base import PresentationContext
-from apps.chat.src.messaging.presenters.whatsapp import WhatsAppPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
+from shared.messaging.intents import RequestAuth, RequestConfirmation
+from shared.messaging.presenters.base import PresentationContext
+from shared.messaging.presenters.whatsapp import WhatsAppPresenter
 
 
 class _StubFlowWhatsAppClient:
