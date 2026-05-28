@@ -5,17 +5,15 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 
+from apps.gateway.api.webhooks.telegram import onboarding as onboarding_module
 from apps.gateway.api.webhooks.telegram import router as router_module
-from apps.gateway.api.webhooks.telegram.router import (
-    BvnInput,
-    LinkingMethodInput,
-    PinSubmitInput,
-    TelegramBootstrapInput,
-)
+from apps.gateway.api.webhooks.telegram.onboarding import BvnInput, LinkingMethodInput
+from apps.gateway.api.webhooks.telegram.router import PinSubmitInput, TelegramBootstrapInput
+from apps.gateway.api.webhooks.telegram.session import token_fingerprint
 from shared.cache.flow_session_manager import SessionReadResult
 from shared.services import telegram_miniapp_bootstrap as bootstrap_module
 from shared.services.auth.authorization import AuthorizationResult
-from shared.services.channel_linking import ChannelLinkPinResult
+from shared.services.channel_link_authorization import ChannelLinkPinResult
 from shared.services.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap, consume_telegram_miniapp_bootstrap
 
 
@@ -194,7 +192,7 @@ async def test_telegram_webhook_rejects_invalid_secret_without_logging_raw_token
     event, fields = logger.events[0]
     assert event == "telegram_webhook_unauthorized"
     assert fields["provided_token_present"] is True
-    assert fields["provided_token_hash"] == router_module._token_fingerprint("attacker-token")
+    assert fields["provided_token_hash"] == token_fingerprint("attacker-token")
     assert "attacker-token" not in str(fields)
     assert "telegram-secret" not in str(fields)
 
@@ -473,9 +471,9 @@ async def test_telegram_onboarding_bvn_rejects_wrong_session_owner(monkeypatch: 
             "step": "bvn_entry",
         }
     )
-    monkeypatch.setattr(router_module, "bvn_service", bvn_stub)
+    monkeypatch.setattr(onboarding_module, "bvn_service", bvn_stub)
 
-    result = await router_module.telegram_onboarding_bvn(
+    result = await onboarding_module.telegram_onboarding_bvn(
         BvnInput(flow_token="onboarding-opaque-token", bvn="12345678901"),
         user_data={"user": '{"id": 111111}'},
     )
@@ -498,9 +496,9 @@ async def test_telegram_linking_method_rejects_wrong_session_owner(monkeypatch: 
             "step": "method_selection",
         }
     )
-    monkeypatch.setattr(router_module, "bvn_service", bvn_stub)
+    monkeypatch.setattr(onboarding_module, "bvn_service", bvn_stub)
 
-    result = await router_module.telegram_linking_method(
+    result = await onboarding_module.telegram_linking_method(
         LinkingMethodInput(flow_token="link-opaque-token", method="sms"),
         user_data={"user": '{"id": 111111}'},
     )

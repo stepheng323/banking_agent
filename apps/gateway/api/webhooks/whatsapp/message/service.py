@@ -1,7 +1,6 @@
 """WhatsApp webhook service - business logic for handling WhatsApp messages."""
 
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
-from apps.gateway.adapters.sender import send_text
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
@@ -130,8 +129,7 @@ class WhatsAppWebhookService:
             return True
 
         whatsapp_msg = self._build_message(msg)
-        await self._enqueue_message(whatsapp_msg, from_id, msg_type)
-        return True
+        return await self._enqueue_message(whatsapp_msg, from_id, msg_type)
 
     async def _handle_channel_link_authorization(self, text: str, from_id: str) -> bool:
         """Neutralize stale native channel-link buttons; PIN is required now."""
@@ -203,8 +201,9 @@ class WhatsAppWebhookService:
 
         except Exception as e:
             logger.error("message_enqueue_failed", error=str(e))
-            await send_text(
+            await self.whatsapp_client.send_text(
                 to=from_id,
                 text="Sorry, I'm having trouble processing your message right now.",
+                suppress_typing_indicator=True,
             )
             return False

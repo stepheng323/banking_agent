@@ -6,7 +6,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from apps.gateway.api.webhooks import flows_router, message_router, mono_router, telegram_router
+from apps.gateway.api.webhooks.mono.router import router as mono_router
+from apps.gateway.api.webhooks.telegram.router import router as telegram_router
+from apps.gateway.api.webhooks.whatsapp.flows.router import router as flows_router
+from apps.gateway.api.webhooks.whatsapp.message.router import router as message_router
 from shared.branding import render_brand_template
 from shared.config.settings import settings
 from shared.runtime_ownership import build_runtime_status

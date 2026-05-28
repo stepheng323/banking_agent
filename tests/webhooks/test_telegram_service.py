@@ -314,7 +314,7 @@ async def test_process_update_uses_cached_linked_identity(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_legacy_telegram_web_app_pin_data_does_not_publish_pin_event() -> None:
+async def test_telegram_web_app_pin_data_is_not_a_supported_payload() -> None:
     publisher = _PublisherStub()
     telegram_client = _TelegramClientStub()
     service = TelegramWebhookService(
@@ -337,9 +337,9 @@ async def test_legacy_telegram_web_app_pin_data_does_not_publish_pin_event() -> 
         }
     )
 
-    assert handled is True
+    assert handled is False
     assert publisher.published == []
-    assert "secure PIN page" in telegram_client.text_calls[-1]["text"]
+    assert telegram_client.text_calls == []
 
 
 @pytest.mark.asyncio

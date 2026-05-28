@@ -7,10 +7,12 @@ from typing import Any, cast
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.intents import Say
-from apps.chat.src.messaging.presenters.base import PresentationResult
 from shared.clients.abstractions.messaging import MessagingClient
-from shared.services.delivery_service import DeliveryAttemptResult, DeliveryService
+from shared.messaging.intents import Say
+from shared.messaging.presenters.base import PresentationResult
+from shared.services.delivery_ledger import build_delivery_ledger_key
+from shared.services.delivery_models import DeliveryAttemptResult
+from shared.services.delivery_service import DeliveryService
 
 
 class _RedisStub:
@@ -67,7 +69,7 @@ async def test_delivery_service_returns_deduped_completed_status(monkeypatch: py
     monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
 
     intents = [Say(text="Still working")]
-    ledger_key, _ = service._build_ledger_key(
+    ledger_key, _ = build_delivery_ledger_key(
         phone_number="2348000000000",
         channel="telegram",
         intents=intents,
@@ -102,7 +104,7 @@ async def test_delivery_service_returns_deduped_resumed_status(monkeypatch: pyte
     monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
 
     intents = [Say(text="Still working")]
-    ledger_key, _ = service._build_ledger_key(
+    ledger_key, _ = build_delivery_ledger_key(
         phone_number="2348000000000",
         channel="telegram",
         intents=intents,
@@ -141,7 +143,7 @@ async def test_delivery_service_defers_non_strict_actionable_persist(monkeypatch
         await release.wait()
 
     monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
-    monkeypatch.setattr(service, "_persist_actionable_if_any", _persist)
+    monkeypatch.setattr("shared.services.delivery_actionables.persist_actionable_if_any", _persist)
 
     result = await service.deliver_intents(
         phone_number="2348000000000",
@@ -175,7 +177,7 @@ async def test_delivery_service_keeps_strict_actionable_persist_inline(monkeypat
         call_order.append("persist_finished")
 
     monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
-    monkeypatch.setattr(service, "_persist_actionable_if_any", _persist)
+    monkeypatch.setattr("shared.services.delivery_actionables.persist_actionable_if_any", _persist)
 
     result = await service.deliver_intents(
         phone_number="2348000000000",

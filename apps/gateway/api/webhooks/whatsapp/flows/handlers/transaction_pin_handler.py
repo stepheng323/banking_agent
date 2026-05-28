@@ -26,7 +26,7 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
-from shared.services.auth import AuthorizationService
+from shared.services.auth.authorization import AuthorizationService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

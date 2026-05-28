@@ -1,14 +1,17 @@
 import httpx
 import pytest
 
+import shared.clients.telegram.client as telegram_client_module
+import shared.clients.telegram.drafts as telegram_drafts
+import shared.clients.telegram.mini_app as telegram_mini_app
 from shared.clients.abstractions.messaging import MessageResult
-from shared.clients.telegram import client as telegram_client_module
-from shared.clients.telegram.client import TelegramClient, _format_telegram_html, _telegram_html_to_plain_text
+from shared.clients.telegram.client import TelegramClient
+from shared.clients.telegram.formatting import format_telegram_html, telegram_html_to_plain_text
 from shared.config.settings import Settings, settings
 
 
 def test_telegram_html_formatter_escapes_html_and_formats_markdown() -> None:
-    rendered = _format_telegram_html("*Bold* _italics_ `code` <tag>")
+    rendered = format_telegram_html("*Bold* _italics_ `code` <tag>")
 
     assert "<b>Bold</b>" in rendered
     assert "<i>italics</i>" in rendered
@@ -17,17 +20,17 @@ def test_telegram_html_formatter_escapes_html_and_formats_markdown() -> None:
 
 
 def test_telegram_html_formatter_does_not_break_plain_text() -> None:
-    rendered = _format_telegram_html("Which account would you like to use?")
+    rendered = format_telegram_html("Which account would you like to use?")
     assert rendered == "Which account would you like to use?"
 
 
 def test_telegram_html_formatter_handles_double_asterisk_bold() -> None:
-    rendered = _format_telegram_html("**Ticket:** 123\n*Total:* **₦30,000**")
+    rendered = format_telegram_html("**Ticket:** 123\n*Total:* **₦30,000**")
     assert rendered == "<b>Ticket:</b> 123\n<b>Total:</b> <b>₦30,000</b>"
 
 
 def test_telegram_html_to_plain_text_strips_markup_for_mini_app_copy() -> None:
-    rendered = _telegram_html_to_plain_text("<b>₦3,000 -&gt; Ada</b>\n<code>GTBank</code>")
+    rendered = telegram_html_to_plain_text("<b>₦3,000 -&gt; Ada</b>\n<code>GTBank</code>")
 
     assert rendered == "₦3,000 -> Ada\nGTBank"
 
@@ -158,7 +161,7 @@ async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monke
         def warning(self, event: str, **kwargs: object) -> None:
             log_events.append((event, kwargs))
 
-    monkeypatch.setattr(telegram_client_module, "logger", _Logger())
+    monkeypatch.setattr(telegram_drafts, "logger", _Logger())
 
     async def _fake_call(
         method: str,
@@ -223,7 +226,7 @@ async def test_send_text_streamed_logs_fallback_after_unexpected_draft_failure(m
         def warning(self, event: str, **kwargs: object) -> None:
             log_events.append((event, kwargs))
 
-    monkeypatch.setattr(telegram_client_module, "logger", _Logger())
+    monkeypatch.setattr(telegram_drafts, "logger", _Logger())
 
     async def _fake_call(
         method: str,
@@ -314,7 +317,7 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
         return {"ok": True, "result": {"message_id": 55}}
 
     monkeypatch.setattr(client, "_call", _fake_call)
-    monkeypatch.setattr(telegram_client_module, "create_telegram_miniapp_bootstrap", _fake_bootstrap)
+    monkeypatch.setattr(telegram_mini_app, "create_telegram_miniapp_bootstrap", _fake_bootstrap)
 
     await client.send_mini_app(to="12345", flow_token="link-opaque-token")
     await client.send_mini_app(to="12345", flow_token="onboarding-opaque-token")
@@ -374,7 +377,7 @@ async def test_send_mini_app_keeps_pin_details_in_chat_not_bootstrap(monkeypatch
         return {"ok": True, "result": {"message_id": 56}}
 
     monkeypatch.setattr(client, "_call", _fake_call)
-    monkeypatch.setattr(telegram_client_module, "create_telegram_miniapp_bootstrap", _fake_bootstrap)
+    monkeypatch.setattr(telegram_mini_app, "create_telegram_miniapp_bootstrap", _fake_bootstrap)
 
     await client.send_mini_app(
         to="12345",

@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.gateway.core.config import settings
+from shared.config.settings import settings
 
 
 class WebhookSignatureError(ValueError):

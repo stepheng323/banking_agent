@@ -1,58 +1,20 @@
-"""Shared service for PIN-authorized cross-channel identity linking."""
+"""PIN-authorized completion for pending cross-channel identity links."""
 
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from shared.cache.channel_identity_cache import store_channel_identity_user
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.auth import AuthorizationService
-from shared.services.onboarding import session_manager as default_session_manager
+from shared.services.auth.authorization import AuthorizationService
+from shared.services.channel_link_authorization import (
+    CHANNEL_LINK_SESSION_PURPOSE,
+    CHANNEL_LINK_TRANSACTION_TYPE,
+    ChannelLinkPinResult,
+    parse_channel_link_pin_token,
+)
+from shared.services.onboarding.runtime import session_manager as default_session_manager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-CHANNEL_LINK_PIN_PREFIX = "channel-link-pin-"
-CHANNEL_LINK_TRANSACTION_TYPE = "channel_link"
-CHANNEL_LINK_SESSION_PURPOSE = "channel_identity_link"
-
-ChannelLinkStatus = Literal[
-    "success",
-    "expired",
-    "invalid_token",
-    "invalid_session",
-    "wrong_authorizer",
-    "invalid_pin",
-    "identity_claimed",
-    "failed",
-]
-
-
-@dataclass(slots=True)
-class ChannelLinkPinResult:
-    success: bool
-    status: ChannelLinkStatus
-    error: str = ""
-    attempts_remaining: int = 3
-    locked: bool = False
-    requested_channel: str = ""
-    requested_channel_user_id: str = ""
-    user: Any | None = None
-
-
-def build_channel_link_pin_token(channel_link_session_token: str) -> str:
-    return f"{CHANNEL_LINK_PIN_PREFIX}{channel_link_session_token}"
-
-
-def parse_channel_link_pin_token(flow_token: str | None) -> str | None:
-    token = str(flow_token or "")
-    if not token.startswith(CHANNEL_LINK_PIN_PREFIX):
-        return None
-    session_token = token.removeprefix(CHANNEL_LINK_PIN_PREFIX)
-    return session_token or None
-
-
-def is_channel_link_pin_token(flow_token: str | None) -> bool:
-    return parse_channel_link_pin_token(flow_token) is not None
 
 
 def _normalize_identity(channel: str, value: str | None) -> str:

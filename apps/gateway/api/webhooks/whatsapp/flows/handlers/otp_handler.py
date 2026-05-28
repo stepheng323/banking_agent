@@ -11,7 +11,8 @@ from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
     format_owner_error_response,
     verify_whatsapp_flow_session_owner,
 )
-from shared.services.onboarding import ServiceResult, bvn_service
+from shared.services.onboarding.runtime import bvn_service
+from shared.services.onboarding.session import ServiceResult
 
 
 class OtpVerificationInput(BaseModel):

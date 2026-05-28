@@ -3,7 +3,8 @@ from typing import Any
 import httpx
 import pytest
 
-from shared.clients.whatsapp import client as whatsapp_client_module
+import shared.clients.whatsapp.client as whatsapp_client_module
+import shared.clients.whatsapp.typing as whatsapp_typing
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
 
@@ -17,10 +18,6 @@ async def test_whatsapp_client_send_text_suppresses_typing_when_requested(monkey
     typing_calls: list[str] = []
     sleep_calls: list[float] = []
 
-    async def _ensure_message_id(to: str, message_id: str | None) -> str | None:
-        del to
-        return message_id
-
     async def _send(url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
         del url, max_retries
         return {"messages": [{"id": "wa-msg-1"}], "payload": payload}
@@ -32,10 +29,9 @@ async def test_whatsapp_client_send_text_suppresses_typing_when_requested(monkey
     async def _sleep(delay_seconds: float) -> None:
         sleep_calls.append(delay_seconds)
 
-    monkeypatch.setattr(client, "_ensure_message_id", _ensure_message_id)
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
-    monkeypatch.setattr("shared.clients.whatsapp.client.asyncio.sleep", _sleep)
+    monkeypatch.setattr(whatsapp_typing.asyncio, "sleep", _sleep)
     monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     result = await client.send_text(
@@ -58,10 +54,6 @@ async def test_whatsapp_client_send_text_keeps_typing_by_default(monkeypatch: py
 
     typing_calls: list[str] = []
 
-    async def _ensure_message_id(to: str, message_id: str | None) -> str | None:
-        del to
-        return message_id
-
     async def _send(url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
         del url, max_retries
         return {"messages": [{"id": "wa-msg-2"}], "payload": payload}
@@ -70,7 +62,6 @@ async def test_whatsapp_client_send_text_keeps_typing_by_default(monkeypatch: py
         typing_calls.append(message_id)
         return {}
 
-    monkeypatch.setattr(client, "_ensure_message_id", _ensure_message_id)
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
     monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 0)
@@ -93,10 +84,6 @@ async def test_whatsapp_client_send_text_waits_briefly_after_typing(monkeypatch:
 
     events: list[str] = []
 
-    async def _ensure_message_id(to: str, message_id: str | None) -> str | None:
-        del to
-        return message_id
-
     async def _send(url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
         del url, max_retries
         events.append(f"send:{payload['text']['body']}")
@@ -109,10 +96,9 @@ async def test_whatsapp_client_send_text_waits_briefly_after_typing(monkeypatch:
     async def _sleep(delay_seconds: float) -> None:
         events.append(f"sleep:{delay_seconds}")
 
-    monkeypatch.setattr(client, "_ensure_message_id", _ensure_message_id)
     monkeypatch.setattr(client, "_send", _send)
     monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
-    monkeypatch.setattr("shared.clients.whatsapp.client.asyncio.sleep", _sleep)
+    monkeypatch.setattr(whatsapp_typing.asyncio, "sleep", _sleep)
     monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     result = await client.send_text(
@@ -134,16 +120,11 @@ async def test_whatsapp_client_send_flow_data_exchange_omits_action_payload(
     client.phone_number_id = "phone-id"
     sent_payloads: list[dict[str, Any]] = []
 
-    async def _ensure_message_id(to: str, message_id: str | None) -> str | None:
-        del to
-        return message_id
-
     async def _send(url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
         del url, max_retries
         sent_payloads.append(payload)
         return {"messages": [{"id": "wa-flow-1"}]}
 
-    monkeypatch.setattr(client, "_ensure_message_id", _ensure_message_id)
     monkeypatch.setattr(client, "_send", _send)
 
     result = await client.send_flow(
@@ -165,6 +146,21 @@ async def test_whatsapp_client_send_flow_data_exchange_omits_action_payload(
     assert params["flow_action"] == "data_exchange"
     assert params["flow_token"] == "transfer-pin-idem-1-2348000000000"
     assert "flow_action_payload" not in params
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_typing_resolves_current_message_id_from_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Redis:
+        async def get(self, key: str) -> str:
+            assert key == "user:2348000000000:current_message_id"
+            return "wamid.redis"
+
+    monkeypatch.setattr(whatsapp_typing.RedisClient, "get_client", staticmethod(lambda: _Redis()))
+
+    assert (
+        await whatsapp_typing.resolve_current_message_id(to="2348000000000", message_id=None)
+        == "wamid.redis"
+    )
 
 
 @pytest.mark.asyncio
@@ -204,12 +200,14 @@ async def test_whatsapp_client_reuses_http_client(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(whatsapp_client_module.httpx, "AsyncClient", _FakeAsyncClient)
     client = WhatsAppClient()
 
-    await client._send(client._get_url(), {"messaging_product": "whatsapp"})
-    assert await client._upload_buffer(b"image", "image.png", "image/png") == "media-id"
+    text_result = await client.send_text("2348000000000", "Hello", suppress_typing_indicator=True)
+    image_result = await client.send_image_data("2348000000000", b"image", suppress_typing_indicator=True)
     assert await client.get_media_url("media-id") == "https://media.example/file"
     assert await client.download_media("https://media.example/file") == b"media"
+    assert text_result["messages"][0]["id"] == "wa-msg"
+    assert image_result["messages"][0]["id"] == "wa-msg"
 
     assert len(created_clients) == 1
     await client.aclose()
-    await client._send(client._get_url(), {"messaging_product": "whatsapp"})
+    await client.send_text("2348000000000", "Hello again", suppress_typing_indicator=True)
     assert len(created_clients) == 2

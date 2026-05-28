@@ -16,6 +16,12 @@ class _PublisherStub:
         self.published.append((topic, message))
 
 
+class _FailingPublisherStub:
+    async def publish(self, topic: str, message: dict[str, Any]) -> None:
+        del topic, message
+        raise RuntimeError("queue unavailable")
+
+
 class _WhatsAppClientStub:
     def __init__(self) -> None:
         self.text_calls: list[dict[str, Any]] = []
@@ -266,3 +272,33 @@ async def test_stale_whatsapp_button_payload_does_not_link_identity(monkeypatch:
     assert handled is True
     assert publisher.published == []
     assert "requires PIN authorization" in whatsapp_client.text_calls[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_enqueue_failure_uses_injected_whatsapp_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(service_module.settings.whatsapp, "allowed_numbers", set())
+    whatsapp_client = _WhatsAppClientStub()
+    service = WhatsAppWebhookService(
+        publisher=_FailingPublisherStub(),  # type: ignore[arg-type]
+        whatsapp_client=whatsapp_client,  # type: ignore[arg-type]
+    )
+
+    handled = await service._process_message(
+        ParsedMessage.model_validate(
+            {
+                "id": "wamid-text",
+                "from": "2348162511023",
+                "type": "text",
+                "text": "hi",
+            }
+        )
+    )
+
+    assert handled is False
+    assert whatsapp_client.text_calls == [
+        {
+            "to": "2348162511023",
+            "text": "Sorry, I'm having trouble processing your message right now.",
+            "suppress_typing_indicator": True,
+        }
+    ]

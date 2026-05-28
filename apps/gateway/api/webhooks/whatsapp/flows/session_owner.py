@@ -5,7 +5,7 @@ from typing import Any
 
 from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response
 from shared.config.settings import settings
-from shared.services.onboarding import session_manager
+from shared.services.onboarding.runtime import session_manager
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

@@ -3,10 +3,11 @@ from typing import Any
 
 import pytest
 
+import shared.services.channel_link_pin_completion as channel_link_pin_completion_module
 from shared.cache.flow_session_manager import SessionReadResult
-from shared.services import channel_linking as channel_linking_module
-from shared.services.auth import AuthorizationResult
-from shared.services.channel_linking import build_channel_link_pin_token, complete_channel_link_with_pin
+from shared.services.auth.authorization import AuthorizationResult
+from shared.services.channel_link_authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
+from shared.services.channel_link_pin_completion import complete_channel_link_with_pin
 
 
 class _SessionManagerStub:
@@ -54,7 +55,7 @@ class _AuthStub:
 
 def _pending_session() -> dict[str, Any]:
     return {
-        "purpose": "channel_identity_link",
+        "purpose": CHANNEL_LINK_SESSION_PURPOSE,
         "user_id": "user-1",
         "phone_number": "2348162511023",
         "requested_channel": "telegram",
@@ -102,8 +103,12 @@ async def test_channel_link_pin_completion_links_requested_identity(monkeypatch:
     async def _store_channel_identity_user(channel: str, channel_user_id: str, cached_user: Any) -> None:
         cached.append((channel, channel_user_id, cached_user))
 
-    monkeypatch.setattr(channel_linking_module, "UnitOfWork", _UnitOfWorkStub)
-    monkeypatch.setattr(channel_linking_module, "store_channel_identity_user", _store_channel_identity_user)
+    monkeypatch.setattr(channel_link_pin_completion_module, "UnitOfWork", _UnitOfWorkStub)
+    monkeypatch.setattr(
+        channel_link_pin_completion_module,
+        "store_channel_identity_user",
+        _store_channel_identity_user,
+    )
 
     result = await complete_channel_link_with_pin(
         flow_token=build_channel_link_pin_token("channel-link-token"),
@@ -214,7 +219,7 @@ async def test_channel_link_pin_completion_rejects_stale_telegram_authorizer(
             del exc_type, exc, tb
             return False
 
-    monkeypatch.setattr(channel_linking_module, "UnitOfWork", _UnitOfWorkStub)
+    monkeypatch.setattr(channel_link_pin_completion_module, "UnitOfWork", _UnitOfWorkStub)
 
     result = await complete_channel_link_with_pin(
         flow_token=build_channel_link_pin_token("channel-link-token"),

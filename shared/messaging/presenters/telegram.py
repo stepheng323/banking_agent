@@ -6,7 +6,7 @@ import html
 from typing import Any, cast
 
 from shared.clients.abstractions.messaging import MessagingClient
-from shared.clients.telegram.client import _format_telegram_html
+from shared.clients.telegram.formatting import format_telegram_html
 from shared.config.settings import settings
 from shared.messaging.intents import (
     RequestAuth,
@@ -253,7 +253,7 @@ class TelegramPresenter(Presenter):
         cta_text = "Authorize Update" if prefix == "schedule" else "Enter PIN"
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-        html_summary = _format_telegram_html(intent.summary or "Please enter your PIN to proceed.")
+        html_summary = format_telegram_html(intent.summary or "Please enter your PIN to proceed.")
 
         # Use Mini App for secure PIN entry
         resp = await self.client.send_flow(
@@ -289,7 +289,7 @@ class TelegramPresenter(Presenter):
         prefix = _pin_flow_prefix(intent)
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-        html_summary = _format_telegram_html(intent.summary or "")
+        html_summary = format_telegram_html(intent.summary or "")
 
         # Use Mini App for PIN-based confirmation
         resp = await self.client.send_flow(

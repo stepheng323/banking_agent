@@ -3,7 +3,8 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.account.worker import AccountWorker
+from apps.chat.src.agent.workers.account.linking import build_link_account_flow
+from apps.chat.src.agent.workers.account.worker import AccountWorker
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.config.settings import settings
 from shared.services.onboarding.bvn_verification import BvnVerificationService
@@ -67,15 +68,17 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.secrets.token_urlsafe", lambda _: "opaque-link-token")
+    monkeypatch.setattr("apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token")
 
-    flow = await worker._build_link_account_flow(
-        {
+    flow = await build_link_account_flow(
+        context={
             "phone_number": "telegram-chat-id",
             "profile": {"phone_number": "2348000000000", "extra_data": {"bvn": "12345678901"}},
             "language": "en",
             "channel": "telegram",
-        }
+        },
+        banking_provider=worker.banking_provider,
+        session_manager=worker.session_manager,
     )
 
     assert flow["flow_config"]["flow_token"] == "link-opaque-link-token"
@@ -104,15 +107,17 @@ async def test_build_link_account_flow_returns_retryable_error_when_session_stor
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.chat.src.agent.graphs.account.worker.secrets.token_urlsafe", lambda _: "opaque-link-token")
+    monkeypatch.setattr("apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token")
 
-    flow = await worker._build_link_account_flow(
-        {
+    flow = await build_link_account_flow(
+        context={
             "phone_number": "2348000000000",
             "profile": {"phone_number": "2348000000000", "extra_data": {"bvn": "12345678901"}},
             "language": "en",
             "channel": "telegram",
-        }
+        },
+        banking_provider=worker.banking_provider,
+        session_manager=worker.session_manager,
     )
 
     assert flow == {"error": "Failed to start linking."}

@@ -14,8 +14,9 @@ from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.user_repository import UserRepository
-from shared.services.channel_linking import build_channel_link_pin_token
-from shared.services.onboarding import OnboardingStep, session_manager
+from shared.services.channel_link_authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
+from shared.services.onboarding.runtime import session_manager
+from shared.services.onboarding.session import OnboardingStep
 from shared.services.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -122,8 +123,6 @@ class TelegramWebhookService:
         user = await self._resolve_linked_user(msg.chat_id)
         if not user:
             # Check if they are currently in the middle of onboarding
-            from shared.services.onboarding import session_manager
-
             flow_token = await _get_telegram_onboarding_token(msg.chat_id)
             session_result = await session_manager.read_session(flow_token) if flow_token else None
             session = (session_result.data or {}) if session_result and session_result.found else {}
@@ -216,7 +215,7 @@ class TelegramWebhookService:
             stored = await session_manager.update_session_strict(
                 flow_token,
                 {
-                    "purpose": "channel_identity_link",
+                            "purpose": CHANNEL_LINK_SESSION_PURPOSE,
                     "user_id": str(user.id),
                     "phone_number": phone,
                     "requested_channel": _TELEGRAM_CHANNEL,
@@ -454,14 +453,6 @@ class TelegramWebhookService:
             await self.telegram_client.send_text(
                 to=msg.chat_id,
                 text="🎉 Account setup complete! You can now use all banking features.",
-            )
-            return True
-
-        if data.get("flow_token") or data.get("pin"):
-            logger.warning("telegram_legacy_web_app_pin_ignored", chat_id_hash=log_fingerprint(msg.chat_id))
-            await self.telegram_client.send_text(
-                to=msg.chat_id,
-                text="That PIN prompt has expired. Please reopen the secure PIN page and try again.",
             )
             return True
 
