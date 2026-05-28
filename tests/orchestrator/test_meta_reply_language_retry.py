@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
+from apps.chat.src.agent.orchestrator.services.meta_reply import generate_meta_reply
 from shared.assistant_profile.voice import AssistantVoice
 from shared.config.settings import settings
 

@@ -11,12 +11,8 @@ from typing import Literal
 
 from langchain_core.language_models import BaseChatModel
 
-from shared.services.confirmation_decision import (
-    ConfirmationDecision,
-    ConfirmationDecisionOutput,
-    classify_confirmation_reply,
-    classify_confirmation_reply_sync,
-)
+from shared.services.confirmation_classifier import classify_confirmation_reply, classify_confirmation_reply_sync
+from shared.services.confirmation_models import ConfirmationDecision, ConfirmationDecisionOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

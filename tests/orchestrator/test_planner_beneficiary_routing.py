@@ -2,7 +2,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -17,6 +17,7 @@ class _MockPlanner:
         *,
         context: str = "None",
         prompt_signals: object | None = None,
+    path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         return self._output

@@ -23,11 +23,9 @@ def render_capability_limitation(
     locale: str | None,
     action_label: str,
     alternative_labels: list[str] | None = None,
-    policy_message: str | None = None,
 ) -> str:
     """Render strict capability limitation text in target locale."""
     resolved_locale = normalize_locale(locale)
-    del policy_message
 
     alternatives = [item for item in (alternative_labels or []) if item]
 

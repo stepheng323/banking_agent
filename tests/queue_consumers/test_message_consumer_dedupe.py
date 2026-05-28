@@ -9,13 +9,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.intents import Say, ShowFlow
+from apps.chat.src.queue_consumers import channel_link_gate as channel_link_gate_module
 from apps.chat.src.queue_consumers import message_consumer as message_consumer_module
+from apps.chat.src.queue_consumers import message_inbound as message_inbound_module
+from apps.chat.src.queue_consumers import pin_resume as pin_resume_module
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
+from shared.messaging.intents import Say, ShowFlow
 from shared.messaging.prompt_suppression import (
     PENDING_INPUT_PROMPT_METADATA_KEY,
     PENDING_INPUT_PROMPT_ORIGIN_MESSAGE_ID_KEY,
@@ -27,7 +30,7 @@ from shared.receipts.choice import (
     RECEIPT_IMAGE_ACTION_ID,
     build_receipt_choice_actionable_payload,
 )
-from shared.services.auth import AuthorizationResult
+from shared.services.auth.authorization import AuthorizationResult
 
 
 class _RateLimiterAllow:
@@ -130,6 +133,7 @@ class _OrchestratorStub:
         self.invoke_calls = 0
         self.last_user: Any | None = None
         self.last_mime_type: str | None = None
+        self.last_channel_metadata: dict[str, Any] | None = None
         self.resume_calls: list[dict[str, str]] = []
 
     async def invoke(
@@ -144,9 +148,11 @@ class _OrchestratorStub:
         quoted_message_id: str | None = None,
         channel: str = "whatsapp",
         channel_identity: str | None = None,
+        channel_metadata: dict[str, Any] | None = None,
         user: Any | None = None,
     ) -> dict[str, Any]:
         del phone_number, text, message_id, message_type, media_id, quoted_message_id, channel, channel_identity
+        self.last_channel_metadata = dict(channel_metadata or {})
         self.invoke_calls += 1
         self.last_user = user
         self.last_mime_type = mime_type
@@ -326,6 +332,36 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
+async def test_message_consumer_passes_channel_metadata_to_orchestrator(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    message = _message("wamid-meta").model_copy(
+        update={"channel_metadata": {"sender_display_name": "Gaines Abiodun"}}
+    )
+
+    result = await consumer._handle_message(message)
+
+    assert result is not None
+    assert result["status"] == "success"
+    assert orchestrator.last_channel_metadata == {"sender_display_name": "Gaines Abiodun"}
+
+
+@pytest.mark.asyncio
 async def test_message_consumer_passes_media_mime_type(monkeypatch: pytest.MonkeyPatch) -> None:
     context_manager = _ContextManagerStub(should_claim=True)
     orchestrator = _OrchestratorStub(context_manager)
@@ -458,10 +494,10 @@ async def test_whatsapp_message_requires_telegram_approval_before_linking(
         say_calls.append((phone_number, channel, text, metadata))
 
     monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
-    monkeypatch.setattr(message_consumer_module, "session_manager", session_manager)
-    monkeypatch.setattr(message_consumer_module.secrets, "token_urlsafe", lambda _: "opaque-token")
+    monkeypatch.setattr(channel_link_gate_module, "session_manager", session_manager)
+    monkeypatch.setattr(channel_link_gate_module.secrets, "token_urlsafe", lambda _: "opaque-token")
     monkeypatch.setattr(message_consumer_module, "TelegramClient", lambda: telegram_client)
-    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr(channel_link_gate_module, "enqueue_outbox_say", _enqueue_outbox_say)
 
     context_manager = _ContextManagerStub(should_claim=True)
     orchestrator = _OrchestratorStub(context_manager)
@@ -842,7 +878,7 @@ async def test_message_consumer_marks_pending_input_prompt_for_receipt_staleness
         {
             "key": key,
             "value": "wamid-pending-prompt",
-            "ex": message_consumer_module.settings.chat_latest_inbound_ttl_seconds,
+            "ex": message_inbound_module.settings.chat_latest_inbound_ttl_seconds,
         }
     ]
     metadata = enqueue_outbox_intents.await_args.kwargs["metadata"]
@@ -917,11 +953,11 @@ async def test_message_consumer_accepts_receipt_image_choice(
     orchestrator.deps = SimpleNamespace(actionable_message_repo=repo)
 
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
-    monkeypatch.setattr(message_consumer_module, "load_channel_identity_user", AsyncMock(return_value=None))
-    monkeypatch.setattr(message_consumer_module, "store_channel_identity_user", AsyncMock())
+    monkeypatch.setattr(message_inbound_module, "load_channel_identity_user", AsyncMock(return_value=None))
+    monkeypatch.setattr(message_inbound_module, "store_channel_identity_user", AsyncMock())
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
-        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.receipt_choices.enqueue_outbox_intents",
         enqueue_outbox_intents,
     )
 
@@ -966,11 +1002,11 @@ async def test_message_consumer_accepts_telegram_receipt_image_choice_removes_bu
     orchestrator.deps = SimpleNamespace(actionable_message_repo=repo)
 
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
-    monkeypatch.setattr(message_consumer_module, "load_channel_identity_user", AsyncMock(return_value=None))
-    monkeypatch.setattr(message_consumer_module, "store_channel_identity_user", AsyncMock())
+    monkeypatch.setattr(message_inbound_module, "load_channel_identity_user", AsyncMock(return_value=None))
+    monkeypatch.setattr(message_inbound_module, "store_channel_identity_user", AsyncMock())
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
-        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.receipt_choices.enqueue_outbox_intents",
         enqueue_outbox_intents,
     )
 
@@ -1009,7 +1045,7 @@ async def test_message_consumer_receipt_image_choice_missing_payload_expires_gra
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
-        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.receipt_choices.enqueue_outbox_intents",
         enqueue_outbox_intents,
     )
 
@@ -1042,17 +1078,20 @@ async def test_non_transaction_pin_verified_flow_is_ignored(monkeypatch: pytest.
         enqueue_calls.append(list(args))
 
     monkeypatch.setattr(
-        "apps.chat.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        "apps.chat.src.queue_consumers.pin_resume.enqueue_outbox_intents",
         _enqueue_outbox_intents,
     )
 
-    await consumer._handle_pin_verified(
+    await pin_resume_module.handle_pin_verified(
         flow_type="link",
         phone_number="2348162511023",
         idempotency_key="idem-1",
         success=True,
         channel="telegram",
+        publisher=consumer.publisher,
         extra_data={"chat_id": "98765"},
+        user_repository=consumer.user_repository,
+        orchestrator=consumer.orchestrator,
     )
 
     assert orchestrator.resume_calls == []
@@ -1071,7 +1110,7 @@ async def test_pin_verified_event_without_stored_authorization_does_not_resume(
         orchestrator=orchestrator,
     )
     auth_service = _AuthorizationServiceStub(None)
-    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(pin_resume_module, "AuthorizationService", lambda: auth_service)
 
     await consumer.process_flow_event(_pin_verified_event())
 
@@ -1092,7 +1131,7 @@ async def test_pin_verified_event_requires_literal_success_true(monkeypatch: pyt
     auth_service = _AuthorizationServiceStub(
         AuthorizationResult(verified=True, user_id="u1", transaction_type="transfer")
     )
-    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(pin_resume_module, "AuthorizationService", lambda: auth_service)
 
     await consumer.process_flow_event(_pin_verified_event(success="true"))
 
@@ -1124,7 +1163,7 @@ async def test_pin_verified_event_rejects_invalid_stored_authorization(
         orchestrator=orchestrator,
     )
     auth_service = _AuthorizationServiceStub(auth_result)
-    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(pin_resume_module, "AuthorizationService", lambda: auth_service)
 
     await consumer.process_flow_event(_pin_verified_event(flow_type=flow_type))
 
@@ -1152,8 +1191,8 @@ async def test_pin_verified_event_resumes_once_after_claim(monkeypatch: pytest.M
         del kwargs
         sent_payloads.append(list(args))
 
-    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
-    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+    monkeypatch.setattr(pin_resume_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(pin_resume_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
 
     await consumer.process_flow_event(_pin_verified_event())
     await consumer.process_flow_event(_pin_verified_event())
@@ -1185,7 +1224,7 @@ async def test_pin_verified_event_accepts_schedule_flow(monkeypatch: pytest.Monk
         claim_results=[True],
     )
 
-    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(pin_resume_module, "AuthorizationService", lambda: auth_service)
 
     await consumer.process_flow_event(_pin_verified_event(flow_type="schedule"))
 
@@ -1228,8 +1267,8 @@ async def test_pin_verified_resume_does_not_duplicate_final_response_and_outbox_
         del kwargs
         sent_payloads.append(list(args))
 
-    monkeypatch.setattr(message_consumer_module, "AuthorizationService", lambda: auth_service)
-    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+    monkeypatch.setattr(pin_resume_module, "AuthorizationService", lambda: auth_service)
+    monkeypatch.setattr(pin_resume_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
 
     await consumer.process_flow_event(_pin_verified_event())
 

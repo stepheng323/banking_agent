@@ -1,7 +1,7 @@
 import time
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
-from apps.chat.src.agent.orchestrator.context.referent_memory import remember_referents_from_frame
+from apps.chat.src.agent.orchestrator.context.referents.frame_memory import remember_referents_from_frame
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
 
@@ -120,6 +120,15 @@ class OrchestratorContextManager:
                     label = _clip_text(item.label or "Scheduled transaction", CONTEXT_FRAME_LABEL_MAX_CHARS)
                     target_text = _clip_text(str(target), CONTEXT_FRAME_DETAILS_MAX_CHARS)
                     items.append(f"[{idx}] {label} ({target_text})")
+                items_str = ", ".join(items)
+
+            elif frame.frame_type == ContextFrameType.DATA_PLAN_LIST:
+                items = []
+                for idx, item in enumerate(preview_items, 1):
+                    amount = item.data.get("amount", "")
+                    label = _clip_text(item.label or "Data plan", CONTEXT_FRAME_LABEL_MAX_CHARS)
+                    amount_text = _clip_text(str(amount), CONTEXT_FRAME_DETAILS_MAX_CHARS)
+                    items.append(f"[{idx}] {label} ({amount_text})")
                 items_str = ", ".join(items)
 
             elif frame.frame_type == ContextFrameType.RECEIPT:

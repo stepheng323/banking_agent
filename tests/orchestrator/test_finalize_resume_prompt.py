@@ -7,10 +7,10 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.orchestrator.context.referent_memory import ReferentMemoryItem
+from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMemoryItem
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 
 
 def _config() -> RunnableConfig:

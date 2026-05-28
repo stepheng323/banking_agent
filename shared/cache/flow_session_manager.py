@@ -65,11 +65,6 @@ class FlowSessionManager:
             return normalized
         return f"{normalized[:4]}***{normalized[-2:]}"
 
-    async def get_session(self, flow_token: str) -> dict[str, Any]:
-        """Backward-compatible best-effort session read."""
-        result = await self.read_session(flow_token)
-        return result.data or {}
-
     async def read_session(self, flow_token: str) -> SessionReadResult:
         """Read session data with explicit status reporting."""
         try:
@@ -94,10 +89,6 @@ class FlowSessionManager:
             logger.error("flow_session_read_failed", flow_token_hash=self._token_fingerprint(flow_token), error=str(e))
             return SessionReadResult(status="backend_error", error=str(e))
         return SessionReadResult(status="missing")
-
-    async def update_session(self, flow_token: str, updates: dict[str, Any]) -> None:
-        """Backward-compatible best-effort session merge."""
-        await self.update_session_strict(flow_token, updates)
 
     async def update_session_strict(self, flow_token: str, updates: dict[str, Any], *, verify: bool = False) -> bool:
         """Merge updates into existing session with optional read-back verification."""

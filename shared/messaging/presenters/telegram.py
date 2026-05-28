@@ -6,7 +6,7 @@ import html
 from typing import Any, cast
 
 from shared.clients.abstractions.messaging import MessagingClient
-from shared.clients.telegram.client import _format_telegram_html
+from shared.clients.telegram.formatting import format_telegram_html
 from shared.config.settings import settings
 from shared.messaging.intents import (
     RequestAuth,
@@ -23,6 +23,7 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_PIN_PREFIX_TASK_TYPES = {"transfer", "airtime", "data"}
 
 
 def _actionable_payload(intent: UiIntent) -> dict[str, Any]:
@@ -38,12 +39,37 @@ def _is_schedule_update_confirmation(intent: RequestConfirmation) -> bool:
     )
 
 
-def _pin_flow_prefix(intent: RequestAuth | RequestConfirmation) -> str:
-    payload = _actionable_payload(intent)
+def _pin_prefix_from_payload(payload: dict[str, Any], correlation_id: str) -> str | None:
     task_type = str(payload.get("task_type") or "").strip().lower()
     action = str(payload.get("action") or "").strip().lower()
     if task_type == "schedule" or action in {"edit_scheduled_transaction", "schedule_update"}:
         return "schedule"
+    if task_type in _PIN_PREFIX_TASK_TYPES:
+        return task_type
+    if task_type == "batch":
+        tasks = payload.get("tasks")
+        if not isinstance(tasks, list):
+            return None
+
+        for task in tasks:
+            if isinstance(task, dict) and str(task.get("idempotency_key") or "") == correlation_id:
+                prefix = _pin_prefix_from_payload(task, correlation_id)
+                if prefix:
+                    return prefix
+
+        for task in tasks:
+            if isinstance(task, dict):
+                prefix = _pin_prefix_from_payload(task, correlation_id)
+                if prefix:
+                    return prefix
+    return None
+
+
+def _pin_flow_prefix(intent: RequestAuth | RequestConfirmation) -> str:
+    payload = _actionable_payload(intent)
+    payload_prefix = _pin_prefix_from_payload(payload, str(intent.correlation_id or ""))
+    if payload_prefix:
+        return payload_prefix
 
     text = f"{getattr(intent, 'reason', '') or ''}\n{getattr(intent, 'header', '') or ''}\n{intent.summary or ''}"
     if "Airtime" in text:
@@ -227,7 +253,7 @@ class TelegramPresenter(Presenter):
         cta_text = "Authorize Update" if prefix == "schedule" else "Enter PIN"
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-        html_summary = _format_telegram_html(intent.summary or "Please enter your PIN to proceed.")
+        html_summary = format_telegram_html(intent.summary or "Please enter your PIN to proceed.")
 
         # Use Mini App for secure PIN entry
         resp = await self.client.send_flow(
@@ -263,7 +289,7 @@ class TelegramPresenter(Presenter):
         prefix = _pin_flow_prefix(intent)
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-        html_summary = _format_telegram_html(intent.summary or "")
+        html_summary = format_telegram_html(intent.summary or "")
 
         # Use Mini App for PIN-based confirmation
         resp = await self.client.send_flow(

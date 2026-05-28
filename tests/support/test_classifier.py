@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.graphs.support.classifier import SupportClassifier
-from apps.chat.src.agent.graphs.support.models import SupportIntent
+from apps.chat.src.agent.workers.support.classifier import SupportClassifier
+from apps.chat.src.agent.workers.support.models import SupportIntent
 
 
 class _LLMStub:

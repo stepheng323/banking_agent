@@ -7,13 +7,13 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.account.worker import AccountWorker
-from apps.chat.src.agent.graphs.airtime.worker import AirtimeWorker
-from apps.chat.src.agent.graphs.data.worker import DataWorker
-from apps.chat.src.agent.graphs.query import capabilities as query_capabilities
-from apps.chat.src.agent.graphs.transfer.worker import TransferWorker
+import apps.chat.src.agent.workers.query.capabilities as query_capabilities
 from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
-from apps.chat.src.agent.orchestrator.nodes.planner.policy import _build_policy_notice
+from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_unsupported import _build_policy_notice
+from apps.chat.src.agent.workers.account.worker import AccountWorker
+from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
+from apps.chat.src.agent.workers.data.worker import DataWorker
+from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from shared.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
 from shared.assistant_profile.voice import build_planner_voice_block, get_runtime_voice
 from shared.config.settings import settings
@@ -135,7 +135,7 @@ def test_runtime_voice_uses_assistant_profile_as_single_voice_source() -> None:
 
 
 def test_planner_prompt_refresh_reloads_profile_summary_block(tmp_path: Path) -> None:
-    from shared.services import task_planner_prompts
+    from shared.services import task_planner_prompt_runtime
 
     raw = load_assistant_profile(ASSISTANT_PROFILE_PATH).model_dump()
     raw["supported_domains"][0] = "Card freeze"
@@ -148,15 +148,15 @@ def test_planner_prompt_refresh_reloads_profile_summary_block(tmp_path: Path) ->
 
     try:
         get_cached_assistant_profile(path=str(custom_path), force_reload=True)
-        task_planner_prompts.refresh_planner_system_prompt()
-        profile_block = task_planner_prompts.PLANNER_POLICY_BLOCK
+        task_planner_prompt_runtime.refresh_runtime_planner_system_prompt()
+        profile_block = task_planner_prompt_runtime.PLANNER_POLICY_BLOCK
         assert "Supported(profile): Card freeze(+6)" in profile_block
         assert "Unsupported(profile): Crypto staking(+5)" in profile_block
         assert "State limits directly" in profile_block
         assert "Banking tasks only" in profile_block
     finally:
         get_cached_assistant_profile(path=ASSISTANT_PROFILE_PATH, force_reload=True)
-        task_planner_prompts.refresh_planner_system_prompt()
+        task_planner_prompt_runtime.refresh_runtime_planner_system_prompt()
 
 
 def test_capability_resolution_uses_policy_matrix() -> None:

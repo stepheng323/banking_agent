@@ -14,7 +14,6 @@ from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
 logger = get_logger(__name__)
-setup_core_consumers = setup_chat_consumers
 _RUNTIME_WARMUP_TIMEOUT_SECONDS = 8.0
 _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
 
@@ -213,7 +212,7 @@ async def run_worker(stop_event: asyncio.Event | None = None) -> None:
             except NotImplementedError:
                 pass
 
-    message_consumer, stream_consumer = setup_core_consumers()
+    message_consumer, stream_consumer = setup_chat_consumers()
     stream_task = asyncio.create_task(
         _run_stream_loop(message_consumer, stream_consumer),
         name="chat-worker-stream-loop",

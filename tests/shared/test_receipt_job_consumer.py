@@ -54,16 +54,13 @@ async def test_receipt_consumer_processes_top_level_payload() -> None:
 
 
 @pytest.mark.asyncio
-async def test_receipt_consumer_processes_wrapped_payload() -> None:
+async def test_receipt_consumer_rejects_wrapped_payload() -> None:
     delivery_service = cast(Any, SimpleNamespace(deliver_intents=AsyncMock(), deliver_text=AsyncMock()))
     redis_client = cast(Any, SimpleNamespace(rpush=AsyncMock(), expire=AsyncMock()))
     consumer = ReceiptJobConsumer(delivery_service=delivery_service, redis_client=redis_client)
 
     render_receipt = AsyncMock(return_value=b"png-bytes")
     consumer.renderer = cast(Any, SimpleNamespace(render_receipt=render_receipt, close=AsyncMock()))
-    rpush = redis_client.rpush
-    expire = redis_client.expire
-
     job: dict[str, Any] = {
         "payload": {
             "phone_number": "2348000000002",
@@ -80,18 +77,10 @@ async def test_receipt_consumer_processes_wrapped_payload() -> None:
 
     await consumer._process_job(job)
 
-    render_receipt.assert_awaited_once_with(
-        transfer_data=job["payload"]["transfer_data"],
-        transaction_reference="TRX-002",
-        attempt=1,
-    )
-    delivery_service.deliver_intents.assert_awaited_once()
-    assert delivery_service.deliver_intents.await_args is not None
-    kwargs = delivery_service.deliver_intents.await_args.kwargs
-    assert kwargs["phone_number"] == "2348000000002"
-    assert kwargs["intents"][0]["type"] == "show_receipt"
-    rpush.assert_awaited_once_with("receipt:signal:test-2", "DONE")
-    expire.assert_awaited_once_with("receipt:signal:test-2", 60)
+    render_receipt.assert_not_awaited()
+    delivery_service.deliver_intents.assert_not_awaited()
+    redis_client.rpush.assert_not_awaited()
+    redis_client.expire.assert_not_awaited()
 
 
 @pytest.mark.asyncio

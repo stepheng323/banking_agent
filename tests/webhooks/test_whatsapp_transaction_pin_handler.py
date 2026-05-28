@@ -61,13 +61,10 @@ def test_parse_transaction_pin_flow_token_handles_hyphenated_idempotency_keys() 
     assert parsed.phone_hint == "2348162511023"
 
 
-def test_parse_transaction_pin_flow_token_accepts_transaction_prefix_without_type() -> None:
+def test_parse_transaction_pin_flow_token_rejects_transaction_prefix_without_type() -> None:
     parsed = parse_transaction_pin_flow_token("transaction-pin-idem-1-2348162511023")
 
-    assert parsed is not None
-    assert parsed.transaction_type is None
-    assert parsed.idempotency_key == "idem-1"
-    assert parsed.phone_hint == "2348162511023"
+    assert parsed is None
 
 
 def test_parse_transaction_pin_flow_token_accepts_schedule_prefix() -> None:

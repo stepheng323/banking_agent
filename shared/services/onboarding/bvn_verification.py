@@ -2,11 +2,13 @@
 
 import hashlib
 
-from shared.clients.providers.mono import BankAccount, BvnLookupData, MonoApiError, mono_client
+from shared.cache.flow_session_manager import FlowSessionManager
+from shared.clients.providers.mono.client import mono_client
+from shared.clients.providers.mono.models import BankAccount, BvnLookupData, MonoApiError
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger, log_fingerprint
 
-from .session import OnboardingStep, SessionManager
+from .session import OnboardingStep
 
 logger = get_logger(__name__)
 
@@ -29,7 +31,7 @@ def _mask_phone(phone_number: str | None) -> str:
 class BvnVerificationService:
     """Handles BVN lookup, OTP sending, and verification."""
 
-    def __init__(self, session_manager: SessionManager):
+    def __init__(self, session_manager: FlowSessionManager):
         self.session = session_manager
 
     async def _get_existing_linked_account_ids(self, phone_number: str) -> set[str]:
@@ -58,7 +60,8 @@ class BvnVerificationService:
 
     async def get_session_data(self, flow_token: str) -> dict:
         """Get session data for a flow token."""
-        return await self.session.get_session(flow_token)
+        result = await self.session.read_session(flow_token)
+        return result.data or {}
 
     async def get_session_status(self, flow_token: str):
         """Get detailed session read status for strict relink/session checks."""
@@ -99,7 +102,7 @@ class BvnVerificationService:
 
             methods = [{"id": m.method, "title": m.hint} for m in bvn_data.methods]
 
-            await self.session.update_session(
+            stored = await self.session.update_session_strict(
                 flow_token,
                 {
                     "phone_number": phone_number,
@@ -109,7 +112,10 @@ class BvnVerificationService:
                     "step": OnboardingStep.METHOD_SELECTION.value,
                     "is_account_linking": True,
                 },
+                verify=True,
             )
+            if not stored:
+                return {"success": False, "error": "Session expired. Please start over."}
 
             logger.info("account_linking_bvn_verified", session_id_hash=log_fingerprint(bvn_data.session_id))
 
@@ -128,8 +134,9 @@ class BvnVerificationService:
         if not bvn or len(bvn) != 11 or not bvn.isdigit():
             return {"success": False, "error": "Invalid BVN. Please enter a valid 11-digit BVN."}
 
-        existing_session = await self.session.get_session(flow_token)
-        phone_number = str(existing_session.get("phone_number") or "") if existing_session else ""
+        existing_result = await self.session.read_session(flow_token)
+        existing_session = existing_result.data or {}
+        phone_number = str(existing_session.get("phone_number") or "") if existing_result.found else ""
         if not phone_number:
             return {"success": False, "error": "Session expired. Please start over."}
 
@@ -142,7 +149,7 @@ class BvnVerificationService:
 
             methods = [{"id": m.method, "title": m.hint} for m in bvn_data.methods]
 
-            await self.session.update_session(
+            stored = await self.session.update_session_strict(
                 flow_token,
                 {
                     "phone_number": phone_number,
@@ -152,7 +159,10 @@ class BvnVerificationService:
                     "step": OnboardingStep.METHOD_SELECTION.value,
                     "is_account_linking": is_linking,
                 },
+                verify=True,
             )
+            if not stored:
+                return {"success": False, "error": "Session expired. Please start over."}
 
             logger.info("bvn_lookup_success", session_id_hash=log_fingerprint(bvn_data.session_id))
 
@@ -168,7 +178,8 @@ class BvnVerificationService:
         if not method:
             return {"success": False, "error": "Please select a verification method."}
 
-        session = await self.session.get_session(flow_token)
+        read_result = await self.session.read_session(flow_token)
+        session = read_result.data or {}
         logger.info(
             "otp_session_loaded",
             flow_token_hash=_token_fingerprint(flow_token),
@@ -185,13 +196,16 @@ class BvnVerificationService:
         try:
             await mono_client.verify_bvn(session_id, method)
 
-            await self.session.update_session(
+            stored = await self.session.update_session_strict(
                 flow_token,
                 {
                     "selected_method": method,
                     "step": OnboardingStep.OTP_VERIFICATION.value,
                 },
+                verify=True,
             )
+            if not stored:
+                return {"success": False, "error": "Session expired. Please start over."}
 
             logger.info("otp_sent", method=method)
 
@@ -210,7 +224,8 @@ class BvnVerificationService:
         if not otp or len(otp) != 6 or not otp.isdigit():
             return {"success": False, "error": "Invalid OTP. Please enter a 6-digit code."}
 
-        session = await self.session.get_session(flow_token)
+        read_result = await self.session.read_session(flow_token)
+        session = read_result.data or {}
         session_id = session.get("session_id")
         if not session_id:
             return {"success": False, "error": "Session expired. Please start over."}
@@ -248,14 +263,17 @@ class BvnVerificationService:
                     "error": "No new accounts available to link.",
                 }
 
-            await self.session.update_session(
+            stored = await self.session.update_session_strict(
                 flow_token,
                 {
                     "otp_verified": True,
                     "accounts": accounts_data,
                     "step": OnboardingStep.ACCOUNT_SELECTION.value,
                 },
+                verify=True,
             )
+            if not stored:
+                return {"success": False, "error": "Session expired. Please start over."}
 
             logger.info("otp_verified", account_count=len(accounts))
 

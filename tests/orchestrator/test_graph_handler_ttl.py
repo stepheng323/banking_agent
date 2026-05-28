@@ -9,6 +9,7 @@ import pytest
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 
 
 class _CheckpointerStub:
@@ -174,7 +175,7 @@ async def test_apply_session_ttl_batches_expire_calls_with_pipeline(monkeypatch:
     )
     handler = _build_handler(monkeypatch, redis_client)
 
-    ok = await handler._apply_session_ttl(thread_id, ttl=123)
+    ok = await handler.housekeeping.apply_session_ttl(thread_id, ttl=123)
 
     assert ok is True
     assert redis_client.expire_calls == []
@@ -196,20 +197,20 @@ async def test_maybe_apply_session_ttl_only_refreshes_chat_history_inline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     handler = _build_handler(monkeypatch, _RedisStub())
-    handler._apply_chat_history_ttl = AsyncMock(return_value=True)
-    handler._apply_session_ttl = AsyncMock(return_value=True)
+    handler.housekeeping.apply_chat_history_ttl = AsyncMock(return_value=True)
+    handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
 
-    ok = await handler._maybe_apply_session_ttl("telegram:2348000000001")
+    ok = await handler.housekeeping.maybe_apply_session_ttl("telegram:2348000000001")
 
     assert ok is True
-    handler._apply_chat_history_ttl.assert_awaited_once()
-    handler._apply_session_ttl.assert_not_awaited()
+    handler.housekeeping.apply_chat_history_ttl.assert_awaited_once()
+    handler.housekeeping.apply_session_ttl.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_cleanup_retains_idle_thread_with_fresh_context_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     handler = _build_handler(monkeypatch, _RedisStub())
-    handler._apply_session_ttl = AsyncMock(return_value=True)
+    handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
     handler.checkpointer.adelete_thread = AsyncMock()
     now = int(time.time())
     state = {
@@ -228,11 +229,33 @@ async def test_cleanup_retains_idle_thread_with_fresh_context_frame(monkeypatch:
         ],
     }
 
-    ok = await handler._cleanup_if_idle("telegram:2348000000001", state)
+    ok = await handler.housekeeping.cleanup_if_idle("telegram:2348000000001", state)
 
     assert ok is True
-    handler._apply_session_ttl.assert_awaited_once()
-    ttl = handler._apply_session_ttl.await_args.kwargs["ttl"]
+    handler.housekeeping.apply_session_ttl.assert_awaited_once()
+    ttl = handler.housekeeping.apply_session_ttl.await_args.kwargs["ttl"]
+    assert 1 <= ttl <= 600
+    handler.checkpointer.adelete_thread.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_retains_idle_thread_with_capability_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    handler = _build_handler(monkeypatch, _RedisStub())
+    handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
+    handler.checkpointer.adelete_thread = AsyncMock()
+    state = {
+        "tasks": {},
+        "waves": [],
+        "pending_interrupt": None,
+        "stashed_sessions": [],
+        "capability_boundary": CapabilityBoundary(key="lending", label="loans or lending", ttl_seconds=600),
+    }
+
+    ok = await handler.housekeeping.cleanup_if_idle("telegram:2348000000001", state)
+
+    assert ok is True
+    handler.housekeeping.apply_session_ttl.assert_awaited_once()
+    ttl = handler.housekeeping.apply_session_ttl.await_args.kwargs["ttl"]
     assert 1 <= ttl <= 600
     handler.checkpointer.adelete_thread.assert_not_awaited()
 
@@ -241,7 +264,7 @@ async def test_cleanup_retains_idle_thread_with_fresh_context_frame(monkeypatch:
 async def test_invoke_allows_different_threads_to_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _ConcurrentGraphStub()
     handler = _build_handler(monkeypatch, _RedisStub(), graph=graph)
-    handler._run_housekeeping = AsyncMock(return_value=None)
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await asyncio.gather(
         handler.invoke(
@@ -271,7 +294,7 @@ async def test_invoke_allows_different_threads_to_run_concurrently(monkeypatch: 
 async def test_invoke_serializes_same_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _ConcurrentGraphStub(delay=0.01)
     handler = _build_handler(monkeypatch, _RedisStub(), graph=graph)
-    handler._run_housekeeping = AsyncMock(return_value=None)
+    handler.housekeeping.run = AsyncMock(return_value=None)
 
     await asyncio.gather(
         handler.invoke(

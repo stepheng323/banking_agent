@@ -3,15 +3,11 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.graphs.query.models import QueryResult
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
-from apps.chat.src.agent.orchestrator.execution.handlers import (
-    ExecutionAggregation,
-    ExecutionContext,
-    handle_query_task,
-)
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
+from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.shared.query_contracts import (
     FocusedReferent,
     SelectionPayload,
@@ -19,6 +15,7 @@ from apps.chat.src.agent.shared.query_contracts import (
     SurfaceView,
     SurfaceViewMode,
 )
+from apps.chat.src.agent.workers.query.models.domain import QueryResult
 
 
 class _DummyQueryWorker:

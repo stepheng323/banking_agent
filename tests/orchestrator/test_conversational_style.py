@@ -1,7 +1,7 @@
 """Tests for shared conversational style formatting helpers."""
 
-from apps.chat.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
-from shared.i18n import render_message
+from apps.chat.src.agent.orchestrator.presentation.conversational_style import format_out_of_scope_reply
+from shared.i18n.renderer import render_message
 
 
 def test_format_out_of_scope_reply_includes_single_empathy_sentence() -> None:

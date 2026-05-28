@@ -2,23 +2,23 @@
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
-from apps.chat.src.agent.graphs.account import AccountWorker
-from apps.chat.src.agent.graphs.airtime import AirtimeWorker
-from apps.chat.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
-from apps.chat.src.agent.graphs.data import DataWorker as AgentDataWorker
-from apps.chat.src.agent.graphs.data.extractor import DataEntityExtractor
-from apps.chat.src.agent.graphs.faq import FAQWorker
-from apps.chat.src.agent.graphs.onboarding.executor import OnboardingExecutor
-from apps.chat.src.agent.graphs.onboarding.service import OnboardingService
-from apps.chat.src.agent.graphs.query.session import QuerySessionManager
-from apps.chat.src.agent.graphs.query.worker import QueryWorker as AgentQueryWorker
-from apps.chat.src.agent.graphs.support import SupportWorker
-from apps.chat.src.agent.graphs.transfer import TransferWorker
-from apps.chat.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
-from apps.chat.src.agent.orchestrator.config import OrchestratorDependencies
-from apps.chat.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
+from apps.chat.src.agent.orchestrator import OrchestratorAgent
+from apps.chat.src.agent.orchestrator.config.dependencies import OrchestratorDependencies
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
+from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.chat.src.agent.workers.account.worker import AccountWorker
+from apps.chat.src.agent.workers.airtime.extractor import AirtimeEntityExtractor
+from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
+from apps.chat.src.agent.workers.data.extraction.extractor import DataEntityExtractor
+from apps.chat.src.agent.workers.data.worker import DataWorker as AgentDataWorker
+from apps.chat.src.agent.workers.faq.worker import FAQWorker
+from apps.chat.src.agent.workers.onboarding.executor import OnboardingExecutor
+from apps.chat.src.agent.workers.onboarding.service import OnboardingService
+from apps.chat.src.agent.workers.query.session import QuerySessionManager
+from apps.chat.src.agent.workers.query.worker import QueryWorker as AgentQueryWorker
+from apps.chat.src.agent.workers.support.worker import SupportWorker
+from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEntityExtractor
+from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
 from shared.assistant_profile.loader import get_cached_assistant_profile
@@ -30,7 +30,7 @@ from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.config.settings import settings
 from shared.database.connection import get_db_session
 from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n import validate_catalog_completeness
+from shared.i18n.renderer import validate_catalog_completeness
 from shared.policy.loader import get_cached_policy
 from shared.policy.validation import validate_policy_coverage
 from shared.queue.contracts import get_contract_by_topic
@@ -46,8 +46,8 @@ from shared.repositories.session_scoped import (
 )
 from shared.repositories.user_repository import UserRepository
 from shared.services.conversation_responder import ConversationResponder
-from shared.services.onboarding import session_manager as onboarding_session_manager
-from shared.services.task_planner import refresh_planner_system_prompt
+from shared.services.onboarding.runtime import session_manager as onboarding_session_manager
+from shared.services.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from shared.services.task_queue.service import TaskQueueService
 from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
@@ -161,6 +161,7 @@ def _build_orchestrator_runtime_bundle(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
+        redis_client=shared_redis,
     )
 
     support_worker = SupportWorker(
@@ -274,7 +275,7 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     validate_policy_coverage(capability_policy)
     get_cached_assistant_profile(force_reload=True)
     get_cached_guardrails(force_reload=True)
-    refresh_planner_system_prompt()
+    refresh_runtime_planner_system_prompt()
 
     queue_publisher = QueuePublisherFactory.get_async_publisher()
     messaging_clients = build_messaging_clients()
@@ -348,8 +349,3 @@ def setup_chat_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
         group_name=f"{settings.project_name}-chat-worker-{settings.runtime.infrastructure_environment}",
     )
     return message_consumer, redis_stream_consumer
-
-
-def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
-    """Compatibility alias for the renamed chat worker dependency entrypoint."""
-    return setup_chat_consumers()

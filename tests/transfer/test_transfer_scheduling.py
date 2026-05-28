@@ -1,8 +1,8 @@
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.confirmation import build_confirmation
-from apps.chat.src.agent.graphs.transfer.worker import ScheduleRequirementsStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from shared.formatters.transaction_copy import build_confirmation_header
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.confirmation import build_confirmation
+from apps.chat.src.agent.workers.transfer.scheduling import ScheduleRequirementsStep
+from shared.formatters.transaction_confirmation_copy import build_confirmation_header
 
 
 async def test_date_only_scheduled_transfer_asks_for_time_before_confirmation() -> None:

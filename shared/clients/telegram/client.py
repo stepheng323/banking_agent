@@ -1,47 +1,22 @@
 """Telegram client for sending messages via the Telegram Bot API."""
 
 import asyncio
-import html
-import re
 from typing import Any
-from urllib.parse import urlencode
 
 import httpx
 
+import shared.clients.telegram.control as telegram_control
+import shared.clients.telegram.drafts as telegram_drafts
+import shared.clients.telegram.media as telegram_media
+import shared.clients.telegram.media_messages as telegram_media_messages
+import shared.clients.telegram.messages as telegram_messages
+import shared.clients.telegram.mini_app as telegram_mini_app
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
-from shared.services.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
-from shared.utils.logging import get_logger, log_fingerprint
+from shared.utils.logging import get_logger
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
-_DRAFT_UNSUPPORTED_STATUS_CODES = {400, 404, 405, 501}
 logger = get_logger(__name__)
-
-
-def _format_telegram_html(text: str) -> str:
-    """Convert lightweight markdown-like syntax to Telegram-safe HTML."""
-    escaped = html.escape(text or "")
-    escaped = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", escaped)
-    escaped = re.sub(r"\*\*([^*\n]+)\*\*", r"<b>\1</b>", escaped)
-    escaped = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<b>\1</b>", escaped)
-
-    def _italic_repl(match: re.Match[str]) -> str:
-        prefix = match.group(1) or ""
-        content = match.group(2) or ""
-        return f"{prefix}<i>{content}</i>"
-
-    escaped = re.sub(r"(^|[\s(])_(?!_)([^_\n]+?)_(?=[\s).,!?:;]|$)", _italic_repl, escaped)
-    return escaped
-
-
-def _telegram_html_to_plain_text(text: str) -> str:
-    """Convert Telegram HTML back to plain text for Mini App UI copy."""
-    without_tags = re.sub(
-        r"</?(?:b|strong|i|em|code|u|s|strike|del|tg-spoiler|blockquote)(?:\s[^>]*)?>",
-        "",
-        text or "",
-    )
-    return html.unescape(without_tags)
 
 
 class TelegramClient(MessagingClient):
@@ -172,83 +147,24 @@ class TelegramClient(MessagingClient):
         suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send a plain text message via Telegram."""
-        del suppress_typing_indicator
-        html_text = _format_telegram_html(text)
-        payload: dict[str, Any] = {
-            "chat_id": to,
-            "text": html_text,
-            "parse_mode": "HTML",
-        }
-        if message_id:
-            payload["reply_to_message_id"] = message_id
-
-        try:
-            result = await self._call("sendMessage", payload)
-            msg_data = result.get("result", {})
-            sent_id = str(msg_data.get("message_id", ""))
-            return MessageResult(success=True, message_id=sent_id, raw_response=result)
-        except Exception as e:
-            logger.error("telegram_send_text_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            return MessageResult(success=False, error="Telegram send failed")
+        return await telegram_messages.send_text(
+            api_call=self._call,
+            to=to,
+            text=text,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
     async def send_message_draft(self, to: str, text: str) -> bool:
         """Set a draft message in chat using Telegram Bot API sendMessageDraft."""
-        if not self._draft_supported:
-            return False
-
-        draft_text = (text or "").strip()
-        if not draft_text:
-            return False
-
-        payload: dict[str, Any] = {
-            "chat_id": to,
-            "text": draft_text[:4096],
-        }
-        logger.info(
-            "telegram_draft_attempt_started",
-            channel="telegram",
-            method="sendMessageDraft",
+        result = await telegram_drafts.send_message_draft(
+            api_call=self._call,
+            to=to,
+            text=text,
+            draft_supported=self._draft_supported,
         )
-        try:
-            await self._call("sendMessageDraft", payload, max_retries=1)
-            logger.info(
-                "telegram_draft_attempt_succeeded",
-                channel="telegram",
-                method="sendMessageDraft",
-            )
-            return True
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            if status in _DRAFT_UNSUPPORTED_STATUS_CODES:
-                self._draft_supported = False
-                logger.warning(
-                    "telegram_draft_endpoint_unsupported_disabled",
-                    channel="telegram",
-                    method="sendMessageDraft",
-                    http_status=status,
-                    runtime_draft_enabled=self._draft_supported,
-                )
-                return False
-            logger.warning(
-                "telegram_draft_attempt_failed",
-                channel="telegram",
-                method="sendMessageDraft",
-                http_status=status,
-                runtime_draft_enabled=self._draft_supported,
-                fallback_to_final_send=True,
-                error=str(e),
-            )
-            return False
-        except Exception as e:
-            logger.warning(
-                "telegram_draft_attempt_failed",
-                channel="telegram",
-                method="sendMessageDraft",
-                runtime_draft_enabled=self._draft_supported,
-                fallback_to_final_send=True,
-                error=str(e),
-            )
-            return False
+        self._draft_supported = result.draft_supported
+        return result.sent
 
     async def send_text_streamed(
         self,
@@ -261,37 +177,18 @@ class TelegramClient(MessagingClient):
         draft_delay_seconds: float = 0.2,
     ) -> MessageResult:
         """Stream a response as Telegram drafts, then publish the final message."""
-        clean_text = (text or "").strip()
-        draft_attempted = False
-        draft_failed = False
-        if clean_text:
-            clipped = clean_text[:4096]
-            sent = 0
-            cursor = min(len(clipped), max(1, draft_step_chars))
-            draft_enabled = self._draft_supported
-            while cursor < len(clipped) and sent < max_draft_updates and draft_enabled:
-                draft_attempted = True
-                draft_enabled = await self.send_message_draft(to=to, text=clipped[:cursor])
-                if not draft_enabled:
-                    draft_failed = True
-                sent += 1
-                if draft_delay_seconds > 0:
-                    await asyncio.sleep(draft_delay_seconds)
-                cursor = min(len(clipped), cursor + max(1, draft_step_chars))
-            if draft_enabled:
-                draft_attempted = True
-                draft_enabled = await self.send_message_draft(to=to, text=clipped)
-                if not draft_enabled:
-                    draft_failed = True
-            if draft_attempted and draft_failed:
-                logger.info(
-                    "telegram_draft_fallback_to_final_send",
-                    channel="telegram",
-                    method="sendMessageDraft",
-                    runtime_draft_enabled=self._draft_supported,
-                )
-
-        return await self.send_text(to=to, text=text, message_id=message_id)
+        return await telegram_drafts.send_text_streamed(
+            to=to,
+            text=text,
+            message_id=message_id,
+            draft_supported=self._draft_supported,
+            is_draft_supported=lambda: self._draft_supported,
+            send_text=self.send_text,
+            send_message_draft=self.send_message_draft,
+            draft_step_chars=draft_step_chars,
+            max_draft_updates=max_draft_updates,
+            draft_delay_seconds=draft_delay_seconds,
+        )
 
     async def send_interactive(
         self,
@@ -304,55 +201,16 @@ class TelegramClient(MessagingClient):
         suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send an interactive message with inline keyboard buttons."""
-        del message_id, suppress_typing_indicator
-        parts: list[str] = []
-        if header:
-            parts.append(f"*{header}*")
-        parts.append(body_text)
-        if footer:
-            parts.append(f"_{footer}_")
-
-        keyboard_rows = self._build_inline_keyboard_rows(options)
-
-        combined_text = "\n\n".join(parts)
-        html_text = _format_telegram_html(combined_text)
-
-        payload: dict[str, Any] = {
-            "chat_id": to,
-            "text": html_text,
-            "parse_mode": "HTML",
-            "reply_markup": {"inline_keyboard": keyboard_rows},
-        }
-
-        try:
-            result = await self._call("sendMessage", payload)
-            msg_data = result.get("result", {})
-            sent_id = str(msg_data.get("message_id", ""))
-            return MessageResult(success=True, message_id=sent_id, raw_response=result)
-        except Exception as e:
-            logger.error("telegram_send_interactive_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            return MessageResult(success=False, error="Telegram send failed")
-
-    @staticmethod
-    def _build_inline_keyboard_rows(options: list[dict[str, str]]) -> list[list[dict[str, str]]]:
-        buttons = [
-            {"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")} for opt in options
-        ]
-        if len(buttons) <= 1:
-            return [buttons] if buttons else []
-
-        rows: list[list[dict[str, str]]] = []
-        remaining = list(buttons)
-        while remaining:
-            if len(remaining) == 4 or len(remaining) == 2:
-                row_size = 2
-            else:
-                row_size = min(3, len(remaining))
-                if len(remaining) - row_size == 1 and row_size > 2:
-                    row_size -= 1
-            rows.append(remaining[:row_size])
-            remaining = remaining[row_size:]
-        return rows
+        return await telegram_messages.send_interactive(
+            api_call=self._call,
+            to=to,
+            body_text=body_text,
+            options=options,
+            header=header,
+            footer=footer,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
     async def send_image(
         self,
@@ -363,22 +221,14 @@ class TelegramClient(MessagingClient):
         suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send an image by URL."""
-        del message_id, suppress_typing_indicator
-        payload: dict[str, Any] = {
-            "chat_id": to,
-            "photo": image_url,
-        }
-        if caption:
-            payload["caption"] = caption
-
-        try:
-            result = await self._call("sendPhoto", payload)
-            msg_data = result.get("result", {})
-            sent_id = str(msg_data.get("message_id", ""))
-            return MessageResult(success=True, message_id=sent_id, raw_response=result)
-        except Exception as e:
-            logger.error("telegram_send_image_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            return MessageResult(success=False, error="Telegram send failed")
+        return await telegram_media_messages.send_image_from_url(
+            api_call=self._call,
+            to=to,
+            image_url=image_url,
+            caption=caption,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
     async def send_image_data(
         self,
@@ -390,41 +240,19 @@ class TelegramClient(MessagingClient):
         suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send an image from bytes via multipart upload."""
-        del message_id, suppress_typing_indicator
-        ext = mime_type.split("/")[-1]
-        filename = f"image.{ext}"
-
-        form_data: dict[str, Any] = {"chat_id": to}
-        if caption:
-            form_data["caption"] = caption
-
-        files_payload = {"photo": (filename, data, mime_type)}
-
-        try:
-            result = await self._call("sendPhoto", payload=form_data, files=files_payload)
-            msg_data = result.get("result", {})
-            sent_id = str(msg_data.get("message_id", ""))
-            return MessageResult(success=True, message_id=sent_id, raw_response=result)
-        except Exception as e:
-            logger.error("telegram_send_image_data_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            return MessageResult(success=False, error="Telegram send failed")
+        return await telegram_media_messages.send_image_data(
+            api_call=self._call,
+            to=to,
+            data=data,
+            caption=caption,
+            mime_type=mime_type,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
     async def send_typing_indicator(self, chat_id: str) -> bool:
         """Send typing indicator (chat action)."""
-        try:
-            await self._call(
-                "sendChatAction",
-                {"chat_id": chat_id, "action": "typing"},
-                max_retries=1,
-            )
-            return True
-        except Exception as e:
-            logger.warning(
-                "telegram_typing_indicator_failed",
-                chat_id_hash=log_fingerprint(chat_id),
-                error_type=type(e).__name__,
-            )
-            return False
+        return await telegram_control.send_typing_indicator(api_call=self._call, chat_id=chat_id)
 
     async def send_document(
         self,
@@ -436,21 +264,15 @@ class TelegramClient(MessagingClient):
         message_id: str | None = None,
     ) -> MessageResult:
         """Send a document via multipart upload."""
-        del message_id
-        form_data: dict[str, Any] = {"chat_id": to}
-        if caption:
-            form_data["caption"] = caption
-
-        files_payload = {"document": (filename, data, mime_type)}
-
-        try:
-            result = await self._call("sendDocument", payload=form_data, files=files_payload)
-            msg_data = result.get("result", {})
-            sent_id = str(msg_data.get("message_id", ""))
-            return MessageResult(success=True, message_id=sent_id, raw_response=result)
-        except Exception as e:
-            logger.error("telegram_send_document_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            return MessageResult(success=False, error="Telegram send failed")
+        return await telegram_media_messages.send_document(
+            api_call=self._call,
+            to=to,
+            data=data,
+            filename=filename,
+            caption=caption,
+            mime_type=mime_type,
+            message_id=message_id,
+        )
 
     async def send_flow(
         self,
@@ -499,111 +321,23 @@ class TelegramClient(MessagingClient):
                 suppress_typing_indicator=suppress_typing_indicator,
             )
 
-        if flow_token.startswith("link-"):
-            endpoint = "linking.html"
-            bootstrap_endpoint = "linking"
-        elif "onboarding" in flow_token:
-            endpoint = "onboarding.html"
-            bootstrap_endpoint = "onboarding"
-        else:
-            endpoint = "pin_entry.html"
-            bootstrap_endpoint = "pin"
-        import time
-
-        bootstrap_extra: dict[str, Any] = {}
-        if bootstrap_endpoint == "pin" and cta_text and cta_text != "Open":
-            bootstrap_extra["submit_label"] = str(cta_text)
-
-        try:
-            bootstrap_nonce = await create_telegram_miniapp_bootstrap(
-                chat_id=to,
-                flow_token=flow_token,
-                endpoint=bootstrap_endpoint,
-                extra=bootstrap_extra,
-            )
-        except Exception as e:
-            logger.error(
-                "telegram_mini_app_bootstrap_create_failed",
-                error_type=type(e).__name__,
-                chat_id_hash=log_fingerprint(to),
-                flow_token_hash=log_fingerprint(flow_token),
-                endpoint=bootstrap_endpoint,
-            )
-            return MessageResult(success=False, error="Failed to create secure Mini App session")
-
-        query_params = {"boot": bootstrap_nonce, "v": str(int(time.time()))}
-
-        mini_app_url = f"{self.mini_app_base_url}/static/telegram/{endpoint}?{urlencode(query_params)}"
-
-        parts: list[str] = []
-        if header:
-            parts.append(f"<b>{header}</b>")
-        if body_text:
-            parts.append(body_text)
-
-        keyboard = {"inline_keyboard": [[{"text": cta_text, "web_app": {"url": mini_app_url}}]]}
-
-        payload: dict[str, Any] = {
-            "chat_id": to,
-            "text": "\n\n".join(parts) or "Please tap the button below.",
-            "parse_mode": "HTML",
-            "reply_markup": keyboard,
-        }
-
-        try:
-            result = await self._call("sendMessage", payload)
-            msg_data = result.get("result", {})
-            sent_id = str(msg_data.get("message_id", ""))
-
-            # Store the message_id in Redis so pin_submit can later remove the button
-            if sent_id and flow_token:
-                try:
-                    from shared.cache.redis_client import RedisClient
-
-                    rc = RedisClient.get_client()
-                    await rc.setex(f"tg:pin_msg:{flow_token}", 1800, sent_id)
-                except Exception as e:
-                    logger.warning(
-                        "telegram_pin_message_cache_failed",
-                        flow_token_hash=log_fingerprint(flow_token),
-                        error_type=type(e).__name__,
-                    )
-
-            return MessageResult(success=True, message_id=sent_id, raw_response=result)
-        except Exception as e:
-            logger.error("telegram_mini_app_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            return MessageResult(success=False, error="Telegram Mini App send failed")
+        return await telegram_mini_app.send_mini_app_message(
+            api_call=self._call,
+            mini_app_base_url=self.mini_app_base_url,
+            to=to,
+            flow_token=flow_token,
+            header=header,
+            body_text=body_text,
+            cta_text=cta_text,
+        )
 
     async def get_media_url(self, media_id: str) -> str:
         """Get the URL for a Telegram file."""
-        try:
-            result = await self._call("getFile", {"file_id": media_id})
-            file_path = result.get("result", {}).get("file_path")
-            if not file_path:
-                raise ValueError(f"Could not get file_path for media {media_id}")
-
-            return f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
-        except Exception as e:
-            logger.error(
-                "telegram_media_url_failed",
-                media_id_hash=log_fingerprint(media_id),
-                error_type=type(e).__name__,
-            )
-            raise
+        return await telegram_media.get_media_url(api_call=self._call, bot_token=self.bot_token, media_id=media_id)
 
     async def download_media(self, media_url: str) -> bytes:
         """Download media bytes from Telegram."""
-        try:
-            resp = await self._client().get(media_url)
-            resp.raise_for_status()
-            return resp.content
-        except Exception as e:
-            logger.error(
-                "telegram_media_download_failed",
-                media_url_hash=log_fingerprint(media_url),
-                error_type=type(e).__name__,
-            )
-            raise
+        return await telegram_media.download_media(http_client=self._client(), media_url=media_url)
 
     async def answer_callback_query(
         self,
@@ -611,20 +345,11 @@ class TelegramClient(MessagingClient):
         text: str = "",
     ) -> bool:
         """Answer a callback query (acknowledge inline button press)."""
-        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
-        if text:
-            payload["text"] = text
-
-        try:
-            await self._call("answerCallbackQuery", payload, max_retries=1)
-            return True
-        except Exception as e:
-            logger.warning(
-                "telegram_answer_callback_failed",
-                callback_query_id_hash=log_fingerprint(callback_query_id),
-                error_type=type(e).__name__,
-            )
-            return False
+        return await telegram_control.answer_callback_query(
+            api_call=self._call,
+            callback_query_id=callback_query_id,
+            text=text,
+        )
 
     async def mark_as_authorized(self, chat_id: str, message_id: str | int) -> bool:
         """Replace the PIN Web App button with a non-interactive 'Authorized' badge.
@@ -632,65 +357,22 @@ class TelegramClient(MessagingClient):
         Called after a successful PIN auth so the user sees confirmation but
         cannot re-open the Mini App.
         """
-        try:
-            await self._call(
-                "editMessageReplyMarkup",
-                {
-                    "chat_id": chat_id,
-                    "message_id": message_id,
-                    "reply_markup": {"inline_keyboard": [[{"text": "✓ Authorized", "callback_data": "auth:done"}]]},
-                },
-                max_retries=1,
-            )
-            return True
-        except Exception as e:
-            logger.warning(
-                "telegram_mark_authorized_failed",
-                chat_id_hash=log_fingerprint(chat_id),
-                message_id_hash=log_fingerprint(message_id),
-                error_type=type(e).__name__,
-            )
-            return False
+        return await telegram_control.mark_as_authorized(api_call=self._call, chat_id=chat_id, message_id=message_id)
 
     async def remove_inline_keyboard(self, chat_id: str, message_id: str | int) -> bool:
         """Remove an inline keyboard from a sent Telegram message."""
-        try:
-            await self._call(
-                "editMessageReplyMarkup",
-                {
-                    "chat_id": chat_id,
-                    "message_id": message_id,
-                },
-                max_retries=1,
-            )
-            return True
-        except Exception as e:
-            logger.warning(
-                "telegram_remove_inline_keyboard_failed",
-                chat_id_hash=log_fingerprint(chat_id),
-                message_id_hash=log_fingerprint(message_id),
-                error_type=type(e).__name__,
-            )
-            return False
+        return await telegram_control.remove_inline_keyboard(
+            api_call=self._call,
+            chat_id=chat_id,
+            message_id=message_id,
+        )
 
     async def set_webhook(self, webhook_url: str) -> bool:
         """Register the webhook URL with Telegram."""
-        try:
-            result = await self._call("setWebhook", {"url": webhook_url})
-            logger.info("telegram_webhook_set", webhook_url_hash=log_fingerprint(webhook_url))
-            return result.get("ok", False)
-        except Exception as e:
-            logger.error("telegram_webhook_set_failed", error_type=type(e).__name__)
-            return False
+        return await telegram_control.set_webhook(api_call=self._call, webhook_url=webhook_url)
 
     async def set_my_commands(self, commands: list[dict[str, str]]) -> bool:
         """Register the persistent bot menu commands.
         commands should be a list like: [{"command": "start", "description": "Start the bot"}]
         """
-        try:
-            result = await self._call("setMyCommands", {"commands": commands})
-            logger.info("telegram_bot_commands_updated", command_count=len(commands))
-            return result.get("ok", False)
-        except Exception as e:
-            logger.error("telegram_bot_commands_update_failed", error_type=type(e).__name__)
-            return False
+        return await telegram_control.set_my_commands(api_call=self._call, commands=commands)

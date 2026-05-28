@@ -3,7 +3,8 @@ from uuid import uuid4
 import pytest
 
 from shared.clients.abstractions.direct_debit import BalanceResult
-from shared.services.funding.coordinator import BatchFundingCoordinator, SourceAffinity, TransferDemand
+from shared.services.funding.batch_models import SourceAffinity, TransferDemand
+from shared.services.funding.coordinator import BatchFundingCoordinator
 
 
 class _MockDirectDebitProvider:

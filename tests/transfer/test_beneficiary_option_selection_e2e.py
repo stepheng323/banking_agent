@@ -3,8 +3,8 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.extraction import ExtractionStep
 from apps.gateway.adapters.meta_whatsapp import parse_payload
 from apps.gateway.adapters.telegram import parse_update
 

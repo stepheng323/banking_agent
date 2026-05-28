@@ -12,7 +12,8 @@ from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
 )
 from shared.database.enums import UserOnboardingStatusEnum
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.onboarding import ServiceResult, bvn_service
+from shared.services.onboarding.runtime import bvn_service
+from shared.services.onboarding.session import ServiceResult
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

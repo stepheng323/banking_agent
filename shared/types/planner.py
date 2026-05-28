@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContextReference(BaseModel):
@@ -47,6 +47,10 @@ class TaskParameters(BaseModel):
     budget: str | None = None
     plan: str | None = None
     plan_name: str | None = None
+    size_preference: str | None = None
+    validity_preference: str | None = None
+    selection_preference: str | None = None
+    usage_intent: str | None = None
     is_self: bool = False
 
     schedule: str | None = None
@@ -249,7 +253,6 @@ ContextFrameRequestedField: TypeAlias = Literal[
 
 ContextFrameRank: TypeAlias = Literal["largest", "smallest", "newest", "oldest"]
 
-
 class ContextFrameFollowupFilters(BaseModel):
     """Structured filters for grounding follow-ups against displayed result frames."""
 
@@ -273,6 +276,7 @@ PendingActionEditOperation: TypeAlias = Literal[
     "cancel_all",
     "status_query",
     "switch_intent",
+    "show_options",
     "unclear",
 ]
 
@@ -280,7 +284,7 @@ PendingActionEditOperation: TypeAlias = Literal[
 class PendingActionFieldUpdates(BaseModel):
     """Allowed pending confirmation field updates from semantic classification.
 
-    This model is intentionally closed for OpenAI structured-output compatibility.
+    This model is intentionally closed for OpenAI structured-output schemas.
     The LLM may classify requested edits into these slots; deterministic code still
     validates whether each slot is applicable to the targeted task(s).
     """
@@ -302,6 +306,11 @@ class PendingActionFieldUpdates(BaseModel):
     )
     phone: str | None = Field(default=None, description="Updated airtime/data phone number")
     network: str | None = Field(default=None, description="Updated airtime/data network")
+    size_preference: str | None = Field(default=None, description="Updated data-plan size preference")
+    validity_preference: str | None = Field(default=None, description="Updated data-plan validity preference")
+    selection_preference: str | None = Field(default=None, description="Updated data-plan selection preference")
+    usage_intent: str | None = Field(default=None, description="Updated data-plan usage intent")
+    show_options: bool | None = Field(default=None, description="Whether to show alternate data-plan options")
 
 
 class PendingActionTargetedUpdate(BaseModel):
@@ -335,22 +344,6 @@ class PendingActionEditDecision(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_legacy_fields_object(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-        fields = data.pop("fields", None)
-        if fields is None:
-            return data
-        if hasattr(fields, "model_dump"):
-            fields = fields.model_dump(exclude_none=True)
-        if isinstance(fields, dict):
-            for key, value in fields.items():
-                if value is not None and key not in data:
-                    data[key] = value
-        return data
 
     operation: PendingActionEditOperation = Field(
         default="unclear",
@@ -389,6 +382,11 @@ class PendingActionEditDecision(BaseModel):
     )
     phone: str | None = Field(default=None, description="Updated airtime/data phone number")
     network: str | None = Field(default=None, description="Updated airtime/data network")
+    size_preference: str | None = Field(default=None, description="Updated data-plan size preference")
+    validity_preference: str | None = Field(default=None, description="Updated data-plan validity preference")
+    selection_preference: str | None = Field(default=None, description="Updated data-plan selection preference")
+    usage_intent: str | None = Field(default=None, description="Updated data-plan usage intent")
+    show_options: bool | None = Field(default=None, description="Whether to show alternate data-plan options")
     add_instruction: str | None = Field(
         default=None,
         description="Fresh user instruction to route when operation=add_tasks",
@@ -418,6 +416,11 @@ class PendingActionEditDecision(BaseModel):
             funding_splits=self.funding_splits,
             phone=self.phone,
             network=self.network,
+            size_preference=self.size_preference,
+            validity_preference=self.validity_preference,
+            selection_preference=self.selection_preference,
+            usage_intent=self.usage_intent,
+            show_options=self.show_options,
         )
 
 

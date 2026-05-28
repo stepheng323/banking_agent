@@ -1,8 +1,8 @@
 import pytest
 
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.selection import select_source_account
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.selection import select_source_account
 
 
 @pytest.mark.asyncio

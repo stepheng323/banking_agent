@@ -3,7 +3,7 @@
 from typing import Any
 
 from shared.formatters.accounts import format_source_account_info_from_account_number
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 
 
 def _coerce_cached_balance(value: Any) -> float | None:

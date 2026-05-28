@@ -1,47 +1,29 @@
 """Task planner for breaking down user requests into executable tasks."""
 
 import time
-from typing import Any, Literal, cast
 
 from langchain_openai import ChatOpenAI
 
-from shared.services.confirmation_decision import (
-    ConfirmationDecision,
-    ConfirmationDecisionOutput,
-    ConfirmationPromptKind,
-    classify_confirmation_reply,
-)
+import shared.services.task_planner_context_frame_prompts as context_frame_prompts
+import shared.services.task_planner_interrupt_prompts as interrupt_prompts
+import shared.services.task_planner_prompt_models as prompt_models
+import shared.services.task_planner_quoted_replay_prompts as quoted_replay_prompts
+import shared.services.task_planner_semantic_router_prompts as semantic_router_prompts
+from shared.services.confirmation_classifier import classify_confirmation_reply
+from shared.services.confirmation_models import ConfirmationDecision, ConfirmationPromptKind
+from shared.services.task_planner_model_wiring import build_task_planner_structured_outputs
 from shared.services.task_planner_normalizer import normalize_planner_transaction_output
-from shared.services.task_planner_prompts import (
+from shared.services.task_planner_observability import invoke_structured_prompt, log_latency_span, model_name
+from shared.services.task_planner_prompt_runtime import (
     PLANNER_PROMPT_BASELINE_RESULT,
-    PLANNER_RULE_ATOMS,
-    PlannerPromptBuildInput,
-    PlannerPromptSignals,
-    build_planner_system_prompt,
-    refresh_planner_system_prompt,
-)
-from shared.services.task_planner_router_prompts import (
-    CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT,
-    CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE,
-    CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT,
-    CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE,
-    INTERRUPT_ROUTER_SYSTEM_PROMPT,
-    INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT,
-    INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
-    INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE,
-    PENDING_ACTION_EDIT_SYSTEM_PROMPT,
-    PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE,
-    QUOTED_REPLAY_SYSTEM_PROMPT,
-    QUOTED_REPLAY_USER_PROMPT_TEMPLATE,
-    SCHEDULE_READ_ROUTER_SYSTEM_PROMPT,
-    SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE,
-    SEMANTIC_ROUTER_SYSTEM_PROMPT,
-    SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE,
+    build_runtime_planner_system_prompt,
 )
 from shared.services.task_queue.service import TaskQueueService
-from shared.services.unsupported_capabilities import (
+from shared.services.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapabilitySemanticOutput,
+)
+from shared.services.unsupported_capability_semantic import (
     classify_unsupported_boundary_turn_semantic,
     classify_unsupported_capability_semantic,
 )
@@ -65,20 +47,6 @@ Message: \"\"\"{user_message}\"\"\"
 """
 
 
-def _with_structured_output(
-    llm: ChatOpenAI,
-    schema: type[Any],
-    *,
-    method: Literal["function_calling", "json_mode", "json_schema"] | None = None,
-) -> Any:
-    if method is None:
-        return llm.with_structured_output(schema)
-    try:
-        return llm.with_structured_output(schema, method=method)
-    except TypeError:
-        return llm.with_structured_output(schema)
-
-
 class TaskPlanner:
     """Handles task planning for multi-step requests."""
 
@@ -96,70 +64,27 @@ class TaskPlanner:
         self.uses_dedicated_semantic_router_model = semantic_router_llm is not None
         # PlannerOutput now includes clause-local free-form extracted fields. That shape is valid for
         # tool/function calling, but OpenAI's strict response_format schema rejects it.
-        self.structured_planner = _with_structured_output(
-            planner_llm,
-            PlannerOutput,
-            method="function_calling",
+        structured_outputs = build_task_planner_structured_outputs(
+            planner_llm=planner_llm,
+            semantic_router_llm=self.semantic_router_llm,
+            interrupt_llm=self.interrupt_llm,
         )
-        self.structured_semantic_router = _with_structured_output(
-            self.semantic_router_llm,
-            SemanticRouteDecision,
-        )
-        self.structured_schedule_read_router = _with_structured_output(
-            self.semantic_router_llm,
-            SemanticRouteDecision,
-        )
-        self.structured_interrupt_router = _with_structured_output(
-            self.interrupt_llm,
-            InterruptRouteDecision,
-        )
-        self.structured_quoted_replay = _with_structured_output(
-            planner_llm,
-            QuotedReplayInterpretation,
-        )
-        self.structured_context_frame_followup = _with_structured_output(
-            self.semantic_router_llm,
-            ContextFrameFollowupDecision,
-        )
-        self.structured_context_frame_replay_modifier = _with_structured_output(
-            self.semantic_router_llm,
-            ContextFrameReplayModifier,
-        )
-        self.structured_pending_action_edit = _with_structured_output(
-            self.interrupt_llm,
-            PendingActionEditDecision,
-        )
-        self.structured_confirmation_decision = _with_structured_output(
-            self.interrupt_llm,
-            ConfirmationDecisionOutput,
-        )
-        self.structured_unsupported_capability = _with_structured_output(
-            self.semantic_router_llm,
-            UnsupportedCapabilitySemanticOutput,
-        )
-        self.structured_unsupported_boundary_turn = _with_structured_output(
-            self.semantic_router_llm,
-            UnsupportedBoundaryTurnOutput,
-        )
+        self.structured_planner = structured_outputs.planner
+        self.structured_semantic_router = structured_outputs.semantic_router
+        self.structured_schedule_read_router = structured_outputs.schedule_read_router
+        self.structured_interrupt_router = structured_outputs.interrupt_router
+        self.structured_quoted_replay = structured_outputs.quoted_replay
+        self.structured_context_frame_followup = structured_outputs.context_frame_followup
+        self.structured_context_frame_replay_modifier = structured_outputs.context_frame_replay_modifier
+        self.structured_pending_action_edit = structured_outputs.pending_action_edit
+        self.structured_confirmation_decision = structured_outputs.confirmation_decision
+        self.structured_unsupported_capability = structured_outputs.unsupported_capability
+        self.structured_unsupported_boundary_turn = structured_outputs.unsupported_boundary_turn
         self.task_queue_service = task_queue_service
         if not self.uses_dedicated_interrupt_model:
             logger.warning("interrupt_router_model_not_dedicated", mode="planner_fallback")
         if not self.uses_dedicated_semantic_router_model:
             logger.warning("semantic_router_model_not_dedicated", mode="interrupt_or_planner_fallback")
-
-    @staticmethod
-    def _log_latency_span(*, span: str, duration_ms: float, path_label: str) -> None:
-        logger.info(
-            "perf_timer_latency",
-            gate=span,
-            span=span,
-            duration_ms=round(duration_ms, 2),
-            path_label=path_label,
-        )
-
-    @staticmethod
-    def _model_name(llm: Any) -> str | None:
-        return cast(str | None, getattr(llm, "model_name", None) or getattr(llm, "model", None))
 
     async def plan_tasks(
         self,
@@ -167,7 +92,7 @@ class TaskPlanner:
         text: str,
         *,
         context: str = "None",
-        prompt_signals: PlannerPromptSignals,
+        prompt_signals: prompt_models.PlannerPromptSignals,
         path_label: str = "planner_path",
     ) -> PlannerOutput:
         """
@@ -182,37 +107,30 @@ class TaskPlanner:
             PlannerOutput with planned tasks
         """
         user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(phone_number=phone_number, user_message=text, context=context)
-        prompt_input = PlannerPromptBuildInput(text=text, context=context, signals=prompt_signals)
-        prompt_result = build_planner_system_prompt(prompt_input)
+        prompt_input = prompt_models.PlannerPromptBuildInput(text=text, context=context, signals=prompt_signals)
+        prompt_result = build_runtime_planner_system_prompt(prompt_input)
         system_prompt = prompt_result.system_prompt
-        start = time.perf_counter()
-        result = await self.structured_planner.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        result = await invoke_structured_prompt(
+            self.structured_planner,
+            PlannerOutput,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="planner_llm_call",
+            model_llm=self.planner_llm,
+            path_label=path_label,
+            latency_span="planner_llm",
+            log_fields={
+                "context_chars": len(context),
+                "context_mode": "compact" if prompt_signals.compact_context else "full",
+                "prompt_profile": prompt_result.profile,
+                "prompt_bundles": list(prompt_result.selected_bundle_ids),
+                "prompt_rule_count": len(prompt_result.selected_rule_ids),
+                "baseline_runtime_system_chars": PLANNER_PROMPT_BASELINE_RESULT.char_count,
+                "baseline_runtime_profile": PLANNER_PROMPT_BASELINE_RESULT.profile,
+            },
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "planner_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.planner_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-            context_chars=len(context),
-            context_mode="compact" if prompt_signals.compact_context else "full",
-            prompt_profile=prompt_result.profile,
-            prompt_bundles=list(prompt_result.selected_bundle_ids),
-            prompt_rule_count=len(prompt_result.selected_rule_ids),
-            baseline_runtime_system_chars=PLANNER_PROMPT_BASELINE_RESULT.char_count,
-            baseline_runtime_profile=PLANNER_PROMPT_BASELINE_RESULT.profile,
-        )
-        self._log_latency_span(span="planner_llm", duration_ms=duration_ms, path_label=path_label)
-
-        if isinstance(result, PlannerOutput):
-            return normalize_planner_transaction_output(result, text)
-        parsed = cast(PlannerOutput, PlannerOutput.model_validate(result))
-        return normalize_planner_transaction_output(parsed, text)
+        return normalize_planner_transaction_output(result, text)
 
     async def route_semantic_turn(
         self,
@@ -223,33 +141,27 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> SemanticRouteDecision:
         """Top-level semantic routing before planner-owned dispatch."""
-        user_prompt = SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE.format(
+        user_prompt = semantic_router_prompts.SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
             context=context,
         )
-        system_prompt = SEMANTIC_ROUTER_SYSTEM_PROMPT
-        start = time.perf_counter()
-        result = await self.structured_semantic_router.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        system_prompt = semantic_router_prompts.SEMANTIC_ROUTER_SYSTEM_PROMPT
+        return await invoke_structured_prompt(
+            self.structured_semantic_router,
+            SemanticRouteDecision,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="semantic_router_llm_call",
+            model_llm=self.semantic_router_llm,
+            path_label=path_label,
+            latency_span="semantic_router_llm",
+            log_fields={
+                "context_chars": len(context),
+                "context_mode": "compact" if context == "None" else "full",
+            },
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "semantic_router_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.semantic_router_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-            context_chars=len(context),
-            context_mode="compact" if context == "None" else "full",
-        )
-        self._log_latency_span(span="semantic_router_llm", duration_ms=duration_ms, path_label=path_label)
-        if isinstance(result, SemanticRouteDecision):
-            return result
-        return cast(SemanticRouteDecision, SemanticRouteDecision.model_validate(result))
 
     async def route_schedule_read_turn(
         self,
@@ -259,30 +171,22 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> SemanticRouteDecision:
         """Small semantic classifier for read-only scheduled-transaction list/count turns."""
-        user_prompt = SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE.format(
+        user_prompt = semantic_router_prompts.SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
         )
-        system_prompt = SCHEDULE_READ_ROUTER_SYSTEM_PROMPT
-        start = time.perf_counter()
-        result = await self.structured_schedule_read_router.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        system_prompt = semantic_router_prompts.SCHEDULE_READ_ROUTER_SYSTEM_PROMPT
+        return await invoke_structured_prompt(
+            self.structured_schedule_read_router,
+            SemanticRouteDecision,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="schedule_read_router_llm_call",
+            model_llm=self.semantic_router_llm,
+            path_label=path_label,
+            latency_span="schedule_read_router_llm",
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "schedule_read_router_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.semantic_router_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-        )
-        self._log_latency_span(span="schedule_read_router_llm", duration_ms=duration_ms, path_label=path_label)
-        if isinstance(result, SemanticRouteDecision):
-            return result
-        return cast(SemanticRouteDecision, SemanticRouteDecision.model_validate(result))
 
     async def route_pending_input(
         self,
@@ -294,42 +198,35 @@ class TaskPlanner:
         prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
         """Classify whether pending-input turn should continue current flow or switch intent."""
-        user_prompt = INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE.format(
+        user_prompt = interrupt_prompts.INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
             context=context,
         )
         system_prompt = (
-            INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
+            interrupt_prompts.INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
             if prompt_mode == "compact"
-            else INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+            else interrupt_prompts.INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
         )
-        start = time.perf_counter()
-        result = await self.structured_interrupt_router.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        return await invoke_structured_prompt(
+            self.structured_interrupt_router,
+            InterruptRouteDecision,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="interrupt_router_llm_call",
+            model_llm=self.interrupt_llm,
+            path_label=path_label,
+            latency_span="interrupt_router_llm",
+            log_fields={
+                "context_chars": len(context),
+                "context_mode": "compact" if context == "None" else "full",
+                "prompt_mode": prompt_mode,
+            },
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "interrupt_router_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.interrupt_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-            context_chars=len(context),
-            context_mode="compact" if context == "None" else "full",
-            prompt_mode=prompt_mode,
-        )
-        self._log_latency_span(span="interrupt_router_llm", duration_ms=duration_ms, path_label=path_label)
-        if isinstance(result, InterruptRouteDecision):
-            return result
-        return cast(InterruptRouteDecision, InterruptRouteDecision.model_validate(result))
 
     async def classify_confirmation_reply(
         self,
-        phone_number: str,
         text: str,
         *,
         prompt_kind: ConfirmationPromptKind,
@@ -338,7 +235,6 @@ class TaskPlanner:
         path_label: str = "interrupt_path",
     ) -> ConfirmationDecision:
         """Bounded LLM fallback for prompt-scoped approval/rejection replies."""
-        del phone_number
         start = time.perf_counter()
         result = await classify_confirmation_reply(
             text,
@@ -351,19 +247,18 @@ class TaskPlanner:
         logger.info(
             "confirmation_decision_llm_call",
             duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.interrupt_llm),
+            model=model_name(self.interrupt_llm),
             action=result.action,
             source=result.source,
             confidence=result.confidence,
             prompt_kind=prompt_kind,
             context_chars=len(context),
         )
-        self._log_latency_span(span="confirmation_decision_llm", duration_ms=duration_ms, path_label=path_label)
+        log_latency_span(logger, span="confirmation_decision_llm", duration_ms=duration_ms, path_label=path_label)
         return result
 
     async def classify_unsupported_capability(
         self,
-        phone_number: str,
         text: str,
         *,
         locale: str | None = None,
@@ -371,7 +266,6 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> UnsupportedCapabilitySemanticOutput:
         """Bounded semantic classifier for unsupported capability boundaries."""
-        del phone_number
         start = time.perf_counter()
         result = await classify_unsupported_capability_semantic(
             text,
@@ -383,13 +277,14 @@ class TaskPlanner:
         logger.info(
             "unsupported_capability_semantic_llm_call",
             duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.semantic_router_llm),
+            model=model_name(self.semantic_router_llm),
             action=result.action,
             capability_key=result.capability_key,
             confidence=result.confidence,
             context_chars=len(context),
         )
-        self._log_latency_span(
+        log_latency_span(
+            logger,
             span="unsupported_capability_semantic_llm",
             duration_ms=duration_ms,
             path_label=path_label,
@@ -398,7 +293,6 @@ class TaskPlanner:
 
     async def classify_unsupported_boundary_turn(
         self,
-        phone_number: str,
         text: str,
         *,
         boundary_key: str,
@@ -409,7 +303,6 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> UnsupportedBoundaryTurnOutput:
         """Bounded semantic classifier for turns after an unsupported capability refusal."""
-        del phone_number
         start = time.perf_counter()
         result = await classify_unsupported_boundary_turn_semantic(
             text,
@@ -424,14 +317,15 @@ class TaskPlanner:
         logger.info(
             "unsupported_boundary_turn_llm_call",
             duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.semantic_router_llm),
+            model=model_name(self.semantic_router_llm),
             action=result.action,
             capability_key=result.capability_key,
             confidence=result.confidence,
             boundary_key=boundary_key,
             context_chars=len(context),
         )
-        self._log_latency_span(
+        log_latency_span(
+            logger,
             span="unsupported_boundary_turn_llm",
             duration_ms=duration_ms,
             path_label=path_label,
@@ -447,33 +341,27 @@ class TaskPlanner:
         path_label: str = "planner_path",
     ) -> ContextFrameFollowupDecision:
         """Classify whether a user turn is a semantic follow-up to the latest displayed frame."""
-        user_prompt = CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE.format(
+        user_prompt = context_frame_prompts.CONTEXT_FRAME_FOLLOWUP_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
             context=context,
         )
-        system_prompt = CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT
-        start = time.perf_counter()
-        result = await self.structured_context_frame_followup.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        system_prompt = context_frame_prompts.CONTEXT_FRAME_FOLLOWUP_SYSTEM_PROMPT
+        return await invoke_structured_prompt(
+            self.structured_context_frame_followup,
+            ContextFrameFollowupDecision,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="context_frame_followup_llm_call",
+            model_llm=self.semantic_router_llm,
+            path_label=path_label,
+            latency_span="context_frame_followup_llm",
+            log_fields={
+                "context_chars": len(context),
+                "context_mode": "compact" if context == "None" else "full",
+            },
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "context_frame_followup_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.semantic_router_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-            context_chars=len(context),
-            context_mode="compact" if context == "None" else "full",
-        )
-        self._log_latency_span(span="context_frame_followup_llm", duration_ms=duration_ms, path_label=path_label)
-        if isinstance(result, ContextFrameFollowupDecision):
-            return result
-        return cast(ContextFrameFollowupDecision, ContextFrameFollowupDecision.model_validate(result))
 
     async def extract_context_frame_replay_modifiers(
         self,
@@ -484,37 +372,27 @@ class TaskPlanner:
         path_label: str = "planner_path",
     ) -> ContextFrameReplayModifier:
         """Extract a strict edit patch for frame-backed transaction replay."""
-        user_prompt = CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE.format(
+        user_prompt = context_frame_prompts.CONTEXT_FRAME_REPLAY_MODIFIER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
             context=context,
         )
-        system_prompt = CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT
-        start = time.perf_counter()
-        result = await self.structured_context_frame_replay_modifier.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-        )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "context_frame_replay_modifier_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.semantic_router_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-            context_chars=len(context),
-            context_mode="compact" if context == "None" else "full",
-        )
-        self._log_latency_span(
-            span="context_frame_replay_modifier_llm",
-            duration_ms=duration_ms,
+        system_prompt = context_frame_prompts.CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT
+        return await invoke_structured_prompt(
+            self.structured_context_frame_replay_modifier,
+            ContextFrameReplayModifier,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="context_frame_replay_modifier_llm_call",
+            model_llm=self.semantic_router_llm,
             path_label=path_label,
+            latency_span="context_frame_replay_modifier_llm",
+            log_fields={
+                "context_chars": len(context),
+                "context_mode": "compact" if context == "None" else "full",
+            },
         )
-        if isinstance(result, ContextFrameReplayModifier):
-            return result
-        return cast(ContextFrameReplayModifier, ContextFrameReplayModifier.model_validate(result))
 
     async def interpret_pending_action_edit(
         self,
@@ -525,63 +403,47 @@ class TaskPlanner:
         path_label: str = "interrupt_path",
     ) -> PendingActionEditDecision:
         """Classify a user turn as a semantic edit to pending confirmation tasks."""
-        user_prompt = PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE.format(
+        user_prompt = interrupt_prompts.PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
             context=context,
         )
-        system_prompt = PENDING_ACTION_EDIT_SYSTEM_PROMPT
-        start = time.perf_counter()
-        result = await self.structured_pending_action_edit.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        system_prompt = interrupt_prompts.PENDING_ACTION_EDIT_SYSTEM_PROMPT
+        return await invoke_structured_prompt(
+            self.structured_pending_action_edit,
+            PendingActionEditDecision,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="pending_action_edit_llm_call",
+            model_llm=self.interrupt_llm,
+            path_label=path_label,
+            latency_span="pending_action_edit_llm",
+            log_fields={
+                "context_chars": len(context),
+                "context_mode": "compact" if context == "None" else "full",
+            },
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "pending_action_edit_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.interrupt_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-            context_chars=len(context),
-            context_mode="compact" if context == "None" else "full",
-        )
-        self._log_latency_span(span="pending_action_edit_llm", duration_ms=duration_ms, path_label=path_label)
-        if isinstance(result, PendingActionEditDecision):
-            return result
-        return cast(PendingActionEditDecision, PendingActionEditDecision.model_validate(result))
 
     async def interpret_quoted_replay(
         self, phone_number: str, text: str, context: str = "None"
     ) -> QuotedReplayInterpretation:
         """Interpret a quoted follow-up turn for replay semantics."""
-        user_prompt = QUOTED_REPLAY_USER_PROMPT_TEMPLATE.format(
+        user_prompt = quoted_replay_prompts.QUOTED_REPLAY_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
             context=context,
         )
-        system_prompt = QUOTED_REPLAY_SYSTEM_PROMPT
-        start = time.perf_counter()
-        result = await self.structured_quoted_replay.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+        system_prompt = quoted_replay_prompts.QUOTED_REPLAY_SYSTEM_PROMPT
+        parsed = await invoke_structured_prompt(
+            self.structured_quoted_replay,
+            QuotedReplayInterpretation,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="quoted_replay_llm_call",
+            model_llm=self.planner_llm,
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "quoted_replay_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=self._model_name(self.planner_llm),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-        )
-        if isinstance(result, QuotedReplayInterpretation):
-            parsed = result
-        else:
-            parsed = cast(QuotedReplayInterpretation, QuotedReplayInterpretation.model_validate(result))
         logger.info(
             "quoted_replay_decision",
             decision=parsed.decision,
@@ -591,21 +453,7 @@ class TaskPlanner:
         )
         return parsed
 
-OrchestratorTaskPlanner = TaskPlanner
-
 __all__ = [
-    "INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT",
-    "INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL",
-    "INTERRUPT_ROUTER_SYSTEM_PROMPT",
-    "PLANNER_PROMPT_BASELINE_RESULT",
-    "PLANNER_RULE_ATOMS",
-    "PlannerPromptBuildInput",
-    "PlannerPromptSignals",
-    "QUOTED_REPLAY_SYSTEM_PROMPT",
-    "CONTEXT_FRAME_REPLAY_MODIFIER_SYSTEM_PROMPT",
+    "PLANNER_USER_PROMPT_TEMPLATE",
     "TaskPlanner",
-    "SEMANTIC_ROUTER_SYSTEM_PROMPT",
-    "build_planner_system_prompt",
-    "refresh_planner_system_prompt",
-    "OrchestratorTaskPlanner",
 ]

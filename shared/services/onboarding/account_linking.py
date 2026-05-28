@@ -2,7 +2,8 @@
 
 import asyncio
 
-from shared.clients.providers.mono import mono_client
+from shared.cache.flow_session_manager import FlowSessionManager
+from shared.clients.providers.mono.client import mono_client
 from shared.models.account import CreateAccount
 from shared.models.user import UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
@@ -10,7 +11,7 @@ from shared.utils.hash import hash_plaintext, is_valid_pin_format
 from shared.utils.logging import get_logger, log_fingerprint
 
 from .mandate import MandateService
-from .session import OnboardingStep, SessionManager
+from .session import OnboardingStep
 
 logger = get_logger(__name__)
 
@@ -18,31 +19,36 @@ logger = get_logger(__name__)
 class AccountLinkingService:
     """Handles account selection and onboarding completion."""
 
-    def __init__(self, session_manager: SessionManager, mandate_service: MandateService):
+    def __init__(self, session_manager: FlowSessionManager, mandate_service: MandateService):
         self.session = session_manager
         self.mandate = mandate_service
 
     async def select_account(self, flow_token: str, account_id: str | None) -> dict:
         """Store selected account."""
         if not account_id:
-            session = await self.session.get_session(flow_token)
+            read_result = await self.session.read_session(flow_token)
+            session = read_result.data or {}
             return {
                 "success": False,
                 "error": "Please select an account.",
                 "data": {"accounts": session.get("accounts", []) if session else []},
             }
 
-        session = await self.session.get_session(flow_token)
-        if not session:
+        read_result = await self.session.read_session(flow_token)
+        if not read_result.found:
             return {"success": False, "error": "Session expired. Please start over."}
+        session = read_result.data or {}
 
-        await self.session.update_session(
+        stored = await self.session.update_session_strict(
             flow_token,
             {
                 "selected_account": account_id,
                 "step": OnboardingStep.PIN_ENTRY.value,
             },
+            verify=True,
         )
+        if not stored:
+            return {"success": False, "error": "Session expired. Please start over."}
 
         return {"success": True, "data": {"bvn": session.get("bvn")}}
 
@@ -64,9 +70,10 @@ class AccountLinkingService:
         if not address:
             return {"success": False, "error": "Address is required."}
 
-        session = await self.session.get_session(flow_token)
-        if not session:
+        read_result = await self.session.read_session(flow_token)
+        if not read_result.found:
             return {"success": False, "error": "Session expired. Please start over."}
+        session = read_result.data or {}
 
         phone_number = session.get("phone_number")
         if not phone_number:
@@ -145,7 +152,13 @@ class AccountLinkingService:
                 if telegram_chat_id:
                     await uow.users.link_channel_identity(str(user.id), "telegram", telegram_chat_id)
 
-            await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
+            stored = await self.session.update_session_strict(
+                flow_token,
+                {"step": OnboardingStep.COMPLETE.value},
+                verify=True,
+            )
+            if not stored:
+                return {"success": False, "error": "Session expired. Please start over."}
 
             asyncio.create_task(
                 self._setup_mono_customer_and_mandate(
@@ -219,7 +232,6 @@ class AccountLinkingService:
                 account_id=account_id,
                 account_number=account_number,
                 bank_code=bank_code,
-                bank_name=bank_name,
             )
 
             if result["success"]:

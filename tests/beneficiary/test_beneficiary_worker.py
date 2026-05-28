@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 from typing import Any
 
-from apps.chat.src.agent.graphs.beneficiary import worker as worker_module
-from apps.chat.src.agent.graphs.beneficiary.worker import BeneficiaryWorker
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.beneficiary import worker as worker_module
+from apps.chat.src.agent.workers.beneficiary.worker import BeneficiaryWorker
 
 
 class _FakeBeneficiaryRepo:
@@ -16,7 +16,7 @@ class _FakeBeneficiaryRepo:
         self.created = kwargs
         return SimpleNamespace(**kwargs)
 
-    async def get_all_for_user(self, user_id: str) -> list[Any]:
+    async def get_by_user(self, user_id: str) -> list[Any]:
         del user_id
         return self.existing
 

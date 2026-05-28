@@ -11,12 +11,12 @@ from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
     format_owner_error_response,
     verify_whatsapp_flow_session_owner,
 )
-from shared.services.onboarding import (
-    ServiceResult,
+from shared.services.onboarding.runtime import (
     account_add_service,
     account_service,
     session_manager,
 )
+from shared.services.onboarding.session import ServiceResult
 
 
 class AccountSelectionInput(BaseModel):
@@ -53,7 +53,11 @@ async def handle_account_selection(
     if not owner_check.ok:
         return format_owner_error_response("ACCOUNT_SELECTION", request_was_encrypted, aes_key_bytes, iv_bytes)
 
-    session = owner_check.session or await session_manager.get_session(flow_token)
+    if owner_check.session is not None:
+        session = owner_check.session
+    else:
+        read_result = await session_manager.read_session(flow_token)
+        session = read_result.data or {}
     is_account_linking = session.get("is_account_linking", False) if session else False
 
     if is_account_linking:

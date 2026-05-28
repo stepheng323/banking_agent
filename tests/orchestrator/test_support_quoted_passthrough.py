@@ -2,11 +2,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.execution.handlers import (
-    ExecutionAggregation,
-    ExecutionContext,
-    handle_support_task,
-)
 from apps.chat.src.agent.orchestrator.models.domain import (
     SupportOutcome,
     SupportResult,
@@ -16,6 +11,8 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
+from apps.chat.src.agent.orchestrator.task_handlers.support import handle_support_task
 
 
 class _SupportWorkerStub:

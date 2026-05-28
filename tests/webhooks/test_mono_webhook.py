@@ -121,7 +121,7 @@ class TestFormatting:
 
     def test_format_multi_source_transfer_summary(self):
         """Test multi-source confirmation formatting."""
-        from shared.formatters.transfer import format_multi_source_transfer_summary
+        from shared.formatters.transfer_multi_source import format_multi_source_transfer_summary
 
         result = format_multi_source_transfer_summary(
             {
@@ -147,7 +147,7 @@ class TestFormatting:
 
     def test_format_multi_source_receipt(self):
         """Test multi-source receipt formatting."""
-        from shared.formatters.transfer import format_multi_source_receipt
+        from shared.formatters.transfer_multi_source import format_multi_source_receipt
 
         result = format_multi_source_receipt(
             {
@@ -170,7 +170,7 @@ class TestFormatting:
 
     def test_single_source_receipt_no_breakdown(self):
         """Single source receipt doesn't show 'Funded from:' header."""
-        from shared.formatters.transfer import format_multi_source_receipt
+        from shared.formatters.transfer_multi_source import format_multi_source_receipt
 
         result = format_multi_source_receipt(
             {

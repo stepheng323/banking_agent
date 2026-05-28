@@ -1,14 +1,14 @@
 from datetime import date
 
-from apps.chat.src.agent.graphs.query.models import (
+from apps.chat.src.agent.workers.query.models.domain import QueryIntent
+from apps.chat.src.agent.workers.query.models.extraction import (
     ExtractionIntent,
     QueryAggregation,
     QueryExtractionResult,
-    QueryIntent,
     QueryTimeRange,
     TimeReference,
 )
-from apps.chat.src.agent.graphs.query.services.parser import QueryParser
+from apps.chat.src.agent.workers.query.services.parsing.parser import QueryParser
 
 
 class _DummyLLM:

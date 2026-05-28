@@ -2,8 +2,11 @@ from datetime import date
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.handlers.affordability import handle_affordability
-from apps.chat.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent
+from apps.chat.src.agent.workers.query.handlers.affordability import handle_affordability
+from apps.chat.src.agent.workers.query.models.domain import (
+    QueryExecutionContract,
+    QueryIntent,
+)
 from shared.clients.abstractions.banking import BalanceData
 
 

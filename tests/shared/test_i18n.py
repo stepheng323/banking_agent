@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import pytest
 
-from shared.i18n import LanguageDetectionSignal, LocaleCode, LocaleManager, render_message, render_text
+from shared.i18n.locale import LocaleManager
 from shared.i18n.message_keys import ALL_MESSAGE_KEYS
-from shared.i18n.renderer import _flatten_string_leaves, _read_catalog, validate_catalog_completeness
+from shared.i18n.models import (
+    LanguageDetectionSignal,
+    LocaleCode,
+)
+from shared.i18n.renderer import (
+    _flatten_string_leaves,
+    _read_catalog,
+    render_message,
+    render_text,
+    validate_catalog_completeness,
+)
 
 
 class _FakeRedis:
@@ -126,3 +136,30 @@ def test_catalog_completeness():
 def test_message_key_typing_in_sync():
     en_keys = set(_flatten_string_leaves(_read_catalog(LocaleCode.EN)).keys())
     assert set(ALL_MESSAGE_KEYS) == en_keys
+
+
+@pytest.mark.parametrize(
+    ("locale", "expected_snippet"),
+    [
+        ("pcm", "You wan save"),
+        ("yo", "Ṣe o fẹ́"),
+        ("ha", "Kana so"),
+        ("ig", "Ị chọrọ"),
+    ],
+)
+def test_beneficiary_suggestion_prompts_are_localized(locale: str, expected_snippet: str):
+    text = render_message(
+        "beneficiary.suggestion.ask_save_phone_default",
+        locale,
+        {
+            "recipient_display": "Mum",
+            "network": "MTN",
+            "masked_phone": "…4567",
+        },
+    )
+
+    assert expected_snippet in text
+    assert "Mum" in text
+    assert "MTN" in text
+    assert "…4567" in text
+    assert "Would you like" not in text

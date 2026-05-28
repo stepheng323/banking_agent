@@ -78,7 +78,7 @@ curl http://<host>/transaction/health
 
 ## GitHub Actions Deploy
 
-The repo now supports VPS deploys through [deploy-vps.yml](/home/abiodun/dev/personal/banking_agent/.github/workflows/deploy-vps.yml).
+The repo now supports VPS deploys through [deploy-vps.yml](../.github/workflows/deploy-vps.yml).
 
 Required GitHub repository secrets:
 

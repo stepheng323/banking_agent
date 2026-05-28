@@ -4,7 +4,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import PlannerOutput
 
 
@@ -12,7 +12,7 @@ class _CapturingPlanner:
     def __init__(self) -> None:
         self.last_context: str | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text
         self.last_context = context
         return PlannerOutput(

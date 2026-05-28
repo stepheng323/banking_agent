@@ -76,15 +76,6 @@ async def test_conversation_eval_banking_coded_ambiguity_prompts_skip_router() -
                     expect_planner_route_calls_delta=0,
                 ),
                 ConversationTurn(
-                    user="buy me data",
-                    expect_response_contains=("buy data", "line"),
-                    expect_path_shape="banking_coded_ambiguity_clarify",
-                    expect_routing_owner="guardrail",
-                    expect_routing_decision="banking_coded_ambiguity_data",
-                    expect_task_types=(),
-                    expect_planner_route_calls_delta=0,
-                ),
-                ConversationTurn(
                     user="send receipt for that",
                     expect_response_contains=("Which transaction", "check"),
                     expect_path_shape="banking_coded_ambiguity_clarify",
@@ -107,6 +98,36 @@ async def test_conversation_eval_banking_coded_ambiguity_prompts_skip_router() -
     )
 
     assert result.final_state.routing_decision == "banking_coded_ambiguity_account_query"
+    assert planner.route_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_conversation_eval_self_data_request_routes_directly() -> None:
+    planner = _CountingPlanner()
+
+    result = await run_conversation_scenario(
+        ConversationScenario(
+            id="self_data_request_direct",
+            initial_state=_state(user_id="u_eval_self_data_1").model_copy(
+                update={"phone_number": "2348162511023"}
+            ),
+            planner=planner,
+            turns=(
+                ConversationTurn(
+                    user="buy me data",
+                    expect_path_shape="deterministic_data_domain",
+                    expect_routing_owner="guardrail",
+                    expect_routing_decision="deterministic_data_domain",
+                    expect_task_types=("data",),
+                    expect_planner_route_calls_delta=0,
+                ),
+            ),
+        )
+    )
+
+    task = result.final_state.tasks["direct_data"]
+    assert task.payload["target_phone"] == "08162511023"
+    assert task.payload["is_self"] is True
     assert planner.route_calls == 0
 
 

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.intents import (
+from shared.messaging.intents import (
     RequestAuth,
     RequestConfirmation,
     Say,

@@ -2,8 +2,8 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from apps.chat.src.agent.graphs.__shared__.beneficiary import suggestion_service as service_module
-from apps.chat.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.chat.src.agent.workers.__shared__.beneficiary import suggestion_service as service_module
+from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 
 
 class _FakeRedis:
@@ -62,6 +62,22 @@ class _FakeBeneficiaries:
                 "bank_code": bank_code,
                 "bank_name": bank_name,
                 "beneficiary_type": beneficiary_type,
+            }
+        )
+        return self.should_suggest
+
+    async def should_suggest_mobile_beneficiary(
+        self,
+        user_id: str,
+        phone_number: str,
+        network: str,
+    ) -> bool:
+        self.should_suggest_calls.append(
+            {
+                "user_id": user_id,
+                "phone_number": phone_number,
+                "network": network,
+                "beneficiary_type": "mobile",
             }
         )
         return self.should_suggest
@@ -210,3 +226,60 @@ async def test_non_mono_duplicate_by_bank_name_is_not_suggested(monkeypatch) -> 
     assert "user:2348011112225:beneficiary_suggestion" not in redis.values
     assert beneficiaries.should_suggest_calls[-1]["bank_code"] is None
     assert beneficiaries.should_suggest_calls[-1]["bank_name"] == "Access Bank"
+
+
+async def test_mobile_suggestion_uses_human_network_label_but_stores_canonical_network(monkeypatch) -> None:
+    redis = _FakeRedis()
+    beneficiaries = _FakeBeneficiaries()
+    uow = _FakeUnitOfWork(beneficiaries)
+    monkeypatch.setattr(service_module, "UnitOfWork", lambda: uow)
+
+    message = await _service(redis).check_and_suggest_beneficiary(
+        phone_number="2348011112226",
+        beneficiary_type="data",
+        recipient_data={
+            "phone": "08031234567",
+            "network": "AIRTEL",
+            "name": "Tolu",
+        },
+        transaction_id="tx-4",
+        send_message=False,
+    )
+
+    assert message is not None
+    assert "Airtel" in message
+    assert "AIRTEL" not in message
+    stored = json.loads(redis.values["user:2348011112226:beneficiary_suggestion"])
+    assert stored["network"] == "AIRTEL"
+    assert beneficiaries.should_suggest_calls[-1]["network"] == "AIRTEL"
+
+
+async def test_data_suggestion_save_creates_data_mobile_beneficiary(monkeypatch) -> None:
+    redis = _FakeRedis()
+    beneficiaries = _FakeBeneficiaries()
+    uow = _FakeUnitOfWork(beneficiaries)
+    monkeypatch.setattr(service_module, "UnitOfWork", lambda: uow)
+
+    message = await _service(redis).check_and_suggest_beneficiary(
+        phone_number="2348011112227",
+        beneficiary_type="data",
+        recipient_data={
+            "phone": "08031234567",
+            "network": "MTN",
+            "name": "Tolu",
+        },
+        transaction_id="tx-5",
+        send_message=False,
+    )
+
+    assert message is not None
+
+    saved = await _service(redis).save_beneficiary("2348011112227", alias="Tolu Data")
+
+    assert "TOLU DATA" in saved
+    assert beneficiaries.created is not None
+    assert beneficiaries.created["account_number"] == "08031234567"
+    assert beneficiaries.created["bank_name"] == "MTN"
+    assert beneficiaries.created["account_name"] == "Tolu"
+    assert beneficiaries.created["beneficiary_type"] == "data"
+    assert ("user:2348011112227:beneficiary_suggestion",) in redis.deleted

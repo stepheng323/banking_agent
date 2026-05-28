@@ -7,12 +7,13 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.finalize import finalize
-from apps.chat.src.agent.orchestrator.nodes.ingest import ingest_message
-from apps.chat.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import SAFE_CAPABILITY_FALLBACK
 from shared.config.settings import settings
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -25,7 +26,7 @@ class _MockPlanner:
         self._output = output
         self.planner_llm = planner_llm
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -122,14 +123,12 @@ class _FakeConversationResponder:
 
     async def generate_reply(
         self,
-        phone_number: str,
         text: str,
         user_ctx: dict[str, Any],
         intent: str | None = None,
     ) -> str:
         self.calls.append(
             {
-                "phone_number": phone_number,
                 "text": text,
                 "user_ctx": dict(user_ctx),
                 "intent": intent,
@@ -536,7 +535,10 @@ async def test_conversational_out_of_scope_logs_policy_blocked_breadcrumb(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.planner.response_flow.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.workflows.planner.response.non_task_response.logger.info",
+        _capture,
+    )
 
     planner_output = PlannerOutput(
         primary_intent="conversational",
@@ -701,7 +703,7 @@ async def test_conversational_banking_coded_transfer_ambiguity_prefers_clarify_o
 
 
 @pytest.mark.asyncio
-async def test_conversational_banking_coded_data_ambiguity_prefers_clarify_over_responder() -> None:
+async def test_conversational_self_data_request_no_longer_uses_ambiguity_prompt() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="I can't help with that.",
@@ -714,7 +716,7 @@ async def test_conversational_banking_coded_data_ambiguity_prefers_clarify_over_
         normalized_instruction="buy me data",
         tasks=[],
     )
-    responder = _FakeConversationResponder("This should not be used.")
+    responder = _FakeConversationResponder("Sure. I can help with data. What budget or data size should I use?")
     state = OrchestratorState(
         user_id="u_meta_banking_ambiguity_data_1",
         phone_number="23489999999882",
@@ -735,8 +737,8 @@ async def test_conversational_banking_coded_data_ambiguity_prefers_clarify_over_
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "Do you want to buy data? If yes, whose line is it for?"
-    assert not responder.calls
+    assert state.final_response == "Sure. I can help with data. What budget or data size should I use?"
+    assert responder.calls
 
 
 @pytest.mark.asyncio

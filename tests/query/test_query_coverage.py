@@ -5,8 +5,13 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent, QueryIR, TimeRange
-from apps.chat.src.agent.graphs.query.services.coverage import build_query_coverage_answer
+from apps.chat.src.agent.workers.query.models.domain import (
+    QueryExecutionContract,
+    QueryIntent,
+    QueryIR,
+    TimeRange,
+)
+from apps.chat.src.agent.workers.query.services.answers.coverage import build_query_coverage_answer
 
 
 class _CoverageRepo:
@@ -67,7 +72,6 @@ async def test_coverage_answer_confirms_all_accounts_when_windows_are_covered() 
         query_contract=_contract(),
         session={},
         target_text=None,
-        locale="en",
     )
 
     assert "confirmed transaction coverage" in answer
@@ -90,7 +94,6 @@ async def test_coverage_answer_explains_pending_mandate_for_target_account() -> 
         query_contract=_contract(),
         session={},
         target_text="Zenith",
-        locale="en",
     )
 
     assert "authorization is pending" in answer
@@ -108,7 +111,6 @@ async def test_coverage_answer_is_honest_when_schema_is_unavailable() -> None:
         query_contract=_contract(),
         session={},
         target_text="Access",
-        locale="en",
     )
 
     assert "cannot confirm full coverage right now" in answer
@@ -125,7 +127,6 @@ async def test_coverage_answer_handles_linked_account_without_local_transactions
         query_contract=_contract(),
         session={"cached_transactions": []},
         target_text=None,
-        locale="en",
     )
 
     assert "best local view" in answer

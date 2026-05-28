@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.graphs.airtime.nodes.confirmation import ConfirmationStep
+from apps.chat.src.agent.workers.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from apps.chat.src.agent.workers.airtime.nodes.confirmation import ConfirmationStep
 
 
 class _StubRedis:
@@ -55,7 +55,8 @@ async def test_airtime_confirmation_falls_back_to_global_redis(monkeypatch: pyte
     result = await step.execute(payload, context, gates, worker_context)
 
     assert result.outcome.value == "needs_confirmation"
+    assert result.confirmation_summary is not None
+    assert result.confirmation_summary.splitlines()[0] == "*₦1,000 airtime for your number (08162511023)*"
     assert redis.calls == [
         ("airtime:token:airtime-test-token:phone", 3600, "2348162511023"),
-        ("transaction:token:airtime-test-token:phone", 3600, "2348162511023"),
     ]

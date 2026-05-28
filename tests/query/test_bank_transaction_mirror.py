@@ -6,9 +6,15 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.handlers.analytics import _aggregate_breakdown
-from apps.chat.src.agent.graphs.query.models import Aggregation, Filters, QueryIntent, QueryIR, TimeRange
-from apps.chat.src.agent.graphs.query.services.fetch import (
+from apps.chat.src.agent.workers.query.handlers.analytics import _aggregate_breakdown
+from apps.chat.src.agent.workers.query.models.domain import (
+    Aggregation,
+    Filters,
+    QueryIntent,
+    QueryIR,
+    TimeRange,
+)
+from apps.chat.src.agent.workers.query.services.fetching.fetch import (
     _is_missing_mirror_table_error,
     fetch_and_filter,
     fetch_transactions_base,
@@ -309,7 +315,6 @@ async def test_fully_covered_historical_query_reads_from_mirror_without_provider
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
 
     assert provider.calls == []
@@ -353,7 +358,6 @@ async def test_uncovered_historical_query_gap_fills_once_then_reuses_mirror(
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
     second = await fetch_transactions_base(
         provider,  # type: ignore[arg-type]
@@ -362,7 +366,6 @@ async def test_uncovered_historical_query_gap_fills_once_then_reuses_mirror(
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
 
     assert len(provider.calls) == 1
@@ -416,7 +419,7 @@ async def test_recent_overlap_sync_captures_same_day_late_transactions(
         }
     )
     monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
-    monkeypatch.setattr("apps.chat.src.agent.graphs.query.services.bank_transaction_mirror.lagos_today", lambda: today)
+    monkeypatch.setattr("apps.chat.src.agent.workers.query.services.fetching.bank_transaction_mirror.lagos_today", lambda: today)
 
     result = await fetch_transactions_base(
         provider,  # type: ignore[arg-type]
@@ -425,7 +428,6 @@ async def test_recent_overlap_sync_captures_same_day_late_transactions(
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
 
     assert len(provider.calls) == 1
@@ -472,7 +474,6 @@ async def test_local_filters_apply_on_mirrored_transactions_without_provider_cal
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
 
     assert provider.calls == []
@@ -512,7 +513,6 @@ async def test_counterparty_filter_uses_parsed_mirror_values(
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
 
     assert provider.calls == []
@@ -550,7 +550,6 @@ async def test_category_filter_uses_provider_category_from_mirror(
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
 
     assert provider.calls == []
@@ -619,7 +618,6 @@ async def test_gap_fill_persists_parsed_counterparty_fields(
         account_ids=["acc_1"],
         accounts_info=_accounts_info(),
         user_id="user-1",
-        language="en",
     )
 
     assert result[0]["counterparty"] == "Johnson Mary"

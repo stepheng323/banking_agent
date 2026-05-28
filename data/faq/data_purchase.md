@@ -4,13 +4,21 @@
 
 Tell {app_name} that you want to buy data and include the phone number, network, amount, or plan size when you know it. For example: "Buy 2GB data for 08012345678."
 
+## How do I buy airtime?
+
+Tell {app_name} the airtime amount and the phone number, or say you want airtime for yourself. {app_name} will resolve the network when possible, ask for any missing details, and show a confirmation before payment.
+
 ## Which networks are supported?
 
-{app_name} supports major Nigerian mobile networks when the configured bill provider has available plans for them. Supported networks can include MTN, Airtel, Glo, and 9mobile.
+{app_name} supports major Nigerian mobile networks when the configured bill provider has available airtime or data options for them. Supported networks can include MTN, Airtel, Glo, and 9mobile.
 
 ## What data plans are available?
 
 Data plans vary by network and provider. Ask for data, and {app_name} can show available plans or guide you to choose by budget, size, or validity when provider data is available.
+
+## Can I compare data plans before buying?
+
+Yes. Ask for plans by network, size, budget, or validity, such as "How much is 5GB MTN?" or "Show MTN data plans under 2000." {app_name} can show matching options when the provider catalog is available.
 
 ## How quickly is data delivered?
 

@@ -3,7 +3,7 @@
 from typing import Any
 
 from shared.formatters.currency import format_naira
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 
 
 def format_insufficient_funds(
@@ -12,8 +12,6 @@ def format_insufficient_funds(
     available_balance: float,
     max_available: float = 0,
     recipient_name: str = "",
-    recipient_bank: str = "",
-    recipient_account: str = "",
     locale: str = "en",
 ) -> str:
     """Format insufficient funds message.
@@ -24,14 +22,10 @@ def format_insufficient_funds(
         available_balance: Current available balance in primary account
         max_available: Maximum available across all accounts (defaults to available_balance)
         recipient_name: Name of the recipient
-        recipient_bank: Recipient's bank name
-        recipient_account: Recipient's account number
 
     Returns:
         WhatsApp-formatted error message
     """
-    del recipient_bank, recipient_account
-
     lines = []
 
     lines.append(render_message("funding.format.insufficient.header", locale))

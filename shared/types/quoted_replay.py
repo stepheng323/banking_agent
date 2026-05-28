@@ -19,13 +19,13 @@ ReplayTargetType = Literal["transfer", "airtime", "data"]
 
 
 class _StrictModel(BaseModel):
-    """Base strict model for OpenAI structured-output schema compatibility."""
+    """Base strict model for OpenAI structured-output schemas."""
 
     model_config = ConfigDict(extra="forbid")
 
 
 class ReplayTaskConfirmation(_StrictModel):
-    """Optional confirmation object for compatibility with existing payload shapes."""
+    """Confirmation reset metadata carried by replay task payloads."""
 
     confirmed: bool | None = None
 

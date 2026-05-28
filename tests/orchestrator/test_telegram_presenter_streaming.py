@@ -3,11 +3,11 @@ from typing import Any, cast
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.intents import RequestAuth, RequestConfirmation, Say
-from apps.chat.src.messaging.presenters.base import PresentationContext
-from apps.chat.src.messaging.presenters.telegram import TelegramPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
+from shared.messaging.intents import RequestAuth, RequestConfirmation, Say
 from shared.messaging.presenters import telegram as telegram_presenter_module
+from shared.messaging.presenters.base import PresentationContext
+from shared.messaging.presenters.telegram import TelegramPresenter
 
 
 class _StubStreamingTelegramClient:
@@ -210,11 +210,63 @@ async def test_telegram_presenter_schedule_auth_uses_schedule_pin_prefix() -> No
 
 
 @pytest.mark.asyncio
+async def test_telegram_presenter_batch_confirmation_uses_prefix_for_correlation_task() -> None:
+    client = _StubFlowTelegramClient()
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = RequestConfirmation(
+        task_ids=["t_transfer", "t_airtime"],
+        summary="*Transfer*\nConfirm transfer task\n\n*Airtime*\nConfirm airtime task",
+        token="tok-1",
+        correlation_id="idem-transfer",
+        header="Confirm Transactions",
+    )
+    intent.actionable_payload = {
+        "task_type": "batch",
+        "tasks": [
+            {"task_type": "transfer", "idempotency_key": "idem-transfer"},
+            {"task_type": "airtime", "idempotency_key": "idem-airtime"},
+        ],
+    }
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    message_id = await presenter._present_confirmation(intent, context)
+
+    assert message_id == "flow-msg-1"
+    assert client.flow_calls[0]["flow_config"]["flow_token"] == "transfer-pin-idem-transfer-123456789"
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_batch_auth_uses_prefix_for_correlation_task() -> None:
+    client = _StubFlowTelegramClient()
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = RequestAuth(
+        method="pin",
+        task_ids=["t_data", "t_airtime"],
+        correlation_id="idem-data",
+        reason="Authorize Transaction",
+        summary="*Data*\nConfirm data task\n\n*Airtime*\nConfirm airtime task",
+    )
+    intent.actionable_payload = {
+        "task_type": "batch",
+        "tasks": [
+            {"task_type": "data", "idempotency_key": "idem-data"},
+            {"task_type": "airtime", "idempotency_key": "idem-airtime"},
+        ],
+    }
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    message_id = await presenter._present_auth(intent, context)
+
+    assert message_id == "flow-msg-1"
+    assert client.flow_calls[0]["flow_config"]["flow_token"] == "data-pin-idem-data-123456789"
+
+
+@pytest.mark.asyncio
 async def test_telegram_presenter_send_typing_intent_emits_typing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
     client = _StubDelayedTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))
-    from apps.chat.src.agent.orchestrator.models.intents import SendTyping
+    from shared.messaging.intents import SendTyping
 
     await presenter.present(
         [SendTyping()],

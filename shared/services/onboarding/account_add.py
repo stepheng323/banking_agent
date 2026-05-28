@@ -27,9 +27,10 @@ class AccountAddService:
         Called after BVN verification and account selection.
         Skips PIN/email/address since the user already has these.
         """
-        session = await self.session.get_session(flow_token)
-        if not session:
+        read_result = await self.session.read_session(flow_token)
+        if not read_result.found:
             return {"success": False, "error": "Session expired. Please try again."}
+        session = read_result.data or {}
 
         phone_number = session.get("phone_number")
         if not phone_number:
@@ -95,7 +96,13 @@ class AccountAddService:
                     error_type=type(cache_error).__name__,
                 )
 
-            await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
+            stored = await self.session.update_session_strict(
+                flow_token,
+                {"step": OnboardingStep.COMPLETE.value},
+                verify=True,
+            )
+            if not stored:
+                return {"success": False, "error": "Session expired. Please try again."}
 
             if mono_customer_id:
                 asyncio.create_task(
@@ -140,7 +147,6 @@ class AccountAddService:
                 account_id=account_id,
                 account_number=account_number,
                 bank_code=bank_code,
-                bank_name=bank_name,
             )
 
             if result["success"]:

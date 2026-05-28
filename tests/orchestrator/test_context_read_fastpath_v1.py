@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import ContextFrameFollowupDecision, PlannerOutput
 
 
@@ -16,7 +16,7 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -26,14 +26,14 @@ class _CapturingPlanner(_MockPlanner):
         super().__init__(output)
         self.last_context: str | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text
         self.last_context = context
         return self._output
 
 
 class _FailingPlanner:
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         raise AssertionError("planner should not be called for grounded beneficiary detail follow-up")
 

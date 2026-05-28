@@ -8,8 +8,8 @@ from sqlalchemy import select
 from shared.cache.user_data import UserDataCache
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.database.models import FundedTransfer, UserChannelIdentity
-from shared.formatters.transfer import format_transfer_success_message
-from shared.i18n import render_message
+from shared.formatters.transfer_notifications import format_transfer_success_message
+from shared.i18n.renderer import render_message
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.async_completion import (
@@ -148,7 +148,6 @@ class MonoWebhookService:
                     await uow.funding_steps.update_status(
                         step_id=str(step.id),
                         status=funding_status,
-                        provider_response=data,
                     )
                     await uow.commit()
 

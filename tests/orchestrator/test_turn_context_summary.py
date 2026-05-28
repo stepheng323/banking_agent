@@ -5,27 +5,39 @@ from time import time
 
 import pytest
 
-from apps.chat.src.agent.graphs.query.models import (
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_query_session import (
+    _load_query_session_snapshot,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_active import (
+    build_interrupt_context_from_summary,
+    build_quoted_replay_context_from_summary,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
+    INTERRUPT_CONTEXT_MAX_CHARS,
+    QUOTED_REPLAY_CONTEXT_MAX_CHARS,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_router import (
+    build_router_context_from_summary,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_user import (
+    build_user_state_summary_from_summary,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
+    build_turn_context_summary,
+    get_or_build_turn_context_summary,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_state import (
+    summary_to_state_payload,
+)
+from apps.chat.src.agent.workers.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
     PendingClarificationState,
     QueryExtractionResult,
-)
-from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner.context import (
-    INTERRUPT_CONTEXT_MAX_CHARS,
-    QUOTED_REPLAY_CONTEXT_MAX_CHARS,
-    _load_query_session_snapshot,
-    build_interrupt_context_from_summary,
-    build_quoted_replay_context_from_summary,
-    build_router_context_from_summary,
-    build_turn_context_summary,
-    build_user_state_summary_from_summary,
-    get_or_build_turn_context_summary,
-    summary_to_state_payload,
 )
 
 
@@ -104,7 +116,10 @@ async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytes
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.planner.context.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.workflows.planner.context.context_query_session.logger.info",
+        _capture,
+    )
 
     class _Redis:
         async def get(self, key: str) -> str:
@@ -154,7 +169,10 @@ async def test_load_query_session_snapshot_logs_typed_surface_shape_without_lega
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.planner.context.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.workflows.planner.context.context_query_session.logger.info",
+        _capture,
+    )
 
     class _Redis:
         async def get(self, key: str) -> str:
@@ -448,7 +466,7 @@ def test_get_or_build_turn_context_summary_reuses_cached_state_payload(monkeypat
         raise AssertionError("summary should be reused from state")
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.nodes.planner.context.build_turn_context_summary",
+        "apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary.build_turn_context_summary",
         _should_not_build,
     )
 

@@ -82,6 +82,20 @@ def normalize_network_name(network: str | None) -> str | None:
     return NETWORK_ALIASES.get(token)
 
 
+def format_network_display_name(network: str | None) -> str:
+    """Return a user-facing network name while preserving canonical storage elsewhere."""
+    canonical = normalize_network_name(network)
+    if canonical == "MTN":
+        return "MTN"
+    if canonical == "AIRTEL":
+        return "Airtel"
+    if canonical == "GLO":
+        return "Glo"
+    if canonical == "9MOBILE":
+        return "9mobile"
+    return (network or "").strip()
+
+
 def resolve_network_from_phone(phone: str) -> str | None:
     """
     Resolve network provider from Nigerian phone number prefix.

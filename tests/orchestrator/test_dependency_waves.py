@@ -5,8 +5,8 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, AccountResult, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import PlannedTask, PlannerClause, PlannerOutput, RecipientAllocation, TaskParameters
 
 
@@ -14,7 +14,7 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -38,7 +38,7 @@ class _PlannerWithLegacyRepairMethods:
         self.review_calls = 0
         self.repair_calls = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1
         return self._output
@@ -60,7 +60,7 @@ class _SignalAwarePlanner:
         self.plan_calls = 0
         self.last_prompt_signals: object | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1
         self.last_prompt_signals = prompt_signals

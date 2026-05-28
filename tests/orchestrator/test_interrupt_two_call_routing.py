@@ -3,13 +3,20 @@
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.graphs.transfer.models.entities import TransferEntities
-from apps.chat.src.agent.graphs.transfer.models.extraction import TransferExtractionResult
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
-from shared.i18n import render_cancelled_prompt
-from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
+from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
+from apps.chat.src.agent.workers.transfer.models.entities import TransferEntities
+from apps.chat.src.agent.workers.transfer.models.extraction import TransferExtractionResult
+from shared.i18n.bridge import render_cancelled_prompt
+from shared.types.planner import (
+    InterruptRouteDecision,
+    PendingActionEditDecision,
+    PlannedTask,
+    PlannerOutput,
+    RecipientAllocation,
+    TaskParameters,
+)
 
 
 class _CountingPlanner:
@@ -25,14 +32,29 @@ class _CountingPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text
+        del phone_number, text, path_label, prompt_mode
         self.route_calls += 1
         self.last_context = context
         return self._route
 
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
+
     async def plan_tasks(
-        self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None
+        self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None,
+    path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1

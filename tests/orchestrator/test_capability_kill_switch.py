@@ -3,15 +3,17 @@ from pathlib import Path
 
 import pytest
 
-from apps.chat.src.agent.graphs.data.worker import DataWorker
-from apps.chat.src.agent.graphs.faq.worker import FAQWorker
-from apps.chat.src.agent.graphs.support.worker import SupportWorker
-from apps.chat.src.agent.graphs.transfer.worker import TransferWorker
 from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome, SupportOutcome, TransactionOutcome
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.context import GateContext
-from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.domain_stages import _stage_data_domain
-from apps.chat.src.agent.orchestrator.nodes.planner.task_flow import _build_planner_task_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.data_domain_stages import _stage_data_domain
+from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import (
+    _build_planner_task_updates,
+)
+from apps.chat.src.agent.workers.data.worker import DataWorker
+from apps.chat.src.agent.workers.faq.worker import FAQWorker
+from apps.chat.src.agent.workers.support.worker import SupportWorker
+from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from shared.policy.adapters import is_capability_supported
 from shared.policy.loader import get_cached_policy, load_policy
 from shared.policy.models import CapabilityPolicy

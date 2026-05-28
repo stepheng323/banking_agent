@@ -7,7 +7,6 @@ def test_provider_and_flow_paths_do_not_use_stdout_diagnostics() -> None:
     for relative_path in (
         "shared/clients/telegram/client.py",
         "shared/clients/whatsapp/client.py",
-        "apps/gateway/adapters/sender.py",
         "shared/utils/flow_encryption.py",
         "shared/utils/flow_decryption.py",
     ):

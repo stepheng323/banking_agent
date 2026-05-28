@@ -73,9 +73,6 @@ class SessionScopedUserRepository(_SessionScopedRepositoryMixin, UserRepository)
     async def get_by_id(self, record_id: str):
         return await self._call_with_session(UserRepository, "get_by_id", record_id)
 
-    async def get_by_whatsapp_id(self, whatsapp_id: str):
-        return await self._call_with_session(UserRepository, "get_by_whatsapp_id", whatsapp_id)
-
     async def is_registered(self, phone_number: str):
         return await self._call_with_session(UserRepository, "is_registered", phone_number)
 
@@ -112,9 +109,6 @@ class SessionScopedBeneficiaryRepository(_SessionScopedRepositoryMixin, Benefici
             BeneficiaryRepository, "search_by_name", user_id, search_term, beneficiary_type
         )
 
-    async def get_all_for_user(self, user_id: str):
-        return await self._call_with_session(BeneficiaryRepository, "get_all_for_user", user_id)
-
     async def should_suggest_beneficiary(
         self,
         user_id: str,
@@ -131,10 +125,10 @@ class SessionScopedBeneficiaryRepository(_SessionScopedRepositoryMixin, Benefici
             beneficiary_type,
         )
 
-    async def should_suggest_airtime_beneficiary(self, user_id: str, phone_number: str, network: str):
+    async def should_suggest_mobile_beneficiary(self, user_id: str, phone_number: str, network: str):
         return await self._call_with_session(
             BeneficiaryRepository,
-            "should_suggest_airtime_beneficiary",
+            "should_suggest_mobile_beneficiary",
             user_id,
             phone_number,
             network,

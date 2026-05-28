@@ -9,87 +9,30 @@ from typing import Any
 
 import redis.asyncio as redis
 
+import shared.transaction_runtime.provider_results as provider_results
+import shared.transaction_runtime.scheduled_runs as scheduled_runs
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.i18n import render_message
 from shared.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
+from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.transaction_repository import TransactionRepository
-from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.async_completion import (
     is_grouped_async_message,
     record_group_leg_and_maybe_build_summary,
 )
 from shared.services.delivery_service import DeliveryService
 from shared.services.failure_categories import classify_failure_category
+from shared.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
+    append_beneficiary_suggestion,
+    suggest_mobile_beneficiary,
+)
 from shared.utils.logging import get_logger
+from shared.utils.network_utils import format_network_display_name
 
 logger = get_logger(__name__)
-
-
-def _provider_error_message(result: dict[str, Any], fallback: str) -> str:
-    for key in ("message", "error", "reason"):
-        value = result.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return fallback
-
-
-def _provider_error_code(result: dict[str, Any]) -> str | None:
-    for key in ("response_code", "responseCode", "error_code", "code"):
-        value = result.get(key)
-        if value is not None:
-            return str(value)
-    return None
-
-
-def _provider_reference(result: dict[str, Any]) -> str | None:
-    for key in ("transaction_id", "reference", "ref", "provider_reference"):
-        value = result.get(key)
-        if value is not None and str(value).strip():
-            return str(value).strip()
-
-    for nested_key in ("data", "raw_response"):
-        nested = result.get(nested_key)
-        if not isinstance(nested, dict):
-            continue
-        for key in ("transaction_id", "reference", "ref", "provider_reference"):
-            value = nested.get(key)
-            if value is not None and str(value).strip():
-                return str(value).strip()
-    return None
-
-
-def _provider_status(result: dict[str, Any]) -> str:
-    for key in ("status", "provider_status", "transaction_status", "tx_status"):
-        value = result.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip().lower()
-
-    for nested_key in ("data", "raw_response"):
-        nested = result.get(nested_key)
-        if not isinstance(nested, dict):
-            continue
-        for key in ("status", "provider_status", "transaction_status", "tx_status"):
-            value = nested.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip().lower()
-
-    for key in ("message", "error", "reason"):
-        value = result.get(key)
-        if isinstance(value, str) and value.strip().lower() in {
-            "pending",
-            "processing",
-            "queued",
-            "bill payment is pending",
-        }:
-            return "pending"
-    return ""
-
-
-def _provider_status_is_processing(result: dict[str, Any]) -> bool:
-    return _provider_status(result) in {"pending", "processing", "queued"}
 
 
 def _execution_error_message(locale: str) -> str:
@@ -109,6 +52,16 @@ def _airtime_personality_context(
     )
 
 
+def _airtime_recipient_target(airtime_data: dict[str, Any], recipient_phone: Any) -> str:
+    phone = str(recipient_phone or "").strip()
+    if airtime_data.get("is_self"):
+        return f"My Number ({phone})" if phone else "My Number"
+    recipient_name = str(airtime_data.get("recipient_name") or airtime_data.get("name") or "").strip()
+    if recipient_name:
+        return f"{recipient_name} ({phone})" if phone else recipient_name
+    return phone
+
+
 class AirtimeExecutor:
     """Executor for Airtime transactions."""
 
@@ -119,55 +72,48 @@ class AirtimeExecutor:
         publisher: QueuePublisher,
         delivery_service: DeliveryService | None = None,
         redis_client: redis.Redis | None = None,
+        beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.publisher = publisher
         self.delivery_service = delivery_service or DeliveryService()
         self.redis_client = redis_client
+        self.beneficiary_suggestion_service = beneficiary_suggestion_service
 
-    @staticmethod
-    def _scheduled_meta(data: dict[str, Any]) -> dict[str, Any]:
-        raw = data.get("scheduled_meta")
-        return raw if isinstance(raw, dict) else {}
-
-    async def _update_scheduled_run(
+    async def _build_airtime_beneficiary_suggestion(
         self,
-        schedule_run_id: str | None,
         *,
-        status: str,
-        error_message: str | None = None,
-        transaction_id: str | None = None,
-    ) -> None:
-        if not schedule_run_id:
-            return
-        try:
-            async with UnitOfWork() as uow:
-                if not uow.scheduled_runs:
-                    return
-                run = await uow.scheduled_runs.get_by_id(schedule_run_id)
-                if not run:
-                    return
-                run.status = status
-                run.error_message = error_message
-                run.transaction_id = transaction_id or run.transaction_id
-                if status in {"successful", "failed"}:
-                    from datetime import UTC, datetime
+        data: dict[str, Any],
+        airtime_data: dict[str, Any],
+        transaction_id: str,
+        locale: str,
+    ) -> str | None:
+        if is_grouped_async_message(data):
+            return None
+        if scheduled_runs.is_scheduled_run(scheduled_runs.scheduled_meta(data)):
+            return None
 
-                    run.completed_at = datetime.now(UTC).replace(tzinfo=None)
-                uow.db.add(run)
-                await uow.commit()
-        except Exception as exc:
-            logger.warning("scheduled_airtime_run_update_failed", schedule_run_id=schedule_run_id, error=str(exc))
+        return await suggest_mobile_beneficiary(
+            self.beneficiary_suggestion_service,
+            phone_number=str(data.get("phone_number") or ""),
+            channel=str(data.get("channel") or "whatsapp"),
+            locale=locale,
+            transaction_id=transaction_id,
+            beneficiary_type="airtime",
+            recipient_phone=airtime_data.get("phone_number"),
+            network=airtime_data.get("network"),
+            recipient_name=airtime_data.get("recipient_name") or airtime_data.get("name"),
+        )
 
     async def handle_airtime(self, data: dict[str, Any]) -> None:
         """Handle execution of an airtime transaction."""
         transaction_id = data.get("transaction_id")
         airtime_data = data.get("airtime_data", {})
         locale = data.get("language", "en")
-        scheduled_meta = self._scheduled_meta(data)
-        schedule_run_id = str(scheduled_meta.get("schedule_run_id")) if scheduled_meta.get("schedule_run_id") else None
-        is_scheduled = str(scheduled_meta.get("run_source") or "") == "scheduled"
+        scheduled_meta = scheduled_runs.scheduled_meta(data)
+        schedule_run_id = scheduled_runs.schedule_run_id(scheduled_meta)
+        is_scheduled = scheduled_runs.is_scheduled_run(scheduled_meta)
 
         if not transaction_id:
             logger.error("airtime_execution_error", error="missing_transaction_id")
@@ -184,11 +130,12 @@ class AirtimeExecutor:
                 ) or capability_block_message(domain="airtime", action="buy_airtime", locale=locale)
                 if policy_block_message:
                     logger.info("scheduled_airtime_execution_policy_blocked", transaction_id=transaction_id)
-                    await self._update_scheduled_run(
+                    await scheduled_runs.update_scheduled_run(
                         schedule_run_id,
                         status="failed",
                         error_message=policy_block_message,
                         transaction_id=transaction_id,
+                        warning_event="scheduled_airtime_run_update_failed",
                     )
                     await self.transaction_repo.update_status(
                         transaction_id,
@@ -196,16 +143,19 @@ class AirtimeExecutor:
                         error_message=policy_block_message,
                     )
                     return
-                await self._update_scheduled_run(
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="processing",
                     transaction_id=transaction_id,
+                    warning_event="scheduled_airtime_run_update_failed",
                 )
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
             amount = airtime_data.get("amount")
             recipient_phone = airtime_data.get("phone_number")
             network = airtime_data.get("network")
+            network_display = format_network_display_name(network)
+            recipient_target = _airtime_recipient_target(airtime_data, recipient_phone)
             delivery_target = str(data.get("channel_identity") or data.get("phone_number") or "").strip()
             channel = data.get("channel", "whatsapp")
             logger.info(
@@ -223,8 +173,8 @@ class AirtimeExecutor:
                 network=network,
                 reference=request_reference,
             )
-            provider_reference = _provider_reference(result) or request_reference
-            provider_status = _provider_status(result) or None
+            provider_reference = provider_results.provider_reference(result) or request_reference
+            provider_status = provider_results.provider_status(result) or None
 
             if result.get("success"):
                 await self.transaction_repo.update_status(
@@ -235,10 +185,11 @@ class AirtimeExecutor:
                     provider_response=result,
                 )
                 logger.info("airtime_success", transaction_id=transaction_id, ref=provider_reference)
-                await self._update_scheduled_run(
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="successful",
                     transaction_id=transaction_id,
+                    warning_event="scheduled_airtime_run_update_failed",
                 )
                 completion_payload = {
                     "amount": amount,
@@ -279,10 +230,20 @@ class AirtimeExecutor:
                         {
                             "amount": f"{amount:,.2f}",
                             "recipient_phone": recipient_phone or "",
-                            "network": network or "",
+                            "recipient_target": recipient_target,
+                            "network": network_display,
                             "reference": ref,
                         },
                         _airtime_personality_context(airtime_data, amount=amount, moment="success"),
+                    )
+                    message = append_beneficiary_suggestion(
+                        message,
+                        await self._build_airtime_beneficiary_suggestion(
+                            data=data,
+                            airtime_data=airtime_data,
+                            transaction_id=transaction_id,
+                            locale=locale,
+                        ),
                     )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
@@ -293,7 +254,7 @@ class AirtimeExecutor:
                     )
                 else:
                     logger.warning("airtime_delivery_target_missing", transaction_id=transaction_id, channel=channel)
-            elif _provider_status_is_processing(result):
+            elif provider_results.provider_status_is_processing(result):
                 await self.transaction_repo.update_status(
                     transaction_id,
                     TransactionStatusEnum.PROCESSING.value,
@@ -301,11 +262,16 @@ class AirtimeExecutor:
                     provider_status=provider_status,
                     provider_response=result,
                 )
-                logger.info("airtime_processing", transaction_id=transaction_id, status=_provider_status(result))
-                await self._update_scheduled_run(
+                logger.info(
+                    "airtime_processing",
+                    transaction_id=transaction_id,
+                    status=provider_results.provider_status(result),
+                )
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="processing",
                     transaction_id=transaction_id,
+                    warning_event="scheduled_airtime_run_update_failed",
                 )
                 completion_payload = {
                     "amount": amount,
@@ -338,7 +304,7 @@ class AirtimeExecutor:
                         },
                         dedupe_key=f"airtime:batch:{batch_summary['stage']}:{transaction_id}",
                     )
-                elif delivery_target and not is_grouped_async_message(data):
+                elif delivery_target and is_scheduled and not is_grouped_async_message(data):
                     amount_text = f"{amount:,.2f}" if amount is not None else "0.00"
                     message = render_personalized_message(
                         "airtime.execution.message_queued",
@@ -346,9 +312,19 @@ class AirtimeExecutor:
                         {
                             "amount": amount_text,
                             "recipient_phone": recipient_phone or "",
-                            "network": network or "",
+                            "recipient_target": recipient_target,
+                            "network": network_display,
                         },
                         _airtime_personality_context(airtime_data, amount=amount, moment="pending"),
+                    )
+                    message = append_beneficiary_suggestion(
+                        message,
+                        await self._build_airtime_beneficiary_suggestion(
+                            data=data,
+                            airtime_data=airtime_data,
+                            transaction_id=transaction_id,
+                            locale=locale,
+                        ),
                     )
                     await self.delivery_service.deliver_text(
                         phone_number=delivery_target,
@@ -357,10 +333,29 @@ class AirtimeExecutor:
                         metadata={"source": "airtime_executor", "transaction_id": transaction_id},
                         dedupe_key=f"airtime:processing:{transaction_id}",
                     )
+                elif delivery_target and not is_grouped_async_message(data):
+                    suggestion = await self._build_airtime_beneficiary_suggestion(
+                        data=data,
+                        airtime_data=airtime_data,
+                        transaction_id=transaction_id,
+                        locale=locale,
+                    )
+                    if suggestion:
+                        message = append_beneficiary_suggestion(
+                            render_message("airtime.execution.processing_status", locale),
+                            suggestion,
+                        )
+                        await self.delivery_service.deliver_text(
+                            phone_number=delivery_target,
+                            channel=channel,
+                            text=message,
+                            metadata={"source": "airtime_executor", "transaction_id": transaction_id},
+                            dedupe_key=f"airtime:processing-suggestion:{transaction_id}",
+                        )
                 else:
                     logger.warning("airtime_delivery_target_missing", transaction_id=transaction_id, channel=channel)
             else:
-                error_msg = _provider_error_message(
+                error_msg = provider_results.provider_error_message(
                     result,
                     render_message("airtime.error.provider_failed", locale),
                 )
@@ -368,17 +363,18 @@ class AirtimeExecutor:
                     transaction_id,
                     TransactionStatusEnum.FAILED.value,
                     error_message=error_msg,
-                    provider_transaction_id=_provider_reference(result),
+                    provider_transaction_id=provider_results.provider_reference(result),
                     provider_status=provider_status,
                     provider_response=result,
-                    provider_error_code=_provider_error_code(result),
+                    provider_error_code=provider_results.provider_error_code(result),
                 )
                 logger.error("airtime_failed", transaction_id=transaction_id, error=error_msg)
-                await self._update_scheduled_run(
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="failed",
                     error_message=error_msg,
                     transaction_id=transaction_id,
+                    warning_event="scheduled_airtime_run_update_failed",
                 )
                 completion_payload = {
                     "amount": amount,
@@ -392,7 +388,7 @@ class AirtimeExecutor:
                     "error_message": error_msg,
                     "failure_category": classify_failure_category(
                         message=error_msg,
-                        code=_provider_error_code(result),
+                        code=provider_results.provider_error_code(result),
                         context="provider",
                     ),
                 }
@@ -424,7 +420,8 @@ class AirtimeExecutor:
                         {
                             "amount": f"{amount:,.2f}",
                             "recipient_phone": recipient_phone or "",
-                            "network": network or "",
+                            "recipient_target": recipient_target,
+                            "network": network_display,
                             "reason": error_msg,
                         },
                         _airtime_personality_context(airtime_data, amount=amount, moment="failure"),
@@ -445,11 +442,12 @@ class AirtimeExecutor:
             await self.transaction_repo.update_status(
                 transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
             )
-            await self._update_scheduled_run(
+            await scheduled_runs.update_scheduled_run(
                 schedule_run_id,
                 status="failed",
                 error_message=error_msg,
                 transaction_id=transaction_id,
+                warning_event="scheduled_airtime_run_update_failed",
             )
             completion_payload = {
                 "amount": airtime_data.get("amount"),

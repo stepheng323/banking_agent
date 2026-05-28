@@ -1,6 +1,6 @@
 """Beneficiary suggestion formatter."""
 
-from shared.i18n import render_message
+from shared.i18n.renderer import render_message
 
 
 def format_beneficiary_suggestion(recipient_name: str, locale: str = "en") -> str:

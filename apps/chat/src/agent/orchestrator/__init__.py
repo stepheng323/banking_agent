@@ -1,44 +1,24 @@
-"""Orchestrator package exports.
+"""Public orchestrator entrypoints."""
 
-Keep imports lazy so lightweight runtimes can import orchestrator submodules
-without pulling chat-only dependencies at module import time.
-"""
+from importlib import import_module
+from typing import Any
 
-from typing import TYPE_CHECKING, Any
+_PUBLIC_EXPORTS = {
+    "OrchestratorAgent": ("apps.chat.src.agent.orchestrator.agent", "OrchestratorAgent"),
+    "build_orchestrator_graph": (
+        "apps.chat.src.agent.orchestrator.graph.builder",
+        "build_orchestrator_graph",
+    ),
+}
 
-__all__ = [
-    "OrchestratorAgent",
-    "OrchestratorContextManager",
-    "OrchestratorTaskPlanner",
-    "ConversationResponder",
-]
-
-if TYPE_CHECKING:
-    from apps.chat.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
-    from shared.services.context_manager import OrchestratorContextManager
-    from shared.services.conversation_responder import ConversationResponder
-    from shared.services.task_planner import OrchestratorTaskPlanner
+__all__ = ["OrchestratorAgent", "build_orchestrator_graph"]
 
 
 def __getattr__(name: str) -> Any:
-    if name == "OrchestratorAgent":
-        from apps.chat.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
+    if name not in _PUBLIC_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-        return OrchestratorAgent
-
-    if name == "OrchestratorContextManager":
-        from shared.services.context_manager import OrchestratorContextManager
-
-        return OrchestratorContextManager
-
-    if name == "OrchestratorTaskPlanner":
-        from shared.services.task_planner import OrchestratorTaskPlanner
-
-        return OrchestratorTaskPlanner
-
-    if name == "ConversationResponder":
-        from shared.services.conversation_responder import ConversationResponder
-
-        return ConversationResponder
-
-    raise AttributeError(f"module 'apps.chat.src.agent.orchestrator' has no attribute '{name}'")
+    module_name, attribute_name = _PUBLIC_EXPORTS[name]
+    value = getattr(import_module(module_name), attribute_name)
+    globals()[name] = value
+    return value

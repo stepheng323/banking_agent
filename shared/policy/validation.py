@@ -13,6 +13,7 @@ REQUIRED_DOMAIN_ACTIONS: dict[str, set[str]] = {
     },
     "data": {
         "buy_data",
+        "data_plan_query",
     },
     "schedule": {
         "schedule_transfer",

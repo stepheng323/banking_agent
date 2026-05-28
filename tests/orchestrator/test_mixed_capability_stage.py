@@ -1,4 +1,4 @@
-from apps.chat.src.agent.orchestrator.nodes.gate.pipeline.mixed_capability_stages import (
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilities import (
     analyze_mixed_supported_unsupported,
     mixed_policy_notice,
 )

@@ -32,7 +32,22 @@
       "request_network": "data {network}",
       "request_amount": "{amount} data",
       "target_phone_for_request": "Enwetara m arịrịọ {request}. Kedu line ka m ga-azụrụ ya?",
+      "target_phone_for_network_request": "Enwetara m arịrịọ {request}. Kedu line {network} ka m ga-azụrụ ya?",
       "network_for_phone": "Enwere m {target_phone}. Kedu network ọ nọ na ya?"
+    },
+    "airtime": {
+      "request_amount_network": "{amount} airtime {network}",
+      "request_network": "airtime {network}",
+      "request_amount": "{amount} airtime",
+      "phone_amount": "Ọ dị mma. Kedu line ka m ga-azụrụ airtime, na ego ole?",
+      "phone_amount_for_network": "Ọ dị mma. Kedu line {network} ka m ga-azụrụ airtime, na ego ole?",
+      "amount_for_self": "Ọ dị mma. Aga m eji number gị. Ego ole airtime ka m ga-azụta?",
+      "amount_for_self_network": "Ọ dị mma. Aga m eji line {network} gị. Ego ole airtime ka m ga-azụta?",
+      "phone_for_request": "Enwetara m {request}. Kedu line ka m ga-azụrụ ya?",
+      "phone_for_network_request": "Enwetara m {request}. Kedu line {network} ka m ga-azụrụ ya?",
+      "amount_for_phone": "Enwere m {recipient_phone}. Ego ole airtime ka m ga-azụta?",
+      "network_for_phone": "Enwere m {recipient_phone}. Kedu network ọ nọ na ya?",
+      "network_for_amount_phone": "Enwetara m {amount} maka {recipient_phone}. Kedu network ọ nọ na ya?"
     }
   },
   "locale": {
@@ -49,9 +64,10 @@
   },
   "conversational": {
     "greeting": "Ndeewo. Abụ m {app_name}. Kedu ihe ịchọrọ ka m mee taa?",
+    "greeting_named": "Ndeewo {display_name}. Abụ m {app_name}. Kedu ihe ịchọrọ ka m mee taa?",
     "appreciation": "Nnoo. Kedu ọrụ ọzọ ka anyị ga-eme ugbu a?",
     "checkin": "Anọ m ebe a. Kedu mmegharị ego ka anyị ga-eme?",
-    "identity": "Abụ m {app_name}. Ana m arụ ọrụ banking nke ọma, ngwa ngwa, ma nlezianya.",
+    "identity": "Abụ m {app_name}, onye enyemaka banking na-enyere gị ịkwaga na ilele ego gị: transfer, airtime/data, balance, na ajụjụ transaction.",
     "identity_correction": "Ọ bụghị {addressed_name} 😄 Abụ m {app_name}. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction. Kedu ihe ịchọrọ ime?",
     "brand_origin": "Aha {app_name_short} sitere na {app_brand_inspiration}. Anyị họọrọ ya n'ihi na {app_brand_symbolism}: echiche dị n'azụ {app_name} bụ inyere ego gị aka ịga nke ọma, nke doro anya, ma nọrọ n'okpuru njikwa gị.",
     "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
@@ -71,6 +87,11 @@
         "airtime_purchase": "ịzụta airtime",
         "data_purchase": "ịzụta data"
       }
+    },
+    "contextual_meta_followup": {
+      "generic": "Aghọtara m.",
+      "brand_origin": "Ee, nke ahụ bụ echiche ya: flow, nghọta, na njikwa ego gị.",
+      "product_identity": "Kpamkpam, Nenya na-enyere gị ịkwaga na ilele ego gị nke ọma."
     }
   },
   "support": {
@@ -580,6 +601,15 @@
       "recipient_resolved": "✓ {label} resolved: {resolved}",
       "recipient_resolved_generic": "✓ {label} resolved",
       "input_attempts_exhausted": "Enweghị m ike ịghọta nkọwa ndị m chọrọ, ya mere akpochara m transaction ahụ. Ka anyị bido ọzọ. Kedu ihe ịchọrọ ime?",
+      "input_greeting": "Ndeewo. Achọrọ m azịza gị ka anyị gaa n'ihu. Biko zaa ajụjụ ikpeazụ, ma obu kwuo cancel.",
+      "input_greeting_data_plan": "Ndeewo. Anyị ka na-ahọrọ data plan. Zaa nomba option, ma obu kwuo cancel.",
+      "input_greeting_data_plan_network": "Ndeewo. Anyị ka na-ahọrọ data plan na {network}. Zaa nomba option, ma obu kwuo cancel.",
+      "input_greeting_data_preference": "Ndeewo. Achọrọ m budget ma obu data size ka anyị gaa n'ihu. Zaa dịka 2k ma obu 5GB, ma obu kwuo cancel.",
+      "input_greeting_data_preference_network": "Ndeewo. Achọrọ m budget ma obu data size maka data {network} a. Zaa dịka 2k ma obu 5GB, ma obu kwuo cancel.",
+      "input_greeting_airtime_amount": "Ndeewo. Achọrọ m ego airtime ka anyị gaa n'ihu. Zaa ego ahụ, ma obu kwuo cancel.",
+      "input_greeting_airtime_amount_network": "Ndeewo. Achọrọ m ego airtime maka line {network} a. Zaa ego ahụ, ma obu kwuo cancel.",
+      "input_greeting_airtime_line_amount": "Ndeewo. Achọrọ m line na ego maka airtime a. Zaa ha abụọ, ma obu kwuo cancel.",
+      "input_greeting_airtime_line_amount_network": "Ndeewo. Achọrọ m line {network} na ego airtime. Zaa ha abụọ, ma obu kwuo cancel.",
       "pin_prompt_default": "Please enter your PIN.",
       "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
@@ -672,14 +702,14 @@
       "not_supported": "Updating beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save as '{alias}'\n- Or send a different name",
-      "ask_save_transfer_default": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "ask_save_phone_default": "Would you like to save {recipient_display} ({network} • {masked_phone}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "no_recent": "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them.",
-      "user_not_found": "User not found.",
+      "ask_save_transfer_with_alias": "Ị chọrọ ka m chekwaa {recipient_display} ({bank_display} • {masked_account}) dịka beneficiary?\n- Zaa 'save' ka m chekwaa ya dịka '{alias}'\n- Ma ọ bụ zitere m aha ọzọ",
+      "ask_save_transfer_default": "Ị chọrọ ka m chekwaa {recipient_display} ({bank_display} • {masked_account}) dịka beneficiary?\n- Zaa 'save' ka m chekwaa ya\n- Ma ọ bụ zitere m aha (e.g., 'Mum') ka m jiri ya dịka alias",
+      "ask_save_phone_default": "Ị chọrọ ka m chekwaa {recipient_display} ({network} • {masked_phone}) dịka beneficiary?\n- Zaa 'save' ka m chekwaa ya\n- Ma ọ bụ zitere m aha (e.g., 'Mum') ka m jiri ya dịka alias",
+      "no_recent": "Anaghị m echeta beneficiary suggestion ọ bụla n'oge na-adịbeghị anya. Transaction ahụ ga-abụ nke nso nso a tupu m nwee ike ichekwa ya.",
+      "user_not_found": "Ahụghị user.",
       "default_alias": "My Beneficiary",
-      "saved": "✓ Saved **{alias}** to your beneficiaries.",
-      "save_failed": "Sorry, I couldn't save that beneficiary due to an error."
+      "saved": "✓ Echekwara **{alias}** na beneficiaries gị.",
+      "save_failed": "Ndo, enweghị m ike ichekwa beneficiary ahụ ugbu a."
     },
     "format": {
       "suggestion": "💡 Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
@@ -827,6 +857,15 @@
     "extraction": {
       "unsupported_feature": "Sorry, I can't do {feature_name} airtime transfers yet. I can only do instant transfers defined right now."
     },
+    "confirmation": {
+      "change": {
+        "amount_to": "O di mma, ana m emelite airtime gaa {amount}.",
+        "phone_to": "O di mma, aga m eji {phone} maka airtime a.",
+        "network_to": "O di mma, ana m agbanwe network airtime gaa {network}.",
+        "source_to": "O di mma, aga m eji {source} maka airtime a.",
+        "details": "O di mma, ana m emelite nkowa airtime ahu."
+      }
+    },
     "validation": {
       "missing_fields": "Biko nye {missing}.",
       "field": {
@@ -843,12 +882,13 @@
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
-        "title": "*{amount} Airtime → {recipient_display}*",
+        "target_self": "your number",
+        "title": "*{amount} airtime maka {recipient_display}*",
         "title_variants": {
-          "standard": "*{amount} Airtime → {recipient_display}*",
-          "warm": "*Airtime adịla njikere maka {recipient_display}: {amount}*",
+          "standard": "*{amount} airtime maka {recipient_display}*",
+          "warm": "*{amount} airtime maka {recipient_display}*",
           "careful": "*Lelee airtime purchase: {amount} maka {recipient_display}*",
-          "trusted_careful": "*Airtime adịla njikere, biko lelee: {amount} maka {recipient_display}*"
+          "trusted_careful": "*Biko lelee: {amount} airtime maka {recipient_display}*"
         },
         "network_line": "Network: {network}"
       }
@@ -856,12 +896,13 @@
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Airtime ₦{amount} maka {recipient_phone} ({network}) na-aga n'ihu.",
+      "message_queued": "Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
       "message_queued_variants": {
-        "standard": "Airtime ₦{amount} maka {recipient_phone} ({network}) na-aga n'ihu.",
-        "warm": "Enwetara m ya. Airtime ₦{amount} maka {recipient_phone} ({network}) na-aga n'ihu.",
-        "reassuring": "Airtime ₦{amount} maka {recipient_phone} ({network}) na-aga n'ihu. Confirmation provider nwere ike were obere oge."
+        "standard": "Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
+        "warm": "Enwetara m ya. Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu.",
+        "reassuring": "Airtime ₦{amount} maka {recipient_target} ({network}) na-aga n'ihu. Confirmation provider nwere ike were obere oge."
       },
+      "processing_status": "Nzụta airtime a ka na-aga n'ihu.",
       "system_error": "System error during execution."
     },
     "error": {
@@ -871,16 +912,16 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "✓ Airtime gara nke ọma\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "✓ Airtime gara nke ọma\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "✓ Airtime gara nke ọma\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
-        "warm": "Emechala. Airtime ₦{amount} erutela {recipient_phone} ({network}).\nRef: {reference}",
-        "celebratory": "O doola. Airtime ₦{amount} erutela {recipient_phone} ({network}).\nRef: {reference}"
+        "standard": "✓ Airtime gara nke ọma\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "warm": "Emechala. Airtime ₦{amount} erutela {recipient_target} ({network}).\nRef: {reference}",
+        "celebratory": "O doola. Airtime ₦{amount} erutela {recipient_target} ({network}).\nRef: {reference}"
       },
-      "failure_message": "Airtime purchase dara maka {recipient_phone} ({network}).\nIhe kpatara ya: {reason}",
+      "failure_message": "Airtime purchase dara maka {recipient_target} ({network}).\nIhe kpatara ya: {reason}",
       "failure_message_variants": {
-        "standard": "Airtime purchase dara maka {recipient_phone} ({network}).\nIhe kpatara ya: {reason}",
-        "reassuring": "Enweghị m ike imecha airtime purchase maka {recipient_phone} ({network}).\nIhe kpatara ya: {reason}"
+        "standard": "Airtime purchase dara maka {recipient_target} ({network}).\nIhe kpatara ya: {reason}",
+        "reassuring": "Enweghị m ike imecha airtime purchase maka {recipient_target} ({network}).\nIhe kpatara ya: {reason}"
       }
     }
   },
@@ -892,11 +933,48 @@
     "confirmation": {
       "buy_network_for_phone": "Zuta data {network} maka {target_phone}?",
       "buy_plan_for_phone": "Zuta {plan_name} maka {target_phone}?",
-      "buy_amount_network_for_phone": "Zuta data {network} nke ₦{amount} maka {target_phone}?"
+      "buy_amount_network_for_phone": "Zuta data {network} nke ₦{amount} maka {target_phone}?",
+      "change": {
+        "amount_to": "O di mma, ana m emelite budget data gaa {amount}.",
+        "phone_to": "O di mma, aga m azuta data a maka {phone}.",
+        "network_to": "O di mma, ana m agbanwe network data gaa {network}.",
+        "plan_to": "O di mma, aga m eji {plan_name} na {amount}.",
+        "source_to": "O di mma, aga m eji {source} maka data a.",
+        "details": "O di mma, ana m emelite nkowa data ahu."
+      }
     },
     "execution": {
       "receipt_description_plan": "{plan_name} for {target_phone}",
       "receipt_description_network": "{network} data for {target_phone}"
+    },
+    "plan_selection": {
+      "ask_preference": "Kedu data plan {network} ka m jiri?\n{options}\n{reply_hint}",
+      "ask_preference_self_network": "O di mma. Aga m eji line {network} gi. Kedu budget ma obu data size ka m jiri?",
+      "ask_preference_self_unknown_network": "O di mma. Aga m eji number gi. Kedu network o ji, ma kedu budget ma obu data size ka m jiri?",
+      "ask_preference_network_without_phone": "O di mma. Kedu line {network} ka m zuta ya maka, ma kedu budget ma obu data size ka m jiri?",
+      "ask_preference_target_network": "O di mma. Kedu budget ma obu data size ka m jiri maka {target_phone} na {network}?",
+      "ask_preference_target_unknown_network": "O di mma. Kedu network ka {target_phone} ji, ma kedu budget ma obu data size ka m jiri?",
+      "choose_plan": "Ahuru m data plans ole na ole dabara:\n{options}\n{reply_hint}",
+      "recommendation_ask_phone": "Ahuru m {plan_name} maka ₦{amount}, o na-adị {validity}. Kedu line {network} ka m zuta ya maka?",
+      "reply_with_one": "Zaa 1.",
+      "reply_with_two": "Zaa 1 ma obu 2.",
+      "reply_with_range": "Zaa 1, 2, ma obu {count}.",
+      "option": "{index}. {plan_name} — ₦{amount} ({validity})",
+      "missing_plan": "Biko họrọ data plan ziri ezi tupu anyi aga n'ihu.",
+      "invalid_plan_code": "Ahughi m data plan ahu. Biko họrọ otu n'ime options di.",
+      "catalog_unavailable": "Enweghị m ike iweta data plans ugbu a. Biko nwaa ọzọ obere oge.",
+      "no_budget_match": "Ahughi m data plan {network} n'ime ₦{budget}. I nwere ike ibuli budget ma obu họrọ obere plan.",
+      "size_budget_conflict": "Ahughi m {size} n'ime ₦{budget}. Plan {size} kacha nso bu ₦{amount}.",
+      "validity_unknown": "validity adighi egosi"
+    },
+    "plan_query": {
+      "ask_network": "Kedu network ka m lelee?",
+      "exact_match": "{plan_name} bu ₦{amount}, o na-adị {validity}.",
+      "multiple_matches": "Ahuru m options ole na ole dabara:\n{options}",
+      "nearest_matches": "Ahughi m size ahu kpọmkwem. Options kacha nso bu:\n{options}",
+      "budget_matches": "Maka ₦{budget} na {network}, ndia bu options kacha ike:\n{options}",
+      "validity_matches": "Options ndia kacha nso na validity i juru:\n{options}",
+      "generic_matches": "Lee ụfọdụ data plans {network}:\n{options}"
     },
     "error": {
       "execution_failed": "Data purchase could not be completed. Please try again.",
@@ -922,12 +1000,12 @@
         "plan_name_fallback": "Data Plan",
         "source_bank_fallback": "Account",
         "target_self": "your number",
-        "title": "*{plan_name} → {target_display}*",
+        "title": "*{plan_name} maka {target_display}*",
         "title_variants": {
-          "standard": "*{plan_name} → {target_display}*",
-          "warm": "*Data adịla njikere maka {target_display}: {plan_name}*",
+          "standard": "*{plan_name} maka {target_display}*",
+          "warm": "*{plan_name} maka {target_display}*",
           "careful": "*Lelee data purchase: {plan_name} maka {target_display}*",
-          "trusted_careful": "*Data adịla njikere, biko lelee: {plan_name} maka {target_display}*"
+          "trusted_careful": "*Biko lelee: {plan_name} maka {target_display}*"
         },
         "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
@@ -945,6 +1023,7 @@
         "warm": "Enwetara m ya. {plan_name} purchase (₦{amount}) maka {recipient_phone} na-aga n'ihu.\n\nỊ ga-enweta confirmation n'oge na-adịghị anya.",
         "reassuring": "{plan_name} purchase (₦{amount}) maka {recipient_phone} na-aga n'ihu. Confirmation provider nwere ike were obere oge."
       },
+      "processing_status": "Nzụta data a ka na-aga n'ihu.",
       "failed_message": "Data purchase dara: {error_message}. Biko nwaa ọzọ.",
       "failed_message_variants": {
         "standard": "Data purchase dara: {error_message}. Biko nwaa ọzọ.",
@@ -1064,9 +1143,27 @@
       "scheduled_data": "Confirm Scheduled Data Purchase",
       "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
+      "airtime_variants": {
+        "standard": "Review Airtime Purchase",
+        "warm": "Review Airtime Purchase",
+        "careful": "Lelee Airtime Purchase Nke Ọma",
+        "trusted_careful": "Review Airtime Purchase"
+      },
       "data": "Confirm Data Purchase",
+      "data_variants": {
+        "standard": "Review Data Purchase",
+        "warm": "Review Data Purchase",
+        "careful": "Lelee Data Purchase Nke Ọma",
+        "trusted_careful": "Review Data Purchase"
+      },
       "mixed": "Confirm Transactions",
-      "generic": "Confirm Transaction"
+      "generic": "Confirm Transaction",
+      "section": {
+        "transfer": "*Transfer*",
+        "airtime": "*Airtime*",
+        "data": "*Data*",
+        "generic": "*Transaction*"
+      }
     },
     "completion": {
       "header": {

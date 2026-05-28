@@ -53,6 +53,7 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.readiness/
 
 # Environment
 .env.local

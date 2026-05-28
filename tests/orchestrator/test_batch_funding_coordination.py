@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from shared.clients.abstractions.direct_debit import BalanceResult
 
 

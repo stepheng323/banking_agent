@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
@@ -17,7 +17,7 @@ class _PlannerStub:
         del phone_number, text, context
         return self.interpretation
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> Any:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> Any:
         del phone_number, text, context
         self.plan_called = True
         return PlannerOutput(

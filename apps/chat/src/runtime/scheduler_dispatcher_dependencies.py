@@ -1,7 +1,7 @@
 """Dependency loader for schedule dispatcher lambda."""
 
 from apps.chat.src.runtime.common import require_aws_account_id
-from apps.chat.src.schedulers.transfer_schedule_dispatcher import TransactionScheduleDispatcher
+from apps.chat.src.schedulers.transaction_schedule_dispatcher import TransactionScheduleDispatcher
 from shared.config.settings import settings
 from shared.queue.factory import QueuePublisherFactory
 

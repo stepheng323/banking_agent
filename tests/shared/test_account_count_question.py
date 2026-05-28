@@ -1,7 +1,8 @@
 from typing import Any
 
-from apps.chat.src.agent.graphs.account.worker import AccountWorker
 from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome
+from apps.chat.src.agent.workers.account.serialization import serialize_accounts
+from apps.chat.src.agent.workers.account.worker import AccountWorker
 
 
 class _StructuredLLM:
@@ -56,7 +57,7 @@ async def test_account_worker_answers_count_question() -> None:
 
 
 def test_account_worker_serializes_dict_accounts_for_context_frames() -> None:
-    serialized = AccountWorker._serialize_accounts(
+    serialized = serialize_accounts(
         [
             {
                 "id": "a1",

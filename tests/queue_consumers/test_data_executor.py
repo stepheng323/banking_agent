@@ -40,6 +40,11 @@ class _RedisStub:
         return dict(self.hashes.get(key, {}))
 
 
+class _SuggestionServiceStub:
+    def __init__(self, message: str | None = "Would you like to save this MTN line?") -> None:
+        self.check_and_suggest_beneficiary = AsyncMock(return_value=message)
+
+
 def _payload() -> dict:
     return {
         "transaction_id": "tx-1",
@@ -53,6 +58,7 @@ def _payload() -> dict:
             "amount": 1500,
             "target_phone": "08031234567",
             "network": "MTN",
+            "recipient_name": "Tolu",
             "source": "1234567890",
         },
         "language": "en",
@@ -105,10 +111,118 @@ async def test_data_executor_single_success_delivers_to_originating_user() -> No
         plan_code="mtn-1gb",
         recipient_phone="08031234567",
         network="MTN",
+        amount=1500.0,
         reference="idem-1",
     )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
-    assert "Data purchase successful" in delivery_service.deliver_text.await_args.kwargs["text"]
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Data purchase successful" in text
+    assert "Recipient: Tolu (MTN)" in text
+    assert "Recipient: 1GB Weekly" not in text
+
+
+@pytest.mark.asyncio
+async def test_data_executor_success_uses_phone_as_recipient_when_name_missing() -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    payload = _payload()
+    payload["data_purchase"].pop("recipient_name")
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_data(payload)
+
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Data purchase successful" in text
+    assert "Recipient: 08031234567 (MTN)" in text
+    assert "Recipient: 1GB Weekly" not in text
+
+
+@pytest.mark.asyncio
+async def test_data_executor_single_success_appends_beneficiary_suggestion() -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_data(_payload())
+
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Data purchase successful" in text
+    assert "Would you like to save this MTN line?" in text
+    suggestion_service.check_and_suggest_beneficiary.assert_awaited_once()
+    assert suggestion_service.check_and_suggest_beneficiary.await_args.kwargs["recipient_data"]["name"] == "Tolu"
+
+
+@pytest.mark.asyncio
+async def test_data_executor_self_success_does_not_suggest_beneficiary() -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    payload = _payload()
+    payload["data_purchase"]["target_phone"] = "08162511023"
+    payload["data_purchase"]["recipient_name"] = ""
+    payload["data_purchase"]["is_self"] = True
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_data(payload)
+
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Would you like to save" not in text
+    suggestion_service.check_and_suggest_beneficiary.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_data_executor_grouped_success_does_not_suggest_beneficiary() -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    payload = _payload()
+    payload["async_group"] = {
+        "async_group_id": "group-data",
+        "async_group_size": 2,
+        "async_group_kind": "mixed_batch",
+        "async_group_index": 1,
+    }
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_data(payload)
+
+    suggestion_service.check_and_suggest_beneficiary.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -162,6 +276,56 @@ async def test_data_executor_failure_uses_provider_error_field() -> None:
 
 
 @pytest.mark.asyncio
+async def test_data_executor_provider_pending_stays_processing_without_duplicate_delivery() -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": False, "message": "Bill payment is Pending"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    payload = _payload()
+    payload.pop("async_group")
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_data(payload)
+
+    assert transaction_repo.update_status.await_args_list[0].args == ("tx-1", TransactionStatusEnum.PROCESSING.value)
+    assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.PROCESSING.value)
+    assert transaction_repo.update_status.await_args_list[1].kwargs["provider_status"] == "pending"
+    delivery_service.deliver_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_data_executor_provider_pending_sends_status_with_beneficiary_suggestion_when_available() -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": False, "message": "Bill payment is Pending"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    payload = _payload()
+    payload.pop("async_group")
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_data(payload)
+
+    delivery_service.deliver_text.assert_awaited_once()
+    assert delivery_service.deliver_text.await_args.kwargs["text"] == (
+        "This data purchase is still processing.\n\nWould you like to save this MTN line?"
+    )
+
+
+@pytest.mark.asyncio
 async def test_data_executor_exception_uses_safe_user_error() -> None:
     provider = SimpleNamespace(purchase_data=AsyncMock(side_effect=RuntimeError("raw provider token leaked")))
     transaction_repo = SimpleNamespace(update_status=AsyncMock())
@@ -212,3 +376,28 @@ async def test_data_executor_policy_block_does_not_call_provider(tmp_path: Path)
         assert DATA_DISABLED_MESSAGE in delivery_service.deliver_text.await_args.kwargs["text"]
     finally:
         _reset_policy_cache()
+
+
+@pytest.mark.asyncio
+async def test_data_executor_missing_plan_code_does_not_call_provider() -> None:
+    provider = SimpleNamespace(purchase_data=AsyncMock(return_value={"success": True}))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    payload = _payload()
+    payload["data_purchase"]["plan_code"] = None
+    payload.pop("async_group")
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_data(payload)
+
+    provider.purchase_data.assert_not_awaited()
+    assert transaction_repo.update_status.await_args_list[1].args == ("tx-1", TransactionStatusEnum.FAILED.value)
+    assert (
+        transaction_repo.update_status.await_args_list[1].kwargs["error_message"]
+        == "Please choose a valid data plan before we continue."
+    )

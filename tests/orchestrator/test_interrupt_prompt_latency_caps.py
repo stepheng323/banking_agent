@@ -4,9 +4,11 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.interrupt import (
-    INTERRUPT_CONTEXT_MAX_CHARS,
+from apps.chat.src.agent.orchestrator.workflows.interrupt.router.context_router import (
     _build_interrupt_context,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
+    INTERRUPT_CONTEXT_MAX_CHARS,
 )
 
 
@@ -129,13 +131,110 @@ def test_interrupt_context_includes_compact_active_task_state() -> None:
     assert "\"has_recipient_account\": true" in context
 
 
+def test_interrupt_context_includes_data_confirmation_plan_state() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_cap_data",
+        phone_number="2348099999995",
+        channel="whatsapp",
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 3500,
+                    "target_phone": "08162511023",
+                    "network": "MTN",
+                    "plan_code": "MD501",
+                    "plan_name": "MTN 5 GB data bundle",
+                    "plan_size_gb": 5.0,
+                    "plan_validity_days": 30,
+                    "confirmation": {
+                        "summary": "Confirm data purchase",
+                        "snapshot": {
+                            "amount": 3500,
+                            "target_phone": "08162511023",
+                            "network": "MTN",
+                            "plan_name": "MTN 5 GB data bundle",
+                        },
+                    },
+                },
+            ),
+        },
+    )
+
+    context = _build_interrupt_context(
+        state=state,
+        kind="confirmation",
+        task_ids=["t_data"],
+        current_task_types={"data"},
+        fields_by_task={"t_data": []},
+        prompt="Confirm data purchase",
+    )
+
+    assert "active_task_state=" in context
+    assert "\"t_data\"" in context
+    assert "\"target_phone\": \"08162511023\"" in context
+    assert "\"network\": \"MTN\"" in context
+    assert "\"plan_name\": \"MTN 5 GB data bundle\"" in context
+    assert "\"plan_size_gb\": 5.0" in context
+    assert "\"plan_validity_days\": 30" in context
+
+
+def test_interrupt_context_includes_airtime_self_target_state() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_cap_airtime",
+        phone_number="2348099999996",
+        channel="whatsapp",
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "is_self": True,
+                    "confirmation": {
+                        "summary": "Confirm airtime purchase",
+                        "snapshot": {
+                            "amount": 1000,
+                            "recipient_phone": "08162511023",
+                            "network": "MTN",
+                            "is_self": True,
+                        },
+                    },
+                },
+            ),
+        },
+    )
+
+    context = _build_interrupt_context(
+        state=state,
+        kind="confirmation",
+        task_ids=["t_airtime"],
+        current_task_types={"airtime"},
+        fields_by_task={"t_airtime": []},
+        prompt="Confirm airtime purchase",
+    )
+
+    assert "active_task_state=" in context
+    assert "\"recipient_phone\": \"08162511023\"" in context
+    assert "\"network\": \"MTN\"" in context
+    assert "\"is_self\": true" in context
+
+
 def test_interrupt_context_logs_raw_and_clipped_component_sizes(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[tuple[str, dict[str, object]]] = []
 
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.nodes.interrupt.logger.info", _capture)
+    monkeypatch.setattr(
+        "apps.chat.src.agent.orchestrator.workflows.interrupt.router.context_router.logger.info",
+        _capture,
+    )
 
     state = OrchestratorState(
         user_id="u_interrupt_cap_4",

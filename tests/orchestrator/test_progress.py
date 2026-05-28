@@ -1,4 +1,4 @@
-from apps.chat.src.agent.orchestrator.progress import (
+from apps.chat.src.agent.orchestrator.graph.progress import (
     TurnProgressSnapshot,
     is_progress_stage_user_visible,
     render_progress_message,

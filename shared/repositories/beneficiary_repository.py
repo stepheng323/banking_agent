@@ -82,10 +82,6 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def get_all_for_user(self, user_id: str) -> list[Beneficiary]:
-        """Get all beneficiaries for a user (alias for get_by_user)."""
-        return await self.get_by_user(user_id)
-
     async def should_suggest_beneficiary(
         self,
         user_id: str,
@@ -115,30 +111,16 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
             if beneficiary.account_number is not None and beneficiary.bank_name is not None
         )
 
-    async def should_suggest_airtime_beneficiary(
+    async def should_suggest_mobile_beneficiary(
         self,
         user_id: str,
         phone_number: str,
         network: str,
     ) -> bool:
-        """
-        Check if airtime recipient should be suggested as a beneficiary.
-
-        For airtime beneficiaries:
-        - account_number stores the phone number
-        - bank_name stores the network name
-
-        Args:
-            user_id: User's UUID
-            phone_number: Recipient phone number
-            network: Network name (MTN, Airtel, Glo, 9mobile)
-
-        Returns:
-            True if recipient should be suggested (doesn't exist), False otherwise
-        """
-        beneficiaries = await self.get_by_user(user_id, beneficiary_type="airtime")
-        # Handle None values in comparisons - skip if either field is None
-        # For airtime: account_number=phone, bank_name=network (both should always be present)
+        """Check if a mobile-line beneficiary should be suggested."""
+        airtime_beneficiaries = await self.get_by_user(user_id, beneficiary_type="airtime")
+        data_beneficiaries = await self.get_by_user(user_id, beneficiary_type="data")
+        beneficiaries = [*airtime_beneficiaries, *data_beneficiaries]
         return not any(
             beneficiary.account_number == phone_number and beneficiary.bank_name == network
             for beneficiary in beneficiaries

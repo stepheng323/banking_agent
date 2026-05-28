@@ -26,12 +26,12 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
-from shared.services.auth import AuthorizationService
+from shared.services.auth.authorization import AuthorizationService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _INVALID_SESSION_MESSAGE = "Invalid transaction session. Please start a new transaction."
-_PIN_FLOW_PREFIXES = frozenset({"transaction", "transfer", "airtime", "data", "schedule"})
+_PIN_FLOW_PREFIXES = frozenset({"transfer", "airtime", "data", "schedule"})
 
 
 @dataclass(frozen=True)
@@ -58,9 +58,8 @@ def parse_transaction_pin_flow_token(flow_token: str | None) -> ParsedTransactio
             idempotency_key = maybe_idempotency_key
             phone_hint = maybe_phone_hint
 
-    transaction_type = None if prefix == "transaction" else prefix
     return ParsedTransactionPinToken(
-        transaction_type=transaction_type,
+        transaction_type=prefix,
         idempotency_key=idempotency_key,
         phone_hint=phone_hint,
     )
@@ -133,13 +132,7 @@ async def handle_transaction_pin(
 
     redis_client = RedisClient.get_client()
 
-    phone_number = await redis_client.get(f"transaction:token:{idem_key}:phone")
-    if not phone_number:
-        phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
-    if not phone_number:
-        phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
-    if not phone_number:
-        phone_number = await redis_client.get(f"data:token:{idem_key}:phone")
+    phone_number = await redis_client.get(f"{transaction_type}:token:{idem_key}:phone")
 
     expected_phone = phone_number or parsed_token.phone_hint
     if (

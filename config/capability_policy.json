@@ -75,6 +75,9 @@
       "actions": {
         "buy_data": {
           "supported": true
+        },
+        "data_plan_query": {
+          "supported": true
         }
       }
     },

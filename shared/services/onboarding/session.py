@@ -1,12 +1,7 @@
-"""Onboarding session types and backwards-compatible exports."""
+"""Onboarding session types."""
 
 from dataclasses import dataclass
 from enum import Enum
-
-from shared.cache.flow_session_manager import FlowSessionManager
-
-# Re-export FlowSessionManager as SessionManager for backwards compatibility
-SessionManager = FlowSessionManager
 
 
 class OnboardingStep(str, Enum):
@@ -18,6 +13,15 @@ class OnboardingStep(str, Enum):
     ACCOUNT_SELECTION = "account_selection"
     PIN_ENTRY = "pin_entry"
     COMPLETE = "complete"
+
+
+@dataclass
+class ServiceResult:
+    """Result from service operations."""
+
+    success: bool
+    data: dict | None = None
+    error: str | None = None
 
 
 @dataclass

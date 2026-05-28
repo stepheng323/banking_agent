@@ -1,12 +1,15 @@
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.graphs.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.graphs.airtime.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.graphs.airtime.nodes.selection import SourceSelectionStep
-from apps.chat.src.agent.graphs.airtime.nodes.validation import ValidationStep
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from apps.chat.src.agent.workers.airtime.nodes.confirmation import ConfirmationStep
+from apps.chat.src.agent.workers.airtime.nodes.extraction import ExtractionStep
+from apps.chat.src.agent.workers.airtime.nodes.selection import SourceSelectionStep
+from apps.chat.src.agent.workers.airtime.nodes.validation import ValidationStep
+from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 
 
 class _ExtractorStub:
@@ -19,6 +22,30 @@ class _ExtractorStub:
         self.calls += 1
         self.last_state = _state
         return self._result
+
+
+@pytest.mark.asyncio
+async def test_airtime_confirmation_update_message_acknowledges_amount_change() -> None:
+    step = ConfirmationStep()
+    payload = AirtimePayload(
+        amount=2000,
+        recipient_phone="08162511023",
+        network="MTN",
+        source_bank_name="Access Bank",
+        source_account_number="2010000003",
+        previous_confirmation_snapshot={
+            "amount": 1000,
+            "recipient_phone": "08162511023",
+            "network": "MTN",
+        },
+    )
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+
+    result = await step.execute(payload, context, gates, SimpleNamespace(redis_client=False))
+
+    assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert result.update_message == "Got it, updating airtime to ₦2,000."
 
 
 @pytest.mark.asyncio
@@ -99,6 +126,20 @@ async def test_airtime_extraction_source_bank_fallback_uses_linked_accounts() ->
 
 
 @pytest.mark.asyncio
+async def test_airtime_extraction_amount_reply_sets_amount_in_multi_slot_prompt_without_extractor() -> None:
+    step = ExtractionStep("4k")
+    payload = AirtimePayload(network="AIRTEL")
+    context = AirtimeContext(phone_number="2348162511023", language="en")
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["recipient_phone", "amount"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {"amount": 4000.0}
+
+
+@pytest.mark.asyncio
 async def test_airtime_source_selection_honors_explicit_bank_over_default() -> None:
     step = SourceSelectionStep()
     payload = AirtimePayload(amount=2000, recipient_phone="08162511023", network="MTN", source_bank_name="GTB")
@@ -135,6 +176,43 @@ async def test_airtime_source_selection_honors_explicit_bank_over_default() -> N
 
 
 @pytest.mark.asyncio
+async def test_airtime_source_account_slot_accepts_bank_reference_without_extractor() -> None:
+    step = ExtractionStep("my GTB")
+    payload = AirtimePayload(amount=2000, recipient_phone="08162511023", network="MTN")
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        accounts=[
+            {
+                "id": "access-1",
+                "bank_name": "Access Bank",
+                "account_name": "Access Main",
+                "account_number": "0000000003",
+            },
+            {
+                "id": "gtb-1",
+                "bank_name": "GTBank",
+                "account_name": "GT Main",
+                "account_number": "0000000002",
+            },
+        ],
+    )
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["source_account_id"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {
+        "source_account_id": "gtb-1",
+        "source_bank_name": "GTBank",
+        "source_account_name": "GT Main",
+        "source_account_number": "0000000002",
+        "source_account_index": None,
+    }
+
+
+@pytest.mark.asyncio
 async def test_airtime_extraction_phone_slot_fallback_normalizes_digits_only_reply() -> None:
     step = ExtractionStep("816 251 1023")
     payload = AirtimePayload(amount=5000)
@@ -149,6 +227,34 @@ async def test_airtime_extraction_phone_slot_fallback_normalizes_digits_only_rep
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch == {"recipient_phone": "08162511023"}
+
+
+@pytest.mark.asyncio
+async def test_airtime_extraction_network_slot_fallback_accepts_exact_network_reply() -> None:
+    step = ExtractionStep("MTN")
+    payload = AirtimePayload(amount=5000, recipient_phone="08162511023")
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["network"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {"network": "MTN"}
+
+
+@pytest.mark.asyncio
+async def test_airtime_extraction_self_slot_fallback_works_without_extractor() -> None:
+    step = ExtractionStep("my line")
+    payload = AirtimePayload(amount=5000)
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    worker_context = SimpleNamespace(required_fields=["recipient_phone"], extractor=None)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {"is_self": True}
 
 
 @pytest.mark.asyncio
@@ -376,7 +482,155 @@ async def test_airtime_validation_missing_fields_uses_locale_field_labels() -> N
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["recipient_phone", "amount"]
-    assert result.prompt == "Jowo fi nomba foonu ati iye owo ranse."
+    assert result.prompt == "Daju. Line wo ni ki n ra airtime fun, ati iye melo?"
+
+
+@pytest.mark.asyncio
+async def test_airtime_worker_bare_purchase_defaults_user_line_and_asks_amount() -> None:
+    worker = AirtimeWorker(
+        extractor=_ExtractorStub({"entities": {}, "correction": None}),
+        bill_provider=None,
+        transaction_repo=None,
+        publisher=None,
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"phone_number": "2348162511023", "language": "en"},
+        user_message="I want to buy airtime",
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["amount"]
+    assert result.prompt == "Sure. I'll use your MTN line. How much airtime should I buy?"
+    assert result.patch["recipient_phone"] == "08162511023"
+    assert result.patch["network"] == "MTN"
+    assert result.patch["is_self"] is True
+
+
+@pytest.mark.asyncio
+async def test_airtime_worker_requested_network_asks_matching_line_when_user_line_mismatches() -> None:
+    worker = AirtimeWorker(
+        extractor=_ExtractorStub({"entities": {"network": "Airtel"}, "correction": None}),
+        bill_provider=None,
+        transaction_repo=None,
+        publisher=None,
+    )
+
+    result = await worker.run(
+        payload={},
+        context={"phone_number": "2348162511023", "language": "en"},
+        user_message="I want to buy Airtel airtime",
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["recipient_phone", "amount"]
+    assert result.prompt == "Sure. Which Airtel line should I buy airtime for, and how much?"
+    assert result.patch["network"] == "AIRTEL"
+    assert "recipient_phone" not in result.patch
+    assert result.patch.get("is_self") is not True
+
+
+@pytest.mark.asyncio
+async def test_airtime_worker_saved_mobile_beneficiary_reaches_confirmation_without_network_prompt() -> None:
+    beneficiary_id = uuid4()
+    worker = AirtimeWorker(
+        extractor=_ExtractorStub({"entities": {"amount": 1000, "recipient_name": "Mum"}, "correction": None}),
+        bill_provider=None,
+        transaction_repo=None,
+        publisher=None,
+    )
+
+    result = await worker.run(
+        payload={},
+        context={
+            "phone_number": "2348162511023",
+            "language": "en",
+            "beneficiaries": [
+                {
+                    "id": beneficiary_id,
+                    "beneficiary_type": "airtime",
+                    "alias": "Mum",
+                    "account_name": "Mum",
+                    "account_number": "08081234567",
+                    "bank_name": "Airtel",
+                }
+            ],
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Access Bank",
+                    "account_name": "Access Main",
+                    "account_number": "0000000003",
+                    "is_default": True,
+                }
+            ],
+        },
+        user_message="buy Mum 1k airtime",
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert result.patch["recipient_phone"] == "08081234567"
+    assert result.patch["recipient_name"] == "Mum"
+    assert result.patch["beneficiary_id"] == str(beneficiary_id)
+    assert result.patch["network"] == "AIRTEL"
+    assert result.patch["is_self"] is False
+    assert "Airtel" in (result.confirmation_summary or "")
+    assert "airtime for Mum (08081234567)" in (result.confirmation_summary or "")
+    assert "Which network" not in (result.prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_airtime_worker_requested_network_does_not_reuse_mismatched_saved_beneficiary() -> None:
+    beneficiary_id = uuid4()
+    worker = AirtimeWorker(
+        extractor=_ExtractorStub(
+            {
+                "entities": {"amount": 1000, "recipient_name": "Mum", "network": "Airtel"},
+                "correction": None,
+            }
+        ),
+        bill_provider=None,
+        transaction_repo=None,
+        publisher=None,
+    )
+
+    result = await worker.run(
+        payload={},
+        context={
+            "phone_number": "2348162511023",
+            "language": "en",
+            "beneficiaries": [
+                {
+                    "id": beneficiary_id,
+                    "beneficiary_type": "airtime",
+                    "alias": "Mum",
+                    "account_name": "Mum",
+                    "account_number": "08162511023",
+                    "bank_name": "MTN",
+                }
+            ],
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Access Bank",
+                    "account_name": "Access Main",
+                    "account_number": "0000000003",
+                    "is_default": True,
+                }
+            ],
+        },
+        user_message="buy Mum 1k Airtel airtime",
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert result.required_fields == ["recipient_phone"]
+    assert result.prompt == "Got ₦1,000.00 Airtel airtime. Which Airtel line should I buy it for?"
+    assert result.patch["network"] == "AIRTEL"
+    assert result.patch["is_self"] is False
+    assert "recipient_phone" not in result.patch
+    assert "beneficiary_id" not in result.patch
+    assert result.confirmation_summary is None
 
 
 @pytest.mark.asyncio

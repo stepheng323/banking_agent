@@ -5,8 +5,9 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
-from shared.i18n import render_cancelled_prompt, render_message
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from shared.i18n.bridge import render_cancelled_prompt
+from shared.i18n.renderer import render_message
 from shared.types.planner import PlannerOutput
 
 
@@ -18,6 +19,7 @@ class _CancelPlanner:
         *,
         context: str = "None",
         prompt_signals: object | None = None,
+    path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         return PlannerOutput(

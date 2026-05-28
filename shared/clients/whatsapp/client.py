@@ -5,11 +5,16 @@ from typing import Any
 
 import httpx
 
+import shared.clients.whatsapp.flows as whatsapp_flows
+import shared.clients.whatsapp.media as whatsapp_media
+import shared.clients.whatsapp.media_messages as whatsapp_media_messages
+import shared.clients.whatsapp.messages as whatsapp_messages
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
+from shared.clients.whatsapp.endpoints import message_url
+from shared.clients.whatsapp.payloads import build_typing_indicator_payload
 from shared.config.settings import settings
 from shared.utils.logging import get_logger, log_fingerprint
 
-GRAPH_API_BASE = "https://graph.facebook.com/v24.0"
 logger = get_logger(__name__)
 
 
@@ -123,58 +128,7 @@ class WhatsAppClient(MessagingClient):
         }
 
     def _get_url(self) -> str:
-        return f"{GRAPH_API_BASE}/{self.phone_number_id}/messages"
-
-    async def _maybe_send_typing_indicator(
-        self,
-        *,
-        to: str,
-        message_id: str | None,
-        suppress_typing_indicator: bool,
-    ) -> str | None:
-        """Resolve the reference message and surface typing before a visible outbound send."""
-        resolved_message_id = await self._ensure_message_id(to, message_id)
-        if not resolved_message_id or suppress_typing_indicator:
-            return resolved_message_id
-
-        await self.send_typing_indicator(resolved_message_id)
-        delay_seconds = max(0.0, settings.whatsapp.typing_indicator_delay_ms / 1000)
-        if delay_seconds > 0:
-            await asyncio.sleep(delay_seconds)
-        return resolved_message_id
-
-    async def _ensure_message_id(self, to: str, message_id: str | None) -> str | None:
-        """Helper to get message_id from parameter or Redis for typing indicator support.
-
-        Args:
-            to: Recipient phone number
-            message_id: Optional message_id provided by caller
-
-        Returns:
-            message_id if available (from parameter or Redis), None otherwise
-        """
-        if message_id:
-            logger.debug("whatsapp_message_id_provided", message_id_hash=log_fingerprint(message_id))
-            return message_id
-        try:
-            from shared.cache.redis_client import RedisClient
-
-            redis_client = RedisClient.get_client()
-            fetched_id = await redis_client.get(f"user:{to}:current_message_id")
-            logger.debug(
-                "whatsapp_message_id_lookup",
-                to_hash=log_fingerprint(to),
-                found=bool(fetched_id),
-                message_id_hash=log_fingerprint(fetched_id),
-            )
-            return fetched_id
-        except Exception as e:
-            logger.warning(
-                "whatsapp_message_id_lookup_failed",
-                to_hash=log_fingerprint(to),
-                error_type=type(e).__name__,
-            )
-            return None
+        return message_url(self.phone_number_id)
 
     async def send_text(
         self,
@@ -192,26 +146,16 @@ class WhatsAppClient(MessagingClient):
             preview_url: Whether to show URL preview
             message_id: If provided, send typing indicator. If None, auto-fetch from Redis.
         """
-        url = self._get_url()
-
-        await self._maybe_send_typing_indicator(
+        return await whatsapp_messages.send_text(
+            url=self._get_url(),
             to=to,
+            text=text,
+            preview_url=preview_url,
             message_id=message_id,
             suppress_typing_indicator=suppress_typing_indicator,
+            send=self._send,
+            send_typing_indicator=self.send_typing_indicator,
         )
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": to,
-            "type": "text",
-            "text": {"body": text, "preview_url": preview_url},
-        }
-
-        try:
-            result = await self._send(url, payload)
-            return result
-        except Exception as e:
-            logger.error("whatsapp_send_text_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            raise
 
     async def send_typing_indicator(self, message_id: str) -> dict[str, Any]:
         """Send a typing indicator to a WhatsApp number.
@@ -220,12 +164,7 @@ class WhatsAppClient(MessagingClient):
         """
         url = self._get_url()
 
-        payload = {
-            "messaging_product": "whatsapp",
-            "status": "read",
-            "message_id": message_id,
-            "typing_indicator": {"type": "text"},
-        }
+        payload = build_typing_indicator_payload(message_id=message_id)
 
         try:
             result = await self._send(url, payload, max_retries=1)
@@ -263,43 +202,18 @@ class WhatsAppClient(MessagingClient):
         Returns:
             API response from WhatsApp
         """
-        url = self._get_url()
-
-        await self._maybe_send_typing_indicator(
+        return await whatsapp_messages.send_button(
+            url=self._get_url(),
             to=to,
+            body_text=body_text,
+            buttons=buttons,
+            header=header,
+            footer=footer,
             message_id=message_id,
             suppress_typing_indicator=suppress_typing_indicator,
+            send=self._send,
+            send_typing_indicator=self.send_typing_indicator,
         )
-
-        # Build button rows (max 3 buttons)
-        button_rows = [{"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}} for btn in buttons[:3]]
-
-        interactive_payload: dict[str, Any] = {
-            "type": "button",
-            "body": {"text": body_text},
-            "action": {"buttons": button_rows},
-        }
-
-        if header and header.strip():
-            interactive_payload["header"] = {"type": "text", "text": header}
-        if footer and footer.strip():
-            interactive_payload["footer"] = {"text": footer}
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "interactive",
-            "interactive": interactive_payload,
-        }
-
-        try:
-            result = await self._send(url, payload)
-            logger.info("whatsapp_button_sent", to_hash=log_fingerprint(to))
-            return result
-        except Exception as e:
-            logger.error("whatsapp_button_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            raise
 
     async def send_list(
         self,
@@ -313,55 +227,19 @@ class WhatsAppClient(MessagingClient):
         suppress_typing_indicator: bool = False,
     ) -> dict[str, Any]:
         """Send an interactive list message (up to 10 options)."""
-        if not options:
-            raise ValueError("List options cannot be empty")
-
-        url = self._get_url()
-        await self._maybe_send_typing_indicator(
+        return await whatsapp_messages.send_list(
+            url=self._get_url(),
             to=to,
+            body_text=body_text,
+            options=options,
+            header=header,
+            footer=footer,
+            list_button_text=list_button_text,
             message_id=message_id,
             suppress_typing_indicator=suppress_typing_indicator,
+            send=self._send,
+            send_typing_indicator=self.send_typing_indicator,
         )
-
-        rows: list[dict[str, str]] = []
-        for idx, option in enumerate(options[:10], start=1):
-            raw_id = str(option.get("id", "")).strip() or str(idx)
-            raw_title = str(option.get("title", f"Option {idx}")).strip() or f"Option {idx}"
-            row: dict[str, str] = {"id": raw_id, "title": raw_title[:24]}
-            description = str(option.get("description", "")).strip()
-            if description:
-                row["description"] = description[:72]
-            rows.append(row)
-
-        interactive_payload: dict[str, Any] = {
-            "type": "list",
-            "body": {"text": body_text},
-            "action": {
-                "button": list_button_text[:20],
-                "sections": [{"title": "Options", "rows": rows}],
-            },
-        }
-
-        if header and header.strip():
-            interactive_payload["header"] = {"type": "text", "text": header}
-        if footer and footer.strip():
-            interactive_payload["footer"] = {"text": footer}
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "interactive",
-            "interactive": interactive_payload,
-        }
-
-        try:
-            result = await self._send(url, payload)
-            logger.info("whatsapp_list_sent", to_hash=log_fingerprint(to))
-            return result
-        except Exception as e:
-            logger.error("whatsapp_list_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
-            raise
 
     async def send_flow(
         self,
@@ -389,135 +267,16 @@ class WhatsAppClient(MessagingClient):
         Returns:
             MessageResult with success status and raw response
         """
-        url = self._get_url()
-
-        await self._maybe_send_typing_indicator(
+        return await whatsapp_flows.send_flow(
+            url=self._get_url(),
             to=to,
+            flow_id=flow_id,
+            flow_config=flow_config,
             message_id=message_id,
             suppress_typing_indicator=suppress_typing_indicator,
+            send=self._send,
+            send_typing_indicator=self.send_typing_indicator,
         )
-
-        # Extract config
-        header = flow_config.get("header", "")
-        text_body = flow_config.get("text_body", "")
-        flow_cta = flow_config.get("flow_cta", "Start")
-        screen_name = flow_config.get("screen_name", "")
-        footer = flow_config.get("footer", "")
-        flow_token = flow_config.get("flow_token", "")
-        flow_action = flow_config.get("flow_action", "navigate")
-        flow_action_payload = flow_config.get("flow_action_payload")
-        parameters: dict[str, Any] = {
-            "flow_message_version": "3",
-            "flow_token": flow_token or "",
-            "flow_id": flow_id,
-            "flow_cta": flow_cta,
-            "flow_action": flow_action,
-        }
-        if flow_action_payload is not None:
-            parameters["flow_action_payload"] = flow_action_payload
-        elif flow_action == "navigate":
-            parameters["flow_action_payload"] = {"screen": screen_name}
-
-        interactive_payload = {
-            "type": "flow",
-            "header": {"type": "text", "text": header},
-            "body": {"text": text_body},
-            "action": {
-                "name": "flow",
-                "parameters": parameters,
-            },
-        }
-
-        if footer and footer.strip():
-            interactive_payload["footer"] = {"text": footer}
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "interactive",
-            "interactive": interactive_payload,
-        }
-
-        action_payload = parameters.get("flow_action_payload")
-        action_payload_data = action_payload.get("data") if isinstance(action_payload, dict) else None
-        logger.info(
-            "whatsapp_flow_send_prepared",
-            to_hash=log_fingerprint(to),
-            flow_id_hash=log_fingerprint(flow_id),
-            flow_token_hash=log_fingerprint(flow_token),
-            flow_action=flow_action,
-            screen_name=screen_name,
-            has_flow_action_payload="flow_action_payload" in parameters,
-            flow_action_payload_keys=(
-                sorted(str(key) for key in action_payload) if isinstance(action_payload, dict) else []
-            ),
-            flow_action_payload_data_keys=(
-                sorted(str(key) for key in action_payload_data) if isinstance(action_payload_data, dict) else []
-            ),
-        )
-
-        try:
-            result = await self._send(url, payload)
-            msg_id = result.get("messages", [{}])[0].get("id")
-            logger.info(
-                "whatsapp_flow_send_succeeded",
-                to_hash=log_fingerprint(to),
-                flow_id_hash=log_fingerprint(flow_id),
-                flow_token_hash=log_fingerprint(flow_token),
-                flow_action=flow_action,
-                message_id_hash=log_fingerprint(msg_id),
-            )
-            return MessageResult(success=True, message_id=msg_id, raw_response=result)
-        except Exception as e:
-            logger.error(
-                "whatsapp_flow_send_failed",
-                to_hash=log_fingerprint(to),
-                flow_id_hash=log_fingerprint(flow_id),
-                flow_token_hash=log_fingerprint(flow_token),
-                flow_action=flow_action,
-                error_type=type(e).__name__,
-            )
-            # Raise exception if it's critical, or return failed result?
-            # Existing clients might expect raise, but interface says return result.
-            # However, for now let's return failed result to inhibit crash
-            return MessageResult(success=False, error=str(e))
-
-    async def _upload_media_to_whatsapp(self, media_url: str) -> str:
-        """
-        Upload media to WhatsApp and get media ID.
-
-        Args:
-            media_url: Public URL of the media file
-
-        Returns:
-            Media ID from WhatsApp
-        """
-        upload_url = f"{GRAPH_API_BASE}/{self.phone_number_id}/media"
-        headers = self._get_headers()
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "url": media_url,
-            "type": "image",
-        }
-
-        try:
-            resp = await self._client().post(upload_url, headers=headers, json=payload, timeout=30)
-            resp.raise_for_status()
-            result = resp.json()
-            media_id: str | None = result.get("id")
-            if not media_id:
-                raise ValueError("No media ID returned from WhatsApp")
-            logger.info("whatsapp_media_uploaded", media_id_hash=log_fingerprint(media_id))
-            return media_id
-        except Exception as e:
-            logger.error(
-                "whatsapp_media_upload_failed",
-                media_url_hash=log_fingerprint(media_url),
-                error_type=type(e).__name__,
-            )
-            raise
 
     async def send_image(
         self,
@@ -539,30 +298,18 @@ class WhatsAppClient(MessagingClient):
             API response from WhatsApp
         """
         try:
-            await self._maybe_send_typing_indicator(
+            return await whatsapp_media_messages.send_image_from_url(
                 to=to,
+                image_url=image_url,
+                caption=caption,
                 message_id=message_id,
                 suppress_typing_indicator=suppress_typing_indicator,
+                http_client=self._client(),
+                phone_number_id=self.phone_number_id,
+                headers=self._get_headers(),
+                send=self._send,
+                send_typing_indicator=self.send_typing_indicator,
             )
-            media_id = await self._upload_media_to_whatsapp(image_url)
-            url = self._get_url()
-            image_payload: dict[str, Any] = {
-                "id": media_id,
-            }
-            if caption:
-                image_payload["caption"] = caption
-
-            payload: dict[str, Any] = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": to,
-                "type": "image",
-                "image": image_payload,
-            }
-
-            result = await self._send(url, payload)
-            logger.info("whatsapp_image_sent", to_hash=log_fingerprint(to), media_id_hash=log_fingerprint(media_id))
-            return result
         except Exception as e:
             logger.error("whatsapp_image_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
@@ -589,39 +336,19 @@ class WhatsAppClient(MessagingClient):
             API response from WhatsApp
         """
         try:
-            await self._maybe_send_typing_indicator(
+            return await whatsapp_media_messages.send_image_data(
                 to=to,
+                data=data,
+                caption=caption,
+                mime_type=mime_type,
                 message_id=message_id,
                 suppress_typing_indicator=suppress_typing_indicator,
+                http_client=self._client(),
+                access_token=self.access_token,
+                phone_number_id=self.phone_number_id,
+                send=self._send,
+                send_typing_indicator=self.send_typing_indicator,
             )
-            # Generate a filename based on mime type
-            extension = mime_type.split("/")[-1]
-            filename = f"image.{extension}"
-
-            media_id = await self._upload_buffer(data, filename, mime_type)
-
-            url = self._get_url()
-            image_payload: dict[str, Any] = {
-                "id": media_id,
-            }
-            if caption:
-                image_payload["caption"] = caption
-
-            payload: dict[str, Any] = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": to,
-                "type": "image",
-                "image": image_payload,
-            }
-
-            result = await self._send(url, payload)
-            logger.info(
-                "whatsapp_image_data_sent",
-                to_hash=log_fingerprint(to),
-                media_id_hash=log_fingerprint(media_id),
-            )
-            return result
         except Exception as e:
             logger.error("whatsapp_image_data_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
@@ -636,24 +363,11 @@ class WhatsAppClient(MessagingClient):
         Returns:
             Publicly accessible URL (with auth token appended) or internal URL
         """
-        url = f"{GRAPH_API_BASE}/{media_id}"
-        headers = self._get_headers()
-
-        try:
-            resp = await self._client().get(url, headers=headers, timeout=10)
-            resp.raise_for_status()
-            result = resp.json()
-            media_url: str | None = result.get("url")
-            if not media_url:
-                raise ValueError("No URL returned for media")
-            return media_url
-        except Exception as e:
-            logger.error(
-                "whatsapp_media_url_failed",
-                media_id_hash=log_fingerprint(media_id),
-                error_type=type(e).__name__,
-            )
-            raise
+        return await whatsapp_media.get_media_url(
+            http_client=self._client(),
+            headers=self._get_headers(),
+            media_id=media_id,
+        )
 
     async def download_media(self, media_url: str) -> bytes:
         """
@@ -665,65 +379,11 @@ class WhatsAppClient(MessagingClient):
         Returns:
             Binary content
         """
-        headers = self._get_headers()
-        try:
-            resp = await self._client().get(media_url, headers=headers, timeout=30)
-            resp.raise_for_status()
-            return resp.content
-        except Exception as e:
-            logger.error(
-                "whatsapp_media_download_failed",
-                media_url_hash=log_fingerprint(media_url),
-                error_type=type(e).__name__,
-            )
-            raise
-
-    async def _upload_buffer(
-        self,
-        data: bytes,
-        filename: str,
-        mime_type: str = "application/pdf",
-    ) -> str:
-        """
-        Upload a buffer/blob to WhatsApp and get media ID.
-
-        Args:
-            data: File content as bytes
-            filename: Display filename for the upload
-            mime_type: MIME type of the file (default: application/pdf)
-
-        Returns:
-            Media ID from WhatsApp
-        """
-        upload_url = f"{GRAPH_API_BASE}/{self.phone_number_id}/media"
-
-        try:
-            files: dict[str, tuple[str | None, bytes | str, str] | tuple[str | None, str]] = {
-                "file": (filename, data, mime_type),
-                "messaging_product": (None, "whatsapp"),
-                "type": (None, mime_type),
-            }
-            headers = {"Authorization": f"Bearer {self.access_token}"}
-
-            resp = await self._client().post(upload_url, headers=headers, files=files, timeout=60)
-            resp.raise_for_status()
-            result = resp.json()
-            media_id: str | None = result.get("id")
-            if not media_id:
-                raise ValueError("No media ID returned from WhatsApp")
-            logger.info(
-                "whatsapp_buffer_uploaded",
-                media_id_hash=log_fingerprint(media_id),
-                filename_hash=log_fingerprint(filename),
-            )
-            return media_id
-        except Exception as e:
-            logger.error(
-                "whatsapp_buffer_upload_failed",
-                filename_hash=log_fingerprint(filename),
-                error_type=type(e).__name__,
-            )
-            raise
+        return await whatsapp_media.download_media(
+            http_client=self._client(),
+            headers=self._get_headers(),
+            media_url=media_url,
+        )
 
     async def send_document(
         self,
@@ -749,46 +409,24 @@ class WhatsAppClient(MessagingClient):
         Returns:
             API response from WhatsApp
         """
-        await self._maybe_send_typing_indicator(
-            to=to,
-            message_id=message_id,
-            suppress_typing_indicator=suppress_typing_indicator,
-        )
-
         try:
-            media_id = await self._upload_buffer(data, filename, mime_type)
-
-            url = self._get_url()
-            document_payload: dict[str, Any] = {
-                "id": media_id,
-                "filename": filename,
-            }
-
-            if caption:
-                document_payload["caption"] = caption
-
-            payload = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": to,
-                "type": "document",
-                "document": document_payload,
-            }
-
-            result = await self._send(url, payload)
-            logger.info(
-                "whatsapp_document_sent",
-                to_hash=log_fingerprint(to),
-                filename_hash=log_fingerprint(filename),
-                media_id_hash=log_fingerprint(media_id),
+            return await whatsapp_media_messages.send_document(
+                to=to,
+                data=data,
+                filename=filename,
+                caption=caption,
+                mime_type=mime_type,
+                message_id=message_id,
+                suppress_typing_indicator=suppress_typing_indicator,
+                http_client=self._client(),
+                access_token=self.access_token,
+                phone_number_id=self.phone_number_id,
+                send=self._send,
+                send_typing_indicator=self.send_typing_indicator,
             )
-            return result
         except Exception as e:
             logger.error("whatsapp_document_send_failed", to_hash=log_fingerprint(to), error_type=type(e).__name__)
             raise
-
-    # ========== MessagingClient Interface Methods ==========
-    # These implement the abstract interface for channel independence
 
     async def send_interactive(
         self,
@@ -801,30 +439,15 @@ class WhatsAppClient(MessagingClient):
         suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Implement MessagingClient.send_interactive using WhatsApp native buttons/lists."""
-        try:
-            if len(options) <= 3:
-                result = await self.send_button(
-                    to=to,
-                    body_text=body_text,
-                    buttons=options,
-                    header=header,
-                    footer=footer,
-                    message_id=message_id,
-                    suppress_typing_indicator=suppress_typing_indicator,
-                )
-            elif len(options) <= 10:
-                result = await self.send_list(
-                    to=to,
-                    body_text=body_text,
-                    options=options,
-                    header=header,
-                    footer=footer,
-                    message_id=message_id,
-                    suppress_typing_indicator=suppress_typing_indicator,
-                )
-            else:
-                raise ValueError("WhatsApp interactive supports at most 10 options")
-            msg_id = result.get("messages", [{}])[0].get("id")
-            return MessageResult(success=True, message_id=msg_id, raw_response=result)
-        except Exception as e:
-            return MessageResult(success=False, error=str(e))
+        return await whatsapp_messages.send_interactive(
+            url=self._get_url(),
+            to=to,
+            body_text=body_text,
+            options=options,
+            header=header,
+            footer=footer,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+            send=self._send,
+            send_typing_indicator=self.send_typing_indicator,
+        )

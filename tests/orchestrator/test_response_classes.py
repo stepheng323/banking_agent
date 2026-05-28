@@ -1,4 +1,4 @@
-from apps.chat.src.agent.orchestrator.nodes.response_classes import (
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.read_only_response import (
     classify_read_only_response_class,
     is_surface_response_class,
 )

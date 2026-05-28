@@ -3,8 +3,8 @@
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from apps.gateway.adapters.meta_whatsapp import WebhookSignatureError, verify_meta_signature
-from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.config.settings import settings
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 

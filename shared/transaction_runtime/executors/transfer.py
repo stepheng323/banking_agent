@@ -10,25 +10,29 @@ from typing import Any
 
 import redis.asyncio as redis
 
+import shared.transaction_runtime.scheduled_runs as scheduled_runs
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.formatters.transfer import format_transfer_pending_message, format_transfer_success_message
-from shared.i18n import render_message
+from shared.formatters.transfer_notifications import format_transfer_pending_message, format_transfer_success_message
 from shared.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
+from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
 from shared.receipts.choice import build_receipt_choice_intent
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.repositories.transaction_repository import TransactionRepository
-from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.async_completion import (
-    AsyncGroupSummaryResult,
     is_grouped_async_message,
     record_group_leg_and_maybe_build_summary,
 )
+from shared.services.async_group_types import AsyncGroupSummaryResult
 from shared.services.delivery_service import DeliveryService
 from shared.services.failure_categories import classify_failure_category
+from shared.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
+    suggest_transfer_beneficiary,
+)
 from shared.transaction_runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.logging import get_logger
 
@@ -76,6 +80,7 @@ class TransferExecutor:
         delivery_service: DeliveryService | None = None,
         redis_client: redis.Redis | None = None,
         funded_transfer_repo: FundedTransferRepository | None = None,
+        beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
     ):
         self.direct_debit_provider = direct_debit_provider
         self.account_repo = account_repo
@@ -84,6 +89,7 @@ class TransferExecutor:
         self.delivery_service = delivery_service
         self.redis_client = redis_client
         self.funded_transfer_repo = funded_transfer_repo
+        self.beneficiary_suggestion_service = beneficiary_suggestion_service
 
     def _resolve_delivery_service(self) -> DeliveryService | None:
         if self.delivery_service is not None:
@@ -94,43 +100,6 @@ class TransferExecutor:
         except Exception as exc:
             logger.warning("delivery_service_unavailable", error=str(exc))
             return None
-
-    @staticmethod
-    def _scheduled_meta(data: dict[str, Any]) -> dict[str, Any]:
-        raw = data.get("scheduled_meta")
-        return raw if isinstance(raw, dict) else {}
-
-    async def _update_scheduled_run(
-        self,
-        schedule_run_id: str | None,
-        *,
-        status: str,
-        error_message: str | None = None,
-        transaction_id: str | None = None,
-        attempt: int | None = None,
-    ) -> None:
-        if not schedule_run_id:
-            return
-        try:
-            async with UnitOfWork() as uow:
-                if not uow.scheduled_runs:
-                    return
-                run = await uow.scheduled_runs.get_by_id(schedule_run_id)
-                if not run:
-                    return
-                run.status = status
-                run.error_message = error_message
-                run.transaction_id = transaction_id or run.transaction_id
-                if attempt is not None:
-                    run.attempt = attempt
-                if status in {"successful", "failed"}:
-                    from datetime import UTC, datetime
-
-                    run.completed_at = datetime.now(UTC).replace(tzinfo=None)
-                uow.db.add(run)
-                await uow.commit()
-        except Exception as exc:
-            logger.warning("scheduled_run_update_failed", schedule_run_id=schedule_run_id, error=str(exc))
 
     async def _notify_scheduled_failure(
         self,
@@ -209,6 +178,45 @@ class TransferExecutor:
             metadata={"source": "transfer_executor", "transaction_id": data.get("transaction_id")},
             dedupe_key=f"receipt-choice:{data.get('transaction_id')}",
             strict_actionable=True,
+        )
+
+    async def _deliver_transfer_beneficiary_suggestion(
+        self,
+        *,
+        data: dict[str, Any],
+        transfer_data: dict[str, Any],
+        transaction_id: str,
+        locale: str,
+    ) -> None:
+        if is_grouped_async_message(data):
+            return
+        if scheduled_runs.is_scheduled_run(scheduled_runs.scheduled_meta(data)):
+            return
+
+        recipient = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
+        suggestion = await suggest_transfer_beneficiary(
+            self.beneficiary_suggestion_service,
+            phone_number=str(data.get("phone_number") or ""),
+            channel=str(data.get("channel") or "whatsapp"),
+            locale=locale,
+            transaction_id=transaction_id,
+            account_number=recipient.get("account_number"),
+            bank_code=recipient.get("bank_code"),
+            bank_name=recipient.get("bank_name"),
+            recipient_name=recipient.get("name"),
+            original_alias=recipient.get("original_alias"),
+            bank_code_provider=recipient.get("bank_code_provider"),
+            resolution_provider=recipient.get("resolution_provider"),
+            is_self=recipient.get("is_self") or recipient.get("is_own_account"),
+        )
+        if not suggestion:
+            return
+
+        await self._deliver_text(
+            data=data,
+            text=suggestion,
+            dedupe_key=f"beneficiary-suggestion:transfer:{transaction_id}",
+            metadata={"source": "beneficiary_suggestion", "transaction_id": transaction_id},
         )
 
     async def _deliver_text(
@@ -308,10 +316,10 @@ class TransferExecutor:
         transaction_id = data.get("transaction_id")
         transfer_data = data.get("transfer_data", {})
         locale = data.get("language", "en")
-        scheduled_meta = self._scheduled_meta(data)
-        schedule_run_id = str(scheduled_meta.get("schedule_run_id")) if scheduled_meta.get("schedule_run_id") else None
+        scheduled_meta = scheduled_runs.scheduled_meta(data)
+        schedule_run_id = scheduled_runs.schedule_run_id(scheduled_meta)
         attempt = int(scheduled_meta.get("attempt") or 1)
-        is_scheduled = str(scheduled_meta.get("run_source") or "") == "scheduled"
+        is_scheduled = scheduled_runs.is_scheduled_run(scheduled_meta)
 
         if not transaction_id:
             logger.error("transfer_execution_error", error="missing_transaction_id")
@@ -348,7 +356,7 @@ class TransferExecutor:
                 if policy_block_message:
                     logger.info("scheduled_transfer_execution_policy_blocked", transaction_id=transaction_id)
                     if schedule_run_id:
-                        await self._update_scheduled_run(
+                        await scheduled_runs.update_scheduled_run(
                             schedule_run_id,
                             status="failed",
                             error_message=policy_block_message,
@@ -362,7 +370,7 @@ class TransferExecutor:
                     return
 
             if schedule_run_id:
-                await self._update_scheduled_run(schedule_run_id, status="processing")
+                await scheduled_runs.update_scheduled_run(schedule_run_id, status="processing")
 
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
@@ -411,7 +419,7 @@ class TransferExecutor:
                 data["provider_reference"] = result.reference or result.debit_id
                 data["provider_transaction_id"] = result.debit_id
                 if schedule_run_id:
-                    await self._update_scheduled_run(
+                    await scheduled_runs.update_scheduled_run(
                         schedule_run_id,
                         status="successful",
                         transaction_id=transaction_id,
@@ -462,6 +470,12 @@ class TransferExecutor:
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
                     await self._offer_transfer_receipt_image(data=data, transfer_data=transfer_data)
+                    await self._deliver_transfer_beneficiary_suggestion(
+                        data=data,
+                        transfer_data=transfer_data,
+                        transaction_id=transaction_id,
+                        locale=locale,
+                    )
                 logger.info("transfer_success", transaction_id=transaction_id, ref=result.reference)
             elif result.success and result.status in (DebitStatus.PENDING, DebitStatus.PROCESSING):
                 await self.transaction_repo.update_status(
@@ -507,6 +521,12 @@ class TransferExecutor:
                         dedupe_key=f"transfer:pending:{transaction_id}",
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
+                    await self._deliver_transfer_beneficiary_suggestion(
+                        data=data,
+                        transfer_data=transfer_data,
+                        transaction_id=transaction_id,
+                        locale=locale,
+                    )
                 logger.info("transfer_processing", transaction_id=transaction_id, ref=result.reference)
             else:
                 error_msg = result.error_message or render_personalized_message(
@@ -530,7 +550,7 @@ class TransferExecutor:
                     provider_error_code=provider_error_code,
                 )
                 if schedule_run_id:
-                    await self._update_scheduled_run(
+                    await scheduled_runs.update_scheduled_run(
                         schedule_run_id,
                         status="failed",
                         transaction_id=transaction_id,
@@ -588,7 +608,7 @@ class TransferExecutor:
                 transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
             )
             if schedule_run_id:
-                await self._update_scheduled_run(
+                await scheduled_runs.update_scheduled_run(
                     schedule_run_id,
                     status="failed",
                     transaction_id=transaction_id,

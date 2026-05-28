@@ -65,7 +65,7 @@ class UnifiedTransactionRecord:
         """Return the dict shape consumed by query filters and presentation."""
         identifier = self.provider_reference or self.local_transaction_id or self.bank_transaction_id or ""
         narration = str(self.metadata.get("narration") or "").strip()
-        counterparty = self.counterparty or str(self.metadata.get("recipient_name") or "").strip()
+        counterparty = self.counterparty or str(self.metadata.get("recipient_name") or "").strip() or None
         if not narration:
             narration = counterparty or "Transaction"
         return {
@@ -94,6 +94,12 @@ class UnifiedTransactionRecord:
             "recipient_account_number": self.metadata.get("recipient_account_number"),
             "recipient_bank_name": self.metadata.get("recipient_bank_name"),
             "recipient_bank_code": self.metadata.get("recipient_bank_code"),
+            "target_phone_number": self.metadata.get("target_phone_number"),
+            "mobile_network": self.metadata.get("mobile_network"),
+            "biller_code": self.metadata.get("biller_code"),
+            "biller_item_code": self.metadata.get("biller_item_code"),
+            "biller_item_name": self.metadata.get("biller_item_name"),
+            "service_metadata": self.metadata.get("service_metadata") or {},
             "source_account_id": self.metadata.get("source_account_id"),
             "source_account_number": self.metadata.get("source_account_number"),
             "source_account_label": self.metadata.get("source_account_label") or self.bank_name,
@@ -207,13 +213,81 @@ def _bank_effective_at(tx: Any) -> datetime:
     )
 
 
+def _service_metadata(tx: Any) -> dict[str, Any]:
+    raw = _tx_attr(tx, "service_metadata")
+    return raw if isinstance(raw, dict) else {}
+
+
+def _mobile_target_display(name: str, phone: str, network: str) -> str:
+    if name and phone and network:
+        return f"{name} ({phone}, {network})"
+    if name and phone:
+        return f"{name} ({phone})"
+    if name and network:
+        return f"{name} ({network})"
+    if name:
+        return name
+    if phone and network:
+        return f"{phone} ({network})"
+    return phone or network
+
+
+def _local_mobile_values(tx: Any, transaction_type: str) -> dict[str, str | None]:
+    service_metadata = _service_metadata(tx)
+    target_phone = _clean(_tx_attr(tx, "target_phone_number"))
+    mobile_network = _clean(_tx_attr(tx, "mobile_network"))
+    biller_item_name = _clean(_tx_attr(tx, "biller_item_name"))
+
+    if transaction_type == "airtime":
+        recipient_name = _clean(service_metadata.get("recipient_name"))
+        counterparty = _mobile_target_display(recipient_name, target_phone, mobile_network)
+        return {
+            "counterparty": counterparty or recipient_name or None,
+            "recipient_name": recipient_name or counterparty or None,
+            "target_phone_number": target_phone or None,
+            "mobile_network": mobile_network or None,
+            "biller_item_name": None,
+        }
+
+    if transaction_type == "data":
+        plan_name = biller_item_name
+        if not plan_name:
+            plan_name = _clean(service_metadata.get("plan_name"))
+        target_name = _clean(service_metadata.get("recipient_name"))
+        target_display = (
+            _mobile_target_display(target_name, target_phone, mobile_network) if target_name else target_phone
+        )
+        counterparty = plan_name
+        if target_display:
+            counterparty = f"{plan_name} for {target_display}" if plan_name else target_display
+        return {
+            "counterparty": counterparty or None,
+            "recipient_name": counterparty or plan_name or target_phone or None,
+            "target_phone_number": target_phone or None,
+            "mobile_network": mobile_network or None,
+            "biller_item_name": plan_name or None,
+        }
+
+    return {
+        "counterparty": None,
+        "recipient_name": None,
+        "target_phone_number": None,
+        "mobile_network": None,
+        "biller_item_name": biller_item_name or None,
+    }
+
+
 def _local_to_record(tx: Any) -> UnifiedTransactionRecord:
     status = normalize_transaction_status(_tx_attr(tx, "status"))
     provider_status = normalize_transaction_status(_tx_attr(tx, "provider_status"))
     if status == "unknown" and provider_status != "unknown":
         status = provider_status
     transaction_type = _clean(_tx_attr(tx, "transaction_type")) or "transfer"
-    recipient = _clean(_tx_attr(tx, "recipient_name"))
+    is_mobile_transaction = transaction_type in {"airtime", "data"}
+    recipient = "" if is_mobile_transaction else _clean(_tx_attr(tx, "recipient_name"))
+    mobile_values = _local_mobile_values(tx, transaction_type)
+    display_recipient = str(mobile_values.get("recipient_name") or recipient or "").strip()
+    counterparty = str(mobile_values.get("counterparty") or recipient or "").strip()
     amount = abs(float(_tx_attr(tx, "amount") or 0.0))
     provider_reference = _first_reference(tx)
     tx_id = _clean(_tx_attr(tx, "id"))
@@ -232,7 +306,7 @@ def _local_to_record(tx: Any) -> UnifiedTransactionRecord:
         currency=_clean(_tx_attr(tx, "currency")) or "NGN",
         type="debit",
         transaction_type=transaction_type,
-        counterparty=recipient or None,
+        counterparty=counterparty or None,
         bank_name=_clean(_tx_attr(tx, "source_bank_name")) or _clean(_tx_attr(tx, "recipient_bank_name")) or None,
         effective_at=_local_effective_at(tx),
         local_status=status,
@@ -241,10 +315,16 @@ def _local_to_record(tx: Any) -> UnifiedTransactionRecord:
         actionable=actionable,
         metadata={
             "narration": _tx_attr(tx, "narration"),
-            "recipient_name": recipient or None,
-            "recipient_account_number": _tx_attr(tx, "recipient_account_number"),
-            "recipient_bank_name": _tx_attr(tx, "recipient_bank_name"),
-            "recipient_bank_code": _tx_attr(tx, "recipient_bank_code"),
+            "recipient_name": display_recipient or None,
+            "recipient_account_number": None if is_mobile_transaction else _tx_attr(tx, "recipient_account_number"),
+            "recipient_bank_name": None if is_mobile_transaction else _tx_attr(tx, "recipient_bank_name"),
+            "recipient_bank_code": None if is_mobile_transaction else _tx_attr(tx, "recipient_bank_code"),
+            "target_phone_number": mobile_values.get("target_phone_number"),
+            "mobile_network": mobile_values.get("mobile_network"),
+            "biller_code": _tx_attr(tx, "biller_code"),
+            "biller_item_code": _tx_attr(tx, "biller_item_code"),
+            "biller_item_name": mobile_values.get("biller_item_name") or _tx_attr(tx, "biller_item_name"),
+            "service_metadata": _service_metadata(tx),
             "source_account_id": _clean(_tx_attr(tx, "source_account_id")) or None,
             "source_account_number": _tx_attr(tx, "source_account_number"),
             "source_bank_name": _tx_attr(tx, "source_bank_name"),

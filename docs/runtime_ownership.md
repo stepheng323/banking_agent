@@ -44,7 +44,7 @@ Active services in the runtime stack:
 
 Service presence is the ownership switch. If a role should not run, stop that service.
 
-See [vps_parallel_migration.md](/home/abiodun/dev/personal/banking_agent/docs/vps_parallel_migration.md) for stack bring-up and cutover notes.
+See [vps_parallel_migration.md](vps_parallel_migration.md) for stack bring-up and cutover notes.
 
 ## Configuration Ownership
 

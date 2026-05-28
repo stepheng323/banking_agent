@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.graphs.support.models import TransactionReference
-from apps.chat.src.agent.graphs.support.resolver import TransactionResolver
+from apps.chat.src.agent.workers.support.models import TransactionReference
+from apps.chat.src.agent.workers.support.resolver import TransactionResolver
 from shared.config.settings import settings
 
 

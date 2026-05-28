@@ -1,5 +1,4 @@
-"""Queue utilities."""
+"""Queue modules.
 
-from shared.queue.contracts import QUEUE_CONTRACTS, QueueContract, TopicType
-
-__all__ = ["QUEUE_CONTRACTS", "QueueContract", "TopicType"]
+Import queue helpers from their concrete modules.
+"""

@@ -16,6 +16,7 @@ from apps.gateway.api.webhooks.whatsapp.flows import session_owner as session_ow
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 from apps.gateway.api.webhooks.whatsapp.flows.router import flow_webhook
 from apps.gateway.api.webhooks.whatsapp.message.router import whatsapp_webhook
+from shared.cache.flow_session_manager import SessionReadResult
 from shared.config.settings import Settings
 from shared.utils.flow_decryption import is_encrypted
 
@@ -121,7 +122,7 @@ async def test_process_flow_request_captures_flow_action_and_version(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_process_flow_request_falls_back_to_data_flow_token(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_flow_request_ignores_data_flow_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(request_processor.settings.runtime, "app_env", "development")
     monkeypatch.setattr(request_processor.settings.runtime, "infrastructure_environment", "production")
 
@@ -138,7 +139,7 @@ async def test_process_flow_request_falls_back_to_data_flow_token(monkeypatch: p
 
     assert error is None
     assert processed is not None
-    assert processed.flow_token == "transfer-pin-idem-1-2348162511023"
+    assert processed.flow_token is None
 
 
 @pytest.mark.asyncio
@@ -217,11 +218,8 @@ async def test_flow_webhook_infers_pin_screen_for_screenless_pin_submit(
         )
     )
 
-    assert response.status_code == 200
-    assert json.loads(response.body) == {"ok": True}
-    assert len(calls) == 1
-    assert calls[0]["args"][0] == {"pin": "123456", "flow_token": "transfer-pin-idem-1-2348162511023"}
-    assert calls[0]["args"][1] == "transfer-pin-idem-1-2348162511023"
+    assert response.status_code == 400
+    assert not calls
 
 
 @pytest.mark.asyncio
@@ -325,13 +323,16 @@ async def test_whatsapp_flow_session_owner_rejects_mismatched_provider_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _SessionManagerStub:
-        async def get_session(self, flow_token: str) -> dict[str, Any]:
+        async def read_session(self, flow_token: str) -> SessionReadResult:
             assert flow_token == "onboarding-opaque-token"
-            return {
-                "phone_number": "2348162511023",
-                "channel": "whatsapp",
-                "channel_user_id": "2348162511023",
-            }
+            return SessionReadResult(
+                status="found",
+                data={
+                    "phone_number": "2348162511023",
+                    "channel": "whatsapp",
+                    "channel_user_id": "2348162511023",
+                },
+            )
 
     monkeypatch.setattr(session_owner_module.settings.runtime, "app_env", "production")
     monkeypatch.setattr(session_owner_module, "session_manager", _SessionManagerStub())

@@ -25,14 +25,12 @@ def _bcrypt_truncate(value: str) -> str:
     return data[:72].decode("utf-8", errors="ignore")
 
 
-def hash_plaintext(value: str, algorithm: str = "bcrypt") -> str:  # noqa: ARG001
+def hash_plaintext(value: str) -> str:
     """
     Hash a plaintext value using bcrypt.
 
     Args:
         value: The plaintext string to hash (e.g., PIN, password)
-        algorithm: Ignored for backward compatibility, always uses bcrypt
-
     Returns:
         Bcrypt hash string (contains algorithm, cost, salt, and hash)
     """

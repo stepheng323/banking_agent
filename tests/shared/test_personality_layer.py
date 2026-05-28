@@ -4,19 +4,21 @@ import pytest
 
 from shared.formatters.airtime import format_airtime_summary
 from shared.formatters.data import format_data_summary
-from shared.formatters.transfer import (
+from shared.formatters.transfer_notifications import (
     format_transfer_pending_message,
     format_transfer_success_message,
+)
+from shared.formatters.transfer_summary import (
     format_transfer_summary,
 )
-from shared.i18n import LocaleCode, render_message
+from shared.i18n.models import LocaleCode
 from shared.i18n.personality import (
     PersonalityContext,
     render_personalized_message,
     select_tone_variant,
     transfer_personality_context_from_payload,
 )
-from shared.i18n.renderer import _get_by_dotted_key, _read_catalog
+from shared.i18n.renderer import _get_by_dotted_key, _read_catalog, render_message
 
 
 @pytest.mark.parametrize(
@@ -176,8 +178,8 @@ def test_airtime_and_data_formatters_pick_expected_variants_with_context() -> No
         personality_context=PersonalityContext(moment="confirmation", amount=1500, saved_recipient=True),
     )
 
-    assert airtime_summary.splitlines()[0] == "*Airtime ready for 08162511023: ₦1,000*"
-    assert data_summary.splitlines()[0] == "*Data ready for 08162511023: MTN 2GB*"
+    assert airtime_summary.splitlines()[0] == "*₦1,000 airtime for 08162511023*"
+    assert data_summary.splitlines()[0] == "*MTN 2GB for 08162511023*"
 
 
 def test_airtime_and_data_notification_variants_render() -> None:
@@ -187,6 +189,7 @@ def test_airtime_and_data_notification_variants_render() -> None:
         {
             "amount": "1,000.00",
             "recipient_phone": "08162511023",
+            "recipient_target": "Tolu (08162511023)",
             "network": "MTN",
             "reference": "ref-1",
         },
@@ -209,7 +212,7 @@ def test_airtime_and_data_notification_variants_render() -> None:
         PersonalityContext(moment="failure", amount=1500),
     )
 
-    assert airtime_success == "Done. ₦1,000.00 airtime has been sent to 08162511023 (MTN).\nRef: ref-1"
+    assert airtime_success == "Done. ₦1,000.00 airtime has been sent to Tolu (08162511023) (MTN).\nRef: ref-1"
     assert data_pending.startswith("Got it. Your MTN 2GB purchase (₦1,500.00)")
     assert data_failure == "I couldn't complete the data purchase: Provider unavailable. Please try again."
 
@@ -235,6 +238,7 @@ def test_airtime_and_data_personality_variants_are_localized(
         {
             "amount": "1,000.00",
             "recipient_phone": "08162511023",
+            "recipient_target": "Tolu (08162511023)",
             "network": "MTN",
             "reference": "ref-1",
         },

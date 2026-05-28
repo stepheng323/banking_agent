@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.executors.transfer import TransferExecutor
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import TransactionStatusEnum
 from shared.policy.loader import get_cached_policy, load_policy
+from shared.transaction_runtime.executors.transfer import TransferExecutor
 
 CAPABILITY_POLICY_PATH = "config/capability_policy.json"
 SCHEDULE_DISABLED_MESSAGE = (
@@ -41,6 +41,11 @@ class _RedisStub:
 
     async def hgetall(self, key: str) -> dict[str, str]:
         return dict(self.hashes.get(key, {}))
+
+
+class _SuggestionServiceStub:
+    def __init__(self, message: str | None = "Would you like to save Mercy Johnson?") -> None:
+        self.check_and_suggest_beneficiary = AsyncMock(return_value=message)
 
 
 def _payload() -> dict:
@@ -147,6 +152,80 @@ async def test_transfer_executor_single_success_delivers_and_enqueues_receipt() 
 
 
 @pytest.mark.asyncio
+async def test_transfer_executor_single_success_sends_visible_beneficiary_suggestion() -> None:
+    dd_provider = SimpleNamespace(
+        initiate_debit_to_beneficiary=AsyncMock(
+            return_value=DebitResult(
+                success=True,
+                status=DebitStatus.SUCCESSFUL,
+                debit_id="debit-1",
+                reference="ref-1",
+                provider_response={"id": "debit-1", "status": "successful", "reference": "ref-1", "response_code": "00"},
+            )
+        )
+    )
+    account_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=SimpleNamespace(mandate_id="mandate-1")))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock(), deliver_intents=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    executor = TransferExecutor(
+        direct_debit_provider=dd_provider,
+        account_repo=account_repo,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_transfer(_payload())
+
+    assert delivery_service.deliver_text.await_count == 2
+    assert "Transfer successful" in delivery_service.deliver_text.await_args_list[0].kwargs["text"]
+    assert delivery_service.deliver_text.await_args_list[1].kwargs["text"] == "Would you like to save Mercy Johnson?"
+    receipt_job = delivery_service.deliver_intents.await_args.kwargs["intents"][0].actionable_payload["receipt_job"]
+    assert "beneficiary_suggestion_message" not in receipt_job
+    suggestion_service.check_and_suggest_beneficiary.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_transfer_executor_batch_success_does_not_suggest_beneficiary() -> None:
+    dd_provider = SimpleNamespace(
+        initiate_debit_to_beneficiary=AsyncMock(
+            return_value=DebitResult(
+                success=True,
+                status=DebitStatus.SUCCESSFUL,
+                debit_id="debit-1",
+                reference="ref-1",
+                provider_response={"id": "debit-1", "status": "successful", "reference": "ref-1", "response_code": "00"},
+            )
+        )
+    )
+    account_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=SimpleNamespace(mandate_id="mandate-1")))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock(), deliver_intents=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    payload = _payload()
+    payload["async_group"] = {
+        "async_group_id": "group-transfer-batch",
+        "async_group_size": 2,
+        "async_group_kind": "multi_transfer",
+        "async_group_index": 1,
+    }
+    executor = TransferExecutor(
+        direct_debit_provider=dd_provider,
+        account_repo=account_repo,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_transfer(payload)
+
+    suggestion_service.check_and_suggest_beneficiary.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_transfer_executor_success_uses_celebratory_tone_for_first_transfer() -> None:
     class _TransactionRepo:
         def __init__(self) -> None:
@@ -235,6 +314,39 @@ async def test_transfer_executor_processing_persists_provider_metadata() -> None
         "provider_error_code": None,
     }
     assert "is processing" in delivery_service.deliver_text.await_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_transfer_executor_processing_sends_visible_beneficiary_suggestion() -> None:
+    dd_provider = SimpleNamespace(
+        initiate_debit_to_beneficiary=AsyncMock(
+            return_value=DebitResult(
+                success=True,
+                status=DebitStatus.PROCESSING,
+                debit_id="debit-pending-1",
+                reference="ref-processing-1",
+                provider_response={"id": "debit-pending-1", "status": "processing", "reference": "ref-processing-1"},
+            )
+        )
+    )
+    account_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=SimpleNamespace(mandate_id="mandate-1")))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    executor = TransferExecutor(
+        direct_debit_provider=dd_provider,
+        account_repo=account_repo,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_transfer(_payload())
+
+    assert delivery_service.deliver_text.await_count == 2
+    assert "is processing" in delivery_service.deliver_text.await_args_list[0].kwargs["text"]
+    assert delivery_service.deliver_text.await_args_list[1].kwargs["text"] == "Would you like to save Mercy Johnson?"
 
 
 @pytest.mark.asyncio

@@ -40,7 +40,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler i
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
-from shared.services.channel_linking import is_channel_link_pin_token
+from shared.services.channel_link_authorization import is_channel_link_pin_token
 from shared.utils.flow_encryption import encrypt_flow_response
 from shared.utils.logging import get_logger
 
@@ -115,6 +115,10 @@ async def flow_webhook(
                 aes_key_bytes=aes_key_bytes,
                 iv_bytes=iv_bytes,
             )
+
+        if screen is None and _has_pin_submission_data(data) and not flow_token:
+            logger.warning("whatsapp_flow_pin_submit_missing_flow_token", action=action, version=version)
+            return JSONResponse(content={"error": "Missing flow token"}, status_code=400)
 
         if screen is None and flow_token and _has_pin_submission_data(data):
             logger.info(

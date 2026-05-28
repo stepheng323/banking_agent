@@ -32,6 +32,11 @@ class _RedisStub:
         return dict(self.hashes.get(key, {}))
 
 
+class _SuggestionServiceStub:
+    def __init__(self, message: str | None = "Would you like to save this MTN line?") -> None:
+        self.check_and_suggest_beneficiary = AsyncMock(return_value=message)
+
+
 def _payload() -> dict:
     return {
         "transaction_id": "tx-1",
@@ -43,6 +48,7 @@ def _payload() -> dict:
             "amount": 2000,
             "phone_number": "08031234567",
             "network": "MTN",
+            "recipient_name": "Tolu",
             "source_account_id": "acc-1",
         },
         "language": "en",
@@ -79,8 +85,86 @@ async def test_airtime_executor_success_delivers_to_channel_identity_not_recipie
     )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
     assert delivery_service.deliver_text.await_args.kwargs["channel"] == "telegram"
-    assert "08031234567" in delivery_service.deliver_text.await_args.kwargs["text"]
-    assert "MTN" in delivery_service.deliver_text.await_args.kwargs["text"]
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Recipient: Tolu (08031234567)" in text
+    assert "MTN" in text
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_success_appends_beneficiary_suggestion() -> None:
+    provider = SimpleNamespace(purchase_airtime=AsyncMock(return_value={"success": True, "reference": "ref-1"}))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_airtime(_payload())
+
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Tolu (08031234567)" in text
+    assert "Would you like to save this MTN line?" in text
+    suggestion_service.check_and_suggest_beneficiary.assert_awaited_once()
+    assert suggestion_service.check_and_suggest_beneficiary.await_args.kwargs["recipient_data"]["name"] == "Tolu"
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_self_success_does_not_suggest_beneficiary() -> None:
+    provider = SimpleNamespace(purchase_airtime=AsyncMock(return_value={"success": True, "reference": "ref-1"}))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    payload = _payload()
+    payload["airtime_data"]["phone_number"] = "08162511023"
+    payload["airtime_data"]["recipient_name"] = ""
+    payload["airtime_data"]["is_self"] = True
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_airtime(payload)
+
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Would you like to save" not in text
+    suggestion_service.check_and_suggest_beneficiary.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_grouped_success_does_not_suggest_beneficiary() -> None:
+    provider = SimpleNamespace(purchase_airtime=AsyncMock(return_value={"success": True, "reference": "ref-1"}))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    payload = _payload()
+    payload["async_group"] = {
+        "async_group_id": "group-airtime",
+        "async_group_size": 2,
+        "async_group_kind": "mixed_batch",
+        "async_group_index": 1,
+    }
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_airtime(payload)
+
+    suggestion_service.check_and_suggest_beneficiary.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -104,7 +188,9 @@ async def test_airtime_executor_failure_delivers_to_originating_user() -> None:
         TransactionStatusEnum.FAILED.value,
     )
     assert delivery_service.deliver_text.await_args.kwargs["phone_number"] == "927331985"
-    assert "Provider down" in delivery_service.deliver_text.await_args.kwargs["text"]
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Provider down" in text
+    assert "Tolu (08031234567)" in text
 
 
 @pytest.mark.asyncio
@@ -129,11 +215,13 @@ async def test_airtime_executor_failure_uses_provider_error_field() -> None:
         TransactionStatusEnum.FAILED.value,
     )
     assert transaction_repo.update_status.await_args_list[1].kwargs["error_message"] == "Unsupported network"
-    assert "Unsupported network" in delivery_service.deliver_text.await_args.kwargs["text"]
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert "Unsupported network" in text
+    assert "Tolu (08031234567)" in text
 
 
 @pytest.mark.asyncio
-async def test_airtime_executor_provider_pending_stays_processing() -> None:
+async def test_airtime_executor_provider_pending_stays_processing_without_duplicate_delivery() -> None:
     provider = SimpleNamespace(
         purchase_airtime=AsyncMock(return_value={"success": False, "message": "Bill payment is Pending"})
     )
@@ -160,8 +248,58 @@ async def test_airtime_executor_provider_pending_stays_processing() -> None:
         "message": "Bill payment is Pending",
     }
     assert "error_message" not in transaction_repo.update_status.await_args_list[1].kwargs
+    delivery_service.deliver_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_provider_pending_appends_beneficiary_suggestion() -> None:
+    provider = SimpleNamespace(
+        purchase_airtime=AsyncMock(return_value={"success": False, "message": "Bill payment is Pending"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    suggestion_service = _SuggestionServiceStub()
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        beneficiary_suggestion_service=suggestion_service,
+    )
+
+    await executor.handle_airtime(_payload())
+
+    text = delivery_service.deliver_text.await_args.kwargs["text"]
+    assert text == "This airtime purchase is still processing.\n\nWould you like to save this MTN line?"
+
+
+@pytest.mark.asyncio
+async def test_scheduled_airtime_executor_provider_pending_sends_processing_message() -> None:
+    provider = SimpleNamespace(
+        purchase_airtime=AsyncMock(return_value={"success": False, "message": "Bill payment is Pending"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    payload = _payload()
+    payload["scheduled_meta"] = {
+        "schedule_id": "schedule-1",
+        "schedule_run_id": "schedule-run-1",
+        "run_source": "scheduled",
+    }
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=SimpleNamespace(),
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+    )
+
+    await executor.handle_airtime(payload)
+
     text = delivery_service.deliver_text.await_args.kwargs["text"]
     assert "being processed" in text
+    assert "Tolu (08031234567)" in text
     assert "failed" not in text.lower()
 
 

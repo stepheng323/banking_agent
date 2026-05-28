@@ -2,11 +2,11 @@
 
 from types import SimpleNamespace
 
-from apps.chat.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
-from apps.chat.src.agent.graphs.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
-from apps.chat.src.agent.graphs.transfer.nodes.payout_preparation import prepare_payout_recipient
-from apps.chat.src.agent.graphs.transfer.nodes.resolver import resolve_beneficiary
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
+from apps.chat.src.agent.workers.transfer.nodes.payout_preparation import prepare_payout_recipient
+from apps.chat.src.agent.workers.transfer.resolution.resolver import resolve_beneficiary
 from shared.formatters.confirmation import build_confirmation_summary
 from shared.i18n.personality import PersonalityContext
 
@@ -651,6 +651,7 @@ async def test_name_only_single_beneficiary_match_autofills_recipient_details() 
                 "account_number": "2010000002",
                 "bank_name": "GTBank",
                 "bank_code": "058",
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],
@@ -682,6 +683,7 @@ async def test_name_variant_only_single_beneficiary_match_autofills_recipient_de
                 "account_number": "2010000002",
                 "bank_name": "GTBank",
                 "bank_code": "058",
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],
@@ -710,6 +712,7 @@ async def test_saved_beneficiary_without_bank_code_does_not_patch_string_none_wi
                 "account_number": "2010000002",
                 "bank_name": "Access Bank",
                 "bank_code": None,
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],
@@ -736,6 +739,7 @@ async def test_saved_beneficiary_without_bank_code_resolves_through_mono_when_av
                 "account_number": "2010000002",
                 "bank_name": "Access Bank",
                 "bank_code": None,
+                "beneficiary_type": "transfer",
             }
         ],
         accounts=[],

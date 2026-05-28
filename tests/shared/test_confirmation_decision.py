@@ -4,11 +4,8 @@ import pytest
 
 from shared.i18n.models import LocaleCode
 from shared.services.affirmation.service import AffirmationService
-from shared.services.confirmation_decision import (
-    ConfirmationDecisionOutput,
-    classify_confirmation_reply,
-    classify_confirmation_reply_sync,
-)
+from shared.services.confirmation_classifier import classify_confirmation_reply, classify_confirmation_reply_sync
+from shared.services.confirmation_models import ConfirmationDecisionOutput
 
 
 class _StructuredConfirmationLLM:

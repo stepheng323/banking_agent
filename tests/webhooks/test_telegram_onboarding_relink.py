@@ -5,8 +5,9 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.graphs.account.worker import AccountWorker
-from apps.gateway.api.webhooks.telegram.router import (
+from apps.chat.src.agent.workers.account.linking import build_link_account_flow
+from apps.chat.src.agent.workers.account.worker import AccountWorker
+from apps.gateway.api.webhooks.telegram.onboarding import (
     AccountInput,
     LinkingAccountInput,
     LinkingMethodInput,
@@ -127,7 +128,7 @@ async def test_linking_method_bootstrap_returns_preseeded_methods(monkeypatch: p
             "channel_user_id": "12345",
         }
     )
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.bvn_service", bvn_stub)
 
     result = await telegram_linking_method(
         LinkingMethodInput(flow_token=LINK_TOKEN, method=None),
@@ -151,7 +152,7 @@ async def test_linking_method_submit_sends_otp(monkeypatch: pytest.MonkeyPatch) 
             "channel_user_id": "12345",
         }
     )
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.bvn_service", bvn_stub)
 
     result = await telegram_linking_method(
         LinkingMethodInput(flow_token=LINK_TOKEN, method="sms"),
@@ -173,7 +174,7 @@ async def test_linking_otp_verifies_and_returns_accounts(monkeypatch: pytest.Mon
             "channel_user_id": "12345",
         }
     )
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.bvn_service", bvn_stub)
 
     result = await telegram_linking_otp(
         LinkingOtpInput(flow_token=LINK_TOKEN, otp="123456"),
@@ -197,8 +198,8 @@ async def test_linking_account_route_uses_account_add(monkeypatch: pytest.Monkey
         }
     )
     add_stub = _AccountAddServiceStub()
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.account_add_service", add_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.bvn_service", bvn_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.account_add_service", add_stub)
 
     result = await telegram_linking_account(
         LinkingAccountInput(flow_token=LINK_TOKEN, account_id="acc_1"),
@@ -212,7 +213,7 @@ async def test_linking_account_route_uses_account_add(monkeypatch: pytest.Monkey
 @pytest.mark.asyncio
 async def test_linking_endpoints_reject_missing_or_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:
     bvn_stub = _BvnServiceStub(None)
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.bvn_service", bvn_stub)
 
     method_result = await telegram_linking_method(
         LinkingMethodInput(flow_token=LINK_TOKEN, method=None),
@@ -241,9 +242,9 @@ async def test_onboarding_account_route_still_uses_onboarding_select(monkeypatch
             "step": "account_selection",
         }
     )
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.account_add_service", add_stub)
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.account_service", account_stub)
-    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.router.bvn_service", bvn_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.account_add_service", add_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.account_service", account_stub)
+    monkeypatch.setattr("apps.gateway.api.webhooks.telegram.onboarding.bvn_service", bvn_stub)
 
     result = await telegram_onboarding_account(
         AccountInput(flow_token="onboarding-opaque-token", account_id="acc_2"),
@@ -272,20 +273,22 @@ async def test_account_worker_link_token_bootstraps_telegram_relink_session(
     )
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.graphs.account.worker.secrets.token_urlsafe", lambda _: "opaque-link-token"
+        "apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token"
     )
     monkeypatch.setattr(
-        "apps.gateway.api.webhooks.telegram.router.bvn_service",
+        "apps.gateway.api.webhooks.telegram.onboarding.bvn_service",
         BvnVerificationService(session_manager),
     )
 
-    flow = await worker._build_link_account_flow(
-        {
+    flow = await build_link_account_flow(
+        context={
             "phone_number": "telegram-chat-id",
             "profile": {"phone_number": "2348000000000", "extra_data": {"bvn": "12345678901"}},
             "language": "en",
             "channel": "telegram",
-        }
+        },
+        banking_provider=worker.banking_provider,
+        session_manager=worker.session_manager,
     )
 
     result = await telegram_linking_method(

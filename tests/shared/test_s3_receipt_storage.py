@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Any
 
 import pytest
@@ -52,7 +51,6 @@ async def test_receipt_upload_is_private_and_returns_presigned_url(monkeypatch: 
     url = await client.upload_receipt_image(
         b"png-bytes",
         transaction_id="tx-secret-123",
-        timestamp=datetime(2026, 5, 19, 12, 0, 0),
     )
 
     assert url == "https://signed.example/receipt"
@@ -61,7 +59,6 @@ async def test_receipt_upload_is_private_and_returns_presigned_url(monkeypatch: 
     assert "ACL" not in put_call
     assert put_call["Key"] == f"receipts/{log_fingerprint('tx-secret-123', length=24)}/random-nonce.png"
     assert "tx-secret-123" not in put_call["Key"]
-    assert "20260519" not in put_call["Key"]
     assert fake_s3.presign_calls[-1] == {
         "method": "get_object",
         "Params": {"Bucket": "receipt-bucket", "Key": put_call["Key"]},

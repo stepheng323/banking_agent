@@ -1,4 +1,5 @@
-from shared.formatters.prompts import format_single_transfer_recipient_prompt, sanitize_recipient_display_name
+from shared.formatters.recipient_prompt_names import sanitize_recipient_display_name
+from shared.formatters.transfer_input_prompts import format_single_transfer_recipient_prompt
 
 
 def test_sanitize_recipient_display_name_uses_guardrail_relationship_aliases() -> None:

@@ -4,9 +4,8 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.planner import plan_tasks
+from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS, MAX_TRANSACTION_BATCH_TASKS
-from shared.services.funding.planner import MAX_SOURCE_ACCOUNTS
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -21,6 +20,7 @@ class _PlannerStub:
         *,
         context: str = "None",
         prompt_signals: object | None = None,
+    path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         return self.output
@@ -71,7 +71,7 @@ async def _run_planner(output: PlannerOutput) -> dict[str, Any]:
 
 
 def test_pool_funding_source_limit_is_two() -> None:
-    assert MAX_SOURCE_ACCOUNTS == MAX_POOLED_SOURCE_ACCOUNTS == 2
+    assert MAX_POOLED_SOURCE_ACCOUNTS == 2
 
 
 @pytest.mark.asyncio
@@ -96,4 +96,3 @@ async def test_planner_blocks_more_than_five_transaction_batch_tasks() -> None:
     assert updates["routing_decision"] == "transaction_batch_limit"
     assert "tasks" not in updates
     assert "waves" not in updates
-

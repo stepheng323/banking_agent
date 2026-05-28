@@ -32,7 +32,22 @@
       "request_network": "{network} data",
       "request_amount": "{amount} data",
       "target_phone_for_request": "Got the {request}. Which line should I buy it for?",
+      "target_phone_for_network_request": "Got the {request}. Which {network} line should I buy it for?",
       "network_for_phone": "I have {target_phone}. Which network is it on?"
+    },
+    "airtime": {
+      "request_amount_network": "{amount} {network} airtime",
+      "request_network": "{network} airtime",
+      "request_amount": "{amount} airtime",
+      "phone_amount": "Sure. Who should I buy airtime for, and how much?",
+      "phone_amount_for_network": "Sure. Which {network} line should I buy airtime for, and how much?",
+      "amount_for_self": "Sure. I'll use your number. How much airtime should I buy?",
+      "amount_for_self_network": "Sure. I'll use your {network} line. How much airtime should I buy?",
+      "phone_for_request": "Got {request}. Which line should I buy it for?",
+      "phone_for_network_request": "Got {request}. Which {network} line should I buy it for?",
+      "amount_for_phone": "I have {recipient_phone}. How much airtime should I buy?",
+      "network_for_phone": "I have {recipient_phone}. Which network is it on?",
+      "network_for_amount_phone": "Got {amount} for {recipient_phone}. Which network is it on?"
     }
   },
   "locale": {
@@ -49,9 +64,10 @@
   },
   "conversational": {
     "greeting": "Hi, I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
+    "greeting_named": "Hi {display_name}, I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "appreciation": "Anytime. What should we handle next?",
     "checkin": "I'm here. What would you like to do?",
-    "identity": "I'm {app_name}. I execute real banking tasks fast and carefully.",
+    "identity": "I'm {app_name}, a banking assistant that helps you move and check your money through transfers, airtime/data, balances, and transaction queries.",
     "identity_correction": "Not {addressed_name} 😄 I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "brand_origin": "The name {app_name_short} comes from {app_brand_inspiration}. We chose it because {app_brand_symbolism}: the idea behind {app_name} is to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
@@ -71,6 +87,11 @@
         "airtime_purchase": "airtime purchase",
         "data_purchase": "data purchase"
       }
+    },
+    "contextual_meta_followup": {
+      "generic": "Got it.",
+      "brand_origin": "Yeah, that's the idea: flow, clarity, and control around your money.",
+      "product_identity": "Exactly, Nenya is built to help you move and check your money clearly."
     }
   },
   "support": {
@@ -580,6 +601,15 @@
       "recipient_resolved": "✓ {label} resolved: {resolved}",
       "recipient_resolved_generic": "✓ {label} resolved",
       "input_attempts_exhausted": "I couldn't understand the details I need, so I cleared that transaction. Let's start fresh. What would you like to do?",
+      "input_greeting": "Hi. I still need your answer to continue. Please reply to the last question, or say cancel.",
+      "input_greeting_data_plan": "Hi. You're still choosing a data plan. Reply with an option number, or say cancel.",
+      "input_greeting_data_plan_network": "Hi. You're still choosing a data plan on {network}. Reply with an option number, or say cancel.",
+      "input_greeting_data_preference": "Hi. I still need a budget or data size to continue. Reply with something like 2k or 5GB, or say cancel.",
+      "input_greeting_data_preference_network": "Hi. I still need a budget or data size for this {network} data purchase. Reply with something like 2k or 5GB, or say cancel.",
+      "input_greeting_airtime_amount": "Hi. I still need the airtime amount to continue. Reply with the amount, or say cancel.",
+      "input_greeting_airtime_amount_network": "Hi. I still need the airtime amount for this {network} line. Reply with the amount, or say cancel.",
+      "input_greeting_airtime_line_amount": "Hi. I still need the line and amount for this airtime purchase. Reply with both, or say cancel.",
+      "input_greeting_airtime_line_amount_network": "Hi. I still need the {network} line and airtime amount. Reply with both, or say cancel.",
       "pin_prompt_default": "Please enter your PIN.",
       "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
@@ -675,9 +705,9 @@
       "suggestion": "💡 Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save as '{alias}'\n- Or send a different name",
-      "ask_save_transfer_default": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "ask_save_phone_default": "Would you like to save {recipient_display} ({network} • {masked_phone}) as a beneficiary?\n- Reply 'yes' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
+      "ask_save_transfer_with_alias": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'save' to save as '{alias}'\n- Or send a different name",
+      "ask_save_transfer_default": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'save' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
+      "ask_save_phone_default": "Would you like to save {recipient_display} ({network} • {masked_phone}) as a beneficiary?\n- Reply 'save' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
       "no_recent": "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them.",
       "user_not_found": "User not found.",
       "default_alias": "My Beneficiary",
@@ -827,15 +857,25 @@
     "extraction": {
       "unsupported_feature": "Sorry, I can't do {feature_name} airtime transfers yet. I can only do instant transfers defined right now."
     },
+    "confirmation": {
+      "change": {
+        "amount_to": "Got it, updating airtime to {amount}.",
+        "phone_to": "Got it, using {phone} for this airtime purchase.",
+        "network_to": "Got it, switching the airtime network to {network}.",
+        "source_to": "Got it, using {source} for this airtime purchase.",
+        "details": "Got it, updating the airtime details."
+      }
+    },
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
-        "title": "*{amount} Airtime → {recipient_display}*",
+        "target_self": "your number",
+        "title": "*{amount} airtime for {recipient_display}*",
         "title_variants": {
-          "standard": "*{amount} Airtime → {recipient_display}*",
-          "warm": "*Airtime ready for {recipient_display}: {amount}*",
+          "standard": "*{amount} airtime for {recipient_display}*",
+          "warm": "*{amount} airtime for {recipient_display}*",
           "careful": "*Review airtime purchase: {amount} for {recipient_display}*",
-          "trusted_careful": "*Airtime ready, please review: {amount} for {recipient_display}*"
+          "trusted_careful": "*Please review: {amount} airtime for {recipient_display}*"
         },
         "network_line": "Network: {network}"
       }
@@ -843,12 +883,13 @@
     "execution": {
       "recipient_fallback": "Airtime Beneficiary",
       "date_now": "Now",
-      "message_queued": "Your airtime purchase of ₦{amount} for {recipient_phone} ({network}) is being processed.",
+      "message_queued": "Your airtime purchase of ₦{amount} for {recipient_target} ({network}) is being processed.",
       "message_queued_variants": {
-        "standard": "Your airtime purchase of ₦{amount} for {recipient_phone} ({network}) is being processed.",
-        "warm": "Got it. Your ₦{amount} airtime for {recipient_phone} ({network}) is processing.",
-        "reassuring": "Your ₦{amount} airtime purchase for {recipient_phone} ({network}) is processing. Provider confirmation can take a few minutes."
+        "standard": "Your airtime purchase of ₦{amount} for {recipient_target} ({network}) is being processed.",
+        "warm": "Got it. Your ₦{amount} airtime for {recipient_target} ({network}) is processing.",
+        "reassuring": "Your ₦{amount} airtime purchase for {recipient_target} ({network}) is processing. Provider confirmation can take a few minutes."
       },
+      "processing_status": "This airtime purchase is still processing.",
       "system_error": "System error during execution."
     },
     "error": {
@@ -871,16 +912,16 @@
     },
     "executor": {
       "reference_fallback": "N/A",
-      "success_message": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
+      "success_message": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
       "success_message_variants": {
-        "standard": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nPhone: {recipient_phone}\nNetwork: {network}\nRef: {reference}",
-        "warm": "Done. ₦{amount} airtime has been sent to {recipient_phone} ({network}).\nRef: {reference}",
-        "celebratory": "All set. ₦{amount} airtime has been sent to {recipient_phone} ({network}).\nRef: {reference}"
+        "standard": "✓ Airtime purchase successful\n\nAmount: ₦{amount}\nRecipient: {recipient_target}\nNetwork: {network}\nRef: {reference}",
+        "warm": "Done. ₦{amount} airtime has been sent to {recipient_target} ({network}).\nRef: {reference}",
+        "celebratory": "All set. ₦{amount} airtime has been sent to {recipient_target} ({network}).\nRef: {reference}"
       },
-      "failure_message": "Airtime purchase failed for {recipient_phone} ({network}).\nReason: {reason}",
+      "failure_message": "Airtime purchase failed for {recipient_target} ({network}).\nReason: {reason}",
       "failure_message_variants": {
-        "standard": "Airtime purchase failed for {recipient_phone} ({network}).\nReason: {reason}",
-        "reassuring": "I couldn't complete the airtime purchase for {recipient_phone} ({network}).\nReason: {reason}"
+        "standard": "Airtime purchase failed for {recipient_target} ({network}).\nReason: {reason}",
+        "reassuring": "I couldn't complete the airtime purchase for {recipient_target} ({network}).\nReason: {reason}"
       }
     }
   },
@@ -892,11 +933,48 @@
     "confirmation": {
       "buy_network_for_phone": "Buy {network} data for {target_phone}?",
       "buy_plan_for_phone": "Buy {plan_name} for {target_phone}?",
-      "buy_amount_network_for_phone": "Buy ₦{amount} of {network} data for {target_phone}?"
+      "buy_amount_network_for_phone": "Buy ₦{amount} of {network} data for {target_phone}?",
+      "change": {
+        "amount_to": "Got it, updating data budget to {amount}.",
+        "phone_to": "Got it, buying this data for {phone}.",
+        "network_to": "Got it, switching the data network to {network}.",
+        "plan_to": "Got it, using {plan_name} at {amount}.",
+        "source_to": "Got it, using {source} for this data purchase.",
+        "details": "Got it, updating the data details."
+      }
     },
     "execution": {
       "receipt_description_plan": "{plan_name} for {target_phone}",
       "receipt_description_network": "{network} data for {target_phone}"
+    },
+    "plan_selection": {
+      "ask_preference": "Which {network} data plan should I use?\n{options}\n{reply_hint}",
+      "ask_preference_self_network": "Sure. I'll use your {network} line. What budget or data size should I use?",
+      "ask_preference_self_unknown_network": "Sure. I'll use your number. Which network is it on, and what budget or data size should I use?",
+      "ask_preference_network_without_phone": "Sure. Which {network} line should I buy for, and what budget or data size should I use?",
+      "ask_preference_target_network": "Sure. What budget or data size should I use for {target_phone} on {network}?",
+      "ask_preference_target_unknown_network": "Sure. Which network is {target_phone} on, and what budget or data size should I use?",
+      "choose_plan": "I found a few matching data plans:\n{options}\n{reply_hint}",
+      "recommendation_ask_phone": "I found {plan_name} for ₦{amount}, valid {validity}. Which {network} line should I buy it for?",
+      "reply_with_one": "Reply with 1.",
+      "reply_with_two": "Reply with 1 or 2.",
+      "reply_with_range": "Reply with 1, 2, or {count}.",
+      "option": "{index}. {plan_name} — ₦{amount} ({validity})",
+      "missing_plan": "Please choose a valid data plan before we continue.",
+      "invalid_plan_code": "I couldn't find that data plan. Please choose one of the available options.",
+      "catalog_unavailable": "I couldn't fetch data plans right now. Please try again shortly.",
+      "no_budget_match": "I couldn't find a {network} data plan within ₦{budget}. You can try a higher budget or choose a smaller plan.",
+      "size_budget_conflict": "I couldn't find {size} within ₦{budget}. The closest {size} plan costs ₦{amount}.",
+      "validity_unknown": "validity not shown"
+    },
+    "plan_query": {
+      "ask_network": "Which network should I check?",
+      "exact_match": "{plan_name} is ₦{amount}, valid for {validity}.",
+      "multiple_matches": "I found a few matching options:\n{options}",
+      "nearest_matches": "I couldn't find that exact size. The closest options are:\n{options}",
+      "budget_matches": "For ₦{budget} on {network}, these are the strongest options:\n{options}",
+      "validity_matches": "These are the closest options by validity:\n{options}",
+      "generic_matches": "Here are some {network} data plans:\n{options}"
     },
     "error": {
       "execution_failed": "Data purchase could not be completed. Please try again.",
@@ -922,12 +1000,12 @@
         "plan_name_fallback": "Data Plan",
         "source_bank_fallback": "Account",
         "target_self": "your number",
-        "title": "*{plan_name} → {target_display}*",
+        "title": "*{plan_name} for {target_display}*",
         "title_variants": {
-          "standard": "*{plan_name} → {target_display}*",
-          "warm": "*Data ready for {target_display}: {plan_name}*",
+          "standard": "*{plan_name} for {target_display}*",
+          "warm": "*{plan_name} for {target_display}*",
           "careful": "*Review data purchase: {plan_name} for {target_display}*",
-          "trusted_careful": "*Data ready, please review: {plan_name} for {target_display}*"
+          "trusted_careful": "*Please review: {plan_name} for {target_display}*"
         },
         "network_amount": "Network: {network} • Amount: ₦{amount}"
       }
@@ -945,6 +1023,7 @@
         "warm": "Got it. Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing.\n\nYou'll receive confirmation shortly.",
         "reassuring": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} is processing. Provider confirmation can take a few minutes."
       },
+      "processing_status": "This data purchase is still processing.",
       "failed_message": "Data purchase failed: {error_message}. Please try again.",
       "failed_message_variants": {
         "standard": "Data purchase failed: {error_message}. Please try again.",
@@ -1098,9 +1177,27 @@
       "scheduled_data": "Confirm Scheduled Data Purchase",
       "schedule_update": "Confirm Schedule Update",
       "airtime": "Confirm Airtime Purchase",
+      "airtime_variants": {
+        "standard": "Review Airtime Purchase",
+        "warm": "Review Airtime Purchase",
+        "careful": "Review Airtime Purchase Carefully",
+        "trusted_careful": "Review Airtime Purchase"
+      },
       "data": "Confirm Data Purchase",
+      "data_variants": {
+        "standard": "Review Data Purchase",
+        "warm": "Review Data Purchase",
+        "careful": "Review Data Purchase Carefully",
+        "trusted_careful": "Review Data Purchase"
+      },
       "mixed": "Confirm Transactions",
-      "generic": "Confirm Transaction"
+      "generic": "Confirm Transaction",
+      "section": {
+        "transfer": "*Transfer*",
+        "airtime": "*Airtime*",
+        "data": "*Data*",
+        "generic": "*Transaction*"
+      }
     },
     "completion": {
       "header": {

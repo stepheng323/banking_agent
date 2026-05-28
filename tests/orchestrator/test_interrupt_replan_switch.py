@@ -15,9 +15,10 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.nodes.execution import advance_wave
-from apps.chat.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
-from shared.i18n import render_cancelled_prompt, render_message
+from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
+from shared.i18n.bridge import render_cancelled_prompt
+from shared.i18n.renderer import render_message
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
@@ -42,7 +43,7 @@ class _MockPlanner:
         self._semantic_route = semantic_route
         self.route_calls = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -51,8 +52,11 @@ class _MockPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text, context, path_label, prompt_mode
         self.route_calls += 1
         if self._route is None:
             return InterruptRouteDecision(
@@ -64,6 +68,17 @@ class _MockPlanner:
                 reason="default continue",
             )
         return self._route
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
     async def route_semantic_turn(
         self,
@@ -103,10 +118,24 @@ class _RouteOnlyPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text, context, path_label, prompt_mode
         self.route_calls += 1
         return self._route
+
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
     async def route_semantic_turn(
         self,
@@ -128,7 +157,7 @@ class _RouteOnlyPlanner:
             reason="mock default",
         )
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for direct switch targets")
 
@@ -139,11 +168,25 @@ class _FailIfRouterCalledPlanner:
         phone_number: str,
         text: str,
         context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+        prompt_mode: str = "full",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text, context, path_label, prompt_mode
         raise AssertionError("route_pending_input should not be called for callback auto-approve")
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
+
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for callback auto-approve")
 
@@ -638,6 +681,66 @@ async def test_interrupt_input_network_reply_continues_data_without_router() -> 
 
 
 @pytest.mark.asyncio
+async def test_interrupt_input_self_line_reply_continues_airtime_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_airtime_self_line_slot",
+        phone_number="2348022222304",
+        channel="whatsapp",
+        last_message_text="my line",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_phone"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="airtime",
+                stage=TaskStage.RESOLVED,
+                payload={"amount": 1000, "network": "MTN", "idempotency_key": "old-key"},
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
+async def test_interrupt_input_network_reply_continues_airtime_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_airtime_network_slot",
+        phone_number="2348022222305",
+        channel="whatsapp",
+        last_message_text="MTN",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["network"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="airtime",
+                stage=TaskStage.RESOLVED,
+                payload={"amount": 1000, "recipient_phone": "08162511023", "idempotency_key": "old-key"},
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
 async def test_interrupt_input_stashes_transfer_and_routes_new_single_transfer_directly() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_3",
@@ -1020,6 +1123,510 @@ async def test_confirmation_amount_shortcut_skips_interrupt_router() -> None:
 
 
 @pytest.mark.asyncio
+async def test_confirmation_data_amount_edit_clears_catalog_plan_before_reconfirming() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_amount_edit",
+        phone_number="2348066666681",
+        channel="whatsapp",
+        last_message_text="make it 2k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_data"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "idempotency_key": "idem-data",
+                    "amount": 3500,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "plan_code": "MD501",
+                    "plan_name": "MTN 5 GB data bundle",
+                    "biller_code": "BIL099",
+                    "plan_size_gb": 5.0,
+                    "plan_validity_days": 30,
+                    "plan_tags": ["monthly"],
+                    "data_plan_candidates": [{"index": 1, "plan_code": "MD501"}],
+                    "catalog_cache_stale": True,
+                    "confirmation": {
+                        "summary": "Confirm data purchase",
+                        "snapshot": {
+                            "amount": 3500,
+                            "network": "MTN",
+                            "target_phone": "08162511023",
+                            "plan_code": "MD501",
+                            "plan_name": "MTN 5 GB data bundle",
+                        },
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["data"],
+                    amount=2000,
+                    reason="data amount edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t_data"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+    assert payload["amount"] == 2000
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["plan_code"] is None
+    assert payload["plan_name"] is None
+    assert payload["biller_code"] is None
+    assert payload["plan_size_gb"] is None
+    assert payload["plan_validity_days"] is None
+    assert payload["plan_tags"] == []
+    assert payload["data_plan_candidates"] == []
+    assert payload["catalog_cache_stale"] is False
+    assert payload["size_preference"] is None
+    assert payload["previous_confirmation_snapshot"]["plan_code"] == "MD501"
+    assert "idempotency_key" not in payload
+
+
+@pytest.mark.asyncio
+async def test_confirmation_data_network_edit_clears_catalog_plan_before_reconfirming() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_network_edit",
+        phone_number="2348066666682",
+        channel="whatsapp",
+        last_message_text="change it to airtel",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_data"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 3500,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "recipient_name": "Mum",
+                    "beneficiary_id": "ben-data-mtn",
+                    "plan_code": "MD501",
+                    "plan_name": "MTN 5 GB data bundle",
+                    "biller_code": "BIL099",
+                    "plan_size_gb": 5.0,
+                    "plan_validity_days": 30,
+                    "plan_tags": ["monthly"],
+                    "data_plan_candidates": [{"index": 1, "plan_code": "MD501"}],
+                    "confirmation": {
+                        "summary": "Confirm data purchase",
+                        "snapshot": {
+                            "network": "MTN",
+                            "plan_code": "MD501",
+                            "plan_name": "MTN 5 GB data bundle",
+                        },
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["data"],
+                    network="AIRTEL",
+                    reason="data network edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t_data"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+    assert payload["network"] == "AIRTEL"
+    assert payload["target_phone"] is None
+    assert payload["phone"] is None
+    assert payload["recipient_name"] is None
+    assert payload["beneficiary_id"] is None
+    assert payload["is_self"] is False
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["plan_code"] is None
+    assert payload["plan_name"] is None
+    assert payload["biller_code"] is None
+    assert payload["plan_size_gb"] is None
+    assert payload["plan_validity_days"] is None
+    assert payload["plan_tags"] == []
+    assert payload["data_plan_candidates"] == []
+    assert payload["previous_confirmation_snapshot"]["plan_code"] == "MD501"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_airtime_phone_edit_infers_new_network_before_reconfirming() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_airtime_phone_network_edit",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="buy it for 08081234567",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_airtime"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "idempotency_key": "idem-airtime",
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "recipient_name": "Mum",
+                    "beneficiary_id": "ben-airtime-mtn",
+                    "network": "MTN",
+                    "is_self": True,
+                    "confirmation": {
+                        "summary": "Confirm airtime",
+                        "snapshot": {
+                            "amount": 1000,
+                            "recipient_phone": "08162511023",
+                            "network": "MTN",
+                        },
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["airtime"],
+                    phone="08081234567",
+                    reason="airtime phone edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t_airtime"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.EXTRACTED
+    assert payload["recipient_phone"] == "08081234567"
+    assert payload["phone"] == "08081234567"
+    assert payload["recipient_name"] is None
+    assert payload["beneficiary_id"] is None
+    assert payload["is_self"] is False
+    assert payload["network"] == "AIRTEL"
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["previous_confirmation_snapshot"] == {
+        "amount": 1000,
+        "recipient_phone": "08162511023",
+        "network": "MTN",
+    }
+    assert "idempotency_key" not in payload
+
+
+@pytest.mark.asyncio
+async def test_confirmation_airtime_network_edit_clears_mismatched_self_line() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_airtime_network_mismatch_edit",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="change airtime to Airtel",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_airtime"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "idempotency_key": "idem-airtime",
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "phone": "08162511023",
+                    "recipient_name": "Mum",
+                    "beneficiary_id": "ben-airtime-mtn",
+                    "network": "MTN",
+                    "is_self": True,
+                    "confirmation": {
+                        "summary": "Confirm airtime",
+                        "snapshot": {
+                            "amount": 1000,
+                            "recipient_phone": "08162511023",
+                            "network": "MTN",
+                        },
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["airtime"],
+                    network="Airtel",
+                    reason="airtime network edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t_airtime"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.EXTRACTED
+    assert payload["network"] == "Airtel"
+    assert payload["recipient_phone"] is None
+    assert payload["phone"] is None
+    assert payload["recipient_name"] is None
+    assert payload["beneficiary_id"] is None
+    assert payload["is_self"] is False
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["previous_confirmation_snapshot"] == {
+        "amount": 1000,
+        "recipient_phone": "08162511023",
+        "network": "MTN",
+    }
+    assert "idempotency_key" not in payload
+
+
+@pytest.mark.asyncio
+async def test_confirmation_data_phone_edit_to_different_network_clears_catalog_plan() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_phone_network_edit",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="buy it for 08081234567",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_data"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 3500,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "recipient_name": "Mum",
+                    "beneficiary_id": "ben-data-mtn",
+                    "is_self": True,
+                    "plan_code": "MD501",
+                    "plan_name": "MTN 5 GB data bundle",
+                    "biller_code": "BIL099",
+                    "plan_size_gb": 5.0,
+                    "plan_validity_days": 30,
+                    "plan_tags": ["monthly"],
+                    "confirmation": {
+                        "summary": "Confirm data purchase",
+                        "snapshot": {
+                            "amount": 3500,
+                            "network": "MTN",
+                            "target_phone": "08162511023",
+                            "plan_code": "MD501",
+                        },
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["data"],
+                    phone="08081234567",
+                    reason="data target phone edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t_data"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+    assert payload["target_phone"] == "08081234567"
+    assert payload["phone"] == "08081234567"
+    assert payload["recipient_name"] is None
+    assert payload["beneficiary_id"] is None
+    assert payload["is_self"] is False
+    assert payload["network"] == "AIRTEL"
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["plan_code"] is None
+    assert payload["plan_name"] is None
+    assert payload["biller_code"] is None
+    assert payload["plan_size_gb"] is None
+    assert payload["plan_validity_days"] is None
+    assert payload["plan_tags"] == []
+    assert payload["data_plan_candidates"] == []
+    assert payload["previous_confirmation_snapshot"]["plan_code"] == "MD501"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_data_size_edit_clears_catalog_plan_before_reconfirming() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_size_edit",
+        phone_number="2348066666683",
+        channel="whatsapp",
+        last_message_text="make it 5GB",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_data"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 2000,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "plan_code": "MD108",
+                    "plan_name": "MTN 3.5 GB",
+                    "biller_code": "BIL099",
+                    "plan_size_gb": 3.5,
+                    "plan_validity_days": 30,
+                    "plan_tags": ["monthly"],
+                    "confirmation": {
+                        "summary": "Confirm data purchase",
+                        "snapshot": {
+                            "network": "MTN",
+                            "plan_code": "MD108",
+                            "plan_name": "MTN 3.5 GB",
+                        },
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["data"],
+                    size_preference="5GB",
+                    reason="data size edit",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t_data"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+    assert payload["size_preference"] == "5GB"
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["plan_code"] is None
+    assert payload["plan_name"] is None
+    assert payload["plan_size_gb"] is None
+    assert payload["plan_validity_days"] is None
+    assert payload["previous_confirmation_snapshot"]["plan_code"] == "MD108"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_data_show_options_sets_catalog_alternative_state() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_show_options",
+        phone_number="2348066666684",
+        channel="whatsapp",
+        last_message_text="what other plan within that range",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_data"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 3500,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "plan_code": "MD501",
+                    "plan_name": "MTN 5 GB data bundle",
+                    "biller_code": "BIL099",
+                    "plan_size_gb": 5.0,
+                    "plan_validity_days": 30,
+                    "plan_tags": ["monthly"],
+                    "confirmation": {
+                        "summary": "Confirm data purchase",
+                        "snapshot": {
+                            "amount": 3500,
+                            "network": "MTN",
+                            "plan_code": "MD501",
+                            "plan_name": "MTN 5 GB data bundle",
+                        },
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="show_options",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["data"],
+                    show_options=True,
+                    reason="data plan alternatives",
+                )
+            ),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t_data"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+    assert payload["show_plan_options"] is True
+    assert payload["data_plan_exclude_codes"] == ["MD501"]
+    assert payload["plan_code"] is None
+    assert payload["plan_name"] is None
+    assert payload["confirmation"] == {"confirmed": False}
+
+
+@pytest.mark.asyncio
 async def test_confirmation_exact_repeat_shortcut_skips_interrupt_router() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_repeat_1",
@@ -1172,6 +1779,340 @@ async def test_input_source_account_reference_shortcut_skips_interrupt_router() 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
     assert updates["tasks"]["t1"].payload["confirmation"] == {}
+
+
+@pytest.mark.asyncio
+async def test_data_plan_numeric_selection_shortcut_skips_interrupt_router() -> None:
+    prompt = (
+        "Which MTN data plan should I use?\n"
+        "1. MTN 5 GB data bundle — ₦3,500 (30 days)\n"
+        "2. MTN 3.5 GB — ₦2,000 (30 days)\n"
+        "3. MTN 1.5 GB — ₦1,000 (30 days)\n"
+        "Reply with 1, 2, or 3."
+    )
+    state = OrchestratorState(
+        user_id="u_interrupt_data_plan_selection",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="2",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_data"],
+            fields_by_task={"t_data": ["data_plan_id"]},
+            prompt=prompt,
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "data_plan_candidates": [
+                        {"index": 1, "plan_code": "MD501"},
+                        {"index": 2, "plan_code": "MD350"},
+                        {"index": 3, "plan_code": "MD150"},
+                    ],
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_data_plan_input_greeting_nudges_without_repeating_full_plan_prompt() -> None:
+    prompt = (
+        "Which MTN data plan should I use?\n"
+        "1. MTN 5 GB data bundle — ₦3,500 (30 days)\n"
+        "2. MTN 3.5 GB — ₦2,000 (30 days)\n"
+        "3. MTN 1.5 GB — ₦1,000 (30 days)\n"
+        "Reply with 1, 2, or 3."
+    )
+    state = OrchestratorState(
+        user_id="u_interrupt_data_plan_greeting",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="Hi",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_data"],
+            fields_by_task={"t_data": ["data_plan_id"]},
+            prompt=prompt,
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "data_plan_candidates": [
+                        {"index": 1, "plan_code": "MD501"},
+                        {"index": 2, "plan_code": "MD350"},
+                        {"index": 3, "plan_code": "MD150"},
+                    ],
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    response = updates["outbox"][0]["text"]
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["pending_interrupt"].attempts == 1
+    assert response == render_message(
+        "orchestrator.execution.input_greeting_data_plan_network",
+        "en",
+        {"network": "MTN"},
+    )
+    assert "MTN 5 GB data bundle" not in response
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_data_preference_input_greeting_nudges_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_preference_greeting",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="Hi",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_data"],
+            fields_by_task={"t_data": ["data_plan_preference"]},
+            prompt="Sure. I'll use your MTN line. What budget or data size should I use?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "MTN", "target_phone": "08162511023", "is_self": True},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    response = updates["outbox"][0]["text"]
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["pending_interrupt"].attempts == 1
+    assert response == render_message(
+        "orchestrator.execution.input_greeting_data_preference_network",
+        "en",
+        {"network": "MTN"},
+    )
+    assert "What budget or data size should I use?" not in response
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_data_preference_reply_in_multi_slot_prompt_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_preference_multi_slot",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="4k",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_data"],
+            fields_by_task={"t_data": ["target_phone", "data_plan_preference"]},
+            prompt="Sure. Which Airtel line should I buy for, and what budget or data size should I use?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "AIRTEL"},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_data_phone_reply_in_multi_slot_prompt_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_data_phone_multi_slot",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="08081234567",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_data"],
+            fields_by_task={"t_data": ["target_phone", "data_plan_preference"]},
+            prompt="Sure. Which Airtel line should I buy for, and what budget or data size should I use?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "AIRTEL"},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_data"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_airtime_amount_input_greeting_nudges_without_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_airtime_amount_greeting",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="Hi",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_airtime"],
+            fields_by_task={"t_airtime": ["amount"]},
+            prompt="Sure. I'll use your MTN line. How much airtime should I buy?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "MTN", "recipient_phone": "08162511023", "is_self": True},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    response = updates["outbox"][0]["text"]
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["pending_interrupt"].attempts == 1
+    assert response == render_message(
+        "orchestrator.execution.input_greeting_airtime_amount_network",
+        "en",
+        {"network": "MTN"},
+    )
+    assert "How much airtime should I buy?" not in response
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_airtime_line_amount_input_greeting_mentions_network_without_full_prompt() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_airtime_line_amount_greeting",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="Hi",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_airtime"],
+            fields_by_task={"t_airtime": ["recipient_phone", "amount"]},
+            prompt="Sure. Which Airtel line should I buy airtime for, and how much?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "Airtel"},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    response = updates["outbox"][0]["text"]
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["pending_interrupt"].attempts == 1
+    assert response == render_message(
+        "orchestrator.execution.input_greeting_airtime_line_amount_network",
+        "en",
+        {"network": "Airtel"},
+    )
+    assert "Which Airtel line should I buy airtime for, and how much?" not in response
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
+async def test_airtime_amount_reply_in_line_amount_prompt_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_airtime_line_amount_amount_reply",
+        phone_number="2348066666700",
+        channel="whatsapp",
+        last_message_text="4k",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_airtime"],
+            fields_by_task={"t_airtime": ["recipient_phone", "amount"]},
+            prompt="Sure. Which Airtel line should I buy airtime for, and how much?",
+        ),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "Airtel"},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.EXTRACTED
 
 
 @pytest.mark.asyncio
@@ -2774,6 +3715,167 @@ async def test_status_query_recap_preserves_pending_interrupt_without_task_reset
 
 
 @pytest.mark.asyncio
+async def test_status_query_data_recap_includes_plan_amount_network_and_line() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_data_recap",
+        phone_number="2348010101191",
+        channel="whatsapp",
+        last_message_text="where did we stop",
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["data_status"],
+            prompt="Review data purchase",
+        ),
+        tasks={
+            "data_status": TaskSpec(
+                id="data_status",
+                type="data",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "plan_name": "MTN 5 GB data bundle",
+                    "amount": 3500,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "source_bank_name": "Access Bank",
+                    "idempotency_key": "idem-data-status",
+                },
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="recap",
+            confidence=0.91,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="flow recap request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["tasks"]["data_status"].stage == TaskStage.AWAITING_CONFIRMATION
+    response = updates["outbox"][0]["text"]
+    assert "data flow" in response
+    assert "plan MTN 5 GB data bundle" in response
+    assert "amount ₦3,500" in response
+    assert "network MTN" in response
+    assert "line 08162511023" in response
+    assert "source Access Bank" in response
+    assert "Next step: confirm to continue." in response
+
+
+@pytest.mark.asyncio
+async def test_status_query_airtime_recap_includes_amount_network_and_line() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_airtime_recap",
+        phone_number="2348010101192",
+        channel="whatsapp",
+        last_message_text="where did we stop",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["airtime_status"],
+            fields_by_task={"airtime_status": ["source_account_id"]},
+        ),
+        tasks={
+            "airtime_status": TaskSpec(
+                id="airtime_status",
+                type="airtime",
+                stage=TaskStage.RESOLVED,
+                payload={
+                    "amount": 2000,
+                    "network": "AIRTEL",
+                    "recipient_phone": "08021234567",
+                    "source_bank_name": "GTBank",
+                    "idempotency_key": "idem-airtime-status",
+                },
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="recap",
+            confidence=0.91,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="flow recap request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["tasks"]["airtime_status"].stage == TaskStage.RESOLVED
+    response = updates["outbox"][0]["text"]
+    assert "airtime flow" in response
+    assert "amount ₦2,000" in response
+    assert "network Airtel" in response
+    assert "line 08021234567" in response
+    assert "source GTBank" in response
+    assert "Next step: provide source account selection." in response
+    assert "Pick the source account by tapping it or replying with the number." in response
+
+
+@pytest.mark.asyncio
+async def test_status_query_data_plan_recap_includes_option_hint() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_data_choice_recap",
+        phone_number="2348010101196",
+        channel="whatsapp",
+        last_message_text="where did we stop",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["data_choice_recap"],
+            fields_by_task={"data_choice_recap": ["data_plan_id"]},
+        ),
+        tasks={
+            "data_choice_recap": TaskSpec(
+                id="data_choice_recap",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 2000,
+                    "network": "MTN",
+                    "target_phone": "08162511023",
+                    "source_bank_name": "Access Bank",
+                },
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="recap",
+            confidence=0.91,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="flow recap request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    response = updates["outbox"][0]["text"]
+    assert updates["pending_interrupt"] is not None
+    assert "data flow" in response
+    assert "amount ₦2,000" in response
+    assert "network MTN" in response
+    assert "line 08162511023" in response
+    assert "Next step: provide data plan choice." in response
+    assert "Pick a data plan by replying with the option number." in response
+    assert "data_plan_id" not in response
+
+
+@pytest.mark.asyncio
 async def test_status_query_requirements_preserves_pending_interrupt() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_status_2",
@@ -2814,6 +3916,136 @@ async def test_status_query_requirements_preserves_pending_interrupt() -> None:
     assert updates["outbox"][0]["type"] == "say"
     assert "I still need: beneficiary selection." in updates["outbox"][0]["text"]
     assert "replying with the number" in updates["outbox"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_status_query_data_preference_requirements_uses_natural_slot_copy() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_data_preference",
+        phone_number="2348010101193",
+        channel="whatsapp",
+        last_message_text="what do you need from me",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["data_preference"],
+            fields_by_task={"data_preference": ["data_plan_preference"]},
+        ),
+        tasks={
+            "data_preference": TaskSpec(
+                id="data_preference",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "MTN", "target_phone": "08162511023"},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="requirements",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="requirements request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    response = updates["outbox"][0]["text"]
+    assert updates["pending_interrupt"] is not None
+    assert "I still need: budget or data size." in response
+    assert "Reply with a budget or size, like 2k or 5GB." in response
+    assert "data_plan_preference" not in response
+
+
+@pytest.mark.asyncio
+async def test_status_query_data_plan_choice_requirements_uses_option_copy() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_data_plan_choice",
+        phone_number="2348010101194",
+        channel="whatsapp",
+        last_message_text="what do you need from me",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["data_choice"],
+            fields_by_task={"data_choice": ["data_plan_id"]},
+        ),
+        tasks={
+            "data_choice": TaskSpec(
+                id="data_choice",
+                type="data",
+                stage=TaskStage.EXTRACTED,
+                payload={"network": "MTN", "target_phone": "08162511023"},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="requirements",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="requirements request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    response = updates["outbox"][0]["text"]
+    assert updates["pending_interrupt"] is not None
+    assert "I still need: data plan choice." in response
+    assert "Pick a data plan by replying with the option number." in response
+    assert "data_plan_id" not in response
+
+
+@pytest.mark.asyncio
+async def test_status_query_airtime_line_and_network_requirements_uses_mobile_slot_copy() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_airtime_line_network",
+        phone_number="2348010101195",
+        channel="whatsapp",
+        last_message_text="what do you need from me",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["airtime_line"],
+            fields_by_task={"airtime_line": ["recipient_phone", "network"]},
+        ),
+        tasks={
+            "airtime_line": TaskSpec(
+                id="airtime_line",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 2000},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="requirements",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="requirements request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    response = updates["outbox"][0]["text"]
+    assert updates["pending_interrupt"] is not None
+    assert "I still need: phone line, mobile network." in response
+    assert "Reply with the phone number, or say my line if it is for you." in response
+    assert "Reply with the network, like MTN, Airtel, Glo, or 9mobile." in response
+    assert "recipient_phone" not in response
 
 
 @pytest.mark.asyncio
