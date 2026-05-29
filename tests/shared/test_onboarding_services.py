@@ -5,12 +5,12 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.workers.onboarding import service as onboarding_service_module
-from shared.cache.flow_session_manager import SessionReadResult
-from shared.clients.providers.mono.models import BankAccount, BvnLookupData, BvnMethod, Institution
 from banking.accounts.onboarding.account_add import AccountAddService
 from banking.accounts.onboarding.account_linking import AccountLinkingService
 from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 from banking.accounts.onboarding.session import OnboardingStep
+from shared.cache.flow_session_manager import SessionReadResult
+from shared.clients.providers.mono.models import BankAccount, BvnLookupData, BvnMethod, Institution
 
 
 class _SessionStub:

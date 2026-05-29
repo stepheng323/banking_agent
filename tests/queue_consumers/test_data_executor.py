@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from banking.transactions.runtime.executors.data import DataExecutor
 from shared.database.enums import TransactionStatusEnum
 from shared.policy.loader import get_cached_policy, load_policy
-from banking.transactions.runtime.executors.data import DataExecutor
 
 CAPABILITY_POLICY_PATH = "config/capability_policy.json"
 DATA_DISABLED_MESSAGE = (

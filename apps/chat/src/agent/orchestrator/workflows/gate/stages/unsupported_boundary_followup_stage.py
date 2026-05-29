@@ -1,6 +1,15 @@
 from time import time
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
+    UnsupportedBoundaryTurnOutput,
+    UnsupportedCapability,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
@@ -18,13 +27,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.unsupported_capability_rout
     semantic_unsupported_capability,
 )
 from shared.i18n.renderer import render_message
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
-    UnsupportedBoundaryTurnOutput,
-    UnsupportedCapability,
-)
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import unsupported_capability_params
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -5,9 +5,9 @@ import pytest
 
 from apps.chat.src.agent.workers.account.linking import build_link_account_flow
 from apps.chat.src.agent.workers.account.worker import AccountWorker
+from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.config.settings import settings
-from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 
 
 class _RedisStub:

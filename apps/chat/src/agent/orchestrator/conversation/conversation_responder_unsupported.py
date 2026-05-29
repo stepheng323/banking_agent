@@ -5,9 +5,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
+    localized_supported_alternatives,
+)
 from shared.i18n.renderer import render_message
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import unsupported_capability_params
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import localized_supported_alternatives
 
 UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT = "unsupported_capability_followup"
 UNSUPPORTED_CAPABILITY_PROMISE_RE = re.compile(

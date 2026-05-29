@@ -1,5 +1,14 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import (
+    conversation_display_name,
+    conversation_topic_for_response,
+)
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     classify_banking_coded_ambiguity,
     render_banking_coded_ambiguity_prompt,
@@ -16,10 +25,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
     _route_observability_updates,
 )
 from shared.i18n.renderer import render_message
-from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_display_name, conversation_topic_for_response
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import unsupported_capability_params
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

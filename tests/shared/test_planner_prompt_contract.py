@@ -9,7 +9,10 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_interrupt_prompts im
     INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
     PENDING_ACTION_EDIT_SYSTEM_PROMPT,
 )
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import (
+    PlannerPromptBuildInput,
+    PlannerPromptSignals,
+)
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import (
     PLANNER_PROMPT_BASELINE_RESULT,
     build_runtime_planner_system_prompt,

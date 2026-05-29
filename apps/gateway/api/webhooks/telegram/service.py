@@ -7,17 +7,17 @@ from typing import Any
 from urllib.parse import urlencode
 
 from apps.gateway.adapters.telegram import ParsedTelegramMessage, parse_update
+from banking.accounts.onboarding.runtime import session_manager
+from banking.accounts.onboarding.session import OnboardingStep
+from banking.identity.channel_linking.authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
+from banking.identity.channel_linking.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
+from banking.identity.repositories.user_repository import UserRepository
 from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.adapter import QueuePublisher
-from banking.identity.repositories.user_repository import UserRepository
-from banking.identity.channel_linking.authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
-from banking.accounts.onboarding.runtime import session_manager
-from banking.accounts.onboarding.session import OnboardingStep
-from banking.identity.channel_linking.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

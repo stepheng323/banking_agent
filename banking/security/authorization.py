@@ -3,8 +3,8 @@
 import json
 from dataclasses import dataclass
 
-from shared.cache.redis_client import RedisClient
 from banking.persistence.unit_of_work import UnitOfWork
+from shared.cache.redis_client import RedisClient
 from shared.utils.hash import is_valid_pin_format, verify_hash
 
 

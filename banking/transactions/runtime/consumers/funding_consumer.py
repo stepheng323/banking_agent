@@ -2,16 +2,16 @@
 
 from typing import Any
 
-from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
-from shared.config.settings import settings
-from shared.database.enums import FundingStepStatusEnum
-from shared.queue.adapter import QueuePublisher
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import (
     is_retryable_debit_result,
     queue_payout_if_all_confirmed,
     queue_refunds_for_confirmed_funding_steps,
 )
+from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
+from shared.config.settings import settings
+from shared.database.enums import FundingStepStatusEnum
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -213,7 +213,7 @@ class FundingConsumer:
             return False
 
         retry_count = int(getattr(step, "retry_count", 0) or 0) + 1
-        setattr(step, "retry_count", retry_count)
+        step.retry_count = retry_count
         if getattr(uow, "db", None) is not None:
             uow.db.add(step)
 

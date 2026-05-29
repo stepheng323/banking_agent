@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-from shared.i18n.locale import LocaleManager
-from shared.i18n.models import LocaleCode
 from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
 from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import (
     CANCEL_PHRASES_BY_LOCALE,
@@ -19,6 +17,8 @@ from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import (
     confirmation_reject_phrases,
     normalize_confirmation_text,
 )
+from shared.i18n.locale import LocaleManager
+from shared.i18n.models import LocaleCode
 from shared.types.planner import InterruptRouteDecision
 
 SUPPORTED_SHORTCUT_LOCALES = {

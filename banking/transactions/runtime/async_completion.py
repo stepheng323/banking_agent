@@ -6,14 +6,18 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from shared.formatters.multi_action_summary import format_multi_action_summary
-from shared.queue.models import AsyncGroupMeta
 from banking.transactions.runtime.async_group_recent_batch import (
     normalize_final_status,
     remember_group_target,
     store_recent_batch_reference,
 )
-from banking.transactions.runtime.async_group_types import ASYNC_GROUP_TTL_SECONDS, AsyncGroupRedis, AsyncGroupSummaryResult
+from banking.transactions.runtime.async_group_types import (
+    ASYNC_GROUP_TTL_SECONDS,
+    AsyncGroupRedis,
+    AsyncGroupSummaryResult,
+)
+from shared.formatters.multi_action_summary import format_multi_action_summary
+from shared.queue.models import AsyncGroupMeta
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

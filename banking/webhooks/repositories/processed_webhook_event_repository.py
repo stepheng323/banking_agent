@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import ProcessedWebhookEvent
 from banking.persistence.base import BaseRepository
+from shared.database.models import ProcessedWebhookEvent
 
 
 class ProcessedWebhookEventRepository(BaseRepository[ProcessedWebhookEvent]):

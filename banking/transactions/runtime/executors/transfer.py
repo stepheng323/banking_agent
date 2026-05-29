@@ -11,6 +11,21 @@ from typing import Any
 import redis.asyncio as redis
 
 import banking.transactions.runtime.scheduled_runs as scheduled_runs
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.beneficiaries.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
+    suggest_transfer_beneficiary,
+)
+from banking.messaging.delivery.service import DeliveryService
+from banking.transactions.repositories.transaction_repository import TransactionRepository
+from banking.transactions.runtime.async_completion import (
+    is_grouped_async_message,
+    record_group_leg_and_maybe_build_summary,
+)
+from banking.transactions.runtime.async_group_types import AsyncGroupSummaryResult
+from banking.transactions.runtime.failure_categories import classify_failure_category
+from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
+from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.formatters.transfer_notifications import format_transfer_pending_message, format_transfer_success_message
@@ -19,21 +34,6 @@ from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
 from shared.receipts.choice import build_receipt_choice_intent
-from banking.accounts.repositories.account_repository import AccountRepository
-from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
-from banking.transactions.repositories.transaction_repository import TransactionRepository
-from banking.transactions.runtime.async_completion import (
-    is_grouped_async_message,
-    record_group_leg_and_maybe_build_summary,
-)
-from banking.transactions.runtime.async_group_types import AsyncGroupSummaryResult
-from banking.messaging.delivery.service import DeliveryService
-from banking.transactions.runtime.failure_categories import classify_failure_category
-from banking.beneficiaries.services.post_transaction_beneficiary import (
-    BeneficiarySuggestionServiceProtocol,
-    suggest_transfer_beneficiary,
-)
-from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

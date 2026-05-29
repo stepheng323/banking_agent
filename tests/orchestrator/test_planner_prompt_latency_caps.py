@@ -10,6 +10,11 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import (
+    PlannerPromptBuildInput,
+    PlannerPromptSignals,
+)
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import build_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
     PLANNER_CONTEXT_MAX_CHARS,
@@ -23,8 +28,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_
     CONTEXT_ACCOUNT_PREVIEW_LIMIT,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import build_runtime_planner_system_prompt
 from shared.types.planner import PlannerOutput
 
 _PROMPT_SIZE_BASELINE = {

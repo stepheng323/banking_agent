@@ -2,10 +2,13 @@ from typing import Any
 
 import pytest
 
-from shared.i18n.models import LocaleCode
 from apps.chat.src.agent.orchestrator.confirmation.affirmation.service import AffirmationService
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply, classify_confirmation_reply_sync
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import (
+    classify_confirmation_reply,
+    classify_confirmation_reply_sync,
+)
 from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecisionOutput
+from shared.i18n.models import LocaleCode
 
 
 class _StructuredConfirmationLLM:

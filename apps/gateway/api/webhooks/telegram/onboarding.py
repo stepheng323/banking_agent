@@ -11,8 +11,8 @@ from apps.gateway.api.webhooks.telegram.session import (
     telegram_init_user_id,
     token_fingerprint,
 )
-from shared.clients.telegram.client import TelegramClient
 from banking.accounts.onboarding.runtime import account_add_service, account_service, bvn_service
+from shared.clients.telegram.client import TelegramClient
 from shared.utils.logging import get_logger, log_fingerprint
 
 router = APIRouter(tags=["telegram"])
@@ -202,8 +202,8 @@ async def telegram_onboarding_bvn(data: BvnInput, user_data: dict = Depends(veri
     try:
         phone_number = session.get("phone_number", "") if session else ""
         if phone_number:
-            from shared.database.enums import UserOnboardingStatusEnum
             from banking.persistence.unit_of_work import UnitOfWork
+            from shared.database.enums import UserOnboardingStatusEnum
 
             async with UnitOfWork() as uow:
                 if uow.users:

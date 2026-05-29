@@ -7,10 +7,10 @@ from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
 from shared.messaging.intents import UiIntent
-from banking.persistence.unit_of_work import UnitOfWork
 from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger, log_fingerprint
 

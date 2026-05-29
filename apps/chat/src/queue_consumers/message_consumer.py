@@ -21,6 +21,7 @@ from apps.chat.src.queue_consumers.message_outbound import (
     suppress_spurious_greeting_intents,
 )
 from apps.chat.src.queue_consumers.receipt_choices import handle_receipt_image_choice
+from banking.identity.repositories.user_repository import UserRepository
 from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.telegram.client import TelegramClient
@@ -31,7 +32,6 @@ from shared.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.messaging.prompt_suppression import pending_input_prompt_metadata
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
-from banking.identity.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger, log_fingerprint
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
 

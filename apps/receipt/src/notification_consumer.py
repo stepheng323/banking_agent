@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from banking.messaging.delivery.service import DeliveryService
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.messaging.prompt_suppression import (
@@ -13,7 +14,6 @@ from shared.messaging.prompt_suppression import (
     is_pending_input_prompt_metadata,
     latest_inbound_delivery_target_key,
 )
-from banking.messaging.delivery.service import DeliveryService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

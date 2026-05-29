@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from shared.database.enums import FundedTransferStatusEnum
-from shared.queue.adapter import QueuePublisher
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.executors.payout import PayoutExecutor
 from banking.transactions.runtime.payout_status import apply_payout_result
+from shared.database.enums import FundedTransferStatusEnum
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -82,7 +82,10 @@ class PayoutConsumer:
             if claim_method:
                 claimed = await claim_method(str(transfer.id), payout_reference=reference)
             else:
-                await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
+                await uow.funded_transfers.update_status(
+                    str(transfer.id),
+                    FundedTransferStatusEnum.PAYOUT_PENDING.value,
+                )
                 claimed = transfer
             if not claimed:
                 return None
@@ -91,15 +94,19 @@ class PayoutConsumer:
                 **payload,
                 "funded_transfer_id": str(transfer.id),
                 "amount": float(payload.get("amount") or getattr(transfer, "amount", 0.0) or 0.0),
-                "recipient_account": payload.get("recipient_account") or getattr(transfer, "recipient_account_number", ""),
-                "recipient_bank_code": payload.get("recipient_bank_code") or getattr(transfer, "recipient_bank_code", ""),
+                "recipient_account": payload.get("recipient_account")
+                or getattr(transfer, "recipient_account_number", ""),
+                "recipient_bank_code": payload.get("recipient_bank_code")
+                or getattr(transfer, "recipient_bank_code", ""),
                 "recipient_bank_code_provider": payload.get("recipient_bank_code_provider")
                 or getattr(transfer, "payout_provider", None)
                 or "flutterwave",
                 "recipient_resolution_provider": payload.get("recipient_resolution_provider")
                 or getattr(transfer, "payout_provider", None)
                 or "flutterwave",
-                "payout_provider": payload.get("payout_provider") or getattr(transfer, "payout_provider", None) or "flutterwave",
+                "payout_provider": payload.get("payout_provider")
+                or getattr(transfer, "payout_provider", None)
+                or "flutterwave",
                 "idempotency_key": reference,
                 "narration": payload.get("narration") or getattr(transfer, "narration", None),
             }

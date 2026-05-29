@@ -6,9 +6,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.persistence.base import BaseRepository
 from shared.database.enums import ScheduledInstructionStatusEnum
 from shared.database.models import ScheduledInstruction
-from banking.persistence.base import BaseRepository
 
 
 class ScheduledInstructionRepository(BaseRepository[ScheduledInstruction]):

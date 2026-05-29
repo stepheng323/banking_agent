@@ -1,18 +1,6 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
-from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
-    _is_account_balance_request,
-    _is_query_domain_request,
-    _is_structural_query_domain_request,
-)
-from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
-    _classify_obvious_transfer_request,
-    _is_obvious_airtime_request,
-    _is_obvious_data_request,
-)
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
     detect_unsupported_capability,
     is_same_unsupported_capability_followup,
@@ -27,6 +15,18 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semant
     validate_semantic_unsupported_capability,
     validate_unsupported_boundary_turn,
 )
+from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
+    _is_account_balance_request,
+    _is_query_domain_request,
+    _is_structural_query_domain_request,
+)
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
+    _classify_obvious_transfer_request,
+    _is_obvious_airtime_request,
+    _is_obvious_data_request,
+)
+from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

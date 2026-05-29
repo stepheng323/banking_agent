@@ -5,18 +5,18 @@ from dataclasses import dataclass
 import redis.asyncio as redis
 from langchain_openai import ChatOpenAI
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
+from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
 from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
+from banking.identity.repositories.user_repository import UserRepository
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
-from banking.accounts.repositories.account_repository import AccountRepository
-from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
-from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
-from banking.identity.repositories.user_repository import UserRepository
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
-from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
 
 
 @dataclass

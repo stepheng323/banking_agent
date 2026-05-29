@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from banking.transactions.runtime.consumers import funding_reconciliation_consumer as reconciliation_module
 from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer
+from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 
 
 class _CapturePublisher:

@@ -12,7 +12,10 @@ from apps.gateway.api.webhooks.telegram.router import PinSubmitInput, TelegramBo
 from apps.gateway.api.webhooks.telegram.session import token_fingerprint
 from banking.identity.channel_linking import telegram_miniapp_bootstrap as bootstrap_module
 from banking.identity.channel_linking.authorization import ChannelLinkPinResult
-from banking.identity.channel_linking.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap, consume_telegram_miniapp_bootstrap
+from banking.identity.channel_linking.telegram_miniapp_bootstrap import (
+    TelegramMiniAppBootstrap,
+    consume_telegram_miniapp_bootstrap,
+)
 from banking.security.authorization import AuthorizationResult
 from shared.cache.flow_session_manager import SessionReadResult
 

@@ -6,9 +6,9 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.persistence.base import BaseRepository
 from shared.database.enums import FundingStepStatusEnum
 from shared.database.models import FundedTransfer, FundingStep
-from banking.persistence.base import BaseRepository
 
 
 class FundingStepRepository(BaseRepository[FundingStep]):

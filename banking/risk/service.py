@@ -32,7 +32,14 @@ class RiskDecisionResult:
 class RiskDecisionService:
     """Evaluates conservative launch-time risk rules before any provider debit."""
 
-    async def evaluate_transfer(self, *, uow: UnitOfWork, payload: Any, context: Any, worker_context: Any) -> RiskDecisionResult:
+    async def evaluate_transfer(
+        self,
+        *,
+        uow: UnitOfWork,
+        payload: Any,
+        context: Any,
+        worker_context: Any,
+    ) -> RiskDecisionResult:
         if not settings.transfer_risk_enabled:
             return RiskDecisionResult(decision="allow", metadata={"risk_disabled": True})
 
@@ -134,7 +141,10 @@ class RiskDecisionService:
         if getattr(payload, "is_self", False):
             return False
 
-        has_saved_binding = bool(getattr(payload, "beneficiary_id", None) or getattr(payload, "resolved_from_saved_beneficiary", False))
+        has_saved_binding = bool(
+            getattr(payload, "beneficiary_id", None)
+            or getattr(payload, "resolved_from_saved_beneficiary", False)
+        )
         if not has_saved_binding and amount >= float(settings.new_beneficiary_limit_ngn):
             metadata["beneficiary_state"] = "unsaved"
             return True
@@ -144,7 +154,7 @@ class RiskDecisionService:
 
         beneficiary = await uow.beneficiaries.get_transfer_by_account(
             user_id,
-            str(getattr(payload, "recipient_account")),
+            str(payload.recipient_account),
             getattr(payload, "recipient_bank_code", None),
         )
         if not beneficiary:
@@ -159,7 +169,13 @@ class RiskDecisionService:
             settings.new_beneficiary_limit_ngn
         )
 
-    async def _is_new_channel_identity(self, uow: UnitOfWork, context: Any, now: datetime, metadata: dict[str, Any]) -> bool:
+    async def _is_new_channel_identity(
+        self,
+        uow: UnitOfWork,
+        context: Any,
+        now: datetime,
+        metadata: dict[str, Any],
+    ) -> bool:
         channel = str(getattr(context, "channel", "") or "")
         channel_identity = str(getattr(context, "channel_identity", "") or "")
         if not channel or not channel_identity or not uow.users:

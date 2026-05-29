@@ -6,9 +6,9 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.persistence.base import BaseRepository
 from shared.database.models import Account
 from shared.models.account import CreateAccount
-from banking.persistence.base import BaseRepository
 
 
 class AccountRepository(BaseRepository[Account]):

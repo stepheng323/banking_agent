@@ -2,9 +2,9 @@
 
 from typing import Any
 
+from banking.messaging.delivery.models import DeliveryAttemptResult
 from shared.messaging.intents import Say, SendTyping, UiIntent
 from shared.queue.adapter import QueuePublisher
-from banking.messaging.delivery.models import DeliveryAttemptResult
 
 
 def _intent_to_dict(intent: UiIntent | dict[str, Any]) -> dict[str, Any]:

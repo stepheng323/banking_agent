@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from shared.database.enums import SupportTicketStatusEnum
 from banking.support.services.ticket_service import TicketService
+from shared.database.enums import SupportTicketStatusEnum
 
 
 class _SessionStub:

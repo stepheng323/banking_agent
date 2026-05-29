@@ -14,6 +14,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
+from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.formatters.currency import format_naira
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transfer_funding_plan import format_funding_plan_summary
@@ -25,7 +26,6 @@ from shared.i18n.personality import (
     transfer_personality_context_from_payload,
 )
 from shared.i18n.renderer import render_message
-from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 

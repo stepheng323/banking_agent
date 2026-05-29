@@ -8,7 +8,10 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer_batch imp
     collapse_transfer_batch_tasks,
     normalize_transfer_only_primary_intent,
 )
-from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer_bills import normalize_airtime_params, normalize_data_params
+from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer_bills import (
+    normalize_airtime_params,
+    normalize_data_params,
+)
 from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer_clauses import normalize_planner_clauses
 from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer_transfer import (
     normalize_transfer_amount_field,

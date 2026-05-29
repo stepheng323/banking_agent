@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from banking.transactions.runtime.consumers import refund_consumer as refund_consumer_module
 from banking.transactions.runtime.consumers.refund_consumer import RefundConsumer
+from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 
 
 class _FakeFundingSteps:

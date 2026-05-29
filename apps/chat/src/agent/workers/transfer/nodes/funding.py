@@ -10,10 +10,10 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
+from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
 from shared.i18n.renderer import render_message
-from banking.transfers.funding.planner import FundingPlanner
 from shared.utils.logging import get_logger
 
 

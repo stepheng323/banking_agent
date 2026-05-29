@@ -20,13 +20,13 @@ from apps.chat.src.agent.workers.account.linking import build_link_account_flow
 from apps.chat.src.agent.workers.account.mutations import missing_identifier_prompt, set_default_account, unlink_account
 from apps.chat.src.agent.workers.account.parser import AccountParser
 from apps.chat.src.agent.workers.account.serialization import serialize_accounts
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.identity.repositories.user_repository import UserRepository
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
-from banking.accounts.repositories.account_repository import AccountRepository
-from banking.identity.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_edit_restore import (
     restore_confirmation_tasks_and_reconfirm_updates,
 )
@@ -29,7 +30,6 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
     _resolve_status_query_operation,
     _resolve_switch_intent_operation,
 )
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 
 
 async def _resolve_semantic_pending_action_edit_updates(

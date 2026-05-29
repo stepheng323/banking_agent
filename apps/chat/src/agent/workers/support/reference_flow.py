@@ -23,9 +23,9 @@ from apps.chat.src.agent.workers.support.reference_selection import (
     select_recent_batch_candidates,
 )
 from apps.chat.src.agent.workers.support.results import build_receipt_job, result_from_support_response
+from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
 from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
-from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
 
 _ACK_ONLY_RE = re.compile(r"^(ok(?:ay)?|alright|yes|yeah|yep|sure)\.?$", re.IGNORECASE)
 

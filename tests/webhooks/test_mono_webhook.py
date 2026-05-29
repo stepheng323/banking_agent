@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 
 
 class _FakeMonoRequest:

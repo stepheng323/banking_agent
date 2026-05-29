@@ -5,7 +5,9 @@ import unicodedata
 from collections.abc import Iterable
 
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedCapability
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import UNSUPPORTED_CAPABILITY_REGISTRY
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
+    UNSUPPORTED_CAPABILITY_REGISTRY,
+)
 
 SEMANTIC_UNSUPPORTED_CANDIDATE_RE = re.compile(
     r"\b(?:"

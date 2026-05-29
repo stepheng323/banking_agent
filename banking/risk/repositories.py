@@ -1,6 +1,8 @@
 """Repository for transfer risk decisions."""
 
-from sqlalchemy import select
+from typing import Any
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from banking.persistence.base import BaseRepository
@@ -25,16 +27,22 @@ class RiskDecisionRepository(BaseRepository[RiskDecision]):
         decision: str,
         score: int,
         reason_codes: list[str],
-        metadata: dict,
+        metadata: dict[str, Any],
     ) -> RiskDecision:
         existing = await self.get_by_idempotency_key(idempotency_key)
         if existing:
-            existing.decision = decision
-            existing.score = score
-            existing.reason_codes = reason_codes
-            existing.risk_metadata = metadata
-            self.db.add(existing)
+            await self.db.execute(
+                update(RiskDecision)
+                .where(RiskDecision.idempotency_key == idempotency_key)
+                .values(
+                    decision=decision,
+                    score=score,
+                    reason_codes=reason_codes,
+                    risk_metadata=metadata,
+                )
+            )
             await self.db.flush()
+            await self.db.refresh(existing)
             return existing
         return await self.create(
             user_id=user_id,

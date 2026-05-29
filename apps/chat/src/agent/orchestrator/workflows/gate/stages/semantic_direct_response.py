@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_banking_refusal_reply
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import render_banking_coded_ambiguity_prompt
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     build_cancellation_reset_updates,
@@ -18,7 +19,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from shared.i18n.renderer import render_message
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_banking_refusal_reply
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

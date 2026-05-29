@@ -8,8 +8,8 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import BankTransactionCoverage
 from banking.persistence.base import BaseRepository
+from shared.database.models import BankTransactionCoverage
 
 
 class BankTransactionCoverageRepository(BaseRepository[BankTransactionCoverage]):

@@ -2,9 +2,9 @@ from uuid import uuid4
 
 import pytest
 
-from shared.clients.abstractions.direct_debit import BalanceResult
 from banking.transfers.funding.batch_models import SourceAffinity, TransferDemand
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
+from shared.clients.abstractions.direct_debit import BalanceResult
 
 
 class _MockDirectDebitProvider:

@@ -4,10 +4,10 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.queue_consumers.channel_link_gate import looks_like_phone_number
+from banking.identity.repositories.user_repository import UserRepository
 from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
 from shared.config.settings import settings
 from shared.messaging.prompt_suppression import latest_inbound_delivery_target_key
-from banking.identity.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

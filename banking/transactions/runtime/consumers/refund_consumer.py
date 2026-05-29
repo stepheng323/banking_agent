@@ -3,10 +3,10 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import finalize_refund_state
+from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,7 +44,10 @@ class RefundConsumer:
             if step.status in (FundingStepStatusEnum.REFUNDED.value, FundingStepStatusEnum.REFUND_FAILED.value):
                 return
 
-            if step.status not in (FundingStepStatusEnum.REFUND_PROCESSING.value, FundingStepStatusEnum.REFUND_PENDING.value):
+            if step.status not in (
+                FundingStepStatusEnum.REFUND_PROCESSING.value,
+                FundingStepStatusEnum.REFUND_PENDING.value,
+            ):
                 logger.info("refund_result_skipped_step_status", funding_step_id=funding_step_id, status=step.status)
                 return
 
@@ -139,11 +142,11 @@ class RefundConsumer:
     def _store_refund_metadata(uow: UnitOfWork, step: Any, result: Any, refund_reference: str) -> None:
         """Persist refund provider metadata on the funding step when columns exist."""
         if result.debit_id:
-            setattr(step, "refund_provider_id", result.debit_id)
-        setattr(step, "refund_provider_reference", result.reference or refund_reference)
+            step.refund_provider_id = result.debit_id
+        step.refund_provider_reference = result.reference or refund_reference
         if not getattr(step, "refund_initiated_at", None):
-            setattr(step, "refund_initiated_at", datetime.now(UTC).replace(tzinfo=None))
+            step.refund_initiated_at = datetime.now(UTC).replace(tzinfo=None)
         if result.error_message:
-            setattr(step, "refund_error_message", result.error_message)
+            step.refund_error_message = result.error_message
         if getattr(uow, "db", None) is not None:
             uow.db.add(step)

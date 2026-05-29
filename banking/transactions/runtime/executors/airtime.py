@@ -11,24 +11,24 @@ import redis.asyncio as redis
 
 import banking.transactions.runtime.provider_results as provider_results
 import banking.transactions.runtime.scheduled_runs as scheduled_runs
+from banking.beneficiaries.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
+    append_beneficiary_suggestion,
+    suggest_mobile_beneficiary,
+)
+from banking.messaging.delivery.service import DeliveryService
+from banking.transactions.repositories.transaction_repository import TransactionRepository
+from banking.transactions.runtime.async_completion import (
+    is_grouped_async_message,
+    record_group_leg_and_maybe_build_summary,
+)
+from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
 from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
-from banking.transactions.repositories.transaction_repository import TransactionRepository
-from banking.transactions.runtime.async_completion import (
-    is_grouped_async_message,
-    record_group_leg_and_maybe_build_summary,
-)
-from banking.messaging.delivery.service import DeliveryService
-from banking.transactions.runtime.failure_categories import classify_failure_category
-from banking.beneficiaries.services.post_transaction_beneficiary import (
-    BeneficiarySuggestionServiceProtocol,
-    append_beneficiary_suggestion,
-    suggest_mobile_beneficiary,
-)
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 

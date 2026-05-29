@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import banking.transfers.funding.models as funding_models
-from shared.i18n.renderer import render_message
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
+from shared.i18n.renderer import render_message
 from shared.utils.bank_aliases import normalize_bank_name
 
 

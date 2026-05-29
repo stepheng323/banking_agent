@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.formatters.batch_funding import format_batch_funding_shortfall
 from banking.transfers.funding.batch_allocation import (
     adapt_batch_accounts,
     allocate_auto_funding,
@@ -17,6 +15,8 @@ from banking.transfers.funding.batch_allocation import (
 from banking.transfers.funding.batch_models import BatchFundingResult, ShortfallDetail, TransferDemand
 from banking.transfers.funding.models import FundingPlan
 from banking.transfers.funding.planner import FundingPlanner
+from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.formatters.batch_funding import format_batch_funding_shortfall
 
 
 class BatchFundingCoordinator:

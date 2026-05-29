@@ -21,7 +21,10 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import
     PlannerPromptBuildInput,
     PlannerPromptBuildResult,
 )
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_selector import select_prompt_bundles, select_rule_ids
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_selector import (
+    select_prompt_bundles,
+    select_rule_ids,
+)
 
 
 def _compile_rule_atoms(rule_ids: tuple[str, ...]) -> str:

@@ -15,9 +15,9 @@ from apps.chat.src.agent.orchestrator.graph.progress import (
     seconds_until_progress_eligible,
     should_emit_progress,
 )
+from banking.messaging.delivery.models import DeliveryAttemptResult
 from shared.messaging.outbox import enqueue_outbox_say, enqueue_outbox_typing
 from shared.queue.adapter import QueuePublisher
-from banking.messaging.delivery.models import DeliveryAttemptResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

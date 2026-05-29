@@ -17,9 +17,9 @@ from apps.gateway.api.webhooks.telegram.onboarding import (
     telegram_linking_otp,
     telegram_onboarding_account,
 )
+from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 from shared.cache.flow_session_manager import FlowSessionManager, SessionReadResult
 from shared.config.settings import settings
-from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 
 LINK_TOKEN = "link-opaque-token"
 TELEGRAM_USER_DATA = {"user": '{"id": 12345}'}

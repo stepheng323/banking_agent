@@ -8,9 +8,9 @@ from collections.abc import Awaitable, Callable
 from inspect import isawaitable
 from typing import Any, TypeVar, cast
 
-from shared.messaging.intents import UiIntent
 from banking.messaging.delivery import actionables as delivery_actionables
 from banking.messaging.delivery.models import DeliveryAttemptResult, DeliveryAttemptStatus
+from shared.messaging.intents import UiIntent
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

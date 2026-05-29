@@ -19,15 +19,15 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.completed_transaction_
     is_grouped_or_batch_task,
     receipt_status,
 )
-from shared.formatters.multi_action_summary import format_multi_action_summary
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message, render_text
-from shared.receipts.choice import build_receipt_choice_intent
 from banking.beneficiaries.services.post_transaction_beneficiary import (
     append_beneficiary_suggestion,
     suggest_mobile_beneficiary,
     suggest_transfer_beneficiary,
 )
+from shared.formatters.multi_action_summary import format_multi_action_summary
+from shared.i18n.locale import LocaleManager
+from shared.i18n.renderer import render_message, render_text
+from shared.receipts.choice import build_receipt_choice_intent
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

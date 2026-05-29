@@ -3,9 +3,9 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.persistence.base import BaseRepository
 from shared.database.models import User, UserChannelIdentity
 from shared.models.user import UserCreate, UserUpdate
-from banking.persistence.base import BaseRepository
 from shared.utils.datetime import utc_now_naive
 
 

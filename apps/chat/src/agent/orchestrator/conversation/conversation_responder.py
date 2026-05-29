@@ -12,8 +12,11 @@ import apps.chat.src.agent.orchestrator.conversation.conversation_responder_cont
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_prompts as responder_prompts
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_text as responder_text
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_unsupported as unsupported_responder
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import (
+    build_conversation_grounding,
+    conversation_display_name,
+)
 from shared.i18n.locale import LocaleManager
-from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import build_conversation_grounding, conversation_display_name
 
 __all__ = ["ConversationResponder"]
 

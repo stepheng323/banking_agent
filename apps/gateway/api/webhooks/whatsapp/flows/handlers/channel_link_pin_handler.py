@@ -9,8 +9,8 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_success_response,
 )
 from apps.gateway.api.webhooks.whatsapp.flows.session_owner import has_required_provider_identity
-from shared.clients.telegram.client import TelegramClient
 from banking.identity.channel_linking.pin_completion import complete_channel_link_with_pin
+from shared.clients.telegram.client import TelegramClient
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

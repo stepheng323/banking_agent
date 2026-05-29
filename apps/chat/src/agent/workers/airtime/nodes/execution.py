@@ -61,8 +61,8 @@ class ExecutionStep(AirtimeStep):
             transaction_id = None
             key = data.idempotency_key
 
-            from shared.database.enums import TransactionStatusEnum
             from banking.persistence.unit_of_work import UnitOfWork
+            from shared.database.enums import TransactionStatusEnum
 
             async with UnitOfWork() as uow:
                 try:

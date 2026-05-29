@@ -1,5 +1,7 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_guardrails import is_safe_guarded_approval_text
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import APPROVAL_CONFIDENCE_THRESHOLD
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.auth.auth_resolve import _approve_auth_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_updates import (
@@ -18,8 +20,6 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch i
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_flow import _status_query_updates
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_guardrails import is_safe_guarded_approval_text
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import APPROVAL_CONFIDENCE_THRESHOLD
 from shared.types.planner import InterruptRouteDecision
 
 

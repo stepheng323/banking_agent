@@ -4,10 +4,10 @@ from typing import Any
 import pytest
 
 import banking.identity.channel_linking.pin_completion as channel_link_pin_completion_module
-from shared.cache.flow_session_manager import SessionReadResult
-from banking.security.authorization import AuthorizationResult
 from banking.identity.channel_linking.authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
 from banking.identity.channel_linking.pin_completion import complete_channel_link_with_pin
+from banking.security.authorization import AuthorizationResult
+from shared.cache.flow_session_manager import SessionReadResult
 
 
 class _SessionManagerStub:

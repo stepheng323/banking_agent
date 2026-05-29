@@ -2,6 +2,11 @@ import re
 import unicodedata
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import build_conversation_grounding
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual import (
+    contextual_meta_fallback_reply,
+    contextual_worker_fallback_reply,
+)
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
@@ -13,11 +18,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_fo
 from apps.chat.src.agent.workers.support.context_manager import SupportContextManager
 from shared.i18n.locale import LocaleManager
 from shared.i18n.models import LocaleCode
-from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import build_conversation_grounding
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual import (
-    contextual_meta_fallback_reply,
-    contextual_worker_fallback_reply,
-)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

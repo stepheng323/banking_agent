@@ -6,8 +6,8 @@ import asyncio
 import time
 from collections.abc import Callable
 
-from shared.messaging.intents import UiIntent
 from banking.messaging.delivery import actionables as delivery_actionables
+from shared.messaging.intents import UiIntent
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

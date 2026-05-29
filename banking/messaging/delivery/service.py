@@ -7,14 +7,6 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
-from shared.cache.redis_client import RedisClient
-from shared.clients.abstractions.messaging import MessagingClient
-from shared.clients.disabled_messaging import DisabledMessagingClient
-from shared.clients.telegram.client import TelegramClient
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.messaging.intents import Say, UiIntent, reconstruct_intent
-from shared.messaging.presenters.base import PresentationContext
-from shared.messaging.presenters.factory import PresenterFactory
 from banking.messaging.delivery import actionables as delivery_actionables
 from banking.messaging.delivery.background import schedule_actionable_persist
 from banking.messaging.delivery.ledger import (
@@ -26,6 +18,14 @@ from banking.messaging.delivery.ledger import (
     resume_delivery_if_already_sent,
 )
 from banking.messaging.delivery.models import DeliveryAttemptResult
+from shared.cache.redis_client import RedisClient
+from shared.clients.abstractions.messaging import MessagingClient
+from shared.clients.disabled_messaging import DisabledMessagingClient
+from shared.clients.telegram.client import TelegramClient
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.messaging.intents import Say, UiIntent, reconstruct_intent
+from shared.messaging.presenters.base import PresentationContext
+from shared.messaging.presenters.factory import PresenterFactory
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

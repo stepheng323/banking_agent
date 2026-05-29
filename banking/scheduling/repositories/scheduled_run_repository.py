@@ -5,9 +5,9 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.persistence.base import BaseRepository
 from shared.database.enums import ScheduledRunStatusEnum
 from shared.database.models import ScheduledRun
-from banking.persistence.base import BaseRepository
 
 
 class ScheduledRunRepository(BaseRepository[ScheduledRun]):

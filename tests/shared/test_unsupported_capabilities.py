@@ -5,7 +5,9 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapabilitySemanticOutput,
 )
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import unsupported_capability_params
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
     classify_unsupported_boundary_turn_semantic,

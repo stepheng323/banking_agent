@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from banking.persistence.unit_of_work import UnitOfWork
+from banking.transactions.runtime.funding_status import finalize_refund_state
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum, SupportTicketPriorityEnum, SupportTicketStatusEnum
 from shared.queue.adapter import QueuePublisher
-from banking.persistence.unit_of_work import UnitOfWork
-from banking.transactions.runtime.funding_status import finalize_refund_state
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -147,14 +147,14 @@ class RefundReconciliationConsumer:
 
     async def _apply_result(self, uow: UnitOfWork, step: Any, transfer: Any, result: Any) -> None:
         attempt_count = int(getattr(step, "refund_attempt_count", 0) or 0) + 1
-        setattr(step, "refund_attempt_count", attempt_count)
-        setattr(step, "refund_last_checked_at", datetime.now(UTC).replace(tzinfo=None))
+        step.refund_attempt_count = attempt_count
+        step.refund_last_checked_at = datetime.now(UTC).replace(tzinfo=None)
         if result.debit_id:
-            setattr(step, "refund_provider_id", result.debit_id)
+            step.refund_provider_id = result.debit_id
         if result.reference:
-            setattr(step, "refund_provider_reference", result.reference)
+            step.refund_provider_reference = result.reference
         if result.error_message:
-            setattr(step, "refund_error_message", result.error_message)
+            step.refund_error_message = result.error_message
         if getattr(uow, "db", None) is not None:
             uow.db.add(step)
 
@@ -190,7 +190,7 @@ class RefundReconciliationConsumer:
             FundingStepStatusEnum.REFUND_FAILED.value,
             error_message=error_message,
         )
-        setattr(step, "refund_error_message", error_message)
+        step.refund_error_message = error_message
         await self._record_manual_review(uow, transfer, step, error_message)
         await finalize_refund_state(uow, transfer)
         logger.error("refund_reconciliation_failed", funding_step_id=str(step.id), error=error_message)

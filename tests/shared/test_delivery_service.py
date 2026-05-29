@@ -7,12 +7,12 @@ from typing import Any, cast
 
 import pytest
 
-from shared.clients.abstractions.messaging import MessagingClient
-from shared.messaging.intents import Say
-from shared.messaging.presenters.base import PresentationResult
 from banking.messaging.delivery.ledger import build_delivery_ledger_key
 from banking.messaging.delivery.models import DeliveryAttemptResult
 from banking.messaging.delivery.service import DeliveryService
+from shared.clients.abstractions.messaging import MessagingClient
+from shared.messaging.intents import Say
+from shared.messaging.presenters.base import PresentationResult
 
 
 class _RedisStub:

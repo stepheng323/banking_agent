@@ -4,11 +4,11 @@ import uuid as uuid_module
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from banking.accounts.onboarding.mandate_messages import format_mandate_auth_message
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.cache.user_data import UserDataCache
 from shared.clients.providers.mono.client import mono_client
 from shared.clients.providers.mono.models import MonoApiError
-from banking.persistence.unit_of_work import UnitOfWork
-from banking.accounts.onboarding.mandate_messages import format_mandate_auth_message
 from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger, log_fingerprint
 

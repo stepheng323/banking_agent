@@ -11,10 +11,10 @@ from apps.receipt.src.renderer import (
     ReceiptRenderer,
     is_browser_runtime_closed_error,
 )
+from banking.messaging.delivery.service import DeliveryService
 from shared.cache.redis_client import Redis
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
-from banking.messaging.delivery.service import DeliveryService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

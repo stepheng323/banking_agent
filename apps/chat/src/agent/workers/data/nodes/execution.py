@@ -58,8 +58,8 @@ class ExecutionStep(PipelineStep):
             transaction_id = None
             key = payload.idempotency_key
 
-            from shared.database.enums import TransactionStatusEnum
             from banking.persistence.unit_of_work import UnitOfWork
+            from shared.database.enums import TransactionStatusEnum
 
             async with UnitOfWork() as uow:
                 existing = await uow.transactions.get_by_idempotency_key(str(key))

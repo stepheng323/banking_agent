@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import re
 
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationPromptKind
 from shared.i18n.locale import LocaleManager
 from shared.i18n.models import LocaleCode
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationPromptKind
 
 SUPPORTED_CONFIRMATION_LOCALES = {
     LocaleCode.EN,

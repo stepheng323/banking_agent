@@ -5,8 +5,8 @@ import time
 from typing import Any, Literal
 
 import apps.chat.src.agent.orchestrator.context.context_redis_state as context_redis_state
-from shared.cache.redis_client import RedisClient
 from apps.chat.src.agent.orchestrator.context.context_user_data import hydrate_user_context_from_cache_snapshot
+from shared.cache.redis_client import RedisClient
 from shared.utils.logging import log_fingerprint
 
 

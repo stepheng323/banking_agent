@@ -1,11 +1,6 @@
 """Dependency loader for transaction worker runtimes."""
 
 from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
-from shared.cache.redis_client import RedisClient
-from shared.clients.factories.providers import ProviderFactory
-from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
-from shared.database.connection import get_db_session
-from shared.queue.factory import QueuePublisherFactory
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
@@ -19,6 +14,11 @@ from banking.transactions.runtime.executors.airtime import AirtimeExecutor
 from banking.transactions.runtime.executors.data import DataExecutor
 from banking.transactions.runtime.executors.payout import PayoutExecutor
 from banking.transactions.runtime.executors.transfer import TransferExecutor
+from shared.cache.redis_client import RedisClient
+from shared.clients.factories.providers import ProviderFactory
+from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
+from shared.database.connection import get_db_session
+from shared.queue.factory import QueuePublisherFactory
 
 
 def setup_transaction_worker_consumers() -> tuple[

@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import Beneficiary
 from banking.persistence.base import BaseRepository
+from shared.database.models import Beneficiary
 
 
 def _normalize_bank_name(value: str | None) -> str:

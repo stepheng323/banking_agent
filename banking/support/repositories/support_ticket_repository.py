@@ -6,9 +6,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.persistence.base import BaseRepository
 from shared.database.enums import SupportTicketStatusEnum
 from shared.database.models import SupportTicket
-from banking.persistence.base import BaseRepository
 
 
 class SupportTicketRepository(BaseRepository[SupportTicket]):

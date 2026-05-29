@@ -21,12 +21,12 @@ from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
     has_required_provider_identity,
     whatsapp_identity_matches,
 )
+from banking.security.authorization import AuthorizationService
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
-from banking.security.authorization import AuthorizationService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

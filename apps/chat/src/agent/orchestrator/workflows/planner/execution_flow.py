@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_frames import (
     _build_beneficiary_context_read_updates,
 )
@@ -25,7 +26,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.guardrails_beneficiary i
 from apps.chat.src.agent.orchestrator.workflows.planner.guardrails_mandate import (
     _deescalate_mandate_acknowledgement,
 )
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

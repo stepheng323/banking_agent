@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from banking.transactions.runtime.consumers import payout_reconciliation_consumer as reconciliation_module
 from banking.transactions.runtime.consumers.payout_reconciliation_consumer import PayoutReconciliationConsumer
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 
 
 class _CapturePublisher:

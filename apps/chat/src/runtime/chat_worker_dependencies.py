@@ -4,7 +4,10 @@ from langchain_openai import ChatOpenAI
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.agent.orchestrator.config.dependencies import OrchestratorDependencies
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
+from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
 from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.chat.src.agent.workers.account.worker import AccountWorker
 from apps.chat.src.agent.workers.airtime.extractor import AirtimeEntityExtractor
@@ -21,6 +24,17 @@ from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEn
 from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
+from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
+from banking.identity.repositories.user_repository import UserRepository
+from banking.persistence.session_scoped import (
+    SessionScopedAccountRepository,
+    SessionScopedActionableMessageRepository,
+    SessionScopedBankTransactionRepository,
+    SessionScopedBeneficiaryRepository,
+    SessionScopedTransactionRepository,
+    SessionScopedUserRepository,
+)
+from banking.support.services.ticket_service import TicketService
 from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
@@ -36,20 +50,6 @@ from shared.policy.validation import validate_policy_coverage
 from shared.queue.contracts import get_contract_by_topic
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.redis_stream_consumer import RedisStreamConsumer
-from banking.persistence.session_scoped import (
-    SessionScopedAccountRepository,
-    SessionScopedActionableMessageRepository,
-    SessionScopedBankTransactionRepository,
-    SessionScopedBeneficiaryRepository,
-    SessionScopedTransactionRepository,
-    SessionScopedUserRepository,
-)
-from banking.identity.repositories.user_repository import UserRepository
-from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
-from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
-from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
-from banking.support.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

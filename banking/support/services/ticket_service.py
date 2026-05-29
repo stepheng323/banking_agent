@@ -7,12 +7,12 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.support.repositories.support_ticket_repository import SupportTicketRepository
 from shared.database.enums import (
     SupportTicketPriorityEnum,
     SupportTicketStatusEnum,
 )
 from shared.database.models import SupportTicket
-from banking.support.repositories.support_ticket_repository import SupportTicketRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -2,10 +2,10 @@
 
 import hashlib
 
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.clients.providers.mono.client import mono_client
 from shared.clients.providers.mono.models import BankAccount, BvnLookupData, MonoApiError
-from banking.persistence.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger, log_fingerprint
 
 from .session import OnboardingStep

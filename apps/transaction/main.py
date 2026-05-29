@@ -10,13 +10,6 @@ from fastapi import FastAPI
 
 from apps.transaction.dependencies import setup_transaction_worker_consumers
 from apps.transaction.lambda_handler import _handler as transaction_lambda_handler
-from shared.cache.distributed_lock import RedisDistributedLock, RedisLockTimeoutError
-from shared.cache.redis_client import RedisClient
-from shared.config.settings import settings
-from shared.queue.contracts import TopicType, get_contract_by_topic
-from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
-from shared.queue.sqs_poller import SQSPoller
-from shared.runtime_ownership import build_runtime_status
 from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
 from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer
 from banking.transactions.runtime.consumers.payout_consumer import PayoutConsumer
@@ -24,6 +17,13 @@ from banking.transactions.runtime.consumers.payout_reconciliation_consumer impor
 from banking.transactions.runtime.consumers.refund_consumer import RefundConsumer
 from banking.transactions.runtime.consumers.refund_reconciliation_consumer import RefundReconciliationConsumer
 from banking.transactions.runtime.consumers.transaction_consumer import TransactionConsumer
+from shared.cache.distributed_lock import RedisDistributedLock, RedisLockTimeoutError
+from shared.cache.redis_client import RedisClient
+from shared.config.settings import settings
+from shared.queue.contracts import TopicType, get_contract_by_topic
+from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
+from shared.queue.sqs_poller import SQSPoller
+from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
@@ -281,7 +281,8 @@ async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup/shutdown logic for the standalone transaction worker."""
-    global _worker_task, _funding_reconciliation_task, _payout_reconciliation_task, _refund_reconciliation_task, _stop_event
+    global _worker_task, _funding_reconciliation_task, _payout_reconciliation_task
+    global _refund_reconciliation_task, _stop_event
 
     logger.info("transaction_worker_service_starting", **build_runtime_status("transaction-worker"))
 

@@ -2,16 +2,16 @@
 
 from typing import Any
 
-from shared.cache.channel_identity_cache import store_channel_identity_user
-from banking.persistence.unit_of_work import UnitOfWork
-from banking.security.authorization import AuthorizationService
+from banking.accounts.onboarding.runtime import session_manager as default_session_manager
 from banking.identity.channel_linking.authorization import (
     CHANNEL_LINK_SESSION_PURPOSE,
     CHANNEL_LINK_TRANSACTION_TYPE,
     ChannelLinkPinResult,
     parse_channel_link_pin_token,
 )
-from banking.accounts.onboarding.runtime import session_manager as default_session_manager
+from banking.persistence.unit_of_work import UnitOfWork
+from banking.security.authorization import AuthorizationService
+from shared.cache.channel_identity_cache import store_channel_identity_user
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

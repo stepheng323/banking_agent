@@ -7,8 +7,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import ActionableMessage
 from banking.persistence.base import BaseRepository
+from shared.database.models import ActionableMessage
 from shared.utils.datetime import utc_now_naive
 
 

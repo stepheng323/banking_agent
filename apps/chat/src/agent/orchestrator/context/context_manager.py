@@ -4,14 +4,14 @@ from typing import Any, Literal, cast
 
 import apps.chat.src.agent.orchestrator.context.context_parallel_loader as context_parallel_loader
 import apps.chat.src.agent.orchestrator.context.context_redis_state as context_redis_state
+from apps.chat.src.agent.orchestrator.context.context_user_data import hydrate_user_context_from_cache_snapshot
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
+from banking.identity.repositories.user_repository import UserRepository
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.cache.user_data import UserDataCache
 from shared.i18n.locale import LocaleManager
 from shared.i18n.models import LanguageDetectionSignal
-from banking.accounts.repositories.account_repository import AccountRepository
-from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
-from banking.persistence.unit_of_work import UnitOfWork
-from banking.identity.repositories.user_repository import UserRepository
-from apps.chat.src.agent.orchestrator.context.context_user_data import hydrate_user_context_from_cache_snapshot
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

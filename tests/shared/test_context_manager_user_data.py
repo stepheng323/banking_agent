@@ -2,8 +2,8 @@ import asyncio
 import time
 from types import SimpleNamespace
 
-from shared.cache.user_data import UserDataCache
 from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
+from shared.cache.user_data import UserDataCache
 
 
 class _FakeUserDataCache:

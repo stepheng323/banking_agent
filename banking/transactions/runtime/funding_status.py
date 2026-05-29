@@ -3,10 +3,10 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.queue.adapter import QueuePublisher
-from banking.persistence.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -121,7 +121,10 @@ async def queue_refunds_for_confirmed_funding_steps(
     if not uow.funding_steps:
         return 0
     if not publisher:
-        logger.error("refund_queue_unavailable_reconciliation_will_retry", funded_transfer_id=str(getattr(transfer, "id", "")))
+        logger.error(
+            "refund_queue_unavailable_reconciliation_will_retry",
+            funded_transfer_id=str(getattr(transfer, "id", "")),
+        )
 
     confirmed_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
     if not confirmed_steps:

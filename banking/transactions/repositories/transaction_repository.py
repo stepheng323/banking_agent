@@ -6,9 +6,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.persistence.base import BaseRepository
 from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
 from shared.database.models import Transaction
-from banking.persistence.base import BaseRepository
 
 
 def normalize_db_timestamp(value: datetime) -> datetime:

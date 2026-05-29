@@ -28,8 +28,8 @@ async def build_link_account_flow(
     session_manager: Any,
 ) -> dict[str, Any]:
     """Build account linking flow."""
-    from shared.config.settings import settings
     from banking.accounts.onboarding.session import OnboardingStep
+    from shared.config.settings import settings
 
     flow_id = settings.whatsapp.account_linking_flow_id
     locale = LocaleManager.normalize(context.get("language")).value

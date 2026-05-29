@@ -2,12 +2,12 @@
 
 import asyncio
 
+from banking.accounts.onboarding.mandate import MandateService
+from banking.accounts.onboarding.session import OnboardingStep
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.cache.user_data import UserDataCache
 from shared.models.account import CreateAccount
-from banking.persistence.unit_of_work import UnitOfWork
-from banking.accounts.onboarding.mandate import MandateService
-from banking.accounts.onboarding.session import OnboardingStep
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

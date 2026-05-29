@@ -3,8 +3,8 @@ from typing import Any, cast
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import FAQEntry
 from banking.persistence.base import BaseRepository
+from shared.database.models import FAQEntry
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

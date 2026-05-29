@@ -26,10 +26,10 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from apps.chat.src.agent.workers.faq.retrieval.embeddings import EmbeddingService
+from banking.knowledge.repositories.faq_repository import FAQRepository
 from shared.branding import render_brand_template
 from shared.database.connection import get_db_session
 from shared.database.models import FAQEntry
-from banking.knowledge.repositories.faq_repository import FAQRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

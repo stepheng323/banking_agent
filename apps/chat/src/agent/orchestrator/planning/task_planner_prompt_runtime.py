@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models as prompt_models
-from shared.assistant_profile.voice import build_planner_voice_block
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_compiler import compile_planner_system_prompt
+from shared.assistant_profile.voice import build_planner_voice_block
 
 
 def _build_planner_policy_block() -> str:

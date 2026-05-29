@@ -8,13 +8,13 @@ from typing import TypeVar
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from banking.accounts.repositories.account_repository import AccountRepository
+from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
+from banking.identity.repositories.user_repository import UserRepository
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
+from banking.support.repositories.support_ticket_repository import SupportTicketRepository
 from banking.transactions.repositories.bank_transaction_coverage_repository import BankTransactionCoverageRepository
 from banking.transactions.repositories.bank_transaction_repository import BankTransactionRepository
-from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
-from banking.support.repositories.support_ticket_repository import SupportTicketRepository
 from banking.transactions.repositories.transaction_repository import TransactionRepository
-from banking.identity.repositories.user_repository import UserRepository
 
 RepoT = TypeVar("RepoT")
 SessionFactory = Callable[[], AsyncSession]

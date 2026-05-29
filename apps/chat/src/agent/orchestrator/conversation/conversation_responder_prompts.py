@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry as unsupported_registry
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual as contextual_responder
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_text as responder_text
-import apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry as unsupported_registry
 from shared.assistant_profile.voice import build_conversation_voice_block
 
 
