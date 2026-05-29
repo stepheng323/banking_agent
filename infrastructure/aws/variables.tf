@@ -111,6 +111,13 @@ variable "flutterwave_secret_key" {
   default     = ""
 }
 
+variable "flutterwave_webhook_secret_hash" {
+  description = "Flutterwave webhook secret hash"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "meta_phone_number_id" {
   description = "Meta phone number ID"
   type        = string

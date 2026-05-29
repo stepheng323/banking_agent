@@ -24,13 +24,14 @@ def _sns_record(domain: str, queue: str = "banking-transactions") -> dict[str, A
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("domain", ["transaction", "funding", "payout", "refund"])
+@pytest.mark.parametrize("domain", ["transaction", "funding", "payout", "payout_reconcile", "refund"])
 async def test_transaction_worker_routes_by_domain(domain: str) -> None:
     transaction = type("TransactionConsumer", (), {"process_transaction": AsyncMock()})()
     funding = type("FundingConsumer", (), {"process_job": AsyncMock()})()
     payout = type("PayoutConsumer", (), {"process_job": AsyncMock()})()
+    payout_reconcile = type("PayoutReconciliationConsumer", (), {"process_job": AsyncMock()})()
     refund = type("RefundConsumer", (), {"process_job": AsyncMock()})()
-    deps: tuple[Any, ...] = (transaction, funding, payout, refund)
+    deps: tuple[Any, ...] = (transaction, funding, payout, payout_reconcile, refund)
 
     handler = TransactionWorkerLambdaHandler(name="test_transaction_worker", dependency_loader=lambda: deps)
     event = {"Records": [_sns_record(domain)]}
@@ -42,6 +43,7 @@ async def test_transaction_worker_routes_by_domain(domain: str) -> None:
         "transaction": transaction.process_transaction,
         "funding": funding.process_job,
         "payout": payout.process_job,
+        "payout_reconcile": payout_reconcile.process_job,
         "refund": refund.process_job,
     }[domain]
     expected_target.assert_awaited_once_with({})
@@ -77,7 +79,7 @@ async def test_receipt_worker_routes_notification_domain() -> None:
 
 @pytest.mark.asyncio
 async def test_worker_unknown_domain_returns_batch_failure() -> None:
-    deps: tuple[Any, ...] = (object(), object(), object(), object())
+    deps: tuple[Any, ...] = (object(), object(), object(), object(), object())
     handler = TransactionWorkerLambdaHandler(name="test_transaction_worker", dependency_loader=lambda: deps)
     event = {"Records": [_sns_record("unknown")]}
 

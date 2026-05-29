@@ -66,6 +66,10 @@ class PayoutProvider(ABC):
         """
         raise NotImplementedError(f"{self.provider_name} does not support status checks yet")
 
+    async def get_transfer_by_reference(self, reference: str) -> dict[str, Any]:
+        """Get the status of a transfer by merchant/idempotency reference."""
+        raise NotImplementedError(f"{self.provider_name} does not support reference status checks yet")
+
     @property
     @abstractmethod
     def provider_name(self) -> str:

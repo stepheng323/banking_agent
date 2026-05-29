@@ -48,7 +48,7 @@ variable "queue_filter_policies" {
   description = "SNS subscription filter policies per queue (jsonencode'd)"
   type        = map(string)
   default = {
-    "transactions" = "{\"domain\":[\"transaction\",\"funding\",\"payout\",\"refund\"]}"
+    "transactions" = "{\"domain\":[\"transaction\",\"funding\",\"payout\",\"payout_reconcile\",\"refund\"]}"
     "receipts"     = "{\"domain\":[\"receipt\",\"notification\"]}"
   }
 }

@@ -16,14 +16,22 @@ class ProcessedWebhookEventRepository(BaseRepository[ProcessedWebhookEvent]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ProcessedWebhookEvent)
 
-    async def get_by_provider_event_id(self, provider: str, event_id: str) -> ProcessedWebhookEvent | None:
+    async def get_by_provider_event_id(
+        self,
+        provider: str,
+        event_id: str,
+        *,
+        for_update: bool = False,
+    ) -> ProcessedWebhookEvent | None:
         """Get an event ledger row by provider and provider event ID."""
-        result = await self.db.execute(
-            select(ProcessedWebhookEvent).filter(
-                ProcessedWebhookEvent.provider == provider,
-                ProcessedWebhookEvent.event_id == event_id,
-            )
+        query = select(ProcessedWebhookEvent).filter(
+            ProcessedWebhookEvent.provider == provider,
+            ProcessedWebhookEvent.event_id == event_id,
         )
+        if for_update:
+            query = query.with_for_update()
+
+        result = await self.db.execute(query)
         return result.scalars().first()
 
     async def claim(
@@ -39,7 +47,7 @@ class ProcessedWebhookEventRepository(BaseRepository[ProcessedWebhookEvent]):
         Returns False when the event is already processing or processed. Failed
         events may be claimed again to support manual/provider replay.
         """
-        existing = await self.get_by_provider_event_id(provider, event_id)
+        existing = await self.get_by_provider_event_id(provider, event_id, for_update=True)
         now = datetime.now(UTC).replace(tzinfo=None)
         if existing:
             if existing.status != "failed":
@@ -73,7 +81,7 @@ class ProcessedWebhookEventRepository(BaseRepository[ProcessedWebhookEvent]):
 
     async def mark_processed(self, *, provider: str, event_id: str) -> ProcessedWebhookEvent | None:
         """Mark a claimed webhook event as processed."""
-        event = await self.get_by_provider_event_id(provider, event_id)
+        event = await self.get_by_provider_event_id(provider, event_id, for_update=True)
         if not event:
             return None
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -93,9 +101,11 @@ class ProcessedWebhookEventRepository(BaseRepository[ProcessedWebhookEvent]):
         error_message: str | None = None,
     ) -> ProcessedWebhookEvent | None:
         """Mark a claimed webhook event as failed so it can be replayed."""
-        event = await self.get_by_provider_event_id(provider, event_id)
+        event = await self.get_by_provider_event_id(provider, event_id, for_update=True)
         if not event:
             return None
+        if event.status == "processed":
+            return event
         event.status = "failed"
         event.last_seen_at = datetime.now(UTC).replace(tzinfo=None)
         event.error_message = error_message

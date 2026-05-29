@@ -57,15 +57,16 @@ locals {
 
   secret_env_vars = merge(
     {
-      DATABASE_URL                  = local.resolved_database_url
-      OPENAI_API_KEY                = var.openai_api_key
-      META_VERIFY_TOKEN             = var.meta_verify_token
-      META_ACCESS_TOKEN             = var.meta_access_token
-      TELEGRAM_BOT_TOKEN            = var.telegram_bot_token
-      TELEGRAM_WEBHOOK_SECRET_TOKEN = var.telegram_webhook_secret_token
-      MONO_API_KEY                  = var.mono_api_key
-      MONO_WEBHOOK_SECRET           = var.mono_webhook_secret
-      FLUTTERWAVE_SECRET_KEY        = var.flutterwave_secret_key
+      DATABASE_URL                    = local.resolved_database_url
+      OPENAI_API_KEY                  = var.openai_api_key
+      META_VERIFY_TOKEN               = var.meta_verify_token
+      META_ACCESS_TOKEN               = var.meta_access_token
+      TELEGRAM_BOT_TOKEN              = var.telegram_bot_token
+      TELEGRAM_WEBHOOK_SECRET_TOKEN   = var.telegram_webhook_secret_token
+      MONO_API_KEY                    = var.mono_api_key
+      MONO_WEBHOOK_SECRET             = var.mono_webhook_secret
+      FLUTTERWAVE_SECRET_KEY          = var.flutterwave_secret_key
+      FLUTTERWAVE_WEBHOOK_SECRET_HASH = var.flutterwave_webhook_secret_hash
     },
     var.secret_config_values
   )
@@ -76,7 +77,8 @@ locals {
     "META_ACCESS_TOKEN",
     "MONO_API_KEY",
     "MONO_WEBHOOK_SECRET",
-    "FLUTTERWAVE_SECRET_KEY"
+    "FLUTTERWAVE_SECRET_KEY",
+    "FLUTTERWAVE_WEBHOOK_SECRET_HASH"
   ]
 
   critical_non_secret_keys = [

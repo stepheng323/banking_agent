@@ -1,8 +1,9 @@
 """Repository for FundedTransfer model."""
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.enums import FundedTransferStatusEnum
@@ -49,6 +50,13 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
         result = await self.db.execute(select(FundedTransfer).filter(FundedTransfer.idempotency_key == idempotency_key))
         return result.scalars().first()
 
+    async def get_by_payout_reference(self, payout_reference: str) -> FundedTransfer | None:
+        """Get a funded transfer by provider payout reference."""
+        result = await self.db.execute(
+            select(FundedTransfer).filter(FundedTransfer.payout_reference == payout_reference)
+        )
+        return result.scalars().first()
+
     async def get_by_status(self, status: str) -> list[FundedTransfer]:
         """Get funded transfers by status (for background processing)."""
         result = await self.db.execute(
@@ -63,6 +71,19 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
     async def get_pending_payout(self) -> list[FundedTransfer]:
         """Get transfers ready for payout."""
         return await self.get_by_status(FundedTransferStatusEnum.PAYOUT_PENDING.value)
+
+    async def get_stale_pending_payout(self, *, cutoff: datetime, limit: int = 50) -> list[FundedTransfer]:
+        """Get payout-pending transfers old enough for reconciliation."""
+        result = await self.db.execute(
+            select(FundedTransfer)
+            .filter(
+                FundedTransfer.status == FundedTransferStatusEnum.PAYOUT_PENDING.value,
+                or_(FundedTransfer.payout_initiated_at.is_(None), FundedTransfer.payout_initiated_at <= cutoff),
+            )
+            .order_by(FundedTransfer.payout_initiated_at.asc().nullsfirst(), FundedTransfer.created_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def get_refunding(self) -> list[FundedTransfer]:
         """Get transfers being refunded."""

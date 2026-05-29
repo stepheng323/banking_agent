@@ -23,6 +23,7 @@ Active services in the runtime stack:
   - `transaction.execute`
   - `funding.process`
   - `payout.process`
+  - `payout.reconcile`
   - `refund.process`
 
 4. `receipt-worker`
@@ -36,6 +37,7 @@ Active services in the runtime stack:
 - Webhook ingress is owned only by `gateway`.
 - Chat-critical queues are consumed only by `chat-worker`.
 - Financial async queues are consumed only by `transaction-worker`.
+- `transaction-worker` also owns the periodic payout reconciliation loop for stale Flutterwave payouts.
 - Receipt and outbound messaging queues are consumed only by `receipt-worker`.
 - Actionable message persistence remains inside `DeliveryService` during notification and receipt delivery.
 - Do not run multiple stacks against the same logical queue ownership.

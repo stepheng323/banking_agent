@@ -10,6 +10,7 @@ from shared.repositories.account_repository import AccountRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.transaction_runtime.consumers.funding_consumer import FundingConsumer
 from shared.transaction_runtime.consumers.payout_consumer import PayoutConsumer
+from shared.transaction_runtime.consumers.payout_reconciliation_consumer import PayoutReconciliationConsumer
 from shared.transaction_runtime.consumers.refund_consumer import RefundConsumer
 from shared.transaction_runtime.consumers.transaction_consumer import TransactionConsumer
 from shared.transaction_runtime.executors.airtime import AirtimeExecutor
@@ -22,6 +23,7 @@ def setup_transaction_worker_consumers() -> tuple[
     TransactionConsumer,
     FundingConsumer,
     PayoutConsumer,
+    PayoutReconciliationConsumer,
     RefundConsumer,
 ]:
     """Setup async transaction-domain consumers owned by transaction worker."""
@@ -78,11 +80,16 @@ def setup_transaction_worker_consumers() -> tuple[
         payout_executor=PayoutExecutor(payout_provider=payout_provider, resolver_provider=payout_resolver),
         publisher=queue_publisher,
     )
+    payout_reconciliation_consumer = PayoutReconciliationConsumer(
+        payout_provider=payout_provider,
+        publisher=queue_publisher,
+    )
     refund_consumer = RefundConsumer(direct_debit_provider=direct_debit_provider)
 
     return (
         transaction_consumer,
         funding_consumer,
         payout_consumer,
+        payout_reconciliation_consumer,
         refund_consumer,
     )

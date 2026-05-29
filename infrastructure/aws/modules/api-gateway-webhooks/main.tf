@@ -16,6 +16,7 @@ locals {
     "POST /webhook/telegram/linking/account",
     "POST /webhook/telegram/pin_submit",
     "POST /webhook/mono",
+    "POST /webhook/flutterwave",
   ])
 }
 

@@ -356,6 +356,7 @@ def test_settings_require_meta_app_secret_outside_local_env(monkeypatch: pytest.
         "MONO_API_KEY": "mono-key",
         "MONO_WEBHOOK_SECRET": "mono-webhook-secret",
         "FLUTTERWAVE_SECRET_KEY": "flutterwave-key",
+        "FLUTTERWAVE_WEBHOOK_SECRET_HASH": "flutterwave-webhook-secret",
         "META_ACCESS_TOKEN": "meta-access-token",
         "META_VERIFY_TOKEN": "meta-verify-token",
         "META_PHONE_NUMBER_ID": "meta-phone-number-id",

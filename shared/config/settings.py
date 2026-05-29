@@ -133,6 +133,14 @@ class Settings:
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
+        self.flutterwave_webhook_secret_hash: str = os.getenv("FLUTTERWAVE_WEBHOOK_SECRET_HASH", "").strip()
+        self.payout_reconciliation_min_age_seconds: int = int(
+            os.getenv("PAYOUT_RECONCILIATION_MIN_AGE_SECONDS", "300")
+        )
+        self.payout_reconciliation_batch_size: int = int(os.getenv("PAYOUT_RECONCILIATION_BATCH_SIZE", "50"))
+        self.payout_reconciliation_interval_seconds: int = int(
+            os.getenv("PAYOUT_RECONCILIATION_INTERVAL_SECONDS", "300")
+        )
 
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
         self.mono_webhook_secret: str = os.getenv("MONO_WEBHOOK_SECRET", "").strip()
@@ -253,6 +261,7 @@ class Settings:
             "MONO_API_KEY": bool(self.mono_api_key),
             "MONO_WEBHOOK_SECRET": bool(self.mono_webhook_secret),
             "FLUTTERWAVE_SECRET_KEY": bool(self.flutterwave_secret_key),
+            "FLUTTERWAVE_WEBHOOK_SECRET_HASH": bool(self.flutterwave_webhook_secret_hash),
             "META_APP_SECRET": bool(self.whatsapp.app_secret),
             "META_ACCESS_TOKEN": self.whatsapp.access_token != "development_access_token",
             "META_VERIFY_TOKEN": self.whatsapp.verify_token != "development_token",
