@@ -505,10 +505,16 @@ class MonoClient:
             mock_debit = mock_data.get_mock_debit_by_reference(reference)
             if mock_debit is None:
                 raise MonoApiError(404, f"Mock debit not found for reference {reference}", error_code="not_found")
+            mock_data.update_mock_debit(
+                str(mock_debit["id"]),
+                status="reversed",
+                response_code="00",
+                updated_at=datetime.now(UTC).isoformat(),
+            )
             return {
                 "id": f"mock_refund_{uuid4().hex[:12]}",
                 "reference": reference,
-                "status": "successful",
+                "status": "reversed",
                 "response_code": "00",
                 "source": source or "pending_payout",
                 "amount": mock_debit.get("amount"),
@@ -518,6 +524,17 @@ class MonoClient:
         if source:
             body["source"] = source
         return await self._request("POST", "/v2/payments/refund", body=body)
+
+    async def verify_payment(self, reference: str) -> dict:
+        """Verify a Mono payment by its original payment reference."""
+        if self.use_mock:
+            logger.info("mock_verify_payment", reference=reference)
+            mock_debit = mock_data.get_mock_debit_by_reference(reference)
+            if mock_debit is None:
+                raise MonoApiError(404, f"Mock debit not found for reference {reference}", error_code="not_found")
+            return mock_debit
+
+        return await self._request("GET", f"/v2/payments/verify/{reference}")
 
 
 mono_client = MonoClient()

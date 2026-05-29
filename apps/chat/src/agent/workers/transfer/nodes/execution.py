@@ -14,6 +14,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
 )
 from apps.chat.src.agent.workers.transfer.nodes.security import require_auth
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
+from banking.risk.service import RiskDecisionService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.i18n.renderer import render_message
 from shared.queue.factory import QueuePublisherFactory
@@ -61,7 +62,92 @@ class ExecutionStep(TransferStep):
                     existing = await uow.transactions.get_by_idempotency_key(key)
                     if existing:
                         transaction_id = str(existing.id)
+                        if existing.status == TransactionStatusEnum.REVIEW_PENDING.value:
+                            return TransactionResult(
+                                outcome=TransactionOutcome.FAILED,
+                                response="This transfer is under review before any debit is made.",
+                                error="Transfer is pending risk review.",
+                            )
                     else:
+                        risk = await RiskDecisionService().evaluate_transfer(
+                            uow=uow,
+                            payload=data,
+                            context=context,
+                            worker_context=worker_context,
+                        )
+                        if risk.decision in {"hold_review", "deny"}:
+                            status = (
+                                TransactionStatusEnum.REVIEW_PENDING.value
+                                if risk.decision == "hold_review"
+                                else TransactionStatusEnum.FAILED.value
+                            )
+                            tx = await uow.transactions.create(
+                                idempotency_key=key,
+                                transaction_type="transfer",
+                                status=status,
+                                user_id=getattr(worker_context, "user_id", None),
+                                amount=data.amount,
+                                recipient_account_number=data.recipient_account,
+                                recipient_bank_code=data.recipient_bank_code,
+                                recipient_name=data.recipient_resolved_name or data.recipient_name or "",
+                                recipient_bank_name=data.recipient_bank_name or "",
+                                source_account_id=data.source_account_id,
+                                source_account_number=data.source_account_number or "",
+                                source_bank_name=data.source_bank_name or "",
+                                narration=narration,
+                                provider_status="risk_review" if risk.decision == "hold_review" else "risk_denied",
+                                provider_response={
+                                    "decision": risk.decision,
+                                    "reason_codes": risk.reason_codes,
+                                    "score": risk.score,
+                                    "metadata": risk.metadata,
+                                },
+                                error_message=(
+                                    "Transfer held for risk review before debit"
+                                    if risk.decision == "hold_review"
+                                    else "Transfer denied by risk policy"
+                                ),
+                            )
+                            transaction_id = str(tx.id)
+                            if risk.decision == "hold_review":
+                                if data.funding_plan and not data.funding_plan.get("is_single_source", True):
+                                    funded = await uow.funded_transfers.get_by_idempotency_key(key)
+                                    if not funded:
+                                        funded = await uow.funded_transfers.create(
+                                            user_id=getattr(worker_context, "user_id", None),
+                                            amount=float(data.amount or 0.0),
+                                            currency="NGN",
+                                            recipient_account_number=data.recipient_account or "",
+                                            recipient_bank_code=data.recipient_bank_code or "",
+                                            recipient_bank_name=data.recipient_bank_name or "",
+                                            recipient_name=data.recipient_resolved_name or data.recipient_name or "Recipient",
+                                            narration=narration,
+                                            payout_provider="flutterwave",
+                                            status=FundedTransferStatusEnum.REVIEW_PENDING.value,
+                                            idempotency_key=key,
+                                            error_message="Transfer held for risk review before funding",
+                                        )
+                                    funded_transfer_id = str(funded.id)
+                                await RiskDecisionService().create_review_ticket(
+                                    uow=uow,
+                                    user_id=str(getattr(worker_context, "user_id", "") or ""),
+                                    idempotency_key=str(key),
+                                    decision=risk,
+                                    channel=context.channel,
+                                )
+                            await uow.commit()
+                            message = (
+                                "This transfer is under review before any debit is made."
+                                if risk.decision == "hold_review"
+                                else "This transfer cannot be processed."
+                            )
+                            return TransactionResult(
+                                outcome=TransactionOutcome.FAILED,
+                                response=message,
+                                error=message,
+                                patch={"transaction_id": transaction_id} if transaction_id else {},
+                            )
+
                         tx = await uow.transactions.create(
                             idempotency_key=key,
                             transaction_type="transfer",

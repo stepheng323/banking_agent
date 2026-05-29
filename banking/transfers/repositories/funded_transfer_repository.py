@@ -1,6 +1,6 @@
 """Repository for FundedTransfer model."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -50,6 +50,14 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
         result = await self.db.execute(select(FundedTransfer).filter(FundedTransfer.idempotency_key == idempotency_key))
         return result.scalars().first()
 
+    async def get_by_id_for_update(self, transfer_id: str) -> FundedTransfer | None:
+        """Get a funded transfer by ID and lock it for state transitions."""
+        lookup_id = self._coerce_transfer_id(transfer_id) or transfer_id
+        result = await self.db.execute(
+            select(FundedTransfer).filter(FundedTransfer.id == lookup_id).with_for_update()
+        )
+        return result.scalars().first()
+
     async def get_by_payout_reference(self, payout_reference: str) -> FundedTransfer | None:
         """Get a funded transfer by provider payout reference."""
         result = await self.db.execute(
@@ -84,6 +92,20 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def claim_for_payout(self, transfer_id: str, *, payout_reference: str) -> FundedTransfer | None:
+        """Atomically claim a payout-pending transfer before calling payout provider."""
+        transfer = await self.get_by_id_for_update(transfer_id)
+        if not transfer or transfer.status != FundedTransferStatusEnum.PAYOUT_PENDING.value:
+            return None
+        if transfer.payout_initiated_at:
+            return None
+
+        transfer.payout_reference = transfer.payout_reference or payout_reference
+        transfer.payout_initiated_at = datetime.now(UTC).replace(tzinfo=None)
+        self.db.add(transfer)
+        await self.db.flush()
+        return transfer
 
     async def get_refunding(self) -> list[FundedTransfer]:
         """Get transfers being refunded."""

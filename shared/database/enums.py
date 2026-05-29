@@ -33,6 +33,7 @@ class TransactionStatusEnum(str, Enum):
 
     PENDING = "pending"
     PROCESSING = "processing"
+    REVIEW_PENDING = "review_pending"
     SUCCESSFUL = "successful"
     FAILED = "failed"
     REVERSED = "reversed"
@@ -42,6 +43,7 @@ class FundedTransferStatusEnum(str, Enum):
     """Status enum for multi-account funded transfers."""
 
     DRAFT = "draft"
+    REVIEW_PENDING = "review_pending"
     FUNDING_PENDING = "funding_pending"
     FUNDING_COMPLETE = "funding_complete"
     PAYOUT_PENDING = "payout_pending"
@@ -59,6 +61,8 @@ class FundingStepStatusEnum(str, Enum):
     CONFIRMED = "confirmed"
     FAILED = "failed"
     REFUND_PENDING = "refund_pending"
+    REFUND_PROCESSING = "refund_processing"
+    REFUND_FAILED = "refund_failed"
     REFUNDED = "refunded"
 
 

@@ -13,8 +13,10 @@ from banking.transfers.repositories.funding_step_repository import FundingStepRe
 from banking.webhooks.repositories.processed_webhook_event_repository import ProcessedWebhookEventRepository
 from banking.scheduling.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
 from banking.scheduling.repositories.scheduled_run_repository import ScheduledRunRepository
+from banking.support.repositories.support_ticket_repository import SupportTicketRepository
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.identity.repositories.user_repository import UserRepository
+from banking.risk.repositories import RiskDecisionRepository
 
 
 class UnitOfWork:
@@ -34,6 +36,8 @@ class UnitOfWork:
         self.bank_transactions: BankTransactionRepository | None = None
         self.bank_transaction_coverages: BankTransactionCoverageRepository | None = None
         self.processed_webhook_events: ProcessedWebhookEventRepository | None = None
+        self.support_tickets: SupportTicketRepository | None = None
+        self.risk_decisions: RiskDecisionRepository | None = None
         self._rolled_back = False
 
     async def __aenter__(self):
@@ -51,6 +55,8 @@ class UnitOfWork:
         self.bank_transactions = BankTransactionRepository(self.db)
         self.bank_transaction_coverages = BankTransactionCoverageRepository(self.db)
         self.processed_webhook_events = ProcessedWebhookEventRepository(self.db)
+        self.support_tickets = SupportTicketRepository(self.db)
+        self.risk_decisions = RiskDecisionRepository(self.db)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:

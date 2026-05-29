@@ -99,7 +99,6 @@ class PayoutReconciliationConsumer:
             )
 
     async def _reconcile_target(self, target: PayoutReconciliationTarget) -> None:
-        result = await self._fetch_provider_result(target)
         async with UnitOfWork() as uow:
             if not uow.funded_transfers:
                 return
@@ -108,6 +107,28 @@ class PayoutReconciliationConsumer:
                 logger.warning("payout_reconciliation_transfer_not_found", funded_transfer_id=target.funded_transfer_id)
                 return
 
+            if transfer.status != FundedTransferStatusEnum.PAYOUT_PENDING.value:
+                logger.info(
+                    "payout_reconciliation_skipped_terminal_transfer",
+                    funded_transfer_id=str(transfer.id),
+                    status=transfer.status,
+                )
+                return
+            if not getattr(transfer, "payout_initiated_at", None) and not (
+                target.provider_transfer_id or self._stored_provider_transfer_id(transfer)
+            ):
+                await self._queue_unclaimed_payout(transfer)
+                return
+
+        result = await self._fetch_provider_result(target)
+        async with UnitOfWork() as uow:
+            if not uow.funded_transfers:
+                return
+            get_transfer = getattr(uow.funded_transfers, "get_by_id_for_update", uow.funded_transfers.get_by_id)
+            transfer = await get_transfer(target.funded_transfer_id)
+            if not transfer:
+                logger.warning("payout_reconciliation_transfer_not_found", funded_transfer_id=target.funded_transfer_id)
+                return
             if transfer.status != FundedTransferStatusEnum.PAYOUT_PENDING.value:
                 logger.info(
                     "payout_reconciliation_skipped_terminal_transfer",
@@ -130,8 +151,23 @@ class PayoutReconciliationConsumer:
             )
             if outcome == "pending":
                 transfer.payout_retry_count = int(transfer.payout_retry_count or 0) + 1
-                if transfer.payout_retry_count >= int(transfer.max_payout_retries or 0):
-                    transfer.error_message = "Payout status still pending after maximum reconciliation attempts"
+                max_retries = int(transfer.max_payout_retries or 0)
+                if max_retries > 0 and transfer.payout_retry_count >= max_retries:
+                    error = "Payout status still pending after maximum reconciliation attempts"
+                    transfer.error_message = error
+                    outcome = await apply_payout_result(
+                        uow=uow,
+                        transfer=transfer,
+                        result={
+                            **result,
+                            "success": False,
+                            "status": "failed",
+                            "provider_status": result.get("provider_status") or result.get("status"),
+                            "error": error,
+                        },
+                        publisher=self.publisher,
+                        provider_name=getattr(self.payout_provider, "provider_name", "flutterwave"),
+                    )
             uow.db.add(transfer)
             await uow.commit()
 
@@ -141,6 +177,26 @@ class PayoutReconciliationConsumer:
                 outcome=outcome,
                 provider_status=result.get("provider_status") or result.get("status"),
             )
+
+    async def _queue_unclaimed_payout(self, transfer: Any) -> None:
+        if not self.publisher:
+            logger.error("payout_reconciliation_publish_unavailable", funded_transfer_id=str(transfer.id))
+            return
+        await self.publisher.publish(
+            topic="payout.process",
+            message={
+                "funded_transfer_id": str(transfer.id),
+                "amount": float(getattr(transfer, "amount", 0.0) or 0.0),
+                "recipient_account": getattr(transfer, "recipient_account_number", ""),
+                "recipient_bank_code": getattr(transfer, "recipient_bank_code", ""),
+                "recipient_bank_code_provider": getattr(transfer, "payout_provider", None) or "flutterwave",
+                "recipient_resolution_provider": getattr(transfer, "payout_provider", None) or "flutterwave",
+                "payout_provider": getattr(transfer, "payout_provider", None) or "flutterwave",
+                "idempotency_key": transfer.idempotency_key,
+                "narration": getattr(transfer, "narration", None),
+            },
+        )
+        logger.info("payout_reconciliation_requeued_unclaimed_payout", funded_transfer_id=str(transfer.id))
 
     async def _fetch_provider_result(self, target: PayoutReconciliationTarget) -> dict[str, Any]:
         """Fetch the authoritative payout state from Flutterwave."""

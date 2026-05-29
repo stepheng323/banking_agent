@@ -9,9 +9,11 @@ from shared.queue.factory import QueuePublisherFactory
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
+from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer
 from banking.transactions.runtime.consumers.payout_consumer import PayoutConsumer
 from banking.transactions.runtime.consumers.payout_reconciliation_consumer import PayoutReconciliationConsumer
 from banking.transactions.runtime.consumers.refund_consumer import RefundConsumer
+from banking.transactions.runtime.consumers.refund_reconciliation_consumer import RefundReconciliationConsumer
 from banking.transactions.runtime.consumers.transaction_consumer import TransactionConsumer
 from banking.transactions.runtime.executors.airtime import AirtimeExecutor
 from banking.transactions.runtime.executors.data import DataExecutor
@@ -25,6 +27,8 @@ def setup_transaction_worker_consumers() -> tuple[
     PayoutConsumer,
     PayoutReconciliationConsumer,
     RefundConsumer,
+    FundingReconciliationConsumer,
+    RefundReconciliationConsumer,
 ]:
     """Setup async transaction-domain consumers owned by transaction worker."""
     queue_publisher = QueuePublisherFactory.get_async_publisher()
@@ -76,6 +80,10 @@ def setup_transaction_worker_consumers() -> tuple[
         publisher=queue_publisher,
         direct_debit_provider=direct_debit_provider,
     )
+    funding_reconciliation_consumer = FundingReconciliationConsumer(
+        direct_debit_provider=direct_debit_provider,
+        publisher=queue_publisher,
+    )
     payout_consumer = PayoutConsumer(
         payout_executor=PayoutExecutor(payout_provider=payout_provider, resolver_provider=payout_resolver),
         publisher=queue_publisher,
@@ -85,6 +93,10 @@ def setup_transaction_worker_consumers() -> tuple[
         publisher=queue_publisher,
     )
     refund_consumer = RefundConsumer(direct_debit_provider=direct_debit_provider)
+    refund_reconciliation_consumer = RefundReconciliationConsumer(
+        direct_debit_provider=direct_debit_provider,
+        publisher=queue_publisher,
+    )
 
     return (
         transaction_consumer,
@@ -92,4 +104,6 @@ def setup_transaction_worker_consumers() -> tuple[
         payout_consumer,
         payout_reconciliation_consumer,
         refund_consumer,
+        funding_reconciliation_consumer,
+        refund_reconciliation_consumer,
     )

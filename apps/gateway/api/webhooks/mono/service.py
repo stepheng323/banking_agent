@@ -17,6 +17,10 @@ from banking.transactions.runtime.async_completion import (
     record_group_leg_and_maybe_build_summary,
 )
 from banking.transactions.runtime.failure_categories import classify_failure_category
+from banking.transactions.runtime.funding_status import (
+    queue_payout_if_all_confirmed,
+    queue_refunds_for_confirmed_funding_steps,
+)
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -154,8 +158,21 @@ class MonoWebhookService:
 
         async with UnitOfWork() as uow:
             if uow.funding_steps and reference:
-                step = await uow.funding_steps.get_by_provider_reference(reference)
+                get_step = getattr(
+                    uow.funding_steps,
+                    "get_by_provider_reference_for_update",
+                    uow.funding_steps.get_by_provider_reference,
+                )
+                step = await get_step(reference)
                 if step:
+                    if self._should_ignore_funding_transition(step.status, funding_status):
+                        logger.info(
+                            "funding_step_webhook_transition_ignored",
+                            step_id=str(step.id),
+                            current_status=step.status,
+                            incoming_status=funding_status,
+                        )
+                        return True
                     await uow.funding_steps.update_status(
                         step_id=str(step.id),
                         status=funding_status,
@@ -244,6 +261,24 @@ class MonoWebhookService:
             if value is not None:
                 return str(value)
         return None
+
+    @staticmethod
+    def _should_ignore_funding_transition(current_status: str, incoming_status: str) -> bool:
+        """Prevent stale webhook deliveries from downgrading money states."""
+        if current_status == incoming_status:
+            return True
+        if current_status == FundingStepStatusEnum.CONFIRMED.value:
+            return incoming_status != FundingStepStatusEnum.CONFIRMED.value
+        if current_status in {
+            FundingStepStatusEnum.REFUND_PENDING.value,
+            FundingStepStatusEnum.REFUND_PROCESSING.value,
+            FundingStepStatusEnum.REFUND_FAILED.value,
+            FundingStepStatusEnum.REFUNDED.value,
+        }:
+            return True
+        if current_status == FundingStepStatusEnum.FAILED.value:
+            return incoming_status == FundingStepStatusEnum.PROCESSING.value
+        return False
 
     async def _invalidate_cache(self, phone_number: str) -> None:
         """Invalidate user account cache."""
@@ -423,6 +458,20 @@ class MonoWebhookService:
         if not uow.funding_steps:
             return
 
+        if uow.funded_transfers:
+            get_transfer_for_update = getattr(uow.funded_transfers, "get_by_id_for_update", None)
+            if get_transfer_for_update:
+                locked_transfer = await get_transfer_for_update(str(transfer.id))
+                if not locked_transfer:
+                    logger.warning("funded_transfer_not_found_for_completion", transfer_id=str(transfer.id))
+                    return
+                transfer = locked_transfer
+
+        if transfer.status == FundedTransferStatusEnum.REFUNDING.value:
+            logger.info("refunding_transfer_received_funding_update", transfer_id=str(transfer.id))
+            await self._queue_refunds(uow, transfer)
+            return
+
         has_failed_step = await uow.funding_steps.any_failed(str(transfer.id))
         if has_failed_step:
             if transfer.status not in (
@@ -443,56 +492,32 @@ class MonoWebhookService:
             return
 
         if await uow.funding_steps.all_confirmed(str(transfer.id)):
-            if transfer.status in (
-                FundedTransferStatusEnum.PAYOUT_PENDING.value,
-                FundedTransferStatusEnum.COMPLETED.value,
-                FundedTransferStatusEnum.REFUNDING.value,
-                FundedTransferStatusEnum.REFUNDED.value,
-                FundedTransferStatusEnum.FAILED.value,
-            ):
-                logger.info(
-                    "payout_already_queued_or_closed",
-                    transfer_id=str(transfer.id),
-                    status=transfer.status,
-                )
-                return
-            await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
-            await uow.commit()
-            logger.info("all_debits_complete", transfer_id=str(transfer.id))
-            await self._queue_payout(transfer)
+            queued = await queue_payout_if_all_confirmed(uow=uow, transfer=transfer, publisher=self.publisher)
+            if queued:
+                await uow.commit()
 
     async def _queue_refunds(self, uow: UnitOfWork, transfer: FundedTransfer) -> None:
         """Queue refund jobs for any successful funding steps."""
-        successful_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
-
-        if not successful_steps:
+        confirmed_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
+        if not confirmed_steps:
             steps = await uow.funding_steps.get_by_transfer(str(transfer.id))
-            has_pending_refund = any(s.status == FundingStepStatusEnum.REFUND_PENDING.value for s in steps)
-            if has_pending_refund:
+            if any(
+                step.status
+                in (
+                    FundingStepStatusEnum.REFUND_PENDING.value,
+                    FundingStepStatusEnum.REFUND_PROCESSING.value,
+                )
+                for step in steps
+            ):
                 logger.info("refunds_already_pending", transfer_id=str(transfer.id))
                 return
-            logger.info("no_refunds_needed", transfer_id=str(transfer.id))
-            await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.FAILED.value)
-            await uow.commit()
-            return
 
-        for step in successful_steps:
-            try:
-                await self.publisher.publish(
-                    topic="refund.process",
-                    message={
-                        "funding_step_id": str(step.id),
-                        "funded_transfer_id": str(transfer.id),
-                        "amount": float(step.amount),
-                        "account_id": str(step.account_id),
-                        "original_reference": step.provider_reference,
-                    },
-                )
-                await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUND_PENDING.value)
-                logger.info("refund_queued", step_id=str(step.id), amount=step.amount)
-            except Exception as e:
-                logger.error("refund_queue_failed", step_id=str(step.id), error=str(e))
-
+        await queue_refunds_for_confirmed_funding_steps(
+            uow=uow,
+            transfer=transfer,
+            publisher=self.publisher,
+            error_message="Funding debit failed",
+        )
         await uow.commit()
 
     async def _queue_payout(self, transfer: FundedTransfer) -> None:

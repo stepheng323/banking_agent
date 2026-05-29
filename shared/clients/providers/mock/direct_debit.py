@@ -195,6 +195,31 @@ class MockDirectDebitProvider(DirectDebitProvider):
             reference=debit_reference,
         )
 
+    async def get_refund_status(self, debit_reference: str, refund_id: str | None = None) -> DebitResult:
+        """Simulate refund status lookup."""
+        del refund_id
+        debit = self._debits.get(debit_reference)
+        if debit is None:
+            return DebitResult(
+                success=False,
+                status=DebitStatus.FAILED,
+                reference=debit_reference,
+                error_message="Mock debit not found",
+            )
+        if debit.get("status") == DebitStatus.REVERSED.value:
+            return DebitResult(
+                success=True,
+                status=DebitStatus.REVERSED,
+                debit_id=str(debit.get("id")),
+                reference=debit_reference,
+            )
+        return DebitResult(
+            success=True,
+            status=DebitStatus.PENDING,
+            debit_id=str(debit.get("id")),
+            reference=debit_reference,
+        )
+
     async def cancel_mandate(self, mandate_id: str) -> bool:
         """Simulate mandate cancellation."""
         logger.info("mock_cancel_mandate", mandate_id=mandate_id)

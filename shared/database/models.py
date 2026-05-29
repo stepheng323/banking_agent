@@ -222,6 +222,37 @@ class Transaction(Base):
         return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, tx_id={self.transaction_id})>"
 
 
+class RiskDecision(Base):
+    """Risk decision recorded before a money-moving transfer is executed."""
+
+    __tablename__ = "risk_decisions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_risk_decisions_user_id"),
+        nullable=False,
+        index=True,
+    )
+    idempotency_key = Column(String, nullable=False, index=True)
+    decision = Column(String, nullable=False, index=True)
+    score = Column(Integer, default=0, nullable=False)
+    reason_codes = Column(JSON, default=list, nullable=False)
+    status = Column(String, default="active", nullable=False, index=True)
+    risk_metadata = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
+
+    user = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_risk_decisions_idempotency_key"),
+    )
+
+    def __repr__(self):
+        return f"<RiskDecision(idempotency_key={self.idempotency_key}, decision={self.decision})>"
+
+
 class BankTransaction(Base):
     """Mirrored bank-feed transaction data fetched from providers like Mono."""
 
@@ -332,7 +363,7 @@ class FundedTransfer(Base):
     status = Column(String, default=FundedTransferStatusEnum.DRAFT.value, nullable=False, index=True)
 
     payout_provider = Column(String, nullable=True)
-    payout_reference = Column(String, nullable=True, index=True)
+    payout_reference = Column(String, unique=True, nullable=True, index=True)
     idempotency_key = Column(String, unique=True, nullable=False, index=True)
 
     payout_retry_count = Column(Integer, default=0, nullable=False)
@@ -380,19 +411,29 @@ class FundingStep(Base):
     status = Column(String, default=FundingStepStatusEnum.PENDING.value, nullable=False, index=True)
 
     provider_name = Column(String, nullable=True)
-    provider_debit_id = Column(String, nullable=True, index=True)
+    provider_debit_id = Column(String, unique=True, nullable=True, index=True)
     provider_reference = Column(String, unique=True, nullable=True, index=True)
+    refund_provider_id = Column(String, nullable=True, index=True)
+    refund_provider_reference = Column(String, nullable=True, index=True)
 
     initiated_at = Column(DateTime, nullable=True)
     confirmed_at = Column(DateTime, nullable=True)
     failed_at = Column(DateTime, nullable=True)
     refunded_at = Column(DateTime, nullable=True)
+    refund_initiated_at = Column(DateTime, nullable=True)
+    refund_last_checked_at = Column(DateTime, nullable=True)
 
     error_message = Column(String, nullable=True)
     retry_count = Column(Integer, default=0, nullable=False)
+    refund_attempt_count = Column(Integer, default=0, nullable=False)
+    refund_error_message = Column(String, nullable=True)
 
     funded_transfer = relationship("FundedTransfer", back_populates="funding_steps")
     account = relationship("Account")
+
+    __table_args__ = (
+        UniqueConstraint("funded_transfer_id", "sequence", name="uq_funding_steps_transfer_sequence"),
+    )
 
     def __repr__(self):
         return f"<FundingStep(id={self.id}, amount={self.amount}, status={self.status}, seq={self.sequence})>"

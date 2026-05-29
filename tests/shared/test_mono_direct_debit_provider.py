@@ -13,11 +13,14 @@ class _MonoClientStub:
         initiate_response: dict | None = None,
         status_response: dict | None = None,
         refund_response: dict | None = None,
+        verify_response: dict | None = None,
     ) -> None:
         self._initiate_response = initiate_response or {}
         self._status_response = status_response or {}
         self._refund_response = refund_response or {}
+        self._verify_response = verify_response or {}
         self.refund_calls: list[tuple[str, str | None]] = []
+        self.verify_calls: list[str] = []
 
     async def initiate_debit(
         self,
@@ -36,6 +39,10 @@ class _MonoClientStub:
     async def refund_payment(self, reference: str, source: str | None = None) -> dict:
         self.refund_calls.append((reference, source))
         return dict(self._refund_response)
+
+    async def verify_payment(self, reference: str) -> dict:
+        self.verify_calls.append(reference)
+        return dict(self._verify_response)
 
 
 @pytest.mark.asyncio
@@ -157,3 +164,27 @@ async def test_mono_provider_refund_failure_fails_closed() -> None:
     assert result.success is False
     assert result.status == DebitStatus.FAILED
     assert result.error_message == "Refund rejected"
+
+
+@pytest.mark.asyncio
+async def test_mono_provider_refund_status_uses_payment_verification() -> None:
+    client = _MonoClientStub(verify_response={"id": "pay-1", "reference": "pool-ref-1", "status": "reversed"})
+    provider = MonoDirectDebitProvider(client)
+
+    result = await provider.get_refund_status("pool-ref-1", refund_id="refund-1")
+
+    assert client.verify_calls == ["pool-ref-1"]
+    assert result.status == DebitStatus.REVERSED
+    assert result.success is True
+
+
+@pytest.mark.asyncio
+async def test_mono_provider_refund_status_original_success_stays_pending() -> None:
+    provider = MonoDirectDebitProvider(
+        _MonoClientStub(verify_response={"id": "pay-1", "reference": "pool-ref-1", "status": "successful"})
+    )
+
+    result = await provider.get_refund_status("pool-ref-1")
+
+    assert result.status == DebitStatus.PENDING
+    assert result.success is True

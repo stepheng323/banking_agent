@@ -10,6 +10,7 @@ from shared.clients.abstractions.direct_debit import (
     DirectDebitProvider,
 )
 from shared.clients.providers.mono.client import MonoClient
+from shared.clients.providers.mono.models import MonoApiError
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -96,14 +97,26 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 error_message=error_message,
                 provider_response=response,
             )
+        except MonoApiError as e:
+            logger.error("mono_initiate_debit_failed", mandate_id=mandate_id, error=str(e))
+            transient = self._is_transient_error(e)
+            return DebitResult(
+                success=transient,
+                status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
+                reference=reference,
+                amount=amount,
+                error_message=e.message,
+                provider_response=self._error_response(e),
+            )
         except Exception as e:
             logger.error("mono_initiate_debit_failed", mandate_id=mandate_id, error=str(e))
             return DebitResult(
-                success=False,
-                status=DebitStatus.FAILED,
+                success=True,
+                status=DebitStatus.PROCESSING,
                 reference=reference,
                 amount=amount,
                 error_message=str(e),
+                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
             )
 
     async def get_debit_status(self, debit_id: str) -> DebitResult:
@@ -121,13 +134,24 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 error_message=error_message,
                 provider_response=response,
             )
+        except MonoApiError as e:
+            logger.error("mono_get_debit_status_failed", debit_id=debit_id, error=str(e))
+            transient = self._is_transient_error(e)
+            return DebitResult(
+                success=transient,
+                status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
+                debit_id=debit_id,
+                error_message=e.message,
+                provider_response=self._error_response(e),
+            )
         except Exception as e:
             logger.error("mono_get_debit_status_failed", debit_id=debit_id, error=str(e))
             return DebitResult(
-                success=False,
-                status=DebitStatus.FAILED,
+                success=True,
+                status=DebitStatus.PROCESSING,
                 debit_id=debit_id,
                 error_message=str(e),
+                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
             )
 
     async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
@@ -144,13 +168,59 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 error_message=error_message,
                 provider_response=response,
             )
+        except MonoApiError as e:
+            logger.error("mono_refund_failed", reference=debit_reference, error=str(e))
+            transient = self._is_transient_error(e)
+            return DebitResult(
+                success=transient,
+                status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
+                reference=debit_reference,
+                error_message=e.message,
+                provider_response=self._error_response(e),
+            )
         except Exception as e:
             logger.error("mono_refund_failed", reference=debit_reference, error=str(e))
             return DebitResult(
-                success=False,
-                status=DebitStatus.FAILED,
+                success=True,
+                status=DebitStatus.PROCESSING,
                 reference=debit_reference,
                 error_message=str(e),
+                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
+            )
+
+    async def get_refund_status(self, debit_reference: str, refund_id: str | None = None) -> DebitResult:
+        """Check refund status conservatively through Mono payment verification."""
+        del refund_id
+        try:
+            response = await self._client.verify_payment(debit_reference)
+            success, status, error_message = self._normalize_refund_verification_outcome(response)
+            return DebitResult(
+                success=success,
+                status=status,
+                debit_id=response.get("id"),
+                reference=response.get("reference") or response.get("reference_number") or debit_reference,
+                amount=(response.get("amount", 0) / 100 if isinstance(response.get("amount"), int) else None),
+                error_message=error_message,
+                provider_response=response,
+            )
+        except MonoApiError as e:
+            logger.error("mono_get_refund_status_failed", reference=debit_reference, error=str(e))
+            transient = self._is_transient_error(e)
+            return DebitResult(
+                success=transient,
+                status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
+                reference=debit_reference,
+                error_message=e.message,
+                provider_response=self._error_response(e),
+            )
+        except Exception as e:
+            logger.error("mono_get_refund_status_failed", reference=debit_reference, error=str(e))
+            return DebitResult(
+                success=True,
+                status=DebitStatus.PROCESSING,
+                reference=debit_reference,
+                error_message=str(e),
+                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
             )
 
     async def cancel_mandate(self, mandate_id: str) -> bool:
@@ -229,3 +299,36 @@ class MonoDirectDebitProvider(DirectDebitProvider):
             return False, DebitStatus.FAILED, self._response_message(response)
 
         return True, DebitStatus.PENDING, None
+
+    def _normalize_refund_verification_outcome(self, response: dict | None) -> tuple[bool, DebitStatus, str | None]:
+        """Normalize verified payment state for refund reconciliation.
+
+        A verified original payment still being successful is not proof that the
+        refund completed, so it remains pending.
+        """
+        status = str((response or {}).get("status", "pending")).lower()
+        response_code = self._response_code(response)
+
+        if status in {"reversed", "refunded"}:
+            if response_code in (None, "00"):
+                return True, DebitStatus.REVERSED, None
+            return False, DebitStatus.FAILED, self._response_message(response)
+
+        if status in {"failed", "failure"}:
+            return False, DebitStatus.FAILED, self._response_message(response)
+
+        return True, DebitStatus.PENDING, None
+
+    @staticmethod
+    def _is_transient_error(error: MonoApiError) -> bool:
+        """Return whether a Mono API error should be reconciled/retried."""
+        return error.http_status == 0 or error.is_rate_limited or error.is_server_error
+
+    @staticmethod
+    def _error_response(error: MonoApiError) -> dict:
+        """Convert MonoApiError into provider_response metadata."""
+        return {
+            "http_status": error.http_status,
+            "message": error.message,
+            "error_code": error.error_code,
+        }

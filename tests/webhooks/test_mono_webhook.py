@@ -390,6 +390,8 @@ class TestFundingStepStatus:
         assert FundingStepStatusEnum.CONFIRMED.value == "confirmed"
         assert FundingStepStatusEnum.FAILED.value == "failed"
         assert FundingStepStatusEnum.REFUND_PENDING.value == "refund_pending"
+        assert FundingStepStatusEnum.REFUND_PROCESSING.value == "refund_processing"
+        assert FundingStepStatusEnum.REFUND_FAILED.value == "refund_failed"
         assert FundingStepStatusEnum.REFUNDED.value == "refunded"
 
     def test_funded_transfer_status_enum_values(self):
@@ -439,7 +441,8 @@ class _FakeFundedTransfers:
     def __init__(self) -> None:
         self.updated: list[tuple[str, str]] = []
 
-    async def update_status(self, transfer_id: str, status: str) -> None:
+    async def update_status(self, transfer_id: str, status: str, error_message: str | None = None) -> None:
+        del error_message
         self.updated.append((transfer_id, status))
 
 

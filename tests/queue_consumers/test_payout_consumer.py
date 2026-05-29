@@ -27,8 +27,10 @@ class _FakeExecutor:
     def __init__(self, result: dict) -> None:
         self.result = result
         self.payout_provider = SimpleNamespace(provider_name="flutterwave")
+        self.calls: list[dict] = []
 
     async def handle_payout(self, payload: dict) -> dict:
+        self.calls.append(payload)
         self.payload = payload
         return self.result
 
@@ -142,12 +144,13 @@ async def test_payout_consumer_completes_only_terminal_success(monkeypatch) -> N
     await consumer.process_job({"funded_transfer_id": "funded-1"})
 
     assert uow.funded_transfers.status_updates == [
+        ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
         ("funded-1", FundedTransferStatusEnum.COMPLETED.value, None)
     ]
     assert transfer.completed_at is not None
     assert tx.status == TransactionStatusEnum.SUCCESSFUL.value
     assert tx.transaction_id == "trf-1"
-    assert uow.commit_calls == 1
+    assert uow.commit_calls == 2
 
 
 @pytest.mark.asyncio
@@ -172,6 +175,7 @@ async def test_payout_consumer_keeps_pending_payout_processing(monkeypatch) -> N
     await consumer.process_job({"funded_transfer_id": "funded-1"})
 
     assert uow.funded_transfers.status_updates == [
+        ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
         ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None)
     ]
     assert transfer.completed_at is None
@@ -211,6 +215,7 @@ async def test_payout_consumer_failed_payout_queues_refunds(monkeypatch) -> None
     await consumer.process_job({"funded_transfer_id": "funded-1"})
 
     assert uow.funded_transfers.status_updates == [
+        ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
         ("funded-1", FundedTransferStatusEnum.REFUNDING.value, "Invalid recipient")
     ]
     assert tx.status == TransactionStatusEnum.FAILED.value
@@ -297,7 +302,7 @@ async def test_payout_consumer_failed_payout_queues_all_confirmed_funding_steps(
 
 
 @pytest.mark.asyncio
-async def test_payout_consumer_failed_payout_without_publisher_does_not_commit(monkeypatch) -> None:
+async def test_payout_consumer_failed_payout_without_publisher_commits_recoverable_refund_state(monkeypatch) -> None:
     transfer = _transfer()
     tx = _transaction()
     step = SimpleNamespace(
@@ -321,7 +326,29 @@ async def test_payout_consumer_failed_payout_without_publisher_does_not_commit(m
         )
     )
 
-    with pytest.raises(RuntimeError, match="Refund queue is unavailable"):
-        await consumer.process_job({"funded_transfer_id": "funded-1"})
+    await consumer.process_job({"funded_transfer_id": "funded-1"})
 
+    assert uow.funded_transfers.status_updates == [
+        ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
+        ("funded-1", FundedTransferStatusEnum.REFUNDING.value, "Invalid recipient"),
+    ]
+    assert uow.funding_steps.status_updates == [("step-1", FundingStepStatusEnum.REFUND_PENDING.value)]
+    assert tx.status == TransactionStatusEnum.FAILED.value
+    assert uow.commit_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_duplicate_payout_process_skips_already_claimed_transfer(monkeypatch) -> None:
+    transfer = _transfer()
+    transfer.payout_initiated_at = "now"
+    tx = _transaction()
+    uow = _FakeUnitOfWork(transfer, tx)
+    monkeypatch.setattr(payout_consumer_module, "UnitOfWork", lambda: uow)
+    executor = _FakeExecutor({"success": True, "status": "successful", "transaction_id": "trf-1"})
+    consumer = PayoutConsumer(payout_executor=executor)
+
+    await consumer.process_job({"funded_transfer_id": "funded-1"})
+
+    assert executor.calls == []
+    assert uow.funded_transfers.status_updates == []
     assert uow.commit_calls == 0

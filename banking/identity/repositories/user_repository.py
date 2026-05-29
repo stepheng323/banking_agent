@@ -51,6 +51,20 @@ class UserRepository(BaseRepository[User]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_channel_identity_record(
+        self,
+        channel: str,
+        channel_user_id: str,
+    ) -> UserChannelIdentity | None:
+        """Get a channel identity row with timestamps for risk checks."""
+        result = await self.db.execute(
+            select(UserChannelIdentity).where(
+                UserChannelIdentity.channel == channel,
+                UserChannelIdentity.channel_user_id == channel_user_id,
+            )
+        )
+        return result.scalars().first()
+
     async def link_channel_identity(self, user_id: str, channel: str, channel_user_id: str) -> UserChannelIdentity:
         """Link a new channel identity to an existing user."""
         identity = UserChannelIdentity(

@@ -82,6 +82,29 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
+    async def get_transfer_by_account(
+        self,
+        user_id: str,
+        account_number: str,
+        bank_code: str | None,
+    ) -> Beneficiary | None:
+        """Get a saved transfer beneficiary by account and optional bank code."""
+        user_uuid: str | UUID = user_id
+        if isinstance(user_id, str):
+            try:
+                user_uuid = UUID(user_id)
+            except ValueError:
+                pass
+        query = select(Beneficiary).filter(
+            Beneficiary.user_id == user_uuid,
+            Beneficiary.beneficiary_type == "transfer",
+            Beneficiary.account_number == account_number,
+        )
+        if bank_code:
+            query = query.filter(Beneficiary.bank_code == bank_code)
+        result = await self.db.execute(query.order_by(Beneficiary.created_at.asc()).limit(1))
+        return result.scalars().first()
+
     async def should_suggest_beneficiary(
         self,
         user_id: str,

@@ -3,9 +3,10 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
+from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
 from shared.queue.adapter import QueuePublisher
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.transactions.runtime.funding_status import queue_refunds_for_confirmed_funding_steps
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,37 +35,6 @@ def payout_reference_from_result(result: dict[str, Any]) -> str | None:
         if value:
             return str(value)
     return None
-
-
-async def queue_refunds_for_confirmed_funding_steps(
-    *,
-    uow: UnitOfWork,
-    transfer: Any,
-    publisher: QueuePublisher | None,
-) -> None:
-    """Queue refunds for confirmed Mono funding debits after terminal payout failure."""
-    if not publisher or not uow.funding_steps:
-        logger.error("payout_refund_queue_unavailable", funded_transfer_id=str(getattr(transfer, "id", "")))
-        raise RuntimeError("Refund queue is unavailable for failed payout")
-
-    confirmed_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
-    if not confirmed_steps:
-        logger.warning("payout_refund_no_confirmed_steps", funded_transfer_id=str(transfer.id))
-        return
-
-    for step in confirmed_steps:
-        await publisher.publish(
-            topic="refund.process",
-            message={
-                "funding_step_id": str(step.id),
-                "funded_transfer_id": str(transfer.id),
-                "amount": float(step.amount),
-                "account_id": str(step.account_id),
-                "original_reference": step.provider_reference,
-            },
-        )
-        await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUND_PENDING.value)
-        logger.info("payout_refund_queued", funding_step_id=str(step.id), funded_transfer_id=str(transfer.id))
 
 
 async def apply_payout_result(
@@ -129,6 +99,11 @@ async def apply_payout_result(
         tx.provider_status = str(result.get("provider_status") or result.get("status") or "failed")
         tx.provider_response = result
         uow.db.add(tx)
-    await queue_refunds_for_confirmed_funding_steps(uow=uow, transfer=transfer, publisher=publisher)
+    await queue_refunds_for_confirmed_funding_steps(
+        uow=uow,
+        transfer=transfer,
+        publisher=publisher,
+        error_message=error,
+    )
     logger.error("payout_failed_refund_queued", funded_transfer_id=str(transfer.id), error=error)
     return "failed"

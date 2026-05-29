@@ -122,6 +122,30 @@ class TransactionRepository(BaseRepository[Transaction]):
         )
         return list(result.scalars().all())
 
+    async def get_transfers_since(
+        self,
+        user_id: str,
+        since: datetime,
+        *,
+        statuses: list[str] | None = None,
+        limit: int = 500,
+    ) -> list[Transaction]:
+        """Get transfer transactions since a timestamp for risk/velocity checks."""
+        lookup_id: UUID | str = self._coerce_user_id(user_id)
+        since = normalize_db_timestamp(since)
+        filters = [
+            Transaction.user_id == lookup_id,
+            Transaction.transaction_type == TransactionTypeEnum.TRANSFER.value,
+            Transaction.created_at >= since,
+        ]
+        if statuses:
+            filters.append(Transaction.status.in_(statuses))
+
+        result = await self.db.execute(
+            select(Transaction).filter(*filters).order_by(Transaction.created_at.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def get_successful_transfers_since(
         self,
         user_id: str,
