@@ -13,11 +13,11 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.user_repository import UserRepository
-from shared.services.channel_link_authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
-from shared.services.onboarding.runtime import session_manager
-from shared.services.onboarding.session import OnboardingStep
-from shared.services.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
+from banking.identity.repositories.user_repository import UserRepository
+from banking.identity.channel_linking.authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
+from banking.accounts.onboarding.runtime import session_manager
+from banking.accounts.onboarding.session import OnboardingStep
+from banking.identity.channel_linking.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

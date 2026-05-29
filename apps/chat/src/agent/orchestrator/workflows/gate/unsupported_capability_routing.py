@@ -13,17 +13,17 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_data_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from shared.services.unsupported_capability_detection import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
     detect_unsupported_capability,
     is_same_unsupported_capability_followup,
     normalize_unsupported_text,
     should_try_semantic_unsupported_capability,
 )
-from shared.services.unsupported_capability_models import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapability,
 )
-from shared.services.unsupported_capability_semantic import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
     validate_semantic_unsupported_capability,
     validate_unsupported_boundary_turn,
 )

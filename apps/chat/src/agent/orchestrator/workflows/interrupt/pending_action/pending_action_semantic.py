@@ -29,7 +29,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
     _resolve_status_query_operation,
     _resolve_switch_intent_operation,
 )
-from shared.services.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 
 
 async def _resolve_semantic_pending_action_edit_updates(

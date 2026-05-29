@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from shared.repositories.processed_webhook_event_repository import ProcessedWebhookEventRepository
+from banking.webhooks.repositories.processed_webhook_event_repository import ProcessedWebhookEventRepository
 
 
 class _FakeScalarResult:

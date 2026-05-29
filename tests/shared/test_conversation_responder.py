@@ -1,9 +1,9 @@
 import pytest
 
 from shared.i18n.renderer import render_message
-from shared.services.conversation_responder import ConversationResponder
-from shared.services.unsupported_capability_presentation import unsupported_capability_params
-from shared.services.unsupported_capability_registry import get_unsupported_capability
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import unsupported_capability_params
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 
 
 def _unsupported_params(key: str) -> dict[str, object]:

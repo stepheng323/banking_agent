@@ -11,16 +11,16 @@ from shared.database.models import FundedTransfer, UserChannelIdentity
 from shared.formatters.transfer_notifications import format_transfer_success_message
 from shared.i18n.renderer import render_message
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.async_completion import (
+from banking.persistence.unit_of_work import UnitOfWork
+from banking.transactions.runtime.async_completion import (
     get_async_group_meta_for_transaction,
     record_group_leg_and_maybe_build_summary,
 )
-from shared.services.failure_categories import classify_failure_category
+from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from shared.services.delivery_service import DeliveryService
+    from banking.messaging.delivery.service import DeliveryService
 
 logger = get_logger(__name__)
 
@@ -72,7 +72,7 @@ class MonoWebhookService:
         self.redis_client = redis_client
 
     def _get_delivery_service(self) -> "DeliveryService":
-        from shared.services.delivery_service import DeliveryService
+        from banking.messaging.delivery.service import DeliveryService
 
         if self.delivery_service is None:
             self.delivery_service = DeliveryService()

@@ -247,7 +247,7 @@ async def ensure_mirror_coverage(
     today: date | None = None,
 ) -> None:
     """Ensure a query window is durable and queryable from the local mirror."""
-    from shared.repositories.unit_of_work import UnitOfWork
+    from banking.persistence.unit_of_work import UnitOfWork
 
     today_value = today or lagos_today()
 
@@ -326,7 +326,7 @@ async def load_mirrored_transactions(
     end_date: date,
 ) -> list[dict[str, Any]]:
     """Load mirrored bank transactions for linked accounts from Postgres."""
-    from shared.repositories.unit_of_work import UnitOfWork
+    from banking.persistence.unit_of_work import UnitOfWork
 
     if not account_contexts:
         return []

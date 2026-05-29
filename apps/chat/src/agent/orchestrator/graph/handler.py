@@ -41,13 +41,13 @@ from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n.locale import LocaleManager
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.repositories.user_repository import UserRepository
-from shared.services.context_manager import ContextManager
-from shared.services.conversation_responder import ConversationResponder
-from shared.services.task_planner import TaskPlanner
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
+from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
+from banking.identity.repositories.user_repository import UserRepository
+from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

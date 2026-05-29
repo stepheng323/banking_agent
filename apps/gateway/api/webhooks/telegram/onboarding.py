@@ -12,7 +12,7 @@ from apps.gateway.api.webhooks.telegram.session import (
     token_fingerprint,
 )
 from shared.clients.telegram.client import TelegramClient
-from shared.services.onboarding.runtime import account_add_service, account_service, bvn_service
+from banking.accounts.onboarding.runtime import account_add_service, account_service, bvn_service
 from shared.utils.logging import get_logger, log_fingerprint
 
 router = APIRouter(tags=["telegram"])
@@ -203,7 +203,7 @@ async def telegram_onboarding_bvn(data: BvnInput, user_data: dict = Depends(veri
         phone_number = session.get("phone_number", "") if session else ""
         if phone_number:
             from shared.database.enums import UserOnboardingStatusEnum
-            from shared.repositories.unit_of_work import UnitOfWork
+            from banking.persistence.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
                 if uow.users:
@@ -340,7 +340,7 @@ async def telegram_onboarding_complete(
 
     if result.get("success"):
         try:
-            from shared.services.onboarding.runtime import session_manager
+            from banking.accounts.onboarding.runtime import session_manager
 
             read_result = await session_manager.read_session(data.flow_token)
             session = read_result.data or {}

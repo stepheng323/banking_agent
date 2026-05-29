@@ -8,8 +8,8 @@ from shared.clients.telegram.client import TelegramClient
 from shared.messaging.outbox import enqueue_outbox_say
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
-from shared.services.channel_link_authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
-from shared.services.onboarding.runtime import session_manager
+from banking.identity.channel_linking.authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
+from banking.accounts.onboarding.runtime import session_manager
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

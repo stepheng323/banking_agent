@@ -10,7 +10,7 @@ from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.queue.factory import QueuePublisherFactory
-from shared.repositories.unit_of_work import UnitOfWork
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger, log_fingerprint
 
 router = APIRouter(prefix="/webhook", tags=["webhooks"])

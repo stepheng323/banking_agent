@@ -22,7 +22,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_renderin
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
     get_or_build_turn_context_summary,
 )
-from shared.services.task_planner_prompt_models import PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

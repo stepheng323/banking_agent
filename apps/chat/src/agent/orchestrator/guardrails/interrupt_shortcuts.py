@@ -12,8 +12,8 @@ from typing import Literal
 
 from shared.i18n.locale import LocaleManager
 from shared.i18n.models import LocaleCode
-from shared.services.confirmation_classifier import classify_confirmation_reply_sync
-from shared.services.confirmation_phrases import (
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import (
     CANCEL_PHRASES_BY_LOCALE,
     confirmation_approve_phrases,
     confirmation_reject_phrases,

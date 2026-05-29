@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.models.message_context import MessageConte
 from apps.chat.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from shared.config.settings import settings
 from shared.i18n.locale import LocaleManager
-from shared.services.conversation_grounding import attach_conversation_grounding, conversation_topic_for_response
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import attach_conversation_grounding, conversation_topic_for_response
 
 
 def build_graph_inputs(context: MessageContext) -> dict[str, Any]:

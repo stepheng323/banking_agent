@@ -22,7 +22,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
     _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
-from shared.services.conversation_responder_text import is_contextual_casual_followup_turn
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_contextual_casual_followup_turn
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

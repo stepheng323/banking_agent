@@ -23,7 +23,7 @@ from shared.formatters.multi_action_summary import format_multi_action_summary
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message, render_text
 from shared.receipts.choice import build_receipt_choice_intent
-from shared.services.post_transaction_beneficiary import (
+from banking.beneficiaries.services.post_transaction_beneficiary import (
     append_beneficiary_suggestion,
     suggest_mobile_beneficiary,
     suggest_transfer_beneficiary,

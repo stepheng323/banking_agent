@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pytest
 
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
-from shared.transaction_runtime.consumers import funding_consumer as funding_consumer_module
-from shared.transaction_runtime.consumers.funding_consumer import FundingConsumer
+from banking.transactions.runtime.consumers import funding_consumer as funding_consumer_module
+from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
 
 
 class _CapturePublisher:

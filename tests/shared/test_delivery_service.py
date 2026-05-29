@@ -10,9 +10,9 @@ import pytest
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.messaging.intents import Say
 from shared.messaging.presenters.base import PresentationResult
-from shared.services.delivery_ledger import build_delivery_ledger_key
-from shared.services.delivery_models import DeliveryAttemptResult
-from shared.services.delivery_service import DeliveryService
+from banking.messaging.delivery.ledger import build_delivery_ledger_key
+from banking.messaging.delivery.models import DeliveryAttemptResult
+from banking.messaging.delivery.service import DeliveryService
 
 
 class _RedisStub:
@@ -45,7 +45,7 @@ async def test_delivery_service_returns_delivered_status(monkeypatch: pytest.Mon
     service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
     service.redis = _RedisStub()
 
-    monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
+    monkeypatch.setattr("banking.messaging.delivery.service.PresenterFactory.create", lambda channel, client: presenter)
 
     result = await service.deliver_text(
         phone_number="2348000000000",
@@ -66,7 +66,7 @@ async def test_delivery_service_returns_deduped_completed_status(monkeypatch: py
     redis = _RedisStub()
     service.redis = redis
 
-    monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
+    monkeypatch.setattr("banking.messaging.delivery.service.PresenterFactory.create", lambda channel, client: presenter)
 
     intents = [Say(text="Still working")]
     ledger_key, _ = build_delivery_ledger_key(
@@ -101,7 +101,7 @@ async def test_delivery_service_returns_deduped_resumed_status(monkeypatch: pyte
     redis = _RedisStub()
     service.redis = redis
 
-    monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
+    monkeypatch.setattr("banking.messaging.delivery.service.PresenterFactory.create", lambda channel, client: presenter)
 
     intents = [Say(text="Still working")]
     ledger_key, _ = build_delivery_ledger_key(
@@ -142,8 +142,8 @@ async def test_delivery_service_defers_non_strict_actionable_persist(monkeypatch
         started.set()
         await release.wait()
 
-    monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
-    monkeypatch.setattr("shared.services.delivery_actionables.persist_actionable_if_any", _persist)
+    monkeypatch.setattr("banking.messaging.delivery.service.PresenterFactory.create", lambda channel, client: presenter)
+    monkeypatch.setattr("banking.messaging.delivery.actionables.persist_actionable_if_any", _persist)
 
     result = await service.deliver_intents(
         phone_number="2348000000000",
@@ -176,8 +176,8 @@ async def test_delivery_service_keeps_strict_actionable_persist_inline(monkeypat
         await asyncio.sleep(0)
         call_order.append("persist_finished")
 
-    monkeypatch.setattr("shared.services.delivery_service.PresenterFactory.create", lambda channel, client: presenter)
-    monkeypatch.setattr("shared.services.delivery_actionables.persist_actionable_if_any", _persist)
+    monkeypatch.setattr("banking.messaging.delivery.service.PresenterFactory.create", lambda channel, client: presenter)
+    monkeypatch.setattr("banking.messaging.delivery.actionables.persist_actionable_if_any", _persist)
 
     result = await service.deliver_intents(
         phone_number="2348000000000",

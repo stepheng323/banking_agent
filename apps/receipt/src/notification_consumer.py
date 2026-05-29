@@ -13,7 +13,7 @@ from shared.messaging.prompt_suppression import (
     is_pending_input_prompt_metadata,
     latest_inbound_delivery_target_key,
 )
-from shared.services.delivery_service import DeliveryService
+from banking.messaging.delivery.service import DeliveryService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

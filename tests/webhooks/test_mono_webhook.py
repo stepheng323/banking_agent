@@ -8,7 +8,7 @@ import pytest
 
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
-from shared.services.async_completion import record_group_leg_and_maybe_build_summary
+from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
 
 
 class _FakeMonoRequest:

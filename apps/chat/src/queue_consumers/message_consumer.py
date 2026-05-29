@@ -31,7 +31,7 @@ from shared.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.messaging.prompt_suppression import pending_input_prompt_metadata
 from shared.models.messages import ChannelMessage
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.user_repository import UserRepository
+from banking.identity.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger, log_fingerprint
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
 

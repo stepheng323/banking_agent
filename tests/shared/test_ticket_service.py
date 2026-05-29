@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from shared.database.enums import SupportTicketStatusEnum
-from shared.services.ticket_service import TicketService
+from banking.support.services.ticket_service import TicketService
 
 
 class _SessionStub:
@@ -62,7 +62,7 @@ class _RepoStub:
 def _reset_repo_state(monkeypatch: pytest.MonkeyPatch) -> None:
     _RepoStub.store = {}
     _RepoStub.created_count = 0
-    monkeypatch.setattr("shared.services.ticket_service.SupportTicketRepository", _RepoStub)
+    monkeypatch.setattr("banking.support.services.ticket_service.SupportTicketRepository", _RepoStub)
 
 
 @pytest.mark.asyncio

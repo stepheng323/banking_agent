@@ -7,7 +7,7 @@ from shared.cache.redis_client import RedisClient
 from shared.i18n.renderer import render_message
 from shared.messaging.outbox import enqueue_outbox_say
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.unit_of_work import UnitOfWork
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 

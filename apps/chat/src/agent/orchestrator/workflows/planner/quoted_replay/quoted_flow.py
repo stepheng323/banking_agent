@@ -18,7 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_rep
 )
 from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.i18n.renderer import render_message
-from shared.services.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger, log_fingerprint

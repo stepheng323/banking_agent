@@ -10,7 +10,7 @@ from shared.i18n.renderer import (
     message_key_exists,
     render_message,
 )
-from shared.services.failure_categories import classify_failure_category
+from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

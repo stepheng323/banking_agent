@@ -1,0 +1,1 @@
+"""Beneficiary repository package."""

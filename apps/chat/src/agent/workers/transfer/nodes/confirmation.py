@@ -25,7 +25,7 @@ from shared.i18n.personality import (
     transfer_personality_context_from_payload,
 )
 from shared.i18n.renderer import render_message
-from shared.transaction_runtime.personality_enrichment import enrich_transfer_personality_context
+from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 

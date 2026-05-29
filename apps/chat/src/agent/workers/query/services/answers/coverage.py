@@ -144,7 +144,7 @@ async def _coverage_for_account(
         )
 
     try:
-        from shared.repositories.unit_of_work import UnitOfWork
+        from banking.persistence.unit_of_work import UnitOfWork
 
         async with UnitOfWork() as uow:
             if uow.bank_transaction_coverages is None:

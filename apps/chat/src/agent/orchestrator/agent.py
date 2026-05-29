@@ -8,9 +8,9 @@ from apps.chat.src.agent.orchestrator.models.message_context import MessageConte
 from apps.chat.src.agent.orchestrator.services.media_text import combine_media_text, format_media_caption_text
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
-from shared.services.context_manager import ContextManager
-from shared.services.conversation_grounding import conversation_topic_for_response
-from shared.services.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_topic_for_response
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from shared.utils.async_helpers import create_background_task
 
 

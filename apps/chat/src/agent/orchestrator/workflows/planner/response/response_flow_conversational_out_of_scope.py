@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _localized_planner_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
-from shared.services.conversation_responder_text import is_banking_refusal_reply
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_banking_refusal_reply
 
 
 async def _out_of_scope_response(

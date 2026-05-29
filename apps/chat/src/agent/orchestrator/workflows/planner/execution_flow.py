@@ -25,7 +25,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.guardrails_beneficiary i
 from apps.chat.src.agent.orchestrator.workflows.planner.guardrails_mandate import (
     _deescalate_mandate_acknowledgement,
 )
-from shared.services.task_planner_prompt_models import PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

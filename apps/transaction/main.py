@@ -17,11 +17,11 @@ from shared.queue.contracts import TopicType, get_contract_by_topic
 from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
 from shared.queue.sqs_poller import SQSPoller
 from shared.runtime_ownership import build_runtime_status
-from shared.transaction_runtime.consumers.funding_consumer import FundingConsumer
-from shared.transaction_runtime.consumers.payout_consumer import PayoutConsumer
-from shared.transaction_runtime.consumers.payout_reconciliation_consumer import PayoutReconciliationConsumer
-from shared.transaction_runtime.consumers.refund_consumer import RefundConsumer
-from shared.transaction_runtime.consumers.transaction_consumer import TransactionConsumer
+from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
+from banking.transactions.runtime.consumers.payout_consumer import PayoutConsumer
+from banking.transactions.runtime.consumers.payout_reconciliation_consumer import PayoutReconciliationConsumer
+from banking.transactions.runtime.consumers.refund_consumer import RefundConsumer
+from banking.transactions.runtime.consumers.transaction_consumer import TransactionConsumer
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()

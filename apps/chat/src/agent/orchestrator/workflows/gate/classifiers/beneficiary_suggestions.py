@@ -5,7 +5,7 @@ from typing import Literal
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS,
 )
-from shared.services.confirmation_classifier import classify_confirmation_reply_sync
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
 
 _BENEFICIARY_SUGGESTION_ALIAS_MAX_CHARS = 64
 _BENEFICIARY_ALIAS_MARKERS = (" as ", " alias ", " name ", " called ", " oruko ", " suna ", " aha ", " nom ")

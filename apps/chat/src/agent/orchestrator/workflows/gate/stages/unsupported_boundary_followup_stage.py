@@ -18,13 +18,13 @@ from apps.chat.src.agent.orchestrator.workflows.gate.unsupported_capability_rout
     semantic_unsupported_capability,
 )
 from shared.i18n.renderer import render_message
-from shared.services.unsupported_capability_detection import detect_unsupported_capability
-from shared.services.unsupported_capability_models import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapability,
 )
-from shared.services.unsupported_capability_presentation import unsupported_capability_params
-from shared.services.unsupported_capability_registry import get_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import unsupported_capability_params
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

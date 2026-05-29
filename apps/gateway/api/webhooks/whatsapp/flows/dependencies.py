@@ -8,7 +8,7 @@ from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
-from shared.services.task_queue.service import TaskQueueService
+from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
 
 _task_queue_service = TaskQueueService(redis_client=RedisClient.get_client())
 

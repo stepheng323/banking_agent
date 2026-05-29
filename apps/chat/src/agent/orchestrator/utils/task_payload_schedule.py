@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from apps.chat.src.agent.workers.__shared__.scheduling import parse_schedule_date
-from shared.services.scheduling.recurrence import (
+from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     normalize_time_local,
     now_lagos,

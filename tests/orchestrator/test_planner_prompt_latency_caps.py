@@ -23,8 +23,8 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_
     CONTEXT_ACCOUNT_PREVIEW_LIMIT,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from shared.services.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
-from shared.services.task_planner_prompt_runtime import build_runtime_planner_system_prompt
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import build_runtime_planner_system_prompt
 from shared.types.planner import PlannerOutput
 
 _PROMPT_SIZE_BASELINE = {

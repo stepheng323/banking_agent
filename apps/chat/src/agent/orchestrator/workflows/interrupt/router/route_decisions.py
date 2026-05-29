@@ -18,8 +18,8 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch i
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_flow import _status_query_updates
-from shared.services.confirmation_guardrails import is_safe_guarded_approval_text
-from shared.services.confirmation_models import APPROVAL_CONFIDENCE_THRESHOLD
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_guardrails import is_safe_guarded_approval_text
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import APPROVAL_CONFIDENCE_THRESHOLD
 from shared.types.planner import InterruptRouteDecision
 
 

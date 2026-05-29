@@ -4,7 +4,7 @@ from typing import Any
 
 from shared.messaging.intents import Say, SendTyping, UiIntent
 from shared.queue.adapter import QueuePublisher
-from shared.services.delivery_models import DeliveryAttemptResult
+from banking.messaging.delivery.models import DeliveryAttemptResult
 
 
 def _intent_to_dict(intent: UiIntent | dict[str, Any]) -> dict[str, Any]:

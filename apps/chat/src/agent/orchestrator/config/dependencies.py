@@ -11,12 +11,12 @@ from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.repositories.user_repository import UserRepository
-from shared.services.conversation_responder import ConversationResponder
-from shared.services.task_queue.service import TaskQueueService
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
+from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
+from banking.identity.repositories.user_repository import UserRepository
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
 
 
 @dataclass

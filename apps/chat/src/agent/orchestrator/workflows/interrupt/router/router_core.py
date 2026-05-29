@@ -10,7 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.context import (
     _state_locale,
     logger,
 )
-from shared.services.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from shared.types.planner import InterruptRouteDecision
 
 

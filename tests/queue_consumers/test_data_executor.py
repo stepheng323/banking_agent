@@ -7,7 +7,7 @@ import pytest
 
 from shared.database.enums import TransactionStatusEnum
 from shared.policy.loader import get_cached_policy, load_policy
-from shared.transaction_runtime.executors.data import DataExecutor
+from banking.transactions.runtime.executors.data import DataExecutor
 
 CAPABILITY_POLICY_PATH = "config/capability_policy.json"
 DATA_DISABLED_MESSAGE = (

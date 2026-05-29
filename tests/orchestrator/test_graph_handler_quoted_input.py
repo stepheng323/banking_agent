@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHand
 from apps.chat.src.agent.orchestrator.graph.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from shared.config.settings import settings
-from shared.services.delivery_models import DeliveryAttemptResult
+from banking.messaging.delivery.models import DeliveryAttemptResult
 
 
 class _CheckpointerStub:

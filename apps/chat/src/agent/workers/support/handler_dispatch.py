@@ -11,7 +11,7 @@ from apps.chat.src.agent.workers.support.handlers.status import handle_pending, 
 from apps.chat.src.agent.workers.support.handlers.ticket_status import handle_ticket_status
 from apps.chat.src.agent.workers.support.models import SupportIntent, SupportResponse
 from shared.i18n.renderer import render_message
-from shared.services.ticket_service import TicketService
+from banking.support.services.ticket_service import TicketService
 
 
 class SupportHandlerDispatcher:

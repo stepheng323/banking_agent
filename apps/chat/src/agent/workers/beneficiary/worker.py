@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, T
 from apps.chat.src.agent.workers.beneficiary.models import BeneficiaryIntent
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
-from shared.repositories.unit_of_work import UnitOfWork
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

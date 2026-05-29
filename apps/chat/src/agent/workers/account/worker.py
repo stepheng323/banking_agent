@@ -25,8 +25,8 @@ from shared.clients.abstractions.banking import BankDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.user_repository import UserRepository
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.identity.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

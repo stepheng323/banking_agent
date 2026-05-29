@@ -28,7 +28,7 @@ from shared.config.settings import settings
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
-from shared.repositories.transaction_repository import (
+from banking.transactions.repositories.transaction_repository import (
     TransactionRepository,
 )
 from shared.utils.logging import get_logger

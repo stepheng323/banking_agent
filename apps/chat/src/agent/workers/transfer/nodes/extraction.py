@@ -37,7 +37,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
-from shared.services.confirmation_classifier import classify_confirmation_reply_sync
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

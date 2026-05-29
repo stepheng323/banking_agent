@@ -10,7 +10,7 @@ import pytest
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import TransactionStatusEnum
 from shared.policy.loader import get_cached_policy, load_policy
-from shared.transaction_runtime.executors.transfer import TransferExecutor
+from banking.transactions.runtime.executors.transfer import TransferExecutor
 
 CAPABILITY_POLICY_PATH = "config/capability_policy.json"
 SCHEDULE_DISABLED_MESSAGE = (

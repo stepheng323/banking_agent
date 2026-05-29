@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from shared.services.task_planner import PLANNER_USER_PROMPT_TEMPLATE
-from shared.services.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
-from shared.services.task_planner_prompt_runtime import build_runtime_planner_system_prompt
+from apps.chat.src.agent.orchestrator.planning.task_planner import PLANNER_USER_PROMPT_TEMPLATE
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptBuildInput, PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import build_runtime_planner_system_prompt
 from shared.types.planner import PlannerOutput
 
 _CASES_PATH = Path("tests/fixtures/planner_replay_cases.json")

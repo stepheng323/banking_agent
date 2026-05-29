@@ -12,7 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
-from shared.services.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from shared.types.planner import ContextFrameFollowupDecision
 
 

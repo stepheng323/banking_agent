@@ -36,7 +36,7 @@ async def test_airtime_execution_publishes_channel_identity_and_processing_recei
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _TransactionRepoStub.created_kwargs = None
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", _UnitOfWorkStub)
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", _UnitOfWorkStub)
 
     publisher = SimpleNamespace(publish=AsyncMock())
     step = ExecutionStep()

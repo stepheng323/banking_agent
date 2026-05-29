@@ -57,7 +57,7 @@ def _contract() -> QueryExecutionContract:
 def _reset_coverage_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     _CoverageRepo.covered_by_linked_id = {}
     _CoverageRepo.error = None
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", _FakeUnitOfWork)
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", _FakeUnitOfWork)
 
 
 @pytest.mark.asyncio

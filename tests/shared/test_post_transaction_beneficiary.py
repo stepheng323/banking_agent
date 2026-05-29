@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from shared.services.post_transaction_beneficiary import (
+from banking.beneficiaries.services.post_transaction_beneficiary import (
     append_beneficiary_suggestion,
     suggest_mobile_beneficiary,
     suggest_transfer_beneficiary,

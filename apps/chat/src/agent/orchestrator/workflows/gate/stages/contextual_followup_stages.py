@@ -13,8 +13,8 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_fo
 from apps.chat.src.agent.workers.support.context_manager import SupportContextManager
 from shared.i18n.locale import LocaleManager
 from shared.i18n.models import LocaleCode
-from shared.services.conversation_grounding import build_conversation_grounding
-from shared.services.conversation_responder_contextual import (
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import build_conversation_grounding
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual import (
     contextual_meta_fallback_reply,
     contextual_worker_fallback_reply,
 )

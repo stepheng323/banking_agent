@@ -14,7 +14,7 @@ from apps.receipt.src.renderer import (
 from shared.cache.redis_client import Redis
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
-from shared.services.delivery_service import DeliveryService
+from banking.messaging.delivery.service import DeliveryService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

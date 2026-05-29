@@ -24,7 +24,7 @@ from shared.config.settings import settings
 from shared.i18n.renderer import render_message
 from shared.policy.adapters import is_capability_supported
 from shared.policy.service import capability_block_message
-from shared.services.async_group_recent_batch import get_recent_batch_reference
+from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -7,8 +7,8 @@ from apps.chat.src.agent.orchestrator.presentation.intents import map_outbox_to_
 from shared.messaging.intents import UiIntent
 from shared.messaging.outbox import enqueue_outbox_intents
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.user_repository import UserRepository
-from shared.services.auth.authorization import AuthorizationService
+from banking.identity.repositories.user_repository import UserRepository
+from banking.security.authorization import AuthorizationService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

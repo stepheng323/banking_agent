@@ -6,7 +6,7 @@ from apps.chat.src.agent.workers.account.formatter import AccountFormatter
 from apps.chat.src.agent.workers.account.serialization import find_account_by_bank_name, serialize_accounts
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n.renderer import render_message
-from shared.repositories.account_repository import AccountRepository
+from banking.accounts.repositories.account_repository import AccountRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

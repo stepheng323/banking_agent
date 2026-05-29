@@ -3,7 +3,7 @@
 import hashlib
 import json
 
-from shared.repositories.unit_of_work import UnitOfWork
+from banking.persistence.unit_of_work import UnitOfWork
 
 
 def payload_hash(payload: dict) -> str:

@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from shared.i18n.personality import PersonalityContext
-from shared.transaction_runtime.personality_enrichment import enrich_transfer_personality_context
+from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 
 
 class _StatsRepo:

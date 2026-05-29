@@ -1,4 +1,4 @@
-from shared.services.failure_categories import classify_failure_category
+from banking.transactions.runtime.failure_categories import classify_failure_category
 
 
 def test_failure_category_maps_provider_unavailable() -> None:

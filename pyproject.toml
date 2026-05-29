@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["apps", "shared"]
+packages = ["apps", "banking", "shared"]
 
 # App-specific optional dependencies
 [project.optional-dependencies]
@@ -170,8 +170,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]  # Allow unused/star imports in __init__.py files
-"shared/services/task_planner.py" = ["E501"]  # Long LLM prompts
-"shared/services/funding/planner.py" = ["E501"]  # Long error messages
+"apps/chat/src/agent/orchestrator/planning/task_planner.py" = ["E501"]  # Long LLM prompts
+"banking/transfers/funding/planner.py" = ["E501"]  # Long error messages
 "apps/chat/src/agent/workers/**" = ["E501"]  # Long nodes/prompts
 "apps/chat/src/agent/orchestrator/models/**" = ["E501"]  # Long field descriptions
 "scripts/**" = ["E402"]  # Allow sys.path modifications before imports
@@ -215,19 +215,34 @@ module = [
     "shared.clients.whatsapp.*",
     "shared.clients.telegram.*",
     "shared.clients.providers.mono.*",
-    "shared.services.onboarding.*",
-    "shared.services.funding.*",
-    "shared.services.context_manager",
-    "shared.services.task_queue.*",
-    "shared.services.affirmation.*",
-    "shared.repositories.*",
+    "banking.accounts.onboarding.*",
+    "banking.transfers.funding.*",
+    "banking.security.*",
+    "banking.identity.channel_linking.*",
+    "banking.scheduling.services.*",
+    "apps.chat.src.agent.orchestrator.task_queue.*",
+    "apps.chat.src.agent.orchestrator.confirmation.affirmation.*",
+    "banking.persistence.*",
+    "banking.identity.repositories.*",
+    "banking.accounts.repositories.*",
+    "banking.beneficiaries.repositories.*",
+    "banking.beneficiaries.services.*",
+    "banking.transactions.repositories.*",
+    "banking.transfers.repositories.*",
+    "banking.webhooks.repositories.*",
+    "banking.messaging.repositories.*",
+    "banking.messaging.delivery.*",
+    "banking.scheduling.repositories.*",
+    "banking.support.repositories.*",
+    "banking.support.services.*",
+    "banking.knowledge.repositories.*",
     "shared.receipts.*",
     "shared.messaging.*",
     "shared.formatters.*",
     "shared.cache.*",
     "shared.clients.factories.*",
     "shared.clients.providers.flutterwave.*",
-    "shared.transaction_runtime.*",
+    "banking.transactions.runtime.*",
     "apps.gateway.api.webhooks.*",
     "apps.chat.src.agent.workers.transfer.*",
     "apps.chat.src.agent.workers.airtime.*",

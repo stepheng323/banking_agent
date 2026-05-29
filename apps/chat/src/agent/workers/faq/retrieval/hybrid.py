@@ -4,7 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.workers.faq.models import FAQRetrievalHit
 from apps.chat.src.agent.workers.faq.retrieval.normalizer import QueryNormalizer
-from shared.repositories.faq_repository import FAQRepository
+from banking.knowledge.repositories.faq_repository import FAQRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

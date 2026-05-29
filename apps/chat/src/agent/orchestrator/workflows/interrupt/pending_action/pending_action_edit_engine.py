@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
     PENDING_ACTION_EDIT_MIN_CONFIDENCE,
     PendingActionEditResolution,
 )
-from shared.services.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 
 
 class PendingActionEditEngine:

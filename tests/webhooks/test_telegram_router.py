@@ -10,11 +10,11 @@ from apps.gateway.api.webhooks.telegram import router as router_module
 from apps.gateway.api.webhooks.telegram.onboarding import BvnInput, LinkingMethodInput
 from apps.gateway.api.webhooks.telegram.router import PinSubmitInput, TelegramBootstrapInput
 from apps.gateway.api.webhooks.telegram.session import token_fingerprint
+from banking.identity.channel_linking import telegram_miniapp_bootstrap as bootstrap_module
+from banking.identity.channel_linking.authorization import ChannelLinkPinResult
+from banking.identity.channel_linking.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap, consume_telegram_miniapp_bootstrap
+from banking.security.authorization import AuthorizationResult
 from shared.cache.flow_session_manager import SessionReadResult
-from shared.services import telegram_miniapp_bootstrap as bootstrap_module
-from shared.services.auth.authorization import AuthorizationResult
-from shared.services.channel_link_authorization import ChannelLinkPinResult
-from shared.services.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap, consume_telegram_miniapp_bootstrap
 
 
 class _RequestStub:
@@ -261,7 +261,7 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
             assert result.verified is True
 
     monkeypatch.setattr("shared.cache.redis_client.RedisClient.get_client", lambda: _RedisStub())
-    monkeypatch.setattr("shared.services.auth.authorization.AuthorizationService", _AuthorizationServiceStub)
+    monkeypatch.setattr("banking.security.authorization.AuthorizationService", _AuthorizationServiceStub)
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: publisher)
 
     result = await router_module.telegram_pin_submit(

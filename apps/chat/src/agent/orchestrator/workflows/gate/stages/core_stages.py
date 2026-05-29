@@ -22,7 +22,7 @@ from shared.i18n.bridge import render_locale_switched
 # Explicit imports from gate.py helpers
 from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
-from shared.services.confirmation_classifier import classify_confirmation_reply_sync
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

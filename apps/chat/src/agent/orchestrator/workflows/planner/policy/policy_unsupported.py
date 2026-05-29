@@ -8,14 +8,14 @@ from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale imp
 )
 from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.i18n.bridge import render_policy_notice
-from shared.services.unsupported_capability_detection import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
     detect_unsupported_capabilities,
 )
-from shared.services.unsupported_capability_presentation import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
     format_planner_alternatives,
     unsupported_capability_label,
 )
-from shared.services.unsupported_capability_registry import get_unsupported_capability_by_policy_label
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability_by_policy_label
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

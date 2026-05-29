@@ -39,9 +39,9 @@ from shared.guardrails.loader import get_cached_guardrails
 from shared.i18n.renderer import validate_catalog_completeness
 from shared.policy.loader import get_cached_policy
 from shared.policy.validation import validate_policy_coverage
-from shared.repositories.user_repository import UserRepository
-from shared.services.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
-from shared.services.unsupported_capability_models import UnsupportedBoundaryTurnOutput
+from banking.identity.repositories.user_repository import UserRepository
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedBoundaryTurnOutput
 from shared.types.planner import SemanticRouteDecision
 
 

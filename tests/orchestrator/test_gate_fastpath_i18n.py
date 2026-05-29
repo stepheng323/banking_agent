@@ -28,13 +28,13 @@ from shared.i18n.bridge import (
     render_locale_switched,
 )
 from shared.i18n.renderer import render_message
-from shared.services.confirmation_models import ConfirmationDecision
-from shared.services.unsupported_capability_models import (
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecision
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapabilitySemanticOutput,
 )
-from shared.services.unsupported_capability_presentation import unsupported_capability_params
-from shared.services.unsupported_capability_registry import get_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import unsupported_capability_params
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 

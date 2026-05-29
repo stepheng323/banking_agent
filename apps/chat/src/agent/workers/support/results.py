@@ -11,7 +11,7 @@ from apps.chat.src.agent.workers.support.models import SupportIntent, SupportRes
 from shared.i18n.renderer import render_message
 from shared.policy.service import capability_block_message
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
-from shared.services.ticket_service import TicketService
+from banking.support.services.ticket_service import TicketService
 
 _TICKET_CODE_RE = re.compile(r"\b(SUP-\d{8}-\d{4})\b", re.IGNORECASE)
 

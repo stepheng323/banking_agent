@@ -36,7 +36,7 @@ from shared.policy.validation import validate_policy_coverage
 from shared.queue.contracts import get_contract_by_topic
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.redis_stream_consumer import RedisStreamConsumer
-from shared.repositories.session_scoped import (
+from banking.persistence.session_scoped import (
     SessionScopedAccountRepository,
     SessionScopedActionableMessageRepository,
     SessionScopedBankTransactionRepository,
@@ -44,12 +44,12 @@ from shared.repositories.session_scoped import (
     SessionScopedTransactionRepository,
     SessionScopedUserRepository,
 )
-from shared.repositories.user_repository import UserRepository
-from shared.services.conversation_responder import ConversationResponder
-from shared.services.onboarding.runtime import session_manager as onboarding_session_manager
-from shared.services.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
-from shared.services.task_queue.service import TaskQueueService
-from shared.services.ticket_service import TicketService
+from banking.identity.repositories.user_repository import UserRepository
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
+from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
+from banking.support.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

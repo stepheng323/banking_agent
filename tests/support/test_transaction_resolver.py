@@ -321,7 +321,7 @@ async def test_resolver_can_prefer_latest_recent_over_status_priority() -> None:
 async def test_resolver_unified_without_bank_repo_does_not_open_unit_of_work(monkeypatch) -> None:
     monkeypatch.setattr(settings, "enable_unified_transaction_view", True)
 
-    import shared.repositories.unit_of_work as unit_of_work_module
+    import banking.persistence.unit_of_work as unit_of_work_module
 
     class _ExplodingUnitOfWork:
         def __init__(self) -> None:

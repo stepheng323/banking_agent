@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from apps.chat.src.agent.workers.__shared__.scheduling import parse_schedule_date, parse_schedule_slot_patch
-from shared.services.scheduling.recurrence import (
+from banking.scheduling.services.recurrence import (
     compute_initial_next_run_utc,
     compute_next_run_utc,
     format_lagos_schedule_datetime,

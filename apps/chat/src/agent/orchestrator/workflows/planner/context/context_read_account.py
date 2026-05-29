@@ -5,7 +5,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from shared.i18n.renderer import render_message
-from shared.services.onboarding.mandate_messages import build_pending_mandate_message
+from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.bank_aliases import BANK_ALIASES, get_bank_search_terms, normalize_bank_name
 
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")

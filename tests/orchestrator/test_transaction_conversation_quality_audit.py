@@ -21,7 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pen
 from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult, DataPurchaseEntities
 from apps.chat.src.agent.workers.data.worker import DataWorker
-from shared.services.unsupported_capability_models import UnsupportedBoundaryTurnOutput
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedBoundaryTurnOutput
 from shared.types.planner import PendingActionEditDecision, SemanticRouteDecision
 from tests.orchestrator.conversation_harness import (
     ConversationScenario,

@@ -19,7 +19,7 @@ from shared.messaging.intents import (
     UiIntent,
 )
 from shared.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
-from shared.repositories.unit_of_work import UnitOfWork
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

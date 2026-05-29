@@ -30,7 +30,7 @@ from shared.receipts.choice import (
     RECEIPT_IMAGE_ACTION_ID,
     build_receipt_choice_actionable_payload,
 )
-from shared.services.auth.authorization import AuthorizationResult
+from banking.security.authorization import AuthorizationResult
 
 
 class _RateLimiterAllow:

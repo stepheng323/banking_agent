@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.abstractions.messaging import MessageResult
-from shared.services.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
+from banking.identity.channel_linking.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

@@ -12,7 +12,7 @@ from apps.chat.src.agent.workers.support.models import (
 )
 from shared.formatters.currency import format_naira
 from shared.i18n.renderer import render_message
-from shared.services.async_group_types import RecentBatchLeg
+from banking.transactions.runtime.async_group_types import RecentBatchLeg
 
 _ORDINAL_RE = re.compile(r"\b(?:(first|second|third|fourth|fifth|last)|([1-5])(?:st|nd|rd|th)?)\b", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)")

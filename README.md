@@ -193,6 +193,6 @@ If you are evaluating this repository for hiring or technical partnership, the s
 | Query orchestration | `apps/chat/src/agent/workers/query/` |
 | Transfer engine | `apps/chat/src/agent/workers/transfer/` |
 | Task planner + guardrails | `apps/chat/src/agent/orchestrator/` |
-| Account linking | `shared/services/onboarding/` |
+| Account linking | `banking/accounts/onboarding/` |
 | Query regression tests | `tests/query/` |
 | Orchestrator tests | `tests/orchestrator/` |

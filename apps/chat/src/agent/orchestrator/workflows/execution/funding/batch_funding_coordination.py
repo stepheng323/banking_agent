@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
     _funding_plan_to_payload_dict,
 )
 from shared.i18n.renderer import render_message
-from shared.services.funding.coordinator import BatchFundingCoordinator
+from banking.transfers.funding.coordinator import BatchFundingCoordinator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

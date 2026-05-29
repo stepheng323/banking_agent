@@ -3,9 +3,9 @@ from typing import Any
 import pytest
 
 from shared.i18n.models import LocaleCode
-from shared.services.affirmation.service import AffirmationService
-from shared.services.confirmation_classifier import classify_confirmation_reply, classify_confirmation_reply_sync
-from shared.services.confirmation_models import ConfirmationDecisionOutput
+from apps.chat.src.agent.orchestrator.confirmation.affirmation.service import AffirmationService
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply, classify_confirmation_reply_sync
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecisionOutput
 
 
 class _StructuredConfirmationLLM:

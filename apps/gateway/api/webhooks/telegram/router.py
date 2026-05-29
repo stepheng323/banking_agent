@@ -21,10 +21,10 @@ from shared.config.settings import settings
 from shared.database.connection import get_db
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
-from shared.repositories.user_repository import UserRepository
-from shared.services.channel_link_authorization import is_channel_link_pin_token
-from shared.services.channel_link_pin_completion import complete_channel_link_with_pin
-from shared.services.telegram_miniapp_bootstrap import consume_telegram_miniapp_bootstrap
+from banking.identity.repositories.user_repository import UserRepository
+from banking.identity.channel_linking.authorization import is_channel_link_pin_token
+from banking.identity.channel_linking.pin_completion import complete_channel_link_with_pin
+from banking.identity.channel_linking.telegram_miniapp_bootstrap import consume_telegram_miniapp_bootstrap
 from shared.utils.logging import get_logger
 
 router = APIRouter(prefix="/webhook", tags=["telegram"])
@@ -223,7 +223,7 @@ async def telegram_pin_submit(
 
     # --- Look up the real phone_number from Redis (chat_id != phone for Telegram) ---
     from shared.cache.redis_client import RedisClient
-    from shared.services.auth.authorization import AuthorizationService
+    from banking.security.authorization import AuthorizationService
 
     redis_client = RedisClient.get_client()
 
