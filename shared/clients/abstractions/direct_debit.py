@@ -163,12 +163,12 @@ class DirectDebitProvider(ABC):
         pass
 
     @abstractmethod
-    async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
+    async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
         """
         Reverse/refund a completed debit.
 
         Args:
-            debit_id: Provider's debit transaction ID
+            debit_reference: Provider's original payment reference
             reason: Reason for the reversal
 
         Returns:

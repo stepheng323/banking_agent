@@ -25,6 +25,7 @@ class PayoutExecutor:
         recipient_resolution_provider = str(data.get("recipient_resolution_provider") or "").strip().lower()
         payout_provider_tag = str(data.get("payout_provider") or "").strip().lower()
         narration = data.get("narration")
+        reference = str(data.get("idempotency_key") or "").strip() or None
         expected_provider = str(self.payout_provider.provider_name or "").strip().lower()
 
         if amount <= 0:
@@ -83,14 +84,23 @@ class PayoutExecutor:
         verified_account = str(resolution.account.account_number or recipient_account)
         verified_bank_code = str(resolution.account.bank_code or recipient_bank_code)
 
-        result = await self.payout_provider.initiate_transfer(
-            amount=amount,
-            recipient_account_number=verified_account,
-            recipient_bank_code=verified_bank_code,
-            narration=narration,
-        )
+        if reference:
+            result = await self.payout_provider.initiate_transfer(
+                amount=amount,
+                recipient_account_number=verified_account,
+                recipient_bank_code=verified_bank_code,
+                narration=narration,
+                reference=reference,
+            )
+        else:
+            result = await self.payout_provider.initiate_transfer(
+                amount=amount,
+                recipient_account_number=verified_account,
+                recipient_bank_code=verified_bank_code,
+                narration=narration,
+            )
 
-        success = bool(result.get("success") or result.get("status") == "success")
+        success = bool(result.get("success"))
         return {
             **result,
             "success": success,

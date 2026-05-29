@@ -180,13 +180,19 @@ class MockDirectDebitProvider(DirectDebitProvider):
             provider_response={"id": debit_id, "status": DebitStatus.FAILED.value, "response_code": "404"},
         )
 
-    async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
+    async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
         """Simulate debit reversal."""
-        logger.info("mock_reverse_debit", debit_id=debit_id, reason=reason)
+        logger.info("mock_reverse_debit", reference=debit_reference, reason=reason)
+        debit = self._debits.get(debit_reference)
+        debit_id = debit.get("id") if debit else debit_reference
+        if debit is not None:
+            debit["status"] = DebitStatus.REVERSED.value
+            debit["updated_at"] = datetime.now(UTC).isoformat()
         return DebitResult(
             success=True,
             status=DebitStatus.REVERSED,
-            debit_id=debit_id,
+            debit_id=str(debit_id),
+            reference=debit_reference,
         )
 
     async def cancel_mandate(self, mandate_id: str) -> bool:

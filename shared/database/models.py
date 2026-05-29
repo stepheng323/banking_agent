@@ -398,6 +398,32 @@ class FundingStep(Base):
         return f"<FundingStep(id={self.id}, amount={self.amount}, status={self.status}, seq={self.sequence})>"
 
 
+class ProcessedWebhookEvent(Base):
+    """Provider webhook event ledger for duplicate delivery protection."""
+
+    __tablename__ = "processed_webhook_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    provider = Column(String, nullable=False, index=True)
+    event_id = Column(String, nullable=False)
+    event_name = Column(String, nullable=False, index=True)
+    status = Column(String, default="processing", nullable=False, index=True)
+    payload_hash = Column(String, nullable=True)
+    attempt_count = Column(Integer, default=1, nullable=False)
+
+    first_seen_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    last_seen_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "event_id", name="uq_processed_webhook_events_provider_event_id"),
+    )
+
+    def __repr__(self):
+        return f"<ProcessedWebhookEvent(provider={self.provider}, event={self.event_name}, status={self.status})>"
+
+
 class ActionableMessage(Base):
     """Actionable message database model for quote-based transaction repeats."""
 

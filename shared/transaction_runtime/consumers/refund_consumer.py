@@ -35,16 +35,17 @@ class RefundConsumer:
             if step.status == FundingStepStatusEnum.REFUNDED.value:
                 return
 
-            if not step.provider_debit_id:
+            refund_reference = step.provider_reference or payload.get("original_reference")
+            if not refund_reference:
                 await uow.funding_steps.update_status(
                     str(step.id),
                     FundingStepStatusEnum.REFUND_PENDING.value,
-                    error_message="Provider debit id missing for refund",
+                    error_message="Provider reference missing for refund",
                 )
                 await uow.commit()
                 return
 
-            result = await self.direct_debit_provider.reverse_debit(step.provider_debit_id, reason="Funding refund")
+            result = await self.direct_debit_provider.reverse_debit(str(refund_reference), reason="Funding refund")
             if result.success and result.status == DebitStatus.REVERSED:
                 await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
                 logger.info("refund_completed", funding_step_id=funding_step_id)

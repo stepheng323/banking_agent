@@ -22,7 +22,10 @@ class _FakeMonoRequest:
 
 class _RouterServiceStub:
     MANDATE_STATUS_MAP = {"events.mandates.approved": "approved"}
-    DEBIT_STATUS_MAP = {"events.mandates.debit.successful": "confirmed"}
+    DEBIT_STATUS_MAP = {
+        "events.mandates.debit.successful": "confirmed",
+        "direct_debit.payment_successful": "confirmed",
+    }
 
     def __init__(self) -> None:
         self.mandate_events: list[tuple[str, dict]] = []
@@ -35,6 +38,59 @@ class _RouterServiceStub:
     async def handle_debit_event(self, event: str, data: dict) -> bool:
         self.debit_events.append((event, data))
         return True
+
+
+class _FailingRouterServiceStub(_RouterServiceStub):
+    async def handle_debit_event(self, event: str, data: dict) -> bool:
+        raise RuntimeError("handler failed")
+
+
+class _UnprocessedRouterServiceStub(_RouterServiceStub):
+    async def handle_debit_event(self, event: str, data: dict) -> bool:
+        return False
+
+
+class _RouterWebhookEventLedger:
+    def __init__(self, *, claim_result: bool = True) -> None:
+        self.claim_result = claim_result
+        self.claim_calls: list[dict] = []
+        self.processed: list[tuple[str, str]] = []
+        self.failed: list[tuple[str, str, str]] = []
+
+    async def claim(
+        self,
+        *,
+        provider: str,
+        event_id: str,
+        event_name: str,
+        payload_hash: str | None = None,
+    ) -> bool:
+        self.claim_calls.append(
+            {
+                "provider": provider,
+                "event_id": event_id,
+                "event_name": event_name,
+                "payload_hash": payload_hash,
+            }
+        )
+        return self.claim_result
+
+    async def mark_processed(self, *, provider: str, event_id: str) -> None:
+        self.processed.append((provider, event_id))
+
+    async def mark_failed(self, *, provider: str, event_id: str, error_message: str | None = None) -> None:
+        self.failed.append((provider, event_id, error_message or ""))
+
+
+class _RouterWebhookUow:
+    def __init__(self, ledger: _RouterWebhookEventLedger) -> None:
+        self.processed_webhook_events = ledger
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
 
 class TestMonoWebhookRouterSecurity:
@@ -92,6 +148,138 @@ class TestMonoWebhookRouterSecurity:
         assert response.status_code == 200
         assert service.debit_events == [("events.mandates.debit.successful", {"id": "debit-1"})]
         assert service.mandate_events == []
+
+    @pytest.mark.asyncio
+    async def test_routes_directpay_payment_event_to_debit_handler(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _RouterServiceStub()
+        payload = {
+            "event": "direct_debit.payment_successful",
+            "data": {"object": {"id": "txd-1", "reference": "ref-1", "status": "successful"}},
+        }
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest(payload, headers={"mono-webhook-secret": "expected-secret"})
+        )
+
+        assert response.status_code == 200
+        assert service.debit_events == [
+            (
+                "direct_debit.payment_successful",
+                {"object": {"id": "txd-1", "reference": "ref-1", "status": "successful"}},
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_claims_event_id_and_marks_processed_after_routing(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _RouterServiceStub()
+        ledger = _RouterWebhookEventLedger()
+        payload = {
+            "event": "events.mandates.debit.successful",
+            "event_id": "evt-1",
+            "data": {"id": "debit-1", "reference_number": "ref-1"},
+        }
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+        monkeypatch.setattr(mono_router, "UnitOfWork", lambda: _RouterWebhookUow(ledger))
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest(payload, headers={"mono-webhook-secret": "expected-secret"})
+        )
+
+        assert response.status_code == 200
+        assert service.debit_events == [("events.mandates.debit.successful", payload["data"])]
+        assert ledger.claim_calls == [
+            {
+                "provider": "mono",
+                "event_id": "evt-1",
+                "event_name": "events.mandates.debit.successful",
+                "payload_hash": mono_router._payload_hash(payload),
+            }
+        ]
+        assert ledger.processed == [("mono", "evt-1")]
+        assert ledger.failed == []
+
+    @pytest.mark.asyncio
+    async def test_duplicate_event_id_skips_business_routing(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _RouterServiceStub()
+        ledger = _RouterWebhookEventLedger(claim_result=False)
+        payload = {
+            "event": "events.mandates.debit.successful",
+            "event_id": "evt-duplicate",
+            "data": {"id": "debit-1", "reference_number": "ref-1"},
+        }
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+        monkeypatch.setattr(mono_router, "UnitOfWork", lambda: _RouterWebhookUow(ledger))
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest(payload, headers={"mono-webhook-secret": "expected-secret"})
+        )
+
+        assert response.status_code == 200
+        assert service.debit_events == []
+        assert ledger.claim_calls[0]["event_id"] == "evt-duplicate"
+        assert ledger.processed == []
+        assert ledger.failed == []
+
+    @pytest.mark.asyncio
+    async def test_failed_handler_marks_event_failed_for_replay(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _FailingRouterServiceStub()
+        ledger = _RouterWebhookEventLedger()
+        payload = {
+            "event": "events.mandates.debit.successful",
+            "event_id": "evt-failed",
+            "data": {"id": "debit-1", "reference_number": "ref-1"},
+        }
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+        monkeypatch.setattr(mono_router, "UnitOfWork", lambda: _RouterWebhookUow(ledger))
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest(payload, headers={"mono-webhook-secret": "expected-secret"})
+        )
+
+        assert response.status_code == 200
+        assert ledger.processed == []
+        assert ledger.failed == [("mono", "evt-failed", "handler failed")]
+
+    @pytest.mark.asyncio
+    async def test_unprocessed_known_event_is_marked_failed_for_replay(self, monkeypatch):
+        mono_router = importlib.import_module("apps.gateway.api.webhooks.mono.router")
+
+        service = _UnprocessedRouterServiceStub()
+        ledger = _RouterWebhookEventLedger()
+        payload = {
+            "event": "events.mandates.debit.successful",
+            "event_id": "evt-unprocessed",
+            "data": {"id": "debit-1", "reference_number": "ref-1"},
+        }
+        monkeypatch.setattr(mono_router.settings.runtime, "app_env", "production")
+        monkeypatch.setattr(mono_router.settings, "mono_webhook_secret", "expected-secret")
+        monkeypatch.setattr(mono_router, "_get_service", lambda: service)
+        monkeypatch.setattr(mono_router, "UnitOfWork", lambda: _RouterWebhookUow(ledger))
+
+        response = await mono_router.mono_webhook(
+            _FakeMonoRequest(payload, headers={"mono-webhook-secret": "expected-secret"})
+        )
+
+        assert response.status_code == 200
+        assert ledger.processed == []
+        assert ledger.failed == [("mono", "evt-unprocessed", "mono_debit_event_not_processed")]
 
 
 class TestWebhookServiceBasics:
@@ -222,6 +410,30 @@ class _FakeFundingSteps:
     async def all_confirmed(self, transfer_id: str) -> bool:
         return False
 
+    async def get_by_transfer(self, transfer_id: str) -> list[SimpleNamespace]:
+        del transfer_id
+        return []
+
+
+class _AllConfirmedFundingSteps:
+    async def any_failed(self, transfer_id: str) -> bool:
+        del transfer_id
+        return False
+
+    async def all_confirmed(self, transfer_id: str) -> bool:
+        del transfer_id
+        return True
+
+
+class _PendingRefundFundingSteps:
+    async def get_confirmed_for_transfer(self, transfer_id: str) -> list[SimpleNamespace]:
+        del transfer_id
+        return []
+
+    async def get_by_transfer(self, transfer_id: str) -> list[SimpleNamespace]:
+        del transfer_id
+        return [SimpleNamespace(id="step-1", status=FundingStepStatusEnum.REFUND_PENDING.value)]
+
 
 class _FakeFundedTransfers:
     def __init__(self) -> None:
@@ -303,6 +515,39 @@ class TestMonoWebhookRefundGate:
         assert ("tx-1", FundedTransferStatusEnum.REFUNDING.value) in uow.funded_transfers.updated
         assert uow.commit_calls == 1
         service._queue_refunds.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_success_webhook_does_not_publish_second_payout(self):
+        publisher = _CapturePublisher()
+        service = MonoWebhookService(publisher=publisher)  # type: ignore[arg-type]
+        uow = _FakeUow()
+        uow.funding_steps = _AllConfirmedFundingSteps()
+        transfer = SimpleNamespace(id="tx-2", status=FundedTransferStatusEnum.PAYOUT_PENDING.value)
+
+        await service._check_transfer_completion(
+            uow=uow,  # type: ignore[arg-type]
+            transfer=transfer,  # type: ignore[arg-type]
+            latest_status=FundingStepStatusEnum.CONFIRMED.value,
+        )
+
+        assert uow.funded_transfers.updated == []
+        assert publisher.published == []
+        assert uow.commit_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_duplicate_failed_webhook_keeps_pending_refunds_open(self):
+        service = MonoWebhookService(publisher=_NoopPublisher())  # type: ignore[arg-type]
+        uow = _FakeUow()
+        uow.funding_steps = _PendingRefundFundingSteps()
+        transfer = SimpleNamespace(id="tx-3", status=FundedTransferStatusEnum.REFUNDING.value)
+
+        await service._queue_refunds(
+            uow=uow,  # type: ignore[arg-type]
+            transfer=transfer,  # type: ignore[arg-type]
+        )
+
+        assert uow.funded_transfers.updated == []
+        assert uow.commit_calls == 0
 
 
 class _FakeTransactions:
@@ -449,6 +694,47 @@ class TestMonoWebhookTransferUpdates:
         assert "Transfer successful" in delivered_text
         assert "Transaction ID" not in delivered_text
         assert "debit-1" not in delivered_text
+
+    @pytest.mark.asyncio
+    async def test_directpay_nested_object_updates_transfer_transaction_by_reference(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        tx = SimpleNamespace(
+            id="tx-directpay",
+            user_id="user-directpay",
+            idempotency_key="directpay-ref-1",
+            transaction_id=None,
+            status="processing",
+            provider_status=None,
+            provider_error_code=None,
+            provider_response=None,
+            error_message=None,
+            completed_at=None,
+        )
+        user = SimpleNamespace(id="user-directpay", phone_number="2348162511023")
+        fake_uow = _FakeTransferUow(tx, user=user, channel_identity=("telegram", "927331985"))
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: fake_uow)
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        service = MonoWebhookService(publisher=_NoopPublisher(), delivery_service=delivery_service)  # type: ignore[arg-type]
+        payload = {
+            "type": "onetime-debit",
+            "object": {
+                "id": "txd-directpay-1",
+                "reference": "directpay-ref-1",
+                "status": "successful",
+                "message": "Payment was successful",
+            },
+        }
+
+        processed = await service.handle_debit_event("direct_debit.payment_successful", payload)
+
+        assert processed is True
+        assert tx.status == "successful"
+        assert tx.transaction_id == "txd-directpay-1"
+        assert tx.provider_status == "successful"
+        assert tx.provider_response == payload
+        assert tx.completed_at is not None
+        delivery_service.deliver_text.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_debit_failure_updates_transfer_transaction_by_reference(self, monkeypatch):

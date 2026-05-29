@@ -76,6 +76,7 @@ def setup_transaction_worker_consumers() -> tuple[
     )
     payout_consumer = PayoutConsumer(
         payout_executor=PayoutExecutor(payout_provider=payout_provider, resolver_provider=payout_resolver),
+        publisher=queue_publisher,
     )
     refund_consumer = RefundConsumer(direct_debit_provider=direct_debit_provider)
 

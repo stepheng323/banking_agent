@@ -10,6 +10,7 @@ from shared.repositories.bank_transaction_repository import BankTransactionRepos
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.repositories.funding_step_repository import FundingStepRepository
+from shared.repositories.processed_webhook_event_repository import ProcessedWebhookEventRepository
 from shared.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
 from shared.repositories.scheduled_run_repository import ScheduledRunRepository
 from shared.repositories.transaction_repository import TransactionRepository
@@ -32,6 +33,7 @@ class UnitOfWork:
         self.actionable_messages: ActionableMessageRepository | None = None
         self.bank_transactions: BankTransactionRepository | None = None
         self.bank_transaction_coverages: BankTransactionCoverageRepository | None = None
+        self.processed_webhook_events: ProcessedWebhookEventRepository | None = None
         self._rolled_back = False
 
     async def __aenter__(self):
@@ -48,6 +50,7 @@ class UnitOfWork:
         self.actionable_messages = ActionableMessageRepository(self.db)
         self.bank_transactions = BankTransactionRepository(self.db)
         self.bank_transaction_coverages = BankTransactionCoverageRepository(self.db)
+        self.processed_webhook_events = ProcessedWebhookEventRepository(self.db)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:

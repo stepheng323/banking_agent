@@ -98,6 +98,14 @@ def get_mock_debit(debit_id: str) -> dict | None:
     return deepcopy(debit)
 
 
+def get_mock_debit_by_reference(reference: str) -> dict | None:
+    """Return a copy of a stored mock debit payload by payment reference."""
+    for debit in _mock_debits_by_id.values():
+        if str(debit.get("reference") or "") == str(reference):
+            return deepcopy(debit)
+    return None
+
+
 def update_mock_debit(debit_id: str, **updates: object) -> dict | None:
     """Apply partial updates to a stored mock debit payload."""
     debit = _mock_debits_by_id.get(str(debit_id))

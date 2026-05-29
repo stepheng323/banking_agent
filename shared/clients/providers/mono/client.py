@@ -493,5 +493,31 @@ class MonoClient:
         data = await self._request("GET", f"/v3/payments/debits/{debit_id}")
         return data
 
+    async def refund_payment(self, reference: str, source: str | None = None) -> dict:
+        """
+        Initiate a refund for a Mono payment reference.
+
+        Mono's refund API takes the original payment reference, not the debit id.
+        When source is omitted, Mono defaults to refunding from the pending payout.
+        """
+        if self.use_mock:
+            logger.info("mock_refund_payment", reference=reference, source=source or "pending_payout")
+            mock_debit = mock_data.get_mock_debit_by_reference(reference)
+            if mock_debit is None:
+                raise MonoApiError(404, f"Mock debit not found for reference {reference}", error_code="not_found")
+            return {
+                "id": f"mock_refund_{uuid4().hex[:12]}",
+                "reference": reference,
+                "status": "successful",
+                "response_code": "00",
+                "source": source or "pending_payout",
+                "amount": mock_debit.get("amount"),
+            }
+
+        body = {"reference": reference}
+        if source:
+            body["source"] = source
+        return await self._request("POST", "/v2/payments/refund", body=body)
+
 
 mono_client = MonoClient()

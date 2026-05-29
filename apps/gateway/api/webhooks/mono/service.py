@@ -41,11 +41,21 @@ class MonoWebhookService:
         "events.mandates.debit.processing": FundingStepStatusEnum.PROCESSING.value,
         "events.mandates.debit.successful": FundingStepStatusEnum.CONFIRMED.value,
         "events.mandates.debit.failed": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_successful": FundingStepStatusEnum.CONFIRMED.value,
+        "direct_debit.payment_failed": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_abandoned": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_cancelled": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_canceled": FundingStepStatusEnum.FAILED.value,
     }
     TRANSFER_DEBIT_STATUS_MAP = {
         "events.mandates.debit.processing": TransactionStatusEnum.PROCESSING.value,
         "events.mandates.debit.successful": TransactionStatusEnum.SUCCESSFUL.value,
         "events.mandates.debit.failed": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_successful": TransactionStatusEnum.SUCCESSFUL.value,
+        "direct_debit.payment_failed": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_abandoned": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_cancelled": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_canceled": TransactionStatusEnum.FAILED.value,
     }
 
     def __init__(
@@ -135,8 +145,9 @@ class MonoWebhookService:
             logger.debug("debit_event_ignored", event_name=event)
             return False
 
-        reference = data.get("reference_number") or data.get("reference")
-        debit_id = data.get("id")
+        debit_data = self._debit_payload(data)
+        reference = debit_data.get("reference_number") or debit_data.get("reference")
+        debit_id = debit_data.get("id")
         if not reference and not debit_id:
             logger.warning("mono_webhook_no_reference", event_name=event)
             return False
@@ -181,13 +192,13 @@ class MonoWebhookService:
 
             previous_status = str(tx.status or "").lower()
             tx.status = transfer_status
-            tx.provider_status = str(data.get("status") or tx.provider_status or "")
-            tx.provider_error_code = self._response_code(data)
+            tx.provider_status = str(debit_data.get("status") or tx.provider_status or "")
+            tx.provider_error_code = self._response_code(debit_data)
             tx.provider_response = data
             if debit_id:
                 tx.transaction_id = str(debit_id)
             if transfer_status == TransactionStatusEnum.FAILED.value:
-                tx.error_message = self._response_message(data) or tx.error_message
+                tx.error_message = self._response_message(debit_data) or tx.error_message
             if transfer_status in {TransactionStatusEnum.SUCCESSFUL.value, TransactionStatusEnum.FAILED.value}:
                 tx.completed_at = datetime.now(UTC).replace(tzinfo=None)
             uow.db.add(tx)
@@ -210,6 +221,14 @@ class MonoWebhookService:
                     await self._notify_transfer_resolution(uow=uow, tx=tx, locale="en")
 
         return True
+
+    @staticmethod
+    def _debit_payload(data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize Mono direct-debit and DirectPay webhook payload shapes."""
+        nested = data.get("object")
+        if isinstance(nested, dict):
+            return {**data, **nested}
+        return data
 
     @staticmethod
     def _response_code(data: dict[str, Any]) -> str | None:
@@ -409,7 +428,6 @@ class MonoWebhookService:
             if transfer.status not in (
                 FundedTransferStatusEnum.REFUNDING.value,
                 FundedTransferStatusEnum.REFUNDED.value,
-                FundedTransferStatusEnum.FAILED.value,
             ):
                 await uow.funded_transfers.update_status(
                     str(transfer.id),
@@ -425,6 +443,19 @@ class MonoWebhookService:
             return
 
         if await uow.funding_steps.all_confirmed(str(transfer.id)):
+            if transfer.status in (
+                FundedTransferStatusEnum.PAYOUT_PENDING.value,
+                FundedTransferStatusEnum.COMPLETED.value,
+                FundedTransferStatusEnum.REFUNDING.value,
+                FundedTransferStatusEnum.REFUNDED.value,
+                FundedTransferStatusEnum.FAILED.value,
+            ):
+                logger.info(
+                    "payout_already_queued_or_closed",
+                    transfer_id=str(transfer.id),
+                    status=transfer.status,
+                )
+                return
             await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
             await uow.commit()
             logger.info("all_debits_complete", transfer_id=str(transfer.id))
@@ -435,6 +466,11 @@ class MonoWebhookService:
         successful_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
 
         if not successful_steps:
+            steps = await uow.funding_steps.get_by_transfer(str(transfer.id))
+            has_pending_refund = any(s.status == FundingStepStatusEnum.REFUND_PENDING.value for s in steps)
+            if has_pending_refund:
+                logger.info("refunds_already_pending", transfer_id=str(transfer.id))
+                return
             logger.info("no_refunds_needed", transfer_id=str(transfer.id))
             await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.FAILED.value)
             await uow.commit()

@@ -130,17 +130,28 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 error_message=str(e),
             )
 
-    async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
-        """Reverse a debit via Mono (if supported)."""
-        # Note: Mono may not support direct reversals - this would trigger a refund flow
+    async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
+        """Refund a debit via Mono's payment refund API."""
         del reason
-        logger.warning("mono_reverse_debit_not_implemented", debit_id=debit_id)
-        return DebitResult(
-            success=False,
-            status=DebitStatus.FAILED,
-            debit_id=debit_id,
-            error_message="Direct debit reversal not yet implemented for Mono",
-        )
+        try:
+            response = await self._client.refund_payment(debit_reference)
+            success, status, error_message = self._normalize_refund_outcome(response)
+            return DebitResult(
+                success=success,
+                status=status,
+                debit_id=response.get("id"),
+                reference=response.get("reference") or debit_reference,
+                error_message=error_message,
+                provider_response=response,
+            )
+        except Exception as e:
+            logger.error("mono_refund_failed", reference=debit_reference, error=str(e))
+            return DebitResult(
+                success=False,
+                status=DebitStatus.FAILED,
+                reference=debit_reference,
+                error_message=str(e),
+            )
 
     async def cancel_mandate(self, mandate_id: str) -> bool:
         """Cancel a mandate via Mono."""
@@ -203,3 +214,18 @@ class MonoDirectDebitProvider(DirectDebitProvider):
             return False, DebitStatus.FAILED, self._response_message(response)
 
         return True, mapped_status, None
+
+    def _normalize_refund_outcome(self, response: dict | None) -> tuple[bool, DebitStatus, str | None]:
+        """Normalize Mono refund status into the direct-debit status model."""
+        refund_status = str((response or {}).get("status", "pending")).lower()
+        response_code = self._response_code(response)
+
+        if refund_status in {"successful", "success", "reversed", "refunded"}:
+            if response_code in (None, "00"):
+                return True, DebitStatus.REVERSED, None
+            return False, DebitStatus.FAILED, self._response_message(response)
+
+        if refund_status in {"failed", "failure"}:
+            return False, DebitStatus.FAILED, self._response_message(response)
+
+        return True, DebitStatus.PENDING, None

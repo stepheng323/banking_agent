@@ -18,6 +18,7 @@ class PayoutProvider(ABC):
         sender_account_number: str | None = None,
         narration: str | None = None,
         currency: str = "NGN",
+        reference: str | None = None,
     ) -> dict[str, Any]:
         """
         Initiate a bank transfer.
@@ -29,6 +30,7 @@ class PayoutProvider(ABC):
             sender_account_number: Optional sender account number
             narration: Optional transfer narration/description
             currency: Currency code (default: "NGN")
+            reference: Optional merchant idempotency reference
 
         Returns:
             Dictionary with:
