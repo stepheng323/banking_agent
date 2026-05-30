@@ -7,8 +7,8 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detect
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
     unsupported_capability_params,
 )
+from banking.presentation.i18n.message_keys import MessageKey
 from shared.branding import brand_name_aliases, legacy_brand_names, normalize_brand_name
-from shared.i18n.message_keys import MessageKey
 
 DETERMINISTIC_GREETING_EXACT = {
     "hi",

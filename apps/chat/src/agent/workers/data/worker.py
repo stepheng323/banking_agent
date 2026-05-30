@@ -21,10 +21,10 @@ from apps.chat.src.agent.workers.data.models.types import (
 from apps.chat.src.agent.workers.data.pipeline_factory import build_data_pipeline, build_data_plan_query_pipeline
 from apps.chat.src.agent.workers.data.plans.service import DataPlanService
 from apps.chat.src.agent.workers.data.scheduling import SCHEDULING_ACTIONS, DataSchedulingHandler
+from banking.policy.service import capability_block_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.config.settings import settings
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
-from shared.policy.service import capability_block_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

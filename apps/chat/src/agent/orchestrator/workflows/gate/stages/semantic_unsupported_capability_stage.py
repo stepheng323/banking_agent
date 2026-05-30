@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.unsupported_capability_rout
     is_supported_banking_request,
     semantic_unsupported_capability,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

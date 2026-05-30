@@ -29,7 +29,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
 from apps.chat.src.agent.workers.query.presentation.formatter import QueryFormatter
 from apps.chat.src.agent.workers.query.services.answers.strategy import select_answer_strategy
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

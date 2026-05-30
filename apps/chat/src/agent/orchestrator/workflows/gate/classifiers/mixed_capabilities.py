@@ -25,7 +25,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_airtime_request,
     _is_obvious_data_request,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

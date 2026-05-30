@@ -16,9 +16,9 @@ from apps.chat.src.agent.workers.query.services.fetching.fetch import (
     parse_date,
 )
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.i18n.message_keys import MessageKey
-from shared.i18n.renderer import render_message
 
 
 async def handle_analytics(

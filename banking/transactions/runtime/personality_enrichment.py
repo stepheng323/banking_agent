@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from shared.i18n.personality import FREQUENT_RECIPIENT_SUCCESS_THRESHOLD, PersonalityContext
+from banking.presentation.i18n.personality import FREQUENT_RECIPIENT_SUCCESS_THRESHOLD, PersonalityContext
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

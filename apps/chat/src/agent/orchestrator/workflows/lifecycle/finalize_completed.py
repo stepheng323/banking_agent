@@ -24,10 +24,10 @@ from banking.beneficiaries.services.post_transaction_beneficiary import (
     suggest_mobile_beneficiary,
     suggest_transfer_beneficiary,
 )
-from shared.formatters.multi_action_summary import format_multi_action_summary
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message, render_text
-from shared.receipts.choice import build_receipt_choice_intent
+from banking.presentation.formatters.multi_action_summary import format_multi_action_summary
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message, render_text
+from banking.receipts.choice import build_receipt_choice_intent
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

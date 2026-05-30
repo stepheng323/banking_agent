@@ -21,6 +21,8 @@ from apps.chat.src.agent.workers.transfer.authorization.pin_token import persist
 from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferPipeline, TransferStep
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
 from banking.scheduling.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
 from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
@@ -29,8 +31,6 @@ from banking.scheduling.services.recurrence import (
     today_lagos,
 )
 from shared.database.enums import ScheduledInstructionStatusEnum
-from shared.formatters.currency import format_naira
-from shared.i18n.renderer import render_message
 
 SCHEDULING_ACTIONS = {
     "schedule_transfer",

@@ -14,12 +14,12 @@ from uuid import UUID
 import banking.transfers.funding.account_matching as account_matching
 import banking.transfers.funding.explicit_pooling as explicit_pooling
 import banking.transfers.funding.models as funding_models
-from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.formatters.funding import (
+from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
+from banking.presentation.formatters.funding import (
     format_insufficient_funds,
 )
-from shared.i18n.renderer import render_message
-from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
+from banking.presentation.i18n.renderer import render_message
+from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

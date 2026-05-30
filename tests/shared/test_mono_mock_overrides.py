@@ -1,4 +1,3 @@
-from shared.clients.factories.direct_debit import DirectDebitProviderFactory
 from shared.clients.providers.mono.client import MonoClient
 from shared.config.settings import Settings, settings
 
@@ -88,18 +87,6 @@ def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
 
     assert cfg.use_mono_mock is True
     assert cfg.selected_direct_debit_provider == "mock"
-
-
-def test_direct_debit_provider_factory_uses_mono_mock_toggle(monkeypatch) -> None:
-    DirectDebitProviderFactory.clear_cache()
-    monkeypatch.setattr(settings, "mono_use_mock_override", True)
-    monkeypatch.setattr(settings.runtime, "app_env", "production")
-
-    provider = DirectDebitProviderFactory.get_provider()
-
-    assert provider.provider_name == "mock"
-
-    DirectDebitProviderFactory.clear_cache()
 
 
 def test_mono_client_uses_explicit_mock_toggle(monkeypatch) -> None:

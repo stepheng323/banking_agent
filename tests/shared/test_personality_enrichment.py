@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
+from banking.presentation.i18n.personality import PersonalityContext
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
-from shared.i18n.personality import PersonalityContext
 
 
 class _StatsRepo:

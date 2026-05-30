@@ -1,6 +1,6 @@
 """Unified transaction consumer for processing all transaction types."""
 
-from shared.protocols.executor import (
+from banking.transactions.runtime.protocols import (
     AirtimeExecutorProtocol,
     DataExecutorProtocol,
     TransferExecutorProtocol,

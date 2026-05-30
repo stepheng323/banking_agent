@@ -17,6 +17,14 @@ from banking.beneficiaries.services.post_transaction_beneficiary import (
     suggest_transfer_beneficiary,
 )
 from banking.messaging.delivery.service import DeliveryService
+from banking.policy.service import capability_block_message
+from banking.presentation.formatters.transfer_notifications import (
+    format_transfer_pending_message,
+    format_transfer_success_message,
+)
+from banking.presentation.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
+from banking.presentation.i18n.renderer import render_message
+from banking.receipts.choice import build_receipt_choice_intent
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transactions.runtime.async_completion import (
     is_grouped_async_message,
@@ -28,12 +36,7 @@ from banking.transactions.runtime.personality_enrichment import enrich_transfer_
 from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.formatters.transfer_notifications import format_transfer_pending_message, format_transfer_success_message
-from shared.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
-from shared.i18n.renderer import render_message
-from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
-from shared.receipts.choice import build_receipt_choice_intent
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

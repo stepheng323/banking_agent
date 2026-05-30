@@ -1,4 +1,4 @@
-from shared.formatters.currency import (
+from banking.presentation.formatters.currency import (
     coerce_amount,
     format_amount_number,
     format_naira,

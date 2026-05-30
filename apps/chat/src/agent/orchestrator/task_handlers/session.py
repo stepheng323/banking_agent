@@ -4,7 +4,7 @@ from apps.chat.src.agent.orchestrator.context.referents.store import forget_stas
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import clear_resume_prompt_frames
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionContext, _state_locale
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

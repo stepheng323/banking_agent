@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from banking.policy.loader import get_cached_policy, load_policy
 from banking.transactions.runtime.executors.data import DataExecutor
 from shared.database.enums import TransactionStatusEnum
-from shared.policy.loader import get_cached_policy, load_policy
 
-CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 DATA_DISABLED_MESSAGE = (
     "Data purchase is temporarily unavailable. I can still help with transfers, airtime, balances, and transaction "
     "queries."

@@ -13,8 +13,8 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     INPUT_INTERRUPT_MAX_ATTEMPTS,
     _input_interrupt_required_fields,
 )
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.network_utils import format_network_display_name
 
 

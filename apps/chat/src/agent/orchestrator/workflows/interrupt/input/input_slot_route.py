@@ -19,7 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_slot_entit
     _looks_like_network_reply,
     _looks_like_simple_transfer_recipient_reply,
 )
-from apps.chat.src.agent.workers.__shared__.beneficiary.selection import match_beneficiary_candidate_selection
+from banking.beneficiaries.services.selection import match_beneficiary_candidate_selection
 from shared.types.planner import InterruptRouteDecision
 
 

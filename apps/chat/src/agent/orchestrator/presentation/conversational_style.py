@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from shared.i18n.renderer import (
+from banking.presentation.i18n.renderer import (
     render_message,
     render_text,
 )

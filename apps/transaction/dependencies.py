@@ -1,7 +1,7 @@
 """Dependency loader for transaction worker runtimes."""
 
-from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from banking.accounts.repositories.account_repository import AccountRepository
+from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
 from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer

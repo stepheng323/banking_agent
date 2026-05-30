@@ -9,8 +9,8 @@ from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHand
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.services.media_text import combine_media_text, format_media_caption_text
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.async_helpers import create_background_task
 
 

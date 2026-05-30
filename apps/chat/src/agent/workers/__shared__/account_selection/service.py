@@ -1,7 +1,7 @@
 """Standalone account selection module for transfer/airtime/data flows."""
 
-from shared.formatters.accounts import format_accounts_list
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.accounts import format_accounts_list
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.bank_aliases import find_matching_bank_name
 from shared.utils.logging import get_logger
 

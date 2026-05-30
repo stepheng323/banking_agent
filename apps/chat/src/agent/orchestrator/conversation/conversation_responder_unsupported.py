@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
     localized_supported_alternatives,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT = "unsupported_capability_followup"
 UNSUPPORTED_CAPABILITY_PROMISE_RE = re.compile(

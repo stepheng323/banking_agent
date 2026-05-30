@@ -6,8 +6,8 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from shared.i18n.bridge import render_cancelled_prompt
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.bridge import render_cancelled_prompt
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import PlannerOutput
 
 

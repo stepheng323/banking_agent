@@ -7,8 +7,8 @@ from apps.chat.src.agent.workers.account.serialization import find_account_by_ba
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.identity.repositories.user_repository import UserRepository
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.presentation.i18n.renderer import render_message
 from shared.cache.user_data import UserDataCache
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

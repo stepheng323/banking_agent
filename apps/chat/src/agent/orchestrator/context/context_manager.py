@@ -9,9 +9,9 @@ from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 from banking.identity.repositories.user_repository import UserRepository
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LanguageDetectionSignal
 from shared.cache.user_data import UserDataCache
-from shared.i18n.locale import LocaleManager
-from shared.i18n.models import LanguageDetectionSignal
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

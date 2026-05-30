@@ -12,8 +12,8 @@ from apps.chat.src.agent.workers.query.models.domain import (
 from apps.chat.src.agent.workers.query.presentation.formatter import QueryFormatter
 from apps.chat.src.agent.workers.query.presentation.surface_builder import build_query_transfer_handoff_payload
 from apps.chat.src.agent.workers.query.services.answers.fact_answer import build_direct_fact_answer
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.queue.factory import QueuePublisherFactory
 
 

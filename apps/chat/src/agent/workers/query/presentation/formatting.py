@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from shared.formatters.currency import format_naira
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
 
 
 def format_query_amount(amount: float) -> str:

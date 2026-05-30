@@ -11,9 +11,9 @@ from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimePayload,
 )
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
+from banking.presentation.formatters.airtime import format_airtime_summary
+from banking.presentation.i18n.personality import PersonalityContext
 from shared.cache.redis_client import RedisClient
-from shared.formatters.airtime import format_airtime_summary
-from shared.i18n.personality import PersonalityContext
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

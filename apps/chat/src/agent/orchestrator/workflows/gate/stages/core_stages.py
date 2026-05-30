@@ -18,11 +18,11 @@ from apps.chat.src.agent.orchestrator.workflows.gate.mandate_state import (
     _has_pending_mandate_without_ready_accounts,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
-from shared.i18n.bridge import render_locale_switched
+from banking.presentation.i18n.bridge import render_locale_switched
 
 # Explicit imports from gate.py helpers
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

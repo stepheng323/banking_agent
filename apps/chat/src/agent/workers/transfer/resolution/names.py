@@ -6,9 +6,9 @@ import unicodedata
 from typing import Any
 
 from apps.chat.src.agent.workers.transfer.models.types import TransferPayload
-from shared.formatters.recipient_prompt_names import sanitize_recipient_display_name
-from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n.renderer import render_message
+from banking.policy.guardrails.loader import get_cached_guardrails
+from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
+from banking.presentation.i18n.renderer import render_message
 
 _RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}
 _UNSAFE_RECIPIENT_TOKENS = _RECIPIENT_PRONOUN_TOKENS | {"send", "transfer", "pay", "recipient", "s"}

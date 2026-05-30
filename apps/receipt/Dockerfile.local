@@ -50,10 +50,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir -r /tmp/requirements.txt && \
     playwright install chromium --with-deps
 
-COPY apps/chat/ /app/apps/chat/
 COPY apps/receipt/ /app/apps/receipt/
+COPY banking/ /app/banking/
 COPY shared/ /app/shared/
-COPY config/ /app/config/
 
 ENV PYTHONPATH=/app
 EXPOSE 8002

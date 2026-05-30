@@ -2,7 +2,7 @@
 
 import re
 
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def _compact_confirmation_update_message(update_messages: list[str], locale: str) -> str | None:

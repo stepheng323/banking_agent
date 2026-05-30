@@ -16,7 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _build_conversational_non_task_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
-from shared.i18n.bridge import render_safe_capability_fallback
+from banking.presentation.i18n.bridge import render_safe_capability_fallback
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

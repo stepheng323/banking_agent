@@ -50,8 +50,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY apps/chat/ /app/apps/chat/
+COPY banking/ /app/banking/
 COPY shared/ /app/shared/
-COPY config/ /app/config/
 
 ENV PYTHONPATH=/app
 CMD ["python", "-m", "apps.chat.src.worker_main"]

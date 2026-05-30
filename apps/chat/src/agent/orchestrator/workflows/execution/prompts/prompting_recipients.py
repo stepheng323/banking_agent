@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from shared.formatters.recipient_display import format_recipient_display_label
+from banking.presentation.formatters.recipient_display import format_recipient_display_label
 
 
 def _recipient_prompt_label(task_payload: dict[str, Any]) -> str | None:

@@ -5,8 +5,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from shared.formatters.transaction_copy_context import build_copy_context
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.transaction_copy_context import build_copy_context
+from banking.presentation.i18n.renderer import render_message
 
 FIRST_PROGRESS_DELAY_SECONDS = 5.0
 SECOND_PROGRESS_DELAY_SECONDS = 15.0

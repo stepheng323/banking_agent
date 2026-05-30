@@ -1,10 +1,10 @@
-from shared.formatters.accounts import format_source_account_info_from_account_number
-from shared.formatters.airtime import format_airtime_summary
-from shared.formatters.confirmation import build_source_account_info
-from shared.formatters.data import format_data_summary
-from shared.formatters.transfer_multi_source import format_multi_source_transfer_summary
-from shared.formatters.transfer_notifications import format_transfer_success_message
-from shared.formatters.transfer_summary import (
+from banking.presentation.formatters.accounts import format_source_account_info_from_account_number
+from banking.presentation.formatters.airtime import format_airtime_summary
+from banking.presentation.formatters.confirmation import build_source_account_info
+from banking.presentation.formatters.data import format_data_summary
+from banking.presentation.formatters.transfer_multi_source import format_multi_source_transfer_summary
+from banking.presentation.formatters.transfer_notifications import format_transfer_success_message
+from banking.presentation.formatters.transfer_summary import (
     format_transfer_summary,
 )
 

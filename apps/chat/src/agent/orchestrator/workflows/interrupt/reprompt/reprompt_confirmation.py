@@ -5,9 +5,9 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _state_locale
-from shared.formatters.confirmation import build_confirmation_summary
-from shared.formatters.transaction_confirmation_copy import build_confirmation_header
-from shared.i18n.personality import transfer_personality_context_from_payload
+from banking.presentation.formatters.confirmation import build_confirmation_summary
+from banking.presentation.formatters.transaction_confirmation_copy import build_confirmation_header
+from banking.presentation.i18n.personality import transfer_personality_context_from_payload
 
 
 def _build_confirmation_reprompt_outbox(

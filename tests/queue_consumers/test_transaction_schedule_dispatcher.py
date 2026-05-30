@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from apps.chat.src.schedulers.transaction_schedule_dispatcher import TransactionScheduleDispatcher
-from shared.policy.loader import get_cached_policy, load_policy
+from banking.policy.loader import get_cached_policy, load_policy
 
-CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 SCHEDULE_DISABLED_MESSAGE = (
     "Scheduled payments are temporarily unavailable. I can still help with immediate transfers, airtime/data purchase, "
     "balances, and transaction queries."

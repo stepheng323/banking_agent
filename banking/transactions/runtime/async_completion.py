@@ -6,6 +6,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+from banking.presentation.formatters.multi_action_summary import format_multi_action_summary
 from banking.transactions.runtime.async_group_recent_batch import (
     normalize_final_status,
     remember_group_target,
@@ -16,7 +17,6 @@ from banking.transactions.runtime.async_group_types import (
     AsyncGroupRedis,
     AsyncGroupSummaryResult,
 )
-from shared.formatters.multi_action_summary import format_multi_action_summary
 from shared.queue.models import AsyncGroupMeta
 from shared.utils.logging import get_logger
 

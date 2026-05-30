@@ -202,9 +202,18 @@ class Settings:
         self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "650"))
         self.receipt_verification_base_url: str = os.getenv("RECEIPT_VERIFICATION_BASE_URL", "").strip()
 
-        self.assistant_profile_path: str = os.getenv("ASSISTANT_PROFILE_PATH", "config/assistant_profile.json")
-        self.capability_policy_path: str = os.getenv("CAPABILITY_POLICY_PATH", "config/capability_policy.json")
-        self.domain_guardrails_path: str = os.getenv("DOMAIN_GUARDRAILS_PATH", "config/domain_guardrails.json")
+        self.assistant_profile_path: str = os.getenv(
+            "ASSISTANT_PROFILE_PATH",
+            "apps/chat/src/agent/assistant_profile/defaults/assistant_profile.json",
+        )
+        self.capability_policy_path: str = os.getenv(
+            "CAPABILITY_POLICY_PATH",
+            "banking/policy/defaults/capability_policy.json",
+        )
+        self.domain_guardrails_path: str = os.getenv(
+            "DOMAIN_GUARDRAILS_PATH",
+            "banking/policy/guardrails/defaults/domain_guardrails.json",
+        )
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
         self.enable_support_diagnostic_agent: bool = (
             os.getenv("ENABLE_SUPPORT_DIAGNOSTIC_AGENT", "false").lower() == "true"

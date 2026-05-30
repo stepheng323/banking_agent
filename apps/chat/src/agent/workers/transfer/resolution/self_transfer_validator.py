@@ -1,6 +1,6 @@
 """Self-transfer validation component."""
 
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

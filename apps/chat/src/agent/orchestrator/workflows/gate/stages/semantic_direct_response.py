@@ -18,7 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
     _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

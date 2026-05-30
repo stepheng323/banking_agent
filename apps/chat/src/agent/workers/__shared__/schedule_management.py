@@ -13,6 +13,9 @@ from apps.chat.src.agent.workers.__shared__.scheduling import (
     format_schedule_confirmation_line,
     schedule_recurrence_label,
 )
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
 from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,
@@ -21,9 +24,6 @@ from banking.scheduling.services.recurrence import (
     today_lagos,
 )
 from shared.database.enums import ScheduledInstructionStatusEnum
-from shared.formatters.currency import format_naira
-from shared.i18n.message_keys import MessageKey
-from shared.i18n.renderer import render_message
 
 _SCHEDULE_FIELDS = {
     "schedule_mode",

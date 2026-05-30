@@ -7,10 +7,10 @@ from typing import Any
 
 import banking.transfers.funding.account_matching as account_matching
 import banking.transfers.funding.models as funding_models
-from shared.formatters.currency import format_naira
-from shared.formatters.funding import format_insufficient_funds
-from shared.i18n.renderer import render_message
-from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
+from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.formatters.funding import format_insufficient_funds
+from banking.presentation.i18n.renderer import render_message
 
 BalanceFetcher = Callable[[Any], Awaitable[float]]
 

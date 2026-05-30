@@ -19,7 +19,7 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     TimeReference,
 )
 from apps.chat.src.agent.workers.query.services.parsing.parser import QueryParser
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 class _DummyStructured:

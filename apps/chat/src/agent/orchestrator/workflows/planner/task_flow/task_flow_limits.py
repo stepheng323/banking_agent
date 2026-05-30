@@ -1,7 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
-from shared.policy.transaction_limits import MAX_TRANSACTION_BATCH_TASKS
+from banking.policy.transaction_limits import MAX_TRANSACTION_BATCH_TASKS
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

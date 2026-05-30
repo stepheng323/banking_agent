@@ -7,9 +7,9 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import build_conversation_grounding
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import fold_text
-from shared.i18n.locale import LocaleManager
-from shared.i18n.message_keys import as_message_key
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.message_keys import as_message_key
+from banking.presentation.i18n.renderer import render_message
 
 CONTEXTUAL_WORKER_FOLLOWUP_INTENT = "contextual_worker_followup"
 CONTEXTUAL_META_FOLLOWUP_INTENT = "contextual_meta_followup"

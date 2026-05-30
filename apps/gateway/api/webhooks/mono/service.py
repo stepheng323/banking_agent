@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.presentation.formatters.transfer_notifications import format_transfer_success_message
+from banking.presentation.i18n.renderer import render_message
 from banking.transactions.runtime.async_completion import (
     get_async_group_meta_for_transaction,
     record_group_leg_and_maybe_build_summary,
@@ -18,8 +20,6 @@ from banking.transactions.runtime.funding_status import (
 from shared.cache.user_data import UserDataCache
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.database.models import FundedTransfer, UserChannelIdentity
-from shared.formatters.transfer_notifications import format_transfer_success_message
-from shared.i18n.renderer import render_message
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 

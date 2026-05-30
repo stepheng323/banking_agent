@@ -20,7 +20,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_flow import _handle_quoted_replay_shortcut
 from apps.chat.src.agent.orchestrator.workflows.planner.response.non_task_response import _build_non_task_response
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import _build_planner_task_updates
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

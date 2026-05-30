@@ -8,9 +8,9 @@ from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, Suppo
 from apps.chat.src.agent.workers.support.handlers.escalation import handle_escalation
 from apps.chat.src.agent.workers.support.handlers.retry import build_retry_quoted_data
 from apps.chat.src.agent.workers.support.models import SupportIntent, SupportResponse
+from banking.policy.service import capability_block_message
+from banking.presentation.i18n.renderer import render_message
 from banking.support.services.ticket_service import TicketService
-from shared.i18n.renderer import render_message
-from shared.policy.service import capability_block_message
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
 
 _TICKET_CODE_RE = re.compile(r"\b(SUP-\d{8}-\d{4})\b", re.IGNORECASE)

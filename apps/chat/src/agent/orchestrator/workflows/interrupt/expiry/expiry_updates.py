@@ -10,8 +10,8 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.expiry.expiry_policy i
 from apps.chat.src.agent.orchestrator.workflows.interrupt.expiry.expiry_stale_session import (
     _expired_transaction_message_targets_stale_session,
 )
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 
 
 async def _expired_transaction_interrupt_updates(

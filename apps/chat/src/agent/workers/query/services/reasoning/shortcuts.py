@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from shared.i18n.locale import LocaleManager
-from shared.i18n.models import LocaleCode
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LocaleCode
 
 QueryShortcutKind = Literal["pagination", "actionable"]
 QueryShortcutAction = Literal["show_more", "show_previous", "get_receipt", "report_issue"]

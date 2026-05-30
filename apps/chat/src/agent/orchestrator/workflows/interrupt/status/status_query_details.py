@@ -1,7 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
-from shared.formatters.currency import format_naira
+from banking.presentation.formatters.currency import format_naira
 from shared.utils.network_utils import format_network_display_name
 
 

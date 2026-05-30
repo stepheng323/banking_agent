@@ -17,8 +17,8 @@ from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import (
     confirmation_reject_phrases,
     normalize_confirmation_text,
 )
-from shared.i18n.locale import LocaleManager
-from shared.i18n.models import LocaleCode
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LocaleCode
 from shared.types.planner import InterruptRouteDecision
 
 SUPPORTED_SHORTCUT_LOCALES = {

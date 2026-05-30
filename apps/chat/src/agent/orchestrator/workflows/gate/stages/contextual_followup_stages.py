@@ -16,8 +16,8 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_fo
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )
 from apps.chat.src.agent.workers.support.context_manager import SupportContextManager
-from shared.i18n.locale import LocaleManager
-from shared.i18n.models import LocaleCode
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LocaleCode
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

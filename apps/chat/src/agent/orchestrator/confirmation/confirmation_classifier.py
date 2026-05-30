@@ -23,7 +23,7 @@ from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import (
     normalize_confirmation_locale,
     normalize_confirmation_text,
 )
-from shared.i18n.models import LocaleCode
+from banking.presentation.i18n.models import LocaleCode
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

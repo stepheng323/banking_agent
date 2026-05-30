@@ -11,8 +11,8 @@ from apps.chat.src.agent.workers.query.pipeline import QueryStep
 from apps.chat.src.agent.workers.query.presentation.formatter import QueryFormatter
 from apps.chat.src.agent.workers.query.presentation.surface_builder import build_surface_view
 from apps.chat.src.agent.workers.query.services.answers.strategy import select_answer_strategy
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

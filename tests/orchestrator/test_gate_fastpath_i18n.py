@@ -31,12 +31,12 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic i
     classify_deterministic_meta_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
-from shared.config.settings import settings
-from shared.i18n.bridge import (
+from banking.presentation.i18n.bridge import (
     render_cancelled_prompt,
     render_locale_switched,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
+from shared.config.settings import settings
 from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 

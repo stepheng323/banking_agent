@@ -25,12 +25,12 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.resume_prompt import (
     is_resumable_stashed_session,
     stashed_session_id,
 )
-from shared.i18n.bridge import (
+from banking.presentation.i18n.bridge import (
     render_cancelled_prompt,
     render_generic_capability_blocked,
 )
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import (
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import (
     render_message,
 )
 from shared.utils.user_error import safe_user_error_message

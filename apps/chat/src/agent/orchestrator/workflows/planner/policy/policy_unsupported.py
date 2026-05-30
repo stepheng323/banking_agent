@@ -2,6 +2,7 @@
 
 from typing import Any, cast
 
+from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
     detect_unsupported_capabilities,
 )
@@ -16,8 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale imp
     SUPPORTED_EXECUTOR_LABELS,
     _supported_executor_label,
 )
-from shared.assistant_profile.loader import get_cached_assistant_profile
-from shared.i18n.bridge import render_policy_notice
+from banking.presentation.i18n.bridge import render_policy_notice
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

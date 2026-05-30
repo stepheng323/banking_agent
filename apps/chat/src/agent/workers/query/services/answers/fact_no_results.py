@@ -5,7 +5,7 @@ import re
 from apps.chat.src.agent.workers.query.capabilities import QUERY_LIMITS
 from apps.chat.src.agent.workers.query.models.domain import QueryExecutionContract
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def build_fact_no_results_text(query_contract: QueryExecutionContract | None, *, locale: str = "en") -> str | None:

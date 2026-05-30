@@ -12,8 +12,8 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finali
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import SAFE_CAPABILITY_FALLBACK
+from banking.presentation.i18n.renderer import render_message
 from shared.config.settings import settings
-from shared.i18n.renderer import render_message
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 

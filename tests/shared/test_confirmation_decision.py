@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier impor
     classify_confirmation_reply_sync,
 )
 from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecisionOutput
-from shared.i18n.models import LocaleCode
+from banking.presentation.i18n.models import LocaleCode
 
 
 class _StructuredConfirmationLLM:

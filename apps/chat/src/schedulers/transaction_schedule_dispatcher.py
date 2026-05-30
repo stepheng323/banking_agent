@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.policy.service import capability_block_message
 from banking.scheduling.services.recurrence import compute_next_run_utc
 from shared.database.enums import ScheduledInstructionStatusEnum, ScheduledRunStatusEnum, TransactionStatusEnum
-from shared.policy.service import capability_block_message
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 

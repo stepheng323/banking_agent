@@ -59,7 +59,7 @@ class UnitOfWork:
         self.risk_decisions = RiskDecisionRepository(self.db)
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+    async def __aexit__(self, exc_type, _exc_val, _exc_tb) -> bool:
         """Exit transaction context and commit or rollback."""
         assert self.db is not None
         try:

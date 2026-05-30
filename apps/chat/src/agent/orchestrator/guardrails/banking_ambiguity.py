@@ -6,7 +6,7 @@ import re
 from typing import Literal
 
 from apps.chat.src.agent.shared.routing_signals import looks_like_explicit_transaction_query_shape
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 AmbiguousBankingDomain = Literal["transfer", "airtime", "data", "support", "account_query"]
 

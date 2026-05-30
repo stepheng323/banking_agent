@@ -2,13 +2,13 @@
 
 from langchain_openai import ChatOpenAI
 
+from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.agent.orchestrator.config.dependencies import OrchestratorDependencies
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
 from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
-from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.chat.src.agent.workers.account.worker import AccountWorker
 from apps.chat.src.agent.workers.airtime.extractor import AirtimeEntityExtractor
 from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
@@ -25,6 +25,7 @@ from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
 from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
+from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.identity.repositories.user_repository import UserRepository
 from banking.persistence.session_scoped import (
     SessionScopedAccountRepository,
@@ -34,8 +35,11 @@ from banking.persistence.session_scoped import (
     SessionScopedTransactionRepository,
     SessionScopedUserRepository,
 )
+from banking.policy.guardrails.loader import get_cached_guardrails
+from banking.policy.loader import get_cached_policy
+from banking.policy.validation import validate_policy_coverage
+from banking.presentation.i18n.renderer import validate_catalog_completeness
 from banking.support.services.ticket_service import TicketService
-from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -43,10 +47,6 @@ from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.config.settings import settings
 from shared.database.connection import get_db_session
-from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n.renderer import validate_catalog_completeness
-from shared.policy.loader import get_cached_policy
-from shared.policy.validation import validate_policy_coverage
 from shared.queue.contracts import get_contract_by_topic
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.redis_stream_consumer import RedisStreamConsumer

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from shared.assistant_profile.loader import load_assistant_profile
+from apps.chat.src.agent.assistant_profile.loader import load_assistant_profile
+from banking.presentation.i18n.renderer import render_message
 from shared.branding import brand_name_aliases, brand_template_params, legacy_brand_names, render_brand_template
 from shared.config.settings import Settings, settings
-from shared.i18n.renderer import render_message
 
 
 def _expected_brand_origin(app_name: str, app_name_short: str, inspiration: str, symbolism: str) -> str:
@@ -81,7 +81,7 @@ def test_assistant_profile_loader_applies_brand_overrides(monkeypatch) -> None:
     monkeypatch.setattr(settings, "app_brand_symbolism", "a better money metaphor")
     monkeypatch.setattr(settings, "app_public_base_url", "https://aurora.example")
 
-    profile = load_assistant_profile("config/assistant_profile.json")
+    profile = load_assistant_profile("apps/chat/src/agent/assistant_profile/defaults/assistant_profile.json")
 
     assert profile.identity.name == "Aurora Pay"
     assert profile.identity.brand_origin == _expected_brand_origin(

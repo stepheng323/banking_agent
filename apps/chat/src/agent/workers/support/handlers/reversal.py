@@ -4,7 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.workers.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.workers.support.models import EscalationResult, SupportResponse
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

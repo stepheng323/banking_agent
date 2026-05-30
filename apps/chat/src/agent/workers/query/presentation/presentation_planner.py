@@ -29,10 +29,10 @@ from apps.chat.src.agent.workers.query.presentation.transaction_list_plan import
     build_transaction_list_presentation_plan,
 )
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.formatters.currency import format_naira
-from shared.formatters.query_transaction_copy import build_transaction_detail_lines
-from shared.i18n.message_keys import MessageKey
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.formatters.query_transaction_copy import build_transaction_detail_lines
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
 
 
 def build_presentation_plan(

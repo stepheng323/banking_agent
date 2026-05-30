@@ -16,7 +16,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
 )
 from apps.chat.src.agent.workers.query.nodes.extraction import ExtractionStep
 from apps.chat.src.agent.workers.query.services.reasoning.models import QuerySemanticDecision
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

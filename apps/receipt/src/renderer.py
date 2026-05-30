@@ -16,8 +16,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-FONTS_DIR = PROJECT_ROOT / "shared" / "receipts" / "fonts"
+FONTS_DIR = Path(__file__).parent / "assets" / "fonts"
 RECEIPT_WIDTH = 480
 RENDER_WAIT_UNTIL: Literal["domcontentloaded"] = "domcontentloaded"
 RENDER_DEVICE_SCALE_FACTOR = 2

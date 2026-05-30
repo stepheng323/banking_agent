@@ -17,6 +17,9 @@ from banking.beneficiaries.services.post_transaction_beneficiary import (
     suggest_mobile_beneficiary,
 )
 from banking.messaging.delivery.service import DeliveryService
+from banking.policy.service import capability_block_message
+from banking.presentation.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
+from banking.presentation.i18n.renderer import render_message
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transactions.runtime.async_completion import (
     is_grouped_async_message,
@@ -25,9 +28,6 @@ from banking.transactions.runtime.async_completion import (
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
-from shared.i18n.renderer import render_message
-from shared.policy.service import capability_block_message
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 

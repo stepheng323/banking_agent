@@ -4,7 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, TRANSACTION_TASK_TYPES
-from shared.formatters.confirmation import strip_source_account_info_lines
+from banking.presentation.formatters.confirmation import strip_source_account_info_lines
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

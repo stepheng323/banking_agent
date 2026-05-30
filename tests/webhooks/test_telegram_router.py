@@ -586,7 +586,7 @@ def test_telegram_pin_surfaces_require_six_digit_transaction_pin() -> None:
     root = Path(__file__).resolve().parents[2]
     onboarding = (root / "apps/gateway/static/telegram/onboarding.html").read_text()
     pin_entry = (root / "apps/gateway/static/telegram/pin_entry.html").read_text()
-    whatsapp_flow = (root / "config/whatsapp_pin_flow.json").read_text()
+    whatsapp_flow = (root / "apps/gateway/api/webhooks/whatsapp/flows/specs/whatsapp_pin_flow.json").read_text()
 
     assert 'placeholder="Transaction PIN (6 digits)"' in onboarding
     assert "const PIN_LENGTH = 6" in onboarding

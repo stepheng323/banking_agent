@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
+from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding import account_matching
 from banking.transfers.funding.batch_models import (
     BatchFundingAccount,
@@ -14,8 +16,6 @@ from banking.transfers.funding.batch_models import (
 from banking.transfers.funding.models import MIN_FUNDING_AMOUNT, FundingPlan, FundingStepPlan
 from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.i18n.renderer import render_message
-from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

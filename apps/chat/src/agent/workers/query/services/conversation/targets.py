@@ -10,7 +10,7 @@ from typing import Any, Literal, cast
 
 from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from apps.chat.src.agent.workers.query.models.domain import Filters, QueryFrame, QueryResult, QueryResultItem
-from shared.formatters.currency import format_naira_compact
+from banking.presentation.formatters.currency import format_naira_compact
 
 _STOPWORDS = {
     "a",

@@ -18,7 +18,7 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _state_locale,
 )
 from apps.chat.src.agent.shared.query_contracts import FocusedReferent
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:

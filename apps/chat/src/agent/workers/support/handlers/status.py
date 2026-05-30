@@ -4,9 +4,9 @@ from typing import Any
 
 from apps.chat.src.agent.workers.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.workers.support.models import SupportResponse
-from shared.formatters.query_transaction_copy import format_transaction_status_reply
-from shared.formatters.support_transaction_copy import format_support_transfer_status_sentence
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.query_transaction_copy import format_transaction_status_reply
+from banking.presentation.formatters.support_transaction_copy import format_support_transfer_status_sentence
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

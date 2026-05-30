@@ -18,7 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

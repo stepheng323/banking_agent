@@ -11,8 +11,8 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
 from apps.chat.src.agent.orchestrator.graph.preflight import InvocationPreflight
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
+from banking.presentation.i18n.locale import LocaleManager
 from shared.config.settings import settings
-from shared.i18n.locale import LocaleManager
 
 
 def build_graph_inputs(context: MessageContext) -> dict[str, Any]:

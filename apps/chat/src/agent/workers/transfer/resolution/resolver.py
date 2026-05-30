@@ -3,7 +3,6 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.chat.src.agent.workers.transfer.models.types import (
     TransferContext,
     TransferPayload,
@@ -29,10 +28,11 @@ from apps.chat.src.agent.workers.transfer.resolution.saved_beneficiaries import 
     resolve_memory_recipient_result,
     saved_beneficiary_result,
 )
+from banking.beneficiaries.services.matcher import BeneficiaryMatcher
+from banking.presentation.formatters.currency import format_naira_compact
+from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
+from banking.presentation.i18n.renderer import render_message
 from shared.database.models import Beneficiary
-from shared.formatters.currency import format_naira_compact
-from shared.formatters.recipient_prompt_names import sanitize_recipient_display_name
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

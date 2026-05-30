@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.workers.query.continuations.grounded_followups import resolve_grounded_followup
 from apps.chat.src.agent.workers.query.models.extraction import AmbiguityCode
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

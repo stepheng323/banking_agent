@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 _TECHNICAL_ERROR_MARKERS = (
     "traceback",

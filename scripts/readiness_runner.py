@@ -17,6 +17,7 @@ import scripts.readiness_assertions as readiness_assertions
 import scripts.readiness_rendering as readiness_rendering
 import scripts.readiness_report as readiness_report
 import scripts.readiness_sequence as readiness_sequence
+from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedBoundaryTurnOutput
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
@@ -25,6 +26,10 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime impor
 from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
 from apps.chat.src.runtime.chat_worker_dependencies import _build_orchestrator_runtime_bundle, _resolve_role_model
 from banking.identity.repositories.user_repository import UserRepository
+from banking.policy.guardrails.loader import get_cached_guardrails
+from banking.policy.loader import get_cached_policy
+from banking.policy.validation import validate_policy_coverage
+from banking.presentation.i18n.renderer import validate_catalog_completeness
 from scripts.readiness_models import (
     ReadinessInvocation,
     ReadinessMode,
@@ -35,13 +40,8 @@ from scripts.readiness_models import (
 )
 from scripts.readiness_scenarios import resolve_scenarios
 from scripts.seed_user_test_data import _resolve_target_user, _seed_for_user
-from shared.assistant_profile.loader import get_cached_assistant_profile
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
-from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n.renderer import validate_catalog_completeness
-from shared.policy.loader import get_cached_policy
-from shared.policy.validation import validate_policy_coverage
 from shared.types.planner import SemanticRouteDecision
 
 

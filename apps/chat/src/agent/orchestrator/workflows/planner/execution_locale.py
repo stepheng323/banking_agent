@@ -3,8 +3,8 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.i18n.locale import LocaleManager
-from shared.i18n.models import LanguageDetectionSignal
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LanguageDetectionSignal
 
 
 async def _resolve_planner_detected_locale(

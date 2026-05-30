@@ -11,8 +11,8 @@ from apps.chat.src.agent.workers.transfer.resolution.names import (
     optional_text,
     provider_name,
 )
+from banking.presentation.i18n.renderer import render_message
 from shared.database.models import Beneficiary
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

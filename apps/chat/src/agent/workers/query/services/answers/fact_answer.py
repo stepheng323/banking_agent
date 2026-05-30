@@ -11,9 +11,12 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryFactField,
     QueryResultItem,
 )
-from shared.formatters.currency import format_naira
-from shared.formatters.query_transaction_copy import format_transaction_evidence_line, format_transaction_status_reply
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.formatters.query_transaction_copy import (
+    format_transaction_evidence_line,
+    format_transaction_status_reply,
+)
+from banking.presentation.i18n.renderer import render_message
 
 FactKind = QueryFactField
 FactDirection = Literal["debit", "credit", "unknown"]

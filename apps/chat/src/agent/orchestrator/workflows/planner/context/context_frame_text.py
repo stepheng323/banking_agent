@@ -2,7 +2,7 @@
 
 import re
 
-from shared.formatters.currency import format_naira_compact
+from banking.presentation.formatters.currency import format_naira_compact
 
 LOOKUP_STOPWORDS = {
     "a",

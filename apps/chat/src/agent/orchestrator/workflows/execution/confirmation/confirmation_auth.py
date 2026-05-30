@@ -1,7 +1,7 @@
 """Auth prompt headers for execution confirmation gates."""
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.formatters.auth_reason import format_auth_reason
+from banking.presentation.formatters.auth_reason import format_auth_reason
 
 
 def _auth_header_for_tasks(state: OrchestratorState, task_ids: list[str], *, locale: str) -> str:

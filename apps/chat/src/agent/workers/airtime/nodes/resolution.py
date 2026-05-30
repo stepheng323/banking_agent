@@ -3,16 +3,16 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
     AirtimePayload,
 )
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
+from banking.beneficiaries.services.matcher import BeneficiaryMatcher
+from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
+from banking.presentation.i18n.renderer import render_message
 from shared.database.models import Beneficiary
-from shared.formatters.transaction_slot_prompts import format_transaction_slot_prompt
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone, resolve_network_from_phone
 

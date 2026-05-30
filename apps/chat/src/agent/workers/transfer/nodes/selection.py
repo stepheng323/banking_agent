@@ -16,8 +16,8 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
-from shared.formatters.accounts import format_accounts_list
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.accounts import format_accounts_list
+from banking.presentation.i18n.renderer import render_message
 
 
 def _build_account_options(accounts: list[dict[str, Any]]) -> list[dict[str, str]]:

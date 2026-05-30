@@ -187,19 +187,19 @@ variable "telegram_mini_app_base_url" {
 variable "assistant_profile_path" {
   description = "Path to the assistant profile file in the container"
   type        = string
-  default     = "config/assistant_profile.json"
+  default     = "apps/chat/src/agent/assistant_profile/defaults/assistant_profile.json"
 }
 
 variable "capability_policy_path" {
   description = "Path to the capability policy file in the container"
   type        = string
-  default     = "config/capability_policy.json"
+  default     = "banking/policy/defaults/capability_policy.json"
 }
 
 variable "domain_guardrails_path" {
   description = "Path to the domain guardrails file in the container"
   type        = string
-  default     = "config/domain_guardrails.json"
+  default     = "banking/policy/guardrails/defaults/domain_guardrails.json"
 }
 
 variable "enable_channel_option_ux_v2" {

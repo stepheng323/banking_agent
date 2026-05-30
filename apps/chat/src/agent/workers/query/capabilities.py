@@ -6,9 +6,9 @@ LLM outputs requested_capabilities, resolver checks and negotiates.
 
 from enum import Enum
 
-from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n.bridge import render_capability_limitation
-from shared.policy.adapters import check_unsupported_actions, resolve_capability_alternative
+from banking.policy.adapters import check_unsupported_actions, resolve_capability_alternative
+from banking.policy.guardrails.loader import get_cached_guardrails
+from banking.presentation.i18n.bridge import render_capability_limitation
 
 
 class QueryCapability(str, Enum):

@@ -6,18 +6,18 @@ from collections.abc import Callable
 from typing import Any
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
-from shared.clients.telegram.client import TelegramClient
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
-from shared.messaging.intents import Say
-from shared.messaging.outbox import enqueue_outbox_intents
-from shared.models.messages import ChannelMessage
-from shared.queue.adapter import QueuePublisher
-from shared.receipts.choice import (
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
+from banking.receipts.choice import (
     extract_receipt_choice_job,
     parse_receipt_choice_action,
     receipt_choice_claim_key,
 )
+from shared.clients.telegram.client import TelegramClient
+from shared.messaging.intents import Say
+from shared.messaging.outbox import enqueue_outbox_intents
+from shared.models.messages import ChannelMessage
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

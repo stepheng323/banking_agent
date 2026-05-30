@@ -6,14 +6,14 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, cast
 
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
 from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     normalize_time_local,
     now_lagos,
     today_lagos,
 )
-from shared.i18n.message_keys import MessageKey
-from shared.i18n.renderer import render_message
 
 SCHEDULE_FIELD_NAMES = {
     "schedule_start_date",

@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
 from apps.chat.src.agent.workers.transfer.models.entities import TransferEntities
 from apps.chat.src.agent.workers.transfer.models.extraction import TransferExtractionResult
-from shared.i18n.bridge import render_cancelled_prompt
+from banking.presentation.i18n.bridge import render_cancelled_prompt
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,

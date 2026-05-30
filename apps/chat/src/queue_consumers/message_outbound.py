@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from shared.i18n.models import LocaleCode
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.models import LocaleCode
+from banking.presentation.i18n.renderer import render_message
 from shared.messaging.intents import (
     RequestAuth,
     RequestConfirmation,

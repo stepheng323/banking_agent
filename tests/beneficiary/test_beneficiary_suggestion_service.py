@@ -2,8 +2,8 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from apps.chat.src.agent.workers.__shared__.beneficiary import suggestion_service as service_module
-from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from banking.beneficiaries.services import suggestion_service as service_module
+from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 
 
 class _FakeRedis:

@@ -2,7 +2,7 @@
 
 from apps.chat.src.agent.workers.query.models.domain import QueryExecutionContract, QueryResult
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.formatters.currency import format_naira
+from banking.presentation.formatters.currency import format_naira
 
 
 def build_existence_answer(

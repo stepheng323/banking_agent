@@ -9,8 +9,8 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
-from shared.formatters.recipient_prompt_names import sanitize_recipient_display_name
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

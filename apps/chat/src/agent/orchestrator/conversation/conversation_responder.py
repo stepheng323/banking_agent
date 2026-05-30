@@ -16,7 +16,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
     build_conversation_grounding,
     conversation_display_name,
 )
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 
 __all__ = ["ConversationResponder"]
 

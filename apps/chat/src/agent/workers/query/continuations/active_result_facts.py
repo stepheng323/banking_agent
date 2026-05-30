@@ -10,7 +10,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
 )
 from apps.chat.src.agent.workers.query.services.answers.fact_answer import build_direct_fact_answer
 from apps.chat.src.agent.workers.query.services.fetching.fetch import apply_filters, apply_time_window, parse_date
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def _coerce_cached_transactions(session: dict[str, Any]) -> list[dict[str, Any]]:

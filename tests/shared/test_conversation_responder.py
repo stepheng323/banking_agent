@@ -5,7 +5,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 )
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def _unsupported_params(key: str) -> dict[str, object]:

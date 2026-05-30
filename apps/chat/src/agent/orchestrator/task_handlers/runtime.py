@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage, TransactionOutcome
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 from shared.utils.logging import get_logger
 from shared.utils.serialization import sqlalchemy_to_dict
 

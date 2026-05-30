@@ -16,9 +16,9 @@ from apps.chat.src.agent.workers.query.models.domain import (
     TimeRange,
 )
 from apps.chat.src.agent.workers.query.services.fetching.fetch import fetch_and_filter
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.formatters.currency import format_naira
-from shared.i18n.renderer import render_message
 
 
 async def handle_time_comparison(

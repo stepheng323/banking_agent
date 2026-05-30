@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 _END_SESSION_PATTERNS = (
     r"\bthanks?\b",

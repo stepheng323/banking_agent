@@ -12,7 +12,7 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _stamp_async_group_metadata,
     _state_locale,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:

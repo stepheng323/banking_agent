@@ -10,8 +10,8 @@ from apps.chat.src.agent.workers.support.handlers.reversal import handle_reversa
 from apps.chat.src.agent.workers.support.handlers.status import handle_pending, handle_transfer_status
 from apps.chat.src.agent.workers.support.handlers.ticket_status import handle_ticket_status
 from apps.chat.src.agent.workers.support.models import SupportIntent, SupportResponse
+from banking.presentation.i18n.renderer import render_message
 from banking.support.services.ticket_service import TicketService
-from shared.i18n.renderer import render_message
 
 
 class SupportHandlerDispatcher:

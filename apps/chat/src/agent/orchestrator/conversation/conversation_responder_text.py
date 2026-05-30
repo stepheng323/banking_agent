@@ -6,8 +6,8 @@ import re
 import unicodedata
 from typing import Any
 
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import (
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import (
     render_message,
     render_text,
 )

@@ -14,18 +14,18 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
-from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
-from shared.formatters.currency import format_naira
-from shared.formatters.recipient_display import format_recipient_display_label
-from shared.formatters.transfer_funding_plan import format_funding_plan_summary
-from shared.formatters.transfer_summary import format_transfer_summary
-from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n.personality import (
+from banking.policy.guardrails.loader import get_cached_guardrails
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.formatters.recipient_display import format_recipient_display_label
+from banking.presentation.formatters.transfer_funding_plan import format_funding_plan_summary
+from banking.presentation.formatters.transfer_summary import format_transfer_summary
+from banking.presentation.i18n.personality import (
     PersonalityContext,
     render_personalized_message,
     transfer_personality_context_from_payload,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from apps.chat.src.agent.workers.query.models.domain import QueryResultItem
-from shared.formatters.currency import format_naira
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
 
 
 def build_soft_clarification(items: list[QueryResultItem], context: str = "", locale: str = "en") -> str:

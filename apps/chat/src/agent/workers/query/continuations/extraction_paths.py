@@ -24,7 +24,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
 )
 from apps.chat.src.agent.workers.query.services.conversation.resolver import build_query_conversation_updates
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

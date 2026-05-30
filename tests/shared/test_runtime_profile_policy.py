@@ -8,23 +8,23 @@ from typing import Any
 import pytest
 
 import apps.chat.src.agent.workers.query.capabilities as query_capabilities
+from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
+from apps.chat.src.agent.assistant_profile.voice import build_planner_voice_block, get_runtime_voice
 from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_unsupported import _build_policy_notice
 from apps.chat.src.agent.workers.account.worker import AccountWorker
 from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 from apps.chat.src.agent.workers.data.worker import DataWorker
 from apps.chat.src.agent.workers.transfer.worker import TransferWorker
-from shared.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
-from shared.assistant_profile.voice import build_planner_voice_block, get_runtime_voice
+from banking.policy.adapters import resolve_capability_message, resolve_capability_rule
+from banking.policy.guardrails.loader import get_cached_guardrails, load_guardrails
+from banking.policy.loader import get_cached_policy, load_policy
+from banking.policy.validation import validate_policy_coverage
 from shared.config.settings import settings
-from shared.guardrails.loader import get_cached_guardrails, load_guardrails
-from shared.policy.adapters import resolve_capability_message, resolve_capability_rule
-from shared.policy.loader import get_cached_policy, load_policy
-from shared.policy.validation import validate_policy_coverage
 
-ASSISTANT_PROFILE_PATH = "config/assistant_profile.json"
-CAPABILITY_POLICY_PATH = "config/capability_policy.json"
-DOMAIN_GUARDRAILS_PATH = "config/domain_guardrails.json"
+ASSISTANT_PROFILE_PATH = "apps/chat/src/agent/assistant_profile/defaults/assistant_profile.json"
+CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
+DOMAIN_GUARDRAILS_PATH = "banking/policy/guardrails/defaults/domain_guardrails.json"
 
 
 class _DummyLLM:
@@ -290,14 +290,14 @@ def test_split_config_files_exist_and_parse() -> None:
         assert isinstance(payload, dict)
 
 
-def test_legacy_soul_policy_json_removed() -> None:
-    assert not Path("config/soul_policy.json").exists()
+def test_root_config_directory_removed() -> None:
+    assert not Path("config").exists()
 
 
-def test_soul_markdown_has_no_legacy_policy_markers() -> None:
-    soul_text = Path("soul.md").read_text(encoding="utf-8")
-    assert "SOUL_POLICY_JSON_START" not in soul_text
-    assert "SOUL_POLICY_JSON_END" not in soul_text
+def test_readme_has_no_legacy_policy_markers() -> None:
+    readme_text = Path("README.md").read_text(encoding="utf-8")
+    assert "SOUL_POLICY_JSON_START" not in readme_text
+    assert "SOUL_POLICY_JSON_END" not in readme_text
 
 
 def test_guardrails_cache_loads_runtime_split() -> None:
