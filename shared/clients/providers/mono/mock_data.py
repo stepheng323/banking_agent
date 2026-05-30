@@ -1,6 +1,7 @@
 """Mock data for Mono API (development environment)."""
 
 from copy import deepcopy
+from decimal import Decimal
 
 from .mock_transactions import (
     account_a_transactions,
@@ -62,9 +63,9 @@ def get_mock_bank_accounts() -> list[BankAccount]:
 def get_mock_balance(account_id: str) -> BalanceData:
     return BalanceData(
         balance_kobo=3000000,  # 30,000 naira in kobo
-        balance_naira=30000.00,
+        balance_naira=Decimal("30000.00"),
         ledger_balance_kobo=3000000,
-        ledger_balance_naira=30000.00,
+        ledger_balance_naira=Decimal("30000.00"),
         currency="NGN",
         account_id=account_id,
         account_name="Samuel Olamide",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from decimal import Decimal
 from typing import Any
 
 import banking.transfers.funding.account_matching as account_matching
@@ -11,21 +12,23 @@ from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.formatters.funding import format_insufficient_funds
 from banking.presentation.i18n.renderer import render_message
+from shared.money import MoneyAmount, require_money, to_money
 
-BalanceFetcher = Callable[[Any], Awaitable[float]]
+BalanceFetcher = Callable[[Any], Awaitable[MoneyAmount]]
 
 
 async def plan_explicit_pooling(
     *,
     eligible: list[Any],
     all_accounts: list[Any],
-    transfer_amount: float,
+    transfer_amount: MoneyAmount,
     requested_source_banks: list[str],
-    explicit_split: dict[str, float],
+    explicit_split: dict[str, MoneyAmount],
     force_multi_source: bool,
     locale: str,
     fetch_balance: BalanceFetcher,
 ) -> funding_models.FundingPlan:
+    transfer_amount = require_money(transfer_amount)
     requested_accounts: list[Any] = []
     if requested_source_banks:
         for bank_name in requested_source_banks:
@@ -38,7 +41,7 @@ async def plan_explicit_pooling(
             if ineligible is not None:
                 return funding_models.FundingPlan(
                     transfer_amount=transfer_amount,
-                    total_funded=0,
+                    total_funded=Decimal("0.00"),
                     is_sufficient=False,
                     trigger_mode="explicit",
                     requested_sources=requested_source_banks,
@@ -48,7 +51,7 @@ async def plan_explicit_pooling(
         if not requested_accounts:
             return funding_models.FundingPlan(
                 transfer_amount=transfer_amount,
-                total_funded=0,
+                total_funded=Decimal("0.00"),
                 is_sufficient=False,
                 trigger_mode="explicit",
                 requested_sources=requested_source_banks,
@@ -76,7 +79,7 @@ async def plan_explicit_pooling(
     remaining = transfer_amount
     balance_checks = 0
     sequence = 1
-    balances: list[tuple[Any, float]] = []
+    balances: list[tuple[Any, MoneyAmount]] = []
     for account in candidates:
         available = await fetch_balance(account)
         balance_checks += 1
@@ -85,7 +88,7 @@ async def plan_explicit_pooling(
     if force_multi_source and len(balances) >= 2 and transfer_amount > 0:
         first_account, first_balance = balances[0]
         second_account, second_balance = balances[1]
-        first_target = transfer_amount / 2
+        first_target = transfer_amount / Decimal("2")
         first_contribution = min(first_balance, first_target)
         second_contribution = min(second_balance, transfer_amount - first_contribution)
         remaining_after_two = transfer_amount - (first_contribution + second_contribution)
@@ -114,14 +117,14 @@ async def plan_explicit_pooling(
             remaining -= contribution
             sequence += 1
 
-    total_funded = transfer_amount - max(0, remaining)
+    total_funded = transfer_amount - max(Decimal("0.00"), remaining)
     is_sufficient = remaining <= 0
     plan = funding_models.FundingPlan(
         transfer_amount=transfer_amount,
         total_funded=total_funded,
         steps=steps,
         is_sufficient=is_sufficient,
-        shortfall=max(0, remaining),
+        shortfall=max(Decimal("0.00"), remaining),
         balance_checks=balance_checks,
         trigger_mode="explicit",
         requested_sources=requested_source_banks,
@@ -134,7 +137,7 @@ async def plan_explicit_pooling(
         plan.error = format_insufficient_funds(
             transfer_amount=transfer_amount,
             bank_name=steps[0].bank_name if steps else render_message("funding.format.plan.bank_fallback", locale),
-            available_balance=steps[0].amount if steps else 0.0,
+            available_balance=steps[0].amount if steps else Decimal("0.00"),
             max_available=total_funded,
             locale=locale,
         )
@@ -145,8 +148,8 @@ async def plan_with_explicit_split(
     *,
     candidates: list[Any],
     all_accounts: list[Any],
-    transfer_amount: float,
-    explicit_split: dict[str, float],
+    transfer_amount: MoneyAmount,
+    explicit_split: dict[str, MoneyAmount],
     locale: str,
     requested_source_banks: list[str],
     fetch_balance: BalanceFetcher,
@@ -154,7 +157,7 @@ async def plan_with_explicit_split(
     if len(explicit_split) > MAX_POOLED_SOURCE_ACCOUNTS:
         return funding_models.FundingPlan(
             transfer_amount=transfer_amount,
-            total_funded=0,
+            total_funded=Decimal("0.00"),
             is_sufficient=False,
             trigger_mode="explicit",
             requested_sources=requested_source_banks,
@@ -162,11 +165,17 @@ async def plan_with_explicit_split(
             error=("Please use at most 2 source accounts in your split. Revise the split and try again."),
         )
 
-    split_total = round(sum(explicit_split.values()), 2)
-    if abs(split_total - transfer_amount) > 0.01:
+    transfer_amount = require_money(transfer_amount)
+    cleaned_split = {
+        bank: amount
+        for bank, raw_amount in explicit_split.items()
+        if (amount := to_money(raw_amount)) is not None and amount > 0
+    }
+    split_total = sum(cleaned_split.values(), Decimal("0.00"))
+    if split_total != transfer_amount:
         return funding_models.FundingPlan(
             transfer_amount=transfer_amount,
-            total_funded=0,
+            total_funded=Decimal("0.00"),
             is_sufficient=False,
             trigger_mode="explicit",
             requested_sources=requested_source_banks,
@@ -181,10 +190,10 @@ async def plan_with_explicit_split(
     steps: list[funding_models.FundingStepPlan] = []
     balance_checks = 0
     sequence = 1
-    total_funded = 0.0
+    total_funded = Decimal("0.00")
     used_account_ids: set[str] = set()
-    primary_available_balance: float | None = None
-    for requested_bank, requested_amount in explicit_split.items():
+    primary_available_balance: MoneyAmount | None = None
+    for requested_bank, requested_amount in cleaned_split.items():
         account = account_matching.match_account_by_bank_name(candidates, requested_bank)
         if account is None:
             ineligible = account_matching.match_ineligible_requested_account(all_accounts, candidates, requested_bank)
@@ -251,7 +260,7 @@ async def plan_with_explicit_split(
         total_funded=total_funded,
         steps=steps,
         is_sufficient=True,
-        shortfall=0.0,
+        shortfall=Decimal("0.00"),
         balance_checks=balance_checks,
         trigger_mode="explicit",
         requested_sources=requested_source_banks,

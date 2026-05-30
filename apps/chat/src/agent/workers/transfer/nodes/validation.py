@@ -111,7 +111,7 @@ class ValidationStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         del gates
         derived_amount_result = await _resolve_account_aware_amount(data, context, worker_context)

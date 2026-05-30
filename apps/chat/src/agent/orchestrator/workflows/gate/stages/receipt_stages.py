@@ -19,6 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import (
     _support_user_id_for_state,
 )
 from apps.chat.src.agent.workers.support.context_manager import SupportContextManager
+from apps.chat.src.agent.workers.support.models import ReceiptBatchThreadState
 from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
 from shared.utils.logging import get_logger
 
@@ -50,7 +51,9 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
         return None
     support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id_for_state(ctx.state))
     receipt_thread_state = getattr(support_ctx, "receipt_thread_state", None)
-    if not _has_receipt_thread_candidates(receipt_thread_state):
+    if not isinstance(receipt_thread_state, ReceiptBatchThreadState) or not _has_receipt_thread_candidates(
+        receipt_thread_state
+    ):
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
         logger.info("gate_receipt_thread_support_policy_blocked")

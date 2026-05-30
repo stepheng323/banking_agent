@@ -8,6 +8,7 @@ from apps.chat.src.agent.workers.__shared__.account_selection.reference import (
     build_source_account_patch,
     match_source_account_reference,
 )
+from shared.money import MoneyAmount
 from shared.types.planner import ContextFrameReplayModifier
 
 QUOTED_REPLAY_MODIFIER_MIN_CONFIDENCE = 0.72
@@ -29,7 +30,7 @@ def _trusted_replay_modifier(modifier: ContextFrameReplayModifier | None) -> Con
     return modifier
 
 
-def _modifier_amount_override(text: str | None, modifier: ContextFrameReplayModifier | None) -> float | None:
+def _modifier_amount_override(text: str | None, modifier: ContextFrameReplayModifier | None) -> MoneyAmount | None:
     trusted = _trusted_replay_modifier(modifier)
     if trusted is None or trusted.amount is None:
         return None

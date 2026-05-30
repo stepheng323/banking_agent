@@ -4,6 +4,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_policy_aware_greeting
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_common import _localized_planner_response
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
+from banking.presentation.i18n.message_keys import is_message_key
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -62,8 +63,9 @@ def _response_key_render_response(
         fallback_path="planner_non_task",
         route_logger=route_logger,
     )
+    message_key = response_key if is_message_key(response_key) else "response.fallback.generic"
     return {
-        "final_response": render_message(response_key, conversational_locale),
+        "final_response": render_message(message_key, conversational_locale),
         **conversational_locale_updates,
         **context_read_updates,
     }

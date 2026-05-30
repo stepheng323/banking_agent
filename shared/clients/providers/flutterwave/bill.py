@@ -7,6 +7,7 @@ import structlog
 
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.clients.providers.flutterwave.client import FlutterwaveClient
+from shared.money import MoneyAmount, money_to_provider_value, require_money
 from shared.utils.logging import log_fingerprint
 
 logger = structlog.get_logger(__name__)
@@ -87,13 +88,14 @@ class FlutterwaveBillsClient(BillPaymentProvider):
 
     async def purchase_airtime(
         self,
-        amount: float,
+        amount: MoneyAmount,
         recipient_phone: str,
         network: str,
         reference: str | None = None,
     ) -> dict[str, Any]:
         """Purchase airtime via Flutterwave Bills Payment API."""
-        airtime_info = {"amount": amount, "recipient_phone": recipient_phone, "network": network}
+        airtime_amount = require_money(amount)
+        airtime_info = {"amount": airtime_amount, "recipient_phone": recipient_phone, "network": network}
 
         network_upper = network.upper().strip()
         biller_info = self.AIRTIME_BILLERS.get(network_upper)
@@ -115,14 +117,14 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         payload = {
             "country": "NG",
             "customer_id": customer_phone,
-            "amount": amount,
+            "amount": money_to_provider_value(airtime_amount),
             "reference": reference,
         }
 
         logger.info(
             "airtime_purchase_request",
             network=network,
-            amount=amount,
+            amount=str(airtime_amount),
             phone_hash=log_fingerprint(customer_phone),
         )
         result = await self._client.request("POST", endpoint, payload=payload)
@@ -270,11 +272,17 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         plan_code: str,
         recipient_phone: str,
         network: str,
-        amount: float | None = None,
+        amount: MoneyAmount | None = None,
         reference: str | None = None,
     ) -> dict[str, Any]:
         """Purchase a data plan via Flutterwave Bills Payment API."""
-        data_info = {"plan_code": plan_code, "recipient_phone": recipient_phone, "network": network, "amount": amount}
+        data_amount = require_money(amount) if amount is not None else None
+        data_info = {
+            "plan_code": plan_code,
+            "recipient_phone": recipient_phone,
+            "network": network,
+            "amount": data_amount,
+        }
 
         network_upper = self._canonical_network(network)
         biller_code = await self._resolve_data_biller_code(network_upper)
@@ -291,13 +299,13 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         customer_phone = self._normalize_phone(recipient_phone)
 
         endpoint = f"/v3/billers/{biller_code}/items/{plan_code}/payment"
-        payload = {
+        payload: dict[str, int | str] = {
             "country": "NG",
             "customer_id": customer_phone,
             "reference": reference,
         }
-        if amount is not None:
-            payload["amount"] = amount
+        if data_amount is not None:
+            payload["amount"] = money_to_provider_value(data_amount) or "0.00"
 
         logger.info(
             "data_purchase_request",

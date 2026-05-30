@@ -72,7 +72,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     if cancelled_tasks:
         outbox.append({"type": "say", "text": render_cancelled_prompt(locale)})
 
-    context_updates = {}
+    context_updates: dict[str, Any] = {}
     has_completed_non_transaction = any(task.type not in TRANSACTION_TASK_TYPES for task in completed_tasks)
     now_ts = int(time.time())
 

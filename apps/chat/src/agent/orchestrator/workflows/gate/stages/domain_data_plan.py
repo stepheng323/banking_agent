@@ -162,11 +162,13 @@ def _is_data_plan_entity(entity: ContextEntity) -> bool:
 def _data_plan_display_key(entity: ContextEntity) -> tuple[str, str, float | None, int | None]:
     data = entity.data if isinstance(entity.data, dict) else {}
     try:
-        amount = float(data.get("amount")) if data.get("amount") is not None else None
+        raw_amount = data.get("amount")
+        amount = float(raw_amount) if raw_amount is not None else None
     except (TypeError, ValueError):
         amount = None
     try:
-        validity = int(float(data.get("validity_days"))) if data.get("validity_days") is not None else None
+        raw_validity = data.get("validity_days")
+        validity = int(float(raw_validity)) if raw_validity is not None else None
     except (TypeError, ValueError):
         validity = None
     name = str(data.get("plan_name") or data.get("name") or entity.label or "").strip().casefold()

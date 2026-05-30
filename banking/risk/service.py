@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Literal
 
 from banking.persistence.unit_of_work import UnitOfWork
@@ -11,6 +12,7 @@ from shared.database.enums import (
     SupportTicketStatusEnum,
     TransactionStatusEnum,
 )
+from shared.money import MoneyAmount, money_to_json, to_money
 
 RiskDecisionValue = Literal["allow", "hold_review", "deny"]
 
@@ -45,20 +47,20 @@ class RiskDecisionService:
 
         user_id = str(getattr(worker_context, "user_id", "") or "")
         idempotency_key = str(getattr(payload, "idempotency_key", "") or "")
-        amount = float(getattr(payload, "amount", 0.0) or 0.0)
+        amount = to_money(getattr(payload, "amount", None)) or Decimal("0.00")
         if not user_id or not idempotency_key or amount <= 0:
             return RiskDecisionResult(decision="allow", metadata={"risk_skipped": "missing_context"})
 
         now = datetime.now(UTC).replace(tzinfo=None)
         reason_codes: list[str] = []
         metadata: dict[str, Any] = {
-            "amount": amount,
+            "amount": money_to_json(amount),
             "idempotency_key": idempotency_key,
             "channel": getattr(context, "channel", None),
             "channel_identity_present": bool(getattr(context, "channel_identity", None)),
         }
 
-        if amount >= float(settings.manual_review_amount_ngn):
+        if amount >= settings.manual_review_amount_ngn:
             reason_codes.append("manual_review_amount")
 
         if await self._is_new_or_risky_beneficiary(uow, payload, user_id, amount, now, metadata):
@@ -134,7 +136,7 @@ class RiskDecisionService:
         uow: UnitOfWork,
         payload: Any,
         user_id: str,
-        amount: float,
+        amount: MoneyAmount,
         now: datetime,
         metadata: dict[str, Any],
     ) -> bool:
@@ -145,7 +147,7 @@ class RiskDecisionService:
             getattr(payload, "beneficiary_id", None)
             or getattr(payload, "resolved_from_saved_beneficiary", False)
         )
-        if not has_saved_binding and amount >= float(settings.new_beneficiary_limit_ngn):
+        if not has_saved_binding and amount >= settings.new_beneficiary_limit_ngn:
             metadata["beneficiary_state"] = "unsaved"
             return True
 
@@ -165,8 +167,9 @@ class RiskDecisionService:
             return False
         age_seconds = (now - created_at).total_seconds()
         metadata["beneficiary_age_seconds"] = age_seconds
-        return age_seconds < int(settings.new_beneficiary_cooling_seconds) and amount >= float(
-            settings.new_beneficiary_limit_ngn
+        return (
+            age_seconds < int(settings.new_beneficiary_cooling_seconds)
+            and amount >= settings.new_beneficiary_limit_ngn
         )
 
     async def _is_new_channel_identity(
@@ -192,7 +195,7 @@ class RiskDecisionService:
         uow: UnitOfWork,
         user_id: str,
         idempotency_key: str,
-        amount: float,
+        amount: MoneyAmount,
         now: datetime,
         metadata: dict[str, Any],
     ) -> list[str]:
@@ -216,27 +219,29 @@ class RiskDecisionService:
             for tx in await uow.transactions.get_transfers_since(user_id, one_day, statuses=tracked_statuses)
             if str(getattr(tx, "idempotency_key", "")) != idempotency_key
         ]
-        hourly_amount = amount + sum(float(getattr(tx, "amount", 0.0) or 0.0) for tx in hourly)
-        daily_amount = amount + sum(float(getattr(tx, "amount", 0.0) or 0.0) for tx in daily)
+        hourly_amount = amount + sum(
+            (to_money(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in hourly
+        )
+        daily_amount = amount + sum((to_money(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in daily)
         metadata.update(
             {
                 "hourly_transfer_count": len(hourly) + 1,
-                "hourly_transfer_amount": hourly_amount,
-                "daily_transfer_amount": daily_amount,
+                "hourly_transfer_amount": money_to_json(hourly_amount),
+                "daily_transfer_amount": money_to_json(daily_amount),
             }
         )
 
         reasons: list[str] = []
         if len(hourly) + 1 > int(settings.transfer_hourly_count_limit):
             reasons.append("hourly_count_velocity")
-        if hourly_amount > float(settings.transfer_hourly_amount_limit_ngn):
+        if hourly_amount > settings.transfer_hourly_amount_limit_ngn:
             reasons.append("hourly_amount_velocity")
-        if daily_amount > float(settings.transfer_daily_amount_limit_ngn):
+        if daily_amount > settings.transfer_daily_amount_limit_ngn:
             reasons.append("daily_amount_velocity")
         return reasons
 
     @staticmethod
-    def _is_first_high_value_pooled_transfer(payload: Any, amount: float) -> bool:
+    def _is_first_high_value_pooled_transfer(payload: Any, amount: MoneyAmount) -> bool:
         funding_plan = getattr(payload, "funding_plan", None) or {}
         is_multi_source = bool(funding_plan and not funding_plan.get("is_single_source", True))
-        return is_multi_source and amount >= float(settings.first_pooled_transfer_limit_ngn)
+        return is_multi_source and amount >= settings.first_pooled_transfer_limit_ngn

@@ -25,7 +25,7 @@ def _phone_patch(
     normalized_user_phone = normalize_nigerian_phone(user_phone or "")
     is_self = bool(normalized_user_phone and phone == normalized_user_phone)
     if task_type == "airtime":
-        patch = {
+        patch: dict[str, Any] = {
             "confirmation": {"confirmed": False},
             "recipient_phone": phone,
             "phone": phone,
@@ -37,7 +37,7 @@ def _phone_patch(
             patch["network"] = inferred_network
         return patch
     if task_type == "data":
-        patch: dict[str, Any] = {
+        data_patch: dict[str, Any] = {
             "confirmation": {"confirmed": False},
             "target_phone": phone,
             "phone": phone,
@@ -48,9 +48,9 @@ def _phone_patch(
         inferred_network = resolve_network_from_phone(phone)
         current_network = normalize_network_name((payload or {}).get("network")) if payload else None
         if inferred_network and inferred_network != current_network:
-            patch["network"] = inferred_network
-            patch.update(_data_plan_reset_patch())
-        return patch
+            data_patch["network"] = inferred_network
+            data_patch.update(_data_plan_reset_patch())
+        return data_patch
     return None
 
 
@@ -66,7 +66,8 @@ def _network_patch(
     patch: dict[str, Any] = {"confirmation": {"confirmed": False}, "network": network}
     normalized_network = normalize_network_name(network)
     if task_type == "airtime":
-        current_phone = normalize_nigerian_phone((payload or {}).get("recipient_phone") or (payload or {}).get("phone"))
+        raw_phone = (payload or {}).get("recipient_phone") or (payload or {}).get("phone")
+        current_phone = normalize_nigerian_phone(str(raw_phone or ""))
         inferred_network = resolve_network_from_phone(current_phone or "")
         if normalized_network and inferred_network and inferred_network != normalized_network:
             patch.update(
@@ -79,7 +80,8 @@ def _network_patch(
                 }
             )
     if task_type == "data":
-        current_phone = normalize_nigerian_phone((payload or {}).get("target_phone") or (payload or {}).get("phone"))
+        raw_phone = (payload or {}).get("target_phone") or (payload or {}).get("phone")
+        current_phone = normalize_nigerian_phone(str(raw_phone or ""))
         inferred_network = resolve_network_from_phone(current_phone or "")
         if normalized_network and inferred_network and inferred_network != normalized_network:
             patch.update(

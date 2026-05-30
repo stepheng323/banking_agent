@@ -76,7 +76,7 @@ async def handle_onboarding_pin(
 
     return format_error_response(
         "PIN_ENTRY",
-        result.error,
+        result.error or "",
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,

@@ -3,6 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult
+from shared.money import MoneyAmount
 
 
 class DataPayload(BaseModel):
@@ -10,7 +11,7 @@ class DataPayload(BaseModel):
 
     idempotency_key: str | None = None
     extraction: DataExtractionResult | None = None
-    amount: float | None = None
+    amount: MoneyAmount | None = None
     network: str | None = None
     beneficiary_id: str | None = None
     recipient_name: str | None = None

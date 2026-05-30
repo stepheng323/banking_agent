@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -16,11 +17,17 @@ from banking.transfers.funding.batch_models import (
 from banking.transfers.funding.models import MIN_FUNDING_AMOUNT, FundingPlan, FundingStepPlan
 from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.money import MoneyAmount, require_money, to_money
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 AllocationOutcome = tuple[FundingPlan | None, ShortfallDetail | None]
+ZERO_MONEY = Decimal("0.00")
+
+
+def _money_or_zero(value: object) -> MoneyAmount:
+    return to_money(value) or ZERO_MONEY
 
 
 def adapt_batch_accounts(accounts: list[dict[str, Any]]) -> list[BatchFundingAccount]:
@@ -36,7 +43,7 @@ def prioritize_demands(demands: list[TransferDemand]) -> list[TransferDemand]:
         demands,
         key=lambda demand: (
             0 if demand.source_affinity.mode == "explicit" else 1,
-            -float(demand.amount or 0.0),
+            -require_money(demand.amount),
         ),
     )
 
@@ -44,23 +51,23 @@ def prioritize_demands(demands: list[TransferDemand]) -> list[TransferDemand]:
 async def fetch_batch_balances(
     provider: DirectDebitProvider,
     accounts: list[BatchFundingAccount],
-) -> dict[str, float]:
-    balances: dict[str, float] = {}
+) -> dict[str, MoneyAmount]:
+    balances: dict[str, MoneyAmount] = {}
     for account in accounts:
         account_id = str(account.id)
         try:
             result = await provider.get_balance(account.mono_account_id, real_time=True)
-            balances[account_id] = float(result.available_balance) if result.success else 0.0
+            balances[account_id] = require_money(result.available_balance) if result.success else ZERO_MONEY
         except Exception as exc:
             logger.warning("batch_funding_balance_fetch_failed", account_id=account_id, error=str(exc))
-            balances[account_id] = 0.0
+            balances[account_id] = ZERO_MONEY
     return balances
 
 
 async def allocate_auto_funding(
     *,
     demand: TransferDemand,
-    ledger: dict[str, float],
+    ledger: dict[str, MoneyAmount],
     accounts: list[BatchFundingAccount],
     bank_names_by_id: dict[str, str],
     locale: str,
@@ -75,7 +82,7 @@ async def allocate_auto_funding(
 
     plan = await planner.plan_funding(
         accounts=accounts,
-        transfer_amount=float(demand.amount),
+        transfer_amount=require_money(demand.amount),
         preferred_account_id=preferred_account_id,
         locale=locale,
         balance_overrides=ledger,
@@ -88,8 +95,8 @@ async def allocate_auto_funding(
     shortfall = build_shortfall(
         demand=demand,
         account_requested=plan.primary_bank_name or render_message("funding.format.plan.bank_fallback", locale),
-        account_available=float(plan.primary_available_balance or 0.0),
-        deficit=max(0.0, float(plan.shortfall or demand.amount)),
+        account_available=plan.primary_available_balance or ZERO_MONEY,
+        deficit=max(ZERO_MONEY, plan.shortfall or require_money(demand.amount)),
         ledger=ledger,
         exclude_account_ids=step_account_ids,
         bank_names_by_id=bank_names_by_id,
@@ -100,7 +107,7 @@ async def allocate_auto_funding(
 def allocate_explicit_funding(
     *,
     demand: TransferDemand,
-    ledger: dict[str, float],
+    ledger: dict[str, MoneyAmount],
     accounts_by_id: dict[str, BatchFundingAccount],
     all_accounts: list[BatchFundingAccount],
     bank_names_by_id: dict[str, str],
@@ -130,8 +137,8 @@ def allocate_explicit_funding(
             account_requested=demand.explicit_sources[0]
             if demand.explicit_sources
             else render_message("funding.format.plan.bank_fallback", locale),
-            account_available=0.0,
-            deficit=float(demand.amount),
+            account_available=ZERO_MONEY,
+            deficit=require_money(demand.amount),
             ledger=ledger,
             exclude_account_ids=set(),
             bank_names_by_id=bank_names_by_id,
@@ -139,17 +146,17 @@ def allocate_explicit_funding(
         return None, shortfall
 
     selected_ids = explicit_account_ids[:MAX_POOLED_SOURCE_ACCOUNTS]
-    remaining = float(demand.amount)
+    remaining = require_money(demand.amount)
     sequence = 1
     steps: list[FundingStepPlan] = []
-    primary_available = float(ledger.get(selected_ids[0], 0.0))
+    primary_available = ledger.get(selected_ids[0], ZERO_MONEY)
     for account_id in selected_ids:
         if remaining <= 0:
             break
         account = accounts_by_id.get(account_id)
-        if account is None:
+        if account is None or account.id is None or account.mandate_id is None:
             continue
-        available = max(0.0, float(ledger.get(account_id, 0.0)))
+        available = max(ZERO_MONEY, ledger.get(account_id, ZERO_MONEY))
         contribution = min(available, remaining)
         if contribution > 0 and (contribution >= MIN_FUNDING_AMOUNT or contribution >= remaining):
             steps.append(
@@ -188,11 +195,11 @@ def allocate_explicit_funding(
         return None, shortfall
 
     plan = FundingPlan(
-        transfer_amount=float(demand.amount),
-        total_funded=float(demand.amount),
+        transfer_amount=require_money(demand.amount),
+        total_funded=require_money(demand.amount),
         steps=steps,
         is_sufficient=True,
-        shortfall=0.0,
+        shortfall=ZERO_MONEY,
         trigger_mode="explicit",
         requested_sources=list(demand.explicit_sources),
         explicit_split_applied=False,
@@ -207,8 +214,8 @@ def allocate_explicit_funding(
 def allocate_explicit_split_funding(
     *,
     demand: TransferDemand,
-    explicit_split: dict[str, float],
-    ledger: dict[str, float],
+    explicit_split: dict[str, MoneyAmount],
+    ledger: dict[str, MoneyAmount],
     accounts: list[BatchFundingAccount],
     bank_names_by_id: dict[str, str],
     locale: str,
@@ -221,21 +228,21 @@ def allocate_explicit_split_funding(
         shortfall = build_shortfall(
             demand=demand,
             account_requested=requested_account_fallback,
-            account_available=0.0,
-            deficit=float(demand.amount),
+            account_available=ZERO_MONEY,
+            deficit=require_money(demand.amount),
             ledger=ledger,
             exclude_account_ids=set(),
             bank_names_by_id=bank_names_by_id,
         )
         return None, shortfall
 
-    split_total = round(sum(float(value) for value in explicit_split.values()), 2)
-    if abs(split_total - float(demand.amount)) > 0.01:
+    split_total = sum((require_money(value) for value in explicit_split.values()), ZERO_MONEY)
+    if split_total != require_money(demand.amount):
         shortfall = build_shortfall(
             demand=demand,
             account_requested=requested_account_fallback,
-            account_available=0.0,
-            deficit=max(0.0, float(demand.amount) - split_total),
+            account_available=ZERO_MONEY,
+            deficit=max(ZERO_MONEY, require_money(demand.amount) - split_total),
             ledger=ledger,
             exclude_account_ids=set(),
             bank_names_by_id=bank_names_by_id,
@@ -244,7 +251,7 @@ def allocate_explicit_split_funding(
 
     planned_steps: list[FundingStepPlan] = []
     used_ids: set[str] = set()
-    primary_available: float | None = None
+    primary_available: MoneyAmount | None = None
     sequence = 1
     for bank_name, requested_amount in explicit_split.items():
         account = account_matching.match_account_by_bank_name(accounts, bank_name)
@@ -252,8 +259,8 @@ def allocate_explicit_split_funding(
             shortfall = build_shortfall(
                 demand=demand,
                 account_requested=bank_name,
-                account_available=0.0,
-                deficit=float(requested_amount),
+                account_available=ZERO_MONEY,
+                deficit=require_money(requested_amount),
                 ledger=ledger,
                 exclude_account_ids=used_ids,
                 bank_names_by_id=bank_names_by_id,
@@ -265,23 +272,24 @@ def allocate_explicit_split_funding(
             shortfall = build_shortfall(
                 demand=demand,
                 account_requested=bank_name,
-                account_available=float(ledger.get(account_id, 0.0)),
-                deficit=float(requested_amount),
+                account_available=ledger.get(account_id, ZERO_MONEY),
+                deficit=require_money(requested_amount),
                 ledger=ledger,
                 exclude_account_ids=used_ids,
                 bank_names_by_id=bank_names_by_id,
             )
             return None, shortfall
 
-        available = max(0.0, float(ledger.get(account_id, 0.0)))
+        available = max(ZERO_MONEY, ledger.get(account_id, ZERO_MONEY))
         if primary_available is None:
             primary_available = available
-        if available < float(requested_amount):
+        requested_money = require_money(requested_amount)
+        if available < requested_money:
             shortfall = build_shortfall(
                 demand=demand,
                 account_requested=bank_name,
                 account_available=available,
-                deficit=max(0.0, float(requested_amount) - available),
+                deficit=max(ZERO_MONEY, requested_money - available),
                 ledger=ledger,
                 exclude_account_ids=used_ids | {account_id},
                 bank_names_by_id=bank_names_by_id,
@@ -294,7 +302,7 @@ def allocate_explicit_split_funding(
                 account_number=account.account_number,
                 bank_name=account.bank_name,
                 mandate_id=account.mandate_id,
-                amount=float(requested_amount),
+                amount=requested_money,
                 sequence=sequence,
             )
         )
@@ -303,11 +311,11 @@ def allocate_explicit_split_funding(
 
     decrement_ledger(ledger, planned_steps)
     plan = FundingPlan(
-        transfer_amount=float(demand.amount),
-        total_funded=float(demand.amount),
+        transfer_amount=require_money(demand.amount),
+        total_funded=require_money(demand.amount),
         steps=planned_steps,
         is_sufficient=True,
-        shortfall=0.0,
+        shortfall=ZERO_MONEY,
         trigger_mode="explicit",
         requested_sources=list(explicit_split.keys()),
         explicit_split_applied=True,
@@ -337,33 +345,33 @@ def resolve_explicit_account_ids(
     return resolved
 
 
-def decrement_ledger(ledger: dict[str, float], steps: list[FundingStepPlan]) -> None:
+def decrement_ledger(ledger: dict[str, MoneyAmount], steps: list[FundingStepPlan]) -> None:
     for step in steps:
         account_id = str(step.account_id)
-        ledger[account_id] = max(0.0, float(ledger.get(account_id, 0.0)) - float(step.amount))
+        ledger[account_id] = max(ZERO_MONEY, ledger.get(account_id, ZERO_MONEY) - require_money(step.amount))
 
 
 def build_shortfall(
     *,
     demand: TransferDemand,
     account_requested: str,
-    account_available: float,
-    deficit: float,
-    ledger: dict[str, float],
+    account_available: MoneyAmount,
+    deficit: MoneyAmount,
+    ledger: dict[str, MoneyAmount],
     exclude_account_ids: set[str],
     bank_names_by_id: dict[str, str],
 ) -> ShortfallDetail:
-    alternates = [
+    alternates: list[dict[str, Any]] = [
         {"account_id": account_id, "bank_name": bank_names_by_id.get(account_id, ""), "available": available}
         for account_id, available in ledger.items()
         if account_id not in exclude_account_ids and available > 0
     ]
-    alternates = sorted(alternates, key=lambda item: float(item.get("available", 0.0)), reverse=True)
+    alternates = sorted(alternates, key=lambda item: _money_or_zero(item.get("available", ZERO_MONEY)), reverse=True)
     return ShortfallDetail(
         task_id=demand.task_id,
-        amount_needed=float(demand.amount),
+        amount_needed=require_money(demand.amount),
         account_requested=account_requested,
-        account_available=max(0.0, float(account_available)),
-        deficit=max(0.0, float(deficit)),
+        account_available=max(ZERO_MONEY, account_available),
+        deficit=max(ZERO_MONEY, deficit),
         alternate_accounts=alternates[:2],
     )

@@ -70,6 +70,7 @@ async def _claim_mono_webhook_event(*, event_id: str, event_name: str, payload: 
             event_name=event_name,
             payload_hash=_payload_hash(payload),
         )
+    return True
 
 
 async def _mark_mono_webhook_event_processed(*, event_id: str) -> None:

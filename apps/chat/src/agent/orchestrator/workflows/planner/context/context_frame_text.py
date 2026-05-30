@@ -1,8 +1,10 @@
 """Text and value parsing helpers for context-frame follow-ups."""
 
 import re
+from decimal import Decimal, InvalidOperation
 
 from banking.presentation.formatters.currency import format_naira_compact
+from shared.money import MoneyAmount, to_money
 
 LOOKUP_STOPWORDS = {
     "a",
@@ -75,23 +77,25 @@ def semantic_tokens(text: str | None) -> set[str]:
     return {token for token in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(token) > 1}
 
 
-def amount_reference_values(text: str | None) -> set[float]:
+def amount_reference_values(text: str | None) -> set[MoneyAmount]:
     if not text:
         return set()
 
-    values: set[float] = set()
+    values: set[MoneyAmount] = set()
     normalized = text.lower().replace(",", "")
 
     def _add(raw_number: str, suffix: str | None = None) -> None:
         try:
-            value = float(raw_number)
-        except ValueError:
+            value = Decimal(raw_number)
+        except InvalidOperation:
             return
         if suffix == "k":
-            value *= 1000
+            value *= Decimal("1000")
         elif suffix == "m":
-            value *= 1_000_000
-        values.add(value)
+            value *= Decimal("1000000")
+        amount = to_money(value)
+        if amount is not None:
+            values.add(amount)
 
     for match in re.finditer(r"(?:₦|ngn|naira)\s*([0-9]+(?:\.[0-9]+)?)\s*([km])?\b", normalized):
         _add(match.group(1), match.group(2))
@@ -108,7 +112,7 @@ def amount_reference_values(text: str | None) -> set[float]:
     return values
 
 
-def format_currency_amount(value: float) -> str:
+def format_currency_amount(value: MoneyAmount) -> str:
     return format_naira_compact(value, absolute=True)
 
 

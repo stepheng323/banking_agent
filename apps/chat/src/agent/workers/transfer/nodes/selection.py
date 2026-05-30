@@ -49,7 +49,7 @@ class SourceSelectionStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         del gates, worker_context
         return await select_source_account(data, context)

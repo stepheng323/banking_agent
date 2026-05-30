@@ -5,6 +5,7 @@ from typing import Any
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.providers.mono.client import MonoClient
 from shared.config.settings import settings
+from shared.money import MoneyAmount
 
 
 class MonoPaymentProvider(PayoutProvider):
@@ -27,7 +28,7 @@ class MonoPaymentProvider(PayoutProvider):
 
     async def initiate_transfer(
         self,
-        amount: float,
+        amount: MoneyAmount,
         recipient_account_number: str,
         recipient_bank_code: str,
         sender_account_number: str | None = None,

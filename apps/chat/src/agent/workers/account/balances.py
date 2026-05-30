@@ -1,5 +1,6 @@
 """Balance lookup for linked accounts."""
 
+from decimal import Decimal
 from typing import Any
 
 from apps.chat.src.agent.workers.account.formatter import AccountFormatter
@@ -48,7 +49,7 @@ async def check_balance(
         target_accounts = accounts
 
     balances = []
-    total_balance = 0.0
+    total_balance = Decimal("0.00")
 
     for account in target_accounts:
         try:

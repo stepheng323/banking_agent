@@ -1,5 +1,7 @@
 """Presenter Factory for creating channel-specific presenters."""
 
+from collections.abc import Callable
+
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config.settings import settings
 from shared.messaging.presenters.base import Presenter
@@ -10,13 +12,13 @@ from shared.messaging.presenters.whatsapp import WhatsAppPresenter
 class PresenterFactory:
     """Factory to create presenters based on channel."""
 
-    _registry: dict[str, type[Presenter]] = {
+    _registry: dict[str, Callable[[MessagingClient], Presenter]] = {
         "whatsapp": WhatsAppPresenter,
         "telegram": TelegramPresenter,
     }
 
     @classmethod
-    def register(cls, channel: str, presenter_cls: type[Presenter]) -> None:
+    def register(cls, channel: str, presenter_cls: Callable[[MessagingClient], Presenter]) -> None:
         """Register a new presenter for a channel."""
         cls._registry[channel] = presenter_cls
 

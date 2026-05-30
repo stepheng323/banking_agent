@@ -156,9 +156,9 @@ def derive_recipient_from_user_text(planned_recipient: str | None, user_text: st
             return best_candidate
         return None
 
-    planned_tokens = [token for token in norm_planned.split() if token]
+    planned_token_list = [token for token in norm_planned.split() if token]
     text_tokens = {token for token in norm_text.split() if token}
-    for token in planned_tokens:
+    for token in planned_token_list:
         if token in text_tokens and _is_plausible_recipient_candidate(token):
             return token
 

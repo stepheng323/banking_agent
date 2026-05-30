@@ -1,5 +1,7 @@
 """Text and amount search for context-frame entities."""
 
+from decimal import Decimal
+
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_ranking import numeric_rank_value
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_text import (
@@ -9,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_te
     semantic_tokens,
     token_matches_searchable,
 )
+from shared.money import MoneyAmount, to_money
 
 SEARCHABLE_DATA_KEYS = (
     "alias",
@@ -47,14 +50,17 @@ SEARCHABLE_DATA_KEYS = (
 )
 
 
-def _entity_matches_amount_reference(entity: ContextEntity, amount_refs: set[float]) -> bool:
+def _entity_matches_amount_reference(entity: ContextEntity, amount_refs: set[MoneyAmount]) -> bool:
     if not amount_refs:
         return False
     value = numeric_rank_value(entity)
     if value is None:
         return False
-    abs_value = abs(value)
-    return any(abs(abs_value - abs(target)) < 0.01 for target in amount_refs)
+    amount = to_money(value)
+    if amount is None:
+        return False
+    abs_value = abs(amount)
+    return any(abs(abs_value - abs(target)) < Decimal("0.01") for target in amount_refs)
 
 
 def _searchable_text(entity: ContextEntity) -> str:

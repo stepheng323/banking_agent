@@ -1,18 +1,19 @@
 """SQLAlchemy database models."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     ARRAY,
     JSON,
     Boolean,
-    Column,
     Date,
     DateTime,
-    Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -37,6 +38,8 @@ from shared.database.enums import (
 )
 from shared.utils.datetime import utc_now_naive
 
+MONEY_COLUMN = Numeric(18, 2)
+
 
 class Base(DeclarativeBase):
     pass
@@ -47,29 +50,35 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    phone_number = Column(String, unique=True, index=True, nullable=False)
-    full_name = Column(String, nullable=True)
-    email = Column(String, unique=True, index=True, nullable=True)
-    address = Column(String, nullable=True)
-    mono_customer_id = Column(String, nullable=True, index=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    phone_number: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    email: Mapped[str | None] = mapped_column(String, unique=True, index=True, nullable=True)
+    address: Mapped[str | None] = mapped_column(String, nullable=True)
+    mono_customer_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
-    onboarding_status = Column(
+    onboarding_status: Mapped[str | None] = mapped_column(
         String,
         default=UserOnboardingStatusEnum.ONBOARDING_STARTED.value,
         nullable=True,
     )
-    last_active = Column(DateTime, default=utc_now_naive)
-    extra_data = Column(JSON, default={})
-    transaction_pin = Column(String, nullable=True)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
+    last_active: Mapped[datetime | None] = mapped_column(DateTime, default=utc_now_naive)
+    extra_data: Mapped[dict[str, Any]] = mapped_column(JSON, default={})
+    transaction_pin: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
 
-    accounts = relationship("Account", back_populates="user")
-    beneficiaries = relationship("Beneficiary", back_populates="user")
-    transactions = relationship("Transaction", back_populates="user")
-    scheduled_instructions = relationship("ScheduledInstruction", back_populates="user")
-    channel_identities = relationship("UserChannelIdentity", back_populates="user", cascade="all, delete-orphan")
+    accounts: Mapped[list["Account"]] = relationship("Account", back_populates="user")
+    beneficiaries: Mapped[list["Beneficiary"]] = relationship("Beneficiary", back_populates="user")
+    transactions: Mapped[list["Transaction"]] = relationship("Transaction", back_populates="user")
+    scheduled_instructions: Mapped[list["ScheduledInstruction"]] = relationship(
+        "ScheduledInstruction", back_populates="user"
+    )
+    channel_identities: Mapped[list["UserChannelIdentity"]] = relationship(
+        "UserChannelIdentity", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<User(id={self.id}, phone={self.phone_number}, name={self.full_name})>"
@@ -80,21 +89,21 @@ class UserChannelIdentity(Base):
 
     __tablename__ = "user_channel_identities"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_channel_identities_user_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    channel = Column(String, nullable=False)  # e.g., "whatsapp", "telegram"
-    channel_user_id = Column(String, nullable=False, index=True)  # e.g., "+234...", "1234567"
+    channel: Mapped[str] = mapped_column(String, nullable=False)  # e.g., "whatsapp", "telegram"
+    channel_user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)  # e.g., "+234...", "1234567"
 
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
 
     __table_args__ = (UniqueConstraint("channel", "channel_user_id", name="uq_user_channel_identity"),)
 
-    user = relationship("User", back_populates="channel_identities")
+    user: Mapped["User"] = relationship("User", back_populates="channel_identities")
 
     def __repr__(self):
         return f"<UserChannelIdentity(user_id={self.user_id}, channel={self.channel}, id={self.channel_user_id})>"
@@ -105,27 +114,29 @@ class Account(Base):
 
     __tablename__ = "accounts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_accounts_user_id"),
         nullable=False,
         index=True,
     )
-    account_id = Column(String, nullable=False, unique=True)
-    bank_name = Column(String, nullable=False)
-    bank_code = Column(String, nullable=True)
-    account_number = Column(String, nullable=False)
-    account_name = Column(String, nullable=True)
-    is_default = Column(Boolean, default=False)
+    account_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    bank_name: Mapped[str] = mapped_column(String, nullable=False)
+    bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    account_number: Mapped[str] = mapped_column(String, nullable=False)
+    account_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    mandate_id = Column(String, nullable=True, index=True)
-    mandate_status = Column(String, default=MandateStatusEnum.PENDING.value, nullable=False)
-    extra_data = Column(JSON, default={})
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
+    mandate_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    mandate_status: Mapped[str] = mapped_column(String, default=MandateStatusEnum.PENDING.value, nullable=False)
+    extra_data: Mapped[dict[str, Any]] = mapped_column(JSON, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
 
-    user = relationship("User", back_populates="accounts")
+    user: Mapped["User"] = relationship("User", back_populates="accounts")
 
     def __repr__(self):
         return f"<Account(id={self.id}, bank={self.bank_name}, number={self.account_number})>"
@@ -136,28 +147,30 @@ class Beneficiary(Base):
 
     __tablename__ = "beneficiaries"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_beneficiaries_user_id"),
         nullable=False,
         index=True,
     )
-    beneficiary_type = Column(
+    beneficiary_type: Mapped[str] = mapped_column(
         String,
         default=BeneficiaryTypeEnum.TRANSFER.value,
         nullable=False,
         index=True,
     )
-    account_name = Column(String, nullable=False)
-    alias = Column(String, nullable=True)
-    account_number = Column(String, nullable=True)
-    bank_code = Column(String, nullable=True)
-    bank_name = Column(String, nullable=True)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
+    account_name: Mapped[str] = mapped_column(String, nullable=False)
+    alias: Mapped[str | None] = mapped_column(String, nullable=True)
+    account_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
 
-    user = relationship("User", back_populates="beneficiaries")
+    user: Mapped["User"] = relationship("User", back_populates="beneficiaries")
 
     def __repr__(self):
         return (
@@ -171,52 +184,54 @@ class Transaction(Base):
 
     __tablename__ = "transactions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_transactions_user_id"),
         nullable=False,
         index=True,
     )
-    transaction_type = Column(
+    transaction_type: Mapped[str] = mapped_column(
         String,
         default=TransactionTypeEnum.TRANSFER.value,
         nullable=False,
     )
-    status = Column(String, nullable=False, index=True)  # Uses TransactionStatusEnum
-    amount = Column(Float, nullable=False)
-    currency = Column(String, default="NGN", nullable=False)
-    source_account_id = Column(
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)  # Uses TransactionStatusEnum
+    amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String, default="NGN", nullable=False)
+    source_account_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("accounts.id", name="fk_transactions_source_account_id"),
         nullable=True,
     )
-    source_account_number = Column(String, nullable=False)
-    source_bank_name = Column(String, nullable=False)
-    recipient_account_number = Column(String, nullable=True)
-    recipient_bank_code = Column(String, nullable=True)
-    recipient_bank_name = Column(String, nullable=True)
-    recipient_name = Column(String, nullable=True)
-    target_phone_number = Column(String, nullable=True)
-    mobile_network = Column(String, nullable=True)
-    biller_code = Column(String, nullable=True)
-    biller_item_code = Column(String, nullable=True)
-    biller_item_name = Column(String, nullable=True)
-    service_metadata = Column(JSON, nullable=True)
-    narration = Column(String, nullable=True)
-    transaction_id = Column(String, nullable=True)
-    idempotency_key = Column(String, unique=True, nullable=False, index=True)
-    error_message = Column(String, nullable=True)
-    provider_response = Column(JSON, nullable=True)
-    provider_status = Column(String, nullable=True)
-    provider_error_code = Column(String, nullable=True)
-    receipt_sent = Column(Boolean, default=False, nullable=False)
-    beneficiary_suggested = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
-    completed_at = Column(DateTime, nullable=True)
+    source_account_number: Mapped[str] = mapped_column(String, nullable=False)
+    source_bank_name: Mapped[str] = mapped_column(String, nullable=False)
+    recipient_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    recipient_bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    recipient_bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    recipient_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    mobile_network: Mapped[str | None] = mapped_column(String, nullable=True)
+    biller_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    biller_item_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    biller_item_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    service_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    narration: Mapped[str | None] = mapped_column(String, nullable=True)
+    transaction_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_response: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    receipt_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    beneficiary_suggested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    user = relationship("User", back_populates="transactions")
+    user: Mapped["User"] = relationship("User", back_populates="transactions")
 
     def __repr__(self):
         return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, tx_id={self.transaction_id})>"
@@ -227,23 +242,25 @@ class RiskDecision(Base):
 
     __tablename__ = "risk_decisions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_risk_decisions_user_id"),
         nullable=False,
         index=True,
     )
-    idempotency_key = Column(String, nullable=False, index=True)
-    decision = Column(String, nullable=False, index=True)
-    score = Column(Integer, default=0, nullable=False)
-    reason_codes = Column(JSON, default=list, nullable=False)
-    status = Column(String, default="active", nullable=False, index=True)
-    risk_metadata = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    decision: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="active", nullable=False, index=True)
+    risk_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
 
-    user = relationship("User")
+    user: Mapped["User"] = relationship("User")
 
     __table_args__ = (
         UniqueConstraint("idempotency_key", name="uq_risk_decisions_idempotency_key"),
@@ -258,38 +275,38 @@ class BankTransaction(Base):
 
     __tablename__ = "bank_transactions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_bank_transactions_user_id"),
         nullable=False,
         index=True,
     )
-    linked_account_id = Column(
+    linked_account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("accounts.id", name="fk_bank_transactions_linked_account_id"),
         nullable=False,
         index=True,
     )
-    provider = Column(String, nullable=False, index=True)
-    provider_transaction_id = Column(String, nullable=False)
-    posted_at = Column(DateTime, nullable=False, index=True)
-    posted_date = Column(Date, nullable=False, index=True)
-    amount = Column(Float, nullable=False)
-    currency = Column(String, default="NGN", nullable=False)
-    transaction_type = Column(String, nullable=False, index=True)
-    narration = Column(Text, nullable=True)
-    category = Column(String, nullable=True)
-    counterparty = Column(String, nullable=True, index=True)
-    counterparty_role = Column(String, nullable=True)
-    counterparty_source = Column(String, nullable=True)
-    resolved_category = Column(String, nullable=True, index=True)
-    category_source = Column(String, nullable=True)
-    parser_rule = Column(String, nullable=True)
-    bank_name = Column(String, nullable=True)
-    raw_payload = Column(JSON, nullable=True)
-    first_seen_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    last_seen_at = Column(DateTime, server_default=text("now()"), nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    provider_transaction_id: Mapped[str] = mapped_column(String, nullable=False)
+    posted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    posted_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String, default="NGN", nullable=False)
+    transaction_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    narration: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
+    counterparty: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    counterparty_role: Mapped[str | None] = mapped_column(String, nullable=True)
+    counterparty_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_category: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    category_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    parser_rule: Mapped[str | None] = mapped_column(String, nullable=True)
+    bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
 
     __table_args__ = (
         UniqueConstraint(
@@ -312,18 +329,18 @@ class BankTransactionCoverage(Base):
 
     __tablename__ = "bank_transaction_coverage"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    linked_account_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    linked_account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("accounts.id", name="fk_bank_transaction_coverage_linked_account_id"),
         nullable=False,
         index=True,
     )
-    provider = Column(String, nullable=False, index=True)
-    window_start = Column(Date, nullable=False)
-    window_end = Column(Date, nullable=False)
-    coverage_type = Column(String, nullable=False, default="full")
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    window_start: Mapped[date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[date] = mapped_column(Date, nullable=False)
+    coverage_type: Mapped[str] = mapped_column(String, nullable=False, default="full")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
 
     def __repr__(self):
         return (
@@ -344,41 +361,50 @@ class FundedTransfer(Base):
 
     __tablename__ = "funded_transfers"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_funded_transfers_user_id"),
         nullable=False,
         index=True,
     )
 
-    amount = Column(Float, nullable=False)
-    currency = Column(String, default="NGN", nullable=False)
-    recipient_account_number = Column(String, nullable=False)
-    recipient_bank_code = Column(String, nullable=False)
-    recipient_bank_name = Column(String, nullable=False)
-    recipient_name = Column(String, nullable=False)
-    narration = Column(String, nullable=True)
+    amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String, default="NGN", nullable=False)
+    recipient_account_number: Mapped[str] = mapped_column(String, nullable=False)
+    recipient_bank_code: Mapped[str] = mapped_column(String, nullable=False)
+    recipient_bank_name: Mapped[str] = mapped_column(String, nullable=False)
+    recipient_name: Mapped[str] = mapped_column(String, nullable=False)
+    narration: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    status = Column(String, default=FundedTransferStatusEnum.DRAFT.value, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String,
+        default=FundedTransferStatusEnum.DRAFT.value,
+        nullable=False,
+        index=True,
+    )
 
-    payout_provider = Column(String, nullable=True)
-    payout_reference = Column(String, unique=True, nullable=True, index=True)
-    idempotency_key = Column(String, unique=True, nullable=False, index=True)
+    payout_provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    payout_reference: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
 
-    payout_retry_count = Column(Integer, default=0, nullable=False)
-    max_payout_retries = Column(Integer, default=3, nullable=False)
+    payout_retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_payout_retries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
 
-    error_message = Column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
-    funding_completed_at = Column(DateTime, nullable=True)
-    payout_initiated_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+    funding_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    payout_initiated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    user = relationship("User")
-    funding_steps = relationship("FundingStep", back_populates="funded_transfer", order_by="FundingStep.sequence")
+    user: Mapped["User"] = relationship("User")
+    funding_steps: Mapped[list["FundingStep"]] = relationship(
+        "FundingStep", back_populates="funded_transfer", order_by="FundingStep.sequence"
+    )
 
     def __repr__(self):
         return f"<FundedTransfer(id={self.id}, amount={self.amount}, status={self.status})>"
@@ -393,43 +419,43 @@ class FundingStep(Base):
 
     __tablename__ = "funding_steps"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    funded_transfer_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    funded_transfer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("funded_transfers.id", name="fk_funding_steps_funded_transfer_id"),
         nullable=False,
         index=True,
     )
-    account_id = Column(
+    account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("accounts.id", name="fk_funding_steps_account_id"),
         nullable=False,
         index=True,
     )
-    amount = Column(Float, nullable=False)
-    sequence = Column(Integer, nullable=False)
-    status = Column(String, default=FundingStepStatusEnum.PENDING.value, nullable=False, index=True)
+    amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, default=FundingStepStatusEnum.PENDING.value, nullable=False, index=True)
 
-    provider_name = Column(String, nullable=True)
-    provider_debit_id = Column(String, unique=True, nullable=True, index=True)
-    provider_reference = Column(String, unique=True, nullable=True, index=True)
-    refund_provider_id = Column(String, nullable=True, index=True)
-    refund_provider_reference = Column(String, nullable=True, index=True)
+    provider_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_debit_id: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    provider_reference: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    refund_provider_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    refund_provider_reference: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
-    initiated_at = Column(DateTime, nullable=True)
-    confirmed_at = Column(DateTime, nullable=True)
-    failed_at = Column(DateTime, nullable=True)
-    refunded_at = Column(DateTime, nullable=True)
-    refund_initiated_at = Column(DateTime, nullable=True)
-    refund_last_checked_at = Column(DateTime, nullable=True)
+    initiated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refund_initiated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refund_last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    error_message = Column(String, nullable=True)
-    retry_count = Column(Integer, default=0, nullable=False)
-    refund_attempt_count = Column(Integer, default=0, nullable=False)
-    refund_error_message = Column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    refund_attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    refund_error_message: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    funded_transfer = relationship("FundedTransfer", back_populates="funding_steps")
-    account = relationship("Account")
+    funded_transfer: Mapped["FundedTransfer"] = relationship("FundedTransfer", back_populates="funding_steps")
+    account: Mapped["Account"] = relationship("Account")
 
     __table_args__ = (
         UniqueConstraint("funded_transfer_id", "sequence", name="uq_funding_steps_transfer_sequence"),
@@ -444,18 +470,20 @@ class ProcessedWebhookEvent(Base):
 
     __tablename__ = "processed_webhook_events"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    provider = Column(String, nullable=False, index=True)
-    event_id = Column(String, nullable=False)
-    event_name = Column(String, nullable=False, index=True)
-    status = Column(String, default="processing", nullable=False, index=True)
-    payload_hash = Column(String, nullable=True)
-    attempt_count = Column(Integer, default=1, nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    event_id: Mapped[str] = mapped_column(String, nullable=False)
+    event_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String, default="processing", nullable=False, index=True)
+    payload_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
-    first_seen_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    last_seen_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
-    processed_at = Column(DateTime, nullable=True)
-    error_message = Column(Text, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("provider", "event_id", name="uq_processed_webhook_events_provider_event_id"),
@@ -470,20 +498,20 @@ class ActionableMessage(Base):
 
     __tablename__ = "actionable_messages"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_actionable_messages_user_id"),
         nullable=False,
         index=True,
     )
-    channel_message_id = Column(String, unique=True, nullable=False, index=True)
-    message_type = Column(String, nullable=False, index=True)  # Uses ActionableMessageTypeEnum
-    message_data = Column(JSON, nullable=False)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    expires_at = Column(DateTime, nullable=False, index=True)
+    channel_message_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    message_type: Mapped[str] = mapped_column(String, nullable=False, index=True)  # Uses ActionableMessageTypeEnum
+    message_data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
 
-    user = relationship("User")
+    user: Mapped["User"] = relationship("User")
 
     def __repr__(self):
         return f"<ActionableMessage(id={self.id}, channel_msg_id={self.channel_message_id}, type={self.message_type})>"
@@ -494,34 +522,42 @@ class ScheduledInstruction(Base):
 
     __tablename__ = "scheduled_instructions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_scheduled_instructions_user_id"),
         nullable=False,
         index=True,
     )
-    domain = Column(String, default=ScheduleDomainEnum.TRANSFER.value, nullable=False, index=True)
-    status = Column(String, default=ScheduledInstructionStatusEnum.ACTIVE.value, nullable=False, index=True)
-    action = Column(String, nullable=False)
-    payload_snapshot = Column(JSON, nullable=False, default={})
-    timezone = Column(String, nullable=False, default="Africa/Lagos")
-    recurrence_type = Column(String, default=RecurrenceTypeEnum.ONE_TIME.value, nullable=False, index=True)
-    start_date = Column(String, nullable=False)
-    local_time = Column(String, nullable=False)
-    day_of_week = Column(Integer, nullable=True)
-    day_of_month = Column(Integer, nullable=True)
-    end_date = Column(String, nullable=True)
-    next_run_at_utc = Column(DateTime, nullable=False, index=True)
-    last_run_at_utc = Column(DateTime, nullable=True)
-    cancelled_at = Column(DateTime, nullable=True)
-    channel = Column(String, nullable=False, default="whatsapp")
-    channel_identity = Column(String, nullable=True)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
+    domain: Mapped[str] = mapped_column(String, default=ScheduleDomainEnum.TRANSFER.value, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String, default=ScheduledInstructionStatusEnum.ACTIVE.value, nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    payload_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default={})
+    timezone: Mapped[str] = mapped_column(String, nullable=False, default="Africa/Lagos")
+    recurrence_type: Mapped[str] = mapped_column(
+        String, default=RecurrenceTypeEnum.ONE_TIME.value, nullable=False, index=True
+    )
+    start_date: Mapped[str] = mapped_column(String, nullable=False)
+    local_time: Mapped[str] = mapped_column(String, nullable=False)
+    day_of_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_date: Mapped[str | None] = mapped_column(String, nullable=True)
+    next_run_at_utc: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    last_run_at_utc: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    channel: Mapped[str] = mapped_column(String, nullable=False, default="whatsapp")
+    channel_identity: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
 
-    user = relationship("User", back_populates="scheduled_instructions")
-    runs = relationship("ScheduledRun", back_populates="schedule", order_by="ScheduledRun.due_at_utc")
+    user: Mapped["User"] = relationship("User", back_populates="scheduled_instructions")
+    runs: Mapped[list["ScheduledRun"]] = relationship(
+        "ScheduledRun", back_populates="schedule", order_by="ScheduledRun.due_at_utc"
+    )
 
     def __repr__(self):
         return (
@@ -535,24 +571,26 @@ class ScheduledRun(Base):
 
     __tablename__ = "scheduled_runs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    schedule_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    schedule_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("scheduled_instructions.id", name="fk_scheduled_runs_schedule_id"),
         nullable=False,
         index=True,
     )
-    due_at_utc = Column(DateTime, nullable=False, index=True)
-    status = Column(String, default=ScheduledRunStatusEnum.QUEUED.value, nullable=False, index=True)
-    attempt = Column(Integer, nullable=False, default=1)
-    transaction_id = Column(String, nullable=True)
-    idempotency_key = Column(String, nullable=False, unique=True, index=True)
-    error_message = Column(String, nullable=True)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
-    completed_at = Column(DateTime, nullable=True)
+    due_at_utc: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String, default=ScheduledRunStatusEnum.QUEUED.value, nullable=False, index=True)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    transaction_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    schedule = relationship("ScheduledInstruction", back_populates="runs")
+    schedule: Mapped["ScheduledInstruction"] = relationship("ScheduledInstruction", back_populates="runs")
 
     def __repr__(self):
         return (
@@ -600,29 +638,35 @@ class SupportTicket(Base):
 
     __tablename__ = "support_tickets"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    ticket_code = Column(String(20), unique=True, nullable=False, index=True)
-    user_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    ticket_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", name="fk_support_tickets_user_id"),
         nullable=False,
         index=True,
     )
-    channel = Column(String(20), default="whatsapp", nullable=False)
-    intent = Column(String(50), nullable=False, index=True)
-    status = Column(String(20), default=SupportTicketStatusEnum.OPEN.value, nullable=False, index=True)
-    priority = Column(String(10), default=SupportTicketPriorityEnum.MEDIUM.value, nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(20), default="whatsapp", nullable=False)
+    intent: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default=SupportTicketStatusEnum.OPEN.value, nullable=False, index=True
+    )
+    priority: Mapped[str] = mapped_column(
+        String(10), default=SupportTicketPriorityEnum.MEDIUM.value, nullable=False, index=True
+    )
 
-    transaction_ref = Column(String(100), nullable=True, index=True)
+    transaction_ref: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 
-    summary = Column(Text, nullable=False)
-    details = Column(JSON, default={}, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default={}, nullable=False)
 
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
-    resolved_at = Column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    user = relationship("User")
+    user: Mapped["User"] = relationship("User")
 
     def __repr__(self):
         return f"<SupportTicket(id={self.id}, code={self.ticket_code}, status={self.status})>"

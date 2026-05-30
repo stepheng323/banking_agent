@@ -152,6 +152,12 @@ class MessageConsumer:
         runtime_user_repository = user_repository or self.user_repository
         runtime_onboarding_executor = onboarding_executor or self.onboarding_executor
         runtime_orchestrator = orchestrator or self.orchestrator
+        if runtime_user_repository is None:
+            raise RuntimeError("user_repository_unavailable")
+        if runtime_onboarding_executor is None:
+            raise RuntimeError("onboarding_executor_unavailable")
+        if runtime_orchestrator is None:
+            raise RuntimeError("orchestrator_unavailable")
 
         rate_result = await message_rate_limiter.check(channel_user_id)
         if not rate_result.allowed:

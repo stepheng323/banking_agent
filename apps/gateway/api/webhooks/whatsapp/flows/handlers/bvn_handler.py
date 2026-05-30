@@ -86,20 +86,21 @@ async def handle_bvn_entry(
     result = ServiceResult(**await bvn_service.initiate_bvn_verification(flow_token, bvn))
 
     if result.success:
+        result_data = result.data or {}
         return format_success_response(
             "METHOD_SELECTION",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
-            bvn=result.data["bvn"],
-            methods=result.data["methods"],
+            bvn=result_data["bvn"],
+            methods=result_data["methods"],
             show_error=False,
             error_message="",
         )
 
     return format_error_response(
         "BVN_ENTRY",
-        result.error,
+        result.error or "",
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,

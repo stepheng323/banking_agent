@@ -79,7 +79,7 @@ async def handle_account_selection(
 
         return format_error_response(
             "ACCOUNT_SELECTION",
-            result.error,
+            result.error or "",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
@@ -90,19 +90,20 @@ async def handle_account_selection(
     result = ServiceResult(**await account_service.select_account(flow_token, data.selected_account))
 
     if result.success:
+        result_data = result.data or {}
         return format_success_response(
             "PIN_ENTRY",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
-            bvn=result.data.get("bvn", ""),
+            bvn=result_data.get("bvn", ""),
             show_error=False,
             error_message="",
         )
 
     return format_error_response(
         "ACCOUNT_SELECTION",
-        result.error,
+        result.error or "",
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,

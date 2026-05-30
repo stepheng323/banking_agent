@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from shared.money import MoneyAmount
+
 
 class MonoApiError(Exception):
     """Mono API error with HTTP status, error code, and message."""
@@ -67,9 +69,9 @@ class BankAccount(BaseModel):
 
 class BalanceData(BaseModel):
     balance_kobo: int
-    balance_naira: float
+    balance_naira: MoneyAmount
     ledger_balance_kobo: int
-    ledger_balance_naira: float
+    ledger_balance_naira: MoneyAmount
     currency: str
     account_id: str
     account_name: str | None = None

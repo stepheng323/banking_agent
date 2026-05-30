@@ -36,6 +36,7 @@ def frame_noun(frame_type: ContextFrameType, *, plural: bool) -> str:
 
 def candidate_detail_fields(entity: ContextEntity) -> list[tuple[str, Any]]:
     data = entity.data if isinstance(entity.data, dict) else {}
+    keys: tuple[str, ...]
     if entity.entity_type.value == "beneficiary":
         keys = ("account_name", "name", "bank_name", "bank", "account_number", "account")
     elif entity.entity_type.value == "account":

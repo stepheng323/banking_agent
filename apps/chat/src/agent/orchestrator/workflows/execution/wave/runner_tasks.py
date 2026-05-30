@@ -53,7 +53,7 @@ async def execute_current_wave_tasks(
             logger.info(
                 "task_deferred_during_input_interrupt",
                 task_id=task_id,
-                active_task_ids=state.last_interrupt.task_ids,
+                active_task_ids=state.last_interrupt.task_ids if state.last_interrupt is not None else [],
             )
             continue
 

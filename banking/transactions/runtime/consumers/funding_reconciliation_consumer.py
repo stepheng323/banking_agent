@@ -159,6 +159,10 @@ class FundingReconciliationConsumer:
         }
 
     async def _retry_debit_initiation(self, uow: UnitOfWork, step: Any, transfer: Any) -> DebitResult:
+        funding_steps = uow.funding_steps
+        accounts = uow.accounts
+        if funding_steps is None or accounts is None:
+            raise RuntimeError("funding_reconciliation_repositories_unavailable")
         retry_count = int(getattr(step, "retry_count", 0) or 0)
         if retry_count >= int(settings.funding_step_max_retries):
             return DebitResult(
@@ -168,7 +172,7 @@ class FundingReconciliationConsumer:
                 error_message="Funding retry limit exhausted",
             )
 
-        account = await uow.accounts.get_by_id(str(step.account_id))
+        account = await accounts.get_by_id(str(step.account_id))
         if not account or not account.mandate_id:
             return DebitResult(
                 success=False,
@@ -179,11 +183,11 @@ class FundingReconciliationConsumer:
 
         reference = step.provider_reference or f"{transfer.idempotency_key}-s{step.sequence}"
         if step.status == FundingStepStatusEnum.PENDING.value:
-            claim_method = getattr(uow.funding_steps, "claim_for_debit", None)
+            claim_method = getattr(funding_steps, "claim_for_debit", None)
             if claim_method:
                 claimed = await claim_method(str(step.id), provider_reference=reference)
             else:
-                await uow.funding_steps.update_status(
+                await funding_steps.update_status(
                     str(step.id),
                     FundingStepStatusEnum.PROCESSING.value,
                     provider_reference=reference,
@@ -192,7 +196,7 @@ class FundingReconciliationConsumer:
             if not claimed:
                 return DebitResult(success=True, status=DebitStatus.PROCESSING, reference=reference)
         else:
-            await uow.funding_steps.update_status(
+            await funding_steps.update_status(
                 str(step.id),
                 FundingStepStatusEnum.PROCESSING.value,
                 provider_reference=reference,
@@ -201,13 +205,16 @@ class FundingReconciliationConsumer:
             success=True,
             status=DebitStatus.PROCESSING,
             reference=reference,
-            amount=float(step.amount),
+            amount=step.amount,
             provider_response={"mandate_id": account.mandate_id},
         )
 
     async def _apply_result(self, uow: UnitOfWork, step: Any, transfer: Any, result: DebitResult) -> None:
+        funding_steps = uow.funding_steps
+        if funding_steps is None:
+            raise RuntimeError("funding_step_repository_unavailable")
         if result.status == DebitStatus.SUCCESSFUL:
-            await uow.funding_steps.update_status(
+            await funding_steps.update_status(
                 str(step.id),
                 FundingStepStatusEnum.CONFIRMED.value,
                 provider_reference=result.reference,
@@ -220,11 +227,11 @@ class FundingReconciliationConsumer:
         if result.status in {DebitStatus.PENDING, DebitStatus.PROCESSING} or is_retryable_debit_result(result):
             retry_count = int(getattr(step, "retry_count", 0) or 0) + 1
             step.retry_count = retry_count
-            if getattr(uow, "db", None) is not None:
+            if uow.db is not None:
                 uow.db.add(step)
 
             if retry_count < int(settings.funding_step_max_retries):
-                await uow.funding_steps.update_status(
+                await funding_steps.update_status(
                     str(step.id),
                     FundingStepStatusEnum.PROCESSING.value,
                     provider_reference=result.reference,
@@ -243,7 +250,7 @@ class FundingReconciliationConsumer:
                 provider_response=result.provider_response,
             )
 
-        await uow.funding_steps.update_status(
+        await funding_steps.update_status(
             str(step.id),
             FundingStepStatusEnum.FAILED.value,
             provider_reference=result.reference,

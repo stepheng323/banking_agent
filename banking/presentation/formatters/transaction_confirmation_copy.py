@@ -5,8 +5,16 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from banking.presentation.formatters.transaction_copy_context import derive_task_mix
+from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
+
+_CONFIRMATION_SECTION_KEYS: dict[str, MessageKey] = {
+    "transfer": "transaction_copy.confirmation.section.transfer",
+    "airtime": "transaction_copy.confirmation.section.airtime",
+    "data": "transaction_copy.confirmation.section.data",
+    "generic": "transaction_copy.confirmation.section.generic",
+}
 
 
 def build_confirmation_header(
@@ -57,7 +65,7 @@ def build_confirmation_section_label(task_type: str, *, locale: str) -> str:
     normalized = str(task_type or "").strip().lower()
     if normalized not in {"transfer", "airtime", "data"}:
         normalized = "generic"
-    return render_message(f"transaction_copy.confirmation.section.{normalized}", locale)
+    return render_message(_CONFIRMATION_SECTION_KEYS[normalized], locale)
 
 
 def format_confirmation_section(*, task_type: str, summary: str, locale: str) -> str:
@@ -77,12 +85,12 @@ def build_completion_frame(*, task_types: Iterable[str], locale: str, task_count
     plural = task_count > 1
 
     if mix == "transfer":
-        header_key = (
+        header_key: MessageKey = (
             "transaction_copy.completion.header.transfer_plural"
             if plural
             else "transaction_copy.completion.header.transfer"
         )
-        footer_key = (
+        footer_key: MessageKey = (
             "transaction_copy.completion.footer.transfer_plural"
             if plural
             else "transaction_copy.completion.footer.transfer"

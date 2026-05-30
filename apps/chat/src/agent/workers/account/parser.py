@@ -1,6 +1,6 @@
 """Parser for account management intents."""
 
-from typing import Literal
+from typing import Any, Literal, cast
 
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
@@ -80,7 +80,8 @@ class AccountParser:
         )
 
         try:
-            structured_llm = self.llm.with_structured_output(AccountIntent)
+            # LangChain's Runnable type omits provider-specific structured output helpers.
+            structured_llm = cast(Any, self.llm).with_structured_output(AccountIntent)
 
             result = await structured_llm.ainvoke(
                 [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}]

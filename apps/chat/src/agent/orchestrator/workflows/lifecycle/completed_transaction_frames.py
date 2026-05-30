@@ -149,7 +149,8 @@ def _completed_transfer_recipient_payload(task: TaskSpec, recipient: dict[str, A
 
 def _completed_transaction_entity_payloads(task: TaskSpec) -> list[dict[str, Any]]:
     payload = task.payload
-    receipt = payload.get("receipt") if isinstance(payload.get("receipt"), dict) else {}
+    raw_receipt = payload.get("receipt")
+    receipt: dict[str, Any] = raw_receipt if isinstance(raw_receipt, dict) else {}
     if task.type == "transfer":
         recipients = payload.get("recipients")
         if isinstance(recipients, list) and recipients:

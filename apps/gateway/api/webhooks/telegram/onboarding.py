@@ -233,6 +233,8 @@ async def telegram_onboarding_linking_session(
     session, error = await _get_valid_linking_session(data.flow_token, user_data)
     if error:
         return error
+    if session is None:
+        return _invalid_linking_session_error()
 
     methods = session.get("methods", [])
     if not isinstance(methods, list) or not methods:
@@ -265,6 +267,8 @@ async def telegram_linking_method(
     session, error = await _get_valid_linking_session(data.flow_token, user_data)
     if error:
         return error
+    if session is None:
+        return _invalid_linking_session_error()
 
     if not data.method:
         methods = session.get("methods", [])

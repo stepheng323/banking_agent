@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from banking.presentation.formatters.batch_funding import format_batch_funding_shortfall
@@ -17,6 +18,9 @@ from banking.transfers.funding.batch_models import BatchFundingResult, Shortfall
 from banking.transfers.funding.models import FundingPlan
 from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.money import MoneyAmount, require_money
+
+ZERO_MONEY = Decimal("0.00")
 
 
 class BatchFundingCoordinator:
@@ -32,30 +36,33 @@ class BatchFundingCoordinator:
         accounts: list[dict[str, Any]],
         locale: str = "en",
     ) -> BatchFundingResult:
-        total_demanded = sum(max(0.0, float(demand.amount or 0.0)) for demand in demands)
+        total_demanded = sum(
+            (max(ZERO_MONEY, require_money(demand.amount)) for demand in demands),
+            ZERO_MONEY,
+        )
         eligible_accounts = eligible_batch_accounts(adapt_batch_accounts(accounts))
 
         if not demands:
             return BatchFundingResult(
                 is_feasible=True,
                 plans_by_task={},
-                total_demanded=0.0,
-                total_available=0.0,
+                total_demanded=ZERO_MONEY,
+                total_available=ZERO_MONEY,
             )
 
         ledger = await fetch_batch_balances(self._provider, eligible_accounts)
-        total_available = sum(ledger.values())
+        total_available: MoneyAmount = sum(ledger.values(), ZERO_MONEY)
         accounts_by_id = {str(account.id): account for account in eligible_accounts}
         bank_names_by_id = {str(account.id): account.bank_name for account in eligible_accounts}
 
         plans_by_task: dict[str, FundingPlan] = {}
         shortfalls: list[ShortfallDetail] = []
         for demand in prioritize_demands(demands):
-            amount = max(0.0, float(demand.amount or 0.0))
+            amount = max(ZERO_MONEY, require_money(demand.amount))
             if amount <= 0:
                 plans_by_task[demand.task_id] = FundingPlan(
-                    transfer_amount=0.0,
-                    total_funded=0.0,
+                    transfer_amount=ZERO_MONEY,
+                    total_funded=ZERO_MONEY,
                     steps=[],
                     is_sufficient=True,
                 )

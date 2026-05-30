@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
 from banking.transfers.funding.models import FundingPlan
+from shared.money import MoneyAmount
 
 
 @dataclass
@@ -19,10 +21,10 @@ class TransferDemand:
     """One transfer's funding demand."""
 
     task_id: str
-    amount: float
+    amount: MoneyAmount
     source_affinity: SourceAffinity = field(default_factory=SourceAffinity)
     explicit_sources: list[str] = field(default_factory=list)
-    explicit_split: dict[str, float] | None = None
+    explicit_split: dict[str, MoneyAmount] | None = None
     use_dual_accounts: bool = False
     preferred_account_id: str | None = None
 
@@ -30,10 +32,10 @@ class TransferDemand:
 @dataclass
 class ShortfallDetail:
     task_id: str
-    amount_needed: float
+    amount_needed: MoneyAmount
     account_requested: str
-    account_available: float
-    deficit: float
+    account_available: MoneyAmount
+    deficit: MoneyAmount
     alternate_accounts: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -44,8 +46,8 @@ class BatchFundingResult:
     is_feasible: bool
     plans_by_task: dict[str, FundingPlan] = field(default_factory=dict)
     shortfalls: list[ShortfallDetail] | None = None
-    total_demanded: float = 0.0
-    total_available: float = 0.0
+    total_demanded: MoneyAmount = Decimal("0.00")
+    total_available: MoneyAmount = Decimal("0.00")
     suggestion: str | None = None
 
 
@@ -54,10 +56,11 @@ class BatchFundingAccount:
 
     def __init__(self, data: dict[str, Any]):
         raw_id = data.get("id")
-        self.id = UUID(raw_id) if isinstance(raw_id, str) else raw_id
-        self.mono_account_id = data.get("mono_account_id") or data.get("account_id") or ""
-        self.account_number = data.get("account_number", "")
-        self.bank_name = data.get("bank_name", "")
-        self.mandate_id = data.get("mandate_id")
-        self.mandate_status = data.get("mandate_status", "pending")
+        self.id: UUID | None = UUID(raw_id) if isinstance(raw_id, str) else raw_id if isinstance(raw_id, UUID) else None
+        self.mono_account_id: str = str(data.get("mono_account_id") or data.get("account_id") or "")
+        self.account_number: str = str(data.get("account_number", ""))
+        self.bank_name: str = str(data.get("bank_name", ""))
+        raw_mandate_id = data.get("mandate_id")
+        self.mandate_id: str | None = str(raw_mandate_id) if raw_mandate_id else None
+        self.mandate_status: str = str(data.get("mandate_status", "pending"))
         self.is_default = bool(data.get("is_default", False))

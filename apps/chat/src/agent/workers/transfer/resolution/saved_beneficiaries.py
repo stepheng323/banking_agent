@@ -34,8 +34,11 @@ def resolve_beneficiary_from_reference(
 
     selector = str(reference.get("selector") or "").strip().lower()
     if selector == "index":
+        raw_index = reference.get("index")
+        if raw_index is None:
+            return None
         try:
-            index = int(reference.get("index"))
+            index = int(raw_index)
         except (TypeError, ValueError):
             return None
         if 1 <= index <= len(candidates):

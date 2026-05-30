@@ -213,6 +213,8 @@ class SupportClassifier:
     def _parse_confidence(value: object) -> float:
         if value is None:
             return 0.5
+        if not isinstance(value, (int, float, str)):
+            return 0.5
         try:
             confidence = float(value)
         except (TypeError, ValueError):

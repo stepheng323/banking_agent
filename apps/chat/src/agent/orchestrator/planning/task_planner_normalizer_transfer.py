@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer_parsing i
     parse_amount_value,
     single_unambiguous,
 )
+from shared.money import MoneyAmount
 from shared.types.planner import TaskParameters
 
 
@@ -89,7 +90,7 @@ def normalize_transfer_params(params: TaskParameters, text: str) -> tuple[list[s
         amount, amount_ambiguous = single_unambiguous(extract_amount_candidates(text))
         if amount_ambiguous:
             ambiguous.append("amount")
-        elif isinstance(amount, float):
+        elif amount is not None:
             params.amount = amount
             patched.append("amount")
 
@@ -130,7 +131,7 @@ def sanitize_transfer_explicit_split(params: TaskParameters) -> list[str]:
     if len(allocations) < 2:
         return []
 
-    cleaned_split: dict[str, float] = {}
+    cleaned_split: dict[str, MoneyAmount] = {}
     for raw_key, raw_value in explicit_split.items():
         key = str(raw_key or "").strip()
         if not key:

@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from shared.money import MoneyAmount
+
 
 class PayoutProvider(ABC):
     """
@@ -12,7 +14,7 @@ class PayoutProvider(ABC):
     @abstractmethod
     async def initiate_transfer(
         self,
-        amount: float,
+        amount: MoneyAmount,
         recipient_account_number: str,
         recipient_bank_code: str,
         sender_account_number: str | None = None,

@@ -23,6 +23,7 @@ async def claim_flutterwave_webhook_event(*, event_id: str, event_name: str, pay
             event_name=event_name,
             payload_hash=payload_hash(payload),
         )
+    return False
 
 
 async def mark_flutterwave_webhook_event_processed(*, event_id: str) -> None:

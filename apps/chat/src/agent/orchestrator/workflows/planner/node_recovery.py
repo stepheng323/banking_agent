@@ -1,6 +1,6 @@
 """Planner runner recovery helpers for empty or misrouted planner output."""
 
-from typing import Any
+from typing import Any, Literal
 
 from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.types.planner import PlannedTask, TaskParameters
@@ -28,11 +28,12 @@ def _recover_unexpected_question_task(planner_output: Any, text: str) -> Planned
     if not instruction:
         return None
 
-    action = "answer_question" if primary_intent == "faq" else "handle_request"
+    executor: Literal["faq", "support"] = "faq" if primary_intent == "faq" else "support"
+    action = "answer_question" if executor == "faq" else "handle_request"
     return PlannedTask(
-        task_id=f"{primary_intent}_unexpected_question",
+        task_id=f"{executor}_unexpected_question",
         action=action,
-        executor=primary_intent,
+        executor=executor,
         instruction=instruction,
         parameters=TaskParameters(),
         risk="READ_ONLY",

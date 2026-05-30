@@ -90,16 +90,16 @@ class TransferWorker:
 
     @staticmethod
     def _build_context(context: dict[str, Any]) -> TransferContext:
+        referent_memory = context.get("referent_memory")
+        resolved_referents = context.get("resolved_referents")
         return TransferContext(
             phone_number=context.get("phone_number", ""),
             language=LocaleManager.normalize(context.get("language")).value,
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
             all_accounts=context.get("all_accounts", []),
-            referent_memory=context.get("referent_memory") if isinstance(context.get("referent_memory"), dict) else {},
-            resolved_referents=(
-                context.get("resolved_referents") if isinstance(context.get("resolved_referents"), dict) else {}
-            ),
+            referent_memory=referent_memory if isinstance(referent_memory, dict) else {},
+            resolved_referents=resolved_referents if isinstance(resolved_referents, dict) else {},
             channel=str(context.get("channel") or "whatsapp"),
             channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
         )

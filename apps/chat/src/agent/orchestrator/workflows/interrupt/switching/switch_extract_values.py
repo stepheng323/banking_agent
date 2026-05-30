@@ -2,14 +2,11 @@
 
 from typing import Any
 
-
-def _coerce_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+from shared.money import MoneyAmount, to_money
 
 
-__all__ = ["_coerce_float"]
+def _coerce_money(value: Any) -> MoneyAmount | None:
+    return to_money(value)
+
+
+__all__ = ["_coerce_money"]

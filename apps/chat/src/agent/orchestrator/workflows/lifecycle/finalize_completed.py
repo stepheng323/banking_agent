@@ -105,7 +105,8 @@ async def build_single_task_beneficiary_suggestion(
         return None
 
     payload = task.payload
-    receipt = payload.get("receipt") if isinstance(payload.get("receipt"), dict) else {}
+    raw_receipt = payload.get("receipt")
+    receipt: dict[str, Any] = raw_receipt if isinstance(raw_receipt, dict) else {}
     transaction_reference = completed_transaction_reference(task, payload, receipt)
 
     if task.type == "transfer":

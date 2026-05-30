@@ -8,6 +8,7 @@ Strategy: "Lazy Balance Fetching"
 - Otherwise: try default first, then add more if needed
 """
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +21,7 @@ from banking.presentation.formatters.funding import (
 )
 from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.money import MoneyAmount, require_money, to_money
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,18 +35,18 @@ class FundingPlanner:
 
     def __init__(self, direct_debit_provider: DirectDebitProvider):
         self._provider = direct_debit_provider
-        self._balance_overrides: dict[str, float] | None = None
+        self._balance_overrides: dict[str, MoneyAmount] | None = None
 
     async def plan_funding(
         self,
         accounts: list[Any],
-        transfer_amount: float,
+        transfer_amount: MoneyAmount,
         preferred_account_id: UUID | None = None,
         use_dual_accounts: bool | None = None,
         requested_source_banks: list[str] | None = None,
-        explicit_split: dict[str, float] | None = None,
+        explicit_split: dict[str, MoneyAmount] | None = None,
         locale: str = "en",
-        balance_overrides: dict[str, float] | None = None,
+        balance_overrides: dict[str, MoneyAmount] | None = None,
     ) -> funding_models.FundingPlan:
         """
         Create a funding plan with lazy balance fetching.
@@ -57,9 +59,10 @@ class FundingPlanner:
         Returns:
             funding_models.FundingPlan with steps or error
         """
+        transfer_amount = require_money(transfer_amount)
         logger.info(
             "planning_funding",
-            amount=transfer_amount,
+            amount=str(transfer_amount),
             account_count=len(accounts),
             preferred_account_id=str(preferred_account_id) if preferred_account_id else None,
             use_dual_accounts=bool(use_dual_accounts),
@@ -69,7 +72,11 @@ class FundingPlanner:
         )
 
         old_overrides = self._balance_overrides
-        self._balance_overrides = dict(balance_overrides or {}) or None
+        self._balance_overrides = {
+            account_id: amount
+            for account_id, raw_amount in (balance_overrides or {}).items()
+            if (amount := to_money(raw_amount)) is not None
+        } or None
         try:
             eligible = [a for a in accounts if account_matching.is_eligible(a)]
 
@@ -82,7 +89,7 @@ class FundingPlanner:
                     error_msg = render_message("funding.planner.no_active_mandates", locale)
                 return funding_models.FundingPlan(
                     transfer_amount=transfer_amount,
-                    total_funded=0,
+                    total_funded=Decimal("0.00"),
                     is_sufficient=False,
                     error=error_msg,
                     is_pending_mandate=bool(pending_accounts),
@@ -92,9 +99,12 @@ class FundingPlanner:
                 s for s in (requested_source_banks or []) if isinstance(s, str) and s.strip()
             ]
             cleaned_explicit_split = {
-                bank: float(amount)
+                bank: parsed_amount
                 for bank, amount in (explicit_split or {}).items()
-                if isinstance(bank, str) and bank.strip() and isinstance(amount, (int, float)) and float(amount) > 0
+                if isinstance(bank, str)
+                and bank.strip()
+                and (parsed_amount := to_money(amount)) is not None
+                and parsed_amount > 0
             }
 
             # Case 1: Explicit pooling request takes precedence
@@ -129,7 +139,7 @@ class FundingPlanner:
         self,
         eligible: list[Any],
         all_accounts: list[Any],
-        transfer_amount: float,
+        transfer_amount: MoneyAmount,
         preferred_account_id: UUID,
         locale: str,
     ) -> funding_models.FundingPlan:
@@ -141,14 +151,14 @@ class FundingPlanner:
             if pending_match is not None and not account_matching.is_eligible(pending_match):
                 return funding_models.FundingPlan(
                     transfer_amount=transfer_amount,
-                    total_funded=0,
+                    total_funded=Decimal("0.00"),
                     is_sufficient=False,
                     trigger_mode="explicit",
                     error=account_matching.build_explicit_nonready_account_message(pending_match, locale),
                 )
             return funding_models.FundingPlan(
                 transfer_amount=transfer_amount,
-                total_funded=0,
+                total_funded=Decimal("0.00"),
                 is_sufficient=False,
                 error=render_message("funding.planner.preferred_account_not_eligible", locale),
             )
@@ -170,7 +180,7 @@ class FundingPlanner:
             )
 
         steps = [account_matching.create_step(account, balance, 1)] if balance > 0 else []
-        remaining = max(0.0, transfer_amount - balance)
+        remaining = max(Decimal("0.00"), transfer_amount - balance)
         balance_checks = 1
         sequence = 2
 
@@ -186,13 +196,13 @@ class FundingPlanner:
                 remaining -= contribution
                 sequence += 1
 
-        total_funded = transfer_amount - max(0, remaining)
+        total_funded = transfer_amount - max(Decimal("0.00"), remaining)
         plan = funding_models.FundingPlan(
             transfer_amount=transfer_amount,
             total_funded=total_funded,
             steps=steps,
             is_sufficient=remaining <= 0,
-            shortfall=max(0, remaining),
+            shortfall=max(Decimal("0.00"), remaining),
             balance_checks=balance_checks,
             trigger_mode="auto",
             primary_account_id=account.id,
@@ -210,7 +220,7 @@ class FundingPlanner:
     async def _plan_with_lazy_fetching(
         self,
         eligible: list[Any],
-        transfer_amount: float,
+        transfer_amount: MoneyAmount,
         locale: str,
     ) -> funding_models.FundingPlan:
         """Plan with lazy balance fetching - default first, then largest."""
@@ -218,7 +228,7 @@ class FundingPlanner:
         remaining = transfer_amount
         balance_checks = 0
         sequence = 1
-        balances_by_account: dict[str, float] = {}
+        balances_by_account: dict[str, MoneyAmount] = {}
 
         # Sort: default first, then by is_default (we'll fetch balances lazily)
         default_accounts = [a for a in eligible if a.is_default]
@@ -253,7 +263,7 @@ class FundingPlanner:
                     remaining -= contribution
                     sequence += 1
 
-        total_funded = transfer_amount - max(0, remaining)
+        total_funded = transfer_amount - max(Decimal("0.00"), remaining)
         is_sufficient = remaining <= 0
 
         plan = funding_models.FundingPlan(
@@ -261,7 +271,7 @@ class FundingPlanner:
             total_funded=total_funded,
             steps=steps,
             is_sufficient=is_sufficient,
-            shortfall=max(0, remaining),
+            shortfall=max(Decimal("0.00"), remaining),
             balance_checks=balance_checks,
             trigger_mode="auto",
             primary_account_id=steps[0].account_id if steps else None,
@@ -272,7 +282,7 @@ class FundingPlanner:
         if not is_sufficient:
             if steps:
                 primary = steps[0]
-                total_available = sum(s.amount for s in steps)
+                total_available = sum((s.amount for s in steps), Decimal("0.00"))
                 plan.error = format_insufficient_funds(
                     transfer_amount=transfer_amount,
                     bank_name=primary.bank_name,
@@ -290,15 +300,15 @@ class FundingPlanner:
 
         return plan
 
-    async def _fetch_balance(self, account: Any) -> float:
+    async def _fetch_balance(self, account: Any) -> MoneyAmount:
         """Fetch balance for a single account."""
         if self._balance_overrides:
             override = self._balance_overrides.get(str(getattr(account, "id", "")))
             if override is not None:
-                return max(0.0, float(override))
+                return max(Decimal("0.00"), override)
         try:
             result = await self._provider.get_balance(account.mono_account_id, real_time=True)
-            return result.available_balance if result.success else 0.0
+            return require_money(result.available_balance) if result.success else Decimal("0.00")
         except Exception as e:
             logger.error("fetch_balance_failed", account_id=str(account.id), error=str(e))
-            return 0.0
+            return Decimal("0.00")

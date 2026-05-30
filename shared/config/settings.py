@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -159,14 +160,16 @@ class Settings:
         self.refund_reconciliation_max_attempts: int = int(os.getenv("REFUND_RECONCILIATION_MAX_ATTEMPTS", "96"))
 
         self.transfer_risk_enabled: bool = os.getenv("TRANSFER_RISK_ENABLED", "true").lower() == "true"
-        self.transfer_hourly_amount_limit_ngn: float = float(os.getenv("TRANSFER_HOURLY_AMOUNT_LIMIT_NGN", "100000"))
-        self.transfer_daily_amount_limit_ngn: float = float(os.getenv("TRANSFER_DAILY_AMOUNT_LIMIT_NGN", "200000"))
+        self.transfer_hourly_amount_limit_ngn: Decimal = Decimal(
+            os.getenv("TRANSFER_HOURLY_AMOUNT_LIMIT_NGN", "100000")
+        )
+        self.transfer_daily_amount_limit_ngn: Decimal = Decimal(os.getenv("TRANSFER_DAILY_AMOUNT_LIMIT_NGN", "200000"))
         self.transfer_hourly_count_limit: int = int(os.getenv("TRANSFER_HOURLY_COUNT_LIMIT", "3"))
-        self.new_beneficiary_limit_ngn: float = float(os.getenv("NEW_BENEFICIARY_LIMIT_NGN", "50000"))
+        self.new_beneficiary_limit_ngn: Decimal = Decimal(os.getenv("NEW_BENEFICIARY_LIMIT_NGN", "50000"))
         self.new_beneficiary_cooling_seconds: int = int(os.getenv("NEW_BENEFICIARY_COOLING_SECONDS", "86400"))
         self.new_channel_cooling_seconds: int = int(os.getenv("NEW_CHANNEL_COOLING_SECONDS", "86400"))
-        self.first_pooled_transfer_limit_ngn: float = float(os.getenv("FIRST_POOLED_TRANSFER_LIMIT_NGN", "100000"))
-        self.manual_review_amount_ngn: float = float(os.getenv("MANUAL_REVIEW_AMOUNT_NGN", "200000"))
+        self.first_pooled_transfer_limit_ngn: Decimal = Decimal(os.getenv("FIRST_POOLED_TRANSFER_LIMIT_NGN", "100000"))
+        self.manual_review_amount_ngn: Decimal = Decimal(os.getenv("MANUAL_REVIEW_AMOUNT_NGN", "200000"))
 
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
         self.mono_webhook_secret: str = os.getenv("MONO_WEBHOOK_SECRET", "").strip()

@@ -24,6 +24,7 @@ from banking.scheduling.services.recurrence import (
     today_lagos,
 )
 from shared.database.enums import ScheduledInstructionStatusEnum
+from shared.money import money_to_json, to_money
 
 _SCHEDULE_FIELDS = {
     "schedule_mode",
@@ -159,6 +160,13 @@ def _time_value_label(value: Any, locale: str = "en") -> str:
         return normalized or render_message("schedule.fallback.not_set", locale)
 
 
+def _format_schedule_amount(value: Any) -> str | None:
+    amount = to_money(value)
+    if amount is None or amount <= 0:
+        return None
+    return format_naira(amount)
+
+
 def _target_label(schedule: Any, locale: str = "en") -> str:
     payload = _payload(schedule)
     domain = _domain(schedule)
@@ -195,10 +203,7 @@ def _target_label(schedule: Any, locale: str = "en") -> str:
 
 def _amount_label(schedule: Any, locale: str = "en") -> str:
     payload = _payload(schedule)
-    amount = payload.get("amount")
-    if isinstance(amount, (int, float)) and float(amount) > 0:
-        return format_naira(float(amount))
-    return render_message("schedule.fallback.scheduled", locale)
+    return _format_schedule_amount(payload.get("amount")) or render_message("schedule.fallback.scheduled", locale)
 
 
 def format_schedule_row(index: int, schedule: Any, *, include_id: bool = False, locale: str = "en") -> str:
@@ -226,7 +231,8 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
     for index, schedule in enumerate(schedules, start=1):
         payload = _payload(schedule)
         amount_raw = payload.get("amount")
-        amount = format_naira(float(amount_raw)) if isinstance(amount_raw, (int, float)) and amount_raw > 0 else None
+        amount_money = to_money(amount_raw)
+        amount = _format_schedule_amount(amount_raw)
         next_run_at_utc = getattr(schedule, "next_run_at_utc", None)
         next_run = (
             format_lagos_schedule_datetime(next_run_at_utc)
@@ -241,7 +247,7 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
             "domain": _domain_label(_domain(schedule), locale),
             "domain_key": _domain(schedule),
             "amount": amount,
-            "amount_value": float(amount_raw) if isinstance(amount_raw, (int, float)) else None,
+            "amount_value": money_to_json(amount_money),
             "target": _target_label(schedule, locale),
             "recurrence": _recurrence_label(schedule, locale),
             "schedule_time": render_message("schedule.time.with_timezone", locale, {"time": _time_label(schedule, locale)}),
@@ -447,16 +453,24 @@ def build_schedule_edit_success_message(
     if "amount" in edit_patch:
         old_amount = payload.get("amount")
         new_amount = edit_patch.get("amount")
-        if isinstance(old_amount, (int, float)) and isinstance(new_amount, (int, float)):
+        old_amount_text = _format_schedule_amount(old_amount)
+        new_amount_text = _format_schedule_amount(new_amount)
+        if old_amount_text and new_amount_text:
             changes.append(
                 render_message(
                     "schedule.edit.change.amount_from_to",
                     locale,
-                    {"old": format_naira(float(old_amount)), "new": format_naira(float(new_amount))},
+                    {"old": old_amount_text, "new": new_amount_text},
                 )
             )
         elif new_amount is not None:
-            changes.append(render_message("schedule.edit.change.amount_to", locale, {"new": str(new_amount)}))
+            changes.append(
+                render_message(
+                    "schedule.edit.change.amount_to",
+                    locale,
+                    {"new": new_amount_text or str(new_amount)},
+                )
+            )
 
     if "schedule_time_local" in edit_patch:
         old_time = getattr(schedule, "local_time", None)

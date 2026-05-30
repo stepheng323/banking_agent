@@ -1,6 +1,7 @@
 """Recent-batch support reference and receipt selection helpers."""
 
 import re
+from typing import Literal
 
 from apps.chat.src.agent.workers.support.models import (
     PendingReferenceState,
@@ -11,8 +12,12 @@ from apps.chat.src.agent.workers.support.models import (
     SupportReferenceCandidate,
 )
 from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.runtime.async_group_types import RecentBatchLeg
+
+_FinalStatus = Literal["success", "processing", "failed"]
+_SelectionMode = Literal["all", "subset", "remainder"]
 
 _ORDINAL_RE = re.compile(r"\b(?:(first|second|third|fourth|fifth|last)|([1-5])(?:st|nd|rd|th)?)\b", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)")
@@ -115,6 +120,13 @@ def leg_to_candidate(leg: RecentBatchLeg) -> SupportReferenceCandidate | None:
     transaction_id = leg.get("transaction_id")
     if not isinstance(transaction_id, str) or not transaction_id.strip():
         return None
+    raw_final_status = str(leg.get("final_status") or "success")
+    if raw_final_status == "processing":
+        final_status: _FinalStatus = "processing"
+    elif raw_final_status == "failed":
+        final_status = "failed"
+    else:
+        final_status = "success"
     return SupportReferenceCandidate(
         transaction_id=transaction_id,
         ordinal=int(leg.get("index") or 0),
@@ -125,7 +137,7 @@ def leg_to_candidate(leg: RecentBatchLeg) -> SupportReferenceCandidate | None:
         recipient_label=leg.get("recipient_label"),
         bank_display=leg.get("bank_display"),
         account_display=leg.get("account_display"),
-        final_status=str(leg.get("final_status") or "success"),
+        final_status=final_status,
         error_message=leg.get("error_message"),
         failure_category=leg.get("failure_category"),
         receipt_allowed=bool(leg.get("receipt_allowed")),
@@ -148,7 +160,7 @@ def build_batch_receipt_ack(
     skipped_non_transfer: int,
     locale: str,
 ) -> str:
-    base_key = "support.receipt.batch_sending_one" if total_jobs == 1 else "support.receipt.batch_sending_many"
+    base_key: MessageKey = "support.receipt.batch_sending_one" if total_jobs == 1 else "support.receipt.batch_sending_many"
     base = render_message(base_key, locale)
     skipped_parts: list[str] = []
     if skipped_failed:
@@ -206,7 +218,7 @@ def selector_from_refs(
     message: str,
     include_candidates: list[SupportReferenceCandidate],
     exclude_candidates: list[SupportReferenceCandidate] | None = None,
-    selection_mode: str = "subset",
+    selection_mode: _SelectionMode = "subset",
     wants_remaining: bool = False,
 ) -> ReceiptBatchSelection:
     include_refs: list[ReceiptBatchSelectionRef] = []

@@ -134,9 +134,9 @@ class WhatsAppClient(MessagingClient):
         self,
         to: str,
         text: str,
-        preview_url: bool = False,
         message_id: str | None = None,
         suppress_typing_indicator: bool = False,
+        preview_url: bool = False,
     ) -> dict[str, Any]:
         """Send a text message to a WhatsApp number.
 

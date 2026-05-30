@@ -1,8 +1,10 @@
 """Lexical extraction helpers for planner task normalization."""
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from shared.money import MoneyAmount, to_money
 from shared.utils.bank_aliases import BANK_ALIASES, normalize_bank_name
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
@@ -92,15 +94,15 @@ def extract_network_candidates(text: str) -> list[str]:
     return candidates
 
 
-def extract_amount_candidates(text: str) -> list[float]:
-    candidates: list[float] = []
-    seen: set[float] = set()
+def extract_amount_candidates(text: str) -> list[MoneyAmount]:
+    candidates: list[MoneyAmount] = []
+    seen: set[MoneyAmount] = set()
     for match in _AMOUNT_TOKEN_PATTERN.finditer(text):
         num_text = match.group("number").replace(",", "")
         suffix = (match.group("suffix") or "").lower()
         try:
-            numeric = float(num_text)
-        except ValueError:
+            numeric = Decimal(num_text)
+        except InvalidOperation:
             continue
         if numeric <= 0:
             continue
@@ -111,15 +113,17 @@ def extract_amount_candidates(text: str) -> list[float]:
         if not has_currency_or_suffix and len(digits) >= 9:
             continue
 
-        multiplier = 1.0
+        multiplier = Decimal("1")
         if suffix == "k":
-            multiplier = 1000.0
+            multiplier = Decimal("1000")
         elif suffix == "h":
-            multiplier = 100.0
+            multiplier = Decimal("100")
         elif suffix == "m":
-            multiplier = 1_000_000.0
+            multiplier = Decimal("1000000")
 
-        amount = numeric * multiplier
+        amount = to_money(numeric * multiplier)
+        if amount is None:
+            continue
         if amount in seen:
             continue
         seen.add(amount)
@@ -172,10 +176,10 @@ def single_unambiguous(values: list[Any]) -> tuple[Any | None, bool]:
     return values[0], False
 
 
-def parse_amount_value(value: str | float | None) -> float | None:
+def parse_amount_value(value: str | MoneyAmount | None) -> MoneyAmount | None:
     if value is None:
         return None
-    if isinstance(value, float):
+    if isinstance(value, Decimal):
         return value
     raw = str(value).strip()
     if not raw:
@@ -183,9 +187,6 @@ def parse_amount_value(value: str | float | None) -> float | None:
     single, ambiguous = single_unambiguous(extract_amount_candidates(raw))
     if ambiguous:
         return None
-    if isinstance(single, float):
+    if isinstance(single, Decimal):
         return single
-    try:
-        return float(raw)
-    except ValueError:
-        return None
+    return to_money(raw)

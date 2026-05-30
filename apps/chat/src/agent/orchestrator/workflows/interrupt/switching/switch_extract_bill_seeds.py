@@ -10,7 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extra
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_extractor import (
     _extract_interrupt_switch_entities,
 )
-from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_values import _coerce_float
+from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_values import _coerce_money
 from shared.types.planner import TaskParameters
 
 
@@ -31,7 +31,7 @@ async def _seed_airtime_switch_payload(
         target_intent="airtime",
     )
 
-    amount = _coerce_float(entities.get("amount"))
+    amount = _coerce_money(entities.get("amount"))
     if amount is not None:
         parameters.amount = amount
 
@@ -89,7 +89,7 @@ async def _seed_data_switch_payload(
         target_intent="data",
     )
 
-    budget = _coerce_float(entities.get("budget"))
+    budget = _coerce_money(entities.get("budget"))
     if budget is not None:
         parameters.amount = budget
 

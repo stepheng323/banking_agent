@@ -347,6 +347,8 @@ class TransferSchedulingHandler:
             apply_schedule_edit(selected, edit_patch, next_run_at)
             await uow.commit()
 
+        if selected is None:
+            raise RuntimeError("schedule_selection_unavailable")
         return TransactionResult(
             outcome=TransactionOutcome.OK,
             response=success_message,

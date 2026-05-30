@@ -92,6 +92,9 @@ class WhatsAppWebhookService:
         """Process a single message. Returns True if processed."""
         from_id = msg.from_number
         normalized_from_id = _normalize_whatsapp_number(from_id)
+        if not from_id:
+            logger.info("webhook_message_missing_sender")
+            return False
         msg_type = msg.type or "text"
         flow_data = msg.flow_data
 

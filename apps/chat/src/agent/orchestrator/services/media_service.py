@@ -4,7 +4,7 @@ import base64
 import io
 import json
 import re
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
@@ -216,11 +216,11 @@ class MediaService:
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            parts: list[str] = []
+            content_parts: list[str] = []
             for item in content:
                 if isinstance(item, dict) and isinstance(item.get("text"), str):
-                    parts.append(item["text"])
-            return "\n".join(parts)
+                    content_parts.append(item["text"])
+            return "\n".join(content_parts)
         return ""
 
     @staticmethod
@@ -250,7 +250,8 @@ class MediaService:
             base64_image = base64.b64encode(image_content).decode("utf-8")
             image_url = f"data:{normalized_mime};base64,{base64_image}"
 
-            response = await self.openai_client.responses.create(
+            # The OpenAI SDK's generated overloads lag this nested JSON schema shape.
+            response = await cast(Any, self.openai_client.responses).create(
                 model=settings.media_image_model,
                 input=[
                     {

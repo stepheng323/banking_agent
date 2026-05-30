@@ -262,16 +262,16 @@ class BankCacheService:
             # Find the bank object for the matched name
             for bank in banks:
                 if bank.get("name") == matched_name:
-                    code: str | None = bank.get("code") or bank.get("bank_code")
+                    matched_code: str | None = bank.get("code") or bank.get("bank_code")
                     logger.info(
                         "bank_code_found",
                         bank_name=matched_name,
-                        code=code,
+                        code=matched_code,
                         search_term=bank_name,
                         provider=self.provider_name,
                         country=self.country,
                     )
-                    return code
+                    return matched_code
 
         logger.warning(
             "bank_code_not_found",

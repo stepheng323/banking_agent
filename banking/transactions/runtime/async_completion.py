@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -17,6 +18,7 @@ from banking.transactions.runtime.async_group_types import (
     AsyncGroupRedis,
     AsyncGroupSummaryResult,
 )
+from shared.money import money_to_json
 from shared.queue.models import AsyncGroupMeta
 from shared.utils.logging import get_logger
 
@@ -101,6 +103,14 @@ def _transaction_meta_key(transaction_id: str) -> str:
     return f"{ASYNC_GROUP_TRANSACTION_META_PREFIX}:{transaction_id}"
 
 
+def _json_default(value: object) -> str:
+    if isinstance(value, Decimal):
+        serialized = money_to_json(value)
+        if serialized is not None:
+            return serialized
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 async def _remember_transaction_group_meta(
     redis_client: AsyncGroupRedis,
     *,
@@ -111,7 +121,7 @@ async def _remember_transaction_group_meta(
         return
     await redis_client.set(
         _transaction_meta_key(transaction_id),
-        json.dumps(meta),
+        json.dumps(meta, default=_json_default),
         ex=ASYNC_GROUP_TTL_SECONDS,
     )
 
@@ -206,7 +216,8 @@ async def record_group_leg_and_maybe_build_summary(
             "payload": payload,
             "transaction_id": message.get("transaction_id"),
             "index": meta["async_group_index"],
-        }
+        },
+        default=_json_default,
     )
     await redis_client.hset(legs_key, field, stored_leg)
     await redis_client.expire(legs_key, ASYNC_GROUP_TTL_SECONDS)

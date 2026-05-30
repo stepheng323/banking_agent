@@ -2,6 +2,10 @@
 
 from typing import Any, Literal, NotRequired, TypedDict
 
+from shared.money import MoneyAmount
+
+MoneyPayload = MoneyAmount | str
+
 
 class AsyncGroupMeta(TypedDict):
     async_group_id: str
@@ -23,7 +27,7 @@ class ReceiptTransferDataSource(TypedDict):
 
 
 class ReceiptTransferData(TypedDict):
-    amount: float | str | None
+    amount: MoneyPayload | None
     source: ReceiptTransferDataSource
     recipient: ReceiptTransferDataRecipient
     narration: str | None
@@ -70,14 +74,14 @@ class TransferJobPayload(TypedDict):
 class RefundJobPayload(TypedDict):
     funding_step_id: str
     funded_transfer_id: str
-    amount: float
+    amount: MoneyPayload
     account_id: str
     original_reference: str
 
 
 class PayoutJobPayload(TypedDict):
     funded_transfer_id: str
-    amount: float
+    amount: MoneyPayload
     recipient_account: str
     recipient_bank_code: str
     recipient_bank_code_provider: NotRequired[str | None]
@@ -108,7 +112,7 @@ class AirtimeSource(TypedDict):
 
 
 class AirtimeData(TypedDict):
-    amount: float
+    amount: MoneyPayload
     recipient: AirtimeRecipient
     source: AirtimeSource
     narration: str
@@ -130,7 +134,7 @@ class AirtimeJobPayload(TypedDict):
 class DataPurchaseData(TypedDict):
     plan_code: str
     plan_name: str
-    amount: float
+    amount: MoneyPayload
     target_phone: str
     network: str
     source: str

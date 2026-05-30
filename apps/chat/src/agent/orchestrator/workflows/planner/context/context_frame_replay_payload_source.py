@@ -41,13 +41,13 @@ def enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorSta
         if source_id:
             payload["source_account_id"] = source_id
     if not payload.get("source_bank_name"):
-        bank_name = (
+        matched_bank_name = (
             matched_account.get("bank_name")
             or matched_account.get("bank")
             or matched_account.get("source_bank_name")
         )
-        if bank_name:
-            payload["source_bank_name"] = bank_name
+        if matched_bank_name:
+            payload["source_bank_name"] = matched_bank_name
     account_number = (
         matched_account.get("account_number")
         or matched_account.get("number")

@@ -4,6 +4,7 @@ from typing import Any
 
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.abstractions.resolution import AccountResolverProvider
+from shared.money import to_money
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -18,7 +19,7 @@ class PayoutExecutor:
 
     async def handle_payout(self, data: dict[str, Any]) -> dict[str, Any]:
         """Execute payout via configured payment provider."""
-        amount = float(data.get("amount") or 0.0)
+        amount = to_money(data.get("amount"))
         recipient_account = str(data.get("recipient_account") or "")
         recipient_bank_code = str(data.get("recipient_bank_code") or "")
         recipient_bank_code_provider = str(data.get("recipient_bank_code_provider") or "").strip().lower()
@@ -28,7 +29,7 @@ class PayoutExecutor:
         reference = str(data.get("idempotency_key") or "").strip() or None
         expected_provider = str(self.payout_provider.provider_name or "").strip().lower()
 
-        if amount <= 0:
+        if amount is None or amount <= 0:
             return {
                 "success": False,
                 "status": "failed",
@@ -60,7 +61,7 @@ class PayoutExecutor:
         logger.info(
             "payout_executor_start",
             provider=self.payout_provider.provider_name,
-            amount=amount,
+            amount=str(amount),
             recipient_bank_code=recipient_bank_code,
         )
 

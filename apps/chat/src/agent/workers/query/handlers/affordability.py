@@ -1,5 +1,6 @@
 """Affordability query handler."""
 
+from decimal import Decimal
 from typing import Any
 
 from apps.chat.src.agent.workers.query.models.domain import (
@@ -10,6 +11,7 @@ from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from banking.presentation.formatters.currency import format_naira_compact
 from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.money import MoneyAmount, to_money
 
 
 async def handle_affordability(
@@ -26,7 +28,7 @@ async def handle_affordability(
     """Handle affordability queries."""
     del current_page, page_size, user_id
     language = kwargs.get("language", "en")
-    amount = contract.amount_check or 0
+    amount = to_money(contract.amount_check) or Decimal("0.00")
     candidate_ids = account_ids or [account_id]
     account_lookup = _account_lookup(accounts_info or [])
 
@@ -77,10 +79,10 @@ async def _handle_multi_account_affordability(
     provider: BankDataProvider,
     account_ids: list[str],
     account_lookup: dict[str, dict],
-    amount: float,
+    amount: MoneyAmount,
     language: str,
 ) -> QueryResult:
-    balances: list[tuple[str, str, str, float]] = []
+    balances: list[tuple[str, str, str, MoneyAmount]] = []
     for candidate_id in account_ids:
         account = account_lookup.get(candidate_id, {})
         mandate_status = str(account.get("mandate_status") or "ready").lower()
@@ -94,7 +96,7 @@ async def _handle_multi_account_affordability(
                 candidate_id,
                 _account_bank_name(account, candidate_id),
                 _account_suffix(account),
-                float(balance.available_balance),
+                balance.available_balance,
             )
         )
 
@@ -128,8 +130,8 @@ async def _handle_multi_account_affordability(
         lines.append(f"Total: {_format_naira(amount)}")
         return QueryResult(summary_text="\n".join(lines))
 
-    total_available = sum(entry[3] for entry in balances)
-    shortfall = max(0.0, amount - total_available)
+    total_available = sum((entry[3] for entry in balances), Decimal("0.00"))
+    shortfall = max(Decimal("0.00"), amount - total_available)
     return QueryResult(
         summary_text=(
             f"Your ready accounts cannot cover {_format_naira(amount)} right now.\n"
@@ -160,10 +162,10 @@ def _account_suffix(account: dict) -> str:
     return ""
 
 
-def _build_pool_plan(balances: list[tuple[str, str, str, float]], amount: float) -> list[tuple[str, str, str, float]]:
+def _build_pool_plan(balances: list[tuple[str, str, str, MoneyAmount]], amount: MoneyAmount) -> list[tuple[str, str, str, MoneyAmount]]:
     ordered = sorted(balances, key=lambda entry: entry[3], reverse=True)
-    plan: list[tuple[str, str, str, float]] = []
-    total = 0.0
+    plan: list[tuple[str, str, str, MoneyAmount]] = []
+    total = Decimal("0.00")
     for entry in ordered[:MAX_POOLED_SOURCE_ACCOUNTS]:
         if entry[3] <= 0:
             continue
@@ -174,5 +176,5 @@ def _build_pool_plan(balances: list[tuple[str, str, str, float]], amount: float)
     return plan
 
 
-def _format_naira(value: float) -> str:
+def _format_naira(value: MoneyAmount) -> str:
     return format_naira_compact(value)

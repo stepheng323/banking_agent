@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 
+from shared.money import MoneyAmount
+
 
 class DebitStatus(str, Enum):
     """Status of a direct debit transaction."""
@@ -27,7 +29,7 @@ class DebitResult:
     status: DebitStatus
     debit_id: str | None = None
     reference: str | None = None
-    amount: float | None = None
+    amount: MoneyAmount | None = None
     error_message: str | None = None
     provider_response: dict | None = None
 
@@ -37,8 +39,8 @@ class BalanceResult:
     """Result of checking account balance."""
 
     success: bool
-    available_balance: float
-    ledger_balance: float | None = None
+    available_balance: MoneyAmount
+    ledger_balance: MoneyAmount | None = None
     currency: str = "NGN"
     error_message: str | None = None
 
@@ -89,7 +91,7 @@ class DirectDebitProvider(ABC):
     async def initiate_debit(
         self,
         mandate_id: str,
-        amount: float,
+        amount: MoneyAmount,
         reference: str,
         narration: str = "Transfer",
         beneficiary_account: str | None = None,
@@ -114,7 +116,7 @@ class DirectDebitProvider(ABC):
     async def initiate_pooling_debit(
         self,
         mandate_id: str,
-        amount: float,
+        amount: MoneyAmount,
         reference: str,
         narration: str = "Transfer",
     ) -> DebitResult:
@@ -131,7 +133,7 @@ class DirectDebitProvider(ABC):
     async def initiate_debit_to_beneficiary(
         self,
         mandate_id: str,
-        amount: float,
+        amount: MoneyAmount,
         reference: str,
         beneficiary_account: str,
         beneficiary_bank_code: str,

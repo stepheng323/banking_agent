@@ -20,7 +20,7 @@ class ResolutionStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         del gates
         return await resolve_beneficiary(

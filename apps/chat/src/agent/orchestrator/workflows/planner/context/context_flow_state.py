@@ -20,7 +20,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_foc
     _infer_recent_domain_focus,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_focus import _derive_recent_answer_focus
-from shared.types.planner import TransactionExecutor
+from shared.types.planner import RouterDomainIntent, TransactionExecutor
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -37,7 +37,7 @@ class PlannerContextFlowState:
     recent_answer_focus: str | None
     has_transaction_intent_hint: bool
     expected_executors: tuple[TransactionExecutor, ...]
-    forced_domain_owner: str | None
+    forced_domain_owner: RouterDomainIntent | None
     compact_transaction_context: bool
 
 

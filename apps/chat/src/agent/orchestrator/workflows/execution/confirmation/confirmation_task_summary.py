@@ -55,11 +55,11 @@ def _render_task_confirmation_summary(
     if isinstance(raw_summary, str):
         cleaned = _strip_batch_name_mismatch_warning(raw_summary, task.payload)
         if cleaned:
+            raw_snapshot = confirmation_payload.get("snapshot")
+            snapshot: dict[str, Any] = raw_snapshot if isinstance(raw_snapshot, dict) else {}
             source_account_info = build_source_account_info(
                 task_payload=task.payload,
-                snapshot=confirmation_payload.get("snapshot")
-                if isinstance(confirmation_payload.get("snapshot"), dict)
-                else {},
+                snapshot=snapshot,
                 accounts=accounts,
                 locale=locale,
             )

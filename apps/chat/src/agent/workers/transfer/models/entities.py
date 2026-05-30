@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from shared.money import MoneyAmount, to_money
 from shared.types.planner import RecipientAllocation
 
 
@@ -23,7 +24,7 @@ class TransferEntities(BaseModel):
             "Example: 'use first bank' -> 'First Bank'"
         ),
     )
-    amount: float | None = Field(default=None, description="Transfer amount as numeric value")
+    amount: MoneyAmount | None = Field(default=None, description="Transfer amount as numeric value")
     narration: str | None = Field(default=None, description="Transfer description/memo (optional)")
     transfer_all: bool | None = Field(
         default=None,
@@ -52,7 +53,7 @@ class TransferEntities(BaseModel):
         default=None,
         description="True if user wants to use both accounts ('use my 2 accounts', 'from both')",
     )
-    explicit_split: dict[str, float] | None = Field(
+    explicit_split: dict[str, MoneyAmount] | None = Field(
         default=None,
         description="User-specified split amounts (e.g., {'Access Bank': 60000, 'GTBank': 40000})",
     )
@@ -73,15 +74,11 @@ class TransferEntities(BaseModel):
 
     @field_validator("amount", mode="before")
     @classmethod
-    def validate_amount(cls, v: Any) -> float | None:
-        """Convert amount to float, let validation node handle limit checks."""
+    def validate_amount(cls, v: Any) -> MoneyAmount | None:
+        """Convert amount to Decimal, let validation node handle limit checks."""
         if v is None:
             return v
-        try:
-            amount = float(v)
-            return amount
-        except (ValueError, TypeError):
-            return None
+        return to_money(v)
 
     @field_validator("transfer_percentage", mode="before")
     @classmethod

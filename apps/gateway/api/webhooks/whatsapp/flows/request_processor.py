@@ -1,7 +1,7 @@
 """Request processing utilities for flow webhook."""
 
 import json
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import Request
 from fastapi.responses import Response
@@ -25,6 +25,17 @@ ScreenType = Literal[
 _ENCRYPTED_REQUEST_FIELDS = frozenset({"encrypted_flow_data", "encrypted_aes_key", "initial_vector"})
 _WHATSAPP_IDENTITY_FIELDS = ("wa_id", "whatsapp_id", "whatsapp_user_id", "from", "sender", "phone_number", "msisdn")
 _WHATSAPP_IDENTITY_CONTAINERS = ("contact", "contacts", "customer", "user", "metadata")
+_SCREEN_TYPES = frozenset(
+    {
+        "BVN_ENTRY",
+        "METHOD_SELECTION",
+        "OTP_VERIFICATION",
+        "ACCOUNT_SELECTION",
+        "PIN_ENTRY",
+        "Pin",
+        "SUCCESS",
+    }
+)
 
 
 def _safe_keys(payload: Any) -> list[str]:
@@ -77,6 +88,12 @@ def _extract_whatsapp_authorizer(payload: dict[str, Any]) -> str | None:
 
 def _extract_flow_token(payload: dict[str, Any]) -> str | None:
     return _string_identity(payload.get("flow_token"))
+
+
+def _screen_type(value: str | None) -> ScreenType | None:
+    if value in _SCREEN_TYPES:
+        return cast(ScreenType, value)
+    return None
 
 
 class ProcessedRequest:
@@ -224,7 +241,7 @@ async def process_flow_request(req: Request) -> tuple[ProcessedRequest | None, R
 
     return (
         ProcessedRequest(
-            screen=screen,
+            screen=_screen_type(screen),
             data=data,
             flow_token=flow_token,
             request_was_encrypted=request_was_encrypted,

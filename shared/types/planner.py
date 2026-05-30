@@ -4,6 +4,8 @@ from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from shared.money import MoneyAmount
+
 
 class ContextReference(BaseModel):
     """Pointer to a context entity."""
@@ -17,7 +19,7 @@ class RecipientAllocation(BaseModel):
     """Recipient-side transfer allocation."""
 
     recipient_name: str = Field(..., description="Recipient/beneficiary name exactly as referenced by the user")
-    amount: float = Field(..., gt=0, description="Allocated amount for this recipient")
+    amount: MoneyAmount = Field(..., gt=0, description="Allocated amount for this recipient")
 
 
 class FundingSplitUpdate(BaseModel):
@@ -26,13 +28,13 @@ class FundingSplitUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     bank_name: str = Field(..., description="User source bank/account reference for this funding leg")
-    amount: float = Field(..., gt=0, description="Amount to fund from this source account")
+    amount: MoneyAmount = Field(..., gt=0, description="Amount to fund from this source account")
 
 
 class TaskParameters(BaseModel):
     """Common parameters for tasks."""
 
-    amount: str | float | None = None
+    amount: str | MoneyAmount | None = None
     transfer_all: bool = False
     transfer_percentage: float | None = None
     recipient: str | None = None
@@ -66,7 +68,7 @@ class TaskParameters(BaseModel):
     source_account_index: int | None = None
     use_dual_accounts: bool | None = None
     source_accounts: list[str] | None = None
-    explicit_split: dict[str, float] | None = None
+    explicit_split: dict[str, MoneyAmount] | None = None
     recipient_allocations: list[RecipientAllocation] | None = None
     recipient_binding_source: Literal["fanout"] | None = None
     recipient_binding_index: int | None = None
@@ -291,7 +293,7 @@ class PendingActionFieldUpdates(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    amount: float | None = Field(default=None, description="Updated transaction amount")
+    amount: MoneyAmount | None = Field(default=None, description="Updated transaction amount")
     narration: str | None = Field(default=None, description="Updated transfer narration")
     recipient_name: str | None = Field(default=None, description="Updated recipient/beneficiary reference")
     recipient_account: str | None = Field(default=None, description="Updated recipient account number")
@@ -367,7 +369,7 @@ class PendingActionEditDecision(BaseModel):
         default_factory=list,
         description="Scoped field updates when one message edits multiple targets differently",
     )
-    amount: float | None = Field(default=None, description="Updated transaction amount")
+    amount: MoneyAmount | None = Field(default=None, description="Updated transaction amount")
     narration: str | None = Field(default=None, description="Updated transfer narration")
     recipient_name: str | None = Field(default=None, description="Updated recipient/beneficiary reference")
     recipient_account: str | None = Field(default=None, description="Updated recipient account number")
@@ -469,7 +471,7 @@ class ContextFrameReplayModifier(BaseModel):
 
     confidence: float = Field(default=0.0, description="Confidence in the replay modifier extraction")
     detected_language: str | None = Field(default=None, description="Detected language for the user turn")
-    amount: float | None = Field(default=None, gt=0, description="Replacement transaction amount, if explicit")
+    amount: MoneyAmount | None = Field(default=None, gt=0, description="Replacement transaction amount, if explicit")
     amount_evidence: str | None = Field(
         default=None,
         description="Exact user-message phrase supporting amount, else null",

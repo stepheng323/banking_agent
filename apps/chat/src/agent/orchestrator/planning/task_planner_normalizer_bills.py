@@ -28,7 +28,7 @@ def normalize_airtime_params(params: TaskParameters, text: str) -> tuple[list[st
         amount, amount_ambiguous = single_unambiguous(extract_amount_candidates(text))
         if amount_ambiguous:
             ambiguous.append("amount")
-        elif isinstance(amount, float):
+        elif amount is not None:
             params.amount = amount
             patched.append("amount")
 
@@ -80,7 +80,7 @@ def normalize_data_params(params: TaskParameters, text: str) -> tuple[list[str],
             amount, amount_ambiguous = single_unambiguous(extract_amount_candidates(text))
             if amount_ambiguous:
                 ambiguous.append("amount")
-            elif isinstance(amount, float):
+            elif amount is not None:
                 params.amount = amount
                 patched.append("amount")
 

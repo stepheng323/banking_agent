@@ -5,69 +5,73 @@ to prevent negative, zero, or out-of-bounds values from being processed.
 """
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from banking.presentation.i18n.renderer import render_message
+from shared.money import MoneyAmount, to_money
 
 
 @dataclass(frozen=True)
 class AmountLimits:
     """Transaction amount limits configuration."""
 
-    min_amount: float
-    max_amount: float
+    min_amount: MoneyAmount
+    max_amount: MoneyAmount
     transaction_type: str
 
 
 # Transaction-specific limits
 TRANSFER_LIMITS = AmountLimits(
-    min_amount=100.0,
-    max_amount=10_000_000.0,
+    min_amount=Decimal("100.00"),
+    max_amount=Decimal("10000000.00"),
     transaction_type="transfer",
 )
 
 AIRTIME_LIMITS = AmountLimits(
-    min_amount=50.0,
-    max_amount=50_000.0,
+    min_amount=Decimal("50.00"),
+    max_amount=Decimal("50000.00"),
     transaction_type="airtime",
 )
 
 DATA_LIMITS = AmountLimits(
-    min_amount=50.0,
-    max_amount=50_000.0,
+    min_amount=Decimal("50.00"),
+    max_amount=Decimal("50000.00"),
     transaction_type="data",
 )
 
 
 def validate_amount(
-    amount: float | int | str | None,
+    amount: MoneyAmount | int | str | None,
     limits: AmountLimits,
     locale: str = "en",
-) -> tuple[bool, str | None, float | None]:
+) -> tuple[bool, str | None, MoneyAmount | None]:
     """
     Validate transaction amount against limits.
 
     Args:
-        amount: The amount to validate (can be float, int, or string)
+        amount: The amount to validate (can be Decimal, int, or string)
         limits: The AmountLimits configuration for this transaction type
 
     Returns:
         Tuple of (is_valid, error_message, validated_amount)
         - is_valid: True if amount passes all checks
         - error_message: Human-readable error message if invalid, None otherwise
-        - validated_amount: The amount as float if valid, None otherwise
+        - validated_amount: The amount as Decimal if valid, None otherwise
     """
     if amount is None:
         return False, render_message("validation.amount.required", locale), None
 
     try:
-        amount_float = float(amount)
+        amount_money = to_money(amount)
     except (ValueError, TypeError):
         return False, render_message("validation.amount.invalid_format", locale), None
+    if amount_money is None:
+        return False, render_message("validation.amount.invalid_format", locale), None
 
-    if amount_float <= 0:
+    if amount_money <= 0:
         return False, render_message("validation.amount.gt_zero", locale), None
 
-    if amount_float < limits.min_amount:
+    if amount_money < limits.min_amount:
         return (
             False,
             render_message(
@@ -78,7 +82,7 @@ def validate_amount(
             None,
         )
 
-    if amount_float > limits.max_amount:
+    if amount_money > limits.max_amount:
         return (
             False,
             render_message(
@@ -89,7 +93,7 @@ def validate_amount(
             None,
         )
 
-    return True, None, amount_float
+    return True, None, amount_money
 
 
 def validate_percentage(
@@ -127,7 +131,7 @@ def validate_percentage(
     return True, None, pct
 
 
-def validate_amount_basic(amount: float | int | str | None, locale: str = "en") -> tuple[bool, str | None]:
+def validate_amount_basic(amount: MoneyAmount | int | str | None, locale: str = "en") -> tuple[bool, str | None]:
     """
     Basic amount validation without transaction-specific limits.
 
@@ -143,12 +147,11 @@ def validate_amount_basic(amount: float | int | str | None, locale: str = "en") 
     if amount is None:
         return False, render_message("validation.amount.required", locale)
 
-    try:
-        amount_float = float(amount)
-    except (ValueError, TypeError):
+    amount_money = to_money(amount)
+    if amount_money is None:
         return False, render_message("validation.amount.invalid_format_short", locale)
 
-    if amount_float <= 0:
+    if amount_money <= 0:
         return False, render_message("validation.amount.gt_zero", locale)
 
     return True, None

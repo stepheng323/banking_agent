@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from banking.presentation.formatters.currency import coerce_amount, format_naira
 from banking.presentation.i18n.renderer import render_message
+from shared.money import MoneyAmount
 
 
 def format_funding_plan_summary(
     steps: list[dict],
-    amount: float,
+    amount: MoneyAmount,
     primary_bank: str,
-    balance_available: float,
+    balance_available: MoneyAmount,
     recipient_name: str = "",
     recipient_bank: str = "",
     recipient_account: str = "",
@@ -18,7 +19,7 @@ def format_funding_plan_summary(
 ) -> str:
     """Format funding plan summary for multi-account transfer authorization."""
     secondary_bank = None
-    secondary_amount = 0.0
+    secondary_amount = coerce_amount(0)
     for step in steps:
         if step.get("bank_name") != primary_bank:
             secondary_bank = step.get(

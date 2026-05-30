@@ -272,7 +272,7 @@ class SupportWorker:
             elif next_step == NextStep.ASK_CLARIFICATION:
                 await self.context_manager.increment_attempts(user_id)
                 prompt = render_message("support.ask_clarification", locale)
-                if decision.prompts:
+                if decision is not None and decision.prompts:
                     if decision.prompts[0].key == "support.negotiate":
                         prompt = decision.negotiation.message if decision.negotiation else prompt
                 return SupportResult(
@@ -306,7 +306,7 @@ class SupportWorker:
                     ),
                 )
                 if tx_obj:
-                    resolved_tx = self.resolver.transaction_to_dict(tx_obj)
+                    resolved_tx = tx_obj if isinstance(tx_obj, dict) else self.resolver.transaction_to_dict(tx_obj)
 
                 if not tx_obj and method == "not_found":
                     updated_context = await self.context_manager.increment_attempts(user_id)

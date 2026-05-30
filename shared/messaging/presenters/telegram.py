@@ -175,7 +175,7 @@ class TelegramPresenter(Presenter):
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
         if context.metadata.get("request_contact"):
             # Use Telegram-specific _call to send a Reply Keyboard with request_contact=True
-            resp = await self.client._call(
+            resp = await cast(Any, self.client)._call(
                 "sendMessage",
                 {
                     "chat_id": context.phone_number,
@@ -197,8 +197,9 @@ class TelegramPresenter(Presenter):
                 options=inline_buttons,
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            if resp.success:
-                return resp.message_id
+            msg_id = self._extract_message_id(resp)
+            if msg_id:
+                return msg_id
 
             logger.info(
                 "telegram_say_inline_buttons_fallback_to_text",
@@ -247,7 +248,7 @@ class TelegramPresenter(Presenter):
                 text="Authentication method not supported on Telegram.",
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
+            return self._extract_message_id(resp)
 
         prefix = _pin_flow_prefix(intent)
         cta_text = "Authorize Update" if prefix == "schedule" else "Enter PIN"
@@ -319,7 +320,7 @@ class TelegramPresenter(Presenter):
                 mime_type=mime_type,
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
+            return self._extract_message_id(resp)
 
         if "url" in receipt_data:
             resp = await self.client.send_image(
@@ -344,7 +345,7 @@ class TelegramPresenter(Presenter):
                 text="\n".join(lines),
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
+            return self._extract_message_id(resp)
 
     async def _present_flow(self, intent: ShowFlow, context: PresentationContext) -> str | None:
         """Present flow via Mini App or fallback text."""
@@ -358,12 +359,12 @@ class TelegramPresenter(Presenter):
             return resp.message_id
         else:
             fallback = intent.fallback_text or "This action requires flow support."
-            resp = await self.client.send_text(
+            fallback_resp = await self.client.send_text(
                 to=context.phone_number,
                 text=fallback,
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
+            return self._extract_message_id(fallback_resp)
 
     @staticmethod
     def _compact_option_button_title(index: int, option: dict[str, str]) -> str:
@@ -412,8 +413,9 @@ class TelegramPresenter(Presenter):
             options=button_options,
             suppress_typing_indicator=self._suppress_typing(context),
         )
-        if resp.success:
-            return resp.message_id
+        msg_id = self._extract_message_id(resp)
+        if msg_id:
+            return msg_id
 
         # Fallback: plain text while preserving numbered selection path.
         logger.info("option_render_mode", channel="telegram", mode="text", option_count=len(options))

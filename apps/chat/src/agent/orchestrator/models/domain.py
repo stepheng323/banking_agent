@@ -10,6 +10,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from shared.money import MoneyAmount
+from shared.queue.models import ReceiptJobPayload
+
 # --- 1. Task Lifecycle ---
 
 
@@ -52,7 +55,7 @@ class TransferConfirmation(BaseModel):
 class TransferPayload(BaseModel):
     """Payload for a Transfer task."""
 
-    amount: float | None = None
+    amount: MoneyAmount | None = None
     recipient_name: str | None = None
     recipient_resolved_name: str | None = None  # Official name from bank
     recipient_account: str | None = None
@@ -69,7 +72,7 @@ class TransferPayload(BaseModel):
     source_account_number: str | None = None
     use_dual_accounts: bool | None = None
     source_accounts: list[str] | None = None
-    explicit_split: dict[str, float] | None = None
+    explicit_split: dict[str, MoneyAmount] | None = None
 
     authored_narration: str | None = None
     narration: str | None = None
@@ -266,7 +269,7 @@ class SupportResult(BaseModel):
 
     outcome: SupportOutcome
     response: str | None = None
-    receipt_jobs: list[dict[str, Any]] = Field(default_factory=list)
+    receipt_jobs: list[ReceiptJobPayload] | list[dict[str, object]] = Field(default_factory=list)
     handoff: dict[str, Any] | None = None
     escalation: Any | None = None
     ticket_code: str | None = None

@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+from shared.money import MoneyAmount
+
 
 @dataclass
 class AccountData:
@@ -25,8 +27,8 @@ class AccountData:
 class BalanceData:
     """Account balance information."""
 
-    available_balance: float
-    ledger_balance: float | None = None
+    available_balance: MoneyAmount
+    ledger_balance: MoneyAmount | None = None
     currency: str = "NGN"
     account_id: str | None = None
 
@@ -38,7 +40,7 @@ class TransactionData:
     transaction_id: str | None
     date: str
     narration: str
-    amount: float
+    amount: MoneyAmount
     transaction_type: str
     category: str | None = None
     counterparty: str | None = None

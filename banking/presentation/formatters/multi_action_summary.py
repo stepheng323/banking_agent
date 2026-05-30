@@ -7,6 +7,7 @@ from typing import Any
 from banking.presentation.formatters.recipient_display import format_summary_recipient_display_label
 from banking.presentation.formatters.transaction_confirmation_copy import build_completion_frame
 from banking.presentation.formatters.transaction_copy_context import derive_task_mix, format_amount_compact
+from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.network_utils import format_network_display_name
 from shared.utils.user_error import safe_user_error_message
@@ -72,7 +73,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
         else:
             footer = render_message("transaction_summary.multi.processing_footer.all_processing", locale)
     elif any_failed:
-        footer_key = (
+        footer_key: MessageKey = (
             "transaction_summary.multi.failed_footer.partial"
             if any_succeeded
             else "transaction_summary.multi.failed_footer.all_failed"
@@ -270,7 +271,7 @@ def _failure_reason(payload: dict[str, Any]) -> str | None:
 
 def _processing_update_header(task_mix: str, task_count: int, locale: str) -> str:
     if task_mix == "transfer":
-        key = (
+        key: MessageKey = (
             "transaction_summary.multi.update_header.transfer_plural"
             if task_count > 1
             else "transaction_summary.multi.update_header.transfer"

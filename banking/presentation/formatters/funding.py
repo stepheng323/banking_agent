@@ -2,15 +2,16 @@
 
 from typing import Any
 
-from banking.presentation.formatters.currency import format_naira
+from banking.presentation.formatters.currency import coerce_amount, format_naira
 from banking.presentation.i18n.renderer import render_message
+from shared.money import MoneyAmount
 
 
 def format_insufficient_funds(
-    transfer_amount: float,
+    transfer_amount: MoneyAmount,
     bank_name: str,
-    available_balance: float,
-    max_available: float = 0,
+    available_balance: MoneyAmount,
+    max_available: MoneyAmount | None = None,
     recipient_name: str = "",
     locale: str = "en",
 ) -> str:
@@ -61,7 +62,7 @@ def format_insufficient_funds(
         render_message(
             "funding.format.insufficient.option_send_instead",
             locale,
-            {"amount": format_naira(max_available)},
+            {"amount": format_naira(max_available if max_available is not None else available_balance)},
         )
     )
     lines.append(render_message("funding.format.insufficient.option_add_funds_retry", locale))
@@ -71,7 +72,7 @@ def format_insufficient_funds(
 
 
 def format_funding_plan_message(
-    transfer_amount: float,
+    transfer_amount: MoneyAmount,
     steps: list[dict[str, Any]],
     locale: str = "en",
 ) -> str:
@@ -103,7 +104,7 @@ def format_funding_plan_message(
     ]
     for step in steps:
         bank = step.get("bank_name", render_message("funding.format.plan.bank_fallback", locale))
-        amount = float(step.get("amount", 0))
+        amount = coerce_amount(step.get("amount"))
         lines.append(
             render_message(
                 "funding.format.plan.multi_source_item",

@@ -6,6 +6,7 @@ from uuid import uuid4
 import aiohttp
 
 from shared.config.settings import settings
+from shared.money import require_money
 from shared.utils.logging import get_logger
 
 from . import mock_data
@@ -167,9 +168,9 @@ class MonoClient:
         raw = await self._request("GET", f"/v2/accounts/{account_id}/balance", real_time=real_time)
         return BalanceData(
             balance_kobo=raw.get("available_balance", 0),
-            balance_naira=raw.get("available_balance", 0) / 100,
+            balance_naira=require_money(raw.get("available_balance", 0)) / 100,
             ledger_balance_kobo=raw.get("ledger_balance", 0),
-            ledger_balance_naira=raw.get("ledger_balance", 0) / 100,
+            ledger_balance_naira=require_money(raw.get("ledger_balance", 0)) / 100,
             currency=raw.get("currency", "NGN"),
             account_id=account_id,
         )
@@ -260,6 +261,8 @@ class MonoClient:
         )
         raw_data = envelope.get("data", [])
         raw_txns = raw_data.get("transactions", raw_data.get("data", [])) if isinstance(raw_data, dict) else raw_data
+        if not isinstance(raw_txns, list):
+            raw_txns = []
         meta = envelope.get("meta", {}) if isinstance(envelope, dict) else {}
         transactions = [Transaction(**t) for t in raw_txns]
         has_more = bool(meta.get("next"))

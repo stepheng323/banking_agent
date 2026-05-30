@@ -20,6 +20,7 @@ from banking.transactions.runtime.funding_status import (
 from shared.cache.user_data import UserDataCache
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.database.models import FundedTransfer, UserChannelIdentity
+from shared.money import require_money
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -312,6 +313,8 @@ class MonoWebhookService:
         user = await uow.users.get_by_id(user_id)
         if not user:
             return None
+        if uow.db is None:
+            return None
 
         result = await uow.db.execute(
             select(UserChannelIdentity.channel, UserChannelIdentity.channel_user_id)
@@ -339,7 +342,7 @@ class MonoWebhookService:
             return
 
         channel, delivery_target = target
-        amount = float(getattr(tx, "amount", 0) or 0)
+        amount = require_money(getattr(tx, "amount", 0))
         recipient_name = str(getattr(tx, "recipient_name", None) or "recipient")
         provider_reference = str(
             getattr(tx, "transaction_id", None) or getattr(tx, "idempotency_key", None) or getattr(tx, "id", "")
@@ -455,7 +458,8 @@ class MonoWebhookService:
         latest_status: str,
     ) -> None:
         """Check if all debits are complete and trigger payout if so."""
-        if not uow.funding_steps:
+        funding_steps = uow.funding_steps
+        if funding_steps is None:
             return
 
         if uow.funded_transfers:
@@ -472,12 +476,14 @@ class MonoWebhookService:
             await self._queue_refunds(uow, transfer)
             return
 
-        has_failed_step = await uow.funding_steps.any_failed(str(transfer.id))
+        has_failed_step = await funding_steps.any_failed(str(transfer.id))
         if has_failed_step:
             if transfer.status not in (
                 FundedTransferStatusEnum.REFUNDING.value,
                 FundedTransferStatusEnum.REFUNDED.value,
             ):
+                if uow.funded_transfers is None:
+                    return
                 await uow.funded_transfers.update_status(
                     str(transfer.id),
                     FundedTransferStatusEnum.REFUNDING.value,
@@ -491,16 +497,19 @@ class MonoWebhookService:
             await self._queue_refunds(uow, transfer)
             return
 
-        if await uow.funding_steps.all_confirmed(str(transfer.id)):
+        if await funding_steps.all_confirmed(str(transfer.id)):
             queued = await queue_payout_if_all_confirmed(uow=uow, transfer=transfer, publisher=self.publisher)
             if queued:
                 await uow.commit()
 
     async def _queue_refunds(self, uow: UnitOfWork, transfer: FundedTransfer) -> None:
         """Queue refund jobs for any successful funding steps."""
-        confirmed_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
+        funding_steps = uow.funding_steps
+        if funding_steps is None:
+            return
+        confirmed_steps = await funding_steps.get_confirmed_for_transfer(str(transfer.id))
         if not confirmed_steps:
-            steps = await uow.funding_steps.get_by_transfer(str(transfer.id))
+            steps = await funding_steps.get_by_transfer(str(transfer.id))
             if any(
                 step.status
                 in (

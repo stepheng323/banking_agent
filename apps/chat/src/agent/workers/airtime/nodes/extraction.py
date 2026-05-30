@@ -169,12 +169,14 @@ def _add_resolved_referent_patch(
     if "amount" not in patch and payload.amount is None:
         amount_referent = _resolved_referent_data(context, "amount")
         if amount_referent:
-            try:
-                amount = float(amount_referent.get("amount"))
-            except (TypeError, ValueError):
-                amount = None
-            if amount is not None and amount > 0:
-                patch["amount"] = amount
+            raw_amount = amount_referent.get("amount")
+            if raw_amount is not None:
+                try:
+                    amount = float(raw_amount)
+                except (TypeError, ValueError):
+                    amount = None
+                if amount is not None and amount > 0:
+                    patch["amount"] = amount
 
     source_has_value = any(
         (
@@ -215,7 +217,8 @@ def _referent_phone_candidates(context: AirtimeContext) -> list[dict[str, Any]]:
     for idx, item in enumerate(raw_items[:5], start=1):
         if not isinstance(item, dict):
             continue
-        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        raw_data = item.get("data")
+        data = raw_data if isinstance(raw_data, dict) else {}
         phone = normalize_nigerian_phone(str(data.get("phone") or data.get("recipient_phone") or item.get("label") or ""))
         if phone:
             network = data.get("network")
@@ -276,7 +279,7 @@ def _resolve_referent_phone_selection_from_input(
         if selected is None:
             return None, None
 
-    patch = {
+    patch: dict[str, Any] = {
         "recipient_phone": selected.get("recipient_phone"),
         "referent_phone_candidates": [],
     }
@@ -306,9 +309,9 @@ class ExtractionStep(AirtimeStep):
 
         skip_requested = data.skip_extraction
 
-        def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any]:
             if not skip_requested:
-                return patch
+                return dict(patch or {})
             merged = dict(patch or {})
             merged.setdefault("skip_extraction", False)
             return merged
@@ -405,13 +408,13 @@ class ExtractionStep(AirtimeStep):
                 patch=_with_skip_patch(_build_mobile_source_account_patch(source_account)),
             )
 
-        referent_patch: dict[str, Any] = {}
-        _add_resolved_referent_patch(referent_patch, data, context)
-        if skip_requested and referent_patch:
-            logger.info("deterministic_airtime_referent_fastpath", fields=sorted(referent_patch.keys()))
+        resolved_referent_patch: dict[str, Any] = {}
+        _add_resolved_referent_patch(resolved_referent_patch, data, context)
+        if skip_requested and resolved_referent_patch:
+            logger.info("deterministic_airtime_referent_fastpath", fields=sorted(resolved_referent_patch.keys()))
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                patch=_with_skip_patch(referent_patch),
+                patch=_with_skip_patch(resolved_referent_patch),
             )
 
         if skip_requested:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeVar
+from datetime import date, datetime
+from typing import Any, TypeVar, cast
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +32,7 @@ class _SessionScopedRepositoryMixin:
 
     async def _call_with_session(
         self,
-        repo_cls: type[RepoT],
+        repo_cls: Callable[[AsyncSession], RepoT],
         method_name: str,
         *args: object,
         **kwargs: object,
@@ -113,17 +115,19 @@ class SessionScopedBeneficiaryRepository(_SessionScopedRepositoryMixin, Benefici
         self,
         user_id: str,
         account_number: str,
-        bank_code: str,
+        bank_code: str | None,
+        bank_name: str | None = None,
         beneficiary_type: str = "transfer",
-    ):
-        return await self._call_with_session(
+    ) -> bool:
+        return cast(bool, await self._call_with_session(
             BeneficiaryRepository,
             "should_suggest_beneficiary",
             user_id,
             account_number,
             bank_code,
+            bank_name,
             beneficiary_type,
-        )
+        ))
 
     async def should_suggest_mobile_beneficiary(self, user_id: str, phone_number: str, network: str):
         return await self._call_with_session(
@@ -235,13 +239,27 @@ class SessionScopedTransactionRepository(_SessionScopedRepositoryMixin, Transact
             recipient_name,
         )
 
-    async def update_status(self, transaction_id: str, status: str, error_message: str | None = None):
+    async def update_status(
+        self,
+        transaction_id: str,
+        status: str,
+        error_message: str | None = None,
+        *,
+        provider_transaction_id: str | None = None,
+        provider_status: str | None = None,
+        provider_response: dict[Any, Any] | None = None,
+        provider_error_code: str | None = None,
+    ):
         return await self._call_with_session(
             TransactionRepository,
             "update_status",
             transaction_id,
             status,
             error_message,
+            provider_transaction_id=provider_transaction_id,
+            provider_status=provider_status,
+            provider_response=provider_response,
+            provider_error_code=provider_error_code,
         )
 
 
@@ -254,7 +272,14 @@ class SessionScopedBankTransactionRepository(_SessionScopedRepositoryMixin, Bank
     async def bulk_upsert(self, rows: list[dict]):
         return await self._call_with_session(BankTransactionRepository, "bulk_upsert", rows)
 
-    async def list_by_account_window(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono"):
+    async def list_by_account_window(
+        self,
+        linked_account_id: str | UUID,
+        *,
+        start_date: date,
+        end_date: date,
+        provider: str = "mono",
+    ):
         return await self._call_with_session(
             BankTransactionRepository,
             "list_by_account_window",
@@ -266,10 +291,10 @@ class SessionScopedBankTransactionRepository(_SessionScopedRepositoryMixin, Bank
 
     async def list_by_accounts_window(
         self,
-        linked_account_ids: list[str],
+        linked_account_ids: list[str | UUID],
         *,
-        start_date,
-        end_date,
+        start_date: date,
+        end_date: date,
         provider: str = "mono",
     ):
         return await self._call_with_session(
@@ -281,13 +306,13 @@ class SessionScopedBankTransactionRepository(_SessionScopedRepositoryMixin, Bank
             provider=provider,
         )
 
-    async def get_latest_posted_at(self, linked_account_id: str, *, provider: str = "mono"):
-        return await self._call_with_session(
+    async def get_latest_posted_at(self, linked_account_id: str | UUID, *, provider: str = "mono") -> datetime | None:
+        return cast(datetime | None, await self._call_with_session(
             BankTransactionRepository,
             "get_latest_posted_at",
             linked_account_id,
             provider=provider,
-        )
+        ))
 
 
 class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMixin, BankTransactionCoverageRepository):
@@ -298,7 +323,7 @@ class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMix
 
     async def list_for_account(
         self,
-        linked_account_id: str,
+        linked_account_id: str | UUID,
         *,
         provider: str = "mono",
         coverage_type: str = "full",
@@ -313,10 +338,10 @@ class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMix
 
     async def find_missing_gaps(
         self,
-        linked_account_id: str,
+        linked_account_id: str | UUID,
         *,
-        start_date,
-        end_date,
+        start_date: date,
+        end_date: date,
         provider: str = "mono",
         coverage_type: str = "full",
     ):
@@ -332,10 +357,10 @@ class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMix
 
     async def is_window_covered(
         self,
-        linked_account_id: str,
+        linked_account_id: str | UUID,
         *,
-        start_date,
-        end_date,
+        start_date: date,
+        end_date: date,
         provider: str = "mono",
         coverage_type: str = "full",
     ):
@@ -349,7 +374,14 @@ class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMix
             coverage_type=coverage_type,
         )
 
-    async def add_full_coverage(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono"):
+    async def add_full_coverage(
+        self,
+        linked_account_id: str | UUID,
+        *,
+        start_date: date,
+        end_date: date,
+        provider: str = "mono",
+    ):
         return await self._call_with_session(
             BankTransactionCoverageRepository,
             "add_full_coverage",

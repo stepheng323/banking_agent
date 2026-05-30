@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from shared.money import MoneyAmount
+
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
 
@@ -20,7 +22,7 @@ class DataPurchaseEntities(BaseModel):
         default=None,
         description="Network provider: MTN, AIRTEL, GLO, 9MOBILE",
     )
-    budget: float | None = Field(
+    budget: MoneyAmount | None = Field(
         default=None,
         description="Budget amount in Naira for data purchase (e.g., 2000 for '2k worth')",
     )
@@ -79,14 +81,14 @@ class DataCorrection(BaseModel):
     """Explicit correction detected from user input."""
 
     field: CorrectionField | None = Field(default=None, description="Field being corrected")
-    new_value: str | float | None = Field(default=None, description="New corrected value")
+    new_value: str | MoneyAmount | None = Field(default=None, description="New corrected value")
 
 
 class Ambiguity(BaseModel):
     """Structured ambiguity with candidates."""
 
     code: AmbiguityCode = Field(description="Ambiguity type")
-    candidates: list[str | float] = Field(default_factory=list, description="Possible values")
+    candidates: list[str | MoneyAmount] = Field(default_factory=list, description="Possible values")
 
 
 class References(BaseModel):

@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from shared.money import MoneyAmount, to_money
+
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
 
@@ -12,7 +14,7 @@ SCHEMA_VERSION = 1
 class SimpleAirtimeEntities(BaseModel):
     """Simplified entities for airtime purchase flow."""
 
-    amount: float | None = Field(
+    amount: MoneyAmount | None = Field(
         default=None, description="Airtime purchase amount as numeric value (e.g., 2000.0 for '2k')"
     )
     recipient_phone: str | None = Field(
@@ -46,17 +48,14 @@ class SimpleAirtimeEntities(BaseModel):
 
     @field_validator("amount", mode="before")
     @classmethod
-    def validate_amount(cls, v: Any) -> float | None:
+    def validate_amount(cls, v: Any) -> MoneyAmount | None:
         """Validate that amount is not negative when provided."""
         if v is None:
             return v
-        try:
-            amount = float(v)
-            if amount < 0:
-                return None
-            return amount
-        except (ValueError, TypeError):
+        amount = to_money(v)
+        if amount is None or amount < 0:
             return None
+        return amount
 
 
 class CorrectionField(str, Enum):

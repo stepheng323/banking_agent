@@ -19,11 +19,12 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage 
     _semantic_schedule_response_mode,
 )
 from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
+from shared.types.planner import RouterDomainIntent
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_ROUTE_TO_DOMAIN: dict[str, str] = {
+_ROUTE_TO_DOMAIN: dict[str, RouterDomainIntent] = {
     "domain_query": "query",
     "domain_account": "account",
     "domain_support": "support",

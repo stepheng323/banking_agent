@@ -146,6 +146,9 @@ class RefundReconciliationConsumer:
         logger.info("refund_reconciliation_requeued_unclaimed_refund", funding_step_id=str(step.id))
 
     async def _apply_result(self, uow: UnitOfWork, step: Any, transfer: Any, result: Any) -> None:
+        funding_steps = uow.funding_steps
+        if funding_steps is None:
+            raise RuntimeError("funding_step_repository_unavailable")
         attempt_count = int(getattr(step, "refund_attempt_count", 0) or 0) + 1
         step.refund_attempt_count = attempt_count
         step.refund_last_checked_at = datetime.now(UTC).replace(tzinfo=None)
@@ -155,11 +158,11 @@ class RefundReconciliationConsumer:
             step.refund_provider_reference = result.reference
         if result.error_message:
             step.refund_error_message = result.error_message
-        if getattr(uow, "db", None) is not None:
+        if uow.db is not None:
             uow.db.add(step)
 
         if result.status == DebitStatus.REVERSED:
-            await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
+            await funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
             await finalize_refund_state(uow, transfer)
             logger.info("refund_reconciliation_completed", funding_step_id=str(step.id))
             return
@@ -177,7 +180,7 @@ class RefundReconciliationConsumer:
             )
             return
 
-        await uow.funding_steps.update_status(
+        await funding_steps.update_status(
             str(step.id),
             FundingStepStatusEnum.REFUND_PROCESSING.value,
             error_message=result.error_message or "Refund still pending",
@@ -185,7 +188,10 @@ class RefundReconciliationConsumer:
         logger.info("refund_reconciliation_pending", funding_step_id=str(step.id), attempt_count=attempt_count)
 
     async def _mark_refund_failed(self, uow: UnitOfWork, step: Any, transfer: Any, error_message: str) -> None:
-        await uow.funding_steps.update_status(
+        funding_steps = uow.funding_steps
+        if funding_steps is None:
+            raise RuntimeError("funding_step_repository_unavailable")
+        await funding_steps.update_status(
             str(step.id),
             FundingStepStatusEnum.REFUND_FAILED.value,
             error_message=error_message,

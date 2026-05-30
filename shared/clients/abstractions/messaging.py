@@ -49,7 +49,7 @@ class MessagingClient(ABC):
         text: str,
         message_id: str | None = None,
         suppress_typing_indicator: bool = False,
-    ) -> MessageResult:
+    ) -> MessageResult | dict[str, Any]:
         """
         Send a plain text message.
 
@@ -74,7 +74,7 @@ class MessagingClient(ABC):
         footer: str = "",
         message_id: str | None = None,
         suppress_typing_indicator: bool = False,
-    ) -> MessageResult:
+    ) -> MessageResult | dict[str, Any]:
         """
         Send an interactive message with options.
 
@@ -105,7 +105,7 @@ class MessagingClient(ABC):
         caption: str = "",
         message_id: str | None = None,
         suppress_typing_indicator: bool = False,
-    ) -> MessageResult:
+    ) -> MessageResult | dict[str, Any]:
         """
         Send an image with optional caption.
 
@@ -129,7 +129,7 @@ class MessagingClient(ABC):
         mime_type: str = "image/png",
         message_id: str | None = None,
         suppress_typing_indicator: bool = False,
-    ) -> MessageResult:
+    ) -> MessageResult | dict[str, Any]:
         """
         Send an image from bytes data.
 
@@ -142,7 +142,7 @@ class MessagingClient(ABC):
             error=f"send_image_data not supported on {self.channel_name}",
         )
 
-    async def send_typing_indicator(self, message_id: str) -> bool:
+    async def send_typing_indicator(self, message_id: str) -> bool | dict[str, Any]:
         """
         Send a typing indicator.
 

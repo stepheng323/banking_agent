@@ -8,8 +8,6 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-import redis.asyncio as redis
-
 import banking.transactions.runtime.scheduled_runs as scheduled_runs
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.services.post_transaction_beneficiary import (
@@ -30,12 +28,13 @@ from banking.transactions.runtime.async_completion import (
     is_grouped_async_message,
     record_group_leg_and_maybe_build_summary,
 )
-from banking.transactions.runtime.async_group_types import AsyncGroupSummaryResult
+from banking.transactions.runtime.async_group_types import AsyncGroupRedis, AsyncGroupSummaryResult
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import TransactionStatusEnum
+from shared.money import to_money
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -81,7 +80,7 @@ class TransferExecutor:
         transaction_repo: TransactionRepository,
         publisher: QueuePublisher | None = None,
         delivery_service: DeliveryService | None = None,
-        redis_client: redis.Redis | None = None,
+        redis_client: AsyncGroupRedis | None = None,
         funded_transfer_repo: FundedTransferRepository | None = None,
         beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
     ):
@@ -390,9 +389,9 @@ class TransferExecutor:
                 raise ValueError("missing_source_account_id")
             if not recipient_account or not recipient_bank_code:
                 raise ValueError("missing_recipient_account_details")
-            if not amount or float(amount) <= 0:
+            amount_value = to_money(amount)
+            if amount_value is None or amount_value <= 0:
                 raise ValueError("invalid_transfer_amount")
-            amount_value = float(amount)
             success_context = transfer_personality_context_from_payload(transfer_data, moment="success")
             pending_context = transfer_personality_context_from_payload(transfer_data, moment="pending")
             failure_context = transfer_personality_context_from_payload(transfer_data, moment="failure")

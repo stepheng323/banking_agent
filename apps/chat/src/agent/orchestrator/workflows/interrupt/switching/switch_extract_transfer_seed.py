@@ -9,7 +9,8 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extra
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_extractor import (
     _extract_interrupt_switch_entities,
 )
-from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_values import _coerce_float
+from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_values import _coerce_money
+from shared.money import MoneyAmount
 from shared.types.planner import RecipientAllocation, TaskParameters
 
 
@@ -35,9 +36,9 @@ def _apply_transfer_source_account_entities(parameters: TaskParameters, entities
 def _apply_transfer_split_entities(parameters: TaskParameters, entities: dict[str, Any]) -> None:
     explicit_split = entities.get("explicit_split")
     if isinstance(explicit_split, dict):
-        normalized_split: dict[str, float] = {}
+        normalized_split: dict[str, MoneyAmount] = {}
         for key, value in explicit_split.items():
-            amount_value = _coerce_float(value)
+            amount_value = _coerce_money(value)
             if amount_value is None:
                 continue
             normalized_key = str(key).strip()
@@ -54,7 +55,7 @@ def _apply_transfer_split_entities(parameters: TaskParameters, entities: dict[st
             if not isinstance(item, dict):
                 continue
             recipient_name = str(item.get("recipient_name") or "").strip()
-            amount_value = _coerce_float(item.get("amount"))
+            amount_value = _coerce_money(item.get("amount"))
             if not recipient_name or amount_value is None:
                 continue
             normalized_allocations.append(RecipientAllocation(recipient_name=recipient_name, amount=amount_value))
@@ -96,7 +97,7 @@ async def _seed_transfer_switch_payload(
         parameters.bank_name = bank_name
         payload_seed["recipient_bank_name"] = bank_name
 
-    amount = _coerce_float(entities.get("amount"))
+    amount = _coerce_money(entities.get("amount"))
     if amount is not None:
         parameters.amount = amount
 

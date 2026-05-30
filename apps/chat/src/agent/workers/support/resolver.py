@@ -8,6 +8,7 @@ Resolves which transaction the user is referring to using:
 """
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from apps.chat.src.agent.shared.unified_transactions import (
@@ -51,7 +52,7 @@ class TransactionResolver:
         quoted_message_id: str | None = None,
         recent_status_priority: list[str] | None = None,
         prefer_latest_recent: bool = False,
-    ) -> tuple[Transaction | None, str]:
+    ) -> tuple[Transaction | dict[str, Any] | None, str]:
         """
         Resolve a transaction reference.
 
@@ -72,15 +73,19 @@ class TransactionResolver:
                 return tx, "transaction_id"
 
         if settings.enable_unified_transaction_view:
-            tx, method = await self._resolve_from_unified(
+            unified_tx, method = await self._resolve_from_unified(
                 user_id,
                 tx_ref,
                 recent_status_priority=recent_status_priority,
                 prefer_latest=prefer_latest_recent,
             )
-            if tx:
-                logger.info("transaction_resolved", method=method, tx_id=str(tx.get("id") or tx.get("transaction_id")))
-                return tx, method
+            if unified_tx:
+                logger.info(
+                    "transaction_resolved",
+                    method=method,
+                    tx_id=str(unified_tx.get("id") or unified_tx.get("transaction_id")),
+                )
+                return unified_tx, method
             if method == "ambiguous":
                 return None, method
 
@@ -348,9 +353,11 @@ class TransactionResolver:
         score = 0.0
 
         if tx_ref.amount:
-            if abs(tx.amount - tx_ref.amount) < 1:  # Exact match
+            tx_amount = Decimal(str(tx.amount))
+            ref_amount = Decimal(str(tx_ref.amount))
+            if abs(tx_amount - ref_amount) < Decimal("1.00"):  # Exact match
                 score += 3.0
-            elif abs(tx.amount - tx_ref.amount) / tx_ref.amount < 0.05:  # Within 5%
+            elif abs(tx_amount - ref_amount) / ref_amount < Decimal("0.05"):  # Within 5%
                 score += 1.0
 
         recipient_name = self._display_recipient(tx)

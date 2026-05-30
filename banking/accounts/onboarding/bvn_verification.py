@@ -57,6 +57,7 @@ class BvnVerificationService:
                 phone_hash=log_fingerprint(phone_number),
             )
             return set()
+        return set()
 
     async def get_session_data(self, flow_token: str) -> dict:
         """Get session data for a flow token."""

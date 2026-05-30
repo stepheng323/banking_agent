@@ -82,6 +82,7 @@ class ValidationStep(AirtimeStep):
                 ),
             )
 
+        assert data.amount is not None
         if data.recipient_phone and not is_valid_nigerian_phone(data.recipient_phone):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,

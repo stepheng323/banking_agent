@@ -7,10 +7,11 @@ from typing import cast
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
+from shared.money import MoneyAmount
 
 
 def format_transfer_success_message(
-    amount: float,
+    amount: MoneyAmount,
     recipient_name: str,
     transaction_id: str,
     locale: str = "en",
@@ -33,7 +34,7 @@ def format_transfer_success_message(
 
 
 def format_transfer_pending_message(
-    amount: float,
+    amount: MoneyAmount,
     recipient_name: str,
     locale: str = "en",
     personality_context: PersonalityContext | None = None,
@@ -54,7 +55,7 @@ def format_transfer_pending_message(
 
 
 def format_transfer_queued_message(
-    amount: float,
+    amount: MoneyAmount,
     recipient_name: str,
     locale: str = "en",
 ) -> str:

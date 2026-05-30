@@ -151,9 +151,9 @@ async def flow_webhook(
         elif screen == "METHOD_SELECTION":
             is_linking_flow = flow_token and flow_token.startswith("link-")
             if is_linking_flow:
-                method_data = LinkingMethodSelectionInput(**data)
+                linking_method_data = LinkingMethodSelectionInput(**data)
                 return await handle_linking_method_selection(
-                    method_data,
+                    linking_method_data,
                     flow_token or "",
                     request_was_encrypted,
                     aes_key_bytes or b"",

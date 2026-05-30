@@ -14,6 +14,7 @@ from apps.chat.src.agent.workers.__shared__.scheduling import (
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
 from banking.presentation.i18n.renderer import render_message
+from shared.money import to_money
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -142,10 +143,7 @@ def _apply_resolved_referents(payload: DataPayload, context: DataContext) -> boo
                 if network and not payload.network:
                     payload.network = str(network).strip().upper()
                 if amount is not None and payload.amount is None:
-                    try:
-                        payload.amount = float(amount)
-                    except (TypeError, ValueError):
-                        pass
+                    payload.amount = to_money(amount)
                 if size_gb is not None:
                     try:
                         payload.plan_size_gb = float(size_gb)
@@ -173,13 +171,12 @@ def _apply_resolved_referents(payload: DataPayload, context: DataContext) -> boo
     if payload.amount is None:
         amount_referent = _resolved_referent_data(context, "amount")
         if amount_referent:
-            try:
-                amount = float(amount_referent.get("amount"))
-            except (TypeError, ValueError):
-                amount = None
-            if amount is not None and amount > 0:
-                payload.amount = amount
-                changed = True
+            raw_amount = amount_referent.get("amount")
+            if raw_amount is not None:
+                amount = to_money(raw_amount)
+                if amount is not None and amount > 0:
+                    payload.amount = amount
+                    changed = True
 
     source_has_value = any(
         (
@@ -217,7 +214,8 @@ def _referent_phone_candidates(context: DataContext) -> list[dict[str, Any]]:
     for idx, item in enumerate(raw_items[:5], start=1):
         if not isinstance(item, dict):
             continue
-        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        raw_data = item.get("data")
+        data = raw_data if isinstance(raw_data, dict) else {}
         phone = normalize_nigerian_phone(str(data.get("phone") or data.get("target_phone") or item.get("label") or ""))
         if phone:
             network = data.get("network")
@@ -278,7 +276,7 @@ def _resolve_referent_phone_selection_from_input(
         if selected is None:
             return None, None
 
-    patch = {
+    patch: dict[str, Any] = {
         "target_phone": selected.get("target_phone"),
         "referent_phone_candidates": [],
     }
@@ -463,7 +461,7 @@ class ExtractionStep(PipelineStep):
         _apply_resolved_referents(payload, context)
 
         if extraction_result.entities.budget is not None and payload.amount is None:
-            payload.amount = float(extraction_result.entities.budget)
+            payload.amount = extraction_result.entities.budget
         if extraction_result.entities.size_preference and not payload.size_preference:
             payload.size_preference = extraction_result.entities.size_preference
         if extraction_result.entities.validity_preference and not payload.validity_preference:

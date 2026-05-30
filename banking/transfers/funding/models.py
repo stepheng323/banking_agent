@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-MIN_FUNDING_AMOUNT = 100.0
+from shared.money import MoneyAmount
+
+MIN_FUNDING_AMOUNT = Decimal("100.00")
 
 
 @dataclass
@@ -17,7 +20,7 @@ class FundingStepPlan:
     account_number: str
     bank_name: str
     mandate_id: str
-    amount: float
+    amount: MoneyAmount
     sequence: int
 
 
@@ -25,11 +28,11 @@ class FundingStepPlan:
 class FundingPlan:
     """Complete funding plan for a transfer."""
 
-    transfer_amount: float
-    total_funded: float
+    transfer_amount: MoneyAmount
+    total_funded: MoneyAmount
     steps: list[FundingStepPlan] = field(default_factory=list)
     is_sufficient: bool = False
-    shortfall: float = 0.0
+    shortfall: MoneyAmount = Decimal("0.00")
     error: str | None = None
     balance_checks: int = 0
     is_pending_mandate: bool = False
@@ -38,7 +41,7 @@ class FundingPlan:
     explicit_split_applied: bool = False
     primary_account_id: UUID | None = None
     primary_bank_name: str | None = None
-    primary_available_balance: float | None = None
+    primary_available_balance: MoneyAmount | None = None
 
     @property
     def num_sources(self) -> int:

@@ -2,6 +2,7 @@ from typing import Any
 
 from banking.presentation.formatters.accounts import get_bank_label, get_last4
 from banking.presentation.i18n.renderer import render_message
+from shared.money import MoneyAmount
 
 STATUS_ICONS = {
     "ready": "✓",
@@ -51,7 +52,7 @@ class AccountFormatter:
         return f"···{last4}"
 
     @staticmethod
-    def format_balance_response(balances: list[dict], total_balance: float | None, locale: str = "en") -> str:
+    def format_balance_response(balances: list[dict], total_balance: MoneyAmount | None, locale: str = "en") -> str:
         """Format balance check response as natural language."""
         if not balances:
             return render_message("account.balance.none_available", locale)

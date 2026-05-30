@@ -47,7 +47,7 @@ def _funding_splits_patch(value: Any) -> dict[str, Any] | None:
     if hasattr(entries, "model_dump"):
         entries = entries.model_dump(exclude_none=True)
     if isinstance(entries, dict):
-        split_items = entries.items()
+        split_items: list[tuple[Any, Any]] = list(entries.items())
     elif isinstance(entries, list):
         split_items = []
         for item in entries:

@@ -24,6 +24,8 @@ def build_interrupt_runtime(
     config: RunnableConfig,
 ) -> InterruptRuntime:
     interrupt = state.pending_interrupt
+    if interrupt is None:
+        raise RuntimeError("pending_interrupt_required")
     current_task_types = _current_task_types(state, interrupt.task_ids)
     configurable = config["configurable"]
     return InterruptRuntime(

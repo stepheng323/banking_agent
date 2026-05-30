@@ -89,21 +89,22 @@ async def handle_linking_method_selection(
                 iv_bytes,
             )
 
-    result = ServiceResult(**await bvn_service.send_otp(flow_token, data.method))
+    result = ServiceResult(**await bvn_service.send_otp(flow_token, data.method or ""))
     if result.success:
+        result_data = result.data or {}
         return format_success_response(
             "OTP_VERIFICATION",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
-            bvn=result.data["bvn"],
+            bvn=result_data["bvn"],
             show_error=False,
             error_message="",
         )
 
     return format_error_response(
         "METHOD_SELECTION",
-        result.error,
+        result.error or "",
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,

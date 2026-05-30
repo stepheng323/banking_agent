@@ -30,7 +30,7 @@ def _is_valid_user_id(value: Any) -> bool:
 
 def _serialize_cached_identity(user: Any) -> dict[str, str | None]:
     onboarding_status = getattr(user, "onboarding_status", None)
-    if hasattr(onboarding_status, "value"):
+    if onboarding_status is not None and hasattr(onboarding_status, "value"):
         onboarding_status = onboarding_status.value
     return {
         "id": str(getattr(user, "id", "")) or None,

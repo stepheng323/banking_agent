@@ -20,7 +20,7 @@ def _should_replan_active_wave(state: OrchestratorState) -> bool:
         return False
 
     replannable_stages = {TaskStage.AWAITING_CONFIRMATION, TaskStage.AWAITING_AUTH}
-    active_tasks = [state.tasks.get(task_id) for task_id in current_wave if state.tasks.get(task_id) is not None]
+    active_tasks = [task for task_id in current_wave if (task := state.tasks.get(task_id)) is not None]
     if not active_tasks:
         return False
     return all(task.stage in replannable_stages for task in active_tasks)

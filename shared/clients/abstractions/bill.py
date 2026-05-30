@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from shared.money import MoneyAmount
+
 
 class BillPaymentProvider(ABC):
     """
@@ -37,7 +39,7 @@ class BillPaymentProvider(ABC):
     @abstractmethod
     async def purchase_airtime(
         self,
-        amount: float,
+        amount: MoneyAmount,
         recipient_phone: str,
         network: str,
         reference: str | None = None,
@@ -96,7 +98,7 @@ class BillPaymentProvider(ABC):
         plan_code: str,
         recipient_phone: str,
         network: str,
-        amount: float | None = None,
+        amount: MoneyAmount | None = None,
         reference: str | None = None,
     ) -> dict[str, Any]:
         """

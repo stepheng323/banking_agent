@@ -7,6 +7,7 @@ Users will ask:
 """
 
 from apps.chat.src.agent.workers.support.models import SupportResponse
+from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.support.services.ticket_service import TicketService
 from shared.database.enums import SupportTicketStatusEnum
@@ -16,7 +17,7 @@ logger = get_logger(__name__)
 
 
 # Human-readable status message keys
-STATUS_MESSAGE_KEYS = {
+STATUS_MESSAGE_KEYS: dict[str, MessageKey] = {
     SupportTicketStatusEnum.OPEN.value: "support.ticket.status_open",
     SupportTicketStatusEnum.IN_PROGRESS.value: "support.ticket.status_in_progress",
     SupportTicketStatusEnum.RESOLVED.value: "support.ticket.status_resolved",
@@ -76,10 +77,8 @@ async def handle_ticket_status(
         )
 
     # Build status response
-    status_text = render_message(
-        STATUS_MESSAGE_KEYS.get(ticket.status, "support.ticket.status_unknown"),
-        locale,
-    )
+    status_key = STATUS_MESSAGE_KEYS.get(ticket.status, "support.ticket.status_unknown")
+    status_text = render_message(status_key, locale)
 
     # Format created_at
     created_str = (

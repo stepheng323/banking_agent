@@ -1,5 +1,7 @@
 """Target selection for context-frame transaction replay."""
 
+from decimal import Decimal
+
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_filtering import (
@@ -49,7 +51,7 @@ def _target_text_is_replay_amount_override(
         return False
 
     target_amounts = amount_reference_values(target_text)
-    return len(target_amounts) == 1 and any(abs(amount - override) < 0.01 for amount in target_amounts)
+    return len(target_amounts) == 1 and any(abs(amount - override) < Decimal("0.01") for amount in target_amounts)
 
 
 def _modifier_matches_target_text(modifier: str | None, target_text: str) -> bool:

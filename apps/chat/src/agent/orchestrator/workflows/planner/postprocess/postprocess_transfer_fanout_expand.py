@@ -7,20 +7,21 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
     _apply_transfer_fanout_target,
     _next_transfer_fanout_task_id,
 )
+from shared.money import MoneyAmount
 from shared.types.planner import PlannedTask
 
 
-def _planned_recipient_allocations(source_task: PlannedTask) -> list[tuple[str, float]] | None:
+def _planned_recipient_allocations(source_task: PlannedTask) -> list[tuple[str, MoneyAmount]] | None:
     allocations = source_task.parameters.recipient_allocations
     if not allocations or len(allocations) < 2:
         return None
 
-    normalized: list[tuple[str, float]] = []
+    normalized: list[tuple[str, MoneyAmount]] = []
     for allocation in allocations:
         recipient_name = str(allocation.recipient_name or "").strip()
         if not recipient_name:
             return None
-        normalized.append((recipient_name, float(allocation.amount)))
+        normalized.append((recipient_name, allocation.amount))
     return normalized if len(normalized) >= 2 else None
 
 
@@ -78,11 +79,12 @@ def _expand_underproduced_transfer_tasks(
         )
     expanded_source_tasks.append(first_task)
 
-    extra_recipients = (
-        recipient_allocations[1:]
-        if recipient_allocations
-        else [(recipient, None) for recipient in recipients[1:]]
-    )
+    if recipient_allocations:
+        extra_recipients: list[tuple[str, MoneyAmount | None]] = [
+            (recipient, amount) for recipient, amount in recipient_allocations[1:]
+        ]
+    else:
+        extra_recipients = [(recipient, None) for recipient in recipients[1:]]
     for idx, recipient_info in enumerate(extra_recipients, start=2):
         recipient, allocated_amount = recipient_info
         clone = source_task.model_copy(deep=True)

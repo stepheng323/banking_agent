@@ -3,9 +3,10 @@
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from banking.presentation.formatters.transaction_copy_context import build_copy_context
+from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 
 FIRST_PROGRESS_DELAY_SECONDS = 5.0
@@ -301,7 +302,11 @@ def render_progress_message(
                 (stage_key, "all")
             )
             if counterparty_variant:
-                return render_message(counterparty_variant[variant], locale, {"counterparty_label": counterparty})
+                return render_message(
+                    cast(MessageKey, counterparty_variant[variant]),
+                    locale,
+                    {"counterparty_label": counterparty},
+                )
         scoped_key = {
             "query.resolving_followup": {
                 "first": "progress.query.resolving_followup.first_scoped",
@@ -317,7 +322,7 @@ def render_progress_message(
             },
         }.get(stage_key, {}).get(variant)
         if scoped_key and scope_label:
-            return render_message(scoped_key, locale, {"scope_label": scope_label})
+            return render_message(cast(MessageKey, scoped_key), locale, {"scope_label": scope_label})
 
     if stage_key.startswith("transfer."):
         transfer_variant_key = {
@@ -344,15 +349,17 @@ def render_progress_message(
                 "amount",
                 "recipient_display",
             }.issubset(copy_context):
-                return render_message(scoped_key, locale, copy_context)
+                return render_message(cast(MessageKey, scoped_key), locale, copy_context)
             if stage_key in {"transfer.resolving_recipient", "transfer.confirming_details"} and copy_context.get(
                 "recipient_display"
             ):
-                return render_message(scoped_key, locale, copy_context)
+                return render_message(cast(MessageKey, scoped_key), locale, copy_context)
 
     generic_key = generic_key_by_stage.get(stage_key, {}).get(variant)
     if generic_key:
-        return render_message(generic_key, locale)
+        return render_message(cast(MessageKey, generic_key), locale)
 
-    fallback_key = "progress.common.first_generic" if progress_count <= 0 else "progress.common.followup_generic"
+    fallback_key: MessageKey = (
+        "progress.common.first_generic" if progress_count <= 0 else "progress.common.followup_generic"
+    )
     return render_message(fallback_key, locale)

@@ -270,15 +270,14 @@ def push_beneficiary_list_frame(ctx: Any, viewed_beneficiaries: Any) -> None:
     if not viewed_beneficiaries:
         return
 
-    entities = [
-        ContextEntity(
-            entity_type=EntityType.BENEFICIARY,
-            label=beneficiary.get("alias") or beneficiary.get("name"),
-            data=beneficiary,
-        )
-        for beneficiary in viewed_beneficiaries
-        if isinstance(beneficiary, dict)
-    ]
+    entities: list[ContextEntity] = []
+    for beneficiary in viewed_beneficiaries:
+        if not isinstance(beneficiary, dict):
+            continue
+        label = str(beneficiary.get("alias") or beneficiary.get("name") or "").strip()
+        if not label:
+            continue
+        entities.append(ContextEntity(entity_type=EntityType.BENEFICIARY, label=label, data=beneficiary))
     if not entities:
         return
 

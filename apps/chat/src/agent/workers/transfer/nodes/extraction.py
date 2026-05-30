@@ -59,10 +59,10 @@ class ExtractionStep(TransferStep):
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
-        def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any]:
             cleanup_patch = recipient_schedule_cleanup_patch(data)
             if not data.skip_extraction and not data.confirmation_message_scoped and not cleanup_patch:
-                return patch
+                return dict(patch or {})
             merged = dict(patch or {})
             for key, value in cleanup_patch.items():
                 merged.setdefault(key, value)
@@ -252,20 +252,20 @@ class ExtractionStep(TransferStep):
                             "confirmation": {"confirmed": False},
                         }
                     ),
-                )
+        )
         if waiting_for_referent_recipient:
-            referent_patch, invalid_referents = resolve_referent_recipient_selection_from_input(
+            selection_referent_patch, invalid_referents = resolve_referent_recipient_selection_from_input(
                 self.user_message,
                 data.referent_recipient_candidates,
             )
-            if referent_patch:
+            if selection_referent_patch:
                 logger.info(
                     "transfer_extraction_referent_recipient_selection",
-                    fields=sorted(referent_patch.keys()),
+                    fields=sorted(selection_referent_patch.keys()),
                 )
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch=_with_skip_patch(referent_patch),
+                    patch=_with_skip_patch(selection_referent_patch),
                 )
             if invalid_referents:
                 retry_prompt = render_referent_recipient_retry_prompt(invalid_referents, context.language)

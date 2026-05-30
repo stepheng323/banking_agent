@@ -70,13 +70,14 @@ def replay_payload_for_entity(
         return None
 
     payload = _base_replay_payload(entity, task_type=task_type, text=text, replay_modifier=replay_modifier)
+    replay_payload: dict[str, Any] | None
     if task_type == "transfer":
-        payload = _transfer_replay_payload(entity, payload)
+        replay_payload = _transfer_replay_payload(entity, payload)
     elif task_type == "airtime":
-        payload = _airtime_replay_payload(entity, payload)
+        replay_payload = _airtime_replay_payload(entity, payload)
     else:
-        payload = _data_replay_payload(entity, payload)
-    return (task_type, payload) if payload is not None else None
+        replay_payload = _data_replay_payload(entity, payload)
+    return (task_type, replay_payload) if replay_payload is not None else None
 
 
 __all__ = ["replay_payload_for_entity"]

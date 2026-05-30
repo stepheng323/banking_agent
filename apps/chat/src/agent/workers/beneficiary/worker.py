@@ -112,6 +112,10 @@ class BeneficiaryWorker:
             return TransactionResult(
                 outcome=TransactionOutcome.OK, response="\n".join(lines), details={"viewed_beneficiaries": simple_list}
             )
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            error=render_message("beneficiary.error.process_failed", locale),
+        )
 
     async def _add_beneficiary(self, user_id: str, payload: dict, context: dict) -> TransactionResult:
         del user_id, payload

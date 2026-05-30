@@ -6,7 +6,7 @@ from typing import Any
 
 from banking.presentation.i18n.models import LocaleCode
 from banking.presentation.i18n.renderer import render_message
-from shared.clients.abstractions.messaging import MessagingClient
+from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
 from shared.messaging.intents import (
     RequestAuth,
@@ -37,6 +37,24 @@ def _is_schedule_update_confirmation(intent: RequestConfirmation) -> bool:
         str(payload.get("task_type") or "").strip().lower() == "schedule"
         and str(payload.get("action") or "").strip().lower() == "edit_scheduled_transaction"
     )
+
+
+def _message_result_id(result: MessageResult | dict[str, Any]) -> str | None:
+    if isinstance(result, MessageResult):
+        return result.message_id
+    return result.get("messages", [{}])[0].get("id")
+
+
+def _message_result_success(result: MessageResult | dict[str, Any]) -> bool:
+    if isinstance(result, MessageResult):
+        return result.success
+    return bool(result.get("messages"))
+
+
+def _message_result_error(result: MessageResult | dict[str, Any]) -> str | None:
+    if isinstance(result, MessageResult):
+        return result.error
+    return str(result.get("error") or "") or None
 
 
 def _pin_prefix_from_payload(payload: dict[str, Any], correlation_id: str) -> str | None:
@@ -174,7 +192,7 @@ class WhatsAppPresenter(Presenter):
     async def _present_typing(self, intent: SendTyping, context: PresentationContext) -> None:
         del intent
         msg_id = context.metadata.get("inbound_message_id")
-        await self.client.send_typing_indicator(msg_id)
+        await self.client.send_typing_indicator(str(msg_id or ""))
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
         resp = await self.client.send_text(
@@ -215,14 +233,14 @@ class WhatsAppPresenter(Presenter):
             return resp.message_id
         else:
             logger.warning("auth_flow_unsupported", phone_hash=log_fingerprint(context.phone_number))
-            resp = await self.client.send_text(
+            fallback_resp = await self.client.send_text(
                 to=context.phone_number,
                 text=self._format_text(
                     "Secure transaction requires WhatsApp Flows support. Please update your WhatsApp version."
                 ),
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
+            return _message_result_id(fallback_resp)
 
     async def _present_confirmation(self, intent: RequestConfirmation, context: PresentationContext) -> str | None:
         supports_flows = context.capabilities.get("flows", False)
@@ -323,12 +341,12 @@ class WhatsAppPresenter(Presenter):
             return resp.message_id
         else:
             fallback = intent.fallback_text or "This action requires flow support on your channel."
-            resp = await self.client.send_text(
+            fallback_resp = await self.client.send_text(
                 to=context.phone_number,
                 text=self._format_text(fallback),
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
+            return _message_result_id(fallback_resp)
 
     async def _present_options(self, intent: ShowOptions, context: PresentationContext) -> str | None:
         """Present options with channel-native interactive UI and text fallback."""
@@ -353,9 +371,9 @@ class WhatsAppPresenter(Presenter):
                 options=options,
                 suppress_typing_indicator=self._suppress_typing(context),
             )
-            if interactive_resp.success:
-                return interactive_resp.message_id
-            logger.warning("whatsapp_show_options_interactive_failed", error=interactive_resp.error)
+            if _message_result_success(interactive_resp):
+                return _message_result_id(interactive_resp)
+            logger.warning("whatsapp_show_options_interactive_failed", error=_message_result_error(interactive_resp))
 
         numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
         logger.info("option_render_mode", channel="whatsapp", mode="text", option_count=len(options))

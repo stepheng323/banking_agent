@@ -83,7 +83,7 @@ def _build_confirmation_gate_updates(
         prompt=summ,
     )
 
-    outbox = []
+    outbox: list[dict[str, Any]] = []
     if update_msg:
         outbox.append({"type": "say", "text": update_msg})
 

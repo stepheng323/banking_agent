@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_renderin
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_user import (
     build_user_state_summary_from_summary,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_types import TurnContextSummary
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +28,7 @@ class PlannerContextSections:
 
 def build_planner_context_sections(
     *,
-    turn_summary: object,
+    turn_summary: TurnContextSummary,
     query_session_source: str | None,
     is_transactional_flow: bool,
     active_intent: str | None,

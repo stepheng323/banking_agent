@@ -11,6 +11,7 @@ from shared.clients.abstractions.direct_debit import (
 )
 from shared.clients.providers.mono.client import MonoClient
 from shared.clients.providers.mono.models import MonoApiError
+from shared.money import MoneyAmount, require_money, to_minor_units
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -48,14 +49,14 @@ class MonoDirectDebitProvider(DirectDebitProvider):
             logger.error("mono_get_balance_failed", account_id=account_id, error=str(e))
             return BalanceResult(
                 success=False,
-                available_balance=0,
+                available_balance=require_money(0),
                 error_message=str(e),
             )
 
     async def initiate_debit(
         self,
         mandate_id: str,
-        amount: float,
+        amount: MoneyAmount,
         reference: str,
         narration: str = "Transfer",
         beneficiary_account: str | None = None,
@@ -69,12 +70,13 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 success=False,
                 status=DebitStatus.FAILED,
                 reference=reference,
-                amount=amount,
+                amount=require_money(amount),
                 error_message="Both beneficiary_account and beneficiary_bank_code must be provided together",
             )
 
         try:
-            amount_kobo = int(amount * 100)
+            debit_amount = require_money(amount)
+            amount_kobo = to_minor_units(debit_amount)
             mode = "direct_beneficiary" if has_beneficiary_account else "pooling"
 
             response = await self._client.initiate_debit(
@@ -93,7 +95,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=status,
                 debit_id=response.get("id"),
                 reference=response.get("reference") or reference,
-                amount=amount,
+                amount=debit_amount,
                 error_message=error_message,
                 provider_response=response,
             )
@@ -104,7 +106,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 success=transient,
                 status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
                 reference=reference,
-                amount=amount,
+                amount=require_money(amount),
                 error_message=e.message,
                 provider_response=self._error_response(e),
             )
@@ -114,7 +116,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 success=True,
                 status=DebitStatus.PROCESSING,
                 reference=reference,
-                amount=amount,
+                amount=require_money(amount),
                 error_message=str(e),
                 provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
             )
@@ -130,7 +132,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=status,
                 debit_id=debit_id,
                 reference=response.get("reference"),
-                amount=response.get("amount", 0) / 100,  # Kobo to Naira
+                amount=require_money(response.get("amount", 0)) / 100,  # Kobo to Naira
                 error_message=error_message,
                 provider_response=response,
             )
@@ -199,7 +201,11 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=status,
                 debit_id=response.get("id"),
                 reference=response.get("reference") or response.get("reference_number") or debit_reference,
-                amount=(response.get("amount", 0) / 100 if isinstance(response.get("amount"), int) else None),
+                amount=(
+                    require_money(response.get("amount", 0)) / 100
+                    if isinstance(response.get("amount"), int)
+                    else None
+                ),
                 error_message=error_message,
                 provider_response=response,
             )

@@ -111,14 +111,13 @@ def prepare_orchestrator_outbound(
     dict[str, Any],
 ]:
     """Choose the outbound intents/raw outbox that should be sent for an orchestrator result."""
-    intents: list[UiIntent] = orchestrator_output.get("intents", [])
-    raw_outbox = orchestrator_output.get("outbox")
-    response_text = orchestrator_output.get("text")
-    delivery_metadata = (
-        orchestrator_output.get("delivery_metadata")
-        if isinstance(orchestrator_output.get("delivery_metadata"), dict)
-        else {}
-    )
+    raw_intents = orchestrator_output.get("intents", [])
+    intents: list[UiIntent] = raw_intents if isinstance(raw_intents, list) else []
+    raw_outbox: Any = orchestrator_output.get("outbox")
+    raw_response_text = orchestrator_output.get("text")
+    response_text = raw_response_text if isinstance(raw_response_text, str) else None
+    raw_delivery_metadata = orchestrator_output.get("delivery_metadata")
+    delivery_metadata: dict[str, Any] = raw_delivery_metadata if isinstance(raw_delivery_metadata, dict) else {}
 
     if intents:
         has_primary_interaction = any(
@@ -133,7 +132,9 @@ def prepare_orchestrator_outbound(
             intents.append(Say(text=response_text))
         return list(intents), raw_outbox, response_text, delivery_metadata
 
-    fallback_outbox = [item for item in raw_outbox if isinstance(item, dict)] if isinstance(raw_outbox, list) else []
+    fallback_outbox: list[UiIntent | dict[str, Any]] = (
+        [item for item in raw_outbox if isinstance(item, dict)] if isinstance(raw_outbox, list) else []
+    )
     if fallback_outbox:
         logger.warning(
             "message_consumer_empty_intents_falling_back_to_raw_outbox",

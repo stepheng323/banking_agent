@@ -1,6 +1,9 @@
 """Amount parsing helpers for context-frame replay modifiers."""
 
 import re
+from decimal import Decimal, InvalidOperation
+
+from shared.money import MoneyAmount, to_money
 
 _REPLAY_AMOUNT_TOKEN_RE = re.compile(
     r"(?P<prefix>₦|ngn|naira)?\s*"
@@ -19,7 +22,7 @@ _REPLAY_AMOUNT_OVERRIDE_RE = re.compile(
 )
 
 
-def _parse_replay_amount_token(token: str | None) -> float | None:
+def _parse_replay_amount_token(token: str | None) -> MoneyAmount | None:
     if not token:
         return None
 
@@ -28,27 +31,27 @@ def _parse_replay_amount_token(token: str | None) -> float | None:
         return None
 
     try:
-        value = float(match.group("amount").replace(",", ""))
-    except ValueError:
+        value = Decimal(match.group("amount").replace(",", ""))
+    except InvalidOperation:
         return None
 
     suffix = (match.group("suffix") or "").lower()
     if suffix == "k":
-        value *= 1000
+        value *= Decimal("1000")
     elif suffix == "m":
-        value *= 1_000_000
+        value *= Decimal("1000000")
 
     if value <= 0:
         return None
 
     has_explicit_money_marker = bool(match.group("prefix") or suffix or "," in match.group("amount"))
-    if not has_explicit_money_marker and value > 100_000_000:
+    if not has_explicit_money_marker and value > Decimal("100000000"):
         return None
 
-    return value
+    return to_money(value)
 
 
-def _replay_amount_override(text: str | None) -> float | None:
+def _replay_amount_override(text: str | None) -> MoneyAmount | None:
     if not text:
         return None
 

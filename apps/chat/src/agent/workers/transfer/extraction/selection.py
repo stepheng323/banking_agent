@@ -186,8 +186,11 @@ def _resolved_amount_referent(context: TransferContext) -> float | None:
     data = _resolved_referent_data(context, "amount")
     if not data:
         return None
+    raw_amount = data.get("amount")
+    if raw_amount is None:
+        return None
     try:
-        amount = float(data.get("amount"))
+        amount = float(raw_amount)
     except (TypeError, ValueError):
         return None
     return amount if amount > 0 else None

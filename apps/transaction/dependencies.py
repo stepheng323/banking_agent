@@ -1,8 +1,11 @@
 """Dependency loader for transaction worker runtimes."""
 
+from typing import cast
+
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.transactions.repositories.transaction_repository import TransactionRepository
+from banking.transactions.runtime.async_group_types import AsyncGroupRedis
 from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
 from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer
 from banking.transactions.runtime.consumers.payout_consumer import PayoutConsumer
@@ -47,12 +50,13 @@ def setup_transaction_worker_consumers() -> tuple[
     if bill_provider is None:
         raise RuntimeError("Bill provider is not configured")
     redis_client = RedisClient.get_client()
+    async_group_redis = cast(AsyncGroupRedis, redis_client)
     beneficiary_suggestion_service = BeneficiarySuggestionService(queue_publisher)
     airtime_executor = AirtimeExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
-        redis_client=redis_client,
+        redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
     transfer_executor = TransferExecutor(
@@ -60,13 +64,13 @@ def setup_transaction_worker_consumers() -> tuple[
         account_repo=account_repository,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
-        redis_client=redis_client,
+        redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
     data_executor = DataExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
-        redis_client=redis_client,
+        redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 

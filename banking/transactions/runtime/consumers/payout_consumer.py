@@ -110,3 +110,4 @@ class PayoutConsumer:
                 "idempotency_key": reference,
                 "narration": payload.get("narration") or getattr(transfer, "narration", None),
             }
+        return None

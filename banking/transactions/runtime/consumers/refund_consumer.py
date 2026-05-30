@@ -137,6 +137,7 @@ class RefundConsumer:
                 "funded_transfer_id": funded_transfer_id,
                 "refund_reference": str(refund_reference),
             }
+        return None
 
     @staticmethod
     def _store_refund_metadata(uow: UnitOfWork, step: Any, result: Any, refund_reference: str) -> None:
@@ -148,5 +149,5 @@ class RefundConsumer:
             step.refund_initiated_at = datetime.now(UTC).replace(tzinfo=None)
         if result.error_message:
             step.refund_error_message = result.error_message
-        if getattr(uow, "db", None) is not None:
+        if uow.db is not None:
             uow.db.add(step)

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import redis.asyncio as redis
-
 import banking.transactions.runtime.provider_results as provider_results
 import banking.transactions.runtime.scheduled_runs as scheduled_runs
 from banking.beneficiaries.services.post_transaction_beneficiary import (
@@ -25,9 +23,11 @@ from banking.transactions.runtime.async_completion import (
     is_grouped_async_message,
     record_group_leg_and_maybe_build_summary,
 )
+from banking.transactions.runtime.async_group_types import AsyncGroupRedis
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
+from shared.money import MoneyAmount, to_money
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 
@@ -41,12 +41,12 @@ def _execution_error_message(locale: str) -> str:
 def _data_personality_context(
     data_purchase: dict[str, Any],
     *,
-    amount: float | int | None,
+    amount: MoneyAmount | int | str | None,
     moment: TransferMoment,
 ) -> PersonalityContext:
     return PersonalityContext(
         moment=moment,
-        amount=float(amount) if amount is not None else None,
+        amount=to_money(amount),
         saved_recipient=bool(data_purchase.get("beneficiary_id") or data_purchase.get("is_self")),
     )
 
@@ -68,7 +68,7 @@ class DataExecutor:
         bill_provider: BillPaymentProvider,
         transaction_repo: TransactionRepository,
         delivery_service: DeliveryService | None = None,
-        redis_client: redis.Redis | None = None,
+        redis_client: AsyncGroupRedis | None = None,
         beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
     ):
         self.bill_provider = bill_provider
@@ -200,7 +200,7 @@ class DataExecutor:
             )
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
-            amount = float(data_purchase.get("amount") or 0)
+            amount = to_money(data_purchase.get("amount"))
             recipient_phone = data_purchase.get("target_phone")
             network = data_purchase.get("network")
             network_display = format_network_display_name(network)
@@ -211,7 +211,7 @@ class DataExecutor:
             )
             request_reference = str(data.get("idempotency_key") or transaction_id)
 
-            if not plan_code or amount <= 0:
+            if not plan_code or amount is None or amount <= 0:
                 error_msg = render_message("data.plan_selection.missing_plan", locale)
                 await self.transaction_repo.update_status(
                     transaction_id,

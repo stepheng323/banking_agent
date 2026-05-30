@@ -1,6 +1,9 @@
 """Batch-transfer normalization for planner task output."""
 
+from decimal import Decimal
+
 from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer_parsing import parse_amount_value
+from shared.money import MoneyAmount
 from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
 from shared.utils.logging import get_logger
 
@@ -18,13 +21,13 @@ def _single_recipient_allocation(params: TaskParameters) -> RecipientAllocation 
         return None
     allocation = allocations[0]
     recipient_name = str(allocation.recipient_name or "").strip()
-    amount = float(allocation.amount or 0)
+    amount = allocation.amount
     if not recipient_name or amount <= 0:
         return None
     return RecipientAllocation(recipient_name=recipient_name, amount=amount)
 
 
-def _collapse_transfer_target(params: TaskParameters) -> tuple[str, float] | None:
+def _collapse_transfer_target(params: TaskParameters) -> tuple[str, MoneyAmount] | None:
     allocation = _single_recipient_allocation(params)
     if allocation is not None:
         return allocation.recipient_name, allocation.amount
@@ -102,7 +105,7 @@ def collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str)
 
         base_task = run[0].model_copy(deep=True)
         allocations: list[RecipientAllocation] = []
-        total_amount = 0.0
+        total_amount = Decimal("0.00")
         for child in run:
             params = child.parameters or TaskParameters()
             target = _collapse_transfer_target(params)

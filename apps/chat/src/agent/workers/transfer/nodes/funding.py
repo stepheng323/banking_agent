@@ -14,6 +14,7 @@ from banking.presentation.i18n.personality import render_personalized_message, t
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.money import money_to_json, require_money
 from shared.utils.logging import get_logger
 
 
@@ -84,7 +85,7 @@ async def plan_transaction_funding(
     funding_accounts = ctx.all_accounts or ctx.accounts
     adapted_accounts = [AccountAdapter(a) for a in funding_accounts]
 
-    amount = payload.amount or 0.0
+    amount = payload.amount or require_money(0)
     preferred_id = None
     if payload.source_account_id:
         try:
@@ -157,10 +158,10 @@ async def plan_transaction_funding(
 
 def _build_plan_signature(payload: TransferPayload) -> dict[str, Any]:
     explicit_split = payload.explicit_split or {}
-    normalized_split = {str(k): float(v) for k, v in sorted(explicit_split.items(), key=lambda item: item[0])}
+    normalized_split = {str(k): money_to_json(v) for k, v in sorted(explicit_split.items(), key=lambda item: item[0])}
     source_accounts = sorted([str(bank) for bank in (payload.source_accounts or []) if str(bank).strip()])
     return {
-        "planned_for_amount": float(payload.amount or 0.0),
+        "planned_for_amount": money_to_json(payload.amount) or "0.00",
         "planned_for_source_account_id": payload.source_account_id,
         "planned_for_source_accounts": source_accounts,
         "planned_for_use_dual_accounts": bool(payload.use_dual_accounts),

@@ -24,6 +24,7 @@ def _extract_interrupt_task_ids(pending_interrupt: Any) -> list[str]:
 
 
 def _extract_task_stage_value(task: Any) -> str | None:
+    stage: Any | None
     if isinstance(task, TaskSpec):
         stage = task.stage
     elif isinstance(task, dict):

@@ -2,6 +2,7 @@
 
 import re
 
+from shared.money import MoneyAmount
 from shared.types.planner import PlannedTask
 
 
@@ -22,7 +23,7 @@ def _apply_transfer_fanout_target(
     task: PlannedTask,
     *,
     recipient_name: str,
-    amount: float | None,
+    amount: MoneyAmount | None,
     clear_source_recipient_allocations: bool,
     binding_index: int,
 ) -> None:

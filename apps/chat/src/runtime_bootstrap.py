@@ -2,6 +2,7 @@
 
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
+from shared.clients.abstractions.resolution import AccountResolverProvider
 from shared.clients.factories.providers import ProviderFactory
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
@@ -11,7 +12,7 @@ logger = get_logger(__name__)
 
 async def warm_runtime() -> None:
     """Warm key runtime dependencies for worker and API entrypoints."""
-    resolver_providers = []
+    resolver_providers: list[AccountResolverProvider] = []
     try:
         logger.info("Initializing resolver provider...")
         for flow in ("bootstrap", "payout"):

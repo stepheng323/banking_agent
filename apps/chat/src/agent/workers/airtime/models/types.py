@@ -8,6 +8,7 @@ from typing import Any, Literal, TypedDict
 from pydantic import BaseModel, Field
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.money import MoneyAmount
 
 AirtimeResult = TransactionResult
 AirtimeOutcome = TransactionOutcome
@@ -32,7 +33,7 @@ class AirtimeConfirmation(BaseModel):
 class AirtimePayload(BaseModel):
     """Core business data for the airtime purchase."""
 
-    amount: float | None = None
+    amount: MoneyAmount | None = None
 
     recipient_phone: str | None = None
     network: str | None = None
@@ -112,7 +113,7 @@ class AirtimeDataDict(TypedDict):
     Matches structure expected by provider adapters.
     """
 
-    amount: float
+    amount: MoneyAmount
     recipient: AirtimeRecipient
     source: AirtimeSource
     narration: str | None
@@ -127,8 +128,8 @@ class AirtimeResultDict(TypedDict):
     status: Literal["successful", "pending", "failed"]
     transaction_id: str | None
     reference: str | None
-    amount: float | None
-    fee: float | None
+    amount: MoneyAmount | None
+    fee: MoneyAmount | None
     currency: str | None
     provider_response: dict[str, Any] | None
     error: str | None

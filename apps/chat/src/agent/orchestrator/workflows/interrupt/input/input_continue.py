@@ -103,7 +103,7 @@ def _continue_flow_updates(
             "pin_verified": False,
             "last_callback": None,
         }
-    return (state, interrupt)
+    return {}
 
 
 __all__ = ["_continue_flow_updates"]

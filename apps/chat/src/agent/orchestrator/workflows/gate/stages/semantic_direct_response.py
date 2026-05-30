@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
     _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
+from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -120,7 +121,7 @@ async def _handle_semantic_direct_response(
             if responder_reply:
                 text = responder_reply
         if not text:
-            fallback_key = (
+            fallback_key: MessageKey = (
                 "conversational.out_of_scope" if canonical_decision == "direct_reply" else "conversational.clarify"
             )
             text = render_message(fallback_key, locale)

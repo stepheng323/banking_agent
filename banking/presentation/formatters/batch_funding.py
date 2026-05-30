@@ -2,14 +2,15 @@
 
 from typing import Any
 
-from banking.presentation.formatters.currency import format_naira
+from banking.presentation.formatters.currency import coerce_amount, format_naira
 from banking.presentation.i18n.renderer import render_message
+from shared.money import MoneyAmount
 
 
 def format_batch_funding_shortfall(
     shortfalls: list[Any],
-    total_demanded: float,
-    total_available: float,
+    total_demanded: MoneyAmount,
+    total_available: MoneyAmount,
     locale: str = "en",
 ) -> str:
     """Format a deterministic shortfall message for batch funding failures."""
@@ -25,9 +26,9 @@ def format_batch_funding_shortfall(
         account_requested = str(
             getattr(shortfall, "account_requested", "") or render_message("funding.format.plan.bank_fallback", locale)
         )
-        amount_needed = float(getattr(shortfall, "amount_needed", 0.0))
-        account_available = float(getattr(shortfall, "account_available", 0.0))
-        deficit = float(getattr(shortfall, "deficit", max(0.0, amount_needed - account_available)))
+        amount_needed = coerce_amount(getattr(shortfall, "amount_needed", 0))
+        account_available = coerce_amount(getattr(shortfall, "account_available", 0))
+        deficit = coerce_amount(getattr(shortfall, "deficit", max(coerce_amount(0), amount_needed - account_available)))
         task_id = str(getattr(shortfall, "task_id", "task"))
 
         if account_available > 0:

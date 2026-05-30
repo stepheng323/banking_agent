@@ -39,23 +39,24 @@ async def handle_otp_verification(
     if not owner_check.ok:
         return format_owner_error_response("OTP_VERIFICATION", request_was_encrypted, aes_key_bytes, iv_bytes)
 
-    result = ServiceResult(**await bvn_service.verify_otp(flow_token, data.otp))
+    result = ServiceResult(**await bvn_service.verify_otp(flow_token, data.otp or ""))
 
     if result.success:
+        result_data = result.data or {}
         return format_success_response(
             "ACCOUNT_SELECTION",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
-            bvn=result.data["bvn"],
-            accounts=result.data["accounts"],
+            bvn=result_data["bvn"],
+            accounts=result_data["accounts"],
             show_error=False,
             error_message="",
         )
 
     return format_error_response(
         "OTP_VERIFICATION",
-        result.error,
+        result.error or "",
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,

@@ -193,6 +193,7 @@ ignore_missing_imports = true
 explicit_package_bases = true
 namespace_packages = true
 mypy_path = ["."]
+plugins = ["sqlalchemy.ext.mypy.plugin"]
 
 # Relax global strictness
 disallow_untyped_defs = false
@@ -208,57 +209,6 @@ ignore_errors = true
 module = "apps.chat.src.agent.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
-
-# WhatsApp/Telegram clients have deliberate override mismatches with the abstract base
-[[tool.mypy.overrides]]
-module = [
-    "shared.clients.whatsapp.*",
-    "shared.clients.telegram.*",
-    "shared.clients.providers.mono.*",
-    "banking.accounts.onboarding.*",
-    "banking.transfers.funding.*",
-    "banking.security.*",
-    "banking.identity.channel_linking.*",
-    "banking.scheduling.services.*",
-    "apps.chat.src.agent.orchestrator.task_queue.*",
-    "apps.chat.src.agent.orchestrator.confirmation.affirmation.*",
-    "banking.persistence.*",
-    "banking.identity.repositories.*",
-    "banking.accounts.repositories.*",
-    "banking.beneficiaries.repositories.*",
-    "banking.beneficiaries.services.*",
-    "banking.transactions.repositories.*",
-    "banking.transfers.repositories.*",
-    "banking.webhooks.repositories.*",
-    "banking.messaging.repositories.*",
-    "banking.messaging.delivery.*",
-    "banking.scheduling.repositories.*",
-    "banking.support.repositories.*",
-    "banking.support.services.*",
-    "banking.knowledge.repositories.*",
-    "banking.receipts.*",
-    "shared.messaging.*",
-    "banking.presentation.formatters.*",
-    "shared.cache.*",
-    "shared.clients.factories.*",
-    "shared.clients.providers.flutterwave.*",
-    "banking.transactions.runtime.*",
-    "apps.gateway.api.webhooks.*",
-    "apps.chat.src.agent.workers.transfer.*",
-    "apps.chat.src.agent.workers.airtime.*",
-    "apps.chat.src.agent.workers.data.*",
-    "apps.chat.src.agent.workers.faq.*",
-    "apps.chat.src.agent.workers.account.*",
-    "apps.chat.src.agent.workers.support.*",
-    "apps.chat.src.agent.workers.beneficiary.*",
-    "apps.chat.src.agent.workers.__shared__.*",
-    "apps.chat.src.agent.orchestrator.*",
-    "apps.chat.src.queue_consumers.*",
-    "apps.chat.src.messaging.*",
-    "apps.chat.src.runtime_bootstrap",
-    "apps.chat.src.worker_main",
-]
-ignore_errors = true
 
 # Pytest configuration
 [tool.pytest.ini_options]

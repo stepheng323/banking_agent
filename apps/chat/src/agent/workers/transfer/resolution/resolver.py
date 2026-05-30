@@ -330,9 +330,7 @@ async def resolve_beneficiary(
         recipient_display_name = sanitize_recipient_display_name(recipient_name_for_match, locale)
         base = render_message("transfer.resolve.ready_to_send", locale, {"recipient_name": recipient_display_name})
         if payload.amount:
-            amt = payload.amount
-            if isinstance(amt, (int, float)):
-                amt = format_naira_compact(amt)
+            amt = format_naira_compact(payload.amount) if isinstance(payload.amount, (int, float)) else str(payload.amount)
             base = render_message(
                 "transfer.resolve.can_send_amount",
                 locale,

@@ -7,6 +7,8 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 
+from shared.money import MoneyAmount
+
 
 class TransferGates(BaseModel):
     """Security gates."""
@@ -27,7 +29,7 @@ class TransferConfirmation(BaseModel):
 class TransferPayload(BaseModel):
     """Core business data for the transfer."""
 
-    amount: float | None = None
+    amount: MoneyAmount | None = None
     transfer_all: bool = False
     transfer_percentage: float | None = None
 
@@ -58,7 +60,7 @@ class TransferPayload(BaseModel):
     source_affinity_mode: Literal["explicit", "auto"] = "auto"
     use_dual_accounts: bool | None = None
     source_accounts: list[str] | None = None
-    explicit_split: dict[str, float] | None = None
+    explicit_split: dict[str, MoneyAmount] | None = None
 
     funding_plan: dict[str, Any] | None = None
 
@@ -74,7 +76,7 @@ class TransferPayload(BaseModel):
     user_note: str | None = None
     transition_acknowledgment: str | None = None
     previous_confirmation_snapshot: dict[str, Any] | None = None
-    suggested_amount: float | None = None
+    suggested_amount: MoneyAmount | None = None
     amount_suggestion_disabled: bool = False
     is_high_risk_transfer: bool = False
     dynamic_risk_threshold: float | None = None
@@ -172,7 +174,7 @@ class FundingStepDict(TypedDict):
     """Details of a single funding step."""
 
     account_id: str
-    amount: float
+    amount: MoneyAmount
     bank_name: str
     sequence: int
 
@@ -180,7 +182,7 @@ class FundingStepDict(TypedDict):
 class FundingPlanDict(TypedDict):
     """Details of the funding plan."""
 
-    transfer_amount: float
+    transfer_amount: MoneyAmount
     total_funded: float
     is_sufficient: bool
     is_single_source: bool
@@ -188,11 +190,11 @@ class FundingPlanDict(TypedDict):
     trigger_mode: Literal["auto", "explicit"]
     requested_sources: list[str]
     explicit_split_applied: bool
-    planned_for_amount: float
+    planned_for_amount: MoneyAmount
     planned_for_source_account_id: str | None
     planned_for_source_accounts: list[str]
     planned_for_use_dual_accounts: bool
-    planned_for_explicit_split: dict[str, float]
+    planned_for_explicit_split: dict[str, MoneyAmount]
 
 
 class TransferDataDict(TypedDict):
@@ -202,7 +204,7 @@ class TransferDataDict(TypedDict):
     This matches the structure expected by the payment provider and logging.
     """
 
-    amount: float
+    amount: MoneyAmount
     recipient: TransferRecipient
     source: TransferSource
     narration: str | None
@@ -220,8 +222,8 @@ class TransferResultDict(TypedDict):
     status: Literal["successful", "pending", "failed"]
     transaction_id: str | None
     reference: str | None
-    amount: float | None
-    fee: float | None
+    amount: MoneyAmount | None
+    fee: MoneyAmount | None
     currency: str | None
     provider_response: dict[str, Any] | None
     error: str | None

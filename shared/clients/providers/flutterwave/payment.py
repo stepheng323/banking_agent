@@ -8,6 +8,7 @@ import structlog
 
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.providers.flutterwave.client import FlutterwaveClient
+from shared.money import MoneyAmount, money_to_provider_value, require_money, to_money
 from shared.utils.logging import log_fingerprint
 
 logger = structlog.get_logger(__name__)
@@ -115,7 +116,7 @@ class FlutterwavePaymentProvider(PayoutProvider):
         data: dict[str, Any],
         *,
         reference: str | None = None,
-        amount: float | None = None,
+        amount: MoneyAmount | None = None,
         recipient_account_number: str | None = None,
         recipient_bank_code: str | None = None,
         currency: str = "NGN",
@@ -130,7 +131,7 @@ class FlutterwavePaymentProvider(PayoutProvider):
             "reference": self._transfer_reference(data, reference),
             "status": status,
             "provider_status": str(raw_status),
-            "amount": data.get("amount") or amount,
+            "amount": to_money(data.get("amount")) or amount,
             "recipient_account_number": recipient_account_number or data.get("account_number"),
             "recipient_bank_code": recipient_bank_code or data.get("account_bank") or data.get("bank_code"),
             "currency": data.get("currency") or currency,
@@ -179,7 +180,7 @@ class FlutterwavePaymentProvider(PayoutProvider):
 
     async def initiate_transfer(
         self,
-        amount: float,
+        amount: MoneyAmount,
         recipient_account_number: str,
         recipient_bank_code: str,
         sender_account_number: str | None = None,
@@ -190,10 +191,11 @@ class FlutterwavePaymentProvider(PayoutProvider):
         """Initiate a bank transfer via Flutterwave."""
         del sender_account_number
         reference = str(reference or self._reference()).strip()
+        transfer_amount = require_money(amount)
         payload = {
             "account_bank": recipient_bank_code,
             "account_number": recipient_account_number,
-            "amount": amount,
+            "amount": money_to_provider_value(transfer_amount),
             "currency": currency,
             "reference": reference,
         }
@@ -202,7 +204,7 @@ class FlutterwavePaymentProvider(PayoutProvider):
 
         logger.info(
             "flutterwave_transfer_initiate_request",
-            amount=amount,
+            amount=str(transfer_amount),
             currency=currency,
             recipient_account_hash=log_fingerprint(recipient_account_number),
             recipient_bank_code=recipient_bank_code,
@@ -217,7 +219,7 @@ class FlutterwavePaymentProvider(PayoutProvider):
             return self._response_from_transfer_data(
                 data,
                 reference=reference,
-                amount=amount,
+                amount=transfer_amount,
                 recipient_account_number=recipient_account_number,
                 recipient_bank_code=recipient_bank_code,
                 currency=currency,
@@ -243,7 +245,7 @@ class FlutterwavePaymentProvider(PayoutProvider):
             str(result.get("error") or "Flutterwave transfer initiation failed"),
             status=status,
             reference=reference,
-            amount=amount,
+            amount=transfer_amount,
             recipient_account_number=recipient_account_number,
             recipient_bank_code=recipient_bank_code,
             currency=currency,

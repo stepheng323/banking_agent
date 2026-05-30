@@ -62,7 +62,7 @@ class ResolutionStep(AirtimeStep):
     ) -> TransactionResult:
         del gates, worker_context
         locale = context.language
-        patch = {}
+        patch: dict[str, Any] = {}
         requested_network = normalize_network_name(data.network) if data.network else None
 
         if data.is_self and not data.recipient_phone:

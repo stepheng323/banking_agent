@@ -26,6 +26,7 @@ from apps.chat.src.agent.workers.support.results import build_receipt_job, resul
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
+from shared.queue.models import ReceiptJobPayload
 
 _ACK_ONLY_RE = re.compile(r"^(ok(?:ay)?|alright|yes|yeah|yep|sure)\.?$", re.IGNORECASE)
 
@@ -85,9 +86,9 @@ class SupportReferenceFlow:
         candidates: list[SupportReferenceCandidate],
         context: dict[str, Any],
         locale: str,
-    ) -> tuple[list[dict[str, Any]], int, int, int]:
+    ) -> tuple[list[ReceiptJobPayload], int, int, int]:
         selected_ids = {candidate.transaction_id for candidate in selected}
-        jobs: list[dict[str, Any]] = []
+        jobs: list[ReceiptJobPayload] = []
         skipped_failed = 0
         skipped_processing = 0
         skipped_non_transfer = 0

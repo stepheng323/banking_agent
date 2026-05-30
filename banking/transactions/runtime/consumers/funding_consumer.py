@@ -139,6 +139,7 @@ class FundingConsumer:
                 "reference": reference,
                 "narration": transfer.narration or "Transfer funding",
             }
+        return None
 
     async def _apply_step_result(
         self,
@@ -206,6 +207,7 @@ class FundingConsumer:
                 await queue_payout_if_all_confirmed(uow=uow, transfer=transfer, publisher=self.publisher)
             await uow.commit()
             return "processed"
+        return "skipped"
 
     async def _apply_retryable_result(self, uow: UnitOfWork, step: Any, result: Any) -> bool:
         """Keep a transient funding outcome open until reconciliation exhausts attempts."""
@@ -214,9 +216,10 @@ class FundingConsumer:
 
         retry_count = int(getattr(step, "retry_count", 0) or 0) + 1
         step.retry_count = retry_count
-        if getattr(uow, "db", None) is not None:
+        if uow.db is not None:
             uow.db.add(step)
 
+        assert uow.funding_steps is not None
         if retry_count >= int(settings.funding_step_max_retries):
             await uow.funding_steps.update_status(
                 str(step.id),

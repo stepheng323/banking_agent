@@ -97,6 +97,7 @@ class PayoutReconciliationConsumer:
                 reference=reference or str(transfer.idempotency_key),
                 provider_transfer_id=provider_transfer_id or self._stored_provider_transfer_id(transfer),
             )
+        return None
 
     async def _reconcile_target(self, target: PayoutReconciliationTarget) -> None:
         async with UnitOfWork() as uow:
@@ -168,7 +169,8 @@ class PayoutReconciliationConsumer:
                         publisher=self.publisher,
                         provider_name=getattr(self.payout_provider, "provider_name", "flutterwave"),
                     )
-            uow.db.add(transfer)
+            if uow.db is not None:
+                uow.db.add(transfer)
             await uow.commit()
 
             logger.info(
@@ -272,8 +274,10 @@ class PayoutReconciliationConsumer:
             tx.provider_status = "reconciliation_mismatch"
             tx.provider_response = result
             tx.error_message = transfer.error_message
-            uow.db.add(tx)
-        uow.db.add(transfer)
+            if uow.db is not None:
+                uow.db.add(tx)
+        if uow.db is not None:
+            uow.db.add(transfer)
         logger.error(
             "payout_reconciliation_mismatch",
             funded_transfer_id=str(transfer.id),

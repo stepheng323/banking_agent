@@ -11,6 +11,7 @@ from apps.chat.src.agent.workers.data.models.types import DataContext, DataPaylo
 from apps.chat.src.agent.workers.data.plans.service import dedupe_data_plans
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
+from shared.money import to_money
 from shared.utils.network_utils import (
     format_network_display_name,
     normalize_network_name,
@@ -270,7 +271,7 @@ def _apply_plan_payload(payload: DataPayload, plan_data: dict[str, Any]) -> None
     payload.network = str(plan_data.get("network") or payload.network or "").strip().upper() or None
     amount = plan_data.get("amount")
     if amount is not None:
-        payload.amount = float(amount)
+        payload.amount = to_money(amount)
     size_gb = plan_data.get("size_gb")
     if size_gb is not None:
         payload.plan_size_gb = float(size_gb)

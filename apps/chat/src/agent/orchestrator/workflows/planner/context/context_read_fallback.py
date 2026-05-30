@@ -1,5 +1,7 @@
 """Fallback task construction for planner context-read requests."""
 
+from typing import Literal
+
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import (
     CONTEXT_READ_ACCOUNT_SUBTYPES,
     CONTEXT_READ_BENEFICIARY_SUBTYPES,
@@ -18,7 +20,7 @@ def _build_context_read_fallback_task(
         action = account_action_override or "list_accounts"
         if action == "list":
             action = "list_accounts"
-        risk = "READ_ONLY"
+        risk: Literal["READ_ONLY", "MUTATION"] = "READ_ONLY"
         if action in {"link", "unlink", "set_default"}:
             risk = "MUTATION"
         return PlannedTask(

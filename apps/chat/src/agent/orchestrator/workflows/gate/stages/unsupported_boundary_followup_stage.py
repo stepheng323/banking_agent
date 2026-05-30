@@ -108,6 +108,7 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any
     next_count = boundary.followup_count + 1
     updated_boundary = boundary_update(boundary, followup_count=next_count, now=now)
     params = unsupported_capability_params(capability, locale=ctx.current_locale)
+    response: str | None
     if next_count > FOLLOWUP_CONVERSATIONAL_LIMIT:
         response = render_message("capability.unsupported_unavailable_firm", ctx.current_locale, params)
     else:

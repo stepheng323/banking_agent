@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
 from banking.transfers.funding.batch_models import SourceAffinity, TransferDemand
+from shared.money import MoneyAmount, require_money, to_money
 
 
 def _build_transfer_demand(task_id: str, task_payload: dict[str, Any]) -> TransferDemand:
@@ -14,14 +15,20 @@ def _build_transfer_demand(task_id: str, task_payload: dict[str, Any]) -> Transf
         explicit_sources = [source_bank_name.strip()]
 
     explicit_split_raw = task_payload.get("explicit_split")
-    explicit_split = explicit_split_raw if isinstance(explicit_split_raw, dict) else None
+    explicit_split: dict[str, MoneyAmount] | None = None
+    if isinstance(explicit_split_raw, dict):
+        explicit_split = {
+            str(key): amount
+            for key, value in explicit_split_raw.items()
+            if str(key).strip() and (amount := to_money(value)) is not None and amount > 0
+        }
     preferred_account_id = task_payload.get("source_account_id")
     return TransferDemand(
         task_id=task_id,
-        amount=float(task_payload.get("amount") or 0.0),
+        amount=to_money(task_payload.get("amount")) or require_money(0),
         source_affinity=SourceAffinity(mode=cast(Any, mode)),
         explicit_sources=explicit_sources,
-        explicit_split=cast(dict[str, float] | None, explicit_split),
+        explicit_split=explicit_split,
         use_dual_accounts=bool(task_payload.get("use_dual_accounts")),
         preferred_account_id=str(preferred_account_id) if preferred_account_id else None,
     )
@@ -32,11 +39,12 @@ def _is_plannable_transfer_task(task: Any) -> bool:
         return False
     payload = task.payload if isinstance(task.payload, dict) else {}
     amount = payload.get("amount")
+    parsed_amount = to_money(amount)
     return (
         bool(payload.get("source_account_id"))
         and not payload.get("funding_plan")
-        and isinstance(amount, (int, float))
-        and float(amount) > 0
+        and parsed_amount is not None
+        and parsed_amount > 0
     )
 
 

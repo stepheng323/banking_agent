@@ -107,7 +107,8 @@ async def mark_transaction_failed(uow: UnitOfWork, transfer: Any, error_message:
     tx.status = TransactionStatusEnum.FAILED.value
     tx.error_message = error_message or tx.error_message
     tx.provider_status = tx.provider_status or "funding_failed"
-    uow.db.add(tx)
+    if uow.db:
+        uow.db.add(tx)
 
 
 async def queue_refunds_for_confirmed_funding_steps(
@@ -201,7 +202,8 @@ async def finalize_refund_state(uow: UnitOfWork, transfer: Any) -> str | None:
                 tx.status = TransactionStatusEnum.REVERSED.value
                 tx.provider_status = "refunded"
                 tx.completed_at = datetime.now(UTC).replace(tzinfo=None)
-                uow.db.add(tx)
+                if uow.db:
+                    uow.db.add(tx)
         logger.info("funded_transfer_refunded", funded_transfer_id=str(transfer.id))
         return "refunded"
 

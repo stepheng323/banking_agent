@@ -1,13 +1,15 @@
 """Currency formatting helpers for user-facing copy."""
 
+from decimal import Decimal
 from typing import Any
 
+from shared.money import MoneyAmount, require_money, to_money
 
-def coerce_amount(value: Any, *, default: float = 0.0, absolute: bool = False) -> float:
-    """Convert an amount-like value to float with a deterministic fallback."""
-    try:
-        amount = float(value or default)
-    except (TypeError, ValueError):
+
+def coerce_amount(value: Any, *, default: MoneyAmount = Decimal("0.00"), absolute: bool = False) -> MoneyAmount:
+    """Convert an amount-like value to Decimal with a deterministic fallback."""
+    amount = to_money(value)
+    if amount is None:
         amount = default
     return abs(amount) if absolute else amount
 
@@ -47,6 +49,11 @@ def format_naira(
 def format_naira_compact(value: Any, *, absolute: bool = False) -> str:
     """Format Naira without forced decimals, preserving fractional values when present."""
     amount = coerce_amount(value, absolute=absolute)
-    if amount.is_integer():
+    if amount == amount.to_integral_value():
         return f"₦{amount:,.0f}"
     return format_naira(amount, decimal_places=2, trim_trailing_decimals=True)
+
+
+def parse_amount(value: Any) -> MoneyAmount:
+    """Parse amount-like input for callers that need a strict Decimal."""
+    return require_money(value)

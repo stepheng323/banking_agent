@@ -47,6 +47,8 @@ async def apply_payout_result(
     mark_payout_initiated: bool = False,
 ) -> str:
     """Apply a verified payout result to a funded transfer and linked transaction."""
+    if not uow.funded_transfers:
+        raise RuntimeError("funded_transfer_repository_unavailable")
     now = datetime.now(UTC).replace(tzinfo=None)
     if mark_payout_initiated:
         transfer.payout_initiated_at = now
@@ -69,7 +71,8 @@ async def apply_payout_result(
             tx.provider_status = str(result.get("provider_status") or result.get("status") or "successful")
             tx.provider_response = result
             tx.completed_at = now
-            uow.db.add(tx)
+            if uow.db:
+                uow.db.add(tx)
         logger.info("payout_completed", funded_transfer_id=str(transfer.id))
         return "completed"
 
@@ -79,7 +82,8 @@ async def apply_payout_result(
             tx.status = TransactionStatusEnum.PROCESSING.value
             tx.provider_status = str(result.get("provider_status") or result.get("status") or "pending")
             tx.provider_response = result
-            uow.db.add(tx)
+            if uow.db:
+                uow.db.add(tx)
         logger.warning(
             "payout_pending",
             funded_transfer_id=str(transfer.id),
@@ -98,7 +102,8 @@ async def apply_payout_result(
         tx.error_message = error
         tx.provider_status = str(result.get("provider_status") or result.get("status") or "failed")
         tx.provider_response = result
-        uow.db.add(tx)
+        if uow.db:
+            uow.db.add(tx)
     await queue_refunds_for_confirmed_funding_steps(
         uow=uow,
         transfer=transfer,
