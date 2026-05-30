@@ -3,12 +3,12 @@
 from decimal import Decimal
 from typing import Any
 
-from shared.money import MoneyAmount, require_money, to_money
+from shared.money import MoneyAmount, require_naira, to_naira
 
 
 def coerce_amount(value: Any, *, default: MoneyAmount = Decimal("0.00"), absolute: bool = False) -> MoneyAmount:
     """Convert an amount-like value to Decimal with a deterministic fallback."""
-    amount = to_money(value)
+    amount = to_naira(value)
     if amount is None:
         amount = default
     return abs(amount) if absolute else amount
@@ -56,4 +56,4 @@ def format_naira_compact(value: Any, *, absolute: bool = False) -> str:
 
 def parse_amount(value: Any) -> MoneyAmount:
     """Parse amount-like input for callers that need a strict Decimal."""
-    return require_money(value)
+    return require_naira(value)

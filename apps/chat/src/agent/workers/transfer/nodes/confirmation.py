@@ -26,7 +26,7 @@ from banking.presentation.i18n.personality import (
 )
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
-from shared.money import require_money, to_money
+from shared.money import require_naira, to_naira
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 
@@ -140,7 +140,7 @@ async def _build_dynamic_risk_patch(
     except Exception as exc:
         logger.warning("dynamic_risk_threshold_lookup_failed", error=str(exc))
 
-    amount = require_money(payload.amount)
+    amount = require_naira(payload.amount)
     is_high_risk = bool(is_unsaved_recipient and amount >= threshold)
 
     warning = None
@@ -511,10 +511,10 @@ def build_confirmation(
                 or render_message("transfer.format.funding_plan.bank_fallback", ctx.language)
             )
             balance_val = funding_plan.get("primary_available_balance")
-            primary_balance = to_money(balance_val if balance_val is not None else steps[0].get("amount")) or require_money(0)
+            primary_balance = to_naira(balance_val if balance_val is not None else steps[0].get("amount")) or require_naira(0)
             funding_summary = format_funding_plan_summary(
                 steps=steps,
-                amount=to_money(payload.amount or funding_plan.get("transfer_amount")) or require_money(0),
+                amount=to_naira(payload.amount or funding_plan.get("transfer_amount")) or require_naira(0),
                 primary_bank=str(primary_bank),
                 balance_available=primary_balance,
                 recipient_name=payload.recipient_resolved_name or payload.recipient_name or "",

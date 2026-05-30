@@ -12,7 +12,7 @@ from shared.database.enums import (
     SupportTicketStatusEnum,
     TransactionStatusEnum,
 )
-from shared.money import MoneyAmount, money_to_json, to_money
+from shared.money import MoneyAmount, naira_to_json, to_naira
 
 RiskDecisionValue = Literal["allow", "hold_review", "deny"]
 
@@ -47,14 +47,14 @@ class RiskDecisionService:
 
         user_id = str(getattr(worker_context, "user_id", "") or "")
         idempotency_key = str(getattr(payload, "idempotency_key", "") or "")
-        amount = to_money(getattr(payload, "amount", None)) or Decimal("0.00")
+        amount = to_naira(getattr(payload, "amount", None)) or Decimal("0.00")
         if not user_id or not idempotency_key or amount <= 0:
             return RiskDecisionResult(decision="allow", metadata={"risk_skipped": "missing_context"})
 
         now = datetime.now(UTC).replace(tzinfo=None)
         reason_codes: list[str] = []
         metadata: dict[str, Any] = {
-            "amount": money_to_json(amount),
+            "amount": naira_to_json(amount),
             "idempotency_key": idempotency_key,
             "channel": getattr(context, "channel", None),
             "channel_identity_present": bool(getattr(context, "channel_identity", None)),
@@ -220,14 +220,14 @@ class RiskDecisionService:
             if str(getattr(tx, "idempotency_key", "")) != idempotency_key
         ]
         hourly_amount = amount + sum(
-            (to_money(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in hourly
+            (to_naira(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in hourly
         )
-        daily_amount = amount + sum((to_money(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in daily)
+        daily_amount = amount + sum((to_naira(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in daily)
         metadata.update(
             {
                 "hourly_transfer_count": len(hourly) + 1,
-                "hourly_transfer_amount": money_to_json(hourly_amount),
-                "daily_transfer_amount": money_to_json(daily_amount),
+                "hourly_transfer_amount": naira_to_json(hourly_amount),
+                "daily_transfer_amount": naira_to_json(daily_amount),
             }
         )
 

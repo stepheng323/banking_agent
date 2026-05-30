@@ -13,6 +13,7 @@ from banking.transactions.runtime.funding_status import (
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus, DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum
+from shared.money import naira_to_json, require_naira
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -151,9 +152,12 @@ class FundingReconciliationConsumer:
         if not mandate_id:
             logger.info("funding_reconciliation_claim_lost_race", funding_step_id=str(step.id))
             return None
+        amount = require_naira(step.amount)
+        amount_naira = naira_to_json(amount) or "0.00"
         return {
             "mandate_id": mandate_id,
-            "amount": float(step.amount),
+            "amount": amount,
+            "amount_naira": amount_naira,
             "reference": result.reference or step.provider_reference or f"{transfer.idempotency_key}-s{step.sequence}",
             "narration": transfer.narration or "Transfer funding",
         }

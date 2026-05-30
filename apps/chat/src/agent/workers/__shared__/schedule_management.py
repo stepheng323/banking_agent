@@ -24,7 +24,7 @@ from banking.scheduling.services.recurrence import (
     today_lagos,
 )
 from shared.database.enums import ScheduledInstructionStatusEnum
-from shared.money import money_to_json, to_money
+from shared.money import naira_to_json, to_naira
 
 _SCHEDULE_FIELDS = {
     "schedule_mode",
@@ -161,7 +161,7 @@ def _time_value_label(value: Any, locale: str = "en") -> str:
 
 
 def _format_schedule_amount(value: Any) -> str | None:
-    amount = to_money(value)
+    amount = to_naira(value)
     if amount is None or amount <= 0:
         return None
     return format_naira(amount)
@@ -231,7 +231,7 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
     for index, schedule in enumerate(schedules, start=1):
         payload = _payload(schedule)
         amount_raw = payload.get("amount")
-        amount_money = to_money(amount_raw)
+        amount_money = to_naira(amount_raw)
         amount = _format_schedule_amount(amount_raw)
         next_run_at_utc = getattr(schedule, "next_run_at_utc", None)
         next_run = (
@@ -247,7 +247,7 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
             "domain": _domain_label(_domain(schedule), locale),
             "domain_key": _domain(schedule),
             "amount": amount,
-            "amount_value": money_to_json(amount_money),
+            "amount_value": naira_to_json(amount_money),
             "target": _target_label(schedule, locale),
             "recurrence": _recurrence_label(schedule, locale),
             "schedule_time": render_message("schedule.time.with_timezone", locale, {"time": _time_label(schedule, locale)}),

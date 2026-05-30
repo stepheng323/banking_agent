@@ -3,7 +3,7 @@
 import re
 from decimal import Decimal, InvalidOperation
 
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 
 _REPLAY_AMOUNT_TOKEN_RE = re.compile(
     r"(?P<prefix>₦|ngn|naira)?\s*"
@@ -48,7 +48,7 @@ def _parse_replay_amount_token(token: str | None) -> MoneyAmount | None:
     if not has_explicit_money_marker and value > Decimal("100000000"):
         return None
 
-    return to_money(value)
+    return to_naira(value)
 
 
 def _replay_amount_override(text: str | None) -> MoneyAmount | None:

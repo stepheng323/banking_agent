@@ -1,3 +1,4 @@
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -23,12 +24,12 @@ class _NoopDirectDebitProvider:
 class _DebitProvider:
     def __init__(self, result: DebitResult) -> None:
         self.result = result
-        self.calls: list[tuple[str, float, str, str]] = []
+        self.calls: list[tuple[str, Decimal, str, str]] = []
 
     async def initiate_pooling_debit(
         self,
         mandate_id: str,
-        amount: float,
+        amount: Decimal,
         reference: str,
         narration: str = "Transfer",
     ) -> DebitResult:
@@ -185,7 +186,8 @@ async def test_funding_consumer_publishes_payout_provider_metadata(monkeypatch) 
             "payout.process",
             {
                 "funded_transfer_id": "funded-1",
-                "amount": 5000.0,
+                "amount": "5000.00",
+                "amount_naira": "5000.00",
                 "recipient_account": "8162511023",
                 "recipient_bank_code": "000014",
                 "recipient_bank_code_provider": "flutterwave",
@@ -242,7 +244,7 @@ async def test_duplicate_funding_process_claims_step_once(monkeypatch) -> None:
     await consumer.process_job({"funded_transfer_id": "funded-1"})
     await consumer.process_job({"funded_transfer_id": "funded-1"})
 
-    assert provider.calls == [("mandate-1", 5000.0, "idem-1-s1", "Test")]
+    assert provider.calls == [("mandate-1", Decimal("5000.00"), "idem-1-s1", "Test")]
     assert uow.funding_steps.status_updates == [
         ("step-1", FundingStepStatusEnum.CONFIRMED.value, None),
     ]

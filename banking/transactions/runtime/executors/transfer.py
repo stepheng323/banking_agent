@@ -34,7 +34,7 @@ from banking.transactions.runtime.personality_enrichment import enrich_transfer_
 from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.money import to_money
+from shared.money import to_naira
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -376,7 +376,7 @@ class TransferExecutor:
 
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
-            amount = transfer_data.get("amount")
+            amount = transfer_data.get("amount_naira") or transfer_data.get("amount")
             recipient = transfer_data.get("recipient", {})
             source = transfer_data.get("source", {})
             narration = transfer_data.get("narration")
@@ -389,7 +389,7 @@ class TransferExecutor:
                 raise ValueError("missing_source_account_id")
             if not recipient_account or not recipient_bank_code:
                 raise ValueError("missing_recipient_account_details")
-            amount_value = to_money(amount)
+            amount_value = to_naira(amount)
             if amount_value is None or amount_value <= 0:
                 raise ValueError("invalid_transfer_amount")
             success_context = transfer_personality_context_from_payload(transfer_data, moment="success")

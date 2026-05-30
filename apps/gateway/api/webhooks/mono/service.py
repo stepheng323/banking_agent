@@ -20,8 +20,9 @@ from banking.transactions.runtime.funding_status import (
 from shared.cache.user_data import UserDataCache
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.database.models import FundedTransfer, UserChannelIdentity
-from shared.money import require_money
+from shared.money import naira_to_json, require_naira
 from shared.queue.adapter import QueuePublisher
+from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -212,7 +213,7 @@ class MonoWebhookService:
             tx.status = transfer_status
             tx.provider_status = str(debit_data.get("status") or tx.provider_status or "")
             tx.provider_error_code = self._response_code(debit_data)
-            tx.provider_response = data
+            tx.provider_response = to_json_safe_dict(data)
             if debit_id:
                 tx.transaction_id = str(debit_id)
             if transfer_status == TransactionStatusEnum.FAILED.value:
@@ -342,7 +343,7 @@ class MonoWebhookService:
             return
 
         channel, delivery_target = target
-        amount = require_money(getattr(tx, "amount", 0))
+        amount = require_naira(getattr(tx, "amount", 0))
         recipient_name = str(getattr(tx, "recipient_name", None) or "recipient")
         provider_reference = str(
             getattr(tx, "transaction_id", None) or getattr(tx, "idempotency_key", None) or getattr(tx, "id", "")
@@ -380,8 +381,10 @@ class MonoWebhookService:
     @staticmethod
     def _completion_payload_from_tx(tx: Any) -> dict[str, Any]:
         status = str(getattr(tx, "status", "") or "").lower()
+        amount_naira = naira_to_json(getattr(tx, "amount", None)) or "0.00"
         payload = {
-            "amount": float(getattr(tx, "amount", 0) or 0),
+            "amount": amount_naira,
+            "amount_naira": amount_naira,
             "recipient_name": getattr(tx, "recipient_name", None),
             "recipient_resolved_name": getattr(tx, "recipient_name", None),
             "recipient_account": getattr(tx, "recipient_account_number", None),
@@ -532,11 +535,13 @@ class MonoWebhookService:
     async def _queue_payout(self, transfer: FundedTransfer) -> None:
         """Queue payout job after all debits complete."""
         try:
+            amount_naira = naira_to_json(transfer.amount) or "0.00"
             await self.publisher.publish(
                 topic="payout.process",
                 message={
                     "funded_transfer_id": str(transfer.id),
-                    "amount": float(transfer.amount),
+                    "amount": amount_naira,
+                    "amount_naira": amount_naira,
                     "recipient_account": transfer.recipient_account_number,
                     "recipient_bank_code": transfer.recipient_bank_code,
                     "recipient_bank_code_provider": transfer.payout_provider or "flutterwave",

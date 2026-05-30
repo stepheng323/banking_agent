@@ -4,7 +4,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 from banking.presentation.formatters.currency import format_naira_compact
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 
 LOOKUP_STOPWORDS = {
     "a",
@@ -93,7 +93,7 @@ def amount_reference_values(text: str | None) -> set[MoneyAmount]:
             value *= Decimal("1000")
         elif suffix == "m":
             value *= Decimal("1000000")
-        amount = to_money(value)
+        amount = to_naira(value)
         if amount is not None:
             values.add(amount)
 

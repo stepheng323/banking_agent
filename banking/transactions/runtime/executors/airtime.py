@@ -27,7 +27,7 @@ from banking.transactions.runtime.async_group_types import AsyncGroupRedis
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
@@ -47,7 +47,7 @@ def _airtime_personality_context(
 ) -> PersonalityContext:
     return PersonalityContext(
         moment=moment,
-        amount=to_money(amount),
+        amount=to_naira(amount),
         saved_recipient=bool(airtime_data.get("beneficiary_id") or airtime_data.get("is_self")),
     )
 
@@ -151,7 +151,7 @@ class AirtimeExecutor:
                 )
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
-            amount = to_money(airtime_data.get("amount"))
+            amount = to_naira(airtime_data.get("amount"))
             if amount is None or amount <= 0:
                 raise ValueError("invalid_airtime_amount")
             recipient_phone = airtime_data.get("phone_number")

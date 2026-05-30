@@ -4,7 +4,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 from shared.utils.bank_aliases import BANK_ALIASES, normalize_bank_name
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
@@ -121,7 +121,7 @@ def extract_amount_candidates(text: str) -> list[MoneyAmount]:
         elif suffix == "m":
             multiplier = Decimal("1000000")
 
-        amount = to_money(numeric * multiplier)
+        amount = to_naira(numeric * multiplier)
         if amount is None:
             continue
         if amount in seen:
@@ -189,4 +189,4 @@ def parse_amount_value(value: str | MoneyAmount | None) -> MoneyAmount | None:
         return None
     if isinstance(single, Decimal):
         return single
-    return to_money(raw)
+    return to_naira(raw)

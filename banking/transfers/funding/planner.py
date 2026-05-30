@@ -21,7 +21,7 @@ from banking.presentation.formatters.funding import (
 )
 from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.money import MoneyAmount, require_money, to_money
+from shared.money import MoneyAmount, require_naira, to_naira
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -59,7 +59,7 @@ class FundingPlanner:
         Returns:
             funding_models.FundingPlan with steps or error
         """
-        transfer_amount = require_money(transfer_amount)
+        transfer_amount = require_naira(transfer_amount)
         logger.info(
             "planning_funding",
             amount=str(transfer_amount),
@@ -75,7 +75,7 @@ class FundingPlanner:
         self._balance_overrides = {
             account_id: amount
             for account_id, raw_amount in (balance_overrides or {}).items()
-            if (amount := to_money(raw_amount)) is not None
+            if (amount := to_naira(raw_amount)) is not None
         } or None
         try:
             eligible = [a for a in accounts if account_matching.is_eligible(a)]
@@ -103,7 +103,7 @@ class FundingPlanner:
                 for bank, amount in (explicit_split or {}).items()
                 if isinstance(bank, str)
                 and bank.strip()
-                and (parsed_amount := to_money(amount)) is not None
+                and (parsed_amount := to_naira(amount)) is not None
                 and parsed_amount > 0
             }
 
@@ -308,7 +308,7 @@ class FundingPlanner:
                 return max(Decimal("0.00"), override)
         try:
             result = await self._provider.get_balance(account.mono_account_id, real_time=True)
-            return require_money(result.available_balance) if result.success else Decimal("0.00")
+            return require_naira(result.available_balance) if result.success else Decimal("0.00")
         except Exception as e:
             logger.error("fetch_balance_failed", account_id=str(account.id), error=str(e))
             return Decimal("0.00")

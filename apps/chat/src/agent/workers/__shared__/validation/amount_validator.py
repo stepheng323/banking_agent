@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from banking.presentation.i18n.renderer import render_message
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def validate_amount(
         return False, render_message("validation.amount.required", locale), None
 
     try:
-        amount_money = to_money(amount)
+        amount_money = to_naira(amount)
     except (ValueError, TypeError):
         return False, render_message("validation.amount.invalid_format", locale), None
     if amount_money is None:
@@ -147,7 +147,7 @@ def validate_amount_basic(amount: MoneyAmount | int | str | None, locale: str = 
     if amount is None:
         return False, render_message("validation.amount.required", locale)
 
-    amount_money = to_money(amount)
+    amount_money = to_naira(amount)
     if amount_money is None:
         return False, render_message("validation.amount.invalid_format_short", locale)
 

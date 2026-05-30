@@ -11,6 +11,7 @@ from apps.chat.src.agent.workers.airtime.models.types import (
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
+from shared.money import naira_to_json
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -95,8 +96,10 @@ class ExecutionStep(AirtimeStep):
             if not publisher:
                 publisher = QueuePublisherFactory.get_async_publisher()
 
+            amount_naira = naira_to_json(data.amount) or "0.00"
             airtime_data = {
-                "amount": data.amount,
+                "amount": amount_naira,
+                "amount_naira": amount_naira,
                 "phone_number": data.recipient_phone,
                 "network": data.network,
                 "recipient_name": data.recipient_name,

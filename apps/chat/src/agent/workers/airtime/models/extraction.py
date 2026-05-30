@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
@@ -52,7 +52,7 @@ class SimpleAirtimeEntities(BaseModel):
         """Validate that amount is not negative when provided."""
         if v is None:
             return v
-        amount = to_money(v)
+        amount = to_naira(v)
         if amount is None or amount < 0:
             return None
         return amount

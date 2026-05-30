@@ -11,7 +11,7 @@ from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from banking.presentation.formatters.currency import format_naira_compact
 from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 
 
 async def handle_affordability(
@@ -28,7 +28,7 @@ async def handle_affordability(
     """Handle affordability queries."""
     del current_page, page_size, user_id
     language = kwargs.get("language", "en")
-    amount = to_money(contract.amount_check) or Decimal("0.00")
+    amount = to_naira(contract.amount_check) or Decimal("0.00")
     candidate_ids = account_ids or [account_id]
     account_lookup = _account_lookup(accounts_info or [])
 

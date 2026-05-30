@@ -7,6 +7,7 @@ from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates
 from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
+from shared.money import naira_to_json
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -109,6 +110,7 @@ class ExecutionStep(PipelineStep):
                     "async_group_index": payload.async_group_index,
                 }
 
+            amount_naira = naira_to_json(payload.amount) or "0.00"
             await publisher.publish(
                 topic="transaction.execute",
                 message={
@@ -123,7 +125,8 @@ class ExecutionStep(PipelineStep):
                         "plan_code": payload.plan_code,
                         "plan_name": payload.plan_name,
                         "biller_code": payload.biller_code,
-                        "amount": payload.amount,
+                        "amount": amount_naira,
+                        "amount_naira": amount_naira,
                         "target_phone": payload.target_phone,
                         "network": payload.network,
                         "recipient_name": payload.recipient_name,

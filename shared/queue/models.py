@@ -75,6 +75,7 @@ class RefundJobPayload(TypedDict):
     funding_step_id: str
     funded_transfer_id: str
     amount: MoneyPayload
+    amount_naira: NotRequired[MoneyPayload]
     account_id: str
     original_reference: str
 
@@ -82,6 +83,7 @@ class RefundJobPayload(TypedDict):
 class PayoutJobPayload(TypedDict):
     funded_transfer_id: str
     amount: MoneyPayload
+    amount_naira: NotRequired[MoneyPayload]
     recipient_account: str
     recipient_bank_code: str
     recipient_bank_code_provider: NotRequired[str | None]
@@ -113,6 +115,7 @@ class AirtimeSource(TypedDict):
 
 class AirtimeData(TypedDict):
     amount: MoneyPayload
+    amount_naira: NotRequired[MoneyPayload]
     recipient: AirtimeRecipient
     source: AirtimeSource
     narration: str
@@ -135,6 +138,7 @@ class DataPurchaseData(TypedDict):
     plan_code: str
     plan_name: str
     amount: MoneyPayload
+    amount_naira: NotRequired[MoneyPayload]
     target_phone: str
     network: str
     source: str

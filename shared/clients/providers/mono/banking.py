@@ -12,7 +12,7 @@ from shared.clients.abstractions.banking import (
 from shared.clients.providers.mono.client import MonoClient
 from shared.clients.providers.mono.models import MonoApiError
 from shared.config.settings import settings
-from shared.money import require_money
+from shared.money import require_kobo_to_naira
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -85,7 +85,7 @@ class MonoBankingProvider(BankDataProvider):
                     transaction_id=t.id,
                     date=t.date,
                     narration=t.narration,
-                    amount=require_money(t.amount if t.type == "credit" else -t.amount) / 100,
+                    amount=require_kobo_to_naira(t.amount if t.type == "credit" else -t.amount),
                     transaction_type=t.type,
                     category=t.category,
                     counterparty=t.counterparty,
@@ -123,7 +123,7 @@ class MonoBankingProvider(BankDataProvider):
                         transaction_id=t.id,
                         date=t.date,
                         narration=t.narration,
-                        amount=require_money(t.amount if t.type == "credit" else -t.amount) / 100,
+                        amount=require_kobo_to_naira(t.amount if t.type == "credit" else -t.amount),
                         transaction_type=t.type,
                         category=t.category,
                         counterparty=t.counterparty,

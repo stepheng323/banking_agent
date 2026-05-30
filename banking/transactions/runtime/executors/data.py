@@ -27,7 +27,7 @@ from banking.transactions.runtime.async_group_types import AsyncGroupRedis
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 
@@ -46,7 +46,7 @@ def _data_personality_context(
 ) -> PersonalityContext:
     return PersonalityContext(
         moment=moment,
-        amount=to_money(amount),
+        amount=to_naira(amount),
         saved_recipient=bool(data_purchase.get("beneficiary_id") or data_purchase.get("is_self")),
     )
 
@@ -200,7 +200,7 @@ class DataExecutor:
             )
             await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
 
-            amount = to_money(data_purchase.get("amount"))
+            amount = to_naira(data_purchase.get("amount"))
             recipient_phone = data_purchase.get("target_phone")
             network = data_purchase.get("network")
             network_display = format_network_display_name(network)

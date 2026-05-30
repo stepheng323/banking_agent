@@ -6,6 +6,7 @@ from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.executors.payout import PayoutExecutor
 from banking.transactions.runtime.payout_status import apply_payout_result
 from shared.database.enums import FundedTransferStatusEnum
+from shared.money import naira_to_json
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -90,10 +91,17 @@ class PayoutConsumer:
             if not claimed:
                 return None
             await uow.commit()
+            amount_naira = (
+                naira_to_json(payload.get("amount_naira"))
+                or naira_to_json(payload.get("amount"))
+                or naira_to_json(getattr(transfer, "amount", None))
+                or "0.00"
+            )
             return {
                 **payload,
                 "funded_transfer_id": str(transfer.id),
-                "amount": float(payload.get("amount") or getattr(transfer, "amount", 0.0) or 0.0),
+                "amount": amount_naira,
+                "amount_naira": amount_naira,
                 "recipient_account": payload.get("recipient_account")
                 or getattr(transfer, "recipient_account_number", ""),
                 "recipient_bank_code": payload.get("recipient_bank_code")

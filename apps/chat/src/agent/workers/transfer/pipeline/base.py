@@ -120,7 +120,7 @@ class TransferPipeline:
             if result.patch:
                 normalized_patch = self._normalize_patch(result.patch)
                 result.patch = normalized_patch
-                data = data.model_copy(update=normalized_patch)
+                data = TransferPayload(**{**data.model_dump(), **normalized_patch})
 
         if last_result:
             return self._finalize_result(last_result, data)

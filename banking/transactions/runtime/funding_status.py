@@ -6,6 +6,7 @@ from typing import Any
 from banking.persistence.unit_of_work import UnitOfWork
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
+from shared.money import naira_to_json
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -75,12 +76,14 @@ async def queue_payout_if_all_confirmed(
 
     transfer.funding_completed_at = datetime.now(UTC).replace(tzinfo=None)
     await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
+    amount_naira = naira_to_json(transfer.amount) or "0.00"
     try:
         await publisher.publish(
             topic="payout.process",
             message={
                 "funded_transfer_id": str(transfer.id),
-                "amount": float(transfer.amount),
+                "amount": amount_naira,
+                "amount_naira": amount_naira,
                 "recipient_account": transfer.recipient_account_number,
                 "recipient_bank_code": transfer.recipient_bank_code,
                 "recipient_bank_code_provider": transfer.payout_provider or "flutterwave",
@@ -154,6 +157,7 @@ async def queue_refunds_for_confirmed_funding_steps(
     queued = 0
     for step in confirmed_steps:
         await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUND_PENDING.value)
+        amount_naira = naira_to_json(step.amount) or "0.00"
         if publisher:
             try:
                 await publisher.publish(
@@ -161,7 +165,8 @@ async def queue_refunds_for_confirmed_funding_steps(
                     message={
                         "funding_step_id": str(step.id),
                         "funded_transfer_id": str(transfer.id),
-                        "amount": float(step.amount),
+                        "amount": amount_naira,
+                        "amount_naira": amount_naira,
                         "account_id": str(step.account_id),
                         "original_reference": step.provider_reference,
                     },

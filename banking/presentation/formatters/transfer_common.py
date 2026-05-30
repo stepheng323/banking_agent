@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from banking.presentation.formatters.currency import coerce_amount
-from shared.money import MoneyAmount, quantize_money
+from shared.money import MoneyAmount, quantize_naira
 
 
 def calculate_transfer_fee(amount: MoneyAmount) -> MoneyAmount:
     amount_value = coerce_amount(amount)
-    fee = quantize_money(amount_value * coerce_amount("0.005"))
+    fee = quantize_naira(amount_value * coerce_amount("0.005"))
     return max(fee, coerce_amount("10"))
 
 

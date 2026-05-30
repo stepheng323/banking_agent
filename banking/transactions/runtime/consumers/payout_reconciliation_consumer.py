@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from banking.persistence.unit_of_work import UnitOfWork
@@ -9,7 +10,9 @@ from banking.transactions.runtime.payout_status import apply_payout_result, norm
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
+from shared.money import naira_to_json, to_naira
 from shared.queue.adapter import QueuePublisher
+from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -184,11 +187,13 @@ class PayoutReconciliationConsumer:
         if not self.publisher:
             logger.error("payout_reconciliation_publish_unavailable", funded_transfer_id=str(transfer.id))
             return
+        amount_naira = naira_to_json(getattr(transfer, "amount", None)) or "0.00"
         await self.publisher.publish(
             topic="payout.process",
             message={
                 "funded_transfer_id": str(transfer.id),
-                "amount": float(getattr(transfer, "amount", 0.0) or 0.0),
+                "amount": amount_naira,
+                "amount_naira": amount_naira,
                 "recipient_account": getattr(transfer, "recipient_account_number", ""),
                 "recipient_bank_code": getattr(transfer, "recipient_bank_code", ""),
                 "recipient_bank_code_provider": getattr(transfer, "payout_provider", None) or "flutterwave",
@@ -250,12 +255,13 @@ class PayoutReconciliationConsumer:
         if result_reference and str(result_reference) != str(transfer.idempotency_key):
             return False
 
-        result_amount = result.get("amount")
+        result_amount = result.get("amount_naira") or result.get("amount")
         if result_amount is not None:
-            try:
-                if abs(float(result_amount) - float(transfer.amount)) > 0.01:
-                    return False
-            except (TypeError, ValueError):
+            provider_amount = to_naira(result_amount)
+            transfer_amount = to_naira(getattr(transfer, "amount", None))
+            if provider_amount is None or transfer_amount is None:
+                return False
+            if abs(provider_amount - transfer_amount) > Decimal("0.01"):
                 return False
 
         result_currency = result.get("currency")
@@ -272,7 +278,7 @@ class PayoutReconciliationConsumer:
         if tx:
             tx.status = TransactionStatusEnum.PROCESSING.value
             tx.provider_status = "reconciliation_mismatch"
-            tx.provider_response = result
+            tx.provider_response = to_json_safe_dict(result)
             tx.error_message = transfer.error_message
             if uow.db is not None:
                 uow.db.add(tx)

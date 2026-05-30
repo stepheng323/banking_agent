@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass
 
-from shared.config import settings  # noqa: E402
+from shared.config.settings import settings  # noqa: E402
 from shared.database.models import Base  # noqa: E402
 
 config = context.config

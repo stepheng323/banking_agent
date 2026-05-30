@@ -19,6 +19,7 @@ class _MonoClientStub:
         self._status_response = status_response or {}
         self._refund_response = refund_response or {}
         self._verify_response = verify_response or {}
+        self.initiate_calls: list[dict] = []
         self.refund_calls: list[tuple[str, str | None]] = []
         self.verify_calls: list[str] = []
 
@@ -31,6 +32,16 @@ class _MonoClientStub:
         beneficiary_account: str | None = None,
         beneficiary_bank_code: str | None = None,
     ) -> dict:
+        self.initiate_calls.append(
+            {
+                "mandate_id": mandate_id,
+                "amount": amount,
+                "reference": reference,
+                "narration": narration,
+                "beneficiary_account": beneficiary_account,
+                "beneficiary_bank_code": beneficiary_bank_code,
+            }
+        )
         return dict(self._initiate_response)
 
     async def get_debit_status(self, debit_id: str) -> dict:
@@ -56,6 +67,20 @@ async def test_mono_provider_success_requires_successful_status_and_00_code() ->
     assert result.success is True
     assert result.status == DebitStatus.SUCCESSFUL
     assert result.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_mono_provider_initiate_debit_sends_amount_in_kobo() -> None:
+    client = _MonoClientStub(
+        initiate_response={"id": "debit-1", "status": "successful", "response_code": "00", "reference": "ref-1"}
+    )
+    provider = MonoDirectDebitProvider(client)
+
+    result = await provider.initiate_debit(mandate_id="mandate-1", amount="2000.05", reference="ref-1")
+
+    assert client.initiate_calls[0]["amount"] == 200005
+    assert result.amount is not None
+    assert str(result.amount) == "2000.05"
 
 
 @pytest.mark.asyncio
@@ -88,6 +113,8 @@ async def test_mono_provider_missing_response_code_falls_back_to_status_only() -
 
     assert result.success is True
     assert result.status == DebitStatus.PROCESSING
+    assert result.amount is not None
+    assert str(result.amount) == "5000.00"
     assert result.error_message is None
 
 
@@ -168,7 +195,9 @@ async def test_mono_provider_refund_failure_fails_closed() -> None:
 
 @pytest.mark.asyncio
 async def test_mono_provider_refund_status_uses_payment_verification() -> None:
-    client = _MonoClientStub(verify_response={"id": "pay-1", "reference": "pool-ref-1", "status": "reversed"})
+    client = _MonoClientStub(
+        verify_response={"id": "pay-1", "reference": "pool-ref-1", "status": "reversed", "amount": "500000"}
+    )
     provider = MonoDirectDebitProvider(client)
 
     result = await provider.get_refund_status("pool-ref-1", refund_id="refund-1")
@@ -176,6 +205,8 @@ async def test_mono_provider_refund_status_uses_payment_verification() -> None:
     assert client.verify_calls == ["pool-ref-1"]
     assert result.status == DebitStatus.REVERSED
     assert result.success is True
+    assert result.amount is not None
+    assert str(result.amount) == "5000.00"
 
 
 @pytest.mark.asyncio

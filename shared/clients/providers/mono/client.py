@@ -6,7 +6,7 @@ from uuid import uuid4
 import aiohttp
 
 from shared.config.settings import settings
-from shared.money import require_money
+from shared.money import require_kobo_to_naira
 from shared.utils.logging import get_logger
 
 from . import mock_data
@@ -168,9 +168,9 @@ class MonoClient:
         raw = await self._request("GET", f"/v2/accounts/{account_id}/balance", real_time=real_time)
         return BalanceData(
             balance_kobo=raw.get("available_balance", 0),
-            balance_naira=require_money(raw.get("available_balance", 0)) / 100,
+            balance_naira=require_kobo_to_naira(raw.get("available_balance", 0)),
             ledger_balance_kobo=raw.get("ledger_balance", 0),
-            ledger_balance_naira=require_money(raw.get("ledger_balance", 0)) / 100,
+            ledger_balance_naira=require_kobo_to_naira(raw.get("ledger_balance", 0)),
             currency=raw.get("currency", "NGN"),
             account_id=account_id,
         )

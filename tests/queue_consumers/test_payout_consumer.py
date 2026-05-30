@@ -226,7 +226,8 @@ async def test_payout_consumer_failed_payout_queues_refunds(monkeypatch) -> None
             {
                 "funding_step_id": "step-1",
                 "funded_transfer_id": "funded-1",
-                "amount": 2500.0,
+                "amount": "2500.00",
+                "amount_naira": "2500.00",
                 "account_id": "account-1",
                 "original_reference": "mono-ref-1",
             },
@@ -279,7 +280,8 @@ async def test_payout_consumer_failed_payout_queues_all_confirmed_funding_steps(
             {
                 "funding_step_id": "step-1",
                 "funded_transfer_id": "funded-1",
-                "amount": 2500.0,
+                "amount": "2500.00",
+                "amount_naira": "2500.00",
                 "account_id": "account-1",
                 "original_reference": "mono-ref-1",
             },
@@ -289,7 +291,8 @@ async def test_payout_consumer_failed_payout_queues_all_confirmed_funding_steps(
             {
                 "funding_step_id": "step-2",
                 "funded_transfer_id": "funded-1",
-                "amount": 3000.0,
+                "amount": "3000.00",
+                "amount_naira": "3000.00",
                 "account_id": "account-2",
                 "original_reference": "mono-ref-2",
             },

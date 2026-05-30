@@ -18,7 +18,7 @@ from banking.transactions.runtime.async_group_types import (
     AsyncGroupRedis,
     AsyncGroupSummaryResult,
 )
-from shared.money import money_to_json
+from shared.money import naira_to_json
 from shared.queue.models import AsyncGroupMeta
 from shared.utils.logging import get_logger
 
@@ -105,7 +105,7 @@ def _transaction_meta_key(transaction_id: str) -> str:
 
 def _json_default(value: object) -> str:
     if isinstance(value, Decimal):
-        serialized = money_to_json(value)
+        serialized = naira_to_json(value)
         if serialized is not None:
             return serialized
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")

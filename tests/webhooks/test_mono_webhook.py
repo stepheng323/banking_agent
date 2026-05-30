@@ -489,7 +489,8 @@ async def test_mono_webhook_queues_payout_with_provider_metadata() -> None:
             "payout.process",
             {
                 "funded_transfer_id": "funded-1",
-                "amount": 5000.0,
+                "amount": "5000.00",
+                "amount_naira": "5000.00",
                 "recipient_account": "8162511023",
                 "recipient_bank_code": "000014",
                 "recipient_bank_code_provider": "flutterwave",

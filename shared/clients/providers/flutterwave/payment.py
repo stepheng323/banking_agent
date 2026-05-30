@@ -8,7 +8,7 @@ import structlog
 
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.providers.flutterwave.client import FlutterwaveClient
-from shared.money import MoneyAmount, money_to_provider_value, require_money, to_money
+from shared.money import MoneyAmount, naira_to_json, naira_to_provider_value, require_naira
 from shared.utils.logging import log_fingerprint
 
 logger = structlog.get_logger(__name__)
@@ -125,13 +125,15 @@ class FlutterwavePaymentProvider(PayoutProvider):
         raw_status = data.get("status") or fallback_status
         status = self._normalize_status(raw_status)
         success = status == "successful"
+        amount_naira = naira_to_json(data.get("amount")) or naira_to_json(amount)
         response = {
             "success": success,
             "transaction_id": self._transfer_id(data),
             "reference": self._transfer_reference(data, reference),
             "status": status,
             "provider_status": str(raw_status),
-            "amount": to_money(data.get("amount")) or amount,
+            "amount": amount_naira,
+            "amount_naira": amount_naira,
             "recipient_account_number": recipient_account_number or data.get("account_number"),
             "recipient_bank_code": recipient_bank_code or data.get("account_bank") or data.get("bank_code"),
             "currency": data.get("currency") or currency,
@@ -191,11 +193,11 @@ class FlutterwavePaymentProvider(PayoutProvider):
         """Initiate a bank transfer via Flutterwave."""
         del sender_account_number
         reference = str(reference or self._reference()).strip()
-        transfer_amount = require_money(amount)
+        transfer_amount = require_naira(amount)
         payload = {
             "account_bank": recipient_bank_code,
             "account_number": recipient_account_number,
-            "amount": money_to_provider_value(transfer_amount),
+            "amount": naira_to_provider_value(transfer_amount),
             "currency": currency,
             "reference": reference,
         }

@@ -7,6 +7,7 @@ from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import queue_refunds_for_confirmed_funding_steps
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
 from shared.queue.adapter import QueuePublisher
+from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -59,6 +60,7 @@ async def apply_payout_result(
     if payout_reference:
         transfer.payout_reference = payout_reference
 
+    safe_result = to_json_safe_dict(result)
     tx = await uow.transactions.get_by_idempotency_key(transfer.idempotency_key) if uow.transactions else None
     status = normalize_payout_status(result.get("status") or result.get("provider_status"))
 
@@ -69,7 +71,7 @@ async def apply_payout_result(
             tx.status = TransactionStatusEnum.SUCCESSFUL.value
             tx.transaction_id = payout_reference or tx.transaction_id
             tx.provider_status = str(result.get("provider_status") or result.get("status") or "successful")
-            tx.provider_response = result
+            tx.provider_response = safe_result
             tx.completed_at = now
             if uow.db:
                 uow.db.add(tx)
@@ -81,7 +83,7 @@ async def apply_payout_result(
         if tx:
             tx.status = TransactionStatusEnum.PROCESSING.value
             tx.provider_status = str(result.get("provider_status") or result.get("status") or "pending")
-            tx.provider_response = result
+            tx.provider_response = safe_result
             if uow.db:
                 uow.db.add(tx)
         logger.warning(
@@ -101,7 +103,7 @@ async def apply_payout_result(
         tx.status = TransactionStatusEnum.FAILED.value
         tx.error_message = error
         tx.provider_status = str(result.get("provider_status") or result.get("status") or "failed")
-        tx.provider_response = result
+        tx.provider_response = safe_result
         if uow.db:
             uow.db.add(tx)
     await queue_refunds_for_confirmed_funding_steps(

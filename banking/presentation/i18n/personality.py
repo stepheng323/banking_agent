@@ -12,7 +12,7 @@ from banking.presentation.i18n.renderer import (
     message_key_exists,
     render_message,
 )
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -180,7 +180,7 @@ def transfer_personality_context_from_payload(
     """Build transfer rendering context from existing worker/executor payload data."""
     return PersonalityContext(
         moment=moment,
-        amount=to_money(_payload_get(payload, "amount")),
+        amount=to_naira(_payload_get(payload, "amount")),
         saved_recipient=_payload_saved_recipient(payload),
         high_risk=bool(_payload_get(payload, "is_high_risk_transfer")),
         pooled_funding=_payload_pooled_funding(payload),

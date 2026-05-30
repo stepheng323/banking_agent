@@ -260,7 +260,8 @@ async def test_reconciliation_failed_payout_queues_refunds(monkeypatch) -> None:
             {
                 "funding_step_id": "step-1",
                 "funded_transfer_id": "funded-1",
-                "amount": 5000.0,
+                "amount": "5000.00",
+                "amount_naira": "5000.00",
                 "account_id": "account-1",
                 "original_reference": "mono-ref-1",
             },

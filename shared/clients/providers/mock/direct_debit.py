@@ -10,7 +10,7 @@ from shared.clients.abstractions.direct_debit import (
     DebitStatus,
     DirectDebitProvider,
 )
-from shared.money import MoneyAmount, require_money, to_money
+from shared.money import MoneyAmount, require_naira, to_naira
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,7 +57,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
     def _build_result(cls, payload: dict, *, amount_naira: MoneyAmount | None = None) -> DebitResult:
         code = cls._response_code(payload)
         status = payload.get("status", DebitStatus.PENDING.value)
-        amount = amount_naira if amount_naira is not None else require_money(payload.get("amount", 0))
+        amount = amount_naira if amount_naira is not None else require_naira(payload.get("amount", 0))
         if status == DebitStatus.SUCCESSFUL.value:
             success = code in (None, "00")
             normalized_status = DebitStatus.SUCCESSFUL if success else DebitStatus.FAILED
@@ -87,7 +87,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
 
     def set_balance(self, account_id: str, balance: MoneyAmount | int | str) -> None:
         """Set balance for testing."""
-        parsed_balance = require_money(balance)
+        parsed_balance = require_naira(balance)
         self._balances[account_id] = parsed_balance
         logger.info("mock_balance_set", account_id=account_id, balance=str(parsed_balance))
 
@@ -120,7 +120,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
                 success=False,
                 status=DebitStatus.FAILED,
                 reference=reference,
-                amount=require_money(amount),
+                amount=require_naira(amount),
                 error_message="Both beneficiary_account and beneficiary_bank_code must be provided together",
             )
 
@@ -130,7 +130,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
         payload = {
             "id": debit_id,
             "mandate_id": mandate_id,
-            "amount": require_money(amount),
+            "amount": require_naira(amount),
             "reference": reference,
             "status": DebitStatus.SUCCESSFUL.value,
             "response_code": "00",
@@ -149,7 +149,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
         logger.info(
             "mock_initiate_debit",
             debit_id=debit_id,
-            amount=str(require_money(amount)),
+            amount=str(require_naira(amount)),
             reference=reference,
             mode="direct_beneficiary" if has_beneficiary_account else "pooling",
             default_status=DebitStatus.SUCCESSFUL.value,
@@ -173,7 +173,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
                 elif next_status == DebitStatus.FAILED.value and "response_code" not in debit:
                     debit["response_code"] = "51"
                     debit["message"] = "Debit failed"
-                return self._build_result(debit, amount_naira=to_money(debit.get("amount")) or Decimal("0.00"))
+                return self._build_result(debit, amount_naira=to_naira(debit.get("amount")) or Decimal("0.00"))
 
         return DebitResult(
             success=False,

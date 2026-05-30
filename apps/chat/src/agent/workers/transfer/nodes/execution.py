@@ -15,6 +15,7 @@ from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
 from banking.presentation.i18n.renderer import render_message
 from banking.risk.service import RiskDecisionService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
+from shared.money import naira_to_json
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 from shared.utils.narration import format_narration
@@ -226,6 +227,7 @@ class ExecutionStep(TransferStep):
                     },
                 )
             else:
+                amount_naira = naira_to_json(data.amount) or "0.00"
                 async_group = None
                 if data.async_group_id and data.async_group_size and data.async_group_kind and data.async_group_index:
                     async_group = {
@@ -245,7 +247,8 @@ class ExecutionStep(TransferStep):
                         "channel_identity": context.channel_identity,
                         "language": locale,
                         "transfer_data": {
-                            "amount": data.amount,
+                            "amount": amount_naira,
+                            "amount_naira": amount_naira,
                             "recipient": {
                                 "account_number": data.recipient_account,
                                 "bank_code": data.recipient_bank_code,

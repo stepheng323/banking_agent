@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_te
     semantic_tokens,
     token_matches_searchable,
 )
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 
 SEARCHABLE_DATA_KEYS = (
     "alias",
@@ -56,7 +56,7 @@ def _entity_matches_amount_reference(entity: ContextEntity, amount_refs: set[Mon
     value = numeric_rank_value(entity)
     if value is None:
         return False
-    amount = to_money(value)
+    amount = to_naira(value)
     if amount is None:
         return False
     abs_value = abs(amount)

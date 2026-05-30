@@ -12,7 +12,7 @@ from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.formatters.funding import format_insufficient_funds
 from banking.presentation.i18n.renderer import render_message
-from shared.money import MoneyAmount, require_money, to_money
+from shared.money import MoneyAmount, require_naira, to_naira
 
 BalanceFetcher = Callable[[Any], Awaitable[MoneyAmount]]
 
@@ -28,7 +28,7 @@ async def plan_explicit_pooling(
     locale: str,
     fetch_balance: BalanceFetcher,
 ) -> funding_models.FundingPlan:
-    transfer_amount = require_money(transfer_amount)
+    transfer_amount = require_naira(transfer_amount)
     requested_accounts: list[Any] = []
     if requested_source_banks:
         for bank_name in requested_source_banks:
@@ -165,11 +165,11 @@ async def plan_with_explicit_split(
             error=("Please use at most 2 source accounts in your split. Revise the split and try again."),
         )
 
-    transfer_amount = require_money(transfer_amount)
+    transfer_amount = require_naira(transfer_amount)
     cleaned_split = {
         bank: amount
         for bank, raw_amount in explicit_split.items()
-        if (amount := to_money(raw_amount)) is not None and amount > 0
+        if (amount := to_naira(raw_amount)) is not None and amount > 0
     }
     split_total = sum(cleaned_split.values(), Decimal("0.00"))
     if split_total != transfer_amount:

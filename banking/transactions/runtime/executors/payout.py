@@ -4,7 +4,7 @@ from typing import Any
 
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.abstractions.resolution import AccountResolverProvider
-from shared.money import to_money
+from shared.money import to_naira
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -19,7 +19,7 @@ class PayoutExecutor:
 
     async def handle_payout(self, data: dict[str, Any]) -> dict[str, Any]:
         """Execute payout via configured payment provider."""
-        amount = to_money(data.get("amount"))
+        amount = to_naira(data.get("amount_naira") or data.get("amount"))
         recipient_account = str(data.get("recipient_account") or "")
         recipient_bank_code = str(data.get("recipient_bank_code") or "")
         recipient_bank_code_provider = str(data.get("recipient_bank_code_provider") or "").strip().lower()

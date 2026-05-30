@@ -253,7 +253,8 @@ async def test_refund_reconciliation_requeues_unclaimed_pending_refund(monkeypat
             {
                 "funding_step_id": "step-1",
                 "funded_transfer_id": "funded-1",
-                "amount": 2500.0,
+                "amount": "2500.00",
+                "amount_naira": "2500.00",
                 "account_id": "account-1",
                 "original_reference": "pool-ref-1",
             },

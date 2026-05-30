@@ -1,12 +1,12 @@
 """SNS publisher for async job topics."""
 
-import json
 from typing import Any
 
 import aioboto3
 
 from shared.queue.adapter import QueuePublisher
 from shared.queue.contracts import TopicType, get_contract_by_topic
+from shared.utils.json import json_dumps_safe
 
 
 class SNSPublisher(QueuePublisher):
@@ -25,7 +25,7 @@ class SNSPublisher(QueuePublisher):
         async with self.session.client("sns", region_name=self.region_name) as sns:
             await sns.publish(
                 TopicArn=self.topic_arn,
-                Message=json.dumps(message),
+                Message=json_dumps_safe(message),
                 MessageAttributes={
                     "domain": {
                         "DataType": "String",

@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 from shared.types.planner import RecipientAllocation
 
 
@@ -78,7 +78,7 @@ class TransferEntities(BaseModel):
         """Convert amount to Decimal, let validation node handle limit checks."""
         if v is None:
             return v
-        return to_money(v)
+        return to_naira(v)
 
     @field_validator("transfer_percentage", mode="before")
     @classmethod

@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from shared.money import MoneyAmount, to_money
+from shared.money import MoneyAmount, to_naira
 
 
 def _coerce_money(value: Any) -> MoneyAmount | None:
-    return to_money(value)
+    return to_naira(value)
 
 
 __all__ = ["_coerce_money"]

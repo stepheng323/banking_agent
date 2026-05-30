@@ -1,11 +1,11 @@
 """Redis Streams publisher for logical queue topics."""
 
-import json
 from typing import Any
 
 from shared.cache.redis_client import RedisClient
 from shared.queue.adapter import QueuePublisher
 from shared.queue.contracts import TopicType, get_contract_by_topic
+from shared.utils.json import json_dumps_safe
 
 
 class RedisStreamPublisher(QueuePublisher):
@@ -24,7 +24,7 @@ class RedisStreamPublisher(QueuePublisher):
             stream_name,
             {
                 "topic": topic,
-                "payload": json.dumps(message),
+                "payload": json_dumps_safe(message),
             },
             maxlen=10000,
             approximate=True,

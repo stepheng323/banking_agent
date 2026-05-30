@@ -2,7 +2,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
 from banking.transfers.funding.batch_models import SourceAffinity, TransferDemand
-from shared.money import MoneyAmount, require_money, to_money
+from shared.money import MoneyAmount, require_naira, to_naira
 
 
 def _build_transfer_demand(task_id: str, task_payload: dict[str, Any]) -> TransferDemand:
@@ -20,12 +20,12 @@ def _build_transfer_demand(task_id: str, task_payload: dict[str, Any]) -> Transf
         explicit_split = {
             str(key): amount
             for key, value in explicit_split_raw.items()
-            if str(key).strip() and (amount := to_money(value)) is not None and amount > 0
+            if str(key).strip() and (amount := to_naira(value)) is not None and amount > 0
         }
     preferred_account_id = task_payload.get("source_account_id")
     return TransferDemand(
         task_id=task_id,
-        amount=to_money(task_payload.get("amount")) or require_money(0),
+        amount=to_naira(task_payload.get("amount")) or require_naira(0),
         source_affinity=SourceAffinity(mode=cast(Any, mode)),
         explicit_sources=explicit_sources,
         explicit_split=explicit_split,
@@ -39,7 +39,7 @@ def _is_plannable_transfer_task(task: Any) -> bool:
         return False
     payload = task.payload if isinstance(task.payload, dict) else {}
     amount = payload.get("amount")
-    parsed_amount = to_money(amount)
+    parsed_amount = to_naira(amount)
     return (
         bool(payload.get("source_account_id"))
         and not payload.get("funding_plan")

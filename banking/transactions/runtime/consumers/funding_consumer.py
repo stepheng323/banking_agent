@@ -11,6 +11,7 @@ from banking.transactions.runtime.funding_status import (
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum
+from shared.money import naira_to_json, require_naira
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -133,9 +134,12 @@ class FundingConsumer:
             if not claimed:
                 return None
             await uow.commit()
+            amount = require_naira(step.amount)
+            amount_naira = naira_to_json(amount) or "0.00"
             return {
                 "mandate_id": account.mandate_id,
-                "amount": float(step.amount),
+                "amount": amount,
+                "amount_naira": amount_naira,
                 "reference": reference,
                 "narration": transfer.narration or "Transfer funding",
             }

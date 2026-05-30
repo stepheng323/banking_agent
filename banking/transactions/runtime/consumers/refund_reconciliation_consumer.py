@@ -9,6 +9,7 @@ from banking.transactions.runtime.funding_status import finalize_refund_state
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum, SupportTicketPriorityEnum, SupportTicketStatusEnum
+from shared.money import naira_to_json
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -133,12 +134,14 @@ class RefundReconciliationConsumer:
         if not self.publisher:
             logger.error("refund_reconciliation_publish_unavailable", funding_step_id=str(step.id))
             return
+        amount_naira = naira_to_json(getattr(step, "amount", None)) or "0.00"
         await self.publisher.publish(
             topic="refund.process",
             message={
                 "funding_step_id": str(step.id),
                 "funded_transfer_id": str(transfer.id),
-                "amount": float(getattr(step, "amount", 0.0) or 0.0),
+                "amount": amount_naira,
+                "amount_naira": amount_naira,
                 "account_id": str(getattr(step, "account_id", "")),
                 "original_reference": getattr(step, "provider_reference", None),
             },

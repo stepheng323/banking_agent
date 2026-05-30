@@ -17,7 +17,7 @@ from banking.transfers.funding.batch_models import (
 from banking.transfers.funding.models import MIN_FUNDING_AMOUNT, FundingPlan, FundingStepPlan
 from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.money import MoneyAmount, require_money, to_money
+from shared.money import MoneyAmount, require_naira, to_naira
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +27,7 @@ ZERO_MONEY = Decimal("0.00")
 
 
 def _money_or_zero(value: object) -> MoneyAmount:
-    return to_money(value) or ZERO_MONEY
+    return to_naira(value) or ZERO_MONEY
 
 
 def adapt_batch_accounts(accounts: list[dict[str, Any]]) -> list[BatchFundingAccount]:
@@ -43,7 +43,7 @@ def prioritize_demands(demands: list[TransferDemand]) -> list[TransferDemand]:
         demands,
         key=lambda demand: (
             0 if demand.source_affinity.mode == "explicit" else 1,
-            -require_money(demand.amount),
+            -require_naira(demand.amount),
         ),
     )
 
@@ -57,7 +57,7 @@ async def fetch_batch_balances(
         account_id = str(account.id)
         try:
             result = await provider.get_balance(account.mono_account_id, real_time=True)
-            balances[account_id] = require_money(result.available_balance) if result.success else ZERO_MONEY
+            balances[account_id] = require_naira(result.available_balance) if result.success else ZERO_MONEY
         except Exception as exc:
             logger.warning("batch_funding_balance_fetch_failed", account_id=account_id, error=str(exc))
             balances[account_id] = ZERO_MONEY
@@ -82,7 +82,7 @@ async def allocate_auto_funding(
 
     plan = await planner.plan_funding(
         accounts=accounts,
-        transfer_amount=require_money(demand.amount),
+        transfer_amount=require_naira(demand.amount),
         preferred_account_id=preferred_account_id,
         locale=locale,
         balance_overrides=ledger,
@@ -96,7 +96,7 @@ async def allocate_auto_funding(
         demand=demand,
         account_requested=plan.primary_bank_name or render_message("funding.format.plan.bank_fallback", locale),
         account_available=plan.primary_available_balance or ZERO_MONEY,
-        deficit=max(ZERO_MONEY, plan.shortfall or require_money(demand.amount)),
+        deficit=max(ZERO_MONEY, plan.shortfall or require_naira(demand.amount)),
         ledger=ledger,
         exclude_account_ids=step_account_ids,
         bank_names_by_id=bank_names_by_id,
@@ -138,7 +138,7 @@ def allocate_explicit_funding(
             if demand.explicit_sources
             else render_message("funding.format.plan.bank_fallback", locale),
             account_available=ZERO_MONEY,
-            deficit=require_money(demand.amount),
+            deficit=require_naira(demand.amount),
             ledger=ledger,
             exclude_account_ids=set(),
             bank_names_by_id=bank_names_by_id,
@@ -146,7 +146,7 @@ def allocate_explicit_funding(
         return None, shortfall
 
     selected_ids = explicit_account_ids[:MAX_POOLED_SOURCE_ACCOUNTS]
-    remaining = require_money(demand.amount)
+    remaining = require_naira(demand.amount)
     sequence = 1
     steps: list[FundingStepPlan] = []
     primary_available = ledger.get(selected_ids[0], ZERO_MONEY)
@@ -195,8 +195,8 @@ def allocate_explicit_funding(
         return None, shortfall
 
     plan = FundingPlan(
-        transfer_amount=require_money(demand.amount),
-        total_funded=require_money(demand.amount),
+        transfer_amount=require_naira(demand.amount),
+        total_funded=require_naira(demand.amount),
         steps=steps,
         is_sufficient=True,
         shortfall=ZERO_MONEY,
@@ -229,20 +229,20 @@ def allocate_explicit_split_funding(
             demand=demand,
             account_requested=requested_account_fallback,
             account_available=ZERO_MONEY,
-            deficit=require_money(demand.amount),
+            deficit=require_naira(demand.amount),
             ledger=ledger,
             exclude_account_ids=set(),
             bank_names_by_id=bank_names_by_id,
         )
         return None, shortfall
 
-    split_total = sum((require_money(value) for value in explicit_split.values()), ZERO_MONEY)
-    if split_total != require_money(demand.amount):
+    split_total = sum((require_naira(value) for value in explicit_split.values()), ZERO_MONEY)
+    if split_total != require_naira(demand.amount):
         shortfall = build_shortfall(
             demand=demand,
             account_requested=requested_account_fallback,
             account_available=ZERO_MONEY,
-            deficit=max(ZERO_MONEY, require_money(demand.amount) - split_total),
+            deficit=max(ZERO_MONEY, require_naira(demand.amount) - split_total),
             ledger=ledger,
             exclude_account_ids=set(),
             bank_names_by_id=bank_names_by_id,
@@ -260,7 +260,7 @@ def allocate_explicit_split_funding(
                 demand=demand,
                 account_requested=bank_name,
                 account_available=ZERO_MONEY,
-                deficit=require_money(requested_amount),
+                deficit=require_naira(requested_amount),
                 ledger=ledger,
                 exclude_account_ids=used_ids,
                 bank_names_by_id=bank_names_by_id,
@@ -273,7 +273,7 @@ def allocate_explicit_split_funding(
                 demand=demand,
                 account_requested=bank_name,
                 account_available=ledger.get(account_id, ZERO_MONEY),
-                deficit=require_money(requested_amount),
+                deficit=require_naira(requested_amount),
                 ledger=ledger,
                 exclude_account_ids=used_ids,
                 bank_names_by_id=bank_names_by_id,
@@ -283,7 +283,7 @@ def allocate_explicit_split_funding(
         available = max(ZERO_MONEY, ledger.get(account_id, ZERO_MONEY))
         if primary_available is None:
             primary_available = available
-        requested_money = require_money(requested_amount)
+        requested_money = require_naira(requested_amount)
         if available < requested_money:
             shortfall = build_shortfall(
                 demand=demand,
@@ -311,8 +311,8 @@ def allocate_explicit_split_funding(
 
     decrement_ledger(ledger, planned_steps)
     plan = FundingPlan(
-        transfer_amount=require_money(demand.amount),
-        total_funded=require_money(demand.amount),
+        transfer_amount=require_naira(demand.amount),
+        total_funded=require_naira(demand.amount),
         steps=planned_steps,
         is_sufficient=True,
         shortfall=ZERO_MONEY,
@@ -348,7 +348,7 @@ def resolve_explicit_account_ids(
 def decrement_ledger(ledger: dict[str, MoneyAmount], steps: list[FundingStepPlan]) -> None:
     for step in steps:
         account_id = str(step.account_id)
-        ledger[account_id] = max(ZERO_MONEY, ledger.get(account_id, ZERO_MONEY) - require_money(step.amount))
+        ledger[account_id] = max(ZERO_MONEY, ledger.get(account_id, ZERO_MONEY) - require_naira(step.amount))
 
 
 def build_shortfall(
@@ -369,7 +369,7 @@ def build_shortfall(
     alternates = sorted(alternates, key=lambda item: _money_or_zero(item.get("available", ZERO_MONEY)), reverse=True)
     return ShortfallDetail(
         task_id=demand.task_id,
-        amount_needed=require_money(demand.amount),
+        amount_needed=require_naira(demand.amount),
         account_requested=account_requested,
         account_available=max(ZERO_MONEY, account_available),
         deficit=max(ZERO_MONEY, deficit),

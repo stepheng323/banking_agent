@@ -47,7 +47,7 @@ class AirtimePipeline:
             result = await step.execute(data, context, gates, worker_context)
 
             if result.patch:
-                data = data.model_copy(update=result.patch)
+                data = AirtimePayload(**{**data.model_dump(), **result.patch})
                 accumulated_patch.update(result.patch)
 
             if result.outcome != TransactionOutcome.OK:

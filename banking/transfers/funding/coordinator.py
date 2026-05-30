@@ -18,7 +18,7 @@ from banking.transfers.funding.batch_models import BatchFundingResult, Shortfall
 from banking.transfers.funding.models import FundingPlan
 from banking.transfers.funding.planner import FundingPlanner
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.money import MoneyAmount, require_money
+from shared.money import MoneyAmount, require_naira
 
 ZERO_MONEY = Decimal("0.00")
 
@@ -37,7 +37,7 @@ class BatchFundingCoordinator:
         locale: str = "en",
     ) -> BatchFundingResult:
         total_demanded = sum(
-            (max(ZERO_MONEY, require_money(demand.amount)) for demand in demands),
+            (max(ZERO_MONEY, require_naira(demand.amount)) for demand in demands),
             ZERO_MONEY,
         )
         eligible_accounts = eligible_batch_accounts(adapt_batch_accounts(accounts))
@@ -58,7 +58,7 @@ class BatchFundingCoordinator:
         plans_by_task: dict[str, FundingPlan] = {}
         shortfalls: list[ShortfallDetail] = []
         for demand in prioritize_demands(demands):
-            amount = max(ZERO_MONEY, require_money(demand.amount))
+            amount = max(ZERO_MONEY, require_naira(demand.amount))
             if amount <= 0:
                 plans_by_task[demand.task_id] = FundingPlan(
                     transfer_amount=ZERO_MONEY,

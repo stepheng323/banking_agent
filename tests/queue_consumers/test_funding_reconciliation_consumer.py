@@ -1,3 +1,4 @@
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -20,7 +21,7 @@ class _FakeProvider:
     def __init__(self, result: DebitResult) -> None:
         self.result = result
         self.status_calls: list[str] = []
-        self.initiate_calls: list[tuple[str, float, str, str]] = []
+        self.initiate_calls: list[tuple[str, Decimal, str, str]] = []
 
     async def get_debit_status(self, debit_id: str) -> DebitResult:
         self.status_calls.append(debit_id)
@@ -29,7 +30,7 @@ class _FakeProvider:
     async def initiate_pooling_debit(
         self,
         mandate_id: str,
-        amount: float,
+        amount: Decimal,
         reference: str,
         narration: str = "Transfer",
     ) -> DebitResult:
@@ -225,7 +226,8 @@ async def test_funding_reconciliation_terminal_failure_refunds_confirmed_leg(mon
             {
                 "funding_step_id": "step-1",
                 "funded_transfer_id": "funded-1",
-                "amount": 2500.0,
+                "amount": "2500.00",
+                "amount_naira": "2500.00",
                 "account_id": "account-1",
                 "original_reference": "ref-1",
             },
@@ -249,7 +251,7 @@ async def test_funding_reconciliation_recovers_missed_pending_funding_job(monkey
 
     await consumer.process_job({"funding_step_id": "step-1"})
 
-    assert provider.initiate_calls == [("mandate-1", 2500.0, "idem-1-s1", "Test")]
+    assert provider.initiate_calls == [("mandate-1", Decimal("2500.00"), "idem-1-s1", "Test")]
     assert state.funding_steps.status_updates == [
         ("step-1", FundingStepStatusEnum.PROCESSING.value, None),
         ("step-1", FundingStepStatusEnum.CONFIRMED.value, None),

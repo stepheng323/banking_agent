@@ -14,7 +14,7 @@ from apps.chat.src.agent.workers.__shared__.scheduling import (
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
 from banking.presentation.i18n.renderer import render_message
-from shared.money import to_money
+from shared.money import to_naira
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -143,7 +143,7 @@ def _apply_resolved_referents(payload: DataPayload, context: DataContext) -> boo
                 if network and not payload.network:
                     payload.network = str(network).strip().upper()
                 if amount is not None and payload.amount is None:
-                    payload.amount = to_money(amount)
+                    payload.amount = to_naira(amount)
                 if size_gb is not None:
                     try:
                         payload.plan_size_gb = float(size_gb)
@@ -173,7 +173,7 @@ def _apply_resolved_referents(payload: DataPayload, context: DataContext) -> boo
         if amount_referent:
             raw_amount = amount_referent.get("amount")
             if raw_amount is not None:
-                amount = to_money(raw_amount)
+                amount = to_naira(raw_amount)
                 if amount is not None and amount > 0:
                     payload.amount = amount
                     changed = True

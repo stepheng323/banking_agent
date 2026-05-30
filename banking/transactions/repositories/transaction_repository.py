@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from banking.persistence.base import BaseRepository
 from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
 from shared.database.models import Transaction
+from shared.utils.json import to_json_safe_dict
 
 
 def normalize_db_timestamp(value: datetime) -> datetime:
@@ -264,7 +265,7 @@ class TransactionRepository(BaseRepository[Transaction]):
             if provider_status:
                 transaction.provider_status = provider_status
             if provider_response is not None:
-                transaction.provider_response = provider_response
+                transaction.provider_response = to_json_safe_dict(provider_response)
             if provider_error_code:
                 transaction.provider_error_code = provider_error_code
             if error_message:

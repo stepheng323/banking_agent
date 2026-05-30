@@ -7,7 +7,7 @@ from typing import Any
 import banking.transfers.funding.models as funding_models
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from banking.presentation.i18n.renderer import render_message
-from shared.money import MoneyAmount, require_money
+from shared.money import MoneyAmount, require_naira
 from shared.utils.bank_aliases import normalize_bank_name
 
 
@@ -32,7 +32,7 @@ def create_step(account: Any, amount: MoneyAmount, sequence: int) -> funding_mod
         account_number=account.account_number,
         bank_name=account.bank_name,
         mandate_id=account.mandate_id,
-        amount=require_money(amount),
+        amount=require_naira(amount),
         sequence=sequence,
     )
 
