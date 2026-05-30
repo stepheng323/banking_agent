@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from shared.services.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from shared.types.planner import SemanticRouteDecision
 
 _CASES_PATH = Path("tests/fixtures/semantic_router_live_cases.json")

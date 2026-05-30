@@ -3,6 +3,8 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_types import PlannerContextBuildResult
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
@@ -12,8 +14,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_fo
     build_surface_answer_response as build_context_frame_followup_response,
 )
 from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import resolve_query_shortcut
-from shared.services.task_planner import TaskPlanner
-from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -23,7 +23,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
     TRANSACTION_INTENTS,
 )
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 from shared.utils.logging import get_logger
 
 logger = get_logger("apps.chat.src.agent.orchestrator.workflows.interrupt")

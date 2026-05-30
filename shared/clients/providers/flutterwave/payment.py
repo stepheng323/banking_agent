@@ -2,6 +2,7 @@
 
 import uuid
 from typing import Any
+from urllib.parse import urlencode
 
 import structlog
 
@@ -10,6 +11,12 @@ from shared.clients.providers.flutterwave.client import FlutterwaveClient
 from shared.utils.logging import log_fingerprint
 
 logger = structlog.get_logger(__name__)
+
+
+TERMINAL_SUCCESS_STATUSES = frozenset({"success", "successful", "completed"})
+TERMINAL_FAILURE_STATUSES = frozenset({"failed", "failure", "cancelled", "canceled", "reversed"})
+NON_TERMINAL_STATUSES = frozenset({"new", "pending", "processing", "queued", "in_progress"})
+
 
 class FlutterwavePaymentProvider(PayoutProvider):
     """Flutterwave payment service provider implementation using v3 API."""
@@ -64,6 +71,112 @@ class FlutterwavePaymentProvider(PayoutProvider):
             **kwargs,
         }
 
+    @staticmethod
+    def _normalize_status(status: Any) -> str:
+        raw_status = str(status or "").strip().lower()
+        if raw_status in TERMINAL_SUCCESS_STATUSES:
+            return "successful"
+        if raw_status in TERMINAL_FAILURE_STATUSES:
+            return "failed"
+        if raw_status in NON_TERMINAL_STATUSES:
+            return "pending"
+        return "pending"
+
+    @staticmethod
+    def _reference() -> str:
+        return f"flw-trf-{uuid.uuid4().hex}"
+
+    @staticmethod
+    def _transfer_id(data: dict[str, Any]) -> str | None:
+        for key in ("id", "transfer_id", "transaction_id"):
+            value = data.get(key)
+            if value is not None:
+                return str(value)
+        return None
+
+    @staticmethod
+    def _transfer_reference(data: dict[str, Any], fallback: str | None = None) -> str | None:
+        for key in ("reference", "tx_ref"):
+            value = data.get(key)
+            if value:
+                return str(value)
+        return fallback
+
+    @staticmethod
+    def _transfer_error(data: dict[str, Any], fallback: str | None = None) -> str | None:
+        for key in ("complete_message", "processor_response", "message", "narration"):
+            value = data.get(key)
+            if value:
+                return str(value)
+        return fallback
+
+    def _response_from_transfer_data(
+        self,
+        data: dict[str, Any],
+        *,
+        reference: str | None = None,
+        amount: float | None = None,
+        recipient_account_number: str | None = None,
+        recipient_bank_code: str | None = None,
+        currency: str = "NGN",
+        fallback_status: str = "pending",
+    ) -> dict[str, Any]:
+        raw_status = data.get("status") or fallback_status
+        status = self._normalize_status(raw_status)
+        success = status == "successful"
+        response = {
+            "success": success,
+            "transaction_id": self._transfer_id(data),
+            "reference": self._transfer_reference(data, reference),
+            "status": status,
+            "provider_status": str(raw_status),
+            "amount": data.get("amount") or amount,
+            "recipient_account_number": recipient_account_number or data.get("account_number"),
+            "recipient_bank_code": recipient_bank_code or data.get("account_bank") or data.get("bank_code"),
+            "currency": data.get("currency") or currency,
+            "provider": self.provider_name,
+            "raw_response": data,
+        }
+        if status == "failed":
+            response["error"] = self._transfer_error(data, "Flutterwave transfer failed")
+        return response
+
+    @staticmethod
+    def _is_duplicate_reference_error(result: dict[str, Any]) -> bool:
+        error = str(result.get("error") or result.get("message") or "").lower()
+        return "duplicate" in error and "reference" in error
+
+    async def get_transfer_by_reference(self, reference: str) -> dict[str, Any]:
+        """Fetch a transfer by merchant reference for idempotency recovery."""
+        params = urlencode({"reference": reference, "page_size": "1"})
+        result = await self._client.request("GET", f"/v3/transfers?{params}", max_retries=1)
+        if not result.get("success"):
+            return self._error_response(
+                str(result.get("error") or "Transfer lookup failed"),
+                status="pending",
+                reference=reference,
+                status_code=result.get("status_code"),
+            )
+
+        data = result.get("data") or {}
+        transfers: list[dict[str, Any]]
+        if isinstance(data, list):
+            transfers = [item for item in data if isinstance(item, dict)]
+        elif isinstance(data, dict):
+            raw_transfers = data.get("data") or data.get("transfers") or data.get("items") or []
+            transfers = [item for item in raw_transfers if isinstance(item, dict)]
+            if not transfers and (data.get("reference") or data.get("id")):
+                transfers = [data]
+        else:
+            transfers = []
+
+        exact_matches = [item for item in transfers if self._transfer_reference(item) == reference]
+        transfer = exact_matches[0] if exact_matches else (transfers[0] if transfers else None)
+        if not transfer:
+            return self._error_response("Transfer not found for reference", status="pending", reference=reference)
+
+        return self._response_from_transfer_data(transfer, reference=reference)
+
     async def initiate_transfer(
         self,
         amount: float,
@@ -72,45 +185,89 @@ class FlutterwavePaymentProvider(PayoutProvider):
         sender_account_number: str | None = None,
         narration: str | None = None,
         currency: str = "NGN",
+        reference: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Initiate a bank transfer via Flutterwave.
-
-        TODO: Implement Flutterwave transfer API integration.
-        This is a placeholder implementation that returns a mock success response.
-        """
-        del sender_account_number, narration
-        # Generate professional transaction ID: FP-YYYYMMDD-XXXX
-        from shared.utils.datetime import utc_now_naive
-
-        date_part = utc_now_naive().strftime("%Y%m%d")
-        random_part = uuid.uuid4().hex[:8].upper()
-        transaction_id = f"FP-{date_part}-{random_part}"
+        """Initiate a bank transfer via Flutterwave."""
+        del sender_account_number
+        reference = str(reference or self._reference()).strip()
+        payload = {
+            "account_bank": recipient_bank_code,
+            "account_number": recipient_account_number,
+            "amount": amount,
+            "currency": currency,
+            "reference": reference,
+        }
+        if narration:
+            payload["narration"] = narration
 
         logger.info(
-            "flutterwave_placeholder_transfer_initiated",
+            "flutterwave_transfer_initiate_request",
             amount=amount,
             currency=currency,
             recipient_account_hash=log_fingerprint(recipient_account_number),
             recipient_bank_code=recipient_bank_code,
-            transaction_id_hash=log_fingerprint(transaction_id),
+            reference_hash=log_fingerprint(reference),
         )
 
-        return {
-            "success": True,
-            "transaction_id": transaction_id,
-            "status": "success",
-            "amount": amount,
-            "recipient_account_number": recipient_account_number,
-            "recipient_bank_code": recipient_bank_code,
-            "currency": currency,
-            "provider": self.provider_name,
-        }
+        result = await self._client.request("POST", "/v3/transfers", payload=payload, max_retries=1)
+        if result.get("success"):
+            data = result.get("data") or {}
+            if not isinstance(data, dict):
+                data = {}
+            return self._response_from_transfer_data(
+                data,
+                reference=reference,
+                amount=amount,
+                recipient_account_number=recipient_account_number,
+                recipient_bank_code=recipient_bank_code,
+                currency=currency,
+            )
+
+        if self._is_duplicate_reference_error(result):
+            logger.warning("flutterwave_transfer_duplicate_reference", reference_hash=log_fingerprint(reference))
+            lookup = await self.get_transfer_by_reference(reference)
+            if lookup.get("transaction_id"):
+                return lookup
+            return {
+                **lookup,
+                "success": False,
+                "status": "pending",
+                "error": lookup.get("error") or "Duplicate transfer reference; status unknown",
+                "reference": reference,
+            }
+
+        status_code = int(result.get("status_code") or 0)
+        transient_failure = bool(result.get("circuit_open")) or status_code == 0 or status_code >= 500
+        status = "pending" if transient_failure else "failed"
+        return self._error_response(
+            str(result.get("error") or "Flutterwave transfer initiation failed"),
+            status=status,
+            reference=reference,
+            amount=amount,
+            recipient_account_number=recipient_account_number,
+            recipient_bank_code=recipient_bank_code,
+            currency=currency,
+            status_code=status_code,
+        )
 
     async def get_transfer_status(self, transaction_id: str) -> dict[str, Any]:
-        """
-        Get transfer status from Flutterwave.
+        """Get transfer status from Flutterwave."""
+        transfer_id = str(transaction_id or "").strip()
+        if not transfer_id:
+            return self._error_response("Transfer transaction id is required", status="failed")
 
-        TODO: Implement Flutterwave status check API integration.
-        """
-        raise NotImplementedError("Flutterwave status check not yet implemented")
+        result = await self._client.request("GET", f"/v3/transfers/{transfer_id}", max_retries=1)
+        if not result.get("success"):
+            status_code = int(result.get("status_code") or 0)
+            transient_failure = bool(result.get("circuit_open")) or status_code == 0 or status_code >= 500
+            return self._error_response(
+                str(result.get("error") or "Transfer status lookup failed"),
+                transaction_id=transfer_id,
+                status="pending" if transient_failure else "failed",
+                status_code=status_code,
+            )
+
+        data = result.get("data") or {}
+        if not isinstance(data, dict):
+            data = {}
+        return self._response_from_transfer_data(data, fallback_status="pending")

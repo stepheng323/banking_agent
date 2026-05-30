@@ -5,8 +5,8 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from shared.formatters.transaction_copy_context import format_amount_compact
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.transaction_copy_context import format_amount_compact
+from banking.presentation.i18n.renderer import render_message
 
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 TERMINAL_TASK_STAGES = {TaskStage.COMPLETED.value, TaskStage.FAILED.value, TaskStage.CANCELLED.value}

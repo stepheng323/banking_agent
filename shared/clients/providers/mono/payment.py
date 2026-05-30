@@ -33,8 +33,10 @@ class MonoPaymentProvider(PayoutProvider):
         sender_account_number: str | None = None,
         narration: str | None = None,
         currency: str = "NGN",
+        reference: str | None = None,
     ) -> dict[str, Any]:
         """Initiate transfer (not yet supported by Mono adapter)."""
+        del reference
         raise NotImplementedError("Mono transfers not yet supported via PayoutProvider interface")
 
     async def get_transfer_status(self, transaction_id: str) -> dict[str, Any]:

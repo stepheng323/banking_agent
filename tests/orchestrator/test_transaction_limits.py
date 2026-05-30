@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS, MAX_TRANSACTION_BATCH_TASKS
+from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS, MAX_TRANSACTION_BATCH_TASKS
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 

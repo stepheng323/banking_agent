@@ -2,7 +2,7 @@
 
 from apps.chat.src.agent.workers.query.models.domain import QueryResult
 from apps.chat.src.agent.workers.query.presentation.presentation_planner import build_presentation_plan
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 class QueryFormatter:

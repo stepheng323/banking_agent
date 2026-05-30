@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 _NON_WORD_ONLY_RE = re.compile(r"^[^\w]+$", re.UNICODE)
 _REPEATED_NON_ALNUM_RE = re.compile(r"^([^A-Za-z0-9\s])\1{4,}$")

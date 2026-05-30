@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_contextual_casual_followup_turn
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     classify_banking_coded_ambiguity,
     render_banking_coded_ambiguity_prompt,
@@ -11,7 +12,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _build_bounded_conversational_reply,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
-from shared.services.conversation_responder_text import is_contextual_casual_followup_turn
 
 
 async def _build_banking_ambiguity_response(

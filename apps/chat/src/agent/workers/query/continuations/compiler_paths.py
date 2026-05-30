@@ -14,8 +14,8 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     ResolverOutcome,
 )
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

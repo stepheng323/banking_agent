@@ -1,6 +1,20 @@
 import re
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
+    detect_unsupported_capability,
+    is_same_unsupported_capability_followup,
+    normalize_unsupported_text,
+    should_try_semantic_unsupported_capability,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
+    UnsupportedBoundaryTurnOutput,
+    UnsupportedCapability,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
+    validate_semantic_unsupported_capability,
+    validate_unsupported_boundary_turn,
+)
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_account_balance_request,
@@ -13,20 +27,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_data_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from shared.services.unsupported_capability_detection import (
-    detect_unsupported_capability,
-    is_same_unsupported_capability_followup,
-    normalize_unsupported_text,
-    should_try_semantic_unsupported_capability,
-)
-from shared.services.unsupported_capability_models import (
-    UnsupportedBoundaryTurnOutput,
-    UnsupportedCapability,
-)
-from shared.services.unsupported_capability_semantic import (
-    validate_semantic_unsupported_capability,
-    validate_unsupported_boundary_turn,
-)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

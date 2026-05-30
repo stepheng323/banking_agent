@@ -4,9 +4,9 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.queue_consumers.pin_resume import handle_pin_verified
+from banking.identity.repositories.user_repository import UserRepository
 from shared.queue.adapter import QueuePublisher
 from shared.queue.messages import FlowEventType
-from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

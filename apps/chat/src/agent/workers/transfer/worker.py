@@ -24,13 +24,13 @@ from apps.chat.src.agent.workers.transfer.models.types import (
 from apps.chat.src.agent.workers.transfer.pipeline_factory import build_transfer_pipeline
 from apps.chat.src.agent.workers.transfer.scheduling import SCHEDULING_ACTIONS, TransferSchedulingHandler
 from apps.chat.src.agent.workers.transfer.validation.service import ValidationService
-from shared.config.settings import settings
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
-from shared.policy.service import capability_block_message
-from shared.repositories.transaction_repository import (
+from banking.policy.service import capability_block_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.repositories.transaction_repository import (
     TransactionRepository,
 )
+from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

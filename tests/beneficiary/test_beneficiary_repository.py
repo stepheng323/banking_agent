@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 
 
 def _repo_with_rows(rows):

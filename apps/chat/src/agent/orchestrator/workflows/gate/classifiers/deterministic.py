@@ -3,10 +3,12 @@
 import re
 from dataclasses import dataclass
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from banking.presentation.i18n.message_keys import MessageKey
 from shared.branding import brand_name_aliases, legacy_brand_names, normalize_brand_name
-from shared.i18n.message_keys import MessageKey
-from shared.services.unsupported_capability_detection import detect_unsupported_capability
-from shared.services.unsupported_capability_presentation import unsupported_capability_params
 
 DETERMINISTIC_GREETING_EXACT = {
     "hi",

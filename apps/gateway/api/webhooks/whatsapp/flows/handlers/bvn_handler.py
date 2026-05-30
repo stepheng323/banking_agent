@@ -10,10 +10,10 @@ from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
     format_owner_error_response,
     verify_whatsapp_flow_session_owner,
 )
+from banking.accounts.onboarding.runtime import bvn_service
+from banking.accounts.onboarding.session import ServiceResult
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.database.enums import UserOnboardingStatusEnum
-from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.onboarding.runtime import bvn_service
-from shared.services.onboarding.session import ServiceResult
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)

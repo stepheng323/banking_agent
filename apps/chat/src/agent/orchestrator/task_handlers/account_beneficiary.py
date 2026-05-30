@@ -12,7 +12,7 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _maybe_user_message,
     _state_locale,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

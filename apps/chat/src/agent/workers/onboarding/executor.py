@@ -3,11 +3,11 @@
 from typing import Any
 
 from apps.chat.src.agent.workers.onboarding.service import OnboardingService
+from banking.identity.repositories.user_repository import UserRepository
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import ChannelMessage
 from shared.models.user import UserCreate
-from shared.repositories.unit_of_work import UnitOfWork
-from shared.repositories.user_repository import UserRepository
 
 
 class OnboardingExecutor:

@@ -8,7 +8,7 @@ from apps.chat.src.agent.workers.query.presentation.scope import (
     format_naira,
     period_label,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def build_aggregate_scope_reply(

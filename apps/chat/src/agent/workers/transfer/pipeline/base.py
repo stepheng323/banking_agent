@@ -11,7 +11,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferGates,
     TransferPayload,
 )
-from shared.formatters.transaction_copy_context import build_copy_context
+from banking.presentation.formatters.transaction_copy_context import build_copy_context
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import normalize_bank_account_number
 

@@ -5,12 +5,12 @@ from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_shortcut_locale,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import (
     _build_interrupt_context_details,
     _state_locale,
     logger,
 )
-from shared.services.task_planner import TaskPlanner
 from shared.types.planner import InterruptRouteDecision
 
 

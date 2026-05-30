@@ -2,6 +2,17 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
+    detect_unsupported_capability,
+    should_try_semantic_unsupported_capability,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedCapability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_label,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
+    validate_semantic_unsupported_capability,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import (
     _is_account_balance_request,
     _is_account_domain_request,
@@ -14,18 +25,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_airtime_request,
     _is_obvious_data_request,
 )
-from shared.i18n.renderer import render_message
-from shared.services.unsupported_capability_detection import (
-    detect_unsupported_capability,
-    should_try_semantic_unsupported_capability,
-)
-from shared.services.unsupported_capability_models import UnsupportedCapability
-from shared.services.unsupported_capability_presentation import (
-    unsupported_capability_label,
-)
-from shared.services.unsupported_capability_semantic import (
-    validate_semantic_unsupported_capability,
-)
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

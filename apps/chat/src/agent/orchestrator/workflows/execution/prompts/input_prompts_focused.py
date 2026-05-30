@@ -22,8 +22,8 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queu
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import (
     _recipient_prompt_label,
 )
-from shared.formatters.transaction_slot_prompts import format_transaction_slot_prompt
-from shared.formatters.transfer_input_prompts import format_single_transfer_recipient_prompt
+from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
+from banking.presentation.formatters.transfer_input_prompts import format_single_transfer_recipient_prompt
 
 
 def _build_focused_missing_field_updates(

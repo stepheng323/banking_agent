@@ -3,7 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
-from shared.services.onboarding.mandate_messages import build_pending_mandate_message
+from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

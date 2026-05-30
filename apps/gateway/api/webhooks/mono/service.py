@@ -5,22 +5,26 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from shared.cache.user_data import UserDataCache
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
-from shared.database.models import FundedTransfer, UserChannelIdentity
-from shared.formatters.transfer_notifications import format_transfer_success_message
-from shared.i18n.renderer import render_message
-from shared.queue.adapter import QueuePublisher
-from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.async_completion import (
+from banking.persistence.unit_of_work import UnitOfWork
+from banking.presentation.formatters.transfer_notifications import format_transfer_success_message
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.runtime.async_completion import (
     get_async_group_meta_for_transaction,
     record_group_leg_and_maybe_build_summary,
 )
-from shared.services.failure_categories import classify_failure_category
+from banking.transactions.runtime.failure_categories import classify_failure_category
+from banking.transactions.runtime.funding_status import (
+    queue_payout_if_all_confirmed,
+    queue_refunds_for_confirmed_funding_steps,
+)
+from shared.cache.user_data import UserDataCache
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
+from shared.database.models import FundedTransfer, UserChannelIdentity
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from shared.services.delivery_service import DeliveryService
+    from banking.messaging.delivery.service import DeliveryService
 
 logger = get_logger(__name__)
 
@@ -41,11 +45,21 @@ class MonoWebhookService:
         "events.mandates.debit.processing": FundingStepStatusEnum.PROCESSING.value,
         "events.mandates.debit.successful": FundingStepStatusEnum.CONFIRMED.value,
         "events.mandates.debit.failed": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_successful": FundingStepStatusEnum.CONFIRMED.value,
+        "direct_debit.payment_failed": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_abandoned": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_cancelled": FundingStepStatusEnum.FAILED.value,
+        "direct_debit.payment_canceled": FundingStepStatusEnum.FAILED.value,
     }
     TRANSFER_DEBIT_STATUS_MAP = {
         "events.mandates.debit.processing": TransactionStatusEnum.PROCESSING.value,
         "events.mandates.debit.successful": TransactionStatusEnum.SUCCESSFUL.value,
         "events.mandates.debit.failed": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_successful": TransactionStatusEnum.SUCCESSFUL.value,
+        "direct_debit.payment_failed": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_abandoned": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_cancelled": TransactionStatusEnum.FAILED.value,
+        "direct_debit.payment_canceled": TransactionStatusEnum.FAILED.value,
     }
 
     def __init__(
@@ -62,7 +76,7 @@ class MonoWebhookService:
         self.redis_client = redis_client
 
     def _get_delivery_service(self) -> "DeliveryService":
-        from shared.services.delivery_service import DeliveryService
+        from banking.messaging.delivery.service import DeliveryService
 
         if self.delivery_service is None:
             self.delivery_service = DeliveryService()
@@ -135,16 +149,30 @@ class MonoWebhookService:
             logger.debug("debit_event_ignored", event_name=event)
             return False
 
-        reference = data.get("reference_number") or data.get("reference")
-        debit_id = data.get("id")
+        debit_data = self._debit_payload(data)
+        reference = debit_data.get("reference_number") or debit_data.get("reference")
+        debit_id = debit_data.get("id")
         if not reference and not debit_id:
             logger.warning("mono_webhook_no_reference", event_name=event)
             return False
 
         async with UnitOfWork() as uow:
             if uow.funding_steps and reference:
-                step = await uow.funding_steps.get_by_provider_reference(reference)
+                get_step = getattr(
+                    uow.funding_steps,
+                    "get_by_provider_reference_for_update",
+                    uow.funding_steps.get_by_provider_reference,
+                )
+                step = await get_step(reference)
                 if step:
+                    if self._should_ignore_funding_transition(step.status, funding_status):
+                        logger.info(
+                            "funding_step_webhook_transition_ignored",
+                            step_id=str(step.id),
+                            current_status=step.status,
+                            incoming_status=funding_status,
+                        )
+                        return True
                     await uow.funding_steps.update_status(
                         step_id=str(step.id),
                         status=funding_status,
@@ -181,13 +209,13 @@ class MonoWebhookService:
 
             previous_status = str(tx.status or "").lower()
             tx.status = transfer_status
-            tx.provider_status = str(data.get("status") or tx.provider_status or "")
-            tx.provider_error_code = self._response_code(data)
+            tx.provider_status = str(debit_data.get("status") or tx.provider_status or "")
+            tx.provider_error_code = self._response_code(debit_data)
             tx.provider_response = data
             if debit_id:
                 tx.transaction_id = str(debit_id)
             if transfer_status == TransactionStatusEnum.FAILED.value:
-                tx.error_message = self._response_message(data) or tx.error_message
+                tx.error_message = self._response_message(debit_data) or tx.error_message
             if transfer_status in {TransactionStatusEnum.SUCCESSFUL.value, TransactionStatusEnum.FAILED.value}:
                 tx.completed_at = datetime.now(UTC).replace(tzinfo=None)
             uow.db.add(tx)
@@ -212,6 +240,14 @@ class MonoWebhookService:
         return True
 
     @staticmethod
+    def _debit_payload(data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize Mono direct-debit and DirectPay webhook payload shapes."""
+        nested = data.get("object")
+        if isinstance(nested, dict):
+            return {**data, **nested}
+        return data
+
+    @staticmethod
     def _response_code(data: dict[str, Any]) -> str | None:
         code = data.get("response_code")
         if code is None:
@@ -225,6 +261,24 @@ class MonoWebhookService:
             if value is not None:
                 return str(value)
         return None
+
+    @staticmethod
+    def _should_ignore_funding_transition(current_status: str, incoming_status: str) -> bool:
+        """Prevent stale webhook deliveries from downgrading money states."""
+        if current_status == incoming_status:
+            return True
+        if current_status == FundingStepStatusEnum.CONFIRMED.value:
+            return incoming_status != FundingStepStatusEnum.CONFIRMED.value
+        if current_status in {
+            FundingStepStatusEnum.REFUND_PENDING.value,
+            FundingStepStatusEnum.REFUND_PROCESSING.value,
+            FundingStepStatusEnum.REFUND_FAILED.value,
+            FundingStepStatusEnum.REFUNDED.value,
+        }:
+            return True
+        if current_status == FundingStepStatusEnum.FAILED.value:
+            return incoming_status == FundingStepStatusEnum.PROCESSING.value
+        return False
 
     async def _invalidate_cache(self, phone_number: str) -> None:
         """Invalidate user account cache."""
@@ -404,12 +458,25 @@ class MonoWebhookService:
         if not uow.funding_steps:
             return
 
+        if uow.funded_transfers:
+            get_transfer_for_update = getattr(uow.funded_transfers, "get_by_id_for_update", None)
+            if get_transfer_for_update:
+                locked_transfer = await get_transfer_for_update(str(transfer.id))
+                if not locked_transfer:
+                    logger.warning("funded_transfer_not_found_for_completion", transfer_id=str(transfer.id))
+                    return
+                transfer = locked_transfer
+
+        if transfer.status == FundedTransferStatusEnum.REFUNDING.value:
+            logger.info("refunding_transfer_received_funding_update", transfer_id=str(transfer.id))
+            await self._queue_refunds(uow, transfer)
+            return
+
         has_failed_step = await uow.funding_steps.any_failed(str(transfer.id))
         if has_failed_step:
             if transfer.status not in (
                 FundedTransferStatusEnum.REFUNDING.value,
                 FundedTransferStatusEnum.REFUNDED.value,
-                FundedTransferStatusEnum.FAILED.value,
             ):
                 await uow.funded_transfers.update_status(
                     str(transfer.id),
@@ -425,38 +492,32 @@ class MonoWebhookService:
             return
 
         if await uow.funding_steps.all_confirmed(str(transfer.id)):
-            await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
-            await uow.commit()
-            logger.info("all_debits_complete", transfer_id=str(transfer.id))
-            await self._queue_payout(transfer)
+            queued = await queue_payout_if_all_confirmed(uow=uow, transfer=transfer, publisher=self.publisher)
+            if queued:
+                await uow.commit()
 
     async def _queue_refunds(self, uow: UnitOfWork, transfer: FundedTransfer) -> None:
         """Queue refund jobs for any successful funding steps."""
-        successful_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
-
-        if not successful_steps:
-            logger.info("no_refunds_needed", transfer_id=str(transfer.id))
-            await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.FAILED.value)
-            await uow.commit()
-            return
-
-        for step in successful_steps:
-            try:
-                await self.publisher.publish(
-                    topic="refund.process",
-                    message={
-                        "funding_step_id": str(step.id),
-                        "funded_transfer_id": str(transfer.id),
-                        "amount": float(step.amount),
-                        "account_id": str(step.account_id),
-                        "original_reference": step.provider_reference,
-                    },
+        confirmed_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
+        if not confirmed_steps:
+            steps = await uow.funding_steps.get_by_transfer(str(transfer.id))
+            if any(
+                step.status
+                in (
+                    FundingStepStatusEnum.REFUND_PENDING.value,
+                    FundingStepStatusEnum.REFUND_PROCESSING.value,
                 )
-                await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUND_PENDING.value)
-                logger.info("refund_queued", step_id=str(step.id), amount=step.amount)
-            except Exception as e:
-                logger.error("refund_queue_failed", step_id=str(step.id), error=str(e))
+                for step in steps
+            ):
+                logger.info("refunds_already_pending", transfer_id=str(transfer.id))
+                return
 
+        await queue_refunds_for_confirmed_funding_steps(
+            uow=uow,
+            transfer=transfer,
+            publisher=self.publisher,
+            error_message="Funding debit failed",
+        )
         await uow.commit()
 
     async def _queue_payout(self, transfer: FundedTransfer) -> None:

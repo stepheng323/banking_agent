@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from shared.repositories.transaction_repository import normalize_db_timestamp
+from banking.transactions.repositories.transaction_repository import normalize_db_timestamp
 
 
 def test_normalize_db_timestamp_strips_timezone_to_utc_naive() -> None:

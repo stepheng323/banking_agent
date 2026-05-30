@@ -4,8 +4,8 @@ import hashlib
 import secrets
 from typing import Any
 
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,8 +28,8 @@ async def build_link_account_flow(
     session_manager: Any,
 ) -> dict[str, Any]:
     """Build account linking flow."""
+    from banking.accounts.onboarding.session import OnboardingStep
     from shared.config.settings import settings
-    from shared.services.onboarding.session import OnboardingStep
 
     flow_id = settings.whatsapp.account_linking_flow_id
     locale = LocaleManager.normalize(context.get("language")).value

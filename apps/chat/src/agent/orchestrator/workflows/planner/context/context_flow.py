@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_followup import (
     try_context_frame_followup_shortcut,
 )
@@ -22,7 +23,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_renderin
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
     get_or_build_turn_context_summary,
 )
-from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

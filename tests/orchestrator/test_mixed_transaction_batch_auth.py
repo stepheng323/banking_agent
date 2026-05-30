@@ -19,9 +19,9 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finali
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
-from shared.formatters.accounts import format_source_account_info_from_account_number
-from shared.i18n.bridge import render_cancelled_prompt
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.accounts import format_source_account_info_from_account_number
+from banking.presentation.i18n.bridge import render_cancelled_prompt
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,

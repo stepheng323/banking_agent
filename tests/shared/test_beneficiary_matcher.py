@@ -1,4 +1,4 @@
-from apps.chat.src.agent.workers.__shared__.beneficiary.matcher import BeneficiaryMatcher
+from banking.beneficiaries.services.matcher import BeneficiaryMatcher
 from shared.database.models import Beneficiary
 
 

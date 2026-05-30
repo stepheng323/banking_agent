@@ -5,12 +5,12 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.workers.onboarding import service as onboarding_service_module
+from banking.accounts.onboarding.account_add import AccountAddService
+from banking.accounts.onboarding.account_linking import AccountLinkingService
+from banking.accounts.onboarding.bvn_verification import BvnVerificationService
+from banking.accounts.onboarding.session import OnboardingStep
 from shared.cache.flow_session_manager import SessionReadResult
 from shared.clients.providers.mono.models import BankAccount, BvnLookupData, BvnMethod, Institution
-from shared.services.onboarding.account_add import AccountAddService
-from shared.services.onboarding.account_linking import AccountLinkingService
-from shared.services.onboarding.bvn_verification import BvnVerificationService
-from shared.services.onboarding.session import OnboardingStep
 
 
 class _SessionStub:
@@ -186,9 +186,9 @@ async def test_account_add_service_uses_async_uow_and_creates_account(monkeypatc
     async def _invalidate_accounts(_self: Any, phone_number: str) -> None:
         invalidated.append(phone_number)
 
-    monkeypatch.setattr("shared.services.onboarding.account_add.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.accounts.onboarding.account_add.UnitOfWork", lambda: uow)
     monkeypatch.setattr(
-        "shared.services.onboarding.account_add.UserDataCache.invalidate_accounts",
+        "banking.accounts.onboarding.account_add.UserDataCache.invalidate_accounts",
         _invalidate_accounts,
     )
 
@@ -217,7 +217,7 @@ async def test_bvn_verification_rejects_missing_preseeded_phone_without_calling_
         raise AssertionError("BVN lookup should not run without a session-bound phone number")
 
     monkeypatch.setattr(
-        "shared.services.onboarding.bvn_verification.mono_client.initiate_bvn_lookup",
+        "banking.accounts.onboarding.bvn_verification.mono_client.initiate_bvn_lookup",
         _unexpected_lookup,
     )
 
@@ -242,7 +242,7 @@ async def test_bvn_verification_uses_session_phone_not_token_suffix(
             methods=[BvnMethod(method="sms", hint="081***1023")],
         )
 
-    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.initiate_bvn_lookup", _lookup)
+    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.initiate_bvn_lookup", _lookup)
 
     result = await service.initiate_bvn_verification("onboarding-random-suffix-9999999999", "12345678901")
 
@@ -275,8 +275,8 @@ async def test_send_otp_logs_redacted_session_fields(monkeypatch: pytest.MonkeyP
     async def _verify_bvn(session_id: str, method: str) -> None:
         verify_calls.append((session_id, method))
 
-    monkeypatch.setattr("shared.services.onboarding.bvn_verification.logger", logger)
-    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.verify_bvn", _verify_bvn)
+    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.logger", logger)
+    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.verify_bvn", _verify_bvn)
 
     result = await service.send_otp("flow-token-secret", "sms")
 
@@ -395,8 +395,8 @@ async def test_verify_otp_filters_out_existing_linked_accounts(monkeypatch: pyte
             ),
         ]
 
-    monkeypatch.setattr("shared.services.onboarding.bvn_verification.UnitOfWork", lambda: uow)
-    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
+    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
 
     result = await service.verify_otp("link-token", "123456")
 
@@ -435,8 +435,8 @@ async def test_verify_otp_returns_error_when_all_accounts_are_already_linked(
             )
         ]
 
-    monkeypatch.setattr("shared.services.onboarding.bvn_verification.UnitOfWork", lambda: uow)
-    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
+    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
 
     result = await service.verify_otp("link-token", "123456")
 

@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
+from banking.transactions.runtime.executors.airtime import AirtimeExecutor
 from shared.database.enums import TransactionStatusEnum
-from shared.services.async_completion import record_group_leg_and_maybe_build_summary
-from shared.transaction_runtime.executors.airtime import AirtimeExecutor
 
 
 class _RedisStub:

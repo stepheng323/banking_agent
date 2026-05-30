@@ -20,17 +20,17 @@ from apps.chat.src.agent.workers.__shared__.scheduling import schedule_recurrenc
 from apps.chat.src.agent.workers.transfer.authorization.pin_token import persist_schedule_pin_token
 from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferPipeline, TransferStep
-from shared.database.enums import ScheduledInstructionStatusEnum
-from shared.formatters.currency import format_naira
-from shared.i18n.renderer import render_message
-from shared.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
-from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.scheduling.recurrence import (
+from banking.persistence.unit_of_work import UnitOfWork
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
+from banking.scheduling.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
+from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,
     format_lagos_schedule_datetime,
     today_lagos,
 )
+from shared.database.enums import ScheduledInstructionStatusEnum
 
 SCHEDULING_ACTIONS = {
     "schedule_transfer",

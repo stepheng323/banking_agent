@@ -20,8 +20,8 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage 
     _build_direct_schedule_read_updates,
     _semantic_schedule_response_mode,
 )
-from shared.i18n.bridge import render_locale_switched
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.bridge import render_locale_switched
+from banking.presentation.i18n.locale import LocaleManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

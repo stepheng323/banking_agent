@@ -13,7 +13,15 @@ class TransactionWorkerLambdaHandler(BaseSQSHandler):
     """Routes transaction-domain jobs to the correct consumer based on queue contract."""
 
     async def process_record(self, payload: dict, deps: Any) -> None:
-        transaction_consumer, funding_consumer, payout_consumer, refund_consumer = deps
+        (
+            transaction_consumer,
+            funding_consumer,
+            payout_consumer,
+            payout_reconciliation_consumer,
+            refund_consumer,
+            funding_reconciliation_consumer,
+            refund_reconciliation_consumer,
+        ) = deps
 
         context = self.get_active_record_context()
         domain = context.get("domain")
@@ -24,10 +32,16 @@ class TransactionWorkerLambdaHandler(BaseSQSHandler):
             await transaction_consumer.process_transaction(payload)
         elif domain == "funding":
             await funding_consumer.process_job(payload)
+        elif domain == "funding_reconcile":
+            await funding_reconciliation_consumer.process_job(payload)
         elif domain == "payout":
             await payout_consumer.process_job(payload)
+        elif domain == "payout_reconcile":
+            await payout_reconciliation_consumer.process_job(payload)
         elif domain == "refund":
             await refund_consumer.process_job(payload)
+        elif domain == "refund_reconcile":
+            await refund_reconciliation_consumer.process_job(payload)
         else:
             raise ValueError(f"transaction_worker_unknown_route domain={domain} queue_name={queue_name}")
 
@@ -48,4 +62,3 @@ _handler = TransactionWorkerLambdaHandler(
 
 def handler(event: dict, context: Any) -> dict:
     return _handler.handle(event, context)
-

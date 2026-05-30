@@ -1,13 +1,15 @@
 import pytest
 
-from shared.services.unsupported_capability_detection import detect_unsupported_capability
-from shared.services.unsupported_capability_models import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import detect_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapabilitySemanticOutput,
 )
-from shared.services.unsupported_capability_presentation import unsupported_capability_params
-from shared.services.unsupported_capability_registry import get_unsupported_capability
-from shared.services.unsupported_capability_semantic import (
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
     classify_unsupported_boundary_turn_semantic,
     classify_unsupported_capability_semantic,
     unsupported_boundary_turn_messages,

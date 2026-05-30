@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.workers.transfer.models.types import TransferGates, TransferPayload
 from apps.chat.src.agent.workers.transfer.pipeline_factory import build_transfer_pipeline
 from apps.chat.src.agent.workers.transfer.scheduling import TransferSchedulingHandler
-from shared.services.scheduling.recurrence import (
+from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,
     format_lagos_schedule_datetime,

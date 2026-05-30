@@ -7,9 +7,12 @@ TopicType = Literal[
     "message.received",
     "transaction.execute",
     "funding.process",
+    "funding.reconcile",
     "payout.process",
+    "payout.reconcile",
     "flow_event.process",
     "refund.process",
+    "refund.reconcile",
     "receipt.process",
     "notification.send",
 ]
@@ -17,8 +20,11 @@ TopicType = Literal[
 DomainType = Literal[
     "transaction",
     "funding",
+    "funding_reconcile",
     "payout",
+    "payout_reconcile",
     "refund",
+    "refund_reconcile",
     "receipt",
     "notification",
 ]
@@ -56,11 +62,25 @@ QUEUE_CONTRACTS: tuple[QueueContract, ...] = (
         redis_stream_name="async:funding",
     ),
     QueueContract(
+        logical_topic="funding.reconcile",
+        queue_name="banking:funding_reconciliation",
+        domain="funding_reconcile",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:funding_reconciliation",
+    ),
+    QueueContract(
         logical_topic="payout.process",
         queue_name="banking:payouts",
         domain="payout",
         sqs_queue_name="banking-transactions",
         redis_stream_name="async:payouts",
+    ),
+    QueueContract(
+        logical_topic="payout.reconcile",
+        queue_name="banking:payout_reconciliation",
+        domain="payout_reconcile",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:payout_reconciliation",
     ),
     QueueContract(
         logical_topic="flow_event.process",
@@ -73,6 +93,13 @@ QUEUE_CONTRACTS: tuple[QueueContract, ...] = (
         domain="refund",
         sqs_queue_name="banking-transactions",
         redis_stream_name="async:refunds",
+    ),
+    QueueContract(
+        logical_topic="refund.reconcile",
+        queue_name="banking:refund_reconciliation",
+        domain="refund_reconcile",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:refund_reconciliation",
     ),
     QueueContract(
         logical_topic="receipt.process",

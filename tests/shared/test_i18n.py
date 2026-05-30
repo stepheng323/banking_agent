@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from shared.i18n.locale import LocaleManager
-from shared.i18n.message_keys import ALL_MESSAGE_KEYS
-from shared.i18n.models import (
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.message_keys import ALL_MESSAGE_KEYS
+from banking.presentation.i18n.models import (
     LanguageDetectionSignal,
     LocaleCode,
 )
-from shared.i18n.renderer import (
+from banking.presentation.i18n.renderer import (
     _flatten_string_leaves,
     _read_catalog,
     render_message,

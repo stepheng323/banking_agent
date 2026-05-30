@@ -9,8 +9,8 @@ from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimePayload,
 )
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
-from shared.i18n.personality import PersonalityContext, render_personalized_message
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
+from banking.presentation.i18n.renderer import render_message
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -61,8 +61,8 @@ class ExecutionStep(AirtimeStep):
             transaction_id = None
             key = data.idempotency_key
 
+            from banking.persistence.unit_of_work import UnitOfWork
             from shared.database.enums import TransactionStatusEnum
-            from shared.repositories.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
                 try:

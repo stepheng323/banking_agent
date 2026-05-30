@@ -10,8 +10,8 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
+from banking.presentation.i18n.renderer import render_message
 from shared.config.settings import settings
-from shared.i18n.renderer import render_message
 from shared.types.planner import PlannerOutput
 
 

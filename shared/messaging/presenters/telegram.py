@@ -5,6 +5,7 @@ import base64
 import html
 from typing import Any, cast
 
+from banking.persistence.unit_of_work import UnitOfWork
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.clients.telegram.formatting import format_telegram_html
 from shared.config.settings import settings
@@ -19,7 +20,6 @@ from shared.messaging.intents import (
     UiIntent,
 )
 from shared.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
-from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

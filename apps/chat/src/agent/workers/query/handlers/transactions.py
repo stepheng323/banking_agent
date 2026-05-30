@@ -17,8 +17,8 @@ from apps.chat.src.agent.workers.query.services.fetching.fetch import (
     fetch_transactions_base,
     parse_date,
 )
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 TRANSACTION_CACHE_MAX_AGE_SECONDS = 90.0

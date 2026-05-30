@@ -1,28 +1,34 @@
 """Dependency loader for transaction worker runtimes."""
 
-from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
+from banking.transactions.repositories.transaction_repository import TransactionRepository
+from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
+from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer
+from banking.transactions.runtime.consumers.payout_consumer import PayoutConsumer
+from banking.transactions.runtime.consumers.payout_reconciliation_consumer import PayoutReconciliationConsumer
+from banking.transactions.runtime.consumers.refund_consumer import RefundConsumer
+from banking.transactions.runtime.consumers.refund_reconciliation_consumer import RefundReconciliationConsumer
+from banking.transactions.runtime.consumers.transaction_consumer import TransactionConsumer
+from banking.transactions.runtime.executors.airtime import AirtimeExecutor
+from banking.transactions.runtime.executors.data import DataExecutor
+from banking.transactions.runtime.executors.payout import PayoutExecutor
+from banking.transactions.runtime.executors.transfer import TransferExecutor
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.database.connection import get_db_session
 from shared.queue.factory import QueuePublisherFactory
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.transaction_repository import TransactionRepository
-from shared.transaction_runtime.consumers.funding_consumer import FundingConsumer
-from shared.transaction_runtime.consumers.payout_consumer import PayoutConsumer
-from shared.transaction_runtime.consumers.refund_consumer import RefundConsumer
-from shared.transaction_runtime.consumers.transaction_consumer import TransactionConsumer
-from shared.transaction_runtime.executors.airtime import AirtimeExecutor
-from shared.transaction_runtime.executors.data import DataExecutor
-from shared.transaction_runtime.executors.payout import PayoutExecutor
-from shared.transaction_runtime.executors.transfer import TransferExecutor
 
 
 def setup_transaction_worker_consumers() -> tuple[
     TransactionConsumer,
     FundingConsumer,
     PayoutConsumer,
+    PayoutReconciliationConsumer,
     RefundConsumer,
+    FundingReconciliationConsumer,
+    RefundReconciliationConsumer,
 ]:
     """Setup async transaction-domain consumers owned by transaction worker."""
     queue_publisher = QueuePublisherFactory.get_async_publisher()
@@ -74,14 +80,30 @@ def setup_transaction_worker_consumers() -> tuple[
         publisher=queue_publisher,
         direct_debit_provider=direct_debit_provider,
     )
+    funding_reconciliation_consumer = FundingReconciliationConsumer(
+        direct_debit_provider=direct_debit_provider,
+        publisher=queue_publisher,
+    )
     payout_consumer = PayoutConsumer(
         payout_executor=PayoutExecutor(payout_provider=payout_provider, resolver_provider=payout_resolver),
+        publisher=queue_publisher,
+    )
+    payout_reconciliation_consumer = PayoutReconciliationConsumer(
+        payout_provider=payout_provider,
+        publisher=queue_publisher,
     )
     refund_consumer = RefundConsumer(direct_debit_provider=direct_debit_provider)
+    refund_reconciliation_consumer = RefundReconciliationConsumer(
+        direct_debit_provider=direct_debit_provider,
+        publisher=queue_publisher,
+    )
 
     return (
         transaction_consumer,
         funding_consumer,
         payout_consumer,
+        payout_reconciliation_consumer,
         refund_consumer,
+        funding_reconciliation_consumer,
+        refund_reconciliation_consumer,
     )

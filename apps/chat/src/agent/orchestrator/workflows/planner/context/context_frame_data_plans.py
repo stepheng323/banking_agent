@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame
-from shared.formatters.currency import format_naira_compact
+from banking.presentation.formatters.currency import format_naira_compact
 
 
 def is_data_plan_entity(entity: ContextEntity) -> bool:

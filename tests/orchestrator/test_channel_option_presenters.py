@@ -2,8 +2,8 @@ from typing import Any, cast
 
 import pytest
 
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
-from shared.i18n.renderer import render_message
 from shared.messaging.intents import Say, ShowOptions
 from shared.messaging.presenters.base import PresentationContext
 from shared.messaging.presenters.telegram import TelegramPresenter

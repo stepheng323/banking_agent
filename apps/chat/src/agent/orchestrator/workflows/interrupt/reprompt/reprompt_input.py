@@ -4,9 +4,9 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _state_locale
-from shared.formatters.recipient_display import format_recipient_display_label
-from shared.formatters.recipient_prompt_names import sanitize_recipient_display_name
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.recipient_display import format_recipient_display_label
+from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
+from banking.presentation.i18n.renderer import render_message
 
 
 def _build_compact_transfer_input_reprompt(state: OrchestratorState, interrupt: Any) -> str | None:

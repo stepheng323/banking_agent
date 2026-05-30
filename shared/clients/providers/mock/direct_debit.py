@@ -180,13 +180,44 @@ class MockDirectDebitProvider(DirectDebitProvider):
             provider_response={"id": debit_id, "status": DebitStatus.FAILED.value, "response_code": "404"},
         )
 
-    async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
+    async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
         """Simulate debit reversal."""
-        logger.info("mock_reverse_debit", debit_id=debit_id, reason=reason)
+        logger.info("mock_reverse_debit", reference=debit_reference, reason=reason)
+        debit = self._debits.get(debit_reference)
+        debit_id = debit.get("id") if debit else debit_reference
+        if debit is not None:
+            debit["status"] = DebitStatus.REVERSED.value
+            debit["updated_at"] = datetime.now(UTC).isoformat()
         return DebitResult(
             success=True,
             status=DebitStatus.REVERSED,
-            debit_id=debit_id,
+            debit_id=str(debit_id),
+            reference=debit_reference,
+        )
+
+    async def get_refund_status(self, debit_reference: str, refund_id: str | None = None) -> DebitResult:
+        """Simulate refund status lookup."""
+        del refund_id
+        debit = self._debits.get(debit_reference)
+        if debit is None:
+            return DebitResult(
+                success=False,
+                status=DebitStatus.FAILED,
+                reference=debit_reference,
+                error_message="Mock debit not found",
+            )
+        if debit.get("status") == DebitStatus.REVERSED.value:
+            return DebitResult(
+                success=True,
+                status=DebitStatus.REVERSED,
+                debit_id=str(debit.get("id")),
+                reference=debit_reference,
+            )
+        return DebitResult(
+            success=True,
+            status=DebitStatus.PENDING,
+            debit_id=str(debit.get("id")),
+            reference=debit_reference,
         )
 
     async def cancel_mandate(self, mandate_id: str) -> bool:

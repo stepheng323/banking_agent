@@ -21,9 +21,9 @@ from apps.chat.src.agent.workers.query.services.fetching.bank_transaction_mirror
     load_mirrored_transactions,
 )
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.config.settings import settings
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

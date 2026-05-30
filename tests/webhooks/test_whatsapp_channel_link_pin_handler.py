@@ -6,7 +6,7 @@ import pytest
 from apps.gateway.api.webhooks.whatsapp.flows import session_owner as session_owner_module
 from apps.gateway.api.webhooks.whatsapp.flows.handlers import channel_link_pin_handler as handler_module
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.channel_link_pin_handler import handle_channel_link_pin
-from shared.services.channel_link_authorization import ChannelLinkPinResult
+from banking.identity.channel_linking.authorization import ChannelLinkPinResult
 
 
 class _TelegramClientStub:

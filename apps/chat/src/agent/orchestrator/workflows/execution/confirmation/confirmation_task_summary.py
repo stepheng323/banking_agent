@@ -2,12 +2,12 @@
 
 from typing import Any
 
-from shared.formatters.confirmation import (
+from banking.presentation.formatters.confirmation import (
     append_source_account_info,
     build_confirmation_summary,
     build_source_account_info,
 )
-from shared.formatters.transaction_intent_lines import format_intent_line
+from banking.presentation.formatters.transaction_intent_lines import format_intent_line
 
 
 def _strip_batch_name_mismatch_warning(summary: str, task_payload: dict[str, Any]) -> str:

@@ -1,13 +1,13 @@
 import secrets
 
+from banking.accounts.onboarding.runtime import session_manager as default_session_manager
+from banking.accounts.onboarding.session import OnboardingStep
+from banking.presentation.i18n.renderer import render_message
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.config.settings import settings
-from shared.i18n.renderer import render_message
 from shared.messaging.intents import ShowFlow
 from shared.messaging.outbox import enqueue_outbox_intents
 from shared.queue.adapter import QueuePublisher
-from shared.services.onboarding.runtime import session_manager as default_session_manager
-from shared.services.onboarding.session import OnboardingStep
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -10,11 +10,14 @@ from apps.gateway.api.webhooks.telegram import router as router_module
 from apps.gateway.api.webhooks.telegram.onboarding import BvnInput, LinkingMethodInput
 from apps.gateway.api.webhooks.telegram.router import PinSubmitInput, TelegramBootstrapInput
 from apps.gateway.api.webhooks.telegram.session import token_fingerprint
+from banking.identity.channel_linking import telegram_miniapp_bootstrap as bootstrap_module
+from banking.identity.channel_linking.authorization import ChannelLinkPinResult
+from banking.identity.channel_linking.telegram_miniapp_bootstrap import (
+    TelegramMiniAppBootstrap,
+    consume_telegram_miniapp_bootstrap,
+)
+from banking.security.authorization import AuthorizationResult
 from shared.cache.flow_session_manager import SessionReadResult
-from shared.services import telegram_miniapp_bootstrap as bootstrap_module
-from shared.services.auth.authorization import AuthorizationResult
-from shared.services.channel_link_authorization import ChannelLinkPinResult
-from shared.services.telegram_miniapp_bootstrap import TelegramMiniAppBootstrap, consume_telegram_miniapp_bootstrap
 
 
 class _RequestStub:
@@ -261,7 +264,7 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
             assert result.verified is True
 
     monkeypatch.setattr("shared.cache.redis_client.RedisClient.get_client", lambda: _RedisStub())
-    monkeypatch.setattr("shared.services.auth.authorization.AuthorizationService", _AuthorizationServiceStub)
+    monkeypatch.setattr("banking.security.authorization.AuthorizationService", _AuthorizationServiceStub)
     monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: publisher)
 
     result = await router_module.telegram_pin_submit(
@@ -583,7 +586,7 @@ def test_telegram_pin_surfaces_require_six_digit_transaction_pin() -> None:
     root = Path(__file__).resolve().parents[2]
     onboarding = (root / "apps/gateway/static/telegram/onboarding.html").read_text()
     pin_entry = (root / "apps/gateway/static/telegram/pin_entry.html").read_text()
-    whatsapp_flow = (root / "config/whatsapp_pin_flow.json").read_text()
+    whatsapp_flow = (root / "apps/gateway/api/webhooks/whatsapp/flows/specs/whatsapp_pin_flow.json").read_text()
 
     assert 'placeholder="Transaction PIN (6 digits)"' in onboarding
     assert "const PIN_LENGTH = 6" in onboarding

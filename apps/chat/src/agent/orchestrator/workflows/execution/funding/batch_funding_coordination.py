@@ -10,8 +10,8 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
 )
-from shared.i18n.renderer import render_message
-from shared.services.funding.coordinator import BatchFundingCoordinator
+from banking.presentation.i18n.renderer import render_message
+from banking.transfers.funding.coordinator import BatchFundingCoordinator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -1,7 +1,7 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
-from shared.services.funding.batch_models import SourceAffinity, TransferDemand
+from banking.transfers.funding.batch_models import SourceAffinity, TransferDemand
 
 
 def _build_transfer_demand(task_id: str, task_payload: dict[str, Any]) -> TransferDemand:

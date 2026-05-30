@@ -12,8 +12,8 @@ from apps.chat.src.agent.workers.faq.nodes.retrieve import create_retrieve_node
 from apps.chat.src.agent.workers.faq.nodes.validate import validate_intent_node
 from apps.chat.src.agent.workers.faq.retrieval import hybrid as hybrid_module
 from apps.chat.src.agent.workers.faq.retrieval.hybrid import HybridRetriever
+from banking.presentation.i18n.renderer import render_message
 from shared.config.settings import settings
-from shared.i18n.renderer import render_message
 
 
 @pytest.mark.asyncio

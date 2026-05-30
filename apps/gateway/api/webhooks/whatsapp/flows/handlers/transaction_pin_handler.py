@@ -1,7 +1,7 @@
 """Unified PIN handler for all transaction types (transfer, airtime, data).
 
 This handler:
-1. Validates and verifies PIN using shared.services.auth
+1. Validates and verifies PIN using banking.security.authorization
 2. Publishes a FlowEvent to the queue for core to handle
 3. Returns success/error response to WhatsApp Flow
 """
@@ -21,12 +21,12 @@ from apps.gateway.api.webhooks.whatsapp.flows.session_owner import (
     has_required_provider_identity,
     whatsapp_identity_matches,
 )
+from banking.security.authorization import AuthorizationService
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
-from shared.services.auth.authorization import AuthorizationService
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -155,7 +155,7 @@ async def handle_transaction_pin(
             if publisher is None:
                 publisher = QueuePublisherFactory.get_publisher()
 
-            from shared.services.delivery_service import DeliveryService
+            from banking.messaging.delivery.service import DeliveryService
 
             delivery_service = DeliveryService()
             asyncio.create_task(

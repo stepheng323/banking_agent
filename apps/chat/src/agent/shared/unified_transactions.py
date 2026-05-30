@@ -491,7 +491,7 @@ class UnifiedTransactionService:
     async def _load_local_rows(self, user_id: str, *, start_date: date, end_date: date, limit: int) -> list[Any]:
         transaction_repo = self.transaction_repo
         if transaction_repo is None:
-            from shared.repositories.unit_of_work import UnitOfWork
+            from banking.persistence.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
                 if uow.transactions is None:
@@ -524,7 +524,7 @@ class UnifiedTransactionService:
         if bank_transaction_repo is None or not hasattr(bank_transaction_repo, "list_by_user_window"):
             if not self.load_bank_rows_from_uow:
                 return []
-            from shared.repositories.unit_of_work import UnitOfWork
+            from banking.persistence.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
                 if uow.bank_transactions is None:

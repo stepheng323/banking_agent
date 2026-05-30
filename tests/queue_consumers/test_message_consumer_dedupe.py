@@ -14,10 +14,15 @@ from apps.chat.src.queue_consumers import message_consumer as message_consumer_m
 from apps.chat.src.queue_consumers import message_inbound as message_inbound_module
 from apps.chat.src.queue_consumers import pin_resume as pin_resume_module
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
+from banking.presentation.i18n.renderer import render_message
+from banking.receipts.choice import (
+    RECEIPT_IMAGE_ACTION_ID,
+    build_receipt_choice_actionable_payload,
+)
+from banking.security.authorization import AuthorizationResult
 from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
-from shared.i18n.renderer import render_message
 from shared.messaging.intents import Say, ShowFlow
 from shared.messaging.prompt_suppression import (
     PENDING_INPUT_PROMPT_METADATA_KEY,
@@ -26,11 +31,6 @@ from shared.messaging.prompt_suppression import (
     latest_inbound_delivery_target_key,
 )
 from shared.models.messages import ChannelMessage, MessageType
-from shared.receipts.choice import (
-    RECEIPT_IMAGE_ACTION_ID,
-    build_receipt_choice_actionable_payload,
-)
-from shared.services.auth.authorization import AuthorizationResult
 
 
 class _RateLimiterAllow:

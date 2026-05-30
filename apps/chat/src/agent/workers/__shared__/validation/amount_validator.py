@@ -6,7 +6,7 @@ to prevent negative, zero, or out-of-bounds values from being processed.
 
 from dataclasses import dataclass
 
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 @dataclass(frozen=True)

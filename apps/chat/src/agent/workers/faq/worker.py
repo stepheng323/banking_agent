@@ -14,9 +14,9 @@ from apps.chat.src.agent.workers.faq.nodes.synthesize import create_synthesize_n
 from apps.chat.src.agent.workers.faq.nodes.validate import validate_intent_node
 from apps.chat.src.agent.workers.faq.retrieval.embeddings import EmbeddingService
 from apps.chat.src.agent.workers.faq.state import FAQState
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
-from shared.policy.service import capability_block_message
+from banking.policy.service import capability_block_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -9,8 +9,8 @@ from apps.chat.src.agent.workers.query.models.domain import QueryResult, QueryRe
 from apps.chat.src.agent.workers.query.presentation.formatting import format_query_date, parse_summary_parts
 from apps.chat.src.agent.workers.query.presentation.scope import build_transaction_heading
 from apps.chat.src.agent.workers.query.presentation.surface_builder import result_query_contract
-from shared.formatters.query_transaction_copy import format_transaction_list_item
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.query_transaction_copy import format_transaction_list_item
+from banking.presentation.i18n.renderer import render_message
 
 
 def build_transaction_list_presentation_plan(

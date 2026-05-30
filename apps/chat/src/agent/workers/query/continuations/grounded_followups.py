@@ -5,7 +5,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.workers.query.grounding.frames import build_grounded_query_contract
 from apps.chat.src.agent.workers.query.grounding.memory import build_memory_answer
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 def resolve_grounded_followup(

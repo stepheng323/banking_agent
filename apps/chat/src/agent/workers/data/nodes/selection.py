@@ -9,9 +9,9 @@ from apps.chat.src.agent.workers.__shared__.source_account_guard import (
     is_account_ready,
 )
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
-from shared.formatters.accounts import format_accounts_list
-from shared.i18n.renderer import render_message
+from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.presentation.formatters.accounts import format_accounts_list
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +33,7 @@ class SourceSelectionStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         del gates, worker_context
         locale = context.language
         linked_accounts = context.all_accounts or context.accounts
@@ -55,7 +55,7 @@ class SourceSelectionStep(PipelineStep):
                             update_message=build_nonready_source_account_message(linked_account, locale),
                             details={"options": _build_account_options(context.accounts)},
                         )
-            return None
+            return continue_pipeline(payload)
 
         accounts = context.accounts
         if not accounts:
@@ -72,7 +72,7 @@ class SourceSelectionStep(PipelineStep):
                 payload.source_account_name = acc.get("account_name")
                 payload.source_account_number = acc.get("account_number")
                 payload.source_account_index = None
-                return None
+                return continue_pipeline(payload)
             linked_account = find_account_by_index(linked_accounts, payload.source_account_index)
             if linked_account and not is_account_ready(linked_account):
                 accounts_list = format_accounts_list(accounts, locale=locale)
@@ -92,7 +92,7 @@ class SourceSelectionStep(PipelineStep):
                 payload.source_bank_name = acc.get("bank_name")
                 payload.source_account_name = acc.get("account_name")
                 payload.source_account_number = acc.get("account_number")
-                return None
+                return continue_pipeline(payload)
             else:
                 linked_account = find_account_by_bank_name(linked_accounts, payload.source_bank_name)
                 update_msg = (
@@ -120,7 +120,7 @@ class SourceSelectionStep(PipelineStep):
             payload.source_bank_name = acc.get("bank_name")
             payload.source_account_name = acc.get("account_name")
             payload.source_account_number = acc.get("account_number")
-            return None
+            return continue_pipeline(payload)
 
         default = next((a for a in accounts if a.get("is_default")), None)
         if default:
@@ -128,7 +128,7 @@ class SourceSelectionStep(PipelineStep):
             payload.source_bank_name = default.get("bank_name")
             payload.source_account_name = default.get("account_name")
             payload.source_account_number = default.get("account_number")
-            return None
+            return continue_pipeline(payload)
 
         accounts_list = format_accounts_list(accounts, locale=locale)
         return TransactionResult(

@@ -14,13 +14,13 @@ from apps.chat.src.agent.workers.data.worker import DataWorker
 from apps.chat.src.agent.workers.faq.worker import FAQWorker
 from apps.chat.src.agent.workers.support.worker import SupportWorker
 from apps.chat.src.agent.workers.transfer.worker import TransferWorker
-from shared.policy.adapters import is_capability_supported
-from shared.policy.loader import get_cached_policy, load_policy
-from shared.policy.models import CapabilityPolicy
-from shared.policy.service import capability_block_message
+from banking.policy.adapters import is_capability_supported
+from banking.policy.loader import get_cached_policy, load_policy
+from banking.policy.models import CapabilityPolicy
+from banking.policy.service import capability_block_message
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
-CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 DATA_DISABLED_MESSAGE = (
     "Data purchase is temporarily unavailable. I can still help with transfers, airtime, balances, and transaction "
     "queries."

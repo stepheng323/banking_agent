@@ -1,4 +1,4 @@
-from shared.services.conversation_grounding import (
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import (
     build_conversation_grounding,
     conversation_display_name,
     conversation_topic_for_response,

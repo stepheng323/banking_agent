@@ -5,6 +5,7 @@ from typing import Any, cast
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_replay_context import (
     _build_quoted_replay_context,
     _build_quoted_replay_context_with_payload,
@@ -17,8 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_rep
     _build_quoted_replay_execution_updates,
 )
 from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
-from shared.i18n.renderer import render_message
-from shared.services.task_planner import TaskPlanner
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger, log_fingerprint

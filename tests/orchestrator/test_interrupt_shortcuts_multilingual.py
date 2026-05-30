@@ -6,7 +6,7 @@ from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_interrupt_shortcut,
     resolve_shortcut_locale,
 )
-from shared.i18n.models import LocaleCode
+from banking.presentation.i18n.models import LocaleCode
 
 
 @pytest.mark.parametrize(

@@ -29,10 +29,10 @@ from apps.chat.src.agent.workers.query.session import (
     is_query_session_stale,
 )
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
+from banking.presentation.formatters.transaction_copy_context import build_copy_context
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.formatters.transaction_copy_context import build_copy_context
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

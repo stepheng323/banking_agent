@@ -6,7 +6,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
+from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
 from apps.chat.src.agent.workers.data.plans.catalog import (
     MAX_PLAN_OPTIONS,
     _apply_early_target_context,
@@ -34,7 +34,7 @@ from apps.chat.src.agent.workers.data.plans.catalog import (
     _selected_candidate_from_reply,
     _top_plan_is_decisive,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 class DataPlanSelectionStep(PipelineStep):
@@ -45,7 +45,7 @@ class DataPlanSelectionStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         del gates
         locale = context.language
         _apply_early_target_context(payload, context)
@@ -56,9 +56,9 @@ class DataPlanSelectionStep(PipelineStep):
             _apply_plan_payload(payload, selected)
             _apply_early_target_context(payload, context)
             if payload.target_phone:
-                return None
+                return continue_pipeline(payload)
             if _has_named_recipient(payload):
-                return None
+                return continue_pipeline(payload)
             validity_days = selected.get("validity_days")
             validity = (
                 render_message("data.format.validity_days", locale, {"days": validity_days})
@@ -82,7 +82,7 @@ class DataPlanSelectionStep(PipelineStep):
             )
 
         if payload.plan_code and payload.plan_name and payload.amount and payload.target_phone:
-            return None
+            return continue_pipeline(payload)
         if not _has_plan_preference_signal(payload, usage_intent):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
@@ -91,7 +91,7 @@ class DataPlanSelectionStep(PipelineStep):
                 patch=payload.model_dump(exclude_none=True),
             )
         if not payload.network:
-            return None
+            return continue_pipeline(payload)
 
         plans = await _plans_for_payload(payload, worker_context)
         if not plans:
@@ -304,7 +304,7 @@ class DataPlanQueryStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         del gates
         locale = context.language
         if not payload.network:

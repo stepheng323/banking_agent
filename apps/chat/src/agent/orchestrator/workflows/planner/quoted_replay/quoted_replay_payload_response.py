@@ -1,7 +1,7 @@
 """Response helpers for quoted replay shortcuts."""
 
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_replay_scope import _scope_requested
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
 

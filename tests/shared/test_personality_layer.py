@@ -2,23 +2,23 @@ from __future__ import annotations
 
 import pytest
 
-from shared.formatters.airtime import format_airtime_summary
-from shared.formatters.data import format_data_summary
-from shared.formatters.transfer_notifications import (
+from banking.presentation.formatters.airtime import format_airtime_summary
+from banking.presentation.formatters.data import format_data_summary
+from banking.presentation.formatters.transfer_notifications import (
     format_transfer_pending_message,
     format_transfer_success_message,
 )
-from shared.formatters.transfer_summary import (
+from banking.presentation.formatters.transfer_summary import (
     format_transfer_summary,
 )
-from shared.i18n.models import LocaleCode
-from shared.i18n.personality import (
+from banking.presentation.i18n.models import LocaleCode
+from banking.presentation.i18n.personality import (
     PersonalityContext,
     render_personalized_message,
     select_tone_variant,
     transfer_personality_context_from_payload,
 )
-from shared.i18n.renderer import _get_by_dotted_key, _read_catalog, render_message
+from banking.presentation.i18n.renderer import _get_by_dotted_key, _read_catalog, render_message
 
 
 @pytest.mark.parametrize(

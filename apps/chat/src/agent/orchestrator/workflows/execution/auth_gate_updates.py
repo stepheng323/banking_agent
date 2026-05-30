@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, Tas
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import gate_task_ids
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_auth import (
     _auth_header_for_tasks,
 )
@@ -14,9 +15,8 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
-    _gate_task_ids,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -29,8 +29,9 @@ def _build_auth_gate_updates(
     agg: ExecutionAggregation,
     locale: str,
     updates: dict[str, Any],
+    task_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    auth_task_ids = _gate_task_ids(
+    auth_task_ids = task_ids or gate_task_ids(
         state=state,
         current_wave=current_wave,
         candidate_task_ids=agg.needs_auth_tasks,

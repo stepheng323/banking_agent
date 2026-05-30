@@ -6,6 +6,15 @@ import time
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
+    UnsupportedBoundaryTurnOutput,
+    UnsupportedCapabilitySemanticOutput,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecision
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.referents.frame_memory import remember_referents_from_frame
 from apps.chat.src.agent.orchestrator.models.domain import (
@@ -22,19 +31,12 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic i
     classify_deterministic_meta_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
-from shared.config.settings import settings
-from shared.i18n.bridge import (
+from banking.presentation.i18n.bridge import (
     render_cancelled_prompt,
     render_locale_switched,
 )
-from shared.i18n.renderer import render_message
-from shared.services.confirmation_models import ConfirmationDecision
-from shared.services.unsupported_capability_models import (
-    UnsupportedBoundaryTurnOutput,
-    UnsupportedCapabilitySemanticOutput,
-)
-from shared.services.unsupported_capability_presentation import unsupported_capability_params
-from shared.services.unsupported_capability_registry import get_unsupported_capability
+from banking.presentation.i18n.renderer import render_message
+from shared.config.settings import settings
 from shared.types.planner import ContextFrameFollowupDecision, SemanticRouteDecision
 
 

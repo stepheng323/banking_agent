@@ -30,8 +30,8 @@ from apps.chat.src.agent.workers.query.pipeline import QueryStep
 from apps.chat.src.agent.workers.query.services.parsing.parser import QueryParser
 from apps.chat.src.agent.workers.query.services.reasoning.models import SemanticReasonerContext
 from apps.chat.src.agent.workers.query.services.reasoning.reasoner import QuerySemanticReasoner
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

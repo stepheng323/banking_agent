@@ -3,13 +3,13 @@ import time
 import uuid
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecision
+from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import normalize_confirmation_locale
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
-from shared.services.confirmation_classifier import classify_confirmation_reply_sync
-from shared.services.confirmation_models import ConfirmationDecision
-from shared.services.confirmation_phrases import normalize_confirmation_locale
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

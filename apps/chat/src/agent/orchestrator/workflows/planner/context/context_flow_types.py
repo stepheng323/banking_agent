@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from shared.services.task_planner_prompt_models import PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 
 
 @dataclass(slots=True)

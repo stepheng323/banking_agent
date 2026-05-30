@@ -4,8 +4,8 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_locale_update
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_text
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_text
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

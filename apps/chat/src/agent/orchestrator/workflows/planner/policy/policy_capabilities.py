@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from shared.policy.service import capability_block_message
+from banking.policy.service import capability_block_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

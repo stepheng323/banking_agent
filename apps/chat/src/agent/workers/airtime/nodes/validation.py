@@ -9,8 +9,8 @@ from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimePayload,
 )
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
-from shared.formatters.transaction_slot_prompts import format_transaction_slot_prompt
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import is_valid_nigerian_phone, normalize_network_name
 

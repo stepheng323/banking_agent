@@ -4,13 +4,13 @@ from typing import Any, cast
 
 from apps.chat.src.agent.workers.support.handlers.status_utils import resolve_transaction_status
 from apps.chat.src.agent.workers.support.models import EscalationResult, SupportResponse
-from shared.formatters.query_transaction_copy import format_transaction_status_reply
-from shared.i18n.message_keys import MessageKey
-from shared.i18n.renderer import (
+from banking.presentation.formatters.query_transaction_copy import format_transaction_status_reply
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import (
     message_key_exists,
     render_message,
 )
-from shared.services.failure_categories import classify_failure_category
+from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

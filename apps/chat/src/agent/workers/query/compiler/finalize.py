@@ -29,8 +29,8 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     TimeReference,
 )
 from apps.chat.src.agent.workers.query.prompts.main import QUERY_PARSER_PROMPT
-from shared.i18n.message_keys import MessageKey
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

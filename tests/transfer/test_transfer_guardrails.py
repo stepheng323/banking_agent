@@ -7,8 +7,8 @@ from apps.chat.src.agent.workers.transfer.models.types import TransferContext, T
 from apps.chat.src.agent.workers.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
 from apps.chat.src.agent.workers.transfer.nodes.payout_preparation import prepare_payout_recipient
 from apps.chat.src.agent.workers.transfer.resolution.resolver import resolve_beneficiary
-from shared.formatters.confirmation import build_confirmation_summary
-from shared.i18n.personality import PersonalityContext
+from banking.presentation.formatters.confirmation import build_confirmation_summary
+from banking.presentation.i18n.personality import PersonalityContext
 
 
 class _MockBankingProvider:

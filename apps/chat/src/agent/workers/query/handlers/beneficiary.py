@@ -11,8 +11,8 @@ from apps.chat.src.agent.workers.query.models.domain import (
 )
 from apps.chat.src.agent.workers.query.presentation.scope import build_beneficiary_summary_header
 from apps.chat.src.agent.workers.query.services.fetching.fetch import extract_counterparty, fetch_and_filter
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.i18n.renderer import render_message
 
 _TRAILING_RECIPIENT_PUNCTUATION = ".,;:!?"
 

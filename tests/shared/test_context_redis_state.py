@@ -1,6 +1,6 @@
 import json
 
-import shared.services.context_redis_state as context_redis_state
+import apps.chat.src.agent.orchestrator.context.context_redis_state as context_redis_state
 
 
 class _RedisStateStub:

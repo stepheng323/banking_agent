@@ -305,7 +305,7 @@ async def test_fully_covered_historical_query_reads_from_mirror_without_provider
         transaction_type="credit",
         narration="Salary",
     )
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
     provider = _PagedProvider({})
 
     result = await fetch_transactions_base(
@@ -349,7 +349,7 @@ async def test_uncovered_historical_query_gap_fills_once_then_reuses_mirror(
             ]
         }
     )
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
 
     first = await fetch_transactions_base(
         provider,  # type: ignore[arg-type]
@@ -418,7 +418,7 @@ async def test_recent_overlap_sync_captures_same_day_late_transactions(
             ]
         }
     )
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
     monkeypatch.setattr("apps.chat.src.agent.workers.query.services.fetching.bank_transaction_mirror.lagos_today", lambda: today)
 
     result = await fetch_transactions_base(
@@ -460,7 +460,7 @@ async def test_local_filters_apply_on_mirrored_transactions_without_provider_cal
         narration="Netflix Monthly Subscription",
         category="entertainment",
     )
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
     provider = _PagedProvider({})
 
     result = await fetch_and_filter(
@@ -499,7 +499,7 @@ async def test_counterparty_filter_uses_parsed_mirror_values(
         counterparty="Johnson Mary",
         counterparty_role="sender",
     )
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
     provider = _PagedProvider({})
 
     result = await fetch_and_filter(
@@ -536,7 +536,7 @@ async def test_category_filter_uses_provider_category_from_mirror(
         narration="POS PURCHASE 000123",
         category="food",
     )
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
     provider = _PagedProvider({})
 
     result = await fetch_and_filter(
@@ -609,7 +609,7 @@ async def test_gap_fill_persists_parsed_counterparty_fields(
             ]
         }
     )
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
 
     result = await fetch_transactions_base(
         provider,  # type: ignore[arg-type]

@@ -11,8 +11,8 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryIntent,
     QueryResult,
 )
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

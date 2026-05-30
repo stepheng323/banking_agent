@@ -163,16 +163,31 @@ class DirectDebitProvider(ABC):
         pass
 
     @abstractmethod
-    async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
+    async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
         """
         Reverse/refund a completed debit.
 
         Args:
-            debit_id: Provider's debit transaction ID
+            debit_reference: Provider's original payment reference
             reason: Reason for the reversal
 
         Returns:
             DebitResult with reversal status
+        """
+        pass
+
+    @abstractmethod
+    async def get_refund_status(self, debit_reference: str, refund_id: str | None = None) -> DebitResult:
+        """
+        Get the current status of a debit refund/reversal.
+
+        Args:
+            debit_reference: Provider's original payment reference
+            refund_id: Provider refund identifier when available
+
+        Returns:
+            DebitResult with reversal status. Ambiguous original debit success
+            must remain pending, not reversed.
         """
         pass
 

@@ -133,6 +133,40 @@ class Settings:
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
+        self.flutterwave_webhook_secret_hash: str = os.getenv("FLUTTERWAVE_WEBHOOK_SECRET_HASH", "").strip()
+        self.payout_reconciliation_min_age_seconds: int = int(
+            os.getenv("PAYOUT_RECONCILIATION_MIN_AGE_SECONDS", "300")
+        )
+        self.payout_reconciliation_batch_size: int = int(os.getenv("PAYOUT_RECONCILIATION_BATCH_SIZE", "50"))
+        self.payout_reconciliation_interval_seconds: int = int(
+            os.getenv("PAYOUT_RECONCILIATION_INTERVAL_SECONDS", "300")
+        )
+        self.funding_step_max_retries: int = int(os.getenv("FUNDING_STEP_MAX_RETRIES", "3"))
+        self.funding_reconciliation_min_age_seconds: int = int(
+            os.getenv("FUNDING_RECONCILIATION_MIN_AGE_SECONDS", "120")
+        )
+        self.funding_reconciliation_batch_size: int = int(os.getenv("FUNDING_RECONCILIATION_BATCH_SIZE", "50"))
+        self.funding_reconciliation_interval_seconds: int = int(
+            os.getenv("FUNDING_RECONCILIATION_INTERVAL_SECONDS", "300")
+        )
+        self.refund_reconciliation_min_age_seconds: int = int(
+            os.getenv("REFUND_RECONCILIATION_MIN_AGE_SECONDS", "300")
+        )
+        self.refund_reconciliation_batch_size: int = int(os.getenv("REFUND_RECONCILIATION_BATCH_SIZE", "50"))
+        self.refund_reconciliation_interval_seconds: int = int(
+            os.getenv("REFUND_RECONCILIATION_INTERVAL_SECONDS", "900")
+        )
+        self.refund_reconciliation_max_attempts: int = int(os.getenv("REFUND_RECONCILIATION_MAX_ATTEMPTS", "96"))
+
+        self.transfer_risk_enabled: bool = os.getenv("TRANSFER_RISK_ENABLED", "true").lower() == "true"
+        self.transfer_hourly_amount_limit_ngn: float = float(os.getenv("TRANSFER_HOURLY_AMOUNT_LIMIT_NGN", "100000"))
+        self.transfer_daily_amount_limit_ngn: float = float(os.getenv("TRANSFER_DAILY_AMOUNT_LIMIT_NGN", "200000"))
+        self.transfer_hourly_count_limit: int = int(os.getenv("TRANSFER_HOURLY_COUNT_LIMIT", "3"))
+        self.new_beneficiary_limit_ngn: float = float(os.getenv("NEW_BENEFICIARY_LIMIT_NGN", "50000"))
+        self.new_beneficiary_cooling_seconds: int = int(os.getenv("NEW_BENEFICIARY_COOLING_SECONDS", "86400"))
+        self.new_channel_cooling_seconds: int = int(os.getenv("NEW_CHANNEL_COOLING_SECONDS", "86400"))
+        self.first_pooled_transfer_limit_ngn: float = float(os.getenv("FIRST_POOLED_TRANSFER_LIMIT_NGN", "100000"))
+        self.manual_review_amount_ngn: float = float(os.getenv("MANUAL_REVIEW_AMOUNT_NGN", "200000"))
 
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
         self.mono_webhook_secret: str = os.getenv("MONO_WEBHOOK_SECRET", "").strip()
@@ -168,9 +202,18 @@ class Settings:
         self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "650"))
         self.receipt_verification_base_url: str = os.getenv("RECEIPT_VERIFICATION_BASE_URL", "").strip()
 
-        self.assistant_profile_path: str = os.getenv("ASSISTANT_PROFILE_PATH", "config/assistant_profile.json")
-        self.capability_policy_path: str = os.getenv("CAPABILITY_POLICY_PATH", "config/capability_policy.json")
-        self.domain_guardrails_path: str = os.getenv("DOMAIN_GUARDRAILS_PATH", "config/domain_guardrails.json")
+        self.assistant_profile_path: str = os.getenv(
+            "ASSISTANT_PROFILE_PATH",
+            "apps/chat/src/agent/assistant_profile/defaults/assistant_profile.json",
+        )
+        self.capability_policy_path: str = os.getenv(
+            "CAPABILITY_POLICY_PATH",
+            "banking/policy/defaults/capability_policy.json",
+        )
+        self.domain_guardrails_path: str = os.getenv(
+            "DOMAIN_GUARDRAILS_PATH",
+            "banking/policy/guardrails/defaults/domain_guardrails.json",
+        )
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
         self.enable_support_diagnostic_agent: bool = (
             os.getenv("ENABLE_SUPPORT_DIAGNOSTIC_AGENT", "false").lower() == "true"
@@ -253,6 +296,7 @@ class Settings:
             "MONO_API_KEY": bool(self.mono_api_key),
             "MONO_WEBHOOK_SECRET": bool(self.mono_webhook_secret),
             "FLUTTERWAVE_SECRET_KEY": bool(self.flutterwave_secret_key),
+            "FLUTTERWAVE_WEBHOOK_SECRET_HASH": bool(self.flutterwave_webhook_secret_hash),
             "META_APP_SECRET": bool(self.whatsapp.app_secret),
             "META_ACCESS_TOKEN": self.whatsapp.access_token != "development_access_token",
             "META_VERIFY_TOKEN": self.whatsapp.verify_token != "development_token",

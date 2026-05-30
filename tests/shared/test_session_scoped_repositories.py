@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from shared.repositories.session_scoped import SessionScopedUserRepository
-from shared.repositories.user_repository import UserRepository
+from banking.identity.repositories.user_repository import UserRepository
+from banking.persistence.session_scoped import SessionScopedUserRepository
 
 
 class _FakeSession:

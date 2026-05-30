@@ -9,8 +9,8 @@ from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, T
 from apps.chat.src.agent.workers.data.models.plans import DataPlan
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataPayload
 from apps.chat.src.agent.workers.data.plans.service import dedupe_data_plans
-from shared.formatters.currency import format_naira
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.network_utils import (
     format_network_display_name,
     normalize_network_name,
@@ -383,13 +383,13 @@ def _finish_plan_selection(
     *,
     context: DataContext,
     locale: str,
-) -> TransactionResult | None:
+) -> TransactionResult:
     _apply_plan_payload(payload, _plan_to_payload(plan))
     _apply_early_target_context(payload, context)
     if payload.target_phone:
-        return None
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={})
     if _has_named_recipient(payload):
-        return None
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={})
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=["target_phone"],

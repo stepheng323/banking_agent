@@ -7,9 +7,9 @@ import pytest
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.agent.orchestrator.services.media_service import MediaInterpretation
-from shared.i18n.locale import LocaleManager
-from shared.i18n.models import LocaleCode
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LocaleCode
+from banking.presentation.i18n.renderer import render_message
 
 
 class _ContextManagerStub:

@@ -36,7 +36,7 @@ async def test_data_execution_writes_mobile_biller_fields_without_transfer_recip
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _TransactionRepoStub.created_kwargs = None
-    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", _UnitOfWorkStub)
+    monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", _UnitOfWorkStub)
 
     publisher = SimpleNamespace(publish=AsyncMock())
     step = ExecutionStep()

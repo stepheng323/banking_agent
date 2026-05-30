@@ -18,7 +18,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
 from apps.chat.src.agent.workers.transfer.resolution.self_transfer_validator import (
     SelfTransferValidator,
 )
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message
 
 
 class ValidationService:

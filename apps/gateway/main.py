@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from apps.gateway.api.webhooks.flutterwave.router import router as flutterwave_router
 from apps.gateway.api.webhooks.mono.router import router as mono_router
 from apps.gateway.api.webhooks.telegram.router import router as telegram_router
 from apps.gateway.api.webhooks.whatsapp.flows.router import router as flows_router
@@ -50,6 +51,7 @@ async def security_headers_middleware(request, call_next):
 
 
 app.include_router(message_router)
+app.include_router(flutterwave_router)
 app.include_router(mono_router)
 app.include_router(flows_router)
 app.include_router(telegram_router)

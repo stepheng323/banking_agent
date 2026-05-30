@@ -2,10 +2,10 @@
 
 from enum import Enum
 
-from shared.guardrails.loader import get_cached_guardrails
-from shared.i18n.bridge import render_capability_limitation
-from shared.policy.adapters import check_unsupported_actions, resolve_capability_alternative
-from shared.policy.service import capability_block_message
+from banking.policy.adapters import check_unsupported_actions, resolve_capability_alternative
+from banking.policy.guardrails.loader import get_cached_guardrails
+from banking.policy.service import capability_block_message
+from banking.presentation.i18n.bridge import render_capability_limitation
 
 
 class SupportAction(str, Enum):

@@ -2,8 +2,8 @@ import asyncio
 import time
 from types import SimpleNamespace
 
+from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
 from shared.cache.user_data import UserDataCache
-from shared.services.context_manager import ContextManager
 
 
 class _FakeUserDataCache:
@@ -291,7 +291,7 @@ async def test_load_context_parallel_reuses_prefetched_cache_snapshot() -> None:
     )
     manager.data_cache = _FakeUserDataCache({})  # type: ignore[assignment]
 
-    import shared.services.context_parallel_loader as context_parallel_module
+    import apps.chat.src.agent.orchestrator.context.context_parallel_loader as context_parallel_module
 
     original_get_client = context_parallel_module.RedisClient.get_client
     context_parallel_module.RedisClient.get_client = staticmethod(lambda: redis_stub)  # type: ignore[method-assign]
@@ -334,7 +334,7 @@ async def test_load_context_parallel_backfills_from_session_snapshot() -> None:
     )
     manager.data_cache = cache  # type: ignore[assignment]
 
-    import shared.services.context_parallel_loader as context_parallel_module
+    import apps.chat.src.agent.orchestrator.context.context_parallel_loader as context_parallel_module
 
     original_get_client = context_parallel_module.RedisClient.get_client
     context_parallel_module.RedisClient.get_client = staticmethod(lambda: redis_stub)  # type: ignore[method-assign]

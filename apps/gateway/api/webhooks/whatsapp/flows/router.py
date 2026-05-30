@@ -38,9 +38,9 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler i
     parse_transaction_pin_flow_token,
 )
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
+from banking.identity.channel_linking.authorization import is_channel_link_pin_token
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
-from shared.services.channel_link_authorization import is_channel_link_pin_token
 from shared.utils.flow_encryption import encrypt_flow_response
 from shared.utils.logging import get_logger
 

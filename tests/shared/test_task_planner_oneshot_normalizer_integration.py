@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from shared.services.task_planner import TaskPlanner
-from shared.services.task_planner_prompt_models import PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
 
 

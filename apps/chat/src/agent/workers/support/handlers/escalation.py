@@ -7,8 +7,8 @@ Every escalation creates a ticket for accountability.
 from typing import Any
 
 from apps.chat.src.agent.workers.support.models import EscalationResult, SupportResponse
-from shared.i18n.renderer import render_message
-from shared.services.ticket_service import TicketService
+from banking.presentation.i18n.renderer import render_message
+from banking.support.services.ticket_service import TicketService
 from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 

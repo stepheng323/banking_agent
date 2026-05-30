@@ -3,7 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.planner.node_updates import _planner_route_updates
-from shared.i18n.bridge import render_safe_capability_fallback
+from banking.presentation.i18n.bridge import render_safe_capability_fallback
 
 
 def _planner_unavailable_response(current_locale: str) -> dict[str, Any]:

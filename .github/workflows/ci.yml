@@ -5,9 +5,9 @@ on:
     branches: [main]
     paths:
       - "apps/**"
+      - "banking/**"
       - "shared/**"
       - "tests/**"
-      - "config/**"
       - "infrastructure/aws/**"
       - "infrastructure/aws-backend-bootstrap/**"
       - ".github/workflows/**"

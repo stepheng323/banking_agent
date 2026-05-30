@@ -2,8 +2,8 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
-from shared.i18n.renderer import render_message
+from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.presentation.i18n.renderer import render_message
 
 
 class ValidationStep(PipelineStep):
@@ -11,7 +11,7 @@ class ValidationStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, _gates: DataGates, _worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         locale = context.language
         missing = []
         if not payload.plan_code:
@@ -35,4 +35,4 @@ class ValidationStep(PipelineStep):
                 patch=payload.model_dump(exclude_none=True),
             )
 
-        return None
+        return continue_pipeline(payload)

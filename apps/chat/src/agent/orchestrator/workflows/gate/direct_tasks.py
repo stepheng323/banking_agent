@@ -10,7 +10,7 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _current_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import DIRECT_DOMAIN_ACTIONS
-from shared.policy.service import capability_block_message
+from banking.policy.service import capability_block_message
 
 
 def _next_direct_account_task_id(existing_tasks: dict[str, TaskSpec]) -> str:

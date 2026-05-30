@@ -5,8 +5,8 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
-from shared.i18n.personality import PersonalityContext, render_personalized_message
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
+from banking.presentation.i18n.renderer import render_message
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -42,7 +42,7 @@ class ExecutionStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         del gates
         locale = context.language
 
@@ -58,8 +58,8 @@ class ExecutionStep(PipelineStep):
             transaction_id = None
             key = payload.idempotency_key
 
+            from banking.persistence.unit_of_work import UnitOfWork
             from shared.database.enums import TransactionStatusEnum
-            from shared.repositories.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
                 existing = await uow.transactions.get_by_idempotency_key(str(key))

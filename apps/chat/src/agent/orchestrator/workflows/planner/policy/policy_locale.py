@@ -3,8 +3,8 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 
 SUPPORTED_EXECUTOR_LABELS = {
     "transfer": "money transfer",

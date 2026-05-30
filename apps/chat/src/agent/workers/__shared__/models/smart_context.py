@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
-from shared.formatters.currency import format_naira
+from banking.presentation.formatters.currency import format_naira
 
 
 class SmartContext(BaseModel):

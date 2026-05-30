@@ -15,6 +15,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph.state import CompiledStateGraph
 
+from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.chat.src.agent.orchestrator.graph.housekeeping import OrchestratorHousekeeping
 from apps.chat.src.agent.orchestrator.graph.invocation_context import (
@@ -36,18 +38,16 @@ from apps.chat.src.agent.orchestrator.graph.route_metrics import (
 )
 from apps.chat.src.agent.orchestrator.graph.thread_lock import thread_invocation_lock
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
-from apps.chat.src.agent.workers.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.protocols import WorkerProtocol
+from banking.accounts.repositories.account_repository import AccountRepository
+from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
+from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
+from banking.identity.repositories.user_repository import UserRepository
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
+from banking.presentation.i18n.locale import LocaleManager
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.i18n.locale import LocaleManager
-from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.repositories.user_repository import UserRepository
-from shared.services.context_manager import ContextManager
-from shared.services.conversation_responder import ConversationResponder
-from shared.services.task_planner import TaskPlanner
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

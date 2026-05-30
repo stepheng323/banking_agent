@@ -4,7 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.services.onboarding.mandate_messages import build_pending_mandate_message
+from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

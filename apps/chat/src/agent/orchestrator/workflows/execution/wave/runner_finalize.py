@@ -3,6 +3,7 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.auth_gate_updates import _build_auth_gate_updates
+from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import choose_wave_blocker
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_updates import (
     _build_confirmation_gate_updates,
@@ -73,7 +74,8 @@ def finalize_execution_wave_updates(
     state: OrchestratorState,
     runtime: ExecutionWaveRuntime,
 ) -> dict[str, Any]:
-    if runtime.agg.missing_fields_by_task:
+    blocker = choose_wave_blocker(state=state, current_wave=runtime.current_wave, agg=runtime.agg)
+    if blocker.kind == "input":
         return _build_missing_field_interrupt_updates(
             state=state,
             current_wave=runtime.current_wave,
@@ -87,22 +89,24 @@ def finalize_execution_wave_updates(
         updates["outbox"] = _with_policy_notice(state, existing)
         updates["policy_notice"] = None
 
-    if runtime.agg.needs_confirm_tasks:
+    if blocker.kind == "confirmation":
         return _build_confirmation_gate_updates(
             state=state,
             current_wave=runtime.current_wave,
             agg=runtime.agg,
             locale=runtime.locale,
             updates=updates,
+            task_ids=blocker.task_ids,
         )
 
-    if runtime.agg.needs_auth_tasks:
+    if blocker.kind == "auth":
         return _build_auth_gate_updates(
             state=state,
             current_wave=runtime.current_wave,
             agg=runtime.agg,
             locale=runtime.locale,
             updates=updates,
+            task_ids=blocker.task_ids,
         )
 
     _advance_or_fail_stalled_wave(

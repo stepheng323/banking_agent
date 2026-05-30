@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -6,6 +7,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
 from apps.chat.src.agent.workers.transfer.nodes.confirmation import ConfirmationStep
 from apps.chat.src.agent.workers.transfer.nodes.execution import ExecutionStep
+from apps.chat.src.agent.workers.transfer.nodes.security import AuthorizationStep
 
 
 class _StubRedis:
@@ -63,14 +65,14 @@ async def test_transfer_confirmation_falls_back_to_global_redis(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
-async def test_transfer_auth_request_falls_back_to_global_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_transfer_authorization_request_falls_back_to_global_redis(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = _StubRedis()
 
     from shared.cache.redis_client import RedisClient
 
     monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls, redis_url=None: redis))
 
-    result = await ExecutionStep().execute(
+    result = await AuthorizationStep().execute(
         _payload(),
         _context(),
         TransferGates(pin_verified=False, confirmation_confirmed=True),
@@ -81,3 +83,18 @@ async def test_transfer_auth_request_falls_back_to_global_redis(monkeypatch: pyt
     assert redis.calls == [
         ("transfer:token:transfer-test-token:phone", 3600, "2348162511023"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_transfer_execution_rejects_unverified_pin_without_publishing() -> None:
+    publisher = SimpleNamespace(publish=AsyncMock())
+
+    result = await ExecutionStep().execute(
+        _payload(),
+        _context(),
+        TransferGates(pin_verified=False, confirmation_confirmed=True),
+        SimpleNamespace(publisher=publisher),
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_AUTH
+    publisher.publish.assert_not_called()

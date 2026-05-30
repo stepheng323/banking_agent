@@ -4,9 +4,9 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, TRANSACTION_TASK_TYPES
-from shared.formatters.transaction_copy_context import format_amount_compact
-from shared.formatters.transaction_intent_lines import format_intent_line
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.transaction_copy_context import format_amount_compact
+from banking.presentation.formatters.transaction_intent_lines import format_intent_line
+from banking.presentation.i18n.renderer import render_message
 
 
 def _queued_transaction_tasks_for_focus(

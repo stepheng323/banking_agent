@@ -1,7 +1,7 @@
 """Personality context selection for confirmation prompts."""
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.i18n.personality import PersonalityContext, transfer_personality_context_from_payload
+from banking.presentation.i18n.personality import PersonalityContext, transfer_personality_context_from_payload
 
 
 def _confirmation_personality_context(

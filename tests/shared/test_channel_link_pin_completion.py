@@ -3,11 +3,11 @@ from typing import Any
 
 import pytest
 
-import shared.services.channel_link_pin_completion as channel_link_pin_completion_module
+import banking.identity.channel_linking.pin_completion as channel_link_pin_completion_module
+from banking.identity.channel_linking.authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
+from banking.identity.channel_linking.pin_completion import complete_channel_link_with_pin
+from banking.security.authorization import AuthorizationResult
 from shared.cache.flow_session_manager import SessionReadResult
-from shared.services.auth.authorization import AuthorizationResult
-from shared.services.channel_link_authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
-from shared.services.channel_link_pin_completion import complete_channel_link_with_pin
 
 
 class _SessionManagerStub:

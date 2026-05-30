@@ -3,7 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 
 
 def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:

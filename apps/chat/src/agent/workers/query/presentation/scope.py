@@ -6,8 +6,8 @@ from datetime import date, timedelta
 
 from apps.chat.src.agent.workers.query.models.domain import QueryExecutionContract
 from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from shared.formatters.currency import format_naira as _format_naira
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.currency import format_naira as _format_naira
+from banking.presentation.i18n.renderer import render_message
 
 
 def format_naira(amount: float) -> str:

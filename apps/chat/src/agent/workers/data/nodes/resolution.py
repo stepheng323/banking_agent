@@ -1,11 +1,11 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
+from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.beneficiaries.services.matcher import BeneficiaryMatcher
+from banking.presentation.i18n.renderer import render_message
 from shared.database.models import Beneficiary
-from shared.i18n.renderer import render_message
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone, resolve_network_from_phone
 
 
@@ -52,7 +52,7 @@ class ResolutionStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         del gates, worker_context
         locale = context.language
         requested_network = normalize_network_name(payload.network) if payload.network else None
@@ -154,4 +154,4 @@ class ResolutionStep(PipelineStep):
 
         # ...Logic to fetch plans and match...
 
-        return None  # Continue
+        return continue_pipeline(payload)

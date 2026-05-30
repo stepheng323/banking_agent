@@ -5,8 +5,8 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _state_locale
-from shared.formatters.auth_reason import format_auth_reason
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.auth_reason import format_auth_reason
+from banking.presentation.i18n.renderer import render_message
 
 
 def _auth_header_for_task_ids(state: OrchestratorState, task_ids: list[str], locale: str) -> str:

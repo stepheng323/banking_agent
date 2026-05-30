@@ -2,8 +2,8 @@
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
-from shared.formatters.transfer_input_prompts import format_batch_transfer_source_prompt
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.transfer_input_prompts import format_batch_transfer_source_prompt
+from banking.presentation.i18n.renderer import render_message
 
 
 def _transfer_tasks_only_missing_source(state: OrchestratorState, agg: ExecutionAggregation) -> list[str]:

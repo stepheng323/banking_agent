@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from banking.policy.loader import get_cached_policy, load_policy
+from banking.transactions.runtime.executors.transfer import TransferExecutor
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import TransactionStatusEnum
-from shared.policy.loader import get_cached_policy, load_policy
-from shared.transaction_runtime.executors.transfer import TransferExecutor
 
-CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 SCHEDULE_DISABLED_MESSAGE = (
     "Scheduled payments are temporarily unavailable. I can still help with immediate transfers, airtime/data purchase, "
     "balances, and transaction queries."

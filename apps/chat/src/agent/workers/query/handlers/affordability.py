@@ -6,10 +6,10 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryExecutionContract,
     QueryResult,
 )
+from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
+from banking.presentation.formatters.currency import format_naira_compact
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.formatters.currency import format_naira_compact
-from shared.i18n.renderer import render_message
-from shared.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 
 
 async def handle_affordability(

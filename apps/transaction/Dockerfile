@@ -49,12 +49,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY apps/chat/ /app/apps/chat/
 COPY apps/transaction/ /app/apps/transaction/
+COPY banking/ /app/banking/
 COPY shared/ /app/shared/
-COPY config/ /app/config/
 
 ENV PYTHONPATH=/app
 EXPOSE 8003
 CMD ["uvicorn", "apps.transaction.main:app", "--host", "0.0.0.0", "--port", "8003"]
-

@@ -36,10 +36,10 @@ from apps.chat.src.agent.workers.support.results import (
     result_from_support_response,
     ticket_code_from_message,
 )
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
-from shared.policy.service import capability_block_message
-from shared.services.ticket_service import TicketService
+from banking.policy.service import capability_block_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
+from banking.support.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

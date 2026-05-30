@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from shared.transaction_runtime import scheduled_runs
+from banking.transactions.runtime import scheduled_runs
 
 
 @dataclass

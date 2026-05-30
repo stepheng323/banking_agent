@@ -8,7 +8,7 @@ import pytest
 from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
 from apps.chat.src.agent.workers.support.handlers.failure import handle_failure_reason
 from apps.chat.src.agent.workers.support.worker import SupportWorker
-from shared.services.async_completion import record_group_leg_and_maybe_build_summary
+from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
 
 
 class _SupportLLMStub:

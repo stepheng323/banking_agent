@@ -10,7 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains 
     _is_query_domain_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.language import _allow_phrase_heavy_fastpath
-from shared.i18n.locale import LocaleManager
+from banking.presentation.i18n.locale import LocaleManager
 
 SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
 _TRANSFER_DIRECT_PREFIX_RE = re.compile(

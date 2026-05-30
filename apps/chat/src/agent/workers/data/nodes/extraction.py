@@ -12,8 +12,8 @@ from apps.chat.src.agent.workers.__shared__.scheduling import (
     schedule_required_prompt,
 )
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
-from shared.i18n.renderer import render_message
+from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -295,10 +295,10 @@ class ExtractionStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         del gates
         if not self.user_message:
-            return None
+            return continue_pipeline(payload)
 
         # [DETERMINISTIC FALLBACK] Numeric index selection
         # If user replies with "1" or "2" while selecting source account, map it directly.
@@ -316,14 +316,14 @@ class ExtractionStep(PipelineStep):
                 payload.is_self = bool(self_phone)
                 payload.skip_extraction = False
                 payload.stage = "extracted"
-                return None
+                return continue_pipeline(payload)
         if waiting_for_network:
             network = _network_reply(self.user_message)
             if network:
                 payload.network = network
                 payload.skip_extraction = False
                 payload.stage = "extracted"
-                return None
+                return continue_pipeline(payload)
         if waiting_for_referent_phone:
             referent_patch, invalid_referents = _resolve_referent_phone_selection_from_input(
                 self.user_message,
@@ -334,7 +334,7 @@ class ExtractionStep(PipelineStep):
                     if hasattr(payload, field):
                         setattr(payload, field, value)
                 payload.stage = "extracted"
-                return None
+                return continue_pipeline(payload)
             if invalid_referents:
                 prompt = _ambiguous_phone_referent_prompt(invalid_referents, context.language)
                 patch = payload.model_dump(exclude_none=True)
@@ -378,7 +378,7 @@ class ExtractionStep(PipelineStep):
                     elif hasattr(payload, field):
                         setattr(payload, field, value)
                 payload.skip_extraction = False
-                return None
+                return continue_pipeline(payload)
             if len(schedule_required_fields) == len(required_fields):
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
@@ -400,11 +400,11 @@ class ExtractionStep(PipelineStep):
         if numeric_patch:
             _apply_numeric_source_account_patch(payload, numeric_patch)
             payload.stage = "extracted"
-            return None
+            return continue_pipeline(payload)
         if source_account:
             _apply_source_account_match(payload, source_account)
             payload.stage = "extracted"
-            return None
+            return continue_pipeline(payload)
 
         referent_applied = _apply_resolved_referents(payload, context)
         if payload.skip_extraction:
@@ -413,17 +413,17 @@ class ExtractionStep(PipelineStep):
             if referent_applied:
                 logger.info("deterministic_data_referent_fastpath")
                 payload.stage = "extracted"
-                return None
+                return continue_pipeline(payload)
             if override_reason is None:
                 logger.info("skip_redundant_extraction", task="data", reason="no_override_signal")
-                return None
+                return continue_pipeline(payload)
             logger.info("override_skip_extraction", task="data", reason=override_reason)
 
         extractor = worker_context.extractor
         if not extractor:
             logger.info("data_extraction_skipped", reason="extractor_unavailable")
             _apply_resolved_referents(payload, context)
-            return None
+            return continue_pipeline(payload)
         extraction_result = await extractor.extract(
             self.user_message,
             smart_context={
@@ -474,4 +474,4 @@ class ExtractionStep(PipelineStep):
             payload.usage_intent = extraction_result.entities.usage_intent
 
         payload.stage = "extracted"
-        return None  # Continue pipeline
+        return continue_pipeline(payload)

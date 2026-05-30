@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from shared.transaction_runtime.executors.payout import PayoutExecutor
+from banking.transactions.runtime.executors.payout import PayoutExecutor
 
 
 class _PayoutProvider:
@@ -82,6 +82,48 @@ async def test_payout_executor_resolves_then_transfers() -> None:
     )
     assert result["success"] is True
     assert result["resolved_account_name"] == "Tolu A"
+
+
+@pytest.mark.asyncio
+async def test_payout_executor_passes_idempotency_key_as_provider_reference() -> None:
+    payout_provider = _PayoutProvider(
+        transfer_result={"success": False, "status": "pending", "transaction_id": "tx-123"},
+    )
+    resolver_provider = _ResolverProvider(
+        resolve_result=type(
+            "ResolutionResult",
+            (),
+            {
+                "success": True,
+                "error": None,
+                "account": type(
+                    "ResolvedAccount",
+                    (),
+                    {"account_name": "Tolu A", "account_number": "8162511023", "bank_code": "033"},
+                )(),
+            },
+        )()
+    )
+    executor = PayoutExecutor(payout_provider=payout_provider, resolver_provider=resolver_provider)
+
+    result = await executor.handle_payout(
+        {
+            "amount": 5000,
+            "recipient_account": "8162511023",
+            "recipient_bank_code": "033",
+            "idempotency_key": "idem-123",
+        }
+    )
+
+    payout_provider.initiate_transfer.assert_awaited_once_with(
+        amount=5000.0,
+        recipient_account_number="8162511023",
+        recipient_bank_code="033",
+        narration=None,
+        reference="idem-123",
+    )
+    assert result["success"] is False
+    assert result["status"] == "pending"
 
 
 @pytest.mark.asyncio

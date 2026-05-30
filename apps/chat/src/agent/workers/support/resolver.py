@@ -17,11 +17,11 @@ from apps.chat.src.agent.shared.unified_transactions import (
 )
 from apps.chat.src.agent.workers.support.handlers.status_utils import normalize_transaction_status
 from apps.chat.src.agent.workers.support.models import TransactionReference
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
+from banking.transactions.repositories.bank_transaction_repository import BankTransactionRepository
+from banking.transactions.repositories.transaction_repository import TransactionRepository
 from shared.config.settings import settings
 from shared.database.models import Transaction
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.repositories.bank_transaction_repository import BankTransactionRepository
-from shared.repositories.transaction_repository import TransactionRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

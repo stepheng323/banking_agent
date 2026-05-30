@@ -16,8 +16,8 @@ from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimePayload,
 )
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
-from shared.formatters.accounts import format_accounts_list
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.accounts import format_accounts_list
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

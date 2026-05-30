@@ -17,9 +17,9 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.task_handlers.support import handle_faq_task
 from apps.chat.src.agent.workers.support.worker import SupportWorker
-from shared.policy.loader import get_cached_policy
+from banking.policy.loader import get_cached_policy
 
-CAPABILITY_POLICY_PATH = "config/capability_policy.json"
+CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 SUPPORT_DISABLED_MESSAGE = (
     "Support help is temporarily unavailable. I can still help with transfers, airtime/data purchase, balances, and "
     "transaction queries."

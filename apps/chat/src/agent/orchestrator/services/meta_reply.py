@@ -8,10 +8,10 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
+from apps.chat.src.agent.assistant_profile.voice import AssistantVoice, get_runtime_voice
 from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
-from shared.assistant_profile.voice import AssistantVoice, get_runtime_voice
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

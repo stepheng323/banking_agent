@@ -4,10 +4,10 @@ import base64
 import re
 from typing import Any
 
+from banking.presentation.i18n.models import LocaleCode
+from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config.settings import settings
-from shared.i18n.models import LocaleCode
-from shared.i18n.renderer import render_message
 from shared.messaging.intents import (
     RequestAuth,
     RequestConfirmation,

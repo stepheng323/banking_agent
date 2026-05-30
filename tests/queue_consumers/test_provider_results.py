@@ -1,4 +1,4 @@
-from shared.transaction_runtime import provider_results
+from banking.transactions.runtime import provider_results
 
 
 def test_provider_reference_reads_nested_provider_payloads() -> None:

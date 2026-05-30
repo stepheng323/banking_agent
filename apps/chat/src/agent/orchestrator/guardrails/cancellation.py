@@ -8,9 +8,9 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import CANCEL_PHRASES
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from shared.i18n.bridge import render_cancelled_prompt
-from shared.i18n.locale import LocaleManager
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.bridge import render_cancelled_prompt
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.renderer import render_message
 
 _TERMINAL_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 _TRIM_CHARS = '.,!?;:"`~()[]{}'

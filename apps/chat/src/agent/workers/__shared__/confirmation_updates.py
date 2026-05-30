@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from shared.formatters.currency import format_naira
-from shared.i18n.renderer import render_message
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
 from shared.utils.network_utils import format_network_display_name
 
 

@@ -8,8 +8,8 @@ import pytest
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.chat.src.agent.orchestrator.graph.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from banking.messaging.delivery.models import DeliveryAttemptResult
 from shared.config.settings import settings
-from shared.services.delivery_models import DeliveryAttemptResult
 
 
 class _CheckpointerStub:

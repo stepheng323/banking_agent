@@ -8,8 +8,8 @@ from apps.chat.src.agent.workers.query.grounding.frames import (
     resolve_query_frames,
 )
 from apps.chat.src.agent.workers.query.models.domain import QueryFrame
-from shared.i18n.message_keys import MessageKey
-from shared.i18n.renderer import render_message
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
 
 
 def build_memory_answer(

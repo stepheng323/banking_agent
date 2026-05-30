@@ -9,7 +9,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler i
     handle_transaction_pin,
     parse_transaction_pin_flow_token,
 )
-from shared.services.auth.authorization import AuthorizationResult
+from banking.security.authorization import AuthorizationResult
 
 
 class _WhatsAppClientStub:

@@ -7,13 +7,13 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
     _render_task_confirmation_summary,
     _strip_batch_name_mismatch_warning,
 )
-from shared.formatters.batch_transfer_summary import format_batch_transfer_summary
-from shared.formatters.confirmation import (
+from banking.presentation.formatters.batch_transfer_summary import format_batch_transfer_summary
+from banking.presentation.formatters.confirmation import (
     append_source_account_info,
     build_source_account_info,
     strip_source_account_info_lines,
 )
-from shared.formatters.transaction_confirmation_copy import format_confirmation_section
+from banking.presentation.formatters.transaction_confirmation_copy import format_confirmation_section
 
 
 def _build_confirmation_gate_summary(

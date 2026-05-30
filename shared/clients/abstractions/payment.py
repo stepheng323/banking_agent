@@ -18,6 +18,7 @@ class PayoutProvider(ABC):
         sender_account_number: str | None = None,
         narration: str | None = None,
         currency: str = "NGN",
+        reference: str | None = None,
     ) -> dict[str, Any]:
         """
         Initiate a bank transfer.
@@ -29,6 +30,7 @@ class PayoutProvider(ABC):
             sender_account_number: Optional sender account number
             narration: Optional transfer narration/description
             currency: Currency code (default: "NGN")
+            reference: Optional merchant idempotency reference
 
         Returns:
             Dictionary with:
@@ -63,6 +65,10 @@ class PayoutProvider(ABC):
             NotImplementedError: If provider doesn't support status checks yet
         """
         raise NotImplementedError(f"{self.provider_name} does not support status checks yet")
+
+    async def get_transfer_by_reference(self, reference: str) -> dict[str, Any]:
+        """Get the status of a transfer by merchant/idempotency reference."""
+        raise NotImplementedError(f"{self.provider_name} does not support reference status checks yet")
 
     @property
     @abstractmethod
