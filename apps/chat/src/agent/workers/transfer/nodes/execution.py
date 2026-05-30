@@ -6,17 +6,15 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.chat.src.agent.workers.transfer.authorization.pin_token import persist_transfer_pin_token
 from apps.chat.src.agent.workers.transfer.models.types import (
     TransferContext,
     TransferGates,
     TransferPayload,
 )
-from apps.chat.src.agent.workers.transfer.nodes.security import require_auth
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
+from banking.presentation.i18n.renderer import render_message
 from banking.risk.service import RiskDecisionService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
-from shared.i18n.renderer import render_message
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 from shared.utils.narration import format_narration
@@ -38,15 +36,12 @@ class ExecutionStep(TransferStep):
         if not gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
-        res = require_auth(gates)
-        if res.outcome != TransactionOutcome.OK:
-            if res.outcome == TransactionOutcome.NEEDS_AUTH:
-                await persist_transfer_pin_token(
-                    idempotency_key=data.idempotency_key,
-                    phone_number=context.phone_number,
-                    worker_context=worker_context,
-                )
-            return res
+        if not gates.pin_verified:
+            logger.warning("transfer_execution_rejected_unauthorized")
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_AUTH,
+                patch=data.model_dump(exclude_none=True),
+            )
 
         try:
             transaction_id = None

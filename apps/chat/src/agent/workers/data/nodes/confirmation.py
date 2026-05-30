@@ -4,11 +4,11 @@ from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, T
 from apps.chat.src.agent.workers.__shared__.confirmation_updates import build_data_confirmation_update_message
 from apps.chat.src.agent.workers.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
+from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.presentation.formatters.data import format_data_summary
+from banking.presentation.i18n.personality import PersonalityContext
+from banking.presentation.i18n.renderer import render_message
 from shared.cache.redis_client import RedisClient
-from shared.formatters.data import format_data_summary
-from shared.i18n.personality import PersonalityContext
-from shared.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,9 +19,9 @@ class ConfirmationStep(PipelineStep):
 
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
-    ) -> TransactionResult | None:
+    ) -> TransactionResult:
         if gates.confirmation_confirmed:
-            return None
+            return continue_pipeline(payload)
 
         locale = context.language
         if not payload.plan_code or not payload.plan_name or payload.amount is None:

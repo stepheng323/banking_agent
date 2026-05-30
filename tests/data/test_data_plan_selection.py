@@ -198,7 +198,7 @@ async def test_data_plan_selection_budget_selects_most_data_within_budget() -> N
         SimpleNamespace(plan_service=_PlanServiceStub(_plans())),
     )
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.plan_code == "MD108"
     assert payload.plan_name == "MTN 3.5 GB"
     assert payload.amount == 2000
@@ -403,7 +403,7 @@ async def test_data_plan_selection_explicit_number_overrides_user_number() -> No
         SimpleNamespace(plan_service=_PlanServiceStub(_plans())),
     )
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08031234567"
     assert payload.is_self is False
     assert payload.plan_code == "MD108"
@@ -520,7 +520,7 @@ async def test_data_plan_selection_monthly_self_uses_validity_and_self_phone() -
         SimpleNamespace(plan_service=_PlanServiceStub(_airtel_plans())),
     )
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.plan_code == "AD130"
     assert payload.target_phone == "08122511023"
     assert payload.is_self is True
@@ -559,7 +559,7 @@ async def test_data_plan_selection_usage_intent_only_ranks_when_catalog_tag_matc
         SimpleNamespace(plan_service=_PlanServiceStub(plans)),
     )
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.plan_code == "MD_SOCIAL"
 
 
@@ -575,7 +575,7 @@ async def test_data_plan_selection_usage_intent_falls_back_to_value_without_cata
         SimpleNamespace(plan_service=_PlanServiceStub(_plans())),
     )
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.plan_code == "MD108"
 
 
@@ -614,7 +614,7 @@ async def test_data_plan_selection_size_and_validity_selects_unambiguous_catalog
         SimpleNamespace(plan_service=_PlanServiceStub(_same_size_different_validity_plans())),
     )
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.plan_code == "MD5_MONTHLY"
     assert payload.plan_name == "MTN 5 GB Monthly"
     assert payload.amount == 3500
@@ -645,7 +645,7 @@ async def test_data_plan_selection_numeric_choice_applies_candidate() -> None:
         SimpleNamespace(plan_service=_PlanServiceStub(_plans())),
     )
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.plan_code == "MD108"
     assert payload.plan_name == "MTN 3.5 GB"
     assert payload.amount == 2000
@@ -707,8 +707,8 @@ async def test_data_plan_self_slot_reply_preserves_selected_plan() -> None:
     extraction_result = await ExtractionStep("For me na").run(payload, context, DataGates(), worker_context)
     plan_result = await DataPlanSelectionStep("For me na").run(payload, context, DataGates(), worker_context)
 
-    assert extraction_result is None
-    assert plan_result is None
+    assert extraction_result.outcome == TransactionOutcome.OK
+    assert plan_result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08162511023"
     assert payload.is_self is True
     assert payload.plan_code == "MD501"

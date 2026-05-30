@@ -36,7 +36,7 @@ async def test_data_skip_extraction_overrides_for_phone_signal() -> None:
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert extractor.calls == 1
     assert payload.skip_extraction is False
     assert payload.target_phone == "08162511023"
@@ -65,7 +65,7 @@ async def test_data_extraction_reuses_resolved_phone_referent_without_extractor(
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08162511023"
     assert payload.network == "MTN"
 
@@ -105,7 +105,7 @@ async def test_data_extraction_reuses_repeat_referents_without_extractor() -> No
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08162511023"
     assert payload.network == "MTN"
     assert payload.amount == 1500
@@ -148,7 +148,7 @@ async def test_data_source_account_slot_accepts_bank_reference_without_extractor
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.source_account_id == "gtb-1"
     assert payload.source_bank_name == "GTBank"
     assert payload.source_account_name == "GT Main"
@@ -175,7 +175,7 @@ async def test_data_source_account_numeric_slot_clears_stale_source_before_resel
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.source_account_index == 2
     assert payload.source_account_id is None
     assert payload.confirmation == {"confirmed": False}
@@ -192,7 +192,7 @@ async def test_data_extraction_self_line_reply_sets_context_phone_without_extrac
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08162511023"
     assert payload.is_self is True
     assert payload.skip_extraction is False
@@ -209,7 +209,7 @@ async def test_data_extraction_phone_reply_sets_target_phone_without_extractor()
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08162511023"
     assert payload.is_self is False
     assert payload.stage == "extracted"
@@ -225,7 +225,7 @@ async def test_data_extraction_network_reply_sets_network_without_extractor() ->
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.network == "MTN"
     assert payload.skip_extraction is False
     assert payload.stage == "extracted"
@@ -241,7 +241,7 @@ async def test_data_extraction_network_reply_sets_network_in_multi_slot_prompt()
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.network == "MTN"
     assert payload.skip_extraction is False
     assert payload.stage == "extracted"
@@ -304,7 +304,7 @@ async def test_data_extraction_accepts_numeric_referent_phone_selection() -> Non
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08162511023"
     assert payload.network == "MTN"
     assert payload.referent_phone_candidates == []
@@ -332,7 +332,7 @@ async def test_data_extraction_passes_compact_context_to_extractor() -> None:
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert extractor.last_context is not None
     assert extractor.last_context["required_fields"] == ["target_phone"]
     assert extractor.last_context["previousResponse"] == "Which line should I buy data for?"
@@ -352,7 +352,7 @@ async def test_data_extraction_records_recipient_name_for_resolution() -> None:
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.recipient_name == "Mum"
 
 
@@ -369,7 +369,7 @@ async def test_data_skip_extraction_overrides_for_network_signal() -> None:
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert extractor.calls == 1
     assert payload.skip_extraction is False
     assert payload.network == "MTN"
@@ -387,7 +387,7 @@ async def test_data_skip_extraction_skips_without_strong_signal() -> None:
 
     result = await step.run(payload, context, gates, worker_context)
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert extractor.calls == 0
     assert payload.skip_extraction is False
     assert payload.stage == "init"
@@ -402,7 +402,7 @@ async def test_data_resolution_normalizes_phone_and_infers_network() -> None:
 
     result = await step.run(payload, context, gates, SimpleNamespace())
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08162511023"
     assert payload.network == "MTN"
 
@@ -447,7 +447,7 @@ async def test_data_resolution_saved_mobile_beneficiary_sets_phone_network_and_i
 
     result = await step.run(payload, context, gates, SimpleNamespace())
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.target_phone == "08081234567"
     assert payload.recipient_name == "Mum"
     assert payload.beneficiary_id == str(beneficiary_id)
@@ -523,7 +523,7 @@ async def test_data_resolution_normalizes_network_alias() -> None:
 
     result = await step.run(payload, context, gates, SimpleNamespace())
 
-    assert result is None
+    assert result.outcome == TransactionOutcome.OK
     assert payload.network == "AIRTEL"
 
 
