@@ -13,35 +13,41 @@ class TransactionWorkerLambdaHandler(BaseSQSHandler):
     """Routes transaction-domain jobs to the correct consumer based on queue contract."""
 
     async def process_record(self, payload: dict, deps: Any) -> None:
-        (
-            transaction_consumer,
-            funding_consumer,
-            payout_consumer,
-            payout_reconciliation_consumer,
-            refund_consumer,
-            funding_reconciliation_consumer,
-            refund_reconciliation_consumer,
-        ) = deps
-
         context = self.get_active_record_context()
         domain = context.get("domain")
         queue_name = context.get("queue_name")
         message_id = context.get("message_id")
 
         if domain == "transaction":
-            await transaction_consumer.process_transaction(payload)
+            await deps.transaction.process_transaction(payload)
+        elif domain == "transaction_debit":
+            await deps.transaction_debit.process_job(payload)
+        elif domain == "transaction_debit_reconcile":
+            await deps.transaction_debit_reconciliation.process_job(payload)
+        elif domain == "transaction_debit_refund":
+            await deps.transaction_debit_refund.process_job(payload)
+        elif domain == "transaction_debit_refund_reconcile":
+            await deps.transaction_debit_refund_reconciliation.process_job(payload)
         elif domain == "funding":
-            await funding_consumer.process_job(payload)
+            await deps.funding.process_job(payload)
         elif domain == "funding_reconcile":
-            await funding_reconciliation_consumer.process_job(payload)
+            await deps.funding_reconciliation.process_job(payload)
+        elif domain == "bill_fulfill":
+            await deps.bill_fulfillment.process_job(payload)
+        elif domain == "bill_reconcile":
+            await deps.bill_reconciliation.process_job(payload)
         elif domain == "payout":
-            await payout_consumer.process_job(payload)
+            await deps.payout.process_job(payload)
         elif domain == "payout_reconcile":
-            await payout_reconciliation_consumer.process_job(payload)
+            await deps.payout_reconciliation.process_job(payload)
         elif domain == "refund":
-            await refund_consumer.process_job(payload)
+            await deps.refund.process_job(payload)
         elif domain == "refund_reconcile":
-            await refund_reconciliation_consumer.process_job(payload)
+            await deps.refund_reconciliation.process_job(payload)
+        elif domain == "ledger_posting_reconcile":
+            await deps.ledger_posting_reconciliation.process_job(payload)
+        elif domain == "ledger_exposure_reconcile":
+            await deps.ledger_exposure_reconciliation.process_job(payload)
         else:
             raise ValueError(f"transaction_worker_unknown_route domain={domain} queue_name={queue_name}")
 

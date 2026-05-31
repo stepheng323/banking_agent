@@ -93,12 +93,39 @@ class PayoutJobPayload(TypedDict):
     narration: NotRequired[str | None]
 
 
+class LedgerReconciliationJobPayload(TypedDict, total=False):
+    limit: int
+    min_age_seconds: int
+    funded_transfer_id: str
+    funding_step_id: str
+
+
 class FundingJobPayload(TypedDict):
     type: Literal["initiate_funding"]
     funded_transfer_id: str
     idempotency_key: str
     transaction_id: str | None
     narration: str | None
+
+
+class TransactionDebitJobPayload(TypedDict):
+    transaction_id: str
+    idempotency_key: str
+
+
+class TransactionDebitRefundJobPayload(TypedDict):
+    transaction_debit_step_id: str
+    transaction_id: str
+    amount: MoneyPayload
+    amount_naira: NotRequired[MoneyPayload]
+    account_id: str
+    original_reference: str
+
+
+class BillFulfillmentJobPayload(TypedDict):
+    transaction_id: str
+    idempotency_key: str
+    bill_reference: str
 
 
 class AirtimeRecipient(TypedDict):

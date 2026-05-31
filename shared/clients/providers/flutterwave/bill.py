@@ -319,7 +319,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             "data_purchase_request",
             network=network,
             plan_code=plan_code,
-            phone=customer_phone,
+            phone_hash=log_fingerprint(customer_phone),
         )
         result = await self._client.request("POST", endpoint, payload=payload)
 
@@ -336,3 +336,21 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             )
 
         return self._error_response(result.get("error", "Data purchase failed"), **data_info)
+
+    async def get_bill_status(self, reference: str) -> dict[str, Any]:
+        """Get Flutterwave bill payment status by payment reference."""
+        normalized_reference = str(reference or "").strip()
+        if not normalized_reference:
+            return self._error_response("Bill reference is required")
+
+        result = await self._client.request("GET", f"/v3/bills/{normalized_reference}?verbose=1")
+        if result.get("success"):
+            data = result.get("data") or {}
+            status = str(data.get("status") or data.get("transaction_status") or "").strip().lower()
+            return self._success_response(
+                transaction_id=data.get("reference") or normalized_reference,
+                reference=data.get("reference") or normalized_reference,
+                status=status or "successful",
+                raw_response=data,
+            )
+        return self._error_response(result.get("error", "Failed to fetch bill status"), reference=normalized_reference)

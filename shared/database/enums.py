@@ -66,6 +66,19 @@ class FundingStepStatusEnum(str, Enum):
     REFUNDED = "refunded"
 
 
+class TransactionDebitStepStatusEnum(str, Enum):
+    """Status enum for single-transaction account debit steps."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    CONFIRMED = "confirmed"
+    FAILED = "failed"
+    REFUND_PENDING = "refund_pending"
+    REFUND_PROCESSING = "refund_processing"
+    REFUND_FAILED = "refund_failed"
+    REFUNDED = "refunded"
+
+
 class BeneficiaryTypeEnum(str, Enum):
     """Beneficiary type enum."""
 

@@ -8,15 +8,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from apps.transaction.dependencies import setup_transaction_worker_consumers
+from apps.transaction.dependencies import TransactionWorkerConsumers, setup_transaction_worker_consumers
 from apps.transaction.lambda_handler import _handler as transaction_lambda_handler
-from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
-from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer
-from banking.transactions.runtime.consumers.payout_consumer import PayoutConsumer
-from banking.transactions.runtime.consumers.payout_reconciliation_consumer import PayoutReconciliationConsumer
-from banking.transactions.runtime.consumers.refund_consumer import RefundConsumer
-from banking.transactions.runtime.consumers.refund_reconciliation_consumer import RefundReconciliationConsumer
-from banking.transactions.runtime.consumers.transaction_consumer import TransactionConsumer
 from shared.cache.distributed_lock import RedisDistributedLock, RedisLockTimeoutError
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
@@ -31,18 +24,31 @@ logger = get_logger(__name__)
 
 TRANSACTION_TOPICS: tuple[TopicType, ...] = (
     "transaction.execute",
+    "transaction_debit.process",
+    "transaction_debit.reconcile",
+    "transaction_debit.refund",
+    "transaction_debit.refund_reconcile",
     "funding.process",
     "funding.reconcile",
+    "bill.fulfill",
+    "bill.reconcile",
     "payout.process",
     "payout.reconcile",
     "refund.process",
     "refund.reconcile",
+    "ledger.reconcile.postings",
+    "ledger.reconcile.exposure",
 )
 
 _worker_task: asyncio.Task[None] | None = None
+_transaction_debit_reconciliation_task: asyncio.Task[None] | None = None
+_transaction_debit_refund_reconciliation_task: asyncio.Task[None] | None = None
 _funding_reconciliation_task: asyncio.Task[None] | None = None
+_bill_reconciliation_task: asyncio.Task[None] | None = None
 _payout_reconciliation_task: asyncio.Task[None] | None = None
 _refund_reconciliation_task: asyncio.Task[None] | None = None
+_ledger_posting_reconciliation_task: asyncio.Task[None] | None = None
+_ledger_exposure_reconciliation_task: asyncio.Task[None] | None = None
 _stop_event: asyncio.Event | None = None
 
 
@@ -50,12 +56,20 @@ def _enabled_domain_flags() -> dict[str, bool]:
     return dict.fromkeys(
         (
             "transaction",
+            "transaction_debit",
+            "transaction_debit_reconcile",
+            "transaction_debit_refund",
+            "transaction_debit_refund_reconcile",
             "funding",
             "funding_reconcile",
+            "bill_fulfill",
+            "bill_reconcile",
             "payout",
             "payout_reconcile",
             "refund",
             "refund_reconcile",
+            "ledger_posting_reconcile",
+            "ledger_exposure_reconcile",
         ),
         True,
     )
@@ -77,42 +91,41 @@ def _enabled_stream_names() -> list[str]:
 
 
 async def _process_stream_record(
-    consumers: tuple[
-        TransactionConsumer,
-        FundingConsumer,
-        PayoutConsumer,
-        PayoutReconciliationConsumer,
-        RefundConsumer,
-        FundingReconciliationConsumer,
-        RefundReconciliationConsumer,
-    ],
+    consumers: TransactionWorkerConsumers,
     stream_consumer: RedisStreamConsumer,
     record: RedisStreamRecord,
 ) -> None:
-    (
-        transaction_consumer,
-        funding_consumer,
-        payout_consumer,
-        payout_reconciliation_consumer,
-        refund_consumer,
-        funding_reconciliation_consumer,
-        refund_reconciliation_consumer,
-    ) = consumers
     try:
         if record.topic == "transaction.execute":
-            await transaction_consumer.process_transaction(record.payload)
+            await consumers.transaction.process_transaction(record.payload)
+        elif record.topic == "transaction_debit.process":
+            await consumers.transaction_debit.process_job(record.payload)
+        elif record.topic == "transaction_debit.reconcile":
+            await consumers.transaction_debit_reconciliation.process_job(record.payload)
+        elif record.topic == "transaction_debit.refund":
+            await consumers.transaction_debit_refund.process_job(record.payload)
+        elif record.topic == "transaction_debit.refund_reconcile":
+            await consumers.transaction_debit_refund_reconciliation.process_job(record.payload)
         elif record.topic == "funding.process":
-            await funding_consumer.process_job(record.payload)
+            await consumers.funding.process_job(record.payload)
         elif record.topic == "funding.reconcile":
-            await funding_reconciliation_consumer.process_job(record.payload)
+            await consumers.funding_reconciliation.process_job(record.payload)
+        elif record.topic == "bill.fulfill":
+            await consumers.bill_fulfillment.process_job(record.payload)
+        elif record.topic == "bill.reconcile":
+            await consumers.bill_reconciliation.process_job(record.payload)
         elif record.topic == "payout.process":
-            await payout_consumer.process_job(record.payload)
+            await consumers.payout.process_job(record.payload)
         elif record.topic == "payout.reconcile":
-            await payout_reconciliation_consumer.process_job(record.payload)
+            await consumers.payout_reconciliation.process_job(record.payload)
         elif record.topic == "refund.process":
-            await refund_consumer.process_job(record.payload)
+            await consumers.refund.process_job(record.payload)
         elif record.topic == "refund.reconcile":
-            await refund_reconciliation_consumer.process_job(record.payload)
+            await consumers.refund_reconciliation.process_job(record.payload)
+        elif record.topic == "ledger.reconcile.postings":
+            await consumers.ledger_posting_reconciliation.process_job(record.payload)
+        elif record.topic == "ledger.reconcile.exposure":
+            await consumers.ledger_exposure_reconciliation.process_job(record.payload)
         else:
             logger.warning("transaction_worker_unknown_stream_topic", topic=record.topic, stream=record.stream_name)
         await stream_consumer.ack(record.stream_name, record.record_id)
@@ -146,6 +159,120 @@ async def _run_transaction_stream_worker(stop_event: asyncio.Event) -> None:
             await _process_stream_record(consumers, stream_consumer, record)
 
 
+async def _run_transaction_debit_reconciliation_loop(stop_event: asyncio.Event) -> None:
+    interval_seconds = int(settings.transaction_debit_reconciliation_interval_seconds or 0)
+    if interval_seconds <= 0:
+        logger.info("transaction_debit_reconciliation_loop_disabled")
+        return
+
+    consumers = setup_transaction_worker_consumers()
+    consumer = consumers.transaction_debit_reconciliation
+    lock_ttl_seconds = max(interval_seconds * 2, 60)
+    logger.info("transaction_debit_reconciliation_loop_started", interval_seconds=interval_seconds)
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            break
+        except TimeoutError:
+            pass
+
+        lock = RedisDistributedLock(
+            RedisClient.get_client(),
+            key=f"{settings.project_name}:transaction_debit_reconciliation:{settings.runtime.infrastructure_environment}",
+            ttl_seconds=lock_ttl_seconds,
+        )
+        try:
+            await lock.acquire(wait_seconds=0.1)
+            await consumer.process_job({})
+            logger.info("transaction_debit_reconciliation_tick_completed")
+        except RedisLockTimeoutError:
+            logger.debug("transaction_debit_reconciliation_tick_skipped_lock_held")
+        except Exception as exc:
+            logger.error("transaction_debit_reconciliation_tick_failed", error=str(exc), exc_info=True)
+        finally:
+            try:
+                await lock.release()
+            except Exception as exc:
+                logger.warning("transaction_debit_reconciliation_lock_release_failed", error=str(exc))
+
+
+async def _run_bill_reconciliation_loop(stop_event: asyncio.Event) -> None:
+    interval_seconds = int(settings.bill_reconciliation_interval_seconds or 0)
+    if interval_seconds <= 0:
+        logger.info("bill_reconciliation_loop_disabled")
+        return
+
+    consumers = setup_transaction_worker_consumers()
+    consumer = consumers.bill_reconciliation
+    lock_ttl_seconds = max(interval_seconds * 2, 60)
+    logger.info("bill_reconciliation_loop_started", interval_seconds=interval_seconds)
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            break
+        except TimeoutError:
+            pass
+
+        lock = RedisDistributedLock(
+            RedisClient.get_client(),
+            key=f"{settings.project_name}:bill_reconciliation:{settings.runtime.infrastructure_environment}",
+            ttl_seconds=lock_ttl_seconds,
+        )
+        try:
+            await lock.acquire(wait_seconds=0.1)
+            await consumer.process_job({})
+            logger.info("bill_reconciliation_tick_completed")
+        except RedisLockTimeoutError:
+            logger.debug("bill_reconciliation_tick_skipped_lock_held")
+        except Exception as exc:
+            logger.error("bill_reconciliation_tick_failed", error=str(exc), exc_info=True)
+        finally:
+            try:
+                await lock.release()
+            except Exception as exc:
+                logger.warning("bill_reconciliation_lock_release_failed", error=str(exc))
+
+
+async def _run_transaction_debit_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
+    interval_seconds = int(settings.refund_reconciliation_interval_seconds or 0)
+    if interval_seconds <= 0:
+        logger.info("transaction_debit_refund_reconciliation_loop_disabled")
+        return
+
+    consumers = setup_transaction_worker_consumers()
+    consumer = consumers.transaction_debit_refund_reconciliation
+    lock_ttl_seconds = max(interval_seconds * 2, 60)
+    logger.info("transaction_debit_refund_reconciliation_loop_started", interval_seconds=interval_seconds)
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            break
+        except TimeoutError:
+            pass
+
+        lock = RedisDistributedLock(
+            RedisClient.get_client(),
+            key=f"{settings.project_name}:transaction_debit_refund_reconciliation:{settings.runtime.infrastructure_environment}",
+            ttl_seconds=lock_ttl_seconds,
+        )
+        try:
+            await lock.acquire(wait_seconds=0.1)
+            await consumer.process_job({})
+            logger.info("transaction_debit_refund_reconciliation_tick_completed")
+        except RedisLockTimeoutError:
+            logger.debug("transaction_debit_refund_reconciliation_tick_skipped_lock_held")
+        except Exception as exc:
+            logger.error("transaction_debit_refund_reconciliation_tick_failed", error=str(exc), exc_info=True)
+        finally:
+            try:
+                await lock.release()
+            except Exception as exc:
+                logger.warning("transaction_debit_refund_reconciliation_lock_release_failed", error=str(exc))
+
+
 async def _run_payout_reconciliation_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = int(settings.payout_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
@@ -153,7 +280,7 @@ async def _run_payout_reconciliation_loop(stop_event: asyncio.Event) -> None:
         return
 
     consumers = setup_transaction_worker_consumers()
-    payout_reconciliation_consumer = consumers[3]
+    payout_reconciliation_consumer = consumers.payout_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     logger.info("payout_reconciliation_loop_started", interval_seconds=interval_seconds)
 
@@ -197,7 +324,7 @@ async def _run_funding_reconciliation_loop(stop_event: asyncio.Event) -> None:
         return
 
     consumers = setup_transaction_worker_consumers()
-    funding_reconciliation_consumer = consumers[5]
+    funding_reconciliation_consumer = consumers.funding_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     logger.info("funding_reconciliation_loop_started", interval_seconds=interval_seconds)
 
@@ -241,7 +368,7 @@ async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
         return
 
     consumers = setup_transaction_worker_consumers()
-    refund_reconciliation_consumer = consumers[6]
+    refund_reconciliation_consumer = consumers.refund_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     logger.info("refund_reconciliation_loop_started", interval_seconds=interval_seconds)
 
@@ -278,11 +405,101 @@ async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
                 logger.warning("refund_reconciliation_lock_release_failed", error=str(exc))
 
 
+async def _run_ledger_posting_reconciliation_loop(stop_event: asyncio.Event) -> None:
+    interval_seconds = int(settings.ledger_reconciliation_interval_seconds or 0)
+    if interval_seconds <= 0:
+        logger.info("ledger_posting_reconciliation_loop_disabled")
+        return
+
+    consumers = setup_transaction_worker_consumers()
+    ledger_consumer = consumers.ledger_posting_reconciliation
+    lock_ttl_seconds = max(interval_seconds * 2, 60)
+    logger.info("ledger_posting_reconciliation_loop_started", interval_seconds=interval_seconds)
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            break
+        except TimeoutError:
+            pass
+
+        lock = RedisDistributedLock(
+            RedisClient.get_client(),
+            key=f"{settings.project_name}:ledger_posting_reconciliation:{settings.runtime.infrastructure_environment}",
+            ttl_seconds=lock_ttl_seconds,
+        )
+        try:
+            await lock.acquire(wait_seconds=0.1)
+        except RedisLockTimeoutError:
+            logger.debug("ledger_posting_reconciliation_tick_skipped_lock_held")
+            continue
+        except Exception as exc:
+            logger.error("ledger_posting_reconciliation_lock_failed", error=str(exc), exc_info=True)
+            continue
+
+        try:
+            await ledger_consumer.process_job({})
+            logger.info("ledger_posting_reconciliation_tick_completed")
+        except Exception as exc:
+            logger.error("ledger_posting_reconciliation_tick_failed", error=str(exc), exc_info=True)
+        finally:
+            try:
+                await lock.release()
+            except Exception as exc:
+                logger.warning("ledger_posting_reconciliation_lock_release_failed", error=str(exc))
+
+
+async def _run_ledger_exposure_reconciliation_loop(stop_event: asyncio.Event) -> None:
+    interval_seconds = int(settings.ledger_reconciliation_interval_seconds or 0)
+    if interval_seconds <= 0:
+        logger.info("ledger_exposure_reconciliation_loop_disabled")
+        return
+
+    consumers = setup_transaction_worker_consumers()
+    ledger_consumer = consumers.ledger_exposure_reconciliation
+    lock_ttl_seconds = max(interval_seconds * 2, 60)
+    logger.info("ledger_exposure_reconciliation_loop_started", interval_seconds=interval_seconds)
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            break
+        except TimeoutError:
+            pass
+
+        lock = RedisDistributedLock(
+            RedisClient.get_client(),
+            key=f"{settings.project_name}:ledger_exposure_reconciliation:{settings.runtime.infrastructure_environment}",
+            ttl_seconds=lock_ttl_seconds,
+        )
+        try:
+            await lock.acquire(wait_seconds=0.1)
+        except RedisLockTimeoutError:
+            logger.debug("ledger_exposure_reconciliation_tick_skipped_lock_held")
+            continue
+        except Exception as exc:
+            logger.error("ledger_exposure_reconciliation_lock_failed", error=str(exc), exc_info=True)
+            continue
+
+        try:
+            await ledger_consumer.process_job({})
+            logger.info("ledger_exposure_reconciliation_tick_completed")
+        except Exception as exc:
+            logger.error("ledger_exposure_reconciliation_tick_failed", error=str(exc), exc_info=True)
+        finally:
+            try:
+                await lock.release()
+            except Exception as exc:
+                logger.warning("ledger_exposure_reconciliation_lock_release_failed", error=str(exc))
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup/shutdown logic for the standalone transaction worker."""
-    global _worker_task, _funding_reconciliation_task, _payout_reconciliation_task
-    global _refund_reconciliation_task, _stop_event
+    global _worker_task, _transaction_debit_reconciliation_task, _transaction_debit_refund_reconciliation_task
+    global _funding_reconciliation_task, _bill_reconciliation_task, _payout_reconciliation_task
+    global _refund_reconciliation_task, _ledger_posting_reconciliation_task
+    global _ledger_exposure_reconciliation_task, _stop_event
 
     logger.info("transaction_worker_service_starting", **build_runtime_status("transaction-worker"))
 
@@ -301,6 +518,18 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             _run_funding_reconciliation_loop(_stop_event),
             name="funding-reconciliation-loop",
         )
+        _transaction_debit_reconciliation_task = asyncio.create_task(
+            _run_transaction_debit_reconciliation_loop(_stop_event),
+            name="transaction-debit-reconciliation-loop",
+        )
+        _bill_reconciliation_task = asyncio.create_task(
+            _run_bill_reconciliation_loop(_stop_event),
+            name="bill-reconciliation-loop",
+        )
+        _transaction_debit_refund_reconciliation_task = asyncio.create_task(
+            _run_transaction_debit_refund_reconciliation_loop(_stop_event),
+            name="transaction-debit-refund-reconciliation-loop",
+        )
         _payout_reconciliation_task = asyncio.create_task(
             _run_payout_reconciliation_loop(_stop_event),
             name="payout-reconciliation-loop",
@@ -308,6 +537,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         _refund_reconciliation_task = asyncio.create_task(
             _run_refund_reconciliation_loop(_stop_event),
             name="refund-reconciliation-loop",
+        )
+        _ledger_posting_reconciliation_task = asyncio.create_task(
+            _run_ledger_posting_reconciliation_loop(_stop_event),
+            name="ledger-posting-reconciliation-loop",
+        )
+        _ledger_exposure_reconciliation_task = asyncio.create_task(
+            _run_ledger_exposure_reconciliation_loop(_stop_event),
+            name="ledger-exposure-reconciliation-loop",
         )
     else:
         logger.info(
@@ -326,13 +563,27 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         _worker_task.cancel()
         await asyncio.gather(_worker_task, return_exceptions=True)
         _worker_task = None
-    for task in (_funding_reconciliation_task, _payout_reconciliation_task, _refund_reconciliation_task):
+    for task in (
+        _transaction_debit_reconciliation_task,
+        _bill_reconciliation_task,
+        _transaction_debit_refund_reconciliation_task,
+        _funding_reconciliation_task,
+        _payout_reconciliation_task,
+        _refund_reconciliation_task,
+        _ledger_posting_reconciliation_task,
+        _ledger_exposure_reconciliation_task,
+    ):
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+    _transaction_debit_reconciliation_task = None
+    _bill_reconciliation_task = None
+    _transaction_debit_refund_reconciliation_task = None
     _funding_reconciliation_task = None
     _payout_reconciliation_task = None
     _refund_reconciliation_task = None
+    _ledger_posting_reconciliation_task = None
+    _ledger_exposure_reconciliation_task = None
     logger.info("transaction_worker_service_shutting_down")
 
 
@@ -360,8 +611,11 @@ async def readiness_check() -> dict[str, object]:
         "enabled_domains": _enabled_domain_flags(),
         "async_transport": settings.async_transport,
         "funding_reconciliation_interval_seconds": settings.funding_reconciliation_interval_seconds,
+        "transaction_debit_reconciliation_interval_seconds": settings.transaction_debit_reconciliation_interval_seconds,
+        "bill_reconciliation_interval_seconds": settings.bill_reconciliation_interval_seconds,
         "payout_reconciliation_interval_seconds": settings.payout_reconciliation_interval_seconds,
         "refund_reconciliation_interval_seconds": settings.refund_reconciliation_interval_seconds,
+        "ledger_reconciliation_interval_seconds": settings.ledger_reconciliation_interval_seconds,
         "runtime": build_runtime_status("transaction-worker"),
     }
 

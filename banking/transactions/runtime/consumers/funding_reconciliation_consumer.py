@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import (
     is_retryable_debit_result,
@@ -218,12 +219,19 @@ class FundingReconciliationConsumer:
         if funding_steps is None:
             raise RuntimeError("funding_step_repository_unavailable")
         if result.status == DebitStatus.SUCCESSFUL:
-            await funding_steps.update_status(
+            updated_step = await funding_steps.update_status(
                 str(step.id),
                 FundingStepStatusEnum.CONFIRMED.value,
                 provider_reference=result.reference,
                 provider_debit_id=result.debit_id,
                 error_message=result.error_message,
+            )
+            step = updated_step or step
+            await LedgerPostingService.post_mono_funding_confirmed(
+                uow,
+                step,
+                transfer,
+                provider_reference=result.reference or getattr(step, "provider_reference", None),
             )
             await queue_payout_if_all_confirmed(uow=uow, transfer=transfer, publisher=self.publisher)
             return

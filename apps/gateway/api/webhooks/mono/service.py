@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
+from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.formatters.transfer_notifications import format_transfer_success_message
 from banking.presentation.i18n.renderer import render_message
@@ -17,8 +18,14 @@ from banking.transactions.runtime.funding_status import (
     queue_payout_if_all_confirmed,
     queue_refunds_for_confirmed_funding_steps,
 )
+from banking.transactions.runtime.transaction_debit_helpers import queue_bill_fulfillment
 from shared.cache.user_data import UserDataCache
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
+from shared.database.enums import (
+    FundedTransferStatusEnum,
+    FundingStepStatusEnum,
+    TransactionDebitStepStatusEnum,
+    TransactionStatusEnum,
+)
 from shared.database.models import FundedTransfer, UserChannelIdentity
 from shared.money import naira_to_json, require_naira
 from shared.queue.adapter import QueuePublisher
@@ -175,10 +182,25 @@ class MonoWebhookService:
                             incoming_status=funding_status,
                         )
                         return True
-                    await uow.funding_steps.update_status(
+                    updated_step = await uow.funding_steps.update_status(
                         step_id=str(step.id),
                         status=funding_status,
+                        provider_reference=reference,
+                        provider_debit_id=str(debit_id) if debit_id else None,
                     )
+                    step = updated_step or step
+
+                    transfer = None
+                    if uow.funded_transfers:
+                        transfer = await uow.funded_transfers.get_by_id(str(step.funded_transfer_id))
+
+                    if transfer and funding_status == FundingStepStatusEnum.CONFIRMED.value:
+                        await LedgerPostingService.post_mono_funding_confirmed(
+                            uow,
+                            step,
+                            transfer,
+                            provider_reference=reference or (str(debit_id) if debit_id else None),
+                        )
                     await uow.commit()
 
                     logger.info(
@@ -188,13 +210,70 @@ class MonoWebhookService:
                         status=funding_status,
                     )
 
-                    transfer = None
-                    if uow.funded_transfers:
-                        transfer = await uow.funded_transfers.get_by_id(str(step.funded_transfer_id))
-
                     if transfer:
                         await self._check_transfer_completion(uow, transfer, funding_status)
 
+                    return True
+
+            transaction_debit_steps = getattr(uow, "transaction_debit_steps", None)
+            if transaction_debit_steps:
+                debit_step = None
+                if reference:
+                    debit_step = await transaction_debit_steps.get_by_provider_reference_for_update(str(reference))
+                if not debit_step and debit_id:
+                    debit_step = await transaction_debit_steps.get_by_provider_debit_id_for_update(str(debit_id))
+                if debit_step:
+                    if self._should_ignore_transaction_debit_transition(debit_step.status, funding_status):
+                        logger.info(
+                            "transaction_debit_webhook_transition_ignored",
+                            step_id=str(debit_step.id),
+                            current_status=debit_step.status,
+                            incoming_status=funding_status,
+                        )
+                        return True
+                    updated_step = await transaction_debit_steps.update_status(
+                        str(debit_step.id),
+                        self._transaction_debit_status(funding_status),
+                        provider_reference=str(reference) if reference else None,
+                        provider_debit_id=str(debit_id) if debit_id else None,
+                    )
+                    debit_step = updated_step or debit_step
+
+                    tx = (
+                        await uow.transactions.get_by_id_for_update(str(debit_step.transaction_id))
+                        if uow.transactions
+                        else None
+                    )
+                    if tx:
+                        tx.provider_status = str(debit_data.get("status") or tx.provider_status or "")
+                        tx.provider_error_code = self._response_code(debit_data)
+                        tx.provider_response = to_json_safe_dict(data)
+                        if debit_id:
+                            tx.transaction_id = str(debit_id)
+                        if debit_step.status == TransactionDebitStepStatusEnum.CONFIRMED.value:
+                            tx.status = TransactionStatusEnum.PROCESSING.value
+                            await LedgerPostingService.post_transaction_debit_confirmed(
+                                uow,
+                                debit_step,
+                                tx,
+                                provider_reference=str(reference or debit_id),
+                            )
+                            await queue_bill_fulfillment(publisher=self.publisher, transaction=tx)
+                        elif debit_step.status == TransactionDebitStepStatusEnum.FAILED.value:
+                            tx.status = TransactionStatusEnum.FAILED.value
+                            tx.error_message = self._response_message(debit_data) or tx.error_message
+                            tx.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                        else:
+                            tx.status = TransactionStatusEnum.PROCESSING.value
+                        if uow.db:
+                            uow.db.add(tx)
+                    await uow.commit()
+                    logger.info(
+                        "transaction_debit_step_updated",
+                        step_id=str(debit_step.id),
+                        reference=reference,
+                        status=debit_step.status,
+                    )
                     return True
 
             if not uow.transactions:
@@ -280,6 +359,34 @@ class MonoWebhookService:
             return True
         if current_status == FundingStepStatusEnum.FAILED.value:
             return incoming_status == FundingStepStatusEnum.PROCESSING.value
+        return False
+
+    @staticmethod
+    def _transaction_debit_status(incoming_status: str) -> str:
+        """Map funding-step debit statuses to transaction-debit statuses."""
+        if incoming_status == FundingStepStatusEnum.CONFIRMED.value:
+            return TransactionDebitStepStatusEnum.CONFIRMED.value
+        if incoming_status == FundingStepStatusEnum.FAILED.value:
+            return TransactionDebitStepStatusEnum.FAILED.value
+        return TransactionDebitStepStatusEnum.PROCESSING.value
+
+    @staticmethod
+    def _should_ignore_transaction_debit_transition(current_status: str, incoming_status: str) -> bool:
+        """Prevent stale Mono webhooks from downgrading transaction debit states."""
+        mapped_status = MonoWebhookService._transaction_debit_status(incoming_status)
+        if current_status == mapped_status:
+            return True
+        if current_status == TransactionDebitStepStatusEnum.CONFIRMED.value:
+            return mapped_status != TransactionDebitStepStatusEnum.CONFIRMED.value
+        if current_status in {
+            TransactionDebitStepStatusEnum.REFUND_PENDING.value,
+            TransactionDebitStepStatusEnum.REFUND_PROCESSING.value,
+            TransactionDebitStepStatusEnum.REFUND_FAILED.value,
+            TransactionDebitStepStatusEnum.REFUNDED.value,
+        }:
+            return True
+        if current_status == TransactionDebitStepStatusEnum.FAILED.value:
+            return mapped_status == TransactionDebitStepStatusEnum.PROCESSING.value
         return False
 
     async def _invalidate_cache(self, phone_number: str) -> None:

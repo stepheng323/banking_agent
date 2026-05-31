@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import queue_refunds_for_confirmed_funding_steps
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
@@ -65,6 +66,12 @@ async def apply_payout_result(
     status = normalize_payout_status(result.get("status") or result.get("provider_status"))
 
     if status == "successful" and result.get("success") is not False:
+        await LedgerPostingService.post_flutterwave_payout_confirmed(
+            uow,
+            transfer,
+            provider_reference=payout_reference or getattr(transfer, "payout_reference", None),
+            result=safe_result,
+        )
         transfer.completed_at = now
         await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.COMPLETED.value)
         if tx:

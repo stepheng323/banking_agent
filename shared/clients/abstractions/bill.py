@@ -123,3 +123,12 @@ class BillPaymentProvider(ABC):
                 - provider: str
         """
         raise NotImplementedError(f"{self.provider_name} does not support data purchases")
+
+    async def get_bill_status(self, reference: str) -> dict[str, Any]:
+        """
+        Get bill payment status by provider reference.
+
+        Providers that cannot verify by reference should raise NotImplementedError so
+        callers keep the transaction pending for manual/reconciliation review.
+        """
+        raise NotImplementedError(f"{self.provider_name} does not support bill status lookup")

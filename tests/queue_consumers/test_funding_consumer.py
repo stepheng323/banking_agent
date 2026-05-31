@@ -121,6 +121,27 @@ class _FakeAccounts:
         return SimpleNamespace(id=account_id, mandate_id="mandate-1")
 
 
+class _FakeLedgerAccounts:
+    async def get_or_create(self, **kwargs) -> SimpleNamespace:
+        return SimpleNamespace(id=kwargs["code"], **kwargs)
+
+
+class _FakeLedgerEntries:
+    def __init__(self) -> None:
+        self.entries: list[dict] = []
+
+    async def get_by_key(self, entry_key: str) -> SimpleNamespace | None:
+        for entry in self.entries:
+            if entry["entry_key"] == entry_key:
+                return SimpleNamespace(**entry)
+        return None
+
+    async def create_entry_with_lines(self, **kwargs) -> SimpleNamespace:
+        entry = {"id": kwargs["entry_key"], **kwargs}
+        self.entries.append(entry)
+        return SimpleNamespace(**entry)
+
+
 class _FakeUnitOfWork:
     def __init__(self, transfer: SimpleNamespace) -> None:
         self.funded_transfers = _FakeFundedTransfers(transfer)
@@ -128,6 +149,9 @@ class _FakeUnitOfWork:
             [SimpleNamespace(id="step-1", status=FundingStepStatusEnum.CONFIRMED.value)]
         )
         self.accounts = SimpleNamespace()
+        self.ledger_accounts = _FakeLedgerAccounts()
+        self.ledger_entries = _FakeLedgerEntries()
+        self.transactions = None
         self.commit_calls = 0
 
     async def __aenter__(self):
@@ -145,6 +169,9 @@ class _ClaimingUnitOfWork:
         self.funded_transfers = _FakeFundedTransfers(transfer)
         self.funding_steps = _ClaimingFundingSteps(steps)
         self.accounts = _FakeAccounts()
+        self.ledger_accounts = _FakeLedgerAccounts()
+        self.ledger_entries = _FakeLedgerEntries()
+        self.transactions = None
         self.commit_calls = 0
 
     async def __aenter__(self):

@@ -15,6 +15,7 @@ from banking.beneficiaries.services.post_transaction_beneficiary import (
     suggest_mobile_beneficiary,
 )
 from banking.messaging.delivery.service import DeliveryService
+from banking.persistence.unit_of_work import UnitOfWork
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.personality import PersonalityContext, TransferMoment, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
@@ -25,9 +26,11 @@ from banking.transactions.runtime.async_completion import (
 )
 from banking.transactions.runtime.async_group_types import AsyncGroupRedis
 from banking.transactions.runtime.failure_categories import classify_failure_category
+from banking.transactions.runtime.transaction_debit_helpers import debit_reference_for_transaction
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.money import MoneyAmount, to_naira
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 
@@ -70,12 +73,16 @@ class DataExecutor:
         delivery_service: DeliveryService | None = None,
         redis_client: AsyncGroupRedis | None = None,
         beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
+        publisher: QueuePublisher | None = None,
+        debit_before_bill: bool = False,
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.delivery_service = delivery_service or DeliveryService()
         self.redis_client = redis_client
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
+        self.publisher = publisher
+        self.debit_before_bill = debit_before_bill
 
     async def _build_data_beneficiary_suggestion(
         self,
@@ -237,7 +244,16 @@ class DataExecutor:
                         ),
                         metadata={"source": "data_executor", "transaction_id": transaction_id},
                         dedupe_key=f"data:failed:{transaction_id}",
-                    )
+                )
+                return
+
+            if self.debit_before_bill:
+                await self._queue_transaction_debit(
+                    transaction_id=str(transaction_id),
+                    idempotency_key=request_reference,
+                    source_account_id=data_purchase.get("source_account_id"),
+                )
+                logger.info("data_debit_queued", transaction_id=transaction_id)
                 return
 
             result = await self.bill_provider.purchase_data(
@@ -541,3 +557,42 @@ class DataExecutor:
                         },
                         dedupe_key=f"data:batch:{batch_summary['stage']}:{transaction_id}",
                     )
+
+    async def _queue_transaction_debit(
+        self,
+        *,
+        transaction_id: str,
+        idempotency_key: str,
+        source_account_id: str | None,
+    ) -> None:
+        """Create/reuse transaction debit state and queue Mono debit processing."""
+        if not self.publisher:
+            raise RuntimeError("transaction_debit_publisher_unavailable")
+        if not source_account_id:
+            await self.transaction_repo.update_status(
+                transaction_id,
+                TransactionStatusEnum.FAILED.value,
+                error_message="Source account missing for data purchase",
+            )
+            return
+
+        async with UnitOfWork() as uow:
+            if not uow.transactions or not uow.transaction_debit_steps:
+                return
+            tx = await uow.transactions.get_by_id(transaction_id)
+            if not tx:
+                return
+            await uow.transaction_debit_steps.get_or_create_for_transaction(
+                transaction=tx,
+                account_id=str(source_account_id),
+                provider_reference=debit_reference_for_transaction(tx),
+            )
+            await uow.commit()
+
+        await self.publisher.publish(
+            topic="transaction_debit.process",
+            message={
+                "transaction_id": transaction_id,
+                "idempotency_key": idempotency_key,
+            },
+        )

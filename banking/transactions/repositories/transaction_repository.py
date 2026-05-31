@@ -1,15 +1,28 @@
 """Repository for Transaction model."""
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.ledger.posting import LedgerPostingService
+from banking.ledger.repositories.ledger_account_repository import LedgerAccountRepository
+from banking.ledger.repositories.ledger_entry_repository import LedgerEntryRepository
 from banking.persistence.base import BaseRepository
 from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
-from shared.database.models import Transaction
+from shared.database.models import FundedTransfer, Transaction, TransactionDebitStep
 from shared.utils.json import to_json_safe_dict
+
+
+@dataclass(slots=True)
+class _TransactionLedgerPostingUow:
+    """Minimal ledger posting context sharing this repository transaction."""
+
+    ledger_accounts: LedgerAccountRepository
+    ledger_entries: LedgerEntryRepository
+    transactions: "TransactionRepository"
 
 
 def normalize_db_timestamp(value: datetime) -> datetime:
@@ -99,6 +112,15 @@ class TransactionRepository(BaseRepository[Transaction]):
         try:
             tx_uuid = UUID(transaction_id) if isinstance(transaction_id, str) else transaction_id
             result = await self.db.execute(select(Transaction).filter(Transaction.id == tx_uuid))
+            return result.scalars().first()
+        except ValueError:
+            return None
+
+    async def get_by_id_for_update(self, transaction_id: str) -> Transaction | None:
+        """Get a transaction by UUID and lock it for a state transition."""
+        try:
+            tx_uuid = UUID(transaction_id) if isinstance(transaction_id, str) else transaction_id
+            result = await self.db.execute(select(Transaction).filter(Transaction.id == tx_uuid).with_for_update())
             return result.scalars().first()
         except ValueError:
             return None
@@ -270,7 +292,49 @@ class TransactionRepository(BaseRepository[Transaction]):
                 transaction.provider_error_code = provider_error_code
             if error_message:
                 transaction.error_message = error_message
+            if status == TransactionStatusEnum.SUCCESSFUL.value:
+                await self._post_success_ledger_entry(transaction)
             self.db.add(transaction)
             await self.db.commit()
             await self.db.refresh(transaction)
         return transaction
+
+    async def _post_success_ledger_entry(self, transaction: Transaction) -> None:
+        """Post idempotent ledger entry before committing a successful non-pooled transaction."""
+        if transaction.transaction_type not in {
+            TransactionTypeEnum.TRANSFER.value,
+            TransactionTypeEnum.AIRTIME.value,
+            TransactionTypeEnum.DATA.value,
+            TransactionTypeEnum.BILL.value,
+        }:
+            return
+        if await self._has_pooled_transfer_accounting(transaction):
+            return
+        if await self._has_transaction_debit_accounting(transaction):
+            return
+
+        await LedgerPostingService.post_transaction_success_confirmed(
+            _TransactionLedgerPostingUow(
+                ledger_accounts=LedgerAccountRepository(self.db),
+                ledger_entries=LedgerEntryRepository(self.db),
+                transactions=self,
+            ),
+            transaction,
+            provider_reference=transaction.transaction_id or transaction.idempotency_key,
+        )
+
+    async def _has_pooled_transfer_accounting(self, transaction: Transaction) -> bool:
+        """Return true when this transaction is already represented by a funded transfer ledger."""
+        result = await self.db.execute(
+            select(FundedTransfer.id).filter(FundedTransfer.idempotency_key == transaction.idempotency_key).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def _has_transaction_debit_accounting(self, transaction: Transaction) -> bool:
+        """Return true when this transaction is represented by debit/bill ledger entries."""
+        result = await self.db.execute(
+            select(TransactionDebitStep.id)
+            .filter(TransactionDebitStep.transaction_id == transaction.id)
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None

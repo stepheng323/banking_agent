@@ -150,6 +150,22 @@ class Settings:
         self.funding_reconciliation_interval_seconds: int = int(
             os.getenv("FUNDING_RECONCILIATION_INTERVAL_SECONDS", "300")
         )
+        self.transaction_debit_reconciliation_min_age_seconds: int = int(
+            os.getenv("TRANSACTION_DEBIT_RECONCILIATION_MIN_AGE_SECONDS", "120")
+        )
+        self.transaction_debit_reconciliation_batch_size: int = int(
+            os.getenv("TRANSACTION_DEBIT_RECONCILIATION_BATCH_SIZE", "50")
+        )
+        self.transaction_debit_reconciliation_interval_seconds: int = int(
+            os.getenv("TRANSACTION_DEBIT_RECONCILIATION_INTERVAL_SECONDS", "300")
+        )
+        self.bill_reconciliation_min_age_seconds: int = int(
+            os.getenv("BILL_RECONCILIATION_MIN_AGE_SECONDS", "300")
+        )
+        self.bill_reconciliation_batch_size: int = int(os.getenv("BILL_RECONCILIATION_BATCH_SIZE", "50"))
+        self.bill_reconciliation_interval_seconds: int = int(
+            os.getenv("BILL_RECONCILIATION_INTERVAL_SECONDS", "300")
+        )
         self.refund_reconciliation_min_age_seconds: int = int(
             os.getenv("REFUND_RECONCILIATION_MIN_AGE_SECONDS", "300")
         )
@@ -158,6 +174,16 @@ class Settings:
             os.getenv("REFUND_RECONCILIATION_INTERVAL_SECONDS", "900")
         )
         self.refund_reconciliation_max_attempts: int = int(os.getenv("REFUND_RECONCILIATION_MAX_ATTEMPTS", "96"))
+        self.ledger_reconciliation_interval_seconds: int = int(
+            os.getenv("LEDGER_RECONCILIATION_INTERVAL_SECONDS", "300")
+        )
+        self.ledger_reconciliation_batch_size: int = int(os.getenv("LEDGER_RECONCILIATION_BATCH_SIZE", "100"))
+        self.ledger_exposure_min_age_seconds: int = int(os.getenv("LEDGER_EXPOSURE_MIN_AGE_SECONDS", "300"))
+        self.ledger_stuck_refunding_seconds: int = int(os.getenv("LEDGER_STUCK_REFUNDING_SECONDS", "3600"))
+        ledger_ticket_setting = self._parse_optional_bool(os.getenv("LEDGER_FINDINGS_CREATE_SUPPORT_TICKET"))
+        self.ledger_findings_create_support_ticket: bool = (
+            True if ledger_ticket_setting is None else ledger_ticket_setting
+        )
 
         self.transfer_risk_enabled: bool = os.getenv("TRANSFER_RISK_ENABLED", "true").lower() == "true"
         self.transfer_hourly_amount_limit_ngn: Decimal = Decimal(

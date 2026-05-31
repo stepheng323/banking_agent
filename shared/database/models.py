@@ -9,9 +9,11 @@ from sqlalchemy import (
     ARRAY,
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -33,6 +35,7 @@ from shared.database.enums import (
     ScheduledRunStatusEnum,
     SupportTicketPriorityEnum,
     SupportTicketStatusEnum,
+    TransactionDebitStepStatusEnum,
     TransactionTypeEnum,
     UserOnboardingStatusEnum,
 )
@@ -463,6 +466,249 @@ class FundingStep(Base):
 
     def __repr__(self):
         return f"<FundingStep(id={self.id}, amount={self.amount}, status={self.status}, seq={self.sequence})>"
+
+
+class TransactionDebitStep(Base):
+    """Single Mono account debit used before bill fulfillment for a normal transaction."""
+
+    __tablename__ = "transaction_debit_steps"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", name="fk_transaction_debit_steps_transaction_id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", name="fk_transaction_debit_steps_account_id"),
+        nullable=False,
+        index=True,
+    )
+    amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String, default="NGN", nullable=False)
+    status: Mapped[str] = mapped_column(
+        String,
+        default=TransactionDebitStepStatusEnum.PENDING.value,
+        nullable=False,
+        index=True,
+    )
+
+    provider_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_debit_id: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    provider_reference: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
+    refund_provider_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    refund_provider_reference: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    initiated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refund_initiated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refund_last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    refund_attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    refund_error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    transaction: Mapped["Transaction"] = relationship("Transaction")
+    account: Mapped["Account"] = relationship("Account")
+
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_transaction_debit_steps_positive_amount"),
+    )
+
+    def __repr__(self):
+        return f"<TransactionDebitStep(id={self.id}, transaction={self.transaction_id}, status={self.status})>"
+
+
+class LedgerAccount(Base):
+    """Double-entry ledger account for confirmed pooled-transfer money movement."""
+
+    __tablename__ = "ledger_accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    code: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    account_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    normal_balance: Mapped[str] = mapped_column(String(10), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="NGN", nullable=False, index=True)
+    owner_type: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_ledger_accounts_user_id"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+
+    lines: Mapped[list["LedgerLine"]] = relationship("LedgerLine", back_populates="account")
+
+    __table_args__ = (
+        CheckConstraint("normal_balance in ('debit', 'credit')", name="ck_ledger_accounts_normal_balance"),
+    )
+
+
+class LedgerEntry(Base):
+    """Append-only ledger entry. Corrections are posted as new reversal entries."""
+
+    __tablename__ = "ledger_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    entry_key: Mapped[str] = mapped_column(String(180), unique=True, nullable=False, index=True)
+    entry_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    amount_naira: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="NGN", nullable=False, index=True)
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", name="fk_ledger_entries_transaction_id"),
+        nullable=True,
+        index=True,
+    )
+    funded_transfer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("funded_transfers.id", name="fk_ledger_entries_funded_transfer_id"),
+        nullable=True,
+        index=True,
+    )
+    funding_step_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("funding_steps.id", name="fk_ledger_entries_funding_step_id"),
+        nullable=True,
+        index=True,
+    )
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    provider_reference: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    provider_event_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    source_type: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    source_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    entry_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    posted_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    reversal_of_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ledger_entries.id", name="fk_ledger_entries_reversal_of_entry_id"),
+        nullable=True,
+        index=True,
+    )
+
+    lines: Mapped[list["LedgerLine"]] = relationship(
+        "LedgerLine",
+        back_populates="entry",
+        order_by="LedgerLine.line_number",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount_naira > 0", name="ck_ledger_entries_positive_amount"),
+    )
+
+
+class LedgerLine(Base):
+    """One side of a ledger entry. Each entry must balance debit and credit lines."""
+
+    __tablename__ = "ledger_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    entry_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ledger_entries.id", name="fk_ledger_lines_entry_id"),
+        nullable=False,
+        index=True,
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ledger_accounts.id", name="fk_ledger_lines_account_id"),
+        nullable=False,
+        index=True,
+    )
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    amount_naira: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="NGN", nullable=False, index=True)
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    funded_transfer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    funding_step_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    provider_reference: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    provider_event_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    posted_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False, index=True)
+
+    entry: Mapped["LedgerEntry"] = relationship("LedgerEntry", back_populates="lines")
+    account: Mapped["LedgerAccount"] = relationship("LedgerAccount", back_populates="lines")
+
+    __table_args__ = (
+        UniqueConstraint("entry_id", "line_number", name="uq_ledger_lines_entry_line_number"),
+        CheckConstraint("direction in ('debit', 'credit')", name="ck_ledger_lines_direction"),
+        CheckConstraint("amount_naira > 0", name="ck_ledger_lines_positive_amount"),
+        Index("ix_ledger_lines_account_posted_at", "account_id", "posted_at"),
+    )
+
+
+class LedgerReconciliationRun(Base):
+    """Execution record for ledger reconciliation scans."""
+
+    __tablename__ = "ledger_reconciliation_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    run_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="running", nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scanned_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    repaired_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    finding_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class LedgerReconciliationFinding(Base):
+    """Persistent accounting mismatch or exposure finding."""
+
+    __tablename__ = "ledger_reconciliation_findings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    finding_key: Mapped[str] = mapped_column(String(220), unique=True, nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    finding_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False, index=True)
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", name="fk_ledger_findings_transaction_id"),
+        nullable=True,
+        index=True,
+    )
+    funded_transfer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("funded_transfers.id", name="fk_ledger_findings_funded_transfer_id"),
+        nullable=True,
+        index=True,
+    )
+    funding_step_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("funding_steps.id", name="fk_ledger_findings_funding_step_id"),
+        nullable=True,
+        index=True,
+    )
+    support_ticket_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("support_tickets.id", name="fk_ledger_findings_support_ticket_id"),
+        nullable=True,
+        index=True,
+    )
+    expected_amount_naira: Mapped[Decimal | None] = mapped_column(MONEY_COLUMN, nullable=True)
+    actual_amount_naira: Mapped[Decimal | None] = mapped_column(MONEY_COLUMN, nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ProcessedWebhookEvent(Base):

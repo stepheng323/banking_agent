@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
+from banking.transactions.runtime.executors import airtime as airtime_module
 from banking.transactions.runtime.executors.airtime import AirtimeExecutor
 from shared.database.enums import TransactionStatusEnum
 
@@ -37,6 +38,14 @@ class _SuggestionServiceStub:
         self.check_and_suggest_beneficiary = AsyncMock(return_value=message)
 
 
+class _PublisherStub:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, dict]] = []
+
+    async def publish(self, *, topic: str, message: dict) -> None:
+        self.messages.append((topic, message))
+
+
 def _payload() -> dict:
     return {
         "transaction_id": "tx-1",
@@ -53,6 +62,54 @@ def _payload() -> dict:
         },
         "language": "en",
     }
+
+
+@pytest.mark.asyncio
+async def test_airtime_executor_debit_first_creates_step_and_queues_mono_debit(monkeypatch) -> None:
+    provider = SimpleNamespace(purchase_airtime=AsyncMock(return_value={"success": True, "reference": "ref-1"}))
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    publisher = _PublisherStub()
+    tx = SimpleNamespace(id="tx-1", idempotency_key="idem-1", amount=2000, currency="NGN")
+    debit_steps = SimpleNamespace(get_or_create_for_transaction=AsyncMock(return_value=(SimpleNamespace(), True)))
+    transactions = SimpleNamespace(get_by_id=AsyncMock(return_value=tx))
+
+    class _Uow:
+        def __init__(self) -> None:
+            self.transactions = transactions
+            self.transaction_debit_steps = debit_steps
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def commit(self) -> None:
+            return None
+
+    monkeypatch.setattr(airtime_module, "UnitOfWork", _Uow)
+    executor = AirtimeExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        publisher=publisher,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        debit_before_bill=True,
+    )
+
+    await executor.handle_airtime(_payload())
+
+    provider.purchase_airtime.assert_not_awaited()
+    debit_steps.get_or_create_for_transaction.assert_awaited_once_with(
+        transaction=tx,
+        account_id="acc-1",
+        provider_reference="idem-1-debit",
+    )
+    assert publisher.messages == [
+        ("transaction_debit.process", {"transaction_id": "tx-1", "idempotency_key": "idem-1"})
+    ]
+    delivery_service.deliver_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -114,6 +114,27 @@ class _FakeTransactions:
         return self.tx if self.tx.idempotency_key == idempotency_key else None
 
 
+class _FakeLedgerAccounts:
+    async def get_or_create(self, **kwargs) -> SimpleNamespace:
+        return SimpleNamespace(id=kwargs["code"], **kwargs)
+
+
+class _FakeLedgerEntries:
+    def __init__(self) -> None:
+        self.entries: list[dict] = []
+
+    async def get_by_key(self, entry_key: str) -> SimpleNamespace | None:
+        for entry in self.entries:
+            if entry["entry_key"] == entry_key:
+                return SimpleNamespace(**entry)
+        return None
+
+    async def create_entry_with_lines(self, **kwargs) -> SimpleNamespace:
+        entry = {"id": kwargs["entry_key"], **kwargs}
+        self.entries.append(entry)
+        return SimpleNamespace(**entry)
+
+
 class _SharedState:
     def __init__(self, steps: list[SimpleNamespace]) -> None:
         self.db = _FakeDb()
@@ -134,6 +155,8 @@ class _SharedState:
         self.funded_transfers = _FakeFundedTransfers(self.transfer)
         self.accounts = _FakeAccounts()
         self.transactions = _FakeTransactions(self.tx)
+        self.ledger_accounts = _FakeLedgerAccounts()
+        self.ledger_entries = _FakeLedgerEntries()
         self.commit_calls = 0
 
 
@@ -144,6 +167,8 @@ class _FakeUnitOfWork:
         self.funded_transfers = state.funded_transfers
         self.accounts = state.accounts
         self.transactions = state.transactions
+        self.ledger_accounts = state.ledger_accounts
+        self.ledger_entries = state.ledger_entries
         self._state = state
 
     async def __aenter__(self):

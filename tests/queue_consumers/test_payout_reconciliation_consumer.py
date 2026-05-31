@@ -95,6 +95,27 @@ class _FakeFundingSteps:
                 step.status = status
 
 
+class _FakeLedgerAccounts:
+    async def get_or_create(self, **kwargs) -> SimpleNamespace:
+        return SimpleNamespace(id=kwargs["code"], **kwargs)
+
+
+class _FakeLedgerEntries:
+    def __init__(self) -> None:
+        self.entries: list[dict] = []
+
+    async def get_by_key(self, entry_key: str) -> SimpleNamespace | None:
+        for entry in self.entries:
+            if entry["entry_key"] == entry_key:
+                return SimpleNamespace(**entry)
+        return None
+
+    async def create_entry_with_lines(self, **kwargs) -> SimpleNamespace:
+        entry = {"id": kwargs["entry_key"], **kwargs}
+        self.entries.append(entry)
+        return SimpleNamespace(**entry)
+
+
 class _SharedState:
     def __init__(
         self,
@@ -106,6 +127,8 @@ class _SharedState:
         self.funded_transfers = _FakeFundedTransfers(transfer)
         self.transactions = _FakeTransactions(tx)
         self.funding_steps = _FakeFundingSteps(steps or [])
+        self.ledger_accounts = _FakeLedgerAccounts()
+        self.ledger_entries = _FakeLedgerEntries()
         self.commit_calls = 0
 
 
@@ -116,6 +139,8 @@ class _FakeUnitOfWork:
         self.funded_transfers = state.funded_transfers
         self.transactions = state.transactions
         self.funding_steps = state.funding_steps
+        self.ledger_accounts = state.ledger_accounts
+        self.ledger_entries = state.ledger_entries
 
     async def __aenter__(self):
         return self
@@ -130,6 +155,7 @@ class _FakeUnitOfWork:
 def _transfer() -> SimpleNamespace:
     return SimpleNamespace(
         id="funded-1",
+        user_id="user-1",
         idempotency_key="idem-1",
         amount=5000,
         currency="NGN",

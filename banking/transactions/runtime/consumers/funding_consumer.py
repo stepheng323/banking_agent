@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import (
     is_retryable_debit_result,
@@ -187,13 +188,14 @@ class FundingConsumer:
             elif result.status == DebitStatus.FAILED:
                 mapped_status = FundingStepStatusEnum.FAILED.value
 
-            await uow.funding_steps.update_status(
+            updated_step = await uow.funding_steps.update_status(
                 str(step.id),
                 mapped_status,
                 provider_reference=result.reference or reference,
                 provider_debit_id=result.debit_id,
                 error_message=result.error_message,
             )
+            step = updated_step or step
 
             if not result.success or mapped_status == FundingStepStatusEnum.FAILED.value:
                 failure_reason = result.error_message or "Funding debit initiation failed"
@@ -206,6 +208,14 @@ class FundingConsumer:
                 await uow.commit()
                 logger.warning("funding_job_failed", funded_transfer_id=funded_transfer_id, error=failure_reason)
                 return "failed"
+
+            if mapped_status == FundingStepStatusEnum.CONFIRMED.value:
+                await LedgerPostingService.post_mono_funding_confirmed(
+                    uow,
+                    step,
+                    transfer,
+                    provider_reference=result.reference or reference,
+                )
 
             if await uow.funding_steps.all_confirmed(str(transfer.id)):
                 await queue_payout_if_all_confirmed(uow=uow, transfer=transfer, publisher=self.publisher)

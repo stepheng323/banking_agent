@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import finalize_refund_state
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
@@ -165,7 +166,16 @@ class RefundReconciliationConsumer:
             uow.db.add(step)
 
         if result.status == DebitStatus.REVERSED:
-            await funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
+            updated_step = await funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
+            step = updated_step or step
+            await LedgerPostingService.post_mono_refund_confirmed(
+                uow,
+                step,
+                transfer,
+                provider_reference=result.reference
+                or getattr(step, "refund_provider_reference", None)
+                or getattr(step, "refund_provider_id", None),
+            )
             await finalize_refund_state(uow, transfer)
             logger.info("refund_reconciliation_completed", funding_step_id=str(step.id))
             return

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from banking.policy.loader import get_cached_policy, load_policy
+from banking.transactions.runtime.executors import data as data_module
 from banking.transactions.runtime.executors.data import DataExecutor
 from shared.database.enums import TransactionStatusEnum
 
@@ -45,6 +46,14 @@ class _SuggestionServiceStub:
         self.check_and_suggest_beneficiary = AsyncMock(return_value=message)
 
 
+class _PublisherStub:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, dict]] = []
+
+    async def publish(self, *, topic: str, message: dict) -> None:
+        self.messages.append((topic, message))
+
+
 def _payload() -> dict:
     return {
         "transaction_id": "tx-1",
@@ -82,6 +91,58 @@ def _install_disabled_data_policy(tmp_path: Path) -> None:
 
 def _reset_policy_cache() -> None:
     get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
+
+
+@pytest.mark.asyncio
+async def test_data_executor_debit_first_creates_step_and_queues_mono_debit(monkeypatch) -> None:
+    provider = SimpleNamespace(
+        purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"})
+    )
+    transaction_repo = SimpleNamespace(update_status=AsyncMock())
+    delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+    publisher = _PublisherStub()
+    tx = SimpleNamespace(id="tx-1", idempotency_key="idem-1", amount=1500, currency="NGN")
+    debit_steps = SimpleNamespace(get_or_create_for_transaction=AsyncMock(return_value=(SimpleNamespace(), True)))
+    transactions = SimpleNamespace(get_by_id=AsyncMock(return_value=tx))
+    payload = _payload()
+    payload["data_purchase"]["source_account_id"] = "acc-1"
+
+    class _Uow:
+        def __init__(self) -> None:
+            self.transactions = transactions
+            self.transaction_debit_steps = debit_steps
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def commit(self) -> None:
+            return None
+
+    monkeypatch.setattr(data_module, "UnitOfWork", _Uow)
+    executor = DataExecutor(
+        bill_provider=provider,
+        transaction_repo=transaction_repo,
+        delivery_service=delivery_service,
+        redis_client=_RedisStub(),
+        publisher=publisher,
+        debit_before_bill=True,
+    )
+
+    await executor.handle_data(payload)
+
+    provider.purchase_data.assert_not_awaited()
+    debit_steps.get_or_create_for_transaction.assert_awaited_once_with(
+        transaction=tx,
+        account_id="acc-1",
+        provider_reference="idem-1-debit",
+    )
+    assert publisher.messages == [
+        ("transaction_debit.process", {"transaction_id": "tx-1", "idempotency_key": "idem-1"})
+    ]
+    delivery_service.deliver_text.assert_not_awaited()
 
 
 @pytest.mark.asyncio

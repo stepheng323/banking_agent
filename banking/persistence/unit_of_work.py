@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 from banking.identity.repositories.user_repository import UserRepository
+from banking.ledger.repositories.ledger_account_repository import LedgerAccountRepository
+from banking.ledger.repositories.ledger_entry_repository import LedgerEntryRepository
+from banking.ledger.repositories.ledger_reconciliation_repository import LedgerReconciliationRepository
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from banking.risk.repositories import RiskDecisionRepository
 from banking.scheduling.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
@@ -12,6 +15,7 @@ from banking.scheduling.repositories.scheduled_run_repository import ScheduledRu
 from banking.support.repositories.support_ticket_repository import SupportTicketRepository
 from banking.transactions.repositories.bank_transaction_coverage_repository import BankTransactionCoverageRepository
 from banking.transactions.repositories.bank_transaction_repository import BankTransactionRepository
+from banking.transactions.repositories.transaction_debit_step_repository import TransactionDebitStepRepository
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
 from banking.transfers.repositories.funding_step_repository import FundingStepRepository
@@ -28,6 +32,7 @@ class UnitOfWork:
         self.accounts: AccountRepository | None = None
         self.beneficiaries: BeneficiaryRepository | None = None
         self.transactions: TransactionRepository | None = None
+        self.transaction_debit_steps: TransactionDebitStepRepository | None = None
         self.funded_transfers: FundedTransferRepository | None = None
         self.funding_steps: FundingStepRepository | None = None
         self.scheduled_instructions: ScheduledInstructionRepository | None = None
@@ -38,6 +43,9 @@ class UnitOfWork:
         self.processed_webhook_events: ProcessedWebhookEventRepository | None = None
         self.support_tickets: SupportTicketRepository | None = None
         self.risk_decisions: RiskDecisionRepository | None = None
+        self.ledger_accounts: LedgerAccountRepository | None = None
+        self.ledger_entries: LedgerEntryRepository | None = None
+        self.ledger_reconciliation: LedgerReconciliationRepository | None = None
         self._rolled_back = False
 
     async def __aenter__(self):
@@ -47,6 +55,7 @@ class UnitOfWork:
         self.accounts = AccountRepository(self.db)
         self.beneficiaries = BeneficiaryRepository(self.db)
         self.transactions = TransactionRepository(self.db)
+        self.transaction_debit_steps = TransactionDebitStepRepository(self.db)
         self.funded_transfers = FundedTransferRepository(self.db)
         self.funding_steps = FundingStepRepository(self.db)
         self.scheduled_instructions = ScheduledInstructionRepository(self.db)
@@ -57,6 +66,9 @@ class UnitOfWork:
         self.processed_webhook_events = ProcessedWebhookEventRepository(self.db)
         self.support_tickets = SupportTicketRepository(self.db)
         self.risk_decisions = RiskDecisionRepository(self.db)
+        self.ledger_accounts = LedgerAccountRepository(self.db)
+        self.ledger_entries = LedgerEntryRepository(self.db)
+        self.ledger_reconciliation = LedgerReconciliationRepository(self.db)
         return self
 
     async def __aexit__(self, exc_type, _exc_val, _exc_tb) -> bool:
