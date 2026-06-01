@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from banking.ledger.posting import LedgerPostingService
@@ -14,6 +14,18 @@ from banking.persistence.base import BaseRepository
 from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
 from shared.database.models import FundedTransfer, Transaction, TransactionDebitStep
 from shared.utils.json import to_json_safe_dict
+
+DIRECT_TRANSFER_CLAIMED_STATUS = "direct_transfer_claimed"
+DIRECT_TRANSFER_RECOVERABLE_PROVIDER_STATUSES = {
+    DIRECT_TRANSFER_CLAIMED_STATUS,
+    "pending",
+    "processing",
+}
+DIRECT_TRANSFER_TERMINAL_STATUSES = {
+    TransactionStatusEnum.SUCCESSFUL.value,
+    TransactionStatusEnum.FAILED.value,
+    TransactionStatusEnum.REVERSED.value,
+}
 
 
 @dataclass(slots=True)
@@ -125,10 +137,145 @@ class TransactionRepository(BaseRepository[Transaction]):
         except ValueError:
             return None
 
+    async def get_by_idempotency_key_for_update(self, idempotency_key: str) -> Transaction | None:
+        """Get a transaction by idempotency key and lock it."""
+        result = await self.db.execute(
+            select(Transaction).filter(Transaction.idempotency_key == idempotency_key).with_for_update()
+        )
+        return result.scalars().first()
+
     async def get_by_transaction_id(self, transaction_id: str) -> Transaction | None:
         """Get a transaction by provider transaction_id."""
         result = await self.db.execute(select(Transaction).filter(Transaction.transaction_id == transaction_id))
         return result.scalars().first()
+
+    async def get_by_transaction_id_for_update(self, transaction_id: str) -> Transaction | None:
+        """Get a transaction by provider transaction_id and lock it."""
+        result = await self.db.execute(
+            select(Transaction).filter(Transaction.transaction_id == transaction_id).with_for_update()
+        )
+        return result.scalars().first()
+
+    async def get_direct_transfer_by_reference_for_update(self, reference: str) -> Transaction | None:
+        """Get a direct transfer transaction by deterministic/provider reference and lock it."""
+        result = await self.db.execute(
+            select(Transaction)
+            .filter(
+                Transaction.transaction_type == TransactionTypeEnum.TRANSFER.value,
+                or_(Transaction.idempotency_key == reference, Transaction.transaction_id == reference),
+            )
+            .with_for_update()
+        )
+        return result.scalars().first()
+
+    async def claim_for_direct_transfer(
+        self,
+        transaction_id: str,
+        *,
+        provider_reference: str,
+        service_metadata: dict | None = None,
+    ) -> Transaction | None:
+        """Atomically claim a direct-transfer transaction before calling Mono."""
+        transaction = await self.get_by_id_for_update(transaction_id)
+        if not transaction or transaction.transaction_type != TransactionTypeEnum.TRANSFER.value:
+            return None
+        if transaction.status in DIRECT_TRANSFER_TERMINAL_STATUSES:
+            return None
+        if transaction.status == TransactionStatusEnum.PROCESSING.value and transaction.transaction_id:
+            return None
+
+        transaction.status = TransactionStatusEnum.PROCESSING.value
+        transaction.provider_status = DIRECT_TRANSFER_CLAIMED_STATUS
+        transaction.transaction_id = provider_reference
+        if service_metadata:
+            metadata = dict(transaction.service_metadata or {})
+            metadata.update(service_metadata)
+            transaction.service_metadata = metadata
+        self.db.add(transaction)
+        await self.db.commit()
+        await self.db.refresh(transaction)
+        return transaction
+
+    async def apply_direct_transfer_result(
+        self,
+        transaction_id: str,
+        *,
+        result: object,
+        provider_reference: str,
+    ) -> tuple[Transaction | None, str]:
+        """Apply a Mono direct-transfer result under a row lock."""
+        transaction = await self.get_by_id_for_update(transaction_id)
+        if not transaction or transaction.transaction_type != TransactionTypeEnum.TRANSFER.value:
+            return None, "skipped"
+        if transaction.status in DIRECT_TRANSFER_TERMINAL_STATUSES:
+            return transaction, "skipped"
+
+        provider_response = to_json_safe_dict(getattr(result, "provider_response", None) or {})
+        provider_status = str(getattr(getattr(result, "status", None), "value", None) or getattr(result, "status", ""))
+        debit_id = getattr(result, "debit_id", None)
+        result_reference = getattr(result, "reference", None) or provider_reference
+        provider_error_code = self._provider_error_code(provider_response)
+
+        transaction.provider_status = provider_status
+        transaction.provider_response = provider_response
+        transaction.provider_error_code = provider_error_code
+        transaction.transaction_id = str(debit_id or result_reference or provider_reference)
+
+        success = bool(getattr(result, "success", False))
+        if success and provider_status == "successful":
+            await LedgerPostingService.post_transaction_success_confirmed(
+                _TransactionLedgerPostingUow(
+                    ledger_accounts=LedgerAccountRepository(self.db),
+                    ledger_entries=LedgerEntryRepository(self.db),
+                    transactions=self,
+                ),
+                transaction,
+                provider_reference=str(result_reference or debit_id or provider_reference),
+            )
+            transaction.status = TransactionStatusEnum.SUCCESSFUL.value
+            transaction.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            outcome = "successful"
+        elif success and provider_status in {"pending", "processing"}:
+            transaction.status = TransactionStatusEnum.PROCESSING.value
+            outcome = "processing"
+        else:
+            transaction.status = TransactionStatusEnum.FAILED.value
+            transaction.error_message = getattr(result, "error_message", None) or "Transfer failed"
+            transaction.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            outcome = "failed"
+
+        self.db.add(transaction)
+        await self.db.commit()
+        await self.db.refresh(transaction)
+        return transaction, outcome
+
+    async def list_recoverable_direct_transfers(self, *, cutoff: datetime, limit: int) -> list[Transaction]:
+        """List stale direct-transfer transactions needing Mono status recovery."""
+        cutoff = normalize_db_timestamp(cutoff)
+        result = await self.db.execute(
+            select(Transaction)
+            .filter(
+                Transaction.transaction_type == TransactionTypeEnum.TRANSFER.value,
+                Transaction.status == TransactionStatusEnum.PROCESSING.value,
+                Transaction.provider_status.in_(DIRECT_TRANSFER_RECOVERABLE_PROVIDER_STATUSES),
+                Transaction.updated_at <= cutoff,
+            )
+            .order_by(Transaction.updated_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    def _provider_error_code(provider_response: dict | None) -> str | None:
+        if not isinstance(provider_response, dict):
+            return None
+        code = (
+            provider_response.get("response_code")
+            or provider_response.get("responseCode")
+            or provider_response.get("error_code")
+            or provider_response.get("code")
+        )
+        return None if code is None else str(code)
 
     async def get_recent_unresolved(self, user_id: str, limit: int = 5) -> list[Transaction]:
         """Get recent pending or failed transactions for a user."""

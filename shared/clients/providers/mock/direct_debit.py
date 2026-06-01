@@ -179,9 +179,22 @@ class MockDirectDebitProvider(DirectDebitProvider):
             success=False,
             status=DebitStatus.FAILED,
             debit_id=debit_id,
-            error_message="Mock debit not found",
-            provider_response={"id": debit_id, "status": DebitStatus.FAILED.value, "response_code": "404"},
-        )
+                error_message="Mock debit not found",
+                provider_response={"id": debit_id, "status": DebitStatus.FAILED.value, "response_code": "404"},
+            )
+
+    async def get_debit_status_by_reference(self, reference: str) -> DebitResult:
+        """Get simulated debit status by merchant reference."""
+        debit = self._debits.get(reference)
+        if debit is None:
+            return DebitResult(
+                success=False,
+                status=DebitStatus.FAILED,
+                reference=reference,
+                error_message="Mock debit not found",
+                provider_response={"reference": reference, "status": DebitStatus.FAILED.value, "response_code": "404"},
+            )
+        return await self.get_debit_status(str(debit.get("id") or debit.get("debit_id") or reference))
 
     async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
         """Simulate debit reversal."""

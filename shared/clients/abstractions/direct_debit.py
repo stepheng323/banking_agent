@@ -164,6 +164,16 @@ class DirectDebitProvider(ABC):
         """
         pass
 
+    async def get_debit_status_by_reference(self, reference: str) -> DebitResult:
+        """
+        Get the current status of a debit transaction by merchant reference.
+
+        This is used for crash recovery when the app claimed a deterministic
+        reference before calling the provider but crashed before storing the
+        provider debit id.
+        """
+        raise NotImplementedError("Debit status lookup by reference is not supported")
+
     @abstractmethod
     async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
         """

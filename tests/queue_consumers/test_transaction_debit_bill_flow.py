@@ -134,6 +134,20 @@ class _Publisher:
         self.messages.append((topic, message))
 
 
+class _Notifier:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str | None]] = []
+
+    async def notify_by_transaction_id(
+        self,
+        transaction_id: str,
+        event: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        self.calls.append((transaction_id, event, error_message))
+
+
 class _State:
     def __init__(self) -> None:
         self.tx = SimpleNamespace(
@@ -153,7 +167,9 @@ class _State:
             target_phone_number="08031234567",
             mobile_network="MTN",
             biller_item_code=None,
+            biller_item_name=None,
             narration="Airtime",
+            service_metadata={},
         )
         self.step = SimpleNamespace(
             id="step-1",
@@ -230,6 +246,31 @@ async def test_transaction_debit_success_posts_ledger_and_queues_bill(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_transaction_debit_terminal_failure_notifies_user(monkeypatch) -> None:
+    state = _State()
+    notifier = _Notifier()
+    monkeypatch.setattr(debit_module, "UnitOfWork", lambda: _Uow(state))
+    provider = SimpleNamespace(
+        initiate_pooling_debit=AsyncMock(
+            return_value=DebitResult(
+                success=False,
+                status=DebitStatus.FAILED,
+                reference="idem-1-debit",
+                error_message="Insufficient funds",
+                provider_response={"status": "failed"},
+            )
+        )
+    )
+
+    await TransactionDebitConsumer(provider, state.publisher, notifier=notifier).process_job({"transaction_id": "tx-1"})
+
+    assert state.tx.status == TransactionStatusEnum.FAILED.value
+    assert state.step.status == TransactionDebitStepStatusEnum.FAILED.value
+    assert state.publisher.messages == []
+    assert notifier.calls == [("tx-1", "debit_failed", "Insufficient funds")]
+
+
+@pytest.mark.asyncio
 async def test_transaction_debit_reconciliation_redrives_stale_processing_without_debit_id(monkeypatch) -> None:
     state = _State()
     state.step.status = TransactionDebitStepStatusEnum.PROCESSING.value
@@ -266,12 +307,13 @@ async def test_transaction_debit_reconciliation_redrives_stale_processing_withou
 async def test_bill_success_posts_bill_ledger_and_marks_transaction_success(monkeypatch) -> None:
     state = _State()
     state.step.status = TransactionDebitStepStatusEnum.CONFIRMED.value
+    notifier = _Notifier()
     monkeypatch.setattr(bill_module, "UnitOfWork", lambda: _Uow(state))
     provider = SimpleNamespace(
         purchase_airtime=AsyncMock(return_value={"success": True, "reference": "idem-1-bill", "status": "successful"})
     )
 
-    await BillFulfillmentConsumer(provider, state.publisher).process_job({"transaction_id": "tx-1"})
+    await BillFulfillmentConsumer(provider, state.publisher, notifier=notifier).process_job({"transaction_id": "tx-1"})
 
     provider.purchase_airtime.assert_awaited_once_with(
         amount=Decimal("2000.00"),
@@ -281,28 +323,32 @@ async def test_bill_success_posts_bill_ledger_and_marks_transaction_success(monk
     )
     assert state.tx.status == TransactionStatusEnum.SUCCESSFUL.value
     assert "transaction:tx-1:flutterwave_bill_confirmed" in state.ledger_entries.entries
+    assert notifier.calls == [("tx-1", "successful", None)]
 
 
 @pytest.mark.asyncio
 async def test_bill_failure_queues_transaction_debit_refund(monkeypatch) -> None:
     state = _State()
     state.step.status = TransactionDebitStepStatusEnum.CONFIRMED.value
+    notifier = _Notifier()
     monkeypatch.setattr(bill_module, "UnitOfWork", lambda: _Uow(state))
     provider = SimpleNamespace(
         purchase_airtime=AsyncMock(return_value={"success": False, "error": "Provider failed", "status": "failed"})
     )
 
-    await BillFulfillmentConsumer(provider, state.publisher).process_job({"transaction_id": "tx-1"})
+    await BillFulfillmentConsumer(provider, state.publisher, notifier=notifier).process_job({"transaction_id": "tx-1"})
 
     assert state.tx.status == TransactionStatusEnum.FAILED.value
     assert state.step.status == TransactionDebitStepStatusEnum.REFUND_PENDING.value
     assert state.publisher.messages[0][0] == "transaction_debit.refund"
+    assert notifier.calls == [("tx-1", "failed_refund_pending", "Provider failed")]
 
 
 @pytest.mark.asyncio
 async def test_transaction_debit_refund_success_posts_ledger_and_marks_reversed(monkeypatch) -> None:
     state = _State()
     state.step.status = TransactionDebitStepStatusEnum.REFUND_PENDING.value
+    notifier = _Notifier()
     monkeypatch.setattr(refund_module, "UnitOfWork", lambda: _Uow(state))
     provider = SimpleNamespace(
         reverse_debit=AsyncMock(
@@ -316,7 +362,7 @@ async def test_transaction_debit_refund_success_posts_ledger_and_marks_reversed(
         )
     )
 
-    await TransactionDebitRefundConsumer(provider).process_job(
+    await TransactionDebitRefundConsumer(provider, notifier=notifier).process_job(
         {
             "transaction_debit_step_id": "step-1",
             "transaction_id": "tx-1",
@@ -328,3 +374,4 @@ async def test_transaction_debit_refund_success_posts_ledger_and_marks_reversed(
     assert state.step.status == TransactionDebitStepStatusEnum.REFUNDED.value
     assert state.tx.status == TransactionStatusEnum.REVERSED.value
     assert "transaction_debit_step:step-1:mono_refund_confirmed" in state.ledger_entries.entries
+    assert notifier.calls == [("tx-1", "refunded", None)]

@@ -6,6 +6,7 @@ from typing import Literal
 TopicType = Literal[
     "message.received",
     "transaction.execute",
+    "direct_transfer.reconcile",
     "transaction_debit.process",
     "transaction_debit.reconcile",
     "transaction_debit.refund",
@@ -27,6 +28,7 @@ TopicType = Literal[
 
 DomainType = Literal[
     "transaction",
+    "direct_transfer_reconcile",
     "transaction_debit",
     "transaction_debit_reconcile",
     "transaction_debit_refund",
@@ -69,6 +71,13 @@ QUEUE_CONTRACTS: tuple[QueueContract, ...] = (
         domain="transaction",
         sqs_queue_name="banking-transactions",
         redis_stream_name="async:transactions",
+    ),
+    QueueContract(
+        logical_topic="direct_transfer.reconcile",
+        queue_name="banking:direct_transfer_reconciliation",
+        domain="direct_transfer_reconcile",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:direct_transfer_reconciliation",
     ),
     QueueContract(
         logical_topic="transaction_debit.process",

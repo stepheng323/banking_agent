@@ -32,9 +32,9 @@ from banking.transactions.runtime.async_group_types import AsyncGroupRedis, Asyn
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from banking.transfers.repositories.funded_transfer_repository import FundedTransferRepository
-from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
+from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus, DirectDebitProvider
 from shared.database.enums import TransactionStatusEnum
-from shared.money import to_naira
+from shared.money import naira_to_json, to_naira
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -313,6 +313,53 @@ class TransferExecutor:
                 return str(code)
         return None
 
+    @staticmethod
+    def _completion_service_metadata(
+        *,
+        data: dict[str, Any],
+        transfer_data: dict[str, Any],
+        amount: Any,
+    ) -> dict[str, Any]:
+        recipient = transfer_data.get("recipient", {}) if isinstance(transfer_data.get("recipient"), dict) else {}
+        source = transfer_data.get("source", {}) if isinstance(transfer_data.get("source"), dict) else {}
+        context = {
+            "domain": "transfer",
+            "phone_number": data.get("phone_number"),
+            "channel": data.get("channel"),
+            "channel_identity": data.get("channel_identity"),
+            "language": data.get("language"),
+            "async_group": data.get("async_group"),
+            "scheduled_meta": data.get("scheduled_meta"),
+            "amount_naira": naira_to_json(amount),
+            "recipient_name": recipient.get("name"),
+            "recipient_account": recipient.get("account_number"),
+            "recipient_bank_code": recipient.get("bank_code"),
+            "recipient_bank_name": recipient.get("bank_name"),
+            "source_account_id": source.get("account_id"),
+            "source_account_number": source.get("account_number"),
+            "source_account_name": source.get("account_name"),
+            "source_bank_name": source.get("bank_name"),
+            "source_affinity_mode": transfer_data.get("source_affinity_mode"),
+            "narration": transfer_data.get("narration"),
+        }
+        return {"completion_context": {key: value for key, value in context.items() if value not in (None, "", [], {})}}
+
+    async def _queue_direct_transfer_reconciliation(
+        self,
+        *,
+        transaction_id: str,
+        reference: str,
+    ) -> None:
+        if not self.publisher:
+            return
+        try:
+            await self.publisher.publish(
+                topic="direct_transfer.reconcile",
+                message={"transaction_id": transaction_id, "reference": reference},
+            )
+        except Exception as exc:
+            logger.error("direct_transfer_reconciliation_publish_failed", transaction_id=transaction_id, error=str(exc))
+
     async def handle_transfer(self, data: dict[str, Any]) -> None:
         """Handle execution of a transfer transaction."""
         transaction_id = data.get("transaction_id")
@@ -329,22 +376,8 @@ class TransferExecutor:
 
         logger.info("executing_transfer", transaction_id=transaction_id)
 
+        provider_call_attempted = False
         try:
-            existing_getter = getattr(self.transaction_repo, "get_by_id", None)
-            existing_transaction = await existing_getter(str(transaction_id)) if callable(existing_getter) else None
-            existing_status = _transaction_status(existing_transaction)
-            existing_provider_ref = _transaction_provider_reference(existing_transaction)
-            if existing_status in _TERMINAL_TRANSACTION_STATUSES or (
-                existing_status == TransactionStatusEnum.PROCESSING.value and existing_provider_ref
-            ):
-                logger.warning(
-                    "transfer_execution_duplicate_suppressed",
-                    transaction_id=transaction_id,
-                    status=existing_status,
-                    has_provider_reference=bool(existing_provider_ref),
-                )
-                return
-
             if is_scheduled:
                 policy_block_message = capability_block_message(
                     domain="schedule",
@@ -371,11 +404,6 @@ class TransferExecutor:
                     await self._notify_scheduled_failure(data=data, error_message=policy_block_message)
                     return
 
-            if schedule_run_id:
-                await scheduled_runs.update_scheduled_run(schedule_run_id, status="processing")
-
-            await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.PROCESSING.value)
-
             amount = transfer_data.get("amount_naira") or transfer_data.get("amount")
             recipient = transfer_data.get("recipient", {})
             source = transfer_data.get("source", {})
@@ -400,24 +428,81 @@ class TransferExecutor:
             if not source_account or not source_account.mandate_id:
                 raise ValueError("source_account_mandate_not_ready")
 
-            result = await self.direct_debit_provider.initiate_debit_to_beneficiary(
-                amount=amount_value,
-                mandate_id=source_account.mandate_id,
-                reference=reference,
-                beneficiary_account=str(recipient_account),
-                beneficiary_bank_code=str(recipient_bank_code),
-                narration=str(narration or "Transfer"),
+            if schedule_run_id:
+                await scheduled_runs.update_scheduled_run(schedule_run_id, status="processing")
+
+            existing_getter = getattr(self.transaction_repo, "get_by_id", None)
+            existing_transaction = await existing_getter(str(transaction_id)) if callable(existing_getter) else None
+            claim_method = getattr(self.transaction_repo, "claim_for_direct_transfer", None)
+            if not callable(claim_method):
+                raise RuntimeError("direct_transfer_claim_unavailable")
+            claimed_transaction = await claim_method(
+                str(transaction_id),
+                provider_reference=reference,
+                service_metadata=self._completion_service_metadata(
+                    data=data,
+                    transfer_data=transfer_data,
+                    amount=amount_value,
+                ),
+            )
+            if not claimed_transaction:
+                existing_transaction = (
+                    await existing_getter(str(transaction_id)) if callable(existing_getter) else existing_transaction
+                )
+                existing_status = _transaction_status(existing_transaction)
+                existing_provider_ref = _transaction_provider_reference(existing_transaction)
+                if existing_status == TransactionStatusEnum.PROCESSING.value and existing_provider_ref:
+                    await self._queue_direct_transfer_reconciliation(
+                        transaction_id=str(transaction_id),
+                        reference=str(getattr(existing_transaction, "idempotency_key", None) or reference),
+                    )
+                logger.warning(
+                    "transfer_execution_duplicate_suppressed",
+                    transaction_id=transaction_id,
+                    status=existing_status,
+                    has_provider_reference=bool(existing_provider_ref),
+                )
+                return
+
+            try:
+                provider_call_attempted = True
+                result = await self.direct_debit_provider.initiate_debit_to_beneficiary(
+                    amount=amount_value,
+                    mandate_id=source_account.mandate_id,
+                    reference=reference,
+                    beneficiary_account=str(recipient_account),
+                    beneficiary_bank_code=str(recipient_bank_code),
+                    narration=str(narration or "Transfer"),
+                )
+            except Exception as exc:
+                logger.error(
+                    "direct_transfer_provider_call_failed_after_claim",
+                    transaction_id=transaction_id,
+                    error=str(exc),
+                )
+                result = DebitResult(
+                    success=True,
+                    status=DebitStatus.PROCESSING,
+                    reference=reference,
+                    amount=amount_value,
+                    error_message="Provider status unavailable; reconciliation scheduled.",
+                    provider_response={
+                        "http_status": 0,
+                        "message": "Provider status unavailable; reconciliation scheduled.",
+                        "error_code": "CONNECTION_ERROR",
+                    },
+                )
+
+            apply_method = getattr(self.transaction_repo, "apply_direct_transfer_result", None)
+            if not callable(apply_method):
+                raise RuntimeError("direct_transfer_result_application_unavailable")
+            applied_transaction, applied_outcome = await apply_method(
+                str(transaction_id),
+                result=result,
+                provider_reference=reference,
             )
 
-            if result.success and result.status == DebitStatus.SUCCESSFUL:
-                successful_transaction = await self.transaction_repo.update_status(
-                    transaction_id,
-                    TransactionStatusEnum.SUCCESSFUL.value,
-                    provider_transaction_id=result.debit_id,
-                    provider_status=result.status.value,
-                    provider_response=result.provider_response,
-                    provider_error_code=self._provider_error_code(result),
-                )
+            if applied_outcome == "successful":
                 data["provider_reference"] = result.reference or result.debit_id
                 data["provider_transaction_id"] = result.debit_id
                 if schedule_run_id:
@@ -450,7 +535,7 @@ class TransferExecutor:
                     )
                     success_context = await enrich_transfer_personality_context(
                         success_context,
-                        user_id=_transaction_user_id(successful_transaction)
+                        user_id=_transaction_user_id(applied_transaction)
                         or _transaction_user_id(existing_transaction)
                         or data.get("user_id"),
                         transaction_repo=self.transaction_repo,
@@ -479,15 +564,7 @@ class TransferExecutor:
                         locale=locale,
                     )
                 logger.info("transfer_success", transaction_id=transaction_id, ref=result.reference)
-            elif result.success and result.status in (DebitStatus.PENDING, DebitStatus.PROCESSING):
-                await self.transaction_repo.update_status(
-                    transaction_id,
-                    TransactionStatusEnum.PROCESSING.value,
-                    provider_transaction_id=result.debit_id,
-                    provider_status=result.status.value,
-                    provider_response=result.provider_response,
-                    provider_error_code=self._provider_error_code(result),
-                )
+            elif applied_outcome == "processing":
                 data["provider_reference"] = result.reference or result.debit_id
                 data["provider_transaction_id"] = result.debit_id
                 completion_payload = self._completion_payload(
@@ -530,7 +607,7 @@ class TransferExecutor:
                         locale=locale,
                     )
                 logger.info("transfer_processing", transaction_id=transaction_id, ref=result.reference)
-            else:
+            elif applied_outcome == "failed":
                 error_msg = result.error_message or render_personalized_message(
                     "transfer.error.provider_failed",
                     locale,
@@ -541,15 +618,6 @@ class TransferExecutor:
                     message=error_msg,
                     code=provider_error_code,
                     context="provider",
-                )
-                await self.transaction_repo.update_status(
-                    transaction_id,
-                    TransactionStatusEnum.FAILED.value,
-                    error_message=error_msg,
-                    provider_transaction_id=result.debit_id,
-                    provider_status=result.status.value,
-                    provider_response=result.provider_response,
-                    provider_error_code=provider_error_code,
                 )
                 if schedule_run_id:
                     await scheduled_runs.update_scheduled_run(
@@ -601,9 +669,17 @@ class TransferExecutor:
                         metadata={"source": "transfer_executor", "transaction_id": transaction_id},
                     )
                 logger.error("transfer_failed", transaction_id=transaction_id, error=error_msg)
+            else:
+                logger.info("transfer_execution_result_skipped", transaction_id=transaction_id, outcome=applied_outcome)
 
         except Exception as e:
             logger.error("transfer_execution_exception", transaction_id=transaction_id, error=str(e))
+            if provider_call_attempted:
+                await self._queue_direct_transfer_reconciliation(
+                    transaction_id=str(transaction_id),
+                    reference=str(data.get("idempotency_key") or transaction_id),
+                )
+                return
             error_msg = _execution_error_message(locale)
             failure_category = classify_failure_category(message=str(e), context="execution")
             await self.transaction_repo.update_status(

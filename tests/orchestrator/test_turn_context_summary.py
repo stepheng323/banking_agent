@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from time import time
 
 import pytest
@@ -28,6 +29,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_renderin
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
     build_turn_context_summary,
     get_or_build_turn_context_summary,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_payload import (
+    _compact_payload_for_prompt,
+    _compact_prompt_value,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_state import (
     summary_to_state_payload,
@@ -59,6 +64,22 @@ async def test_load_query_session_snapshot_prefers_redis_then_stashed() -> None:
     assert source == "redis"
     assert snapshot is not None
     assert snapshot["query_result"]["summary_text"] == "You spent ₦5,000 today."
+
+
+def test_compact_payload_for_prompt_serializes_decimal_amounts() -> None:
+    assert _compact_prompt_value(Decimal("2000.00")) == "2000.00"
+
+    preview = _compact_payload_for_prompt(
+        {
+            "action": "buy_airtime",
+            "amount": Decimal("2000.00"),
+            "nested": {"refund_amount": Decimal("50.25")},
+        }
+    )
+
+    decoded = json.loads(preview)
+    assert decoded["amount"] == "2000.00"
+    assert decoded["nested"]["refund_amount"] == "50.25"
 
 
 async def test_load_query_session_snapshot_marks_stale_redis_session_inactive() -> None:

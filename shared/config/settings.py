@@ -159,6 +159,15 @@ class Settings:
         self.transaction_debit_reconciliation_interval_seconds: int = int(
             os.getenv("TRANSACTION_DEBIT_RECONCILIATION_INTERVAL_SECONDS", "300")
         )
+        self.direct_transfer_reconciliation_min_age_seconds: int = int(
+            os.getenv("DIRECT_TRANSFER_RECONCILIATION_MIN_AGE_SECONDS", "120")
+        )
+        self.direct_transfer_reconciliation_batch_size: int = int(
+            os.getenv("DIRECT_TRANSFER_RECONCILIATION_BATCH_SIZE", "50")
+        )
+        self.direct_transfer_reconciliation_interval_seconds: int = int(
+            os.getenv("DIRECT_TRANSFER_RECONCILIATION_INTERVAL_SECONDS", "300")
+        )
         self.bill_reconciliation_min_age_seconds: int = int(
             os.getenv("BILL_RECONCILIATION_MIN_AGE_SECONDS", "300")
         )

@@ -3,11 +3,16 @@
 import hashlib
 import hmac
 import json
+from typing import cast
 
 from fastapi import APIRouter, Request, Response
 
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
+from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
+from banking.messaging.delivery.service import DeliveryService
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.transactions.runtime.async_group_types import AsyncGroupRedis
+from banking.transactions.runtime.bill_completion_notifications import BillCompletionNotifier
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.queue.factory import QueuePublisherFactory
@@ -25,7 +30,19 @@ def _get_service() -> MonoWebhookService:
     global _service_instance
     if _service_instance is None:
         publisher = QueuePublisherFactory.get_async_publisher()
-        _service_instance = MonoWebhookService(publisher=publisher, redis_client=RedisClient.get_client())
+        redis_client = RedisClient.get_client()
+        async_group_redis = cast(AsyncGroupRedis, redis_client)
+        delivery_service = DeliveryService()
+        _service_instance = MonoWebhookService(
+            publisher=publisher,
+            delivery_service=delivery_service,
+            redis_client=redis_client,
+            bill_completion_notifier=BillCompletionNotifier(
+                delivery_service=delivery_service,
+                redis_client=async_group_redis,
+                beneficiary_suggestion_service=BeneficiarySuggestionService(publisher),
+            ),
+        )
     return _service_instance
 
 

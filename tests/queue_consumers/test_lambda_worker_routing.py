@@ -33,6 +33,7 @@ def _sns_record(domain: str, queue: str = "banking-transactions") -> dict[str, A
         "transaction_debit_reconcile",
         "transaction_debit_refund",
         "transaction_debit_refund_reconcile",
+        "direct_transfer_reconcile",
         "funding",
         "funding_reconcile",
         "bill_fulfill",
@@ -53,6 +54,7 @@ async def test_transaction_worker_routes_by_domain(domain: str) -> None:
     transaction_debit_refund_reconcile = type(
         "TransactionDebitRefundReconciliationConsumer", (), {"process_job": AsyncMock()}
     )()
+    direct_transfer_reconcile = type("DirectTransferReconciliationConsumer", (), {"process_job": AsyncMock()})()
     funding = type("FundingConsumer", (), {"process_job": AsyncMock()})()
     funding_reconcile = type("FundingReconciliationConsumer", (), {"process_job": AsyncMock()})()
     bill_fulfill = type("BillFulfillmentConsumer", (), {"process_job": AsyncMock()})()
@@ -69,6 +71,7 @@ async def test_transaction_worker_routes_by_domain(domain: str) -> None:
         transaction_debit_reconciliation=transaction_debit_reconcile,
         transaction_debit_refund=transaction_debit_refund,
         transaction_debit_refund_reconciliation=transaction_debit_refund_reconcile,
+        direct_transfer_reconciliation=direct_transfer_reconcile,
         funding=funding,
         bill_fulfillment=bill_fulfill,
         bill_reconciliation=bill_reconcile,
@@ -93,6 +96,7 @@ async def test_transaction_worker_routes_by_domain(domain: str) -> None:
         "transaction_debit_reconcile": transaction_debit_reconcile.process_job,
         "transaction_debit_refund": transaction_debit_refund.process_job,
         "transaction_debit_refund_reconcile": transaction_debit_refund_reconcile.process_job,
+        "direct_transfer_reconcile": direct_transfer_reconcile.process_job,
         "funding": funding.process_job,
         "funding_reconcile": funding_reconcile.process_job,
         "bill_fulfill": bill_fulfill.process_job,

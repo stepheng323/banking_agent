@@ -6,11 +6,16 @@ from typing import cast
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.ledger.reconciliation import LedgerExposureReconciliationConsumer, LedgerPostingReconciliationConsumer
+from banking.messaging.delivery.service import DeliveryService
 from banking.transactions.repositories.transaction_repository import TransactionRepository
 from banking.transactions.runtime.async_group_types import AsyncGroupRedis
+from banking.transactions.runtime.bill_completion_notifications import BillCompletionNotifier
 from banking.transactions.runtime.consumers.bill_fulfillment_consumer import (
     BillFulfillmentConsumer,
     BillReconciliationConsumer,
+)
+from banking.transactions.runtime.consumers.direct_transfer_reconciliation_consumer import (
+    DirectTransferReconciliationConsumer,
 )
 from banking.transactions.runtime.consumers.funding_consumer import FundingConsumer
 from banking.transactions.runtime.consumers.funding_reconciliation_consumer import FundingReconciliationConsumer
@@ -43,6 +48,7 @@ class TransactionWorkerConsumers:
     """Transaction worker consumer bundle keyed by domain."""
 
     transaction: TransactionConsumer
+    direct_transfer_reconciliation: DirectTransferReconciliationConsumer
     transaction_debit: TransactionDebitConsumer
     transaction_debit_reconciliation: TransactionDebitReconciliationConsumer
     transaction_debit_refund: TransactionDebitRefundConsumer
@@ -79,13 +85,19 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
     redis_client = RedisClient.get_client()
     async_group_redis = cast(AsyncGroupRedis, redis_client)
     beneficiary_suggestion_service = BeneficiarySuggestionService(queue_publisher)
+    delivery_service = DeliveryService()
+    bill_completion_notifier = BillCompletionNotifier(
+        delivery_service=delivery_service,
+        redis_client=async_group_redis,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
+    )
     airtime_executor = AirtimeExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
+        delivery_service=delivery_service,
         redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
-        debit_before_bill=True,
     )
     transfer_executor = TransferExecutor(
         direct_debit_provider=direct_debit_provider,
@@ -98,16 +110,19 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
     data_executor = DataExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
+        delivery_service=delivery_service,
         redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
         publisher=queue_publisher,
-        debit_before_bill=True,
     )
 
     transaction_consumer = TransactionConsumer(
         transfer_executor=transfer_executor,
         airtime_executor=airtime_executor,
         data_executor=data_executor,
+    )
+    direct_transfer_reconciliation_consumer = DirectTransferReconciliationConsumer(
+        direct_debit_provider=direct_debit_provider,
     )
 
     funding_consumer = FundingConsumer(
@@ -117,22 +132,30 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
     transaction_debit_consumer = TransactionDebitConsumer(
         direct_debit_provider=direct_debit_provider,
         publisher=queue_publisher,
+        notifier=bill_completion_notifier,
     )
     transaction_debit_reconciliation_consumer = TransactionDebitReconciliationConsumer(
         direct_debit_provider=direct_debit_provider,
         publisher=queue_publisher,
+        notifier=bill_completion_notifier,
     )
-    transaction_debit_refund_consumer = TransactionDebitRefundConsumer(direct_debit_provider=direct_debit_provider)
+    transaction_debit_refund_consumer = TransactionDebitRefundConsumer(
+        direct_debit_provider=direct_debit_provider,
+        notifier=bill_completion_notifier,
+    )
     transaction_debit_refund_reconciliation_consumer = TransactionDebitRefundReconciliationConsumer(
-        direct_debit_provider=direct_debit_provider
+        direct_debit_provider=direct_debit_provider,
+        notifier=bill_completion_notifier,
     )
     bill_fulfillment_consumer = BillFulfillmentConsumer(
         bill_provider=bill_provider,
         publisher=queue_publisher,
+        notifier=bill_completion_notifier,
     )
     bill_reconciliation_consumer = BillReconciliationConsumer(
         bill_provider=bill_provider,
         publisher=queue_publisher,
+        notifier=bill_completion_notifier,
     )
     funding_reconciliation_consumer = FundingReconciliationConsumer(
         direct_debit_provider=direct_debit_provider,
@@ -154,6 +177,7 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
 
     return TransactionWorkerConsumers(
         transaction=transaction_consumer,
+        direct_transfer_reconciliation=direct_transfer_reconciliation_consumer,
         transaction_debit=transaction_debit_consumer,
         transaction_debit_reconciliation=transaction_debit_reconciliation_consumer,
         transaction_debit_refund=transaction_debit_refund_consumer,

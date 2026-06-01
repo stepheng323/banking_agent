@@ -1,14 +1,16 @@
 """Payload compaction and preview-line helpers for turn context summaries."""
 
-import json
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import _clip_text
+from shared.money import naira_to_json
+from shared.utils.json import json_dumps_safe
 
 CONTEXT_BENEFICIARY_PREVIEW_LIMIT = 5
 CONTEXT_ACCOUNT_PREVIEW_LIMIT = 5
@@ -33,6 +35,10 @@ def _compact_prompt_value(value: Any, depth: int = 0) -> Any:
 
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+
+    if isinstance(value, Decimal):
+        serialized = naira_to_json(value)
+        return serialized if serialized is not None else str(value)
 
     if isinstance(value, str):
         return _clip_text(value, PLANNER_ACTIVE_TASK_STRING_MAX_CHARS)
@@ -70,7 +76,7 @@ def _compact_payload_for_prompt(payload: dict[str, Any]) -> str:
             break
         compact_payload[str(key)] = _compact_prompt_value(value)
 
-    serialized = json.dumps(compact_payload, ensure_ascii=True)
+    serialized = json_dumps_safe(compact_payload, ensure_ascii=True)
     return _clip_text(serialized, PLANNER_ACTIVE_TASK_DATA_MAX_CHARS)
 
 

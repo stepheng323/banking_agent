@@ -1,6 +1,7 @@
 """Tests for Mono webhook handler - Unit tests with mocked dependencies."""
 
 import importlib
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -555,18 +556,67 @@ class TestMonoWebhookRefundGate:
 
 
 class _FakeTransactions:
-    def __init__(self, tx: SimpleNamespace | None = None) -> None:
+    def __init__(self, tx: SimpleNamespace | None = None, uow: "_FakeTransferUow | None" = None) -> None:
         self.tx = tx
+        self.uow = uow
 
     async def get_by_transaction_id(self, transaction_id: str) -> SimpleNamespace | None:
         if self.tx and self.tx.transaction_id == transaction_id:
             return self.tx
         return None
 
+    async def get_by_transaction_id_for_update(self, transaction_id: str) -> SimpleNamespace | None:
+        return await self.get_by_transaction_id(transaction_id)
+
     async def get_by_idempotency_key(self, idempotency_key: str) -> SimpleNamespace | None:
         if self.tx and self.tx.idempotency_key == idempotency_key:
             return self.tx
         return None
+
+    async def get_direct_transfer_by_reference_for_update(self, reference: str) -> SimpleNamespace | None:
+        if self.tx and (self.tx.idempotency_key == reference or self.tx.transaction_id == reference):
+            return self.tx
+        return None
+
+    async def apply_direct_transfer_result(
+        self,
+        transaction_id: str,
+        *,
+        result: object,
+        provider_reference: str,
+    ) -> tuple[SimpleNamespace | None, str]:
+        if not self.tx or str(self.tx.id) != str(transaction_id):
+            return None, "skipped"
+        if str(self.tx.status).lower() in {"successful", "failed", "reversed"}:
+            return self.tx, "skipped"
+
+        provider_response = getattr(result, "provider_response", None) or {}
+        provider_status = str(getattr(getattr(result, "status", None), "value", None) or getattr(result, "status", ""))
+        debit_id = getattr(result, "debit_id", None)
+        reference = getattr(result, "reference", None) or provider_reference
+        provider_error_code = None
+        if isinstance(provider_response, dict):
+            provider_error_code = provider_response.get("response_code") or provider_response.get("error_code")
+
+        self.tx.provider_status = provider_status
+        self.tx.provider_error_code = None if provider_error_code is None else str(provider_error_code)
+        self.tx.provider_response = provider_response
+        self.tx.transaction_id = str(debit_id or reference or provider_reference)
+        if provider_status == "successful":
+            self.tx.status = "successful"
+            self.tx.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            outcome = "successful"
+        elif provider_status in {"pending", "processing"} and bool(getattr(result, "success", False)):
+            self.tx.status = "processing"
+            outcome = "processing"
+        else:
+            self.tx.status = "failed"
+            self.tx.error_message = getattr(result, "error_message", None) or "Transfer failed"
+            self.tx.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            outcome = "failed"
+        if self.uow:
+            await self.uow.commit()
+        return self.tx, outcome
 
 
 class _FakeUsers:
@@ -606,13 +656,13 @@ class _FakeTransferUow:
         user: SimpleNamespace | None = None,
         channel_identity: tuple[str, str] | None = None,
     ) -> None:
-        self.transactions = _FakeTransactions(tx)
+        self.commit_calls = 0
+        self.transactions = _FakeTransactions(tx, self)
         self.funding_steps = None
         self.funded_transfers = None
         self.accounts = None
         self.users = _FakeUsers(user)
         self.db = _FakeDb(channel_identity)
-        self.commit_calls = 0
 
     async def __aenter__(self):
         return self

@@ -156,6 +156,41 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
             )
 
+    async def get_debit_status_by_reference(self, reference: str) -> DebitResult:
+        """Get debit status from Mono by original payment reference."""
+        try:
+            response = await self._client.verify_payment(reference)
+            success, status, error_message = self._normalize_debit_outcome(response)
+
+            return DebitResult(
+                success=success,
+                status=status,
+                debit_id=response.get("id"),
+                reference=response.get("reference") or reference,
+                amount=require_kobo_to_naira(response.get("amount", 0)),
+                error_message=error_message,
+                provider_response=response,
+            )
+        except MonoApiError as e:
+            logger.error("mono_get_debit_status_by_reference_failed", reference=reference, error=str(e))
+            transient = self._is_transient_error(e)
+            return DebitResult(
+                success=transient,
+                status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
+                reference=reference,
+                error_message=e.message,
+                provider_response=self._error_response(e),
+            )
+        except Exception as e:
+            logger.error("mono_get_debit_status_by_reference_failed", reference=reference, error=str(e))
+            return DebitResult(
+                success=True,
+                status=DebitStatus.PROCESSING,
+                reference=reference,
+                error_message=str(e),
+                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
+            )
+
     async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
         """Refund a debit via Mono's payment refund API."""
         del reason

@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 
 TRANSACTION_TOPICS: tuple[TopicType, ...] = (
     "transaction.execute",
+    "direct_transfer.reconcile",
     "transaction_debit.process",
     "transaction_debit.reconcile",
     "transaction_debit.refund",
@@ -41,6 +42,7 @@ TRANSACTION_TOPICS: tuple[TopicType, ...] = (
 )
 
 _worker_task: asyncio.Task[None] | None = None
+_direct_transfer_reconciliation_task: asyncio.Task[None] | None = None
 _transaction_debit_reconciliation_task: asyncio.Task[None] | None = None
 _transaction_debit_refund_reconciliation_task: asyncio.Task[None] | None = None
 _funding_reconciliation_task: asyncio.Task[None] | None = None
@@ -56,6 +58,7 @@ def _enabled_domain_flags() -> dict[str, bool]:
     return dict.fromkeys(
         (
             "transaction",
+            "direct_transfer_reconcile",
             "transaction_debit",
             "transaction_debit_reconcile",
             "transaction_debit_refund",
@@ -81,6 +84,44 @@ async def _run_transaction_worker(stop_event: asyncio.Event) -> None:
     await poller.run(stop_event)
 
 
+async def _run_direct_transfer_reconciliation_loop(stop_event: asyncio.Event) -> None:
+    interval_seconds = int(settings.direct_transfer_reconciliation_interval_seconds or 0)
+    if interval_seconds <= 0:
+        logger.info("direct_transfer_reconciliation_loop_disabled")
+        return
+
+    consumers = setup_transaction_worker_consumers()
+    consumer = consumers.direct_transfer_reconciliation
+    lock_ttl_seconds = max(interval_seconds * 2, 60)
+    logger.info("direct_transfer_reconciliation_loop_started", interval_seconds=interval_seconds)
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            break
+        except TimeoutError:
+            pass
+
+        lock = RedisDistributedLock(
+            RedisClient.get_client(),
+            key=f"{settings.project_name}:direct_transfer_reconciliation:{settings.runtime.infrastructure_environment}",
+            ttl_seconds=lock_ttl_seconds,
+        )
+        try:
+            await lock.acquire(wait_seconds=0.1)
+            await consumer.process_job({})
+            logger.info("direct_transfer_reconciliation_tick_completed")
+        except RedisLockTimeoutError:
+            logger.debug("direct_transfer_reconciliation_tick_skipped_lock_held")
+        except Exception as exc:
+            logger.error("direct_transfer_reconciliation_tick_failed", error=str(exc), exc_info=True)
+        finally:
+            try:
+                await lock.release()
+            except Exception as exc:
+                logger.warning("direct_transfer_reconciliation_lock_release_failed", error=str(exc))
+
+
 def _enabled_stream_names() -> list[str]:
     stream_names: list[str] = []
     for topic in TRANSACTION_TOPICS:
@@ -98,6 +139,8 @@ async def _process_stream_record(
     try:
         if record.topic == "transaction.execute":
             await consumers.transaction.process_transaction(record.payload)
+        elif record.topic == "direct_transfer.reconcile":
+            await consumers.direct_transfer_reconciliation.process_job(record.payload)
         elif record.topic == "transaction_debit.process":
             await consumers.transaction_debit.process_job(record.payload)
         elif record.topic == "transaction_debit.reconcile":
@@ -496,7 +539,8 @@ async def _run_ledger_exposure_reconciliation_loop(stop_event: asyncio.Event) ->
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Startup/shutdown logic for the standalone transaction worker."""
-    global _worker_task, _transaction_debit_reconciliation_task, _transaction_debit_refund_reconciliation_task
+    global _worker_task, _direct_transfer_reconciliation_task
+    global _transaction_debit_reconciliation_task, _transaction_debit_refund_reconciliation_task
     global _funding_reconciliation_task, _bill_reconciliation_task, _payout_reconciliation_task
     global _refund_reconciliation_task, _ledger_posting_reconciliation_task
     global _ledger_exposure_reconciliation_task, _stop_event
@@ -517,6 +561,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         _funding_reconciliation_task = asyncio.create_task(
             _run_funding_reconciliation_loop(_stop_event),
             name="funding-reconciliation-loop",
+        )
+        _direct_transfer_reconciliation_task = asyncio.create_task(
+            _run_direct_transfer_reconciliation_loop(_stop_event),
+            name="direct-transfer-reconciliation-loop",
         )
         _transaction_debit_reconciliation_task = asyncio.create_task(
             _run_transaction_debit_reconciliation_loop(_stop_event),
@@ -564,6 +612,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         await asyncio.gather(_worker_task, return_exceptions=True)
         _worker_task = None
     for task in (
+        _direct_transfer_reconciliation_task,
         _transaction_debit_reconciliation_task,
         _bill_reconciliation_task,
         _transaction_debit_refund_reconciliation_task,
@@ -576,6 +625,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+    _direct_transfer_reconciliation_task = None
     _transaction_debit_reconciliation_task = None
     _bill_reconciliation_task = None
     _transaction_debit_refund_reconciliation_task = None
@@ -611,6 +661,7 @@ async def readiness_check() -> dict[str, object]:
         "enabled_domains": _enabled_domain_flags(),
         "async_transport": settings.async_transport,
         "funding_reconciliation_interval_seconds": settings.funding_reconciliation_interval_seconds,
+        "direct_transfer_reconciliation_interval_seconds": settings.direct_transfer_reconciliation_interval_seconds,
         "transaction_debit_reconciliation_interval_seconds": settings.transaction_debit_reconciliation_interval_seconds,
         "bill_reconciliation_interval_seconds": settings.bill_reconciliation_interval_seconds,
         "payout_reconciliation_interval_seconds": settings.payout_reconciliation_interval_seconds,

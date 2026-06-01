@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.transactions.runtime.bill_completion_notifications import BillCompletionEvent, BillCompletionNotifier
 from banking.transactions.runtime.transaction_debit_helpers import (
     apply_transaction_debit_result,
     debit_reference_for_transaction,
@@ -22,9 +23,15 @@ logger = get_logger(__name__)
 class TransactionDebitConsumer:
     """Starts Mono debit for a single airtime/data transaction."""
 
-    def __init__(self, direct_debit_provider: DirectDebitProvider, publisher: QueuePublisher):
+    def __init__(
+        self,
+        direct_debit_provider: DirectDebitProvider,
+        publisher: QueuePublisher,
+        notifier: BillCompletionNotifier | None = None,
+    ):
         self.direct_debit_provider = direct_debit_provider
         self.publisher = publisher
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         transaction_id = str(payload.get("transaction_id") or "")
@@ -41,6 +48,7 @@ class TransactionDebitConsumer:
             await queue_bill_fulfillment(publisher=self.publisher, transaction=claim["transaction"])
             return
         if claim.get("failed"):
+            await self._notify(transaction_id, "debit_failed")
             return
 
         result = await self.direct_debit_provider.initiate_pooling_debit(
@@ -49,7 +57,9 @@ class TransactionDebitConsumer:
             reference=claim["reference"],
             narration=claim["narration"],
         )
-        await self._apply_result(transaction_id, str(claim["step_id"]), claim["reference"], result)
+        outcome = await self._apply_result(transaction_id, str(claim["step_id"]), claim["reference"], result)
+        if outcome == "failed":
+            await self._notify(transaction_id, "debit_failed", error_message=result.error_message)
 
     async def _claim(self, transaction_id: str) -> dict[str, Any] | None:
         async with UnitOfWork() as uow:
@@ -116,15 +126,15 @@ class TransactionDebitConsumer:
         step_id: str,
         reference: str,
         result: Any,
-    ) -> None:
+    ) -> str:
         async with UnitOfWork() as uow:
             if not uow.transactions or not uow.transaction_debit_steps:
-                return
+                return "skipped"
             step = await uow.transaction_debit_steps.get_by_id_for_update(step_id)
             transaction = await uow.transactions.get_by_id_for_update(transaction_id)
             if not step or not transaction:
-                return
-            await apply_transaction_debit_result(
+                return "skipped"
+            outcome = await apply_transaction_debit_result(
                 uow=uow,
                 debit_step=step,
                 transaction=transaction,
@@ -133,6 +143,23 @@ class TransactionDebitConsumer:
                 publisher=self.publisher,
             )
             await uow.commit()
+            return outcome
+        return "skipped"
+
+    async def _notify(
+        self,
+        transaction_id: str,
+        event: BillCompletionEvent,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        if self.notifier is None:
+            return
+        await self.notifier.notify_by_transaction_id(
+            transaction_id,
+            event,
+            error_message=error_message,
+        )
 
     @staticmethod
     async def _fail_transaction(uow: UnitOfWork, transaction: Any, error_message: str) -> None:
@@ -147,16 +174,25 @@ class TransactionDebitConsumer:
 class TransactionDebitReconciliationConsumer:
     """Recovers stale transaction debit steps and missed bill fulfillment publishes."""
 
-    def __init__(self, direct_debit_provider: DirectDebitProvider, publisher: QueuePublisher):
+    def __init__(
+        self,
+        direct_debit_provider: DirectDebitProvider,
+        publisher: QueuePublisher,
+        notifier: BillCompletionNotifier | None = None,
+    ):
         self.direct_debit_provider = direct_debit_provider
         self.publisher = publisher
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         transaction_id = payload.get("transaction_id")
         if transaction_id:
-            await TransactionDebitConsumer(self.direct_debit_provider, self.publisher)._process_transaction(
-                str(transaction_id)
+            consumer = TransactionDebitConsumer(
+                self.direct_debit_provider,
+                self.publisher,
+                notifier=self.notifier,
             )
+            await consumer._process_transaction(str(transaction_id))
             return
         await self._reconcile_batch(payload)
 
@@ -191,7 +227,7 @@ class TransactionDebitReconciliationConsumer:
             tx = await uow.transactions.get_by_id_for_update(transaction_id)
             if not step or not tx:
                 return
-            await apply_transaction_debit_result(
+            outcome = await apply_transaction_debit_result(
                 uow=uow,
                 debit_step=step,
                 transaction=tx,
@@ -200,6 +236,8 @@ class TransactionDebitReconciliationConsumer:
                 publisher=self.publisher,
             )
             await uow.commit()
+        if outcome == "failed":
+            await self._notify(transaction_id, "debit_failed", error_message=result.error_message)
 
     async def _retry_open_step(self, transaction_id: str, step_id: str) -> None:
         """Re-drive stale pending/processing debits using the deterministic Mono reference."""
@@ -239,7 +277,7 @@ class TransactionDebitReconciliationConsumer:
                     reference=reference,
                     error_message="Transaction debit retry limit exhausted",
                 )
-                await apply_transaction_debit_result(
+                outcome = await apply_transaction_debit_result(
                     uow=uow,
                     debit_step=step,
                     transaction=tx,
@@ -248,6 +286,8 @@ class TransactionDebitReconciliationConsumer:
                     publisher=self.publisher,
                 )
                 await uow.commit()
+                if outcome == "failed":
+                    await self._notify(transaction_id, "debit_failed", error_message=result.error_message)
                 return None
 
             account = await uow.accounts.get_by_id(str(step.account_id))
@@ -258,7 +298,7 @@ class TransactionDebitReconciliationConsumer:
                     reference=reference,
                     error_message="Mandate not available for source account",
                 )
-                await apply_transaction_debit_result(
+                outcome = await apply_transaction_debit_result(
                     uow=uow,
                     debit_step=step,
                     transaction=tx,
@@ -267,6 +307,8 @@ class TransactionDebitReconciliationConsumer:
                     publisher=self.publisher,
                 )
                 await uow.commit()
+                if outcome == "failed":
+                    await self._notify(transaction_id, "debit_failed", error_message=result.error_message)
                 return None
 
             if step.status == TransactionDebitStepStatusEnum.PENDING.value:
@@ -295,6 +337,21 @@ class TransactionDebitReconciliationConsumer:
                 "narration": tx.narration or "Bill payment funding",
             }
         return None
+
+    async def _notify(
+        self,
+        transaction_id: str,
+        event: BillCompletionEvent,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        if self.notifier is None:
+            return
+        await self.notifier.notify_by_transaction_id(
+            transaction_id,
+            event,
+            error_message=error_message,
+        )
 
 
 async def queue_bill_fulfillment_for_transaction_id(publisher: QueuePublisher, transaction_id: str) -> None:

@@ -20,6 +20,8 @@ class TransactionWorkerLambdaHandler(BaseSQSHandler):
 
         if domain == "transaction":
             await deps.transaction.process_transaction(payload)
+        elif domain == "direct_transfer_reconcile":
+            await deps.direct_transfer_reconciliation.process_job(payload)
         elif domain == "transaction_debit":
             await deps.transaction_debit.process_job(payload)
         elif domain == "transaction_debit_reconcile":

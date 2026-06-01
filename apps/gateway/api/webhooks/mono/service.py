@@ -13,6 +13,7 @@ from banking.transactions.runtime.async_completion import (
     get_async_group_meta_for_transaction,
     record_group_leg_and_maybe_build_summary,
 )
+from banking.transactions.runtime.bill_completion_notifications import BillCompletionEvent, BillCompletionNotifier
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from banking.transactions.runtime.funding_status import (
     queue_payout_if_all_confirmed,
@@ -20,6 +21,7 @@ from banking.transactions.runtime.funding_status import (
 )
 from banking.transactions.runtime.transaction_debit_helpers import queue_bill_fulfillment
 from shared.cache.user_data import UserDataCache
+from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
 from shared.database.enums import (
     FundedTransferStatusEnum,
     FundingStepStatusEnum,
@@ -76,11 +78,13 @@ class MonoWebhookService:
         publisher: QueuePublisher | None = None,
         delivery_service: "DeliveryService | None" = None,
         redis_client: Any | None = None,
+        bill_completion_notifier: BillCompletionNotifier | None = None,
     ):
         if publisher is None:
             raise ValueError("publisher is required")
         self.publisher = publisher
         self.delivery_service = delivery_service
+        self.bill_completion_notifier = bill_completion_notifier
         self.cache = UserDataCache()
         self.redis_client = redis_client
 
@@ -90,6 +94,21 @@ class MonoWebhookService:
         if self.delivery_service is None:
             self.delivery_service = DeliveryService()
         return self.delivery_service
+
+    async def _notify_bill_completion(
+        self,
+        transaction_id: str,
+        event: BillCompletionEvent,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        if self.bill_completion_notifier is None:
+            return
+        await self.bill_completion_notifier.notify_by_transaction_id(
+            transaction_id,
+            event,
+            error_message=error_message,
+        )
 
     async def handle_mandate_event(self, event: str, data: dict[str, Any]) -> bool:
         """
@@ -274,6 +293,12 @@ class MonoWebhookService:
                         reference=reference,
                         status=debit_step.status,
                     )
+                    if tx and debit_step.status == TransactionDebitStepStatusEnum.FAILED.value:
+                        await self._notify_bill_completion(
+                            str(tx.id),
+                            "debit_failed",
+                            error_message=tx.error_message,
+                        )
                     return True
 
             if not uow.transactions:
@@ -281,38 +306,46 @@ class MonoWebhookService:
 
             tx = None
             if debit_id:
-                tx = await uow.transactions.get_by_transaction_id(str(debit_id))
+                tx = await uow.transactions.get_by_transaction_id_for_update(str(debit_id))
             if not tx and reference:
-                tx = await uow.transactions.get_by_idempotency_key(str(reference))
+                tx = await uow.transactions.get_direct_transfer_by_reference_for_update(str(reference))
             if not tx:
                 logger.warning("mono_debit_target_not_found", reference=reference, debit_id=debit_id)
                 return False
 
             previous_status = str(tx.status or "").lower()
-            tx.status = transfer_status
-            tx.provider_status = str(debit_data.get("status") or tx.provider_status or "")
-            tx.provider_error_code = self._response_code(debit_data)
-            tx.provider_response = to_json_safe_dict(data)
-            if debit_id:
-                tx.transaction_id = str(debit_id)
-            if transfer_status == TransactionStatusEnum.FAILED.value:
-                tx.error_message = self._response_message(debit_data) or tx.error_message
-            if transfer_status in {TransactionStatusEnum.SUCCESSFUL.value, TransactionStatusEnum.FAILED.value}:
-                tx.completed_at = datetime.now(UTC).replace(tzinfo=None)
-            uow.db.add(tx)
-            await uow.commit()
+            debit_status = DebitStatus.PROCESSING
+            if transfer_status == TransactionStatusEnum.SUCCESSFUL.value:
+                debit_status = DebitStatus.SUCCESSFUL
+            elif transfer_status == TransactionStatusEnum.FAILED.value:
+                debit_status = DebitStatus.FAILED
+            result = DebitResult(
+                success=debit_status != DebitStatus.FAILED,
+                status=debit_status,
+                debit_id=str(debit_id) if debit_id else None,
+                reference=str(reference or tx.idempotency_key),
+                amount=getattr(tx, "amount", None),
+                error_message=self._response_message(debit_data) if debit_status == DebitStatus.FAILED else None,
+                provider_response=data,
+            )
+            tx, outcome = await uow.transactions.apply_direct_transfer_result(
+                str(tx.id),
+                result=result,
+                provider_reference=str(reference or tx.idempotency_key),
+            )
 
             logger.info(
                 "transfer_transaction_updated_from_mono_webhook",
-                transaction_id=str(tx.id),
+                transaction_id=str(getattr(tx, "id", "")),
                 reference=reference,
                 debit_id=debit_id,
-                status=transfer_status,
+                status=outcome,
             )
 
             if (
                 previous_status in {TransactionStatusEnum.PENDING.value, TransactionStatusEnum.PROCESSING.value}
-                and transfer_status in {TransactionStatusEnum.SUCCESSFUL.value, TransactionStatusEnum.FAILED.value}
+                and outcome in {"successful", "failed"}
+                and tx is not None
             ):
                 grouped_handled = await self._maybe_notify_grouped_transfer_resolution(uow=uow, tx=tx, locale="en")
                 if not grouped_handled:

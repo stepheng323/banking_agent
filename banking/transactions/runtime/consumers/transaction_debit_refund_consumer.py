@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.transactions.runtime.bill_completion_notifications import BillCompletionEvent, BillCompletionNotifier
 from banking.transactions.runtime.transaction_debit_helpers import finalize_transaction_debit_refund
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.config.settings import settings
@@ -16,8 +17,13 @@ logger = get_logger(__name__)
 class TransactionDebitRefundConsumer:
     """Initiates a Mono refund for a confirmed transaction debit."""
 
-    def __init__(self, direct_debit_provider: DirectDebitProvider):
+    def __init__(
+        self,
+        direct_debit_provider: DirectDebitProvider,
+        notifier: BillCompletionNotifier | None = None,
+    ):
         self.direct_debit_provider = direct_debit_provider
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         step_id = str(payload.get("transaction_debit_step_id") or "")
@@ -28,6 +34,9 @@ class TransactionDebitRefundConsumer:
 
         claim = await self._claim_refund(step_id, transaction_id, payload)
         if claim is None:
+            return
+        if claim.get("refund_failed"):
+            await self._notify(transaction_id, "refund_failed", error_message=str(claim.get("error_message") or ""))
             return
 
         result = await self.direct_debit_provider.reverse_debit(
@@ -65,7 +74,7 @@ class TransactionDebitRefundConsumer:
                     error_message="Provider reference missing for refund",
                 )
                 await uow.commit()
-                return None
+                return {"refund_failed": True, "error_message": "Provider reference missing for refund"}
 
             claimed = await uow.transaction_debit_steps.claim_for_refund(
                 str(step.id),
@@ -85,7 +94,7 @@ class TransactionDebitRefundConsumer:
             tx = await uow.transactions.get_by_id_for_update(transaction_id)
             if not step or not tx:
                 return
-            await finalize_transaction_debit_refund(
+            outcome = await finalize_transaction_debit_refund(
                 uow=uow,
                 debit_step=step,
                 transaction=tx,
@@ -93,13 +102,37 @@ class TransactionDebitRefundConsumer:
                 refund_reference=refund_reference,
             )
             await uow.commit()
+        if outcome == "refunded":
+            await self._notify(transaction_id, "refunded")
+        elif outcome == "failed":
+            await self._notify(transaction_id, "refund_failed", error_message=getattr(result, "error_message", None))
+
+    async def _notify(
+        self,
+        transaction_id: str,
+        event: BillCompletionEvent,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        if self.notifier is None:
+            return
+        await self.notifier.notify_by_transaction_id(
+            transaction_id,
+            event,
+            error_message=error_message,
+        )
 
 
 class TransactionDebitRefundReconciliationConsumer:
     """Reconciles pending transaction debit refunds."""
 
-    def __init__(self, direct_debit_provider: DirectDebitProvider):
+    def __init__(
+        self,
+        direct_debit_provider: DirectDebitProvider,
+        notifier: BillCompletionNotifier | None = None,
+    ):
         self.direct_debit_provider = direct_debit_provider
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         step_id = payload.get("transaction_debit_step_id")
@@ -137,6 +170,11 @@ class TransactionDebitRefundReconciliationConsumer:
                         error_message="Refund reconciliation attempts exhausted",
                     )
                     await uow.commit()
+                    await self._notify(
+                        transaction_id,
+                        "refund_failed",
+                        error_message="Refund reconciliation attempts exhausted",
+                    )
                     return
                 refund_reference = step.provider_reference
                 if not refund_reference:
@@ -146,6 +184,11 @@ class TransactionDebitRefundReconciliationConsumer:
                         error_message="Provider reference missing for refund",
                     )
                     await uow.commit()
+                    await self._notify(
+                        transaction_id,
+                        "refund_failed",
+                        error_message="Provider reference missing for refund",
+                    )
                     return
                 await uow.transaction_debit_steps.claim_for_refund(str(step.id), refund_reference=str(refund_reference))
                 step.refund_attempt_count = int(step.refund_attempt_count or 0) + 1
@@ -174,7 +217,7 @@ class TransactionDebitRefundReconciliationConsumer:
             tx = await uow.transactions.get_by_id_for_update(transaction_id)
             if not step or not tx:
                 return
-            await finalize_transaction_debit_refund(
+            outcome = await finalize_transaction_debit_refund(
                 uow=uow,
                 debit_step=step,
                 transaction=tx,
@@ -182,3 +225,22 @@ class TransactionDebitRefundReconciliationConsumer:
                 refund_reference=str(step.refund_provider_reference or step.provider_reference or ""),
             )
             await uow.commit()
+        if outcome == "refunded":
+            await self._notify(transaction_id, "refunded")
+        elif outcome == "failed":
+            await self._notify(transaction_id, "refund_failed", error_message=getattr(result, "error_message", None))
+
+    async def _notify(
+        self,
+        transaction_id: str,
+        event: BillCompletionEvent,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        if self.notifier is None:
+            return
+        await self.notifier.notify_by_transaction_id(
+            transaction_id,
+            event,
+            error_message=error_message,
+        )

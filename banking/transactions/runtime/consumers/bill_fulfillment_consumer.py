@@ -6,6 +6,7 @@ from typing import Any
 from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime import provider_results
+from banking.transactions.runtime.bill_completion_notifications import BillCompletionNotifier
 from banking.transactions.runtime.transaction_debit_helpers import (
     bill_reference_for_transaction,
     queue_transaction_debit_refund,
@@ -46,9 +47,15 @@ def normalize_bill_status(result: dict[str, Any]) -> str:
 class BillFulfillmentConsumer:
     """Fulfills airtime/data bill payment after a confirmed transaction debit."""
 
-    def __init__(self, bill_provider: BillPaymentProvider, publisher: QueuePublisher):
+    def __init__(
+        self,
+        bill_provider: BillPaymentProvider,
+        publisher: QueuePublisher,
+        notifier: BillCompletionNotifier | None = None,
+    ):
         self.bill_provider = bill_provider
         self.publisher = publisher
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         transaction_id = str(payload.get("transaction_id") or "")
@@ -64,7 +71,8 @@ class BillFulfillmentConsumer:
             result = await self.bill_provider.get_bill_status(claim["bill_reference"])
         else:
             result = await self._purchase_bill(claim)
-        await self._apply_result(transaction_id, claim["debit_step_id"], claim["bill_reference"], result)
+        outcome = await self._apply_result(transaction_id, claim["debit_step_id"], claim["bill_reference"], result)
+        await self._notify_completion(transaction_id, outcome, result)
 
     async def _claim(self, transaction_id: str, *, reconcile: bool = False) -> dict[str, Any] | None:
         async with UnitOfWork() as uow:
@@ -199,18 +207,39 @@ class BillFulfillmentConsumer:
             return "failed"
         return "skipped"
 
+    async def _notify_completion(self, transaction_id: str, outcome: str, result: dict[str, Any]) -> None:
+        if self.notifier is None:
+            return
+        error_message = provider_results.provider_error_message(result, "Bill payment failed")
+        if outcome == "successful":
+            await self.notifier.notify_by_transaction_id(transaction_id, "successful")
+        elif outcome == "pending":
+            await self.notifier.notify_by_transaction_id(transaction_id, "processing")
+        elif outcome == "failed":
+            await self.notifier.notify_by_transaction_id(
+                transaction_id,
+                "failed_refund_pending",
+                error_message=error_message,
+            )
+
 
 class BillReconciliationConsumer:
     """Recovers stale bill fulfillment after confirmed transaction debits."""
 
-    def __init__(self, bill_provider: BillPaymentProvider, publisher: QueuePublisher):
+    def __init__(
+        self,
+        bill_provider: BillPaymentProvider,
+        publisher: QueuePublisher,
+        notifier: BillCompletionNotifier | None = None,
+    ):
         self.bill_provider = bill_provider
         self.publisher = publisher
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         transaction_id = payload.get("transaction_id")
         if transaction_id:
-            await BillFulfillmentConsumer(self.bill_provider, self.publisher).process_job(
+            await BillFulfillmentConsumer(self.bill_provider, self.publisher, notifier=self.notifier).process_job(
                 {"transaction_id": str(transaction_id), "reconcile": True}
             )
             return
@@ -225,6 +254,6 @@ class BillReconciliationConsumer:
             transaction_ids = [str(step.transaction_id) for step in steps]
 
         for transaction_id in transaction_ids:
-            await BillFulfillmentConsumer(self.bill_provider, self.publisher).process_job(
+            await BillFulfillmentConsumer(self.bill_provider, self.publisher, notifier=self.notifier).process_job(
                 {"transaction_id": transaction_id, "reconcile": True}
             )
