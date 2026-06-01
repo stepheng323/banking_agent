@@ -7,7 +7,7 @@ import aiohttp
 
 from shared.config.settings import settings
 from shared.money import require_kobo_to_naira
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 from . import mock_data
 from .models import (
@@ -356,16 +356,16 @@ class MonoClient:
             True if successfully cancelled
         """
         if self.use_mock:
-            logger.info("mock_cancel_mandate", mandate_id=mandate_id)
+            logger.info("mock_cancel_mandate", mandate_id_hash=log_fingerprint(mandate_id))
             return True
 
         try:
             await self._request("PATCH", f"/v3/payments/mandates/{mandate_id}/cancel")
-            logger.info("mandate_cancelled", mandate_id=mandate_id)
+            logger.info("mandate_cancelled", mandate_id_hash=log_fingerprint(mandate_id))
             return True
         except MonoApiError as e:
             if e.is_not_found:
-                logger.warning("mandate_not_found_for_cancel", mandate_id=mandate_id)
+                logger.warning("mandate_not_found_for_cancel", mandate_id_hash=log_fingerprint(mandate_id))
                 return True
             raise
 
@@ -423,7 +423,7 @@ class MonoClient:
             )
             logger.info(
                 "mock_initiate_debit",
-                mandate_id=mandate_id,
+                mandate_id_hash=log_fingerprint(mandate_id),
                 amount=amount,
                 reference=reference,
                 direct_to_beneficiary=is_direct_to_beneficiary,
@@ -448,7 +448,7 @@ class MonoClient:
         data = await self._request("POST", "/v3/payments/debits/initiate", body=body)
         logger.info(
             "debit_initiated",
-            mandate_id=mandate_id,
+            mandate_id_hash=log_fingerprint(mandate_id),
             debit_id=data.get("id"),
             reference=reference,
             direct_to_beneficiary=is_direct_to_beneficiary,

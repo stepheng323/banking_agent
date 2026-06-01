@@ -54,7 +54,6 @@ class AccountAdapter:
         self.mono_account_id = data.get("mono_account_id") or data.get("account_id") or ""
         self.account_number = data.get("account_number", "")
         self.bank_name = data.get("bank_name", "")
-        self.mandate_id = data.get("mandate_id")
         self.mandate_status = data.get("mandate_status", "pending")
         self.is_default = data.get("is_default", False)
         raw_extra = data.get("extra_data") or {}

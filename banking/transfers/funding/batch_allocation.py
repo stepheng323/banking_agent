@@ -35,7 +35,7 @@ def adapt_batch_accounts(accounts: list[dict[str, Any]]) -> list[BatchFundingAcc
 
 
 def eligible_batch_accounts(accounts: list[BatchFundingAccount]) -> list[BatchFundingAccount]:
-    return [account for account in accounts if account.mandate_status == "ready" and account.mandate_id]
+    return [account for account in accounts if account.mandate_status == "ready"]
 
 
 def prioritize_demands(demands: list[TransferDemand]) -> list[TransferDemand]:
@@ -154,7 +154,7 @@ def allocate_explicit_funding(
         if remaining <= 0:
             break
         account = accounts_by_id.get(account_id)
-        if account is None or account.id is None or account.mandate_id is None:
+        if account is None or account.id is None:
             continue
         available = max(ZERO_MONEY, ledger.get(account_id, ZERO_MONEY))
         contribution = min(available, remaining)
@@ -164,7 +164,6 @@ def allocate_explicit_funding(
                     account_id=account.id,
                     account_number=account.account_number,
                     bank_name=account.bank_name,
-                    mandate_id=account.mandate_id,
                     amount=contribution,
                     sequence=sequence,
                 )
@@ -301,7 +300,6 @@ def allocate_explicit_split_funding(
                 account_id=account.id,
                 account_number=account.account_number,
                 bank_name=account.bank_name,
-                mandate_id=account.mandate_id,
                 amount=requested_money,
                 sequence=sequence,
             )

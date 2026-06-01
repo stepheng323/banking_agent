@@ -11,6 +11,7 @@ from shared.config.settings import settings
 from shared.database.enums import TransactionDebitStepStatusEnum, TransactionStatusEnum
 from shared.money import naira_to_json
 from shared.queue.adapter import QueuePublisher
+from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger
 
@@ -118,7 +119,9 @@ async def apply_transaction_debit_result(
             )
             transaction.status = TransactionStatusEnum.PROCESSING.value
             transaction.provider_status = "debit_processing"
-            transaction.provider_response = to_json_safe_dict(result.provider_response or {})
+            transaction.provider_response = redact_sensitive_identifiers(
+                to_json_safe_dict(result.provider_response or {})
+            )
             if uow.db:
                 uow.db.add(transaction)
                 uow.db.add(debit_step)
@@ -149,7 +152,7 @@ async def apply_transaction_debit_result(
     debit_step = updated_step or debit_step
 
     transaction.provider_status = result.status.value
-    transaction.provider_response = to_json_safe_dict(result.provider_response or {})
+    transaction.provider_response = redact_sensitive_identifiers(to_json_safe_dict(result.provider_response or {}))
     if result.debit_id:
         transaction.transaction_id = result.debit_id
     if mapped_status == TransactionDebitStepStatusEnum.FAILED.value or not result.success:

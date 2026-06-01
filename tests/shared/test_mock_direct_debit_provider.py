@@ -25,6 +25,8 @@ async def test_mock_provider_initiate_returns_successful_with_terminal_code() ->
     assert result.provider_response["status"] == "successful"
     assert result.provider_response["response_code"] == "00"
     assert result.provider_response["debit_type"] == "direct-to-beneficiary"
+    assert result.provider_response["mandate_id"] != "mandate-1"
+    assert result.provider_response["beneficiary"]["account_number"] == "****1023"
 
 
 @pytest.mark.asyncio

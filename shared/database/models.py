@@ -39,6 +39,12 @@ from shared.database.enums import (
     TransactionTypeEnum,
     UserOnboardingStatusEnum,
 )
+from shared.security.field_encryption import (
+    account_number_last4,
+    decrypt_optional,
+    encrypt_account_number,
+    encrypt_secret_identifier,
+)
 from shared.utils.datetime import utc_now_naive
 
 MONEY_COLUMN = Numeric(18, 2)
@@ -127,11 +133,14 @@ class Account(Base):
     account_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     bank_name: Mapped[str] = mapped_column(String, nullable=False)
     bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
-    account_number: Mapped[str] = mapped_column(String, nullable=False)
+    _account_number_ciphertext: Mapped[str] = mapped_column("account_number", String, nullable=False)
+    account_number_blind_index: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    account_number_last4: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)
     account_name: Mapped[str | None] = mapped_column(String, nullable=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    mandate_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    _mandate_id_ciphertext: Mapped[str | None] = mapped_column("mandate_id", String, nullable=True, index=True)
+    mandate_id_blind_index: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     mandate_status: Mapped[str] = mapped_column(String, default=MandateStatusEnum.PENDING.value, nullable=False)
     extra_data: Mapped[dict[str, Any]] = mapped_column(JSON, default={})
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
@@ -141,8 +150,29 @@ class Account(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="accounts")
 
+    @property
+    def account_number(self) -> str:
+        return decrypt_optional(self._account_number_ciphertext) or ""
+
+    @account_number.setter
+    def account_number(self, value: str | None) -> None:
+        encrypted = encrypt_account_number(value, field="accounts.account_number")
+        self._account_number_ciphertext = encrypted.ciphertext
+        self.account_number_blind_index = encrypted.blind_index
+        self.account_number_last4 = encrypted.last4
+
+    @property
+    def mandate_id(self) -> str | None:
+        return decrypt_optional(self._mandate_id_ciphertext)
+
+    @mandate_id.setter
+    def mandate_id(self, value: str | None) -> None:
+        encrypted = encrypt_secret_identifier(value, field="accounts.mandate_id")
+        self._mandate_id_ciphertext = encrypted.ciphertext or None
+        self.mandate_id_blind_index = encrypted.blind_index
+
     def __repr__(self):
-        return f"<Account(id={self.id}, bank={self.bank_name}, number={self.account_number})>"
+        return f"<Account(id={self.id}, bank={self.bank_name}, account_last4={self.account_number_last4})>"
 
 
 class Beneficiary(Base):
@@ -165,7 +195,9 @@ class Beneficiary(Base):
     )
     account_name: Mapped[str] = mapped_column(String, nullable=False)
     alias: Mapped[str | None] = mapped_column(String, nullable=True)
-    account_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    _account_number_ciphertext: Mapped[str | None] = mapped_column("account_number", String, nullable=True)
+    account_number_blind_index: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    account_number_last4: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)
     bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
     bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
@@ -175,10 +207,35 @@ class Beneficiary(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="beneficiaries")
 
+    def __init__(self, **kwargs: Any):
+        account_number = kwargs.pop("account_number", None)
+        super().__init__(**kwargs)
+        if account_number is not None:
+            self.account_number = account_number
+
+    @property
+    def account_number(self) -> str | None:
+        return decrypt_optional(self._account_number_ciphertext)
+
+    @account_number.setter
+    def account_number(self, value: str | None) -> None:
+        beneficiary_type = getattr(self, "beneficiary_type", None) or BeneficiaryTypeEnum.TRANSFER.value
+        if beneficiary_type == BeneficiaryTypeEnum.TRANSFER.value:
+            encrypted = encrypt_account_number(value, field="beneficiaries.account_number")
+            self._account_number_ciphertext = encrypted.ciphertext or None
+            self.account_number_blind_index = encrypted.blind_index
+            self.account_number_last4 = encrypted.last4
+            return
+
+        text = str(value or "").strip()
+        self._account_number_ciphertext = text or None
+        self.account_number_blind_index = None
+        self.account_number_last4 = account_number_last4(text)
+
     def __repr__(self):
         return (
             f"<Beneficiary(id={self.id}, type={self.beneficiary_type}, "
-            f"name={self.account_name}, account={self.account_number})>"
+            f"name={self.account_name}, account_last4={self.account_number_last4})>"
         )
 
 
@@ -207,9 +264,15 @@ class Transaction(Base):
         ForeignKey("accounts.id", name="fk_transactions_source_account_id"),
         nullable=True,
     )
-    source_account_number: Mapped[str] = mapped_column(String, nullable=False)
+    _source_account_number_ciphertext: Mapped[str] = mapped_column("source_account_number", String, nullable=False)
+    source_account_number_blind_index: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    source_account_number_last4: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)
     source_bank_name: Mapped[str] = mapped_column(String, nullable=False)
-    recipient_account_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    _recipient_account_number_ciphertext: Mapped[str | None] = mapped_column(
+        "recipient_account_number", String, nullable=True
+    )
+    recipient_account_number_blind_index: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    recipient_account_number_last4: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)
     recipient_bank_code: Mapped[str | None] = mapped_column(String, nullable=True)
     recipient_bank_name: Mapped[str | None] = mapped_column(String, nullable=True)
     recipient_name: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -235,6 +298,28 @@ class Transaction(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="transactions")
+
+    @property
+    def source_account_number(self) -> str:
+        return decrypt_optional(self._source_account_number_ciphertext) or ""
+
+    @source_account_number.setter
+    def source_account_number(self, value: str | None) -> None:
+        encrypted = encrypt_account_number(value, field="transactions.source_account_number")
+        self._source_account_number_ciphertext = encrypted.ciphertext
+        self.source_account_number_blind_index = encrypted.blind_index
+        self.source_account_number_last4 = encrypted.last4
+
+    @property
+    def recipient_account_number(self) -> str | None:
+        return decrypt_optional(self._recipient_account_number_ciphertext)
+
+    @recipient_account_number.setter
+    def recipient_account_number(self, value: str | None) -> None:
+        encrypted = encrypt_account_number(value, field="transactions.recipient_account_number")
+        self._recipient_account_number_ciphertext = encrypted.ciphertext or None
+        self.recipient_account_number_blind_index = encrypted.blind_index
+        self.recipient_account_number_last4 = encrypted.last4
 
     def __repr__(self):
         return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, tx_id={self.transaction_id})>"
@@ -374,7 +459,11 @@ class FundedTransfer(Base):
 
     amount: Mapped[Decimal] = mapped_column(MONEY_COLUMN, nullable=False)
     currency: Mapped[str] = mapped_column(String, default="NGN", nullable=False)
-    recipient_account_number: Mapped[str] = mapped_column(String, nullable=False)
+    _recipient_account_number_ciphertext: Mapped[str] = mapped_column(
+        "recipient_account_number", String, nullable=False
+    )
+    recipient_account_number_blind_index: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    recipient_account_number_last4: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)
     recipient_bank_code: Mapped[str] = mapped_column(String, nullable=False)
     recipient_bank_name: Mapped[str] = mapped_column(String, nullable=False)
     recipient_name: Mapped[str] = mapped_column(String, nullable=False)
@@ -403,6 +492,17 @@ class FundedTransfer(Base):
     funding_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     payout_initiated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def recipient_account_number(self) -> str:
+        return decrypt_optional(self._recipient_account_number_ciphertext) or ""
+
+    @recipient_account_number.setter
+    def recipient_account_number(self, value: str | None) -> None:
+        encrypted = encrypt_account_number(value, field="funded_transfers.recipient_account_number")
+        self._recipient_account_number_ciphertext = encrypted.ciphertext
+        self.recipient_account_number_blind_index = encrypted.blind_index
+        self.recipient_account_number_last4 = encrypted.last4
 
     user: Mapped["User"] = relationship("User")
     funding_steps: Mapped[list["FundingStep"]] = relationship(

@@ -218,4 +218,4 @@ class DirectDebitProvider(ABC):
 
     def is_mandate_ready(self, account: AccountInfo) -> bool:
         """Check if an account's mandate is ready for debiting."""
-        return account.mandate_status == "ready" and account.mandate_id is not None
+        return account.mandate_status == "ready"

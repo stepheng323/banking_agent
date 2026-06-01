@@ -11,7 +11,8 @@ from shared.clients.abstractions.direct_debit import (
     DirectDebitProvider,
 )
 from shared.money import MoneyAmount, require_naira, to_naira
-from shared.utils.logging import get_logger
+from shared.security.redaction import redact_sensitive_identifiers
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -78,7 +79,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
             reference=str(payload.get("reference") or ""),
             amount=amount,
             error_message=error_message,
-            provider_response=dict(payload),
+            provider_response=redact_sensitive_identifiers(dict(payload)),
         )
 
     @property
@@ -179,9 +180,9 @@ class MockDirectDebitProvider(DirectDebitProvider):
             success=False,
             status=DebitStatus.FAILED,
             debit_id=debit_id,
-                error_message="Mock debit not found",
-                provider_response={"id": debit_id, "status": DebitStatus.FAILED.value, "response_code": "404"},
-            )
+            error_message="Mock debit not found",
+            provider_response={"id": debit_id, "status": DebitStatus.FAILED.value, "response_code": "404"},
+        )
 
     async def get_debit_status_by_reference(self, reference: str) -> DebitResult:
         """Get simulated debit status by merchant reference."""
@@ -238,7 +239,7 @@ class MockDirectDebitProvider(DirectDebitProvider):
 
     async def cancel_mandate(self, mandate_id: str) -> bool:
         """Simulate mandate cancellation."""
-        logger.info("mock_cancel_mandate", mandate_id=mandate_id)
+        logger.info("mock_cancel_mandate", mandate_id_hash=log_fingerprint(mandate_id))
         return True
 
     def simulate_debit_success(self, reference: str) -> None:

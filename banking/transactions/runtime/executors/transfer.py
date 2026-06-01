@@ -36,6 +36,7 @@ from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus, D
 from shared.database.enums import TransactionStatusEnum
 from shared.money import naira_to_json, to_naira
 from shared.queue.adapter import QueuePublisher
+from shared.security.redaction import mask_account_number
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -282,11 +283,11 @@ class TransferExecutor:
             "amount": transfer_data.get("amount"),
             "recipient_name": recipient.get("name"),
             "recipient_resolved_name": recipient.get("name"),
-            "recipient_account": recipient.get("account_number"),
+            "recipient_account": mask_account_number(recipient.get("account_number")),
             "recipient_bank_code": recipient.get("bank_code"),
             "recipient_bank_name": recipient.get("bank_name"),
             "source_account_id": source.get("account_id"),
-            "source_account_number": source.get("account_number"),
+            "source_account_number": mask_account_number(source.get("account_number")),
             "source_account_name": source.get("account_name"),
             "source_bank_name": source.get("bank_name"),
             "source_affinity_mode": transfer_data.get("source_affinity_mode"),

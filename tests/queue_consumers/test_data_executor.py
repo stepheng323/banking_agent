@@ -163,9 +163,9 @@ async def test_data_executor_always_queues_mono_debit(monkeypatch: pytest.Monkey
         "target_phone": "08031234567",
         "network": "MTN",
         "recipient_name": "Tolu",
-        "source": "1234567890",
+        "source": "****7890",
         "source_account_id": "acc-1",
-        "source_account_number": "1234567890",
+        "source_account_number": "****7890",
     }
     delivery_service.deliver_text.assert_not_awaited()
 

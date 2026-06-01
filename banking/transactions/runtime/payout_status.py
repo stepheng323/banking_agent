@@ -8,6 +8,7 @@ from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import queue_refunds_for_confirmed_funding_steps
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
 from shared.queue.adapter import QueuePublisher
+from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger
 
@@ -61,7 +62,7 @@ async def apply_payout_result(
     if payout_reference:
         transfer.payout_reference = payout_reference
 
-    safe_result = to_json_safe_dict(result)
+    safe_result = redact_sensitive_identifiers(to_json_safe_dict(result))
     tx = await uow.transactions.get_by_idempotency_key(transfer.idempotency_key) if uow.transactions else None
     status = normalize_payout_status(result.get("status") or result.get("provider_status"))
 

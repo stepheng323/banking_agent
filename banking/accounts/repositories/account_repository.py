@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from banking.persistence.base import BaseRepository
 from shared.database.models import Account
 from shared.models.account import CreateAccount
+from shared.security.field_encryption import blind_index
 
 
 class AccountRepository(BaseRepository[Account]):
@@ -117,8 +118,16 @@ class AccountRepository(BaseRepository[Account]):
 
     async def get_by_mandate_id(self, mandate_id: str) -> Account | None:
         """Get account by Mono mandate ID."""
-        result = await self.db.execute(select(Account).filter(Account.mandate_id == mandate_id))
+        mandate_lookup = blind_index("accounts.mandate_id", mandate_id)
+        if not mandate_lookup:
+            return None
+        result = await self.db.execute(select(Account).filter(Account.mandate_id_blind_index == mandate_lookup))
         return result.scalars().first()
+
+    async def get_mandate_id_for_provider(self, account_id: str) -> str | None:
+        """Return decrypted mandate ID for provider calls only."""
+        account = await self.get_by_account_id(account_id)
+        return account.mandate_id if account else None
 
     async def update_mandate_status(self, mandate_id: str, status: str) -> Account | None:
         """Update mandate status by mandate ID. Returns updated account or None if not found."""

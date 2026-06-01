@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from banking.persistence.base import BaseRepository
 from shared.database.models import Beneficiary
+from shared.security.field_encryption import blind_index
 
 
 def _normalize_bank_name(value: str | None) -> str:
@@ -95,10 +96,17 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
                 user_uuid = UUID(user_id)
             except ValueError:
                 pass
+        account_lookup = blind_index(
+            "beneficiaries.account_number",
+            account_number,
+            normalizer="account_number",
+        )
+        if not account_lookup:
+            return None
         query = select(Beneficiary).filter(
             Beneficiary.user_id == user_uuid,
             Beneficiary.beneficiary_type == "transfer",
-            Beneficiary.account_number == account_number,
+            Beneficiary.account_number_blind_index == account_lookup,
         )
         if bank_code:
             query = query.filter(Beneficiary.bank_code == bank_code)
@@ -114,6 +122,61 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         beneficiary_type: str = "transfer",
     ) -> bool:
         """Check if recipient should be suggested as a beneficiary."""
+        if beneficiary_type == "transfer":
+            account_lookup = blind_index(
+                "beneficiaries.account_number",
+                account_number,
+                normalizer="account_number",
+            )
+            if not account_lookup:
+                return True
+
+            user_uuid: str | UUID = user_id
+            if isinstance(user_id, str):
+                try:
+                    user_uuid = UUID(user_id)
+                except ValueError:
+                    pass
+            if not getattr(self, "db", None):
+                beneficiaries = await self.get_by_user(user_id, beneficiary_type=beneficiary_type)
+                if bank_code:
+                    return not any(
+                        beneficiary.account_number == account_number and beneficiary.bank_code == bank_code
+                        for beneficiary in beneficiaries
+                        if beneficiary.account_number is not None and beneficiary.bank_code is not None
+                    )
+
+                normalized_bank_name = _normalize_bank_name(bank_name)
+                if not normalized_bank_name:
+                    return True
+                return not any(
+                    beneficiary.account_number == account_number
+                    and _normalize_bank_name(beneficiary.bank_name) == normalized_bank_name
+                    for beneficiary in beneficiaries
+                    if beneficiary.account_number is not None and beneficiary.bank_name is not None
+                )
+            query = select(Beneficiary).filter(
+                Beneficiary.user_id == user_uuid,
+                Beneficiary.beneficiary_type == "transfer",
+                Beneficiary.account_number_blind_index == account_lookup,
+            )
+            if bank_code:
+                query = query.filter(Beneficiary.bank_code == bank_code)
+                result = await self.db.execute(query.limit(1))
+                return result.scalars().first() is None
+
+            normalized_bank_name = _normalize_bank_name(bank_name)
+            if not normalized_bank_name:
+                return True
+
+            result = await self.db.execute(query)
+            beneficiaries = list(result.scalars().all())
+            return not any(
+                _normalize_bank_name(beneficiary.bank_name) == normalized_bank_name
+                for beneficiary in beneficiaries
+                if beneficiary.bank_name is not None
+            )
+
         beneficiaries = await self.get_by_user(user_id, beneficiary_type=beneficiary_type)
         if bank_code:
             # Handle None values in comparisons - skip if either field is None.

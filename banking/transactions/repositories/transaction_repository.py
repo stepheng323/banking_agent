@@ -13,6 +13,8 @@ from banking.ledger.repositories.ledger_entry_repository import LedgerEntryRepos
 from banking.persistence.base import BaseRepository
 from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
 from shared.database.models import FundedTransfer, Transaction, TransactionDebitStep
+from shared.security.field_encryption import blind_index
+from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
 
 DIRECT_TRANSFER_CLAIMED_STATUS = "direct_transfer_claimed"
@@ -215,7 +217,9 @@ class TransactionRepository(BaseRepository[Transaction]):
         if transaction.status in DIRECT_TRANSFER_TERMINAL_STATUSES:
             return transaction, "skipped"
 
-        provider_response = to_json_safe_dict(getattr(result, "provider_response", None) or {})
+        provider_response = redact_sensitive_identifiers(
+            to_json_safe_dict(getattr(result, "provider_response", None) or {})
+        )
         provider_status = str(getattr(getattr(result, "status", None), "value", None) or getattr(result, "status", ""))
         debit_id = getattr(result, "debit_id", None)
         result_reference = getattr(result, "reference", None) or provider_reference
@@ -405,7 +409,15 @@ class TransactionRepository(BaseRepository[Transaction]):
         if recipient_since is not None:
             recipient_filters.append(Transaction.created_at >= normalize_db_timestamp(recipient_since))
         if recipient_account_number:
-            recipient_filters.append(Transaction.recipient_account_number == recipient_account_number)
+            recipient_account_lookup = blind_index(
+                "transactions.recipient_account_number",
+                recipient_account_number,
+                normalizer="account_number",
+            )
+            if recipient_account_lookup:
+                recipient_filters.append(Transaction.recipient_account_number_blind_index == recipient_account_lookup)
+            else:
+                recipient_filters = []
         elif recipient_name:
             recipient_filters.append(Transaction.recipient_name.ilike(f"%{recipient_name.strip()}%"))
         else:
@@ -442,7 +454,7 @@ class TransactionRepository(BaseRepository[Transaction]):
             if provider_status:
                 transaction.provider_status = provider_status
             if provider_response is not None:
-                transaction.provider_response = to_json_safe_dict(provider_response)
+                transaction.provider_response = redact_sensitive_identifiers(to_json_safe_dict(provider_response))
             if provider_error_code:
                 transaction.provider_error_code = provider_error_code
             if error_message:

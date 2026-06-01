@@ -60,7 +60,5 @@ class BatchFundingAccount:
         self.mono_account_id: str = str(data.get("mono_account_id") or data.get("account_id") or "")
         self.account_number: str = str(data.get("account_number", ""))
         self.bank_name: str = str(data.get("bank_name", ""))
-        raw_mandate_id = data.get("mandate_id")
-        self.mandate_id: str | None = str(raw_mandate_id) if raw_mandate_id else None
         self.mandate_status: str = str(data.get("mandate_status", "pending"))
         self.is_default = bool(data.get("is_default", False))

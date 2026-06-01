@@ -12,7 +12,8 @@ from shared.clients.abstractions.direct_debit import (
 from shared.clients.providers.mono.client import MonoClient
 from shared.clients.providers.mono.models import MonoApiError
 from shared.money import MoneyAmount, naira_to_kobo, require_kobo_to_naira, require_naira
-from shared.utils.logging import get_logger
+from shared.security.redaction import redact_sensitive_identifiers
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -97,10 +98,10 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 reference=response.get("reference") or reference,
                 amount=debit_amount_naira,
                 error_message=error_message,
-                provider_response=response,
+                provider_response=redact_sensitive_identifiers(response),
             )
         except MonoApiError as e:
-            logger.error("mono_initiate_debit_failed", mandate_id=mandate_id, error=str(e))
+            logger.error("mono_initiate_debit_failed", mandate_id_hash=log_fingerprint(mandate_id), error=str(e))
             transient = self._is_transient_error(e)
             return DebitResult(
                 success=transient,
@@ -108,17 +109,19 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 reference=reference,
                 amount=require_naira(amount),
                 error_message=e.message,
-                provider_response=self._error_response(e),
+                provider_response=redact_sensitive_identifiers(self._error_response(e)),
             )
         except Exception as e:
-            logger.error("mono_initiate_debit_failed", mandate_id=mandate_id, error=str(e))
+            logger.error("mono_initiate_debit_failed", mandate_id_hash=log_fingerprint(mandate_id), error=str(e))
             return DebitResult(
                 success=True,
                 status=DebitStatus.PROCESSING,
                 reference=reference,
                 amount=require_naira(amount),
                 error_message=str(e),
-                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
+                provider_response=redact_sensitive_identifiers(
+                    {"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"}
+                ),
             )
 
     async def get_debit_status(self, debit_id: str) -> DebitResult:
@@ -134,7 +137,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 reference=response.get("reference"),
                 amount=require_kobo_to_naira(response.get("amount", 0)),
                 error_message=error_message,
-                provider_response=response,
+                provider_response=redact_sensitive_identifiers(response),
             )
         except MonoApiError as e:
             logger.error("mono_get_debit_status_failed", debit_id=debit_id, error=str(e))
@@ -144,7 +147,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
                 debit_id=debit_id,
                 error_message=e.message,
-                provider_response=self._error_response(e),
+                provider_response=redact_sensitive_identifiers(self._error_response(e)),
             )
         except Exception as e:
             logger.error("mono_get_debit_status_failed", debit_id=debit_id, error=str(e))
@@ -153,7 +156,9 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING,
                 debit_id=debit_id,
                 error_message=str(e),
-                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
+                provider_response=redact_sensitive_identifiers(
+                    {"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"}
+                ),
             )
 
     async def get_debit_status_by_reference(self, reference: str) -> DebitResult:
@@ -169,7 +174,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 reference=response.get("reference") or reference,
                 amount=require_kobo_to_naira(response.get("amount", 0)),
                 error_message=error_message,
-                provider_response=response,
+                provider_response=redact_sensitive_identifiers(response),
             )
         except MonoApiError as e:
             logger.error("mono_get_debit_status_by_reference_failed", reference=reference, error=str(e))
@@ -179,7 +184,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
                 reference=reference,
                 error_message=e.message,
-                provider_response=self._error_response(e),
+                provider_response=redact_sensitive_identifiers(self._error_response(e)),
             )
         except Exception as e:
             logger.error("mono_get_debit_status_by_reference_failed", reference=reference, error=str(e))
@@ -188,7 +193,9 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING,
                 reference=reference,
                 error_message=str(e),
-                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
+                provider_response=redact_sensitive_identifiers(
+                    {"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"}
+                ),
             )
 
     async def reverse_debit(self, debit_reference: str, reason: str = "Refund") -> DebitResult:
@@ -203,7 +210,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 debit_id=response.get("id"),
                 reference=response.get("reference") or debit_reference,
                 error_message=error_message,
-                provider_response=response,
+                provider_response=redact_sensitive_identifiers(response),
             )
         except MonoApiError as e:
             logger.error("mono_refund_failed", reference=debit_reference, error=str(e))
@@ -213,7 +220,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
                 reference=debit_reference,
                 error_message=e.message,
-                provider_response=self._error_response(e),
+                provider_response=redact_sensitive_identifiers(self._error_response(e)),
             )
         except Exception as e:
             logger.error("mono_refund_failed", reference=debit_reference, error=str(e))
@@ -222,7 +229,9 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING,
                 reference=debit_reference,
                 error_message=str(e),
-                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
+                provider_response=redact_sensitive_identifiers(
+                    {"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"}
+                ),
             )
 
     async def get_refund_status(self, debit_reference: str, refund_id: str | None = None) -> DebitResult:
@@ -238,7 +247,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 reference=response.get("reference") or response.get("reference_number") or debit_reference,
                 amount=require_kobo_to_naira(response["amount"]) if response.get("amount") is not None else None,
                 error_message=error_message,
-                provider_response=response,
+                provider_response=redact_sensitive_identifiers(response),
             )
         except MonoApiError as e:
             logger.error("mono_get_refund_status_failed", reference=debit_reference, error=str(e))
@@ -248,7 +257,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING if transient else DebitStatus.FAILED,
                 reference=debit_reference,
                 error_message=e.message,
-                provider_response=self._error_response(e),
+                provider_response=redact_sensitive_identifiers(self._error_response(e)),
             )
         except Exception as e:
             logger.error("mono_get_refund_status_failed", reference=debit_reference, error=str(e))
@@ -257,7 +266,9 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 status=DebitStatus.PROCESSING,
                 reference=debit_reference,
                 error_message=str(e),
-                provider_response={"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"},
+                provider_response=redact_sensitive_identifiers(
+                    {"http_status": 0, "message": str(e), "error_code": "CONNECTION_ERROR"}
+                ),
             )
 
     async def cancel_mandate(self, mandate_id: str) -> bool:
@@ -265,7 +276,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
         try:
             return await self._client.cancel_mandate(mandate_id)
         except Exception as e:
-            logger.error("mono_cancel_mandate_failed", mandate_id=mandate_id, error=str(e))
+            logger.error("mono_cancel_mandate_failed", mandate_id_hash=log_fingerprint(mandate_id), error=str(e))
             return False
 
     def _map_status(self, mono_status: str) -> DebitStatus:

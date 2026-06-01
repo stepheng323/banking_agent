@@ -308,6 +308,7 @@ dependencies = [
     { name = "httpx" },
     { name = "passlib", extra = ["bcrypt"] },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pycryptodome" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
@@ -328,7 +329,6 @@ all = [
     { name = "langgraph-checkpoint-redis" },
     { name = "mangum" },
     { name = "playwright" },
-    { name = "pycryptodome" },
     { name = "python-multipart" },
     { name = "segno" },
     { name = "uvicorn", extra = ["standard"] },
@@ -343,7 +343,6 @@ core = [
 gateway = [
     { name = "fastapi" },
     { name = "mangum" },
-    { name = "pycryptodome" },
     { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -365,7 +364,6 @@ runtime-chat-worker = [
 runtime-gateway = [
     { name = "fastapi" },
     { name = "mangum" },
-    { name = "pycryptodome" },
     { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -426,7 +424,7 @@ requires-dist = [
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
     { name = "playwright", marker = "extra == 'receipt'", specifier = ">=1.57.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
-    { name = "pycryptodome", marker = "extra == 'gateway'", specifier = ">=3.23.0" },
+    { name = "pycryptodome", specifier = ">=3.23.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pydantic-settings", specifier = ">=2.5.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },

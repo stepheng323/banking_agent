@@ -31,8 +31,9 @@ from shared.database.enums import (
 from shared.database.models import FundedTransfer, UserChannelIdentity
 from shared.money import naira_to_json, require_naira
 from shared.queue.adapter import QueuePublisher
+from shared.security.redaction import mask_account_number, redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 if TYPE_CHECKING:
     from banking.messaging.delivery.service import DeliveryService
@@ -132,12 +133,12 @@ class MonoWebhookService:
 
             account = await uow.accounts.update_mandate_status(mandate_id, new_status)
             if not account:
-                logger.warning("mandate_not_found", mandate_id=mandate_id)
+                logger.warning("mandate_not_found", mandate_id_hash=log_fingerprint(str(mandate_id)))
                 return False
 
             logger.info(
                 "mandate_status_updated",
-                mandate_id=mandate_id,
+                mandate_id_hash=log_fingerprint(str(mandate_id)),
                 status=new_status,
                 account_id=str(account.id),
             )
@@ -159,7 +160,7 @@ class MonoWebhookService:
                     await self._notify_mandate_ready(
                         user.phone_number,
                         account.bank_name,
-                        account.account_number,
+                        mask_account_number(account.account_number),
                         channel=channel,
                     )
 
@@ -266,7 +267,7 @@ class MonoWebhookService:
                     if tx:
                         tx.provider_status = str(debit_data.get("status") or tx.provider_status or "")
                         tx.provider_error_code = self._response_code(debit_data)
-                        tx.provider_response = to_json_safe_dict(data)
+                        tx.provider_response = redact_sensitive_identifiers(to_json_safe_dict(data))
                         if debit_id:
                             tx.transaction_id = str(debit_id)
                         if debit_step.status == TransactionDebitStepStatusEnum.CONFIRMED.value:
@@ -326,7 +327,7 @@ class MonoWebhookService:
                 reference=str(reference or tx.idempotency_key),
                 amount=getattr(tx, "amount", None),
                 error_message=self._response_message(debit_data) if debit_status == DebitStatus.FAILED else None,
-                provider_response=data,
+                provider_response=redact_sensitive_identifiers(data),
             )
             tx, outcome = await uow.transactions.apply_direct_transfer_result(
                 str(tx.id),

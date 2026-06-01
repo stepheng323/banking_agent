@@ -84,6 +84,33 @@ async def test_mono_provider_initiate_debit_sends_amount_in_kobo() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mono_provider_redacts_sensitive_provider_response_fields() -> None:
+    client = _MonoClientStub(
+        initiate_response={
+            "id": "debit-1",
+            "status": "successful",
+            "response_code": "00",
+            "reference": "ref-1",
+            "mandate_id": "mandate-1",
+            "beneficiary": {"account_number": "8162511023", "bank_code": "044"},
+        }
+    )
+    provider = MonoDirectDebitProvider(client)
+
+    result = await provider.initiate_debit(
+        mandate_id="mandate-1",
+        amount="2000.05",
+        reference="ref-1",
+        beneficiary_account="8162511023",
+        beneficiary_bank_code="044",
+    )
+
+    assert result.provider_response is not None
+    assert result.provider_response["mandate_id"] != "mandate-1"
+    assert result.provider_response["beneficiary"]["account_number"] == "****1023"
+
+
+@pytest.mark.asyncio
 async def test_mono_provider_failed_status_with_non_zero_code_is_failure() -> None:
     provider = MonoDirectDebitProvider(
         _MonoClientStub(

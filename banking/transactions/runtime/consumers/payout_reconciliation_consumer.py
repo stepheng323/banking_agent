@@ -12,6 +12,7 @@ from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
 from shared.money import naira_to_json, to_naira
 from shared.queue.adapter import QueuePublisher
+from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -278,7 +279,7 @@ class PayoutReconciliationConsumer:
         if tx:
             tx.status = TransactionStatusEnum.PROCESSING.value
             tx.provider_status = "reconciliation_mismatch"
-            tx.provider_response = to_json_safe_dict(result)
+            tx.provider_response = redact_sensitive_identifiers(to_json_safe_dict(result))
             tx.error_message = transfer.error_message
             if uow.db is not None:
                 uow.db.add(tx)

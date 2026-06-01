@@ -22,6 +22,7 @@ from banking.transactions.runtime.async_group_types import AsyncGroupRedis
 from banking.transactions.runtime.failure_categories import classify_failure_category
 from shared.database.enums import TransactionTypeEnum
 from shared.money import MoneyAmount, naira_to_json, to_naira
+from shared.security.redaction import mask_account_number
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import format_network_display_name
 
@@ -114,7 +115,7 @@ def build_airtime_completion_context(
             "beneficiary_id": airtime_data.get("beneficiary_id"),
             "is_self": airtime_data.get("is_self"),
             "source_account_id": airtime_data.get("source_account_id"),
-            "source_account_number": airtime_data.get("source_account_number"),
+            "source_account_number": mask_account_number(airtime_data.get("source_account_number")),
             "source_bank_name": airtime_data.get("source_bank_name"),
             "source_affinity_mode": airtime_data.get("source_affinity_mode"),
         }
@@ -146,9 +147,11 @@ def build_data_completion_context(
             "recipient_name": data_purchase.get("recipient_name") or data_purchase.get("name"),
             "beneficiary_id": data_purchase.get("beneficiary_id"),
             "is_self": data_purchase.get("is_self"),
-            "source": data_purchase.get("source"),
+            "source": mask_account_number(data_purchase.get("source")),
             "source_account_id": data_purchase.get("source_account_id"),
-            "source_account_number": data_purchase.get("source_account_number") or data_purchase.get("source"),
+            "source_account_number": mask_account_number(
+                data_purchase.get("source_account_number") or data_purchase.get("source")
+            ),
             "source_bank_name": data_purchase.get("source_bank_name"),
             "source_affinity_mode": data_purchase.get("source_affinity_mode"),
         }

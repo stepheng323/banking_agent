@@ -31,14 +31,13 @@ def create_step(account: Any, amount: MoneyAmount, sequence: int) -> funding_mod
         account_id=account.id,
         account_number=account.account_number,
         bank_name=account.bank_name,
-        mandate_id=account.mandate_id,
         amount=require_naira(amount),
         sequence=sequence,
     )
 
 
 def is_eligible(account: Any) -> bool:
-    return account.mandate_status == "ready" and account.mandate_id is not None
+    return account.mandate_status == "ready"
 
 
 def match_ineligible_requested_account(all_accounts: list[Any], eligible: list[Any], bank_name: str) -> Any | None:

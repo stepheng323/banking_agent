@@ -16,7 +16,7 @@ from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum
 from shared.money import naira_to_json, require_naira
 from shared.queue.adapter import QueuePublisher
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -148,15 +148,16 @@ class FundingReconciliationConsumer:
             await self._apply_result(uow, step, transfer, result)
             await uow.commit()
             return None
-        provider_response = result.provider_response or {}
-        mandate_id = provider_response.get("mandate_id")
-        if not mandate_id:
-            logger.info("funding_reconciliation_claim_lost_race", funding_step_id=str(step.id))
+        if not uow.accounts:
+            return None
+        account = await uow.accounts.get_by_id(str(step.account_id))
+        if not account or not account.mandate_id:
+            logger.info("funding_reconciliation_mandate_unavailable", funding_step_id=str(step.id))
             return None
         amount = require_naira(step.amount)
         amount_naira = naira_to_json(amount) or "0.00"
         return {
-            "mandate_id": mandate_id,
+            "mandate_id": str(account.mandate_id),
             "amount": amount,
             "amount_naira": amount_naira,
             "reference": result.reference or step.provider_reference or f"{transfer.idempotency_key}-s{step.sequence}",
@@ -211,7 +212,7 @@ class FundingReconciliationConsumer:
             status=DebitStatus.PROCESSING,
             reference=reference,
             amount=step.amount,
-            provider_response={"mandate_id": account.mandate_id},
+            provider_response={"mandate_id_hash": log_fingerprint(account.mandate_id)},
         )
 
     async def _apply_result(self, uow: UnitOfWork, step: Any, transfer: Any, result: DebitResult) -> None:

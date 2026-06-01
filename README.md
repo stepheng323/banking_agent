@@ -226,6 +226,9 @@ Baseline infrastructure:
 
 - `DATABASE_URL`
 - `REDIS_URL`
+- `FIELD_ENCRYPTION_KEY_B64` (base64 AES key, 16/24/32 bytes after decode)
+- `FIELD_BLIND_INDEX_KEY_B64` (base64 HMAC key for equality lookup)
+- `FIELD_ENCRYPTION_KEY_ID` (key identifier stored in ciphertext envelopes)
 - `APP_DOMAIN`
 - `ACME_EMAIL`
 - `CHAT_TRANSPORT`

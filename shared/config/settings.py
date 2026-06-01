@@ -114,6 +114,10 @@ class Settings:
         self.db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
         self.db_pool_timeout: int = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 
+        self.field_encryption_key_b64: str = os.getenv("FIELD_ENCRYPTION_KEY_B64", "").strip()
+        self.field_blind_index_key_b64: str = os.getenv("FIELD_BLIND_INDEX_KEY_B64", "").strip()
+        self.field_encryption_key_id: str = os.getenv("FIELD_ENCRYPTION_KEY_ID", "local-dev").strip() or "local-dev"
+
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
         self.user_ctx_ttl_seconds: int = int(os.getenv("TTL_SECONDS", "6000"))

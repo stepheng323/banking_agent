@@ -218,7 +218,7 @@ class MandateService:
 
             return {
                 "success": True,
-                "data": {"mandate_id": mandate.id, "message": "Mandate reinitiated successfully"},
+                "data": {"message": "Mandate reinitiated successfully"},
             }
 
         except MonoApiError as e:

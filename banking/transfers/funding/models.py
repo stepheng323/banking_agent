@@ -19,7 +19,6 @@ class FundingStepPlan:
     account_id: UUID
     account_number: str
     bank_name: str
-    mandate_id: str
     amount: MoneyAmount
     sequence: int
 

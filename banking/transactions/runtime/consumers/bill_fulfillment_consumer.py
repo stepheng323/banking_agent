@@ -16,6 +16,7 @@ from shared.config.settings import settings
 from shared.database.enums import TransactionDebitStepStatusEnum, TransactionStatusEnum, TransactionTypeEnum
 from shared.money import require_naira
 from shared.queue.adapter import QueuePublisher
+from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger
 
@@ -159,7 +160,7 @@ class BillFulfillmentConsumer:
             if step.status != TransactionDebitStepStatusEnum.CONFIRMED.value:
                 return "skipped"
 
-            safe_result = to_json_safe_dict(result)
+            safe_result = redact_sensitive_identifiers(to_json_safe_dict(result))
             provider_reference = provider_results.provider_reference(result) or bill_reference
             status = normalize_bill_status(result)
             tx.transaction_id = provider_reference
