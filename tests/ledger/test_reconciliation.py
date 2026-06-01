@@ -9,7 +9,12 @@ from banking.ledger.reconciliation import (
     LedgerExposureReconciliationConsumer,
     LedgerPostingReconciliationConsumer,
 )
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
+from shared.database.enums import (
+    FundedTransferStatusEnum,
+    FundingStepStatusEnum,
+    TransactionDebitStepStatusEnum,
+    TransactionStatusEnum,
+)
 
 
 class _LedgerAccounts:
@@ -43,6 +48,10 @@ class _LedgerEntries:
         return entry
 
     async def liability_balance_for_transfer(self, *, liability_account_id) -> Decimal:
+        del liability_account_id
+        return self.accounts.balance
+
+    async def liability_balance_for_transaction(self, *, liability_account_id) -> Decimal:
         del liability_account_id
         return self.accounts.balance
 
@@ -96,6 +105,24 @@ class _ReconciliationRepo:
         del cutoff, limit
         return self.state.exposure_transfers
 
+    async def list_transaction_debits_for_exposure_scan(
+        self,
+        *,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[SimpleNamespace]:
+        del cutoff, limit
+        return self.state.exposure_transaction_debit_steps
+
+    async def list_direct_transfer_transactions_for_exposure_scan(
+        self,
+        *,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[SimpleNamespace]:
+        del cutoff, limit
+        return self.state.exposure_direct_transfer_transactions
+
     async def open_or_refresh_finding(self, **kwargs) -> SimpleNamespace:
         finding = self.findings.get(kwargs["finding_key"])
         if finding:
@@ -131,10 +158,20 @@ class _FundingSteps:
 
 
 class _Transactions:
+    def __init__(self, state: "_State") -> None:
+        self.state = state
+
     async def get_by_idempotency_key(self, idempotency_key: str) -> SimpleNamespace | None:
         return SimpleNamespace(id=f"tx:{idempotency_key}")
 
     async def get_by_id(self, transaction_id: str) -> SimpleNamespace | None:
+        for transaction in [
+            *self.state.debit_backed_bill_transactions,
+            *self.state.successful_transactions,
+            *self.state.exposure_direct_transfer_transactions,
+        ]:
+            if str(transaction.id) == transaction_id:
+                return transaction
         return SimpleNamespace(
             id=transaction_id,
             user_id="user-1",
@@ -219,6 +256,7 @@ class _State:
                 id="tx-bill-1",
                 user_id="user-1",
                 transaction_type="airtime",
+                status=TransactionStatusEnum.SUCCESSFUL.value,
                 amount=Decimal("1500.00"),
                 currency="NGN",
                 idempotency_key="debit-backed-idem-1",
@@ -229,6 +267,8 @@ class _State:
         ]
         self.refunded_transaction_debit_steps = [self.transaction_debit_step]
         self.exposure_transfers = [self.transfer]
+        self.exposure_transaction_debit_steps: list[SimpleNamespace] = []
+        self.exposure_direct_transfer_transactions: list[SimpleNamespace] = []
         self.ledger_accounts = _LedgerAccounts()
         self.ledger_entries = _LedgerEntries(self.ledger_accounts)
         self.ledger_reconciliation = _ReconciliationRepo(self)
@@ -244,7 +284,7 @@ class _Uow:
         self.ledger_reconciliation = state.ledger_reconciliation
         self.funded_transfers = _FundedTransfers({"funded-1": state.transfer})
         self.funding_steps = _FundingSteps([state.step])
-        self.transactions = _Transactions()
+        self.transactions = _Transactions(state)
         self.support_tickets = state.support_tickets
         self._state = state
 
@@ -309,3 +349,58 @@ async def test_exposure_reconciliation_resolves_zero_balance_finding(monkeypatch
     await LedgerExposureReconciliationConsumer().process_job({"limit": 10, "min_age_seconds": 0})
 
     assert "ledger_exposure:funded-1" in state.ledger_reconciliation.resolved
+
+
+@pytest.mark.asyncio
+async def test_exposure_reconciliation_finds_debit_backed_bill_liability(monkeypatch) -> None:
+    state = _State()
+    state.exposure_transfers = []
+    state.transaction_debit_step.status = TransactionDebitStepStatusEnum.CONFIRMED.value
+    state.exposure_transaction_debit_steps = [state.transaction_debit_step]
+    state.ledger_accounts.accounts["liability:transaction:tx-bill-1:customer_funds:NGN"] = SimpleNamespace(
+        id="liability:transaction:tx-bill-1:customer_funds:NGN"
+    )
+    state.ledger_accounts.balance = Decimal("1500.00")
+    monkeypatch.setattr(reconciliation_module, "UnitOfWork", lambda: _Uow(state))
+
+    await LedgerExposureReconciliationConsumer().process_job({"limit": 10, "min_age_seconds": 0})
+
+    missing_debit = state.ledger_reconciliation.findings[
+        "ledger_missing_entry:transaction_debit_step:tx-debit-step-1:mono_debit_confirmed"
+    ]
+    exposure = state.ledger_reconciliation.findings["ledger_exposure:transaction:tx-bill-1"]
+    assert missing_debit.finding_type == "missing_transaction_debit_ledger_entry"
+    assert exposure.severity == "critical"
+    assert exposure.finding_type == "terminal_transaction_non_zero_liability"
+    assert exposure.actual_amount_naira == Decimal("1500.00")
+    assert state.support_tickets.created[0]["intent"] == "ledger_reconciliation"
+
+
+@pytest.mark.asyncio
+async def test_exposure_reconciliation_requires_direct_transfer_entry(monkeypatch) -> None:
+    state = _State()
+    state.exposure_transfers = []
+    state.exposure_direct_transfer_transactions = [
+        SimpleNamespace(
+            id="tx-direct-missing",
+            user_id="user-1",
+            transaction_type="transfer",
+            status=TransactionStatusEnum.SUCCESSFUL.value,
+            amount=Decimal("2500.00"),
+            currency="NGN",
+            idempotency_key="direct-missing-idem",
+            transaction_id="mono-direct-missing",
+            provider_status="successful",
+            provider_response={"provider": "mono"},
+        )
+    ]
+    monkeypatch.setattr(reconciliation_module, "UnitOfWork", lambda: _Uow(state))
+
+    await LedgerExposureReconciliationConsumer().process_job({"limit": 10, "min_age_seconds": 0})
+
+    finding = state.ledger_reconciliation.findings[
+        "ledger_missing_entry:transaction:tx-direct-missing:mono_direct_transfer_confirmed"
+    ]
+    assert finding.severity == "critical"
+    assert finding.finding_type == "missing_direct_transfer_ledger_entry"
+    assert finding.expected_amount_naira == Decimal("2500.00")

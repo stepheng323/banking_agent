@@ -1,3 +1,4 @@
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -58,6 +59,32 @@ class _FakeTransactions:
         return self.tx if self.tx.idempotency_key == idempotency_key else None
 
 
+class _FakeLedgerAccounts:
+    def __init__(self) -> None:
+        self.accounts: dict[str, SimpleNamespace] = {}
+
+    async def get_or_create(self, **kwargs) -> SimpleNamespace:
+        account = self.accounts.get(kwargs["code"])
+        if account:
+            return account
+        account = SimpleNamespace(id=kwargs["code"], **kwargs)
+        self.accounts[kwargs["code"]] = account
+        return account
+
+
+class _FakeLedgerEntries:
+    def __init__(self) -> None:
+        self.entries: dict[str, SimpleNamespace] = {}
+
+    async def get_by_key(self, entry_key: str) -> SimpleNamespace | None:
+        return self.entries.get(entry_key)
+
+    async def create_entry_with_lines(self, **kwargs) -> SimpleNamespace:
+        entry = SimpleNamespace(id=kwargs["entry_key"], **kwargs)
+        self.entries[kwargs["entry_key"]] = entry
+        return entry
+
+
 class _FakeDb:
     def __init__(self) -> None:
         self.added: list[object] = []
@@ -72,6 +99,8 @@ class _FakeUnitOfWork:
         self.transfer = SimpleNamespace(
             id="funded-1",
             idempotency_key="idem-1",
+            user_id="user-1",
+            amount=Decimal("1000.00"),
             status=FundedTransferStatusEnum.REFUNDING.value,
         )
         self.tx = SimpleNamespace(
@@ -84,6 +113,8 @@ class _FakeUnitOfWork:
         self.funding_steps = _FakeFundingSteps(step, all_steps)
         self.funded_transfers = _FakeFundedTransfers(self.transfer)
         self.transactions = _FakeTransactions(self.tx)
+        self.ledger_accounts = _FakeLedgerAccounts()
+        self.ledger_entries = _FakeLedgerEntries()
         self.commit_calls = 0
 
     async def __aenter__(self):
@@ -113,6 +144,7 @@ async def test_refund_consumer_uses_provider_reference_for_mono_refund(monkeypat
         status=FundingStepStatusEnum.REFUND_PENDING.value,
         provider_reference="pool-ref-1",
         provider_debit_id="debit-1",
+        amount=Decimal("1000.00"),
         refund_provider_id=None,
         refund_initiated_at=None,
         confirmed_at="now",
@@ -132,6 +164,7 @@ async def test_refund_consumer_uses_provider_reference_for_mono_refund(monkeypat
         ("step-1", FundingStepStatusEnum.REFUNDED.value, None),
     ]
     assert uow.funded_transfers.status_updates == [("funded-1", FundedTransferStatusEnum.REFUNDED.value)]
+    assert "funding_step:step-1:mono_refund_confirmed" in uow.ledger_entries.entries
     assert step.refund_provider_id == "refund-1"
     assert uow.tx.status == TransactionStatusEnum.REVERSED.value
     assert uow.commit_calls == 2
@@ -144,6 +177,7 @@ async def test_refund_consumer_falls_back_to_original_reference_payload(monkeypa
         status=FundingStepStatusEnum.REFUND_PENDING.value,
         provider_reference=None,
         provider_debit_id="debit-1",
+        amount=Decimal("1000.00"),
         refund_provider_id=None,
         refund_initiated_at=None,
         confirmed_at="now",
@@ -171,6 +205,7 @@ async def test_refund_consumer_fails_step_when_provider_reference_missing(monkey
         status=FundingStepStatusEnum.REFUND_PENDING.value,
         provider_reference=None,
         provider_debit_id="debit-1",
+        amount=Decimal("1000.00"),
         refund_provider_id=None,
         refund_initiated_at=None,
         confirmed_at="now",
@@ -195,6 +230,7 @@ async def test_refund_consumer_does_not_reinitiate_existing_refund(monkeypatch) 
         status=FundingStepStatusEnum.REFUND_PROCESSING.value,
         provider_reference="pool-ref-1",
         provider_debit_id="debit-1",
+        amount=Decimal("1000.00"),
         refund_provider_id="refund-1",
         refund_initiated_at="now",
         confirmed_at="now",
@@ -217,6 +253,7 @@ async def test_refund_consumer_does_not_refund_confirmed_step_when_transfer_is_n
         status=FundingStepStatusEnum.CONFIRMED.value,
         provider_reference="pool-ref-1",
         provider_debit_id="debit-1",
+        amount=Decimal("1000.00"),
         refund_provider_id=None,
         refund_initiated_at=None,
         confirmed_at="now",

@@ -99,6 +99,14 @@ class LedgerEntryRepository:
 
     async def liability_balance_for_transfer(self, *, liability_account_id: UUID) -> Decimal:
         """Return credit minus debit balance for one funded-transfer liability account."""
+        return await self.liability_balance_for_account(liability_account_id=liability_account_id)
+
+    async def liability_balance_for_transaction(self, *, liability_account_id: UUID) -> Decimal:
+        """Return credit minus debit balance for one transaction liability account."""
+        return await self.liability_balance_for_account(liability_account_id=liability_account_id)
+
+    async def liability_balance_for_account(self, *, liability_account_id: UUID) -> Decimal:
+        """Return credit minus debit balance for one liability account."""
         debit_amount = case(
             (LedgerLine.direction == "debit", LedgerLine.amount_naira),
             else_=Decimal("0.00"),

@@ -15,7 +15,7 @@ from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
 from banking.presentation.i18n.renderer import render_message
 from banking.risk.service import RiskDecisionService
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
-from shared.money import naira_to_json
+from shared.money import naira_to_json, require_naira
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 from shared.utils.narration import format_narration
@@ -111,7 +111,7 @@ class ExecutionStep(TransferStep):
                                     if not funded:
                                         funded = await uow.funded_transfers.create(
                                             user_id=getattr(worker_context, "user_id", None),
-                                            amount=float(data.amount or 0.0),
+                                            amount=require_naira(data.amount),
                                             currency="NGN",
                                             recipient_account_number=data.recipient_account or "",
                                             recipient_bank_code=data.recipient_bank_code or "",
@@ -167,7 +167,7 @@ class ExecutionStep(TransferStep):
                         if not funded:
                             funded = await uow.funded_transfers.create(
                                 user_id=getattr(worker_context, "user_id", None),
-                                amount=float(data.amount or 0.0),
+                                amount=require_naira(data.amount),
                                 currency="NGN",
                                 recipient_account_number=data.recipient_account or "",
                                 recipient_bank_code=data.recipient_bank_code or "",
@@ -186,7 +186,7 @@ class ExecutionStep(TransferStep):
                                 await uow.funding_steps.create(
                                     funded_transfer_id=funded.id,
                                     account_id=step.get("account_id"),
-                                    amount=float(step.get("amount", 0.0)),
+                                    amount=require_naira(step.get("amount")),
                                     sequence=int(step.get("sequence", 0)),
                                     status=FundingStepStatusEnum.PENDING.value,
                                     provider_name="mono",

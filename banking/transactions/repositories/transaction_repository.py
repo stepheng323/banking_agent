@@ -174,6 +174,7 @@ class TransactionRepository(BaseRepository[Transaction]):
         *,
         provider_reference: str,
         service_metadata: dict | None = None,
+        commit: bool = True,
     ) -> Transaction | None:
         """Atomically claim a direct-transfer transaction before calling Mono."""
         transaction = await self.get_by_id_for_update(transaction_id)
@@ -192,8 +193,11 @@ class TransactionRepository(BaseRepository[Transaction]):
             metadata.update(service_metadata)
             transaction.service_metadata = metadata
         self.db.add(transaction)
-        await self.db.commit()
-        await self.db.refresh(transaction)
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(transaction)
+        else:
+            await self.db.flush()
         return transaction
 
     async def apply_direct_transfer_result(
@@ -202,6 +206,7 @@ class TransactionRepository(BaseRepository[Transaction]):
         *,
         result: object,
         provider_reference: str,
+        commit: bool = True,
     ) -> tuple[Transaction | None, str]:
         """Apply a Mono direct-transfer result under a row lock."""
         transaction = await self.get_by_id_for_update(transaction_id)
@@ -245,8 +250,11 @@ class TransactionRepository(BaseRepository[Transaction]):
             outcome = "failed"
 
         self.db.add(transaction)
-        await self.db.commit()
-        await self.db.refresh(transaction)
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(transaction)
+        else:
+            await self.db.flush()
         return transaction, outcome
 
     async def list_recoverable_direct_transfers(self, *, cutoff: datetime, limit: int) -> list[Transaction]:

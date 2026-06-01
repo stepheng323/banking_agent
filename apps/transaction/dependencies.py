@@ -36,6 +36,7 @@ from banking.transactions.runtime.executors.airtime import AirtimeExecutor
 from banking.transactions.runtime.executors.data import DataExecutor
 from banking.transactions.runtime.executors.payout import PayoutExecutor
 from banking.transactions.runtime.executors.transfer import TransferExecutor
+from banking.transactions.runtime.transfer_completion_notifications import TransferCompletionNotifier
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
@@ -91,6 +92,12 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
         redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
+    transfer_completion_notifier = TransferCompletionNotifier(
+        delivery_service=delivery_service,
+        redis_client=async_group_redis,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
+        transaction_repo=transaction_repository,
+    )
     airtime_executor = AirtimeExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
@@ -123,6 +130,7 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
     )
     direct_transfer_reconciliation_consumer = DirectTransferReconciliationConsumer(
         direct_debit_provider=direct_debit_provider,
+        notifier=transfer_completion_notifier,
     )
 
     funding_consumer = FundingConsumer(

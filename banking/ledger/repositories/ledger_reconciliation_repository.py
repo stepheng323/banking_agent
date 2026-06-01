@@ -192,6 +192,60 @@ class LedgerReconciliationRepository:
         )
         return list(result.scalars().all())
 
+    async def list_transaction_debits_for_exposure_scan(
+        self,
+        *,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[TransactionDebitStep]:
+        """List debit-backed bill steps old enough for transaction exposure reconciliation."""
+        result = await self.db.execute(
+            select(TransactionDebitStep)
+            .join(Transaction, Transaction.id == TransactionDebitStep.transaction_id)
+            .filter(
+                Transaction.transaction_type.in_([TransactionTypeEnum.AIRTIME.value, TransactionTypeEnum.DATA.value]),
+                TransactionDebitStep.status.in_(
+                    [
+                        TransactionDebitStepStatusEnum.CONFIRMED.value,
+                        TransactionDebitStepStatusEnum.REFUND_PENDING.value,
+                        TransactionDebitStepStatusEnum.REFUND_PROCESSING.value,
+                        TransactionDebitStepStatusEnum.REFUND_FAILED.value,
+                        TransactionDebitStepStatusEnum.REFUNDED.value,
+                    ]
+                ),
+                or_(
+                    Transaction.updated_at <= cutoff,
+                    TransactionDebitStep.confirmed_at <= cutoff,
+                    TransactionDebitStep.refund_initiated_at <= cutoff,
+                    TransactionDebitStep.refunded_at <= cutoff,
+                ),
+            )
+            .order_by(Transaction.updated_at.asc(), TransactionDebitStep.confirmed_at.asc().nullsfirst())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_direct_transfer_transactions_for_exposure_scan(
+        self,
+        *,
+        cutoff: datetime,
+        limit: int,
+    ) -> list[Transaction]:
+        """List successful direct-transfer transactions old enough for ledger exposure checks."""
+        result = await self.db.execute(
+            select(Transaction)
+            .outerjoin(FundedTransfer, FundedTransfer.idempotency_key == Transaction.idempotency_key)
+            .filter(
+                Transaction.transaction_type == TransactionTypeEnum.TRANSFER.value,
+                Transaction.status == TransactionStatusEnum.SUCCESSFUL.value,
+                FundedTransfer.id.is_(None),
+                or_(Transaction.completed_at <= cutoff, Transaction.updated_at <= cutoff),
+            )
+            .order_by(Transaction.completed_at.asc().nullsfirst(), Transaction.updated_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def get_finding_by_key(self, finding_key: str) -> LedgerReconciliationFinding | None:
         """Return a reconciliation finding by stable key."""
         result = await self.db.execute(

@@ -25,7 +25,9 @@ class _Transactions:
         *,
         result: DebitResult,
         provider_reference: str,
+        commit: bool = True,
     ) -> tuple[SimpleNamespace, str]:
+        del commit
         self.applied.append(
             {
                 "transaction_id": transaction_id,
@@ -39,12 +41,30 @@ class _Transactions:
 class _Uow:
     def __init__(self, transactions: _Transactions) -> None:
         self.transactions = transactions
+        self.commit_calls = 0
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
+
+
+class _Notifier:
+    def __init__(self) -> None:
+        self.calls: list[tuple[SimpleNamespace, str, str | None]] = []
+
+    async def notify(
+        self,
+        transaction: SimpleNamespace,
+        event: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        self.calls.append((transaction, event, error_message))
 
 
 @pytest.mark.asyncio
@@ -68,8 +88,9 @@ async def test_direct_transfer_reconciliation_looks_up_mono_by_reference(monkeyp
         )
     )
     monkeypatch.setattr(consumer_module, "UnitOfWork", lambda: _Uow(transactions))
+    notifier = _Notifier()
 
-    await DirectTransferReconciliationConsumer(provider).process_job({"transaction_id": "tx-1"})
+    await DirectTransferReconciliationConsumer(provider, notifier=notifier).process_job({"transaction_id": "tx-1"})  # type: ignore[arg-type]
 
     provider.get_debit_status_by_reference.assert_awaited_once_with("idem-1")
     assert transactions.applied == [
@@ -79,6 +100,7 @@ async def test_direct_transfer_reconciliation_looks_up_mono_by_reference(monkeyp
             "provider_reference": "idem-1",
         }
     ]
+    assert notifier.calls == [(tx, "successful", None)]
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from banking.persistence.unit_of_work import UnitOfWork
+from banking.transactions.runtime.transfer_completion_notifications import TransferCompletionNotifier
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import TransactionStatusEnum
@@ -17,8 +18,13 @@ logger = get_logger(__name__)
 class DirectTransferReconciliationConsumer:
     """Recovers claimed direct transfers from Mono by deterministic reference."""
 
-    def __init__(self, direct_debit_provider: DirectDebitProvider):
+    def __init__(
+        self,
+        direct_debit_provider: DirectDebitProvider,
+        notifier: TransferCompletionNotifier | None = None,
+    ):
         self.direct_debit_provider = direct_debit_provider
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         transaction_id = payload.get("transaction_id")
@@ -52,6 +58,8 @@ class DirectTransferReconciliationConsumer:
                 return
 
         result = await self.direct_debit_provider.get_debit_status_by_reference(lookup_reference)
+        notifiable_transaction: Any | None = None
+        notifiable_outcome: str | None = None
         async with UnitOfWork() as uow:
             if not uow.transactions:
                 return
@@ -59,11 +67,25 @@ class DirectTransferReconciliationConsumer:
                 transaction_id,
                 result=result,
                 provider_reference=lookup_reference,
+                commit=False,
             )
+            await uow.commit()
+            notifiable_transaction = transaction
+            notifiable_outcome = outcome
         logger.info(
             "direct_transfer_reconciliation_applied",
             transaction_id=transaction_id,
             outcome=outcome,
             provider_status=getattr(result.status, "value", result.status),
-            found=bool(transaction),
+            found=bool(notifiable_transaction),
         )
+        if (
+            self.notifier
+            and notifiable_transaction is not None
+            and notifiable_outcome in {"successful", "processing", "failed"}
+        ):
+            await self.notifier.notify(
+                notifiable_transaction,
+                notifiable_outcome,  # type: ignore[arg-type]
+                error_message=getattr(result, "error_message", None),
+            )

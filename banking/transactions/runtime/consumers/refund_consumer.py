@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import finalize_refund_state
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
@@ -54,7 +55,20 @@ class RefundConsumer:
             self._store_refund_metadata(uow, step, result, str(claim["refund_reference"]))
 
             if result.success and result.status == DebitStatus.REVERSED:
-                await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
+                updated_step = await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
+                step = updated_step or step
+                transfer = await uow.funded_transfers.get_by_id(str(funded_transfer_id))
+                if transfer:
+                    await LedgerPostingService.post_mono_refund_confirmed(
+                        uow,
+                        step,
+                        transfer,
+                        provider_reference=result.reference
+                        or getattr(step, "refund_provider_reference", None)
+                        or getattr(step, "refund_provider_id", None)
+                        or str(claim["refund_reference"]),
+                    )
+                    await finalize_refund_state(uow, transfer)
                 logger.info("refund_completed", funding_step_id=funding_step_id)
             elif result.status == DebitStatus.FAILED:
                 await uow.funding_steps.update_status(
@@ -71,8 +85,9 @@ class RefundConsumer:
                 )
                 logger.warning("refund_pending", funding_step_id=funding_step_id, error=result.error_message)
 
-            transfer = await uow.funded_transfers.get_by_id(str(funded_transfer_id))
-            if transfer:
+            if result.status != DebitStatus.REVERSED:
+                transfer = await uow.funded_transfers.get_by_id(str(funded_transfer_id))
+            if transfer and result.status != DebitStatus.REVERSED:
                 await finalize_refund_state(uow, transfer)
 
             await uow.commit()

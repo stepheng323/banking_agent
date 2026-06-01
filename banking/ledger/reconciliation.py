@@ -6,9 +6,13 @@ from typing import Any
 
 from banking.ledger.errors import LedgerEntryConflict
 from banking.ledger.posting import (
+    DIRECT_TRANSFER_ENTRY_TYPE,
     FUNDING_ENTRY_TYPE,
     PAYOUT_ENTRY_TYPE,
     REFUND_ENTRY_TYPE,
+    TRANSACTION_BILL_ENTRY_TYPE,
+    TRANSACTION_DEBIT_ENTRY_TYPE,
+    TRANSACTION_DEBIT_REFUND_ENTRY_TYPE,
     LedgerPostingService,
     transaction_success_entry_key,
 )
@@ -19,6 +23,9 @@ from shared.database.enums import (
     FundingStepStatusEnum,
     SupportTicketPriorityEnum,
     SupportTicketStatusEnum,
+    TransactionDebitStepStatusEnum,
+    TransactionStatusEnum,
+    TransactionTypeEnum,
 )
 from shared.money import require_naira
 from shared.utils.logging import get_logger
@@ -349,9 +356,25 @@ class LedgerExposureReconciliationConsumer:
                     cutoff=cutoff,
                     limit=limit,
                 )
+                transaction_debit_steps = await uow.ledger_reconciliation.list_transaction_debits_for_exposure_scan(
+                    cutoff=cutoff,
+                    limit=limit,
+                )
+                direct_transfer_transactions = (
+                    await uow.ledger_reconciliation.list_direct_transfer_transactions_for_exposure_scan(
+                        cutoff=cutoff,
+                        limit=limit,
+                    )
+                )
                 for transfer in transfers:
                     scanned += 1
                     finding_count += await self._scan_transfer(uow, transfer)
+                for step in transaction_debit_steps:
+                    scanned += 1
+                    finding_count += await self._scan_transaction_debit(uow, step)
+                for transaction in direct_transfer_transactions:
+                    scanned += 1
+                    finding_count += await self._scan_direct_transfer_transaction(uow, transaction)
                 await uow.ledger_reconciliation.finish_run(
                     run,
                     status="completed",
@@ -417,6 +440,128 @@ class LedgerExposureReconciliationConsumer:
         if uow.ledger_reconciliation:
             await uow.ledger_reconciliation.resolve_finding(finding_key)
         return finding_count
+
+    async def _scan_transaction_debit(self, uow: UnitOfWork, step: Any) -> int:
+        if not uow.transactions:
+            return 0
+        transaction = await uow.transactions.get_by_id(str(step.transaction_id))
+        if not transaction:
+            return 0
+
+        finding_count = 0
+        finding_count += await self._scan_required_transaction_debit_entries(uow, step, transaction)
+        balance = await self._transaction_liability_balance(uow, transaction)
+        finding_key = f"ledger_exposure:transaction:{transaction.id}"
+        transaction_status = str(getattr(transaction, "status", "") or "")
+        step_status = str(getattr(step, "status", "") or "")
+
+        severity: str | None = None
+        finding_type: str | None = None
+        if transaction_status in {TransactionStatusEnum.SUCCESSFUL.value, TransactionStatusEnum.REVERSED.value}:
+            if balance != ZERO:
+                severity = "critical"
+                finding_type = "terminal_transaction_non_zero_liability"
+        elif transaction_status == TransactionStatusEnum.FAILED.value and balance > ZERO:
+            if step_status == TransactionDebitStepStatusEnum.REFUND_FAILED.value:
+                severity = "critical"
+                finding_type = "failed_transaction_user_money_exposure"
+            elif step_status in {
+                TransactionDebitStepStatusEnum.REFUND_PENDING.value,
+                TransactionDebitStepStatusEnum.REFUND_PROCESSING.value,
+            }:
+                age_seconds = self._age_seconds(step)
+                if age_seconds >= int(settings.ledger_stuck_refunding_seconds):
+                    severity = "high"
+                    finding_type = "stuck_transaction_refund_user_money_exposure"
+            elif step_status == TransactionDebitStepStatusEnum.CONFIRMED.value:
+                severity = "critical"
+                finding_type = "failed_transaction_unqueued_refund_exposure"
+
+        if severity and finding_type:
+            finding = await self._open_transaction_finding(
+                uow,
+                transaction,
+                finding_key=finding_key,
+                severity=severity,
+                finding_type=finding_type,
+                expected_amount_naira=ZERO,
+                actual_amount_naira=balance,
+                details={
+                    "transaction_id": str(transaction.id),
+                    "transaction_status": transaction_status,
+                    "transaction_debit_step_id": str(step.id),
+                    "transaction_debit_status": step_status,
+                    "liability_exposure_naira": str(balance),
+                },
+            )
+            await self._ensure_transaction_support_ticket(uow, transaction, finding)
+            return finding_count + 1
+
+        if uow.ledger_reconciliation:
+            await uow.ledger_reconciliation.resolve_finding(finding_key)
+        return finding_count
+
+    async def _scan_direct_transfer_transaction(self, uow: UnitOfWork, transaction: Any) -> int:
+        return await self._check_required_transaction_entry(
+            uow,
+            transaction,
+            key=transaction_success_entry_key(transaction.id, TransactionTypeEnum.TRANSFER.value),
+            finding_type="missing_direct_transfer_ledger_entry",
+            entry_type=DIRECT_TRANSFER_ENTRY_TYPE,
+            severity="critical",
+            expected_amount_naira=require_naira(getattr(transaction, "amount", None)),
+        )
+
+    async def _scan_required_transaction_debit_entries(
+        self,
+        uow: UnitOfWork,
+        step: Any,
+        transaction: Any,
+    ) -> int:
+        step_status = str(getattr(step, "status", "") or "")
+        transaction_status = str(getattr(transaction, "status", "") or "")
+        count = 0
+        if step_status in {
+            TransactionDebitStepStatusEnum.CONFIRMED.value,
+            TransactionDebitStepStatusEnum.REFUND_PENDING.value,
+            TransactionDebitStepStatusEnum.REFUND_PROCESSING.value,
+            TransactionDebitStepStatusEnum.REFUND_FAILED.value,
+            TransactionDebitStepStatusEnum.REFUNDED.value,
+        }:
+            count += await self._check_required_transaction_entry(
+                uow,
+                transaction,
+                key=transaction_debit_entry_key(str(step.id)),
+                finding_type="missing_transaction_debit_ledger_entry",
+                entry_type=TRANSACTION_DEBIT_ENTRY_TYPE,
+                severity="critical"
+                if transaction_status in {TransactionStatusEnum.SUCCESSFUL.value, TransactionStatusEnum.REVERSED.value}
+                else "high",
+                expected_amount_naira=require_naira(getattr(step, "amount", None)),
+            )
+        if transaction_status == TransactionStatusEnum.SUCCESSFUL.value:
+            count += await self._check_required_transaction_entry(
+                uow,
+                transaction,
+                key=transaction_bill_entry_key(str(transaction.id)),
+                finding_type="missing_transaction_bill_ledger_entry",
+                entry_type=TRANSACTION_BILL_ENTRY_TYPE,
+                severity="critical",
+                expected_amount_naira=require_naira(getattr(transaction, "amount", None)),
+            )
+        if step_status == TransactionDebitStepStatusEnum.REFUNDED.value:
+            count += await self._check_required_transaction_entry(
+                uow,
+                transaction,
+                key=transaction_debit_refund_entry_key(str(step.id)),
+                finding_type="missing_transaction_debit_refund_ledger_entry",
+                entry_type=TRANSACTION_DEBIT_REFUND_ENTRY_TYPE,
+                severity="critical"
+                if transaction_status == TransactionStatusEnum.REVERSED.value
+                else "high",
+                expected_amount_naira=require_naira(getattr(step, "amount", None)),
+            )
+        return count
 
     async def _scan_required_entries(self, uow: UnitOfWork, transfer: Any) -> int:
         if not uow.funding_steps or not uow.ledger_entries:
@@ -502,6 +647,45 @@ class LedgerExposureReconciliationConsumer:
             await self._ensure_support_ticket(uow, transfer, finding)
         return 1
 
+    async def _check_required_transaction_entry(
+        self,
+        uow: UnitOfWork,
+        transaction: Any,
+        *,
+        key: str,
+        finding_type: str,
+        entry_type: str,
+        severity: str,
+        expected_amount_naira: Decimal,
+    ) -> int:
+        if not uow.ledger_entries:
+            return 0
+        entry = await uow.ledger_entries.get_by_key(key)
+        finding_key = f"ledger_missing_entry:{key}"
+        if entry:
+            if uow.ledger_reconciliation:
+                await uow.ledger_reconciliation.resolve_finding(finding_key)
+            return 0
+
+        finding = await self._open_transaction_finding(
+            uow,
+            transaction,
+            finding_key=finding_key,
+            severity=severity,
+            finding_type=finding_type,
+            expected_amount_naira=expected_amount_naira,
+            actual_amount_naira=None,
+            details={
+                "entry_key": key,
+                "entry_type": entry_type,
+                "transaction_id": str(transaction.id),
+                "transaction_type": getattr(transaction, "transaction_type", None),
+            },
+        )
+        if severity == "critical":
+            await self._ensure_transaction_support_ticket(uow, transaction, finding)
+        return 1
+
     async def _liability_balance(self, uow: UnitOfWork, transfer: Any) -> Decimal:
         if not uow.ledger_accounts or not uow.ledger_entries:
             return ZERO
@@ -509,6 +693,14 @@ class LedgerExposureReconciliationConsumer:
         if not account:
             return ZERO
         return await uow.ledger_entries.liability_balance_for_transfer(liability_account_id=account.id)
+
+    async def _transaction_liability_balance(self, uow: UnitOfWork, transaction: Any) -> Decimal:
+        if not uow.ledger_accounts or not uow.ledger_entries:
+            return ZERO
+        account = await uow.ledger_accounts.get_by_code(f"liability:transaction:{transaction.id}:customer_funds:NGN")
+        if not account:
+            return ZERO
+        return await uow.ledger_entries.liability_balance_for_transaction(liability_account_id=account.id)
 
     async def _open_finding(
         self,
@@ -530,6 +722,30 @@ class LedgerExposureReconciliationConsumer:
             finding_type=finding_type,
             transaction_id=await LedgerPostingService._transaction_id_for_transfer(uow, transfer),
             funded_transfer_id=transfer.id,
+            expected_amount_naira=expected_amount_naira,
+            actual_amount_naira=actual_amount_naira,
+            details=details,
+        )
+
+    async def _open_transaction_finding(
+        self,
+        uow: UnitOfWork,
+        transaction: Any,
+        *,
+        finding_key: str,
+        severity: str,
+        finding_type: str,
+        expected_amount_naira: Decimal | None,
+        actual_amount_naira: Decimal | None,
+        details: dict[str, Any],
+    ) -> Any:
+        if not uow.ledger_reconciliation:
+            return None
+        return await uow.ledger_reconciliation.open_or_refresh_finding(
+            finding_key=finding_key,
+            severity=severity,
+            finding_type=finding_type,
+            transaction_id=getattr(transaction, "id", None),
             expected_amount_naira=expected_amount_naira,
             actual_amount_naira=actual_amount_naira,
             details=details,
@@ -572,6 +788,44 @@ class LedgerExposureReconciliationConsumer:
         if uow.db:
             uow.db.add(finding)
 
+    async def _ensure_transaction_support_ticket(self, uow: UnitOfWork, transaction: Any, finding: Any) -> None:
+        if not settings.ledger_findings_create_support_ticket:
+            return
+        tickets = getattr(uow, "support_tickets", None)
+        if not tickets or not finding or getattr(finding, "support_ticket_id", None):
+            return
+        transaction_ref = str(getattr(transaction, "idempotency_key", None) or getattr(transaction, "id", ""))
+        existing = await tickets.get_by_transaction_ref(transaction_ref)
+        for ticket in existing:
+            if getattr(ticket, "intent", None) == "ledger_reconciliation":
+                finding.support_ticket_id = ticket.id
+                if uow.db:
+                    uow.db.add(finding)
+                return
+
+        ticket_code = await tickets.generate_ticket_code()
+        ticket = await tickets.create(
+            ticket_code=ticket_code,
+            user_id=str(getattr(transaction, "user_id", "")),
+            channel="system",
+            intent="ledger_reconciliation",
+            status=SupportTicketStatusEnum.OPEN.value,
+            priority=SupportTicketPriorityEnum.URGENT.value
+            if getattr(finding, "severity", "") == "critical"
+            else SupportTicketPriorityEnum.HIGH.value,
+            transaction_ref=transaction_ref,
+            summary="Ledger reconciliation finding requires review",
+            details={
+                "finding_key": finding.finding_key,
+                "finding_type": finding.finding_type,
+                "transaction_id": str(getattr(transaction, "id", "")),
+                "severity": finding.severity,
+            },
+        )
+        finding.support_ticket_id = ticket.id
+        if uow.db:
+            uow.db.add(finding)
+
     @staticmethod
     def _is_terminal_transfer(transfer: Any) -> bool:
         return str(getattr(transfer, "status", "") or "") in {
@@ -583,7 +837,14 @@ class LedgerExposureReconciliationConsumer:
     @staticmethod
     def _age_seconds(transfer: Any) -> int:
         now = datetime.now(UTC).replace(tzinfo=None)
-        base = getattr(transfer, "updated_at", None) or getattr(transfer, "created_at", None) or now
+        base = (
+            getattr(transfer, "updated_at", None)
+            or getattr(transfer, "refund_last_checked_at", None)
+            or getattr(transfer, "refund_initiated_at", None)
+            or getattr(transfer, "confirmed_at", None)
+            or getattr(transfer, "created_at", None)
+            or now
+        )
         if getattr(base, "tzinfo", None) is not None:
             base = base.astimezone(UTC).replace(tzinfo=None)
         return max(int((now - base).total_seconds()), 0)
