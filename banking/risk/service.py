@@ -1,4 +1,4 @@
-"""Conservative pre-debit risk decisions for transfer execution."""
+"""Advisory pre-debit risk concerns for transfer execution."""
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -7,19 +7,15 @@ from typing import Any, Literal
 
 from banking.persistence.unit_of_work import UnitOfWork
 from shared.config.settings import settings
-from shared.database.enums import (
-    SupportTicketPriorityEnum,
-    SupportTicketStatusEnum,
-    TransactionStatusEnum,
-)
+from shared.database.enums import TransactionStatusEnum
 from shared.money import MoneyAmount, naira_to_json, to_naira
 
-RiskDecisionValue = Literal["allow", "hold_review", "deny"]
+RiskDecisionValue = Literal["allow", "warn"]
 
 
 @dataclass(frozen=True, slots=True)
 class RiskDecisionResult:
-    """Risk decision returned before a transfer can debit user accounts."""
+    """Advisory risk decision returned before a transfer can debit user accounts."""
 
     decision: RiskDecisionValue
     reason_codes: list[str] = field(default_factory=list)
@@ -28,11 +24,15 @@ class RiskDecisionResult:
 
     @property
     def allowed(self) -> bool:
-        return self.decision == "allow"
+        return self.decision in {"allow", "warn"}
+
+    @property
+    def has_concerns(self) -> bool:
+        return bool(self.reason_codes)
 
 
 class RiskDecisionService:
-    """Evaluates conservative launch-time risk rules before any provider debit."""
+    """Evaluates advisory launch-time risk rules before any provider debit."""
 
     async def evaluate_transfer(
         self,
@@ -61,7 +61,8 @@ class RiskDecisionService:
         }
 
         if amount >= settings.manual_review_amount_ngn:
-            reason_codes.append("manual_review_amount")
+            metadata["high_value_threshold"] = naira_to_json(settings.manual_review_amount_ngn)
+            reason_codes.append("high_value_amount")
 
         if await self._is_new_or_risky_beneficiary(uow, payload, user_id, amount, now, metadata):
             reason_codes.append("new_or_unsaved_beneficiary")
@@ -83,7 +84,7 @@ class RiskDecisionService:
                 reason_codes.append("first_high_value_pooled_transfer")
 
         reason_codes = sorted(set(reason_codes))
-        decision: RiskDecisionValue = "hold_review" if reason_codes else "allow"
+        decision: RiskDecisionValue = "warn" if reason_codes else "allow"
         score = min(100, len(reason_codes) * 25)
         result = RiskDecisionResult(decision=decision, reason_codes=reason_codes, score=score, metadata=metadata)
 
@@ -98,38 +99,6 @@ class RiskDecisionService:
             )
 
         return result
-
-    async def create_review_ticket(
-        self,
-        *,
-        uow: UnitOfWork,
-        user_id: str,
-        idempotency_key: str,
-        decision: RiskDecisionResult,
-        channel: str,
-    ) -> None:
-        if not uow.support_tickets:
-            return
-        existing = await uow.support_tickets.get_by_transaction_ref(idempotency_key)
-        if existing:
-            return
-        ticket_code = await uow.support_tickets.generate_ticket_code()
-        await uow.support_tickets.create(
-            ticket_code=ticket_code,
-            user_id=user_id,
-            channel=channel,
-            intent="transfer_risk_review",
-            status=SupportTicketStatusEnum.OPEN.value,
-            priority=SupportTicketPriorityEnum.HIGH.value,
-            transaction_ref=idempotency_key,
-            summary="Transfer held for risk review before debit",
-            details={
-                "decision": decision.decision,
-                "reason_codes": decision.reason_codes,
-                "score": decision.score,
-                "metadata": decision.metadata,
-            },
-        )
 
     async def _is_new_or_risky_beneficiary(
         self,
@@ -204,7 +173,6 @@ class RiskDecisionService:
         tracked_statuses = [
             TransactionStatusEnum.PENDING.value,
             TransactionStatusEnum.PROCESSING.value,
-            TransactionStatusEnum.REVIEW_PENDING.value,
             TransactionStatusEnum.SUCCESSFUL.value,
         ]
         one_hour = now - timedelta(hours=1)

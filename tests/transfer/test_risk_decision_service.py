@@ -65,7 +65,7 @@ def _uow(*, channel_created_at, has_prior_completed=False, transfers=None) -> Si
 
 
 @pytest.mark.asyncio
-async def test_high_risk_pooled_transfer_is_held_before_debit(monkeypatch) -> None:
+async def test_high_risk_pooled_transfer_records_warning_without_blocking(monkeypatch) -> None:
     now = datetime.now(UTC).replace(tzinfo=None)
     monkeypatch.setattr(settings, "transfer_risk_enabled", True)
     monkeypatch.setattr(settings, "new_beneficiary_limit_ngn", 10_000)
@@ -97,13 +97,14 @@ async def test_high_risk_pooled_transfer_is_held_before_debit(monkeypatch) -> No
         worker_context=worker_context,
     )
 
-    assert result.decision == "hold_review"
+    assert result.decision == "warn"
+    assert result.allowed is True
     assert set(result.reason_codes) == {
         "first_high_value_pooled_transfer",
         "new_channel_identity",
         "new_or_unsaved_beneficiary",
     }
-    assert uow.risk_decisions.records[0]["decision"] == "hold_review"
+    assert uow.risk_decisions.records[0]["decision"] == "warn"
 
 
 @pytest.mark.asyncio

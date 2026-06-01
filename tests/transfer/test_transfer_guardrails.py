@@ -1,14 +1,17 @@
 """Transfer guardrail coverage tests."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
+from apps.chat.src.agent.workers.transfer.nodes import confirmation as confirmation_module
 from apps.chat.src.agent.workers.transfer.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation
 from apps.chat.src.agent.workers.transfer.nodes.payout_preparation import prepare_payout_recipient
 from apps.chat.src.agent.workers.transfer.resolution.resolver import resolve_beneficiary
 from banking.presentation.formatters.confirmation import build_confirmation_summary
 from banking.presentation.i18n.personality import PersonalityContext
+from shared.config.settings import settings
 
 
 class _MockBankingProvider:
@@ -164,6 +167,66 @@ class _FailIfTxRepoCalled:
     async def get_successful_transfers_since(self, user_id: str, since, limit: int = 500) -> list[SimpleNamespace]:
         del user_id, since, limit
         raise AssertionError("transaction repo should not be called for saved-beneficiary risk checks")
+
+
+class _RiskDecisionRecorder:
+    def __init__(self) -> None:
+        self.records: list[dict] = []
+
+    async def record(self, **kwargs):
+        self.records.append(kwargs)
+        return SimpleNamespace(**kwargs)
+
+
+class _RiskUsers:
+    def __init__(self, created_at) -> None:
+        self.created_at = created_at
+
+    async def get_channel_identity_record(self, channel: str, channel_identity: str):
+        del channel, channel_identity
+        return SimpleNamespace(created_at=self.created_at)
+
+
+class _RiskTransactions:
+    async def get_transfers_since(self, user_id: str, since, statuses=None, limit: int = 500):
+        del user_id, since, statuses, limit
+        return []
+
+
+class _RiskBeneficiaries:
+    async def get_transfer_by_account(self, user_id: str, account_number: str, bank_code: str | None):
+        del user_id, account_number, bank_code
+        return None
+
+
+class _RiskFundedTransfers:
+    async def has_prior_completed_pooled_transfer(
+        self,
+        user_id: str,
+        *,
+        exclude_idempotency_key: str | None = None,
+    ) -> bool:
+        del user_id, exclude_idempotency_key
+        return False
+
+
+class _RiskUnitOfWork:
+    def __init__(self, *, channel_created_at) -> None:
+        self.risk_decisions = _RiskDecisionRecorder()
+        self.users = _RiskUsers(channel_created_at)
+        self.transactions = _RiskTransactions()
+        self.beneficiaries = _RiskBeneficiaries()
+        self.funded_transfers = _RiskFundedTransfers()
+        self.commits = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        del exc_type, exc, tb
+
+    async def commit(self) -> None:
+        self.commits += 1
 
 
 async def test_resolver_relational_alias_exempts_name_mismatch_warning() -> None:
@@ -1123,6 +1186,52 @@ async def test_dynamic_risk_patch_flags_large_unsaved_transfer() -> None:
     assert isinstance(patch["high_risk_warning"], str) and patch["high_risk_warning"]
     assert confirmed.confirmation_summary is not None
     assert "high-risk transfer" in confirmed.confirmation_summary.lower()
+
+
+async def test_risk_advisory_patch_warns_without_review_hold(monkeypatch) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    monkeypatch.setattr(settings, "transfer_risk_enabled", True)
+    monkeypatch.setattr(settings, "new_beneficiary_limit_ngn", 10_000)
+    monkeypatch.setattr(settings, "new_beneficiary_cooling_seconds", 86_400)
+    monkeypatch.setattr(settings, "new_channel_cooling_seconds", 86_400)
+    monkeypatch.setattr(settings, "first_pooled_transfer_limit_ngn", 20_000)
+    monkeypatch.setattr(settings, "manual_review_amount_ngn", 50_000)
+    monkeypatch.setattr(settings, "transfer_hourly_amount_limit_ngn", 1_000_000)
+    monkeypatch.setattr(settings, "transfer_daily_amount_limit_ngn", 5_000_000)
+    monkeypatch.setattr(settings, "transfer_hourly_count_limit", 20)
+    uow = _RiskUnitOfWork(channel_created_at=now - timedelta(minutes=5))
+    monkeypatch.setattr(confirmation_module, "UnitOfWork", lambda: uow)
+    payload = TransferPayload(
+        idempotency_key="risk-advisory-1",
+        amount=70000,
+        recipient_name="Tolu",
+        recipient_account="1234567890",
+        recipient_bank_name="GTBank",
+        beneficiary_id=None,
+        resolved_from_saved_beneficiary=False,
+        is_self=False,
+        funding_plan={"is_single_source": False, "steps": [{"account_id": "account-1", "amount": 70000}]},
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        channel="telegram",
+        channel_identity="tg-1",
+        language="en",
+        beneficiaries=[],
+        accounts=[],
+    )
+    worker_context = SimpleNamespace(user_id="user-1", transaction_repo=None)
+
+    patch = await _build_dynamic_risk_patch(payload, ctx, worker_context)
+    confirmed = build_confirmation(payload.model_copy(update=patch), ctx)
+
+    assert patch["is_high_risk_transfer"] is True
+    assert patch["risk_advisory_score"] > 0
+    assert "high_value_amount" in patch["risk_advisory_reason_codes"]
+    assert uow.risk_decisions.records[0]["decision"] == "warn"
+    assert uow.commits == 1
+    assert confirmed.confirmation_summary is not None
+    assert "please review this transfer carefully" in confirmed.confirmation_summary.lower()
 
 
 async def test_dynamic_risk_patch_skips_repo_lookup_for_saved_beneficiary() -> None:

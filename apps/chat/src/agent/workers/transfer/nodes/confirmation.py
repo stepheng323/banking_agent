@@ -14,6 +14,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
+from banking.persistence.unit_of_work import UnitOfWork
 from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.formatters.recipient_display import format_recipient_display_label
@@ -24,7 +25,8 @@ from banking.presentation.i18n.personality import (
     render_personalized_message,
     transfer_personality_context_from_payload,
 )
-from banking.presentation.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message, render_text
+from banking.risk.service import RiskDecisionResult, RiskDecisionService
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from shared.money import require_naira, to_naira
 from shared.utils.bank_aliases import normalize_bank_name
@@ -54,6 +56,15 @@ _ACK_FIELD_MARKERS: dict[str, tuple[str, ...]] = {
     "recipient_bank": ("bank",),
     "recipient_account": ("account", "acct"),
     "narration": ("narration", "memo", "note", "description"),
+}
+_RISK_ADVISORY_REASON_LABELS: dict[str, str] = {
+    "high_value_amount": "the amount is high",
+    "new_or_unsaved_beneficiary": "the recipient is new or unsaved",
+    "new_channel_identity": "this channel was linked recently",
+    "hourly_count_velocity": "there have been many transfers in the last hour",
+    "hourly_amount_velocity": "recent hourly transfer value is high",
+    "daily_amount_velocity": "today's transfer value is high",
+    "first_high_value_pooled_transfer": "this is the first high-value pooled transfer",
 }
 
 
@@ -113,56 +124,112 @@ async def _build_dynamic_risk_patch(
     if payload.amount is None:
         return {}
 
+    dynamic_patch: dict[str, Any] = {}
     is_unsaved_recipient = (
         not payload.beneficiary_id and not payload.resolved_from_saved_beneficiary and not payload.is_self
     )
-    if not is_unsaved_recipient:
-        return {}
-
-    user_id = getattr(worker_context, "user_id", None)
-    tx_repo = getattr(worker_context, "transaction_repo", None)
-    if not user_id or tx_repo is None:
-        return {}
-
-    guardrails = get_cached_guardrails()
-    risk_cfg = guardrails.transfer.dynamic_risk
-    floor_amount = float(risk_cfg.floor_amount)
-    lookback_days = int(risk_cfg.lookback_days)
-    percentile = float(risk_cfg.percentile)
-
-    since = datetime.now(UTC) - timedelta(days=lookback_days)
-    threshold = floor_amount
-    try:
-        history = await tx_repo.get_successful_transfers_since(str(user_id), since)
-        amounts = [float(tx.amount) for tx in history if getattr(tx, "amount", None)]
-        if amounts:
-            threshold = max(floor_amount, _compute_percentile(amounts, percentile))
-    except Exception as exc:
-        logger.warning("dynamic_risk_threshold_lookup_failed", error=str(exc))
-
-    amount = require_naira(payload.amount)
-    is_high_risk = bool(is_unsaved_recipient and amount >= threshold)
-
     warning = None
-    if is_high_risk:
-        warning = render_personalized_message(
-            "transfer.confirmation.high_risk_unsaved_warning",
-            ctx.language,
-            {"amount": format_naira(amount), "threshold": format_naira(threshold)},
-            PersonalityContext(
-                moment="confirmation",
-                amount=amount,
-                saved_recipient=False,
-                high_risk=True,
-                dynamic_risk_threshold=threshold,
-            ),
-        )
+    if is_unsaved_recipient:
+        user_id = getattr(worker_context, "user_id", None)
+        tx_repo = getattr(worker_context, "transaction_repo", None)
+        if user_id and tx_repo is not None:
+            guardrails = get_cached_guardrails()
+            risk_cfg = guardrails.transfer.dynamic_risk
+            floor_amount = float(risk_cfg.floor_amount)
+            lookback_days = int(risk_cfg.lookback_days)
+            percentile = float(risk_cfg.percentile)
 
+            since = datetime.now(UTC) - timedelta(days=lookback_days)
+            threshold = floor_amount
+            try:
+                history = await tx_repo.get_successful_transfers_since(str(user_id), since)
+                amounts = [float(tx.amount) for tx in history if getattr(tx, "amount", None)]
+                if amounts:
+                    threshold = max(floor_amount, _compute_percentile(amounts, percentile))
+            except Exception as exc:
+                logger.warning("dynamic_risk_threshold_lookup_failed", error=str(exc))
+
+            amount = require_naira(payload.amount)
+            is_high_risk = bool(amount >= threshold)
+            if is_high_risk:
+                warning = render_personalized_message(
+                    "transfer.confirmation.high_risk_unsaved_warning",
+                    ctx.language,
+                    {"amount": format_naira(amount), "threshold": format_naira(threshold)},
+                    PersonalityContext(
+                        moment="confirmation",
+                        amount=amount,
+                        saved_recipient=False,
+                        high_risk=True,
+                        dynamic_risk_threshold=threshold,
+                    ),
+                )
+
+            dynamic_patch = {
+                "dynamic_risk_threshold": threshold,
+                "is_high_risk_transfer": is_high_risk,
+                "high_risk_warning": warning,
+            }
+
+    advisory_patch = await _build_risk_advisory_patch(payload, ctx, worker_context, existing_warning=warning)
+    return {**dynamic_patch, **advisory_patch}
+
+
+async def _build_risk_advisory_patch(
+    payload: TransferPayload,
+    ctx: TransferContext,
+    worker_context: Any,
+    *,
+    existing_warning: str | None,
+) -> dict[str, Any]:
+    user_id = getattr(worker_context, "user_id", None)
+    if not user_id or not payload.idempotency_key:
+        return {}
+
+    try:
+        async with UnitOfWork() as uow:
+            result = await RiskDecisionService().evaluate_transfer(
+                uow=uow,
+                payload=payload,
+                context=ctx,
+                worker_context=worker_context,
+            )
+            await uow.commit()
+    except Exception as exc:
+        logger.warning("risk_advisory_lookup_failed", error=str(exc))
+        return {}
+
+    if not result.has_concerns:
+        return {
+            "risk_advisory_reason_codes": [],
+            "risk_advisory_score": 0,
+        }
+
+    warning = _render_risk_advisory_warning(result, ctx, payload.amount) or existing_warning
     return {
-        "dynamic_risk_threshold": threshold,
-        "is_high_risk_transfer": is_high_risk,
+        "is_high_risk_transfer": True,
         "high_risk_warning": warning,
+        "risk_advisory_reason_codes": result.reason_codes,
+        "risk_advisory_score": result.score,
     }
+
+
+def _render_risk_advisory_warning(
+    result: RiskDecisionResult,
+    ctx: TransferContext,
+    amount: Any,
+) -> str | None:
+    if not result.reason_codes:
+        return None
+    labels = [_RISK_ADVISORY_REASON_LABELS.get(code, code.replace("_", " ")) for code in result.reason_codes]
+    visible = ", ".join(labels[:3])
+    if len(labels) > 3:
+        visible = f"{visible}, and {len(labels) - 3} more concern(s)"
+    amount_text = format_naira(require_naira(amount)) if amount is not None else "this amount"
+    return render_text(
+        f"Please review this transfer carefully before confirming. Concerns for {amount_text}: {visible}.",
+        ctx.language,
+    )
 
 
 def _format_naira(amount: Any) -> str | None:

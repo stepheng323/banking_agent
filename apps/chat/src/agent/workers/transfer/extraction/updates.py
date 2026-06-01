@@ -175,6 +175,8 @@ async def extract_transfer_update(
                 extracted_data["is_high_risk_transfer"] = False
                 extracted_data["dynamic_risk_threshold"] = None
                 extracted_data["high_risk_warning"] = None
+                extracted_data["risk_advisory_reason_codes"] = []
+                extracted_data["risk_advisory_score"] = 0
 
         funding_invalidation_fields = {
             "amount",

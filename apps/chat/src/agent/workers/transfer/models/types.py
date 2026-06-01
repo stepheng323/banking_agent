@@ -81,6 +81,8 @@ class TransferPayload(BaseModel):
     is_high_risk_transfer: bool = False
     dynamic_risk_threshold: float | None = None
     high_risk_warning: str | None = None
+    risk_advisory_reason_codes: list[str] = Field(default_factory=list)
+    risk_advisory_score: int = 0
 
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
     skip_extraction: bool = False
