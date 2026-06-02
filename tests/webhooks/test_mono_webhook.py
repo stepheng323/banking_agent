@@ -32,7 +32,8 @@ class _RouterServiceStub:
         self.mandate_events: list[tuple[str, dict]] = []
         self.debit_events: list[tuple[str, dict]] = []
 
-    async def handle_mandate_event(self, event: str, data: dict) -> bool:
+    async def handle_mandate_event(self, event: str, data: dict, *, event_id: str | None = None) -> bool:
+        del event_id
         self.mandate_events.append((event, data))
         return True
 
@@ -460,6 +461,132 @@ class _FakeUow:
 class _NoopPublisher:
     async def publish(self, topic: str, message: dict) -> None:  # noqa: ARG002
         return None
+
+
+class _FakeMandateAccounts:
+    def __init__(self, account: SimpleNamespace | None = None, *, applied: bool = True) -> None:
+        self.account = account
+        self.applied = applied
+        self.calls: list[dict] = []
+
+    async def apply_mandate_status_event(
+        self,
+        mandate_id: str,
+        status: str,
+        *,
+        event_name: str,
+        event_id: str | None = None,
+        provider_payload: dict | None = None,
+    ) -> tuple[SimpleNamespace | None, bool]:
+        self.calls.append(
+            {
+                "mandate_id": mandate_id,
+                "status": status,
+                "event_name": event_name,
+                "event_id": event_id,
+                "provider_payload": provider_payload or {},
+            }
+        )
+        if not self.account:
+            return None, False
+        if self.applied:
+            self.account.mandate_status = status
+        return self.account, self.applied
+
+
+class _FakeMandateUow:
+    def __init__(self, accounts: _FakeMandateAccounts) -> None:
+        self.accounts = accounts
+        self.users = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestMonoMandateWebhookService:
+    @pytest.mark.asyncio
+    async def test_cancelled_action_event_uses_mandate_field(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        account = SimpleNamespace(id="acct-1", user_id="user-1", mandate_status="ready")
+        accounts = _FakeMandateAccounts(account)
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: _FakeMandateUow(accounts))
+        service = MonoWebhookService(publisher=_NoopPublisher())  # type: ignore[arg-type]
+
+        processed = await service.handle_mandate_event(
+            "events.mandate.action.cancelled",
+            {"mandate": "mandate-1", "status": "success", "message": "mandate cancelled"},
+            event_id="evt-cancelled",
+        )
+
+        assert processed is True
+        assert accounts.calls == [
+            {
+                "mandate_id": "mandate-1",
+                "status": "cancelled",
+                "event_name": "events.mandate.action.cancelled",
+                "event_id": "evt-cancelled",
+                "provider_payload": {
+                    "mandate": "mandate-1",
+                    "id": "mandate-1",
+                    "status": "success",
+                    "message": "mandate cancelled",
+                },
+            }
+        ]
+        assert account.mandate_status == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_expired_event_marks_mandate_expired(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        account = SimpleNamespace(id="acct-2", user_id="user-2", mandate_status="pending")
+        accounts = _FakeMandateAccounts(account)
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: _FakeMandateUow(accounts))
+        service = MonoWebhookService(publisher=_NoopPublisher())  # type: ignore[arg-type]
+
+        processed = await service.handle_mandate_event("events.mandates.expired", {"id": "mandate-2"})
+
+        assert processed is True
+        assert accounts.calls[0]["status"] == "expired"
+        assert account.mandate_status == "expired"
+
+    @pytest.mark.asyncio
+    async def test_ready_event_with_ready_to_debit_false_does_not_mark_ready(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        account = SimpleNamespace(id="acct-3", user_id="user-3", mandate_status="pending")
+        accounts = _FakeMandateAccounts(account)
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: _FakeMandateUow(accounts))
+        service = MonoWebhookService(publisher=_NoopPublisher())  # type: ignore[arg-type]
+
+        processed = await service.handle_mandate_event(
+            "events.mandates.ready",
+            {"id": "mandate-3", "status": "approved", "ready_to_debit": False},
+        )
+
+        assert processed is True
+        assert accounts.calls[0]["status"] == "approved"
+        assert account.mandate_status == "approved"
+
+    @pytest.mark.asyncio
+    async def test_ignored_stale_mandate_update_does_not_notify_ready(self, monkeypatch):
+        from apps.gateway.api.webhooks.mono import service as service_module
+
+        account = SimpleNamespace(id="acct-4", user_id="user-4", mandate_status="expired")
+        accounts = _FakeMandateAccounts(account, applied=False)
+        monkeypatch.setattr(service_module, "UnitOfWork", lambda: _FakeMandateUow(accounts))
+        delivery_service = SimpleNamespace(deliver_text=AsyncMock())
+        service = MonoWebhookService(publisher=_NoopPublisher(), delivery_service=delivery_service)  # type: ignore[arg-type]
+
+        processed = await service.handle_mandate_event("events.mandates.ready", {"id": "mandate-4"})
+
+        assert processed is True
+        assert account.mandate_status == "expired"
+        delivery_service.deliver_text.assert_not_awaited()
 
 
 class _CapturePublisher:

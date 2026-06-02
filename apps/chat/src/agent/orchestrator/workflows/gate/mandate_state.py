@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from banking.accounts.mandate_state import READY, effective_mandate_status
+
 
 def _has_pending_mandate_without_ready_accounts(loaded_context: dict[str, Any] | None) -> bool:
     if not isinstance(loaded_context, dict):
@@ -15,10 +17,10 @@ def _has_pending_mandate_without_ready_accounts(loaded_context: dict[str, Any] |
     for account in accounts_raw:
         if not isinstance(account, dict):
             continue
-        status = str(account.get("mandate_status") or "").strip().lower()
+        status = effective_mandate_status(account)
         if not status:
             continue
-        if status == "ready":
+        if status == READY:
             has_ready = True
         else:
             has_pending_like = True

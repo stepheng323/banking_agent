@@ -1,5 +1,6 @@
 from typing import Any
 
+from banking.accounts.mandate_state import effective_mandate_status
 from banking.presentation.formatters.accounts import get_bank_label, get_last4
 from banking.presentation.i18n.renderer import render_message
 from shared.money import MoneyAmount
@@ -8,8 +9,11 @@ STATUS_ICONS = {
     "ready": "✓",
     "pending": "○",
     "awaiting_authorization": "○",
+    "approved": "○",
     "expired": "!",
     "cancelled": "!",
+    "paused": "!",
+    "rejected": "!",
     None: "",
 }
 
@@ -29,13 +33,12 @@ class AccountFormatter:
 
             if isinstance(account, dict):
                 is_default = account.get("is_default", False)
-                mandate_status = account.get("mandate_status")
             else:
                 is_default = getattr(account, "is_default", False)
-                mandate_status = getattr(account, "mandate_status", None)
 
             default_badge = render_message("account.list.default_badge", locale) if is_default else ""
-            status_icon = STATUS_ICONS.get(mandate_status, "")
+            effective_status = effective_mandate_status(account)
+            status_icon = STATUS_ICONS.get(effective_status, "")
             status_suffix = f" [{status_icon}]" if status_icon else ""
 
             lines.append(f"{i}. {bank_name} (****{last4}){default_badge}{status_suffix}")

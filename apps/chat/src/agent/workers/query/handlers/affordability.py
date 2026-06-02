@@ -7,6 +7,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryExecutionContract,
     QueryResult,
 )
+from banking.accounts.mandate_state import is_mandate_debit_ready
 from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from banking.presentation.formatters.currency import format_naira_compact
 from banking.presentation.i18n.renderer import render_message
@@ -85,8 +86,7 @@ async def _handle_multi_account_affordability(
     balances: list[tuple[str, str, str, MoneyAmount]] = []
     for candidate_id in account_ids:
         account = account_lookup.get(candidate_id, {})
-        mandate_status = str(account.get("mandate_status") or "ready").lower()
-        if mandate_status not in {"ready", "active", "successful"}:
+        if account and not is_mandate_debit_ready(account):
             continue
         balance = await provider.get_balance(candidate_id, real_time=True)
         if balance is None:

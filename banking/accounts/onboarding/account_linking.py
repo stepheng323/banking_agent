@@ -4,7 +4,9 @@ import asyncio
 
 from banking.persistence.unit_of_work import UnitOfWork
 from shared.cache.flow_session_manager import FlowSessionManager
-from shared.clients.providers.mono.client import mono_client
+from shared.clients.abstractions.account_authorization import AccountAuthorizationProvider
+from shared.clients.factories.providers import ProviderFactory
+from shared.config.settings import settings
 from shared.models.account import CreateAccount
 from shared.models.user import UserUpdate
 from shared.utils.hash import hash_plaintext, is_valid_pin_format
@@ -19,9 +21,25 @@ logger = get_logger(__name__)
 class AccountLinkingService:
     """Handles account selection and onboarding completion."""
 
-    def __init__(self, session_manager: FlowSessionManager, mandate_service: MandateService):
+    def __init__(
+        self,
+        session_manager: FlowSessionManager,
+        mandate_service: MandateService,
+        authorization_provider: AccountAuthorizationProvider | None = None,
+    ):
         self.session = session_manager
         self.mandate = mandate_service
+        self.authorization_provider = authorization_provider
+
+    def _get_authorization_provider(self) -> AccountAuthorizationProvider:
+        if self.authorization_provider is None:
+            provider = ProviderFactory.get_account_authorization_provider()
+            if provider is None:
+                raise RuntimeError(
+                    f"Account provider authorization capability is not configured: {settings.account_provider_name}"
+                )
+            self.authorization_provider = provider
+        return self.authorization_provider
 
     async def select_account(self, flow_token: str, account_id: str | None) -> dict:
         """Store selected account."""
@@ -205,7 +223,8 @@ class AccountLinkingService:
     ) -> None:
         """Background task: Create Mono customer and mandate, then notify user."""
         try:
-            customer = await mono_client.create_customer(
+            provider = self._get_authorization_provider()
+            customer = await provider.create_customer(
                 first_name=first_name,
                 last_name=last_name,
                 phone=phone_number,
@@ -215,7 +234,8 @@ class AccountLinkingService:
                 identity_type="bvn",
             )
             logger.info(
-                "mono_customer_created_async",
+                "provider_customer_created_async",
+                provider=provider.provider_name,
                 phone_hash=log_fingerprint(phone_number),
                 customer_id_hash=log_fingerprint(customer.id),
             )
@@ -249,7 +269,7 @@ class AccountLinkingService:
             import traceback
 
             logger.error(
-                "mono_setup_background_error",
+                "account_authorization_setup_background_error",
                 error_type=type(e).__name__,
                 phone_hash=log_fingerprint(phone_number),
                 traceback_hash=log_fingerprint(traceback.format_exc()),

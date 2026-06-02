@@ -82,7 +82,11 @@ class FundingPlanner:
 
             if not eligible:
                 # Distinguish between "pending mandate" and "no mandate at all"
-                pending_accounts = [a for a in accounts if getattr(a, "mandate_status", None) not in (None, "ready")]
+                pending_accounts = [
+                    a
+                    for a in accounts
+                    if getattr(a, "mandate_status", None) is not None and not account_matching.is_eligible(a)
+                ]
                 if pending_accounts:
                     error_msg = account_matching.build_pending_mandate_message_for_account(pending_accounts[0], locale)
                 else:

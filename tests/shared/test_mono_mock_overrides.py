@@ -18,14 +18,14 @@ def _set_minimum_production_env(monkeypatch) -> None:
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "test-telegram-secret")
 
 
-def test_settings_force_mock_provider_in_production(monkeypatch) -> None:
+def test_settings_force_mono_mock_mode_in_production(monkeypatch) -> None:
     _set_minimum_production_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("MONO_USE_MOCK", "true")
 
     cfg = Settings()
 
-    assert cfg.selected_direct_debit_provider == "mock"
+    assert cfg.account_provider_name == "mono"
     assert cfg.use_mono_mock is True
 
 
@@ -35,7 +35,7 @@ def test_settings_force_real_mono_in_development(monkeypatch) -> None:
 
     cfg = Settings()
 
-    assert cfg.selected_direct_debit_provider == "mono"
+    assert cfg.account_provider_name == "mono"
     assert cfg.use_mono_mock is False
 
 
@@ -86,7 +86,7 @@ def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
     cfg = Settings()
 
     assert cfg.use_mono_mock is True
-    assert cfg.selected_direct_debit_provider == "mock"
+    assert cfg.account_provider_name == "mono"
 
 
 def test_mono_client_uses_explicit_mock_toggle(monkeypatch) -> None:
@@ -98,11 +98,32 @@ def test_mono_client_uses_explicit_mock_toggle(monkeypatch) -> None:
     assert client.use_mock is True
 
 
-def test_direct_debit_provider_is_only_backward_compatible_fallback(monkeypatch) -> None:
+def test_account_provider_identity_stays_mono_when_mock_mode_defaults(monkeypatch) -> None:
     monkeypatch.delenv("MONO_USE_MOCK", raising=False)
     monkeypatch.setenv("APP_ENV", "development")
 
     cfg = Settings()
 
     assert cfg.use_mono_mock is True
-    assert cfg.selected_direct_debit_provider == "mock"
+    assert cfg.account_provider_name == "mono"
+
+
+def test_account_provider_setting_drives_account_owned_capabilities(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ACCOUNT_PROVIDER", "okra")
+    monkeypatch.setenv("BILL_PROVIDER", "vtpass")
+    monkeypatch.setenv("PAYOUT_PROVIDER", "nibss")
+    monkeypatch.setenv("TRANSFER_RESOLVER_PROVIDER", "transfer-resolver")
+    monkeypatch.setenv("BENEFICIARY_RESOLVER_PROVIDER", "beneficiary-resolver")
+    monkeypatch.setenv("BOOTSTRAP_RESOLVER_PROVIDER", "bootstrap-resolver")
+    monkeypatch.setenv("PAYOUT_RESOLVER_PROVIDER", "payout-resolver")
+
+    cfg = Settings()
+
+    assert cfg.account_provider_name == "okra"
+    assert cfg.bill_provider_name == "vtpass"
+    assert cfg.payout_provider_name == "nibss"
+    assert cfg.resolver_provider_for_flow("transfer") == "transfer-resolver"
+    assert cfg.resolver_provider_for_flow("beneficiary") == "beneficiary-resolver"
+    assert cfg.resolver_provider_for_flow("bootstrap") == "bootstrap-resolver"
+    assert cfg.resolver_provider_for_flow("payout") == "payout-resolver"

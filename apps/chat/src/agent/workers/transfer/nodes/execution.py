@@ -14,6 +14,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
 from banking.presentation.i18n.renderer import render_message
 from banking.risk.service import RiskDecisionService
+from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.money import naira_to_json, require_naira
 from shared.queue.factory import QueuePublisherFactory
@@ -113,7 +114,7 @@ class ExecutionStep(TransferStep):
                                 recipient_bank_name=data.recipient_bank_name or "",
                                 recipient_name=data.recipient_resolved_name or data.recipient_name or "Recipient",
                                 narration=narration,
-                                payout_provider="flutterwave",
+                                payout_provider=settings.payout_provider_name,
                                 status=FundedTransferStatusEnum.FUNDING_PENDING.value,
                                 idempotency_key=key,
                             )
@@ -128,7 +129,7 @@ class ExecutionStep(TransferStep):
                                     amount=require_naira(step.get("amount")),
                                     sequence=int(step.get("sequence", 0)),
                                     status=FundingStepStatusEnum.PENDING.value,
-                                    provider_name="mono",
+                                    provider_name=settings.account_provider_name,
                                 )
                     await uow.commit()
                 except Exception as e:

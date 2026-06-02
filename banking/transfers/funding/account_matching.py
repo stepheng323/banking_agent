@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import banking.transfers.funding.models as funding_models
+from banking.accounts.mandate_state import is_mandate_debit_ready
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from banking.presentation.i18n.renderer import render_message
 from shared.money import MoneyAmount, require_naira
@@ -37,7 +38,7 @@ def create_step(account: Any, amount: MoneyAmount, sequence: int) -> funding_mod
 
 
 def is_eligible(account: Any) -> bool:
-    return account.mandate_status == "ready"
+    return is_mandate_debit_ready(account)
 
 
 def match_ineligible_requested_account(all_accounts: list[Any], eligible: list[Any], bank_name: str) -> Any | None:

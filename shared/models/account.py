@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-MandateStatus = Literal["pending", "approved", "ready", "rejected", "cancelled"]
+MandateStatus = Literal["pending", "approved", "ready", "rejected", "cancelled", "paused", "expired"]
 
 
 class CreateAccount(BaseModel):

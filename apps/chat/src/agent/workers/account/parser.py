@@ -5,6 +5,7 @@ from typing import Any, Literal, cast
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -83,8 +84,15 @@ class AccountParser:
             # LangChain's Runnable type omits provider-specific structured output helpers.
             structured_llm = cast(Any, self.llm).with_structured_output(AccountIntent)
 
-            result = await structured_llm.ainvoke(
-                [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}]
+            result = await ainvoke_with_config(
+                structured_llm,
+                [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}],
+                config=build_llm_runnable_config(
+                    role="account_parser",
+                    task_domain="account",
+                    extra_metadata={"system_chars": len(system_prompt)},
+                )
+                or None,
             )
 
             if isinstance(result, dict):

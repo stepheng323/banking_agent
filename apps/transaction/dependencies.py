@@ -39,7 +39,7 @@ from banking.transactions.runtime.executors.transfer import TransferExecutor
 from banking.transactions.runtime.transfer_completion_notifications import TransferCompletionNotifier
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.providers import ProviderFactory
-from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
+from shared.config.settings import settings
 from shared.database.connection import get_db_session
 from shared.queue.factory import QueuePublisherFactory
 
@@ -72,17 +72,21 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
     db_session = get_db_session()
     transaction_repository = TransactionRepository(db=db_session)
     account_repository = AccountRepository(db=db_session)
-    direct_debit_provider = MonoDirectDebitProvider()
-    payout_provider = ProviderFactory.get_payout_provider("flutterwave")
+    direct_debit_provider = ProviderFactory.get_direct_debit_provider()
+    if direct_debit_provider is None:
+        raise RuntimeError(
+            f"Account provider direct-debit capability is not configured: {settings.account_provider_name}"
+        )
+    payout_provider = ProviderFactory.get_payout_provider()
     if payout_provider is None:
-        raise RuntimeError("Flutterwave payout provider is not configured")
+        raise RuntimeError(f"Payout provider is not configured: {settings.payout_provider_name}")
     payout_resolver = ProviderFactory.get_resolver_for_flow("payout")
     if payout_resolver is None:
-        raise RuntimeError("Payout resolver provider is not configured")
+        raise RuntimeError(f"Payout resolver provider is not configured: {settings.payout_resolver_provider_name}")
 
     bill_provider = ProviderFactory.get_bill_provider()
     if bill_provider is None:
-        raise RuntimeError("Bill provider is not configured")
+        raise RuntimeError(f"Bill provider is not configured: {settings.bill_provider_name}")
     redis_client = RedisClient.get_client()
     async_group_redis = cast(AsyncGroupRedis, redis_client)
     beneficiary_suggestion_service = BeneficiarySuggestionService(queue_publisher)
@@ -102,6 +106,7 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,
+        account_provider_name=direct_debit_provider.provider_name,
         delivery_service=delivery_service,
         redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
@@ -117,6 +122,7 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
     data_executor = DataExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
+        account_provider_name=direct_debit_provider.provider_name,
         delivery_service=delivery_service,
         redis_client=async_group_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,

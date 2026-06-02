@@ -287,7 +287,12 @@ class MonoDirectDebitProvider(DirectDebitProvider):
             "successful": DebitStatus.SUCCESSFUL,
             "success": DebitStatus.SUCCESSFUL,
             "failed": DebitStatus.FAILED,
+            "failure": DebitStatus.FAILED,
+            "cancelled": DebitStatus.FAILED,
+            "canceled": DebitStatus.FAILED,
+            "abandoned": DebitStatus.FAILED,
             "reversed": DebitStatus.REVERSED,
+            "refunded": DebitStatus.REVERSED,
         }
         return status_map.get(mono_status.lower(), DebitStatus.PENDING)
 

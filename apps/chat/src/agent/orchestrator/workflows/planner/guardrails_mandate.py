@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
+from banking.accounts.mandate_state import READY, effective_mandate_status
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
@@ -21,10 +22,10 @@ def _has_pending_mandate_without_ready_accounts(loaded_context: dict[str, Any] |
     for account in accounts_raw:
         if not isinstance(account, dict):
             continue
-        status = str(account.get("mandate_status") or "").strip().lower()
+        status = effective_mandate_status(account)
         if not status:
             continue
-        if status == "ready":
+        if status == READY:
             has_ready = True
         else:
             has_pending_like = True

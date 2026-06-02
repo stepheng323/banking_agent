@@ -304,7 +304,7 @@ class MonoClient:
         start_date: str,
         end_date: str,
         debit_type: str = "variable",
-        mandate_type: str = "e-mandate",
+        mandate_type: str = "emandate",
         description: str = "Direct debit mandate",
         fee_bearer: str = "customer",
     ) -> MandateData:
@@ -320,7 +320,7 @@ class MonoClient:
             start_date: Mandate start date (YYYY-MM-DD)
             end_date: Mandate end date (YYYY-MM-DD)
             debit_type: "variable" or "fixed"
-            mandate_type: "e-mandate" or "signed"
+            mandate_type: "emandate", "sweep", or "signed"
             description: Description of the mandate
             fee_bearer: "business" or "customer"
         """

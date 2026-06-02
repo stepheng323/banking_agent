@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from banking.accounts.mandate_state import is_mandate_debit_ready
 from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding import account_matching
@@ -35,7 +36,7 @@ def adapt_batch_accounts(accounts: list[dict[str, Any]]) -> list[BatchFundingAcc
 
 
 def eligible_batch_accounts(accounts: list[BatchFundingAccount]) -> list[BatchFundingAccount]:
-    return [account for account in accounts if account.mandate_status == "ready"]
+    return [account for account in accounts if is_mandate_debit_ready(account)]
 
 
 def prioritize_demands(demands: list[TransferDemand]) -> list[TransferDemand]:

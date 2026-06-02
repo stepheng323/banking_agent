@@ -135,6 +135,12 @@ class Settings:
         self.media_image_model: str = os.getenv("MEDIA_IMAGE_MODEL", "gpt-5-mini").strip()
         self.audio_transcription_model: str = os.getenv("AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
         self.media_image_max_bytes: int = int(os.getenv("MEDIA_IMAGE_MAX_BYTES", "5000000"))
+        self.llm_observability_enabled: bool = os.getenv("LLM_OBSERVABILITY_ENABLED", "true").lower() == "true"
+        self.llm_trace_privacy_mode: str = os.getenv("LLM_TRACE_PRIVACY_MODE", "masked").strip().lower() or "masked"
+        self.llm_trace_sample_rate: float = float(os.getenv("LLM_TRACE_SAMPLE_RATE", "1.0"))
+        self.llm_slow_call_threshold_ms: int = int(os.getenv("LLM_SLOW_CALL_THRESHOLD_MS", "10000"))
+        self.llm_high_prompt_size_chars: int = int(os.getenv("LLM_HIGH_PROMPT_SIZE_CHARS", "24000"))
+        self.llm_max_calls_per_turn_warning: int = int(os.getenv("LLM_MAX_CALLS_PER_TURN_WARNING", "8"))
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
@@ -193,6 +199,13 @@ class Settings:
         self.ledger_reconciliation_batch_size: int = int(os.getenv("LEDGER_RECONCILIATION_BATCH_SIZE", "100"))
         self.ledger_exposure_min_age_seconds: int = int(os.getenv("LEDGER_EXPOSURE_MIN_AGE_SECONDS", "300"))
         self.ledger_stuck_refunding_seconds: int = int(os.getenv("LEDGER_STUCK_REFUNDING_SECONDS", "3600"))
+        self.funding_stuck_seconds: int = int(os.getenv("FUNDING_STUCK_SECONDS", "900"))
+        self.transaction_debit_stuck_seconds: int = int(os.getenv("TRANSACTION_DEBIT_STUCK_SECONDS", "900"))
+        self.direct_transfer_stuck_seconds: int = int(os.getenv("DIRECT_TRANSFER_STUCK_SECONDS", "900"))
+        self.bill_fulfillment_stuck_seconds: int = int(os.getenv("BILL_FULFILLMENT_STUCK_SECONDS", "900"))
+        self.payout_stuck_seconds: int = int(os.getenv("PAYOUT_STUCK_SECONDS", "900"))
+        self.refund_stuck_seconds: int = int(os.getenv("REFUND_STUCK_SECONDS", "3600"))
+        self.webhook_failure_alert_threshold: int = int(os.getenv("WEBHOOK_FAILURE_ALERT_THRESHOLD", "5"))
         ledger_ticket_setting = self._parse_optional_bool(os.getenv("LEDGER_FINDINGS_CREATE_SUPPORT_TICKET"))
         self.ledger_findings_create_support_ticket: bool = (
             True if ledger_ticket_setting is None else ledger_ticket_setting
@@ -213,6 +226,27 @@ class Settings:
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
         self.mono_webhook_secret: str = os.getenv("MONO_WEBHOOK_SECRET", "").strip()
         self.mono_use_mock_override: bool | None = self._parse_optional_bool(os.getenv("MONO_USE_MOCK"))
+        self.account_provider_name: str = os.getenv("ACCOUNT_PROVIDER", "mono").strip().lower() or "mono"
+        self.bill_provider_name: str = os.getenv("BILL_PROVIDER", "flutterwave").strip().lower() or "flutterwave"
+        self.payout_provider_name: str = (
+            os.getenv("PAYOUT_PROVIDER", "flutterwave").strip().lower() or "flutterwave"
+        )
+        self.transfer_resolver_provider_name: str = (
+            os.getenv("TRANSFER_RESOLVER_PROVIDER", self.account_provider_name).strip().lower()
+            or self.account_provider_name
+        )
+        self.beneficiary_resolver_provider_name: str = (
+            os.getenv("BENEFICIARY_RESOLVER_PROVIDER", self.account_provider_name).strip().lower()
+            or self.account_provider_name
+        )
+        self.bootstrap_resolver_provider_name: str = (
+            os.getenv("BOOTSTRAP_RESOLVER_PROVIDER", self.account_provider_name).strip().lower()
+            or self.account_provider_name
+        )
+        self.payout_resolver_provider_name: str = (
+            os.getenv("PAYOUT_RESOLVER_PROVIDER", self.payout_provider_name).strip().lower()
+            or self.payout_provider_name
+        )
 
         self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
         self.aws_region: str = os.getenv("AWS_REGION", "us-east-1")
@@ -335,10 +369,6 @@ class Settings:
             "DATABASE_URL": self.database_url and self.database_url != "sqlite:///./test.db",
             "REDIS_URL": self.redis_url and self.redis_url != "redis://localhost:6379",
             "OPENAI_API_KEY": bool(self.openai_api_key),
-            "MONO_API_KEY": bool(self.mono_api_key),
-            "MONO_WEBHOOK_SECRET": bool(self.mono_webhook_secret),
-            "FLUTTERWAVE_SECRET_KEY": bool(self.flutterwave_secret_key),
-            "FLUTTERWAVE_WEBHOOK_SECRET_HASH": bool(self.flutterwave_webhook_secret_hash),
             "META_APP_SECRET": bool(self.whatsapp.app_secret),
             "META_ACCESS_TOKEN": self.whatsapp.access_token != "development_access_token",
             "META_VERIFY_TOKEN": self.whatsapp.verify_token != "development_token",
@@ -346,6 +376,14 @@ class Settings:
             "TELEGRAM_BOT_TOKEN": bool(self.telegram_bot_token),
             "TELEGRAM_WEBHOOK_SECRET_TOKEN": bool(self.telegram_webhook_secret_token),
         }
+        if self._uses_provider("mono"):
+            checks["MONO_API_KEY"] = bool(self.mono_api_key)
+        if self.account_provider_name == "mono":
+            checks["MONO_WEBHOOK_SECRET"] = bool(self.mono_webhook_secret)
+        if self._uses_provider("flutterwave"):
+            checks["FLUTTERWAVE_SECRET_KEY"] = bool(self.flutterwave_secret_key)
+        if self.payout_provider_name == "flutterwave":
+            checks["FLUTTERWAVE_WEBHOOK_SECRET_HASH"] = bool(self.flutterwave_webhook_secret_hash)
         for env_key, ok in checks.items():
             if not ok:
                 missing.append(env_key)
@@ -362,10 +400,30 @@ class Settings:
             return self.mono_use_mock_override
         return self.runtime.app_env.lower() == "development"
 
-    @property
-    def selected_direct_debit_provider(self) -> str:
-        """Return the effective direct-debit provider selection."""
-        return "mock" if self.use_mono_mock else "mono"
+    def resolver_provider_for_flow(self, flow: str) -> str:
+        """Return configured resolver provider for a business flow."""
+        if flow == "transfer":
+            return self.transfer_resolver_provider_name
+        if flow == "beneficiary":
+            return self.beneficiary_resolver_provider_name
+        if flow == "payout":
+            return self.payout_resolver_provider_name
+        if flow == "bootstrap":
+            return self.bootstrap_resolver_provider_name
+        return ""
+
+    def _uses_provider(self, provider_name: str) -> bool:
+        """Return whether any configured provider category uses provider_name."""
+        provider = provider_name.strip().lower()
+        return provider in {
+            self.account_provider_name,
+            self.bill_provider_name,
+            self.payout_provider_name,
+            self.transfer_resolver_provider_name,
+            self.beneficiary_resolver_provider_name,
+            self.bootstrap_resolver_provider_name,
+            self.payout_resolver_provider_name,
+        }
 
     @property
     def uses_aws_async_transport(self) -> bool:

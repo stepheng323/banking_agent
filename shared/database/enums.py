@@ -14,9 +14,12 @@ class MandateStatusEnum(str, Enum):
     """Account mandate status enum."""
 
     PENDING = "pending"
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
-    REVOKED = "revoked"
+    APPROVED = "approved"
+    READY = "ready"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    PAUSED = "paused"
+    EXPIRED = "expired"
 
 
 class TransactionTypeEnum(str, Enum):

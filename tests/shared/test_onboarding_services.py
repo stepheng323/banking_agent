@@ -10,7 +10,47 @@ from banking.accounts.onboarding.account_linking import AccountLinkingService
 from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 from banking.accounts.onboarding.session import OnboardingStep
 from shared.cache.flow_session_manager import SessionReadResult
-from shared.clients.providers.mono.models import BankAccount, BvnLookupData, BvnMethod, Institution
+from shared.clients.abstractions.banking import BvnLookupResult, BvnVerificationResult
+
+
+class _BankingProviderStub:
+    def __init__(
+        self,
+        *,
+        lookup_result: BvnLookupResult | None = None,
+        verify_bvn_result: dict[str, Any] | None = None,
+        otp_result: BvnVerificationResult | None = None,
+    ) -> None:
+        self.lookup_result = lookup_result
+        self.verify_bvn_result = verify_bvn_result or {"success": True}
+        self.otp_result = otp_result
+        self.lookup_calls: list[str] = []
+        self.verify_bvn_calls: list[tuple[str, str]] = []
+        self.verify_otp_calls: list[tuple[str, str]] = []
+
+    @property
+    def provider_name(self) -> str:
+        return "stub"
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    async def initiate_bvn_lookup(self, bvn: str) -> BvnLookupResult:
+        self.lookup_calls.append(bvn)
+        if self.lookup_result is None:
+            raise AssertionError("BVN lookup should not run")
+        return self.lookup_result
+
+    async def verify_bvn(self, session_id: str, method: str) -> dict[str, Any]:
+        self.verify_bvn_calls.append((session_id, method))
+        return self.verify_bvn_result
+
+    async def verify_otp(self, session_id: str, otp: str) -> BvnVerificationResult:
+        self.verify_otp_calls.append((session_id, otp))
+        if self.otp_result is None:
+            raise AssertionError("OTP verification should not run")
+        return self.otp_result
 
 
 class _SessionStub:
@@ -210,20 +250,13 @@ async def test_bvn_verification_rejects_missing_preseeded_phone_without_calling_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = _SessionStub({})
-    service = BvnVerificationService(session)
-
-    async def _unexpected_lookup(bvn: str) -> BvnLookupData:
-        del bvn
-        raise AssertionError("BVN lookup should not run without a session-bound phone number")
-
-    monkeypatch.setattr(
-        "banking.accounts.onboarding.bvn_verification.mono_client.initiate_bvn_lookup",
-        _unexpected_lookup,
-    )
+    banking_provider = _BankingProviderStub()
+    service = BvnVerificationService(session, banking_provider=banking_provider)
 
     result = await service.initiate_bvn_verification("onboarding-attacker-token", "12345678901")
 
     assert result == {"success": False, "error": "Session expired. Please start over."}
+    assert banking_provider.lookup_calls == []
 
 
 @pytest.mark.asyncio
@@ -231,18 +264,15 @@ async def test_bvn_verification_uses_session_phone_not_token_suffix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = _SessionStub({"phone_number": "2348162511023"})
-    service = BvnVerificationService(session)
-    lookups: list[str] = []
-
-    async def _lookup(bvn: str) -> BvnLookupData:
-        lookups.append(bvn)
-        return BvnLookupData(
+    banking_provider = _BankingProviderStub(
+        lookup_result=BvnLookupResult(
+            success=True,
             session_id="mono-session-1",
-            bvn=bvn,
-            methods=[BvnMethod(method="sms", hint="081***1023")],
+            bvn="12345678901",
+            verification_methods=[{"method": "sms", "hint": "081***1023"}],
         )
-
-    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.initiate_bvn_lookup", _lookup)
+    )
+    service = BvnVerificationService(session, banking_provider=banking_provider)
 
     result = await service.initiate_bvn_verification("onboarding-random-suffix-9999999999", "12345678901")
 
@@ -250,7 +280,7 @@ async def test_bvn_verification_uses_session_phone_not_token_suffix(
         "success": True,
         "data": {"bvn": "12345678901", "methods": [{"id": "sms", "title": "081***1023"}]},
     }
-    assert lookups == ["12345678901"]
+    assert banking_provider.lookup_calls == ["12345678901"]
     assert session.data["phone_number"] == "2348162511023"
     assert session.data["is_account_linking"] is False
     assert session.data["step"] == OnboardingStep.METHOD_SELECTION.value
@@ -268,20 +298,16 @@ async def test_send_otp_logs_redacted_session_fields(monkeypatch: pytest.MonkeyP
             "step": OnboardingStep.METHOD_SELECTION.value,
         }
     )
-    service = BvnVerificationService(session)
+    banking_provider = _BankingProviderStub()
+    service = BvnVerificationService(session, banking_provider=banking_provider)
     logger = _LoggerStub()
-    verify_calls: list[tuple[str, str]] = []
-
-    async def _verify_bvn(session_id: str, method: str) -> None:
-        verify_calls.append((session_id, method))
 
     monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.logger", logger)
-    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.verify_bvn", _verify_bvn)
 
     result = await service.send_otp("flow-token-secret", "sms")
 
     assert result == {"success": True, "data": {"bvn": "12345678901"}}
-    assert verify_calls == [("mono-session-secret", "sms")]
+    assert banking_provider.verify_bvn_calls == [("mono-session-secret", "sms")]
 
     session_events = [fields for event, fields in logger.events if event == "otp_session_loaded"]
     assert session_events == [
@@ -373,30 +399,33 @@ async def test_account_add_service_setup_mandate_uses_originating_channel() -> N
 @pytest.mark.asyncio
 async def test_verify_otp_filters_out_existing_linked_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
     session = _SessionStub({"session_id": "mono-session", "phone_number": "2348162511023", "bvn": "12345678901"})
-    service = BvnVerificationService(session)
+    banking_provider = _BankingProviderStub(
+        otp_result=BvnVerificationResult(
+            success=True,
+            accounts=[
+                {
+                    "account_name": "Existing Account",
+                    "account_number": "8162511022",
+                    "account_type": "savings",
+                    "bank_name": "Access Bank",
+                    "bank_code": "058",
+                },
+                {
+                    "account_name": "New Account",
+                    "account_number": "0334555167",
+                    "account_type": "savings",
+                    "bank_name": "GTBank",
+                    "bank_code": "058",
+                },
+            ],
+        )
+    )
+    service = BvnVerificationService(session, banking_provider=banking_provider)
     user = SimpleNamespace(id=uuid4())
     existing_account = SimpleNamespace(account_id="058_8162511022")
     uow = _UnitOfWorkStub(user=user, existing_for_user=[existing_account])
 
-    async def _verify_otp(session_id: str, otp: str) -> list[BankAccount]:
-        del session_id, otp
-        return [
-            BankAccount(
-                account_name="Existing Account",
-                account_number="8162511022",
-                account_type="savings",
-                institution=Institution(name="Access Bank", bank_code="058"),
-            ),
-            BankAccount(
-                account_name="New Account",
-                account_number="0334555167",
-                account_type="savings",
-                institution=Institution(name="GTBank", bank_code="058"),
-            ),
-        ]
-
     monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.UnitOfWork", lambda: uow)
-    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
 
     result = await service.verify_otp("link-token", "123456")
 
@@ -419,24 +448,26 @@ async def test_verify_otp_returns_error_when_all_accounts_are_already_linked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = _SessionStub({"session_id": "mono-session", "phone_number": "2348162511023", "bvn": "12345678901"})
-    service = BvnVerificationService(session)
+    banking_provider = _BankingProviderStub(
+        otp_result=BvnVerificationResult(
+            success=True,
+            accounts=[
+                {
+                    "account_name": "Existing Account",
+                    "account_number": "8162511022",
+                    "account_type": "savings",
+                    "bank_name": "Access Bank",
+                    "bank_code": "058",
+                }
+            ],
+        )
+    )
+    service = BvnVerificationService(session, banking_provider=banking_provider)
     user = SimpleNamespace(id=uuid4())
     existing_account = SimpleNamespace(account_id="058_8162511022")
     uow = _UnitOfWorkStub(user=user, existing_for_user=[existing_account])
 
-    async def _verify_otp(session_id: str, otp: str) -> list[BankAccount]:
-        del session_id, otp
-        return [
-            BankAccount(
-                account_name="Existing Account",
-                account_number="8162511022",
-                account_type="savings",
-                institution=Institution(name="Access Bank", bank_code="058"),
-            )
-        ]
-
     monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.UnitOfWork", lambda: uow)
-    monkeypatch.setattr("banking.accounts.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
 
     result = await service.verify_otp("link-token", "123456")
 

@@ -9,14 +9,15 @@ from apps.chat.src.agent.workers.transfer.models.types import TransferPayload
 from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
 from banking.presentation.i18n.renderer import render_message
+from shared.config.settings import settings
 
 _RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}
 _UNSAFE_RECIPIENT_TOKENS = _RECIPIENT_PRONOUN_TOKENS | {"send", "transfer", "pay", "recipient", "s"}
 
 
-def provider_name(provider: Any, default: str = "mono") -> str:
+def provider_name(provider: Any, default: str | None = None) -> str:
     value = getattr(provider, "provider_name", None)
-    return str(value or default).strip().lower()
+    return str(value or default or settings.transfer_resolver_provider_name).strip().lower()
 
 
 def optional_text(value: Any) -> str | None:
@@ -32,7 +33,7 @@ def beneficiary_provider(value: Any, bank_code: str | None) -> str | None:
     if not bank_code:
         return None
     provider = optional_text(value)
-    return (provider or "mono").lower()
+    return (provider or settings.beneficiary_resolver_provider_name).lower()
 
 
 def canonical_beneficiary_id(value: str | None) -> str | None:
@@ -136,7 +137,9 @@ def matches_selected_beneficiary(payload: TransferPayload, selected: dict[str, A
     """Return True when current payload still targets the selected beneficiary."""
     selected_account = str(selected.get("account_number") or "").strip()
     selected_bank_code = str(selected.get("bank_code") or "").strip()
-    selected_bank_code_provider = str(selected.get("bank_code_provider") or "mono").strip().lower()
+    selected_bank_code_provider = str(
+        selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name
+    ).strip().lower()
     selected_bank_name = str(selected.get("bank_name") or "").strip()
     selected_alias = str(selected.get("alias") or "").strip()
     selected_account_name = str(selected.get("account_name") or "").strip()
@@ -172,7 +175,9 @@ def clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[str
     """Detach payload from previously selected beneficiary when recipient changes."""
     selected_account = str(selected.get("account_number") or "").strip()
     selected_bank_code = str(selected.get("bank_code") or "").strip()
-    selected_bank_code_provider = str(selected.get("bank_code_provider") or "mono").strip().lower()
+    selected_bank_code_provider = str(
+        selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name
+    ).strip().lower()
     selected_bank_name = str(selected.get("bank_name") or "").strip()
 
     payload.beneficiary_id = None

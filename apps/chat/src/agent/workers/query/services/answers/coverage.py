@@ -8,11 +8,11 @@ from typing import Any
 
 from apps.chat.src.agent.workers.query.models.domain import QueryExecutionContract
 from apps.chat.src.agent.workers.query.services.fetching.fetch import _is_missing_mirror_table_error
+from banking.accounts.mandate_state import READY, effective_mandate_status
+from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-_READY_MANDATE_STATUSES = {"ready", "active", "successful"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +53,7 @@ def _suffix(account: dict[str, Any]) -> str:
 
 
 def _mandate_status(account: dict[str, Any]) -> str:
-    return str(account.get("mandate_status") or account.get("status") or "ready").strip().lower()
+    return effective_mandate_status(account)
 
 
 def _sync_metadata(account: dict[str, Any]) -> dict[str, Any]:
@@ -63,6 +63,10 @@ def _sync_metadata(account: dict[str, Any]) -> dict[str, Any]:
         if isinstance(raw_sync, dict):
             return raw_sync
     return {}
+
+
+def _account_provider(account: dict[str, Any]) -> str:
+    return str(account.get("provider_name") or account.get("provider") or settings.account_provider_name).strip().lower()
 
 
 def _format_date(value: date) -> str:
@@ -122,7 +126,7 @@ async def _coverage_for_account(
     sync_metadata = _sync_metadata(account)
     last_synced_at = _format_sync_time(str(sync_metadata.get("last_recent_sync_at") or "").strip() or None)
 
-    if mandate_status not in _READY_MANDATE_STATUSES:
+    if mandate_status and mandate_status != READY:
         return AccountCoverageSnapshot(
             bank_name=bank_name,
             suffix=suffix,
@@ -153,7 +157,7 @@ async def _coverage_for_account(
                 linked_account_id,
                 start_date=start_date,
                 end_date=end_date,
-                provider="mono",
+                provider=_account_provider(account),
             )
     except Exception as exc:
         reason = "coverage_schema_unavailable" if _is_missing_mirror_table_error(exc) else "coverage_check_unavailable"

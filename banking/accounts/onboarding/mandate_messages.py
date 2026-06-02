@@ -5,6 +5,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from banking.accounts.mandate_state import (
+    APPROVED,
+    CANCELLED,
+    EXPIRED,
+    PAUSED,
+    PENDING,
+    READY,
+    REJECTED,
+    effective_mandate_status,
+)
 from banking.presentation.i18n.renderer import render_message
 
 
@@ -90,14 +100,18 @@ def build_pending_mandate_message(accounts: list[dict[str, Any]], locale: str) -
     for account in accounts:
         if not isinstance(account, dict):
             continue
-        status = str(account.get("mandate_status") or "").strip().lower()
-        if not status or status == "ready":
+        status = effective_mandate_status(account)
+        if not status or status == READY:
             continue
+
+        status_message = build_mandate_status_message(account, locale)
+        if status != PENDING:
+            return status_message
 
         extra_data = _load_extra_data(account.get("extra_data"))
         destinations = _normalize_destinations(extra_data.get("transfer_destinations"))
         if not destinations:
-            continue
+            return status_message
 
         return format_mandate_auth_message(
             account_number=str(account.get("account_number") or ""),
@@ -106,3 +120,31 @@ def build_pending_mandate_message(accounts: list[dict[str, Any]], locale: str) -
         )
 
     return render_message("mandate.pending_complete_transfer", locale)
+
+
+def build_mandate_status_message(account: dict[str, Any], locale: str) -> str:
+    """Build state-specific account mandate copy."""
+    status = effective_mandate_status(account)
+    bank_name = str(account.get("bank_name") or render_message("mandate.bank_fallback", locale))
+    account_number = str(account.get("account_number") or "")
+    account_suffix = f"ending in {account_number[-4:]}" if len(account_number) >= 4 else ""
+    if status == APPROVED:
+        return render_message(
+            "mandate.approved_awaiting_nibss",
+            locale,
+            {
+                "bank_name": bank_name,
+                "account_suffix": account_suffix,
+            },
+        )
+    if status == EXPIRED:
+        return render_message("mandate.expired_reinitiate", locale)
+    if status == CANCELLED:
+        return render_message("mandate.status_cancelled", locale)
+    if status == PAUSED:
+        return render_message("mandate.status_paused", locale)
+    if status == REJECTED:
+        return render_message("mandate.status_rejected", locale)
+    if status == PENDING:
+        return render_message("mandate.pending_complete_transfer", locale)
+    return render_message("mandate.status_not_ready", locale)

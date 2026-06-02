@@ -1,11 +1,13 @@
 """Repository for Account model."""
 
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from banking.accounts.mandate_state import is_mandate_transition_allowed, normalize_mandate_status
 from banking.persistence.base import BaseRepository
 from shared.database.models import Account
 from shared.models.account import CreateAccount
@@ -124,6 +126,16 @@ class AccountRepository(BaseRepository[Account]):
         result = await self.db.execute(select(Account).filter(Account.mandate_id_blind_index == mandate_lookup))
         return result.scalars().first()
 
+    async def get_by_mandate_id_for_update(self, mandate_id: str) -> Account | None:
+        """Get account by Mono mandate ID with a row lock."""
+        mandate_lookup = blind_index("accounts.mandate_id", mandate_id)
+        if not mandate_lookup:
+            return None
+        result = await self.db.execute(
+            select(Account).filter(Account.mandate_id_blind_index == mandate_lookup).with_for_update()
+        )
+        return result.scalars().first()
+
     async def get_mandate_id_for_provider(self, account_id: str) -> str | None:
         """Return decrypted mandate ID for provider calls only."""
         account = await self.get_by_account_id(account_id)
@@ -136,3 +148,46 @@ class AccountRepository(BaseRepository[Account]):
             account.mandate_status = cast(Any, status)
             await self.db.flush()
         return account
+
+    async def apply_mandate_status_event(
+        self,
+        mandate_id: str,
+        status: str,
+        *,
+        event_name: str,
+        event_id: str | None = None,
+        provider_payload: dict[str, Any] | None = None,
+    ) -> tuple[Account | None, bool]:
+        """Apply a Mono mandate webhook status only when the state transition is safe."""
+        account = await self.get_by_mandate_id_for_update(mandate_id)
+        if not account:
+            return None, False
+
+        current_status = normalize_mandate_status(account.mandate_status)
+        incoming_status = normalize_mandate_status(status)
+        if not is_mandate_transition_allowed(current_status, incoming_status, event_name=event_name):
+            return account, False
+
+        account.mandate_status = cast(Any, incoming_status)
+        extra_data = dict(account.extra_data or {})
+        payload = provider_payload or {}
+        extra_data["mandate_state"] = {
+            "event_name": event_name,
+            "event_id": event_id,
+            "provider_status": _safe_str(payload.get("status")),
+            "ready_to_debit": (
+                payload.get("ready_to_debit") if isinstance(payload.get("ready_to_debit"), bool) else None
+            ),
+            "reason": _safe_str(payload.get("reason") or payload.get("message") or payload.get("description")),
+            "updated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+        }
+        account.extra_data = extra_data
+        await self.db.flush()
+        return account, True
+
+
+def _safe_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

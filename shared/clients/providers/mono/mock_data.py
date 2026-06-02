@@ -240,7 +240,7 @@ def get_mock_mandate(
     return MandateData(
         id="mock_mandate_id",
         status="awaiting_authorization",
-        mandate_type="e-mandate",
+        mandate_type="emandate",
         debit_type="variable",
         nibss_code="NIBSS123456789",
         amount=amount,

@@ -13,6 +13,48 @@ def _reset_mock_state() -> None:
     reset_mock_transaction_state()
 
 
+class _CreateMandateClient(MonoClient):
+    def __init__(self) -> None:
+        self.use_mock = False
+        self.api_key = "test-key"
+        self.requests: list[dict] = []
+
+    async def _request(self, method: str, path: str, body: dict | None = None, **kwargs) -> dict:
+        del kwargs
+        self.requests.append({"method": method, "path": path, "body": body or {}})
+        return {
+            "id": "mandate-1",
+            "status": "pending",
+            "mandate_type": body["mandate_type"] if body else "emandate",
+            "debit_type": "variable",
+            "amount": 1000000,
+            "account_number": "0123456789",
+            "bank_code": "058",
+            "reference": "mandate-ref-1",
+            "start_date": "2026-06-01",
+            "end_date": "2027-06-01",
+        }
+
+
+@pytest.mark.asyncio
+async def test_mono_client_create_mandate_defaults_to_documented_emandate() -> None:
+    client = _CreateMandateClient()
+
+    mandate = await client.create_mandate(
+        customer_id="customer-1",
+        account_number="0123456789",
+        bank_code="058",
+        amount=1000000,
+        reference="mandate-ref-1",
+        start_date="2026-06-01",
+        end_date="2027-06-01",
+    )
+
+    assert client.requests[0]["path"] == "/v3/payments/mandates"
+    assert client.requests[0]["body"]["mandate_type"] == "emandate"
+    assert mandate.mandate_type == "emandate"
+
+
 @pytest.mark.asyncio
 async def test_mono_client_mock_transactions_apply_date_window(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "mono_use_mock_override", True)

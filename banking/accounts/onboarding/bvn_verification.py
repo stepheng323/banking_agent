@@ -4,8 +4,9 @@ import hashlib
 
 from banking.persistence.unit_of_work import UnitOfWork
 from shared.cache.flow_session_manager import FlowSessionManager
-from shared.clients.providers.mono.client import mono_client
-from shared.clients.providers.mono.models import BankAccount, BvnLookupData, MonoApiError
+from shared.clients.abstractions.banking import BankDataProvider
+from shared.clients.factories.providers import ProviderFactory
+from shared.config.settings import settings
 from shared.utils.logging import get_logger, log_fingerprint
 
 from .session import OnboardingStep
@@ -31,8 +32,19 @@ def _mask_phone(phone_number: str | None) -> str:
 class BvnVerificationService:
     """Handles BVN lookup, OTP sending, and verification."""
 
-    def __init__(self, session_manager: FlowSessionManager):
+    def __init__(self, session_manager: FlowSessionManager, banking_provider: BankDataProvider | None = None):
         self.session = session_manager
+        self.banking_provider = banking_provider
+
+    def _get_banking_provider(self) -> BankDataProvider:
+        if self.banking_provider is None:
+            provider = ProviderFactory.get_bank_data_provider()
+            if provider is None:
+                raise RuntimeError(
+                    f"Account provider bank-data capability is not configured: {settings.account_provider_name}"
+                )
+            self.banking_provider = provider
+        return self.banking_provider
 
     async def _get_existing_linked_account_ids(self, phone_number: str) -> set[str]:
         """Return linked account IDs for a user so relinking can exclude duplicates."""
@@ -99,9 +111,14 @@ class BvnVerificationService:
         )
 
         try:
-            bvn_data: BvnLookupData = await mono_client.initiate_bvn_lookup(bvn)
+            bvn_data = await self._get_banking_provider().initiate_bvn_lookup(bvn)
+            if not bvn_data.success or not bvn_data.session_id:
+                return {"success": False, "error": "Verification failed. Please try again."}
 
-            methods = [{"id": m.method, "title": m.hint} for m in bvn_data.methods]
+            methods = [
+                {"id": str(method.get("method") or ""), "title": str(method.get("hint") or "")}
+                for method in bvn_data.verification_methods or []
+            ]
 
             stored = await self.session.update_session_strict(
                 flow_token,
@@ -122,8 +139,8 @@ class BvnVerificationService:
 
             return {"success": True, "data": {"bvn": bvn, "methods": methods}}
 
-        except MonoApiError as e:
-            logger.error("account_linking_bvn_failed", error=e.message)
+        except Exception as e:
+            logger.error("account_linking_bvn_failed", error_type=type(e).__name__)
             return {"success": False, "error": "Verification failed. Please try again."}
 
     async def initiate_bvn_verification(self, flow_token: str, bvn: str) -> dict:
@@ -146,9 +163,14 @@ class BvnVerificationService:
         logger.info("bvn_lookup_initiated", bvn_hash=log_fingerprint(bvn))
 
         try:
-            bvn_data: BvnLookupData = await mono_client.initiate_bvn_lookup(bvn)
+            bvn_data = await self._get_banking_provider().initiate_bvn_lookup(bvn)
+            if not bvn_data.success or not bvn_data.session_id:
+                return {"success": False, "error": "BVN verification failed. Please try again."}
 
-            methods = [{"id": m.method, "title": m.hint} for m in bvn_data.methods]
+            methods = [
+                {"id": str(method.get("method") or ""), "title": str(method.get("hint") or "")}
+                for method in bvn_data.verification_methods or []
+            ]
 
             stored = await self.session.update_session_strict(
                 flow_token,
@@ -169,8 +191,8 @@ class BvnVerificationService:
 
             return {"success": True, "data": {"bvn": bvn, "methods": methods}}
 
-        except MonoApiError as e:
-            logger.error("bvn_lookup_failed", error=e.message)
+        except Exception as e:
+            logger.error("bvn_lookup_failed", error_type=type(e).__name__)
             return {"success": False, "error": "BVN verification failed. Please try again."}
 
     async def send_otp(self, flow_token: str, method: str) -> dict:
@@ -195,7 +217,13 @@ class BvnVerificationService:
             return {"success": False, "error": "Session expired. Please start over."}
 
         try:
-            await mono_client.verify_bvn(session_id, method)
+            result = await self._get_banking_provider().verify_bvn(session_id, method)
+            if not result.get("success"):
+                return {
+                    "success": False,
+                    "error": "Failed to send OTP. Please try again.",
+                    "data": {"methods": session.get("methods"), "bvn": session.get("bvn")},
+                }
 
             stored = await self.session.update_session_strict(
                 flow_token,
@@ -212,8 +240,8 @@ class BvnVerificationService:
 
             return {"success": True, "data": {"bvn": session.get("bvn")}}
 
-        except MonoApiError as e:
-            logger.error("send_otp_failed", error=e.message)
+        except Exception as e:
+            logger.error("send_otp_failed", error_type=type(e).__name__)
             return {
                 "success": False,
                 "error": "Failed to send OTP. Please try again.",
@@ -232,20 +260,23 @@ class BvnVerificationService:
             return {"success": False, "error": "Session expired. Please start over."}
 
         try:
-            accounts: list[BankAccount] = await mono_client.verify_otp(session_id, otp)
+            verification = await self._get_banking_provider().verify_otp(session_id, otp)
+            if not verification.success:
+                return {"success": False, "error": "OTP verification failed. Please try again."}
+            accounts = verification.accounts or []
             existing_account_ids = await self._get_existing_linked_account_ids(session.get("phone_number", ""))
 
             accounts_data = [
                 {
-                    "id": f"{acc.institution.bank_code}_{acc.account_number}",
-                    "account_number": acc.account_number,
-                    "bank_name": acc.institution.name,
-                    "bank_code": acc.institution.bank_code,
-                    "account_name": acc.account_name,
-                    "account_type": acc.account_type,
+                    "id": f"{acc.get('bank_code')}_{acc.get('account_number')}",
+                    "account_number": acc.get("account_number"),
+                    "bank_name": acc.get("bank_name"),
+                    "bank_code": acc.get("bank_code"),
+                    "account_name": acc.get("account_name"),
+                    "account_type": acc.get("account_type"),
                 }
                 for acc in accounts
-                if f"{acc.institution.bank_code}_{acc.account_number}" not in existing_account_ids
+                if f"{acc.get('bank_code')}_{acc.get('account_number')}" not in existing_account_ids
             ]
 
             accounts_for_flow = [
@@ -286,6 +317,6 @@ class BvnVerificationService:
                 },
             }
 
-        except MonoApiError as e:
-            logger.error("otp_verification_failed", error=e.message)
+        except Exception as e:
+            logger.error("otp_verification_failed", error_type=type(e).__name__)
             return {"success": False, "error": "OTP verification failed. Please try again."}

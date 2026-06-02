@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from banking.accounts.mandate_state import effective_mandate_status
 from shared.utils.bank_aliases import normalize_bank_name
 
 
@@ -18,7 +19,7 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
                 "account_name": account.get("account_name") or account.get("name_on_account"),
                 "account_number": account.get("account_number") or account.get("number"),
                 "currency": account.get("currency"),
-                "mandate_status": account.get("mandate_status"),
+                "mandate_status": effective_mandate_status(account),
                 "available_balance": account.get("available_balance"),
                 "balance": account.get("balance"),
                 "is_default": account.get("is_default"),
@@ -35,7 +36,7 @@ def serialize_accounts(accounts: list[Any]) -> list[dict[str, Any]]:
             "account_name": getattr(account, "account_name", None),
             "account_number": getattr(account, "account_number", None),
             "currency": getattr(account, "currency", None),
-            "mandate_status": getattr(account, "mandate_status", None),
+            "mandate_status": effective_mandate_status(account),
             "available_balance": getattr(account, "available_balance", None),
             "balance": getattr(account, "balance", None),
             "is_default": getattr(account, "is_default", None),

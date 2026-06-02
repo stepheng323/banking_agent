@@ -246,3 +246,25 @@ async def test_mono_provider_refund_status_original_success_stays_pending() -> N
 
     assert result.status == DebitStatus.PENDING
     assert result.success is True
+
+
+@pytest.mark.parametrize("status", ["cancelled", "canceled", "abandoned"])
+@pytest.mark.asyncio
+async def test_mono_provider_payment_verification_terminal_cancelled_statuses_fail(status: str) -> None:
+    provider = MonoDirectDebitProvider(
+        _MonoClientStub(
+            verify_response={
+                "id": "pay-1",
+                "reference": "ref-terminal",
+                "status": status,
+                "amount": 500000,
+                "message": "Payment did not complete",
+            }
+        )
+    )
+
+    result = await provider.get_debit_status_by_reference("ref-terminal")
+
+    assert result.status == DebitStatus.FAILED
+    assert result.success is False
+    assert result.error_message == "Payment did not complete"

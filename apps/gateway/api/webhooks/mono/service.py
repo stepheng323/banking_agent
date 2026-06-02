@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
+from banking.accounts.mandate_state import READY, normalize_mandate_status
 from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.formatters.transfer_notifications import format_transfer_success_message
@@ -22,6 +23,7 @@ from banking.transactions.runtime.funding_status import (
 from banking.transactions.runtime.transaction_debit_helpers import queue_bill_fulfillment
 from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
+from shared.config.settings import settings
 from shared.database.enums import (
     FundedTransferStatusEnum,
     FundingStepStatusEnum,
@@ -45,10 +47,13 @@ class MonoWebhookService:
     """Handles business logic for Mono webhook events."""
 
     MANDATE_STATUS_MAP = {
+        "events.mandates.created": "pending",
         "events.mandates.approved": "approved",
         "events.mandates.ready": "ready",
         "events.mandates.rejected": "rejected",
+        "events.mandates.expired": "expired",
         "events.mandate.action.cancel": "cancelled",
+        "events.mandate.action.cancelled": "cancelled",
         "events.mandate.action.pause": "paused",
         "events.mandate.action.reinstate": "ready",
     }
@@ -111,18 +116,19 @@ class MonoWebhookService:
             error_message=error_message,
         )
 
-    async def handle_mandate_event(self, event: str, data: dict[str, Any]) -> bool:
+    async def handle_mandate_event(self, event: str, data: dict[str, Any], *, event_id: str | None = None) -> bool:
         """
         Handle mandate lifecycle events.
 
         Returns True if event was processed, False if ignored.
         """
-        new_status = self.MANDATE_STATUS_MAP.get(event)
+        mandate_data = self._mandate_payload(data)
+        new_status = self._mandate_status_for_event(event, mandate_data)
         if not new_status:
-            logger.debug("mandate_event_ignored", event_name=event)
-            return False
+            logger.warning("mandate_event_status_ignored", event_name=event)
+            return True
 
-        mandate_id = data.get("id")
+        mandate_id = mandate_data.get("id") or mandate_data.get("mandate")
         if not mandate_id:
             logger.warning("mono_webhook_no_mandate_id", event_name=event)
             return False
@@ -131,10 +137,30 @@ class MonoWebhookService:
             if not uow.accounts:
                 return False
 
-            account = await uow.accounts.update_mandate_status(mandate_id, new_status)
+            apply_event = getattr(uow.accounts, "apply_mandate_status_event", None)
+            if apply_event:
+                account, applied = await apply_event(
+                    str(mandate_id),
+                    new_status,
+                    event_name=event,
+                    event_id=event_id,
+                    provider_payload=mandate_data,
+                )
+            else:
+                account = await uow.accounts.update_mandate_status(str(mandate_id), new_status)
+                applied = bool(account)
             if not account:
                 logger.warning("mandate_not_found", mandate_id_hash=log_fingerprint(str(mandate_id)))
                 return False
+            if not applied:
+                logger.info(
+                    "mandate_status_update_ignored",
+                    mandate_id_hash=log_fingerprint(str(mandate_id)),
+                    incoming_status=new_status,
+                    current_status=getattr(account, "mandate_status", None),
+                    event_name=event,
+                )
+                return True
 
             logger.info(
                 "mandate_status_updated",
@@ -147,7 +173,7 @@ class MonoWebhookService:
             if user and user.phone_number:
                 await self._invalidate_cache(user.phone_number)
 
-                if new_status == "ready":
+                if new_status == READY:
                     # Determine user's active channel (default to whatsapp if none found)
                     channel = "whatsapp"
                     result = await uow.db.execute(
@@ -361,6 +387,30 @@ class MonoWebhookService:
         if isinstance(nested, dict):
             return {**data, **nested}
         return data
+
+    @staticmethod
+    def _mandate_payload(data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize Mono mandate lifecycle webhook payload shapes."""
+        for nested_key in ("object", "approved_mandate"):
+            nested = data.get(nested_key)
+            if isinstance(nested, dict):
+                return {**data, **nested}
+        if data.get("mandate") and not data.get("id"):
+            return {**data, "id": data.get("mandate")}
+        return data
+
+    @classmethod
+    def _mandate_status_for_event(cls, event: str, data: dict[str, Any]) -> str | None:
+        """Map a Mono mandate event to a safe internal status."""
+        status = cls.MANDATE_STATUS_MAP.get(event)
+        if not status:
+            return None
+        if status == READY and data.get("ready_to_debit") is False:
+            provider_status = normalize_mandate_status(data.get("status"))
+            if provider_status in {"pending", "approved", "paused"}:
+                return provider_status
+            return None
+        return status
 
     @staticmethod
     def _response_code(data: dict[str, Any]) -> str | None:
@@ -677,6 +727,7 @@ class MonoWebhookService:
         """Queue payout job after all debits complete."""
         try:
             amount_naira = naira_to_json(transfer.amount) or "0.00"
+            payout_provider_name = transfer.payout_provider or settings.payout_provider_name
             await self.publisher.publish(
                 topic="payout.process",
                 message={
@@ -685,9 +736,9 @@ class MonoWebhookService:
                     "amount_naira": amount_naira,
                     "recipient_account": transfer.recipient_account_number,
                     "recipient_bank_code": transfer.recipient_bank_code,
-                    "recipient_bank_code_provider": transfer.payout_provider or "flutterwave",
-                    "recipient_resolution_provider": transfer.payout_provider or "flutterwave",
-                    "payout_provider": transfer.payout_provider or "flutterwave",
+                    "recipient_bank_code_provider": payout_provider_name,
+                    "recipient_resolution_provider": payout_provider_name,
+                    "payout_provider": payout_provider_name,
                     "idempotency_key": transfer.idempotency_key,
                 },
             )

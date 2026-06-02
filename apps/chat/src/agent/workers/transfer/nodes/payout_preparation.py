@@ -11,6 +11,7 @@ from apps.chat.src.agent.workers.transfer.models.types import (
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
 from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
 from banking.presentation.i18n.renderer import render_message
+from shared.config.settings import settings
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -34,8 +35,8 @@ def _is_multi_source_funding_plan(plan: dict[str, Any] | None) -> bool:
     return isinstance(plan, dict) and plan.get("is_single_source") is False
 
 
-def _provider_name(provider: Any, default: str = "flutterwave") -> str:
-    return str(getattr(provider, "provider_name", None) or default).strip().lower()
+def _provider_name(provider: Any, default: str | None = None) -> str:
+    return str(getattr(provider, "provider_name", None) or default or settings.payout_resolver_provider_name).strip().lower()
 
 
 def _ask_account_and_bank_prompt(locale: str, recipient_name: str | None) -> str:

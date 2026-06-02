@@ -15,6 +15,7 @@ from banking.transactions.runtime.async_group_types import AsyncGroupRedis
 from banking.transactions.runtime.bill_completion_notifications import BillCompletionNotifier
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
+from shared.observability.events import emit_operational_event
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -54,14 +55,22 @@ def _is_authorized_mono_webhook(request: Request) -> bool:
     if not configured_secret:
         if settings.runtime.is_local:
             return True
+        emit_operational_event("mono_webhook_secret_not_configured", severity="critical", domain="webhook")
         logger.error("mono_webhook_secret_not_configured")
         return False
 
     if not provided_secret:
+        emit_operational_event("mono_webhook_missing_secret_header", severity="high", domain="webhook")
         logger.warning("mono_webhook_missing_secret_header")
         return False
 
     if not hmac.compare_digest(provided_secret, configured_secret):
+        emit_operational_event(
+            "mono_webhook_invalid_secret",
+            severity="high",
+            domain="webhook",
+            identifiers={"secret": provided_secret},
+        )
         logger.warning("mono_webhook_invalid_secret", secret_hash=log_fingerprint(provided_secret))
         return False
 
@@ -124,6 +133,13 @@ async def mono_webhook(request: Request) -> Response:
         if event_id:
             claimed = await _claim_mono_webhook_event(event_id=event_id, event_name=event, payload=payload)
             if not claimed:
+                emit_operational_event(
+                    "mono_webhook_duplicate_ignored",
+                    severity="info",
+                    domain="webhook",
+                    identifiers={"event_id": event_id},
+                    details={"event_name": event},
+                )
                 logger.info(
                     "mono_webhook_duplicate_ignored",
                     event_name=event,
@@ -142,7 +158,7 @@ async def mono_webhook(request: Request) -> Response:
             return Response(status_code=200)
 
         if event in service.MANDATE_STATUS_MAP:
-            handled = await service.handle_mandate_event(event, data)
+            handled = await service.handle_mandate_event(event, data, event_id=event_id)
             if handled:
                 await _mark_mono_webhook_event_processed(event_id=event_id)
             else:
@@ -150,10 +166,24 @@ async def mono_webhook(request: Request) -> Response:
             return Response(status_code=200)
 
         logger.debug("mono_webhook_ignored", event_name=event)
+        emit_operational_event(
+            "mono_webhook_unknown_event_ignored",
+            severity="warning",
+            domain="webhook",
+            identifiers={"event_id": event_id, "data_id": data.get("id") if isinstance(data, dict) else None},
+            details={"event_name": event},
+        )
         await _mark_mono_webhook_event_processed(event_id=event_id)
         return Response(status_code=200)
 
     except Exception as e:
+        emit_operational_event(
+            "mono_webhook_processing_failed",
+            severity="high",
+            domain="webhook",
+            identifiers={"event_id": event_id},
+            details={"error_type": type(e).__name__},
+        )
         try:
             await _mark_mono_webhook_event_failed(event_id=event_id, error=str(e))
         except Exception as mark_error:

@@ -44,7 +44,6 @@ from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.providers import ProviderFactory
-from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.config.settings import settings
 from shared.database.connection import get_db_session
 from shared.queue.contracts import get_contract_by_topic
@@ -133,16 +132,20 @@ def _build_orchestrator_runtime_bundle(
     onboarding_executor = OnboardingExecutor(user_repository, onboarding_service)
 
     beneficiary_suggestion_service = BeneficiarySuggestionService(queue_publisher)
-    bank_data_provider = ProviderFactory.get_bank_data_provider("mono")
+    bank_data_provider = ProviderFactory.get_bank_data_provider()
     if bank_data_provider is None:
-        raise RuntimeError("Mono bank data provider is not configured")
+        raise RuntimeError(f"Account provider bank-data capability is not configured: {settings.account_provider_name}")
     resolver_provider = ProviderFactory.get_resolver_for_flow("transfer")
     if resolver_provider is None:
-        raise RuntimeError("Transfer resolver provider is not configured")
+        raise RuntimeError(f"Transfer resolver provider is not configured: {settings.transfer_resolver_provider_name}")
     payout_resolver_provider = ProviderFactory.get_resolver_for_flow("payout")
     if payout_resolver_provider is None:
-        raise RuntimeError("Payout resolver provider is not configured")
-    direct_debit_provider = MonoDirectDebitProvider()
+        raise RuntimeError(f"Payout resolver provider is not configured: {settings.payout_resolver_provider_name}")
+    direct_debit_provider = ProviderFactory.get_direct_debit_provider()
+    if direct_debit_provider is None:
+        raise RuntimeError(
+            f"Account provider direct-debit capability is not configured: {settings.account_provider_name}"
+        )
 
     account_worker = AccountWorker(
         account_repo=account_repository,
@@ -182,8 +185,11 @@ def _build_orchestrator_runtime_bundle(
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
-    bank_cache_service = BankCacheService(redis_client=shared_redis, provider_name="mono")
-    payout_bank_cache_service = BankCacheService(redis_client=shared_redis, provider_name="flutterwave")
+    bank_cache_service = BankCacheService(redis_client=shared_redis, provider_name=resolver_provider.provider_name)
+    payout_bank_cache_service = BankCacheService(
+        redis_client=shared_redis,
+        provider_name=payout_resolver_provider.provider_name,
+    )
 
     agent_airtime_worker = AirtimeWorker(
         extractor=AirtimeEntityExtractor(llm=extractor_chat),

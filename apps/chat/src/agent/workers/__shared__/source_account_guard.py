@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
+from banking.accounts.mandate_state import PENDING, effective_mandate_status, is_mandate_debit_ready
+from banking.accounts.onboarding.mandate_messages import build_mandate_status_message, build_pending_mandate_message
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.bank_aliases import get_bank_search_terms, normalize_bank_name
 
@@ -55,17 +56,16 @@ def find_account_by_bank_name(accounts: list[dict[str, Any]], bank_name: str | N
 def is_account_ready(account: dict[str, Any] | None) -> bool:
     if not account:
         return False
-    status = str(account.get("mandate_status") or "").strip().lower()
-    return status == "ready"
+    return is_mandate_debit_ready(account)
 
 
 def build_nonready_source_account_message(account: dict[str, Any], locale: str) -> str:
     bank_name = str(account.get("bank_name") or render_message("mandate.bank_fallback", locale))
-    status = str(account.get("mandate_status") or "").strip().lower()
-    if status == "pending":
+    status = effective_mandate_status(account)
+    if status == PENDING:
         pending_message = build_pending_mandate_message([account], locale)
         return f"Your {bank_name} account is linked, but it is not ready for payments yet.\n\n{pending_message}"
     return (
         f"Your {bank_name} account is linked, but it is not ready for direct debit yet.\n\n"
-        f"{render_message('mandate.status_not_ready', locale)}"
+        f"{build_mandate_status_message(account, locale)}"
     )

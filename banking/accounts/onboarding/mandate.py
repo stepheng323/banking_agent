@@ -4,11 +4,13 @@ import uuid as uuid_module
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from banking.accounts.mandate_state import mandate_authorization_metadata
 from banking.accounts.onboarding.mandate_messages import format_mandate_auth_message
 from banking.persistence.unit_of_work import UnitOfWork
 from shared.cache.user_data import UserDataCache
-from shared.clients.providers.mono.client import mono_client
-from shared.clients.providers.mono.models import MonoApiError
+from shared.clients.abstractions.account_authorization import AccountAuthorizationProvider
+from shared.clients.factories.providers import ProviderFactory
+from shared.config.settings import settings
 from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -21,8 +23,13 @@ logger = get_logger(__name__)
 class MandateService:
     """Handles mandate creation, reinitiation, and notifications."""
 
-    def __init__(self, delivery_service: "DeliveryService | None" = None) -> None:
+    def __init__(
+        self,
+        delivery_service: "DeliveryService | None" = None,
+        authorization_provider: AccountAuthorizationProvider | None = None,
+    ) -> None:
         self.delivery_service = delivery_service
+        self.authorization_provider = authorization_provider
 
     def _get_delivery_service(self) -> "DeliveryService":
         from banking.messaging.delivery.service import DeliveryService
@@ -30,6 +37,16 @@ class MandateService:
         if self.delivery_service is None:
             self.delivery_service = DeliveryService()
         return self.delivery_service
+
+    def _get_authorization_provider(self) -> AccountAuthorizationProvider:
+        if self.authorization_provider is None:
+            provider = ProviderFactory.get_account_authorization_provider()
+            if provider is None:
+                raise RuntimeError(
+                    f"Account provider authorization capability is not configured: {settings.account_provider_name}"
+                )
+            self.authorization_provider = provider
+        return self.authorization_provider
 
     async def enqueue_outbox_say(self, phone_number: str, text: str, channel: str = "whatsapp") -> None:
         await self._get_delivery_service().deliver_text(
@@ -85,17 +102,19 @@ class MandateService:
         end_date = (utc_now_naive() + timedelta(days=365)).strftime("%Y-%m-%d")
 
         try:
-            mandate = await mono_client.create_mandate(
+            provider = self._get_authorization_provider()
+            mandate = await provider.create_mandate(
                 customer_id=mono_customer_id,
                 account_number=account_number,
                 bank_code=bank_code,
-                amount=100000000,  # Max amount in kobo
+                maximum_debit_amount_minor=100000000,
                 reference=mandate_reference,
                 start_date=start_date,
                 end_date=end_date,
             )
             logger.info(
                 "mandate_created",
+                provider=provider.provider_name,
                 mandate_id_hash=log_fingerprint(mandate.id),
                 phone_hash=log_fingerprint(phone_number),
             )
@@ -104,18 +123,20 @@ class MandateService:
                 if uow.accounts:
                     db_account = await uow.accounts.get_by_account_id(account_id)
                     if db_account:
+                        created_at = utc_now_naive()
                         db_account.mandate_id = mandate.id
                         db_account.mandate_status = "pending"
                         transfer_destinations = mandate.transfer_destinations or []
+                        transfer_destination_payload = [
+                            {"bank_name": dest.bank_name, "account_number": dest.account_number}
+                            for dest in transfer_destinations
+                        ]
                         existing_extra = db_account.extra_data or {}
-                        db_account.extra_data = {
-                            **existing_extra,
-                            "mandate_created_at": utc_now_naive().isoformat(),
-                            "transfer_destinations": [
-                                {"bank_name": dest.bank_name, "account_number": dest.account_number}
-                                for dest in transfer_destinations
-                            ],
-                        }
+                        db_account.extra_data = mandate_authorization_metadata(
+                            existing_extra,
+                            created_at=created_at,
+                            transfer_destinations=transfer_destination_payload,
+                        )
 
             try:
                 cache = UserDataCache()
@@ -125,7 +146,7 @@ class MandateService:
 
             return {"success": True, "mandate": mandate}
 
-        except MonoApiError as e:
+        except Exception as e:
             logger.error(
                 "mandate_creation_failed",
                 error_type=type(e).__name__,
@@ -167,17 +188,19 @@ class MandateService:
             start_date = utc_now_naive().strftime("%Y-%m-%d")
             end_date = (utc_now_naive() + timedelta(days=365)).strftime("%Y-%m-%d")
 
-            mandate = await mono_client.create_mandate(
+            provider = self._get_authorization_provider()
+            mandate = await provider.create_mandate(
                 customer_id=mono_customer_id,
                 account_number=account_number,
                 bank_code=bank_code,
-                amount=100000000,
+                maximum_debit_amount_minor=100000000,
                 reference=mandate_reference,
                 start_date=start_date,
                 end_date=end_date,
             )
             logger.info(
                 "mandate_reinitiated",
+                provider=provider.provider_name,
                 mandate_id_hash=log_fingerprint(mandate.id),
                 phone_hash=log_fingerprint(phone_number),
                 account_id_hash=log_fingerprint(account_id),
@@ -188,18 +211,20 @@ class MandateService:
                 if uow.accounts:
                     db_account = await uow.accounts.get_by_account_id(account_id)
                     if db_account:
+                        created_at = utc_now_naive()
                         db_account.mandate_id = mandate.id
                         db_account.mandate_status = "pending"
                         transfer_destinations = mandate.transfer_destinations or []
+                        transfer_destination_payload = [
+                            {"bank_name": dest.bank_name, "account_number": dest.account_number}
+                            for dest in transfer_destinations
+                        ]
                         existing_extra = db_account.extra_data or {}
-                        db_account.extra_data = {
-                            **existing_extra,
-                            "mandate_created_at": utc_now_naive().isoformat(),
-                            "transfer_destinations": [
-                                {"bank_name": dest.bank_name, "account_number": dest.account_number}
-                                for dest in transfer_destinations
-                            ],
-                        }
+                        db_account.extra_data = mandate_authorization_metadata(
+                            existing_extra,
+                            created_at=created_at,
+                            transfer_destinations=transfer_destination_payload,
+                        )
 
             try:
                 cache = UserDataCache()
@@ -221,13 +246,6 @@ class MandateService:
                 "data": {"message": "Mandate reinitiated successfully"},
             }
 
-        except MonoApiError as e:
-            logger.error(
-                "reinitiate_mandate_mono_error",
-                error_type=type(e).__name__,
-                phone_hash=log_fingerprint(phone_number),
-            )
-            return {"success": False, "error": f"Failed to reinitiate mandate: {e}"}
         except Exception as e:
             logger.error(
                 "reinitiate_mandate_error",

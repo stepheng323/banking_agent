@@ -32,6 +32,7 @@ from banking.beneficiaries.services.matcher import BeneficiaryMatcher
 from banking.presentation.formatters.currency import format_naira_compact
 from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
 from banking.presentation.i18n.renderer import render_message
+from shared.config.settings import settings
 from shared.database.models import Beneficiary
 from shared.utils.logging import get_logger
 
@@ -269,8 +270,8 @@ async def resolve_beneficiary(
                     "recipient_account": str(candidate_account.get("account_number")),
                     "recipient_bank_code": str(candidate_account.get("bank_code")),
                     "recipient_bank_name": candidate_account.get("bank_name"),
-                    "recipient_bank_code_provider": "mono",
-                    "recipient_resolution_provider": "mono",
+                    "recipient_bank_code_provider": settings.transfer_resolver_provider_name,
+                    "recipient_resolution_provider": settings.transfer_resolver_provider_name,
                     "recipient_resolved_name": render_message(
                         "transfer.resolve.my_bank_account",
                         locale,

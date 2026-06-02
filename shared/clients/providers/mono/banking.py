@@ -30,7 +30,7 @@ class MonoBankingProvider(BankDataProvider):
 
     @property
     def is_available(self) -> bool:
-        return bool(settings.mono_api_key)
+        return bool(settings.mono_api_key) or settings.use_mono_mock
 
     async def get_account(self, account_id: str) -> AccountData | None:
         try:
