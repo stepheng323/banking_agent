@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_te
     semantic_tokens,
     token_matches_searchable,
 )
+from banking.accounts.mandate_state import effective_mandate_status
 from shared.money import MoneyAmount, to_naira
 
 SEARCHABLE_DATA_KEYS = (
@@ -112,7 +113,7 @@ def account_status_grounded_entities(frame: ContextFrame, text: str) -> list[Con
     matches: list[ContextEntity] = []
     for entity in frame.items:
         data = entity.data if isinstance(entity.data, dict) else {}
-        status = str(data.get("mandate_status") or data.get("status") or "").strip().lower()
+        status = effective_mandate_status(data)
         if not status or not any(token_matches_searchable(token, status) for token in tokens):
             continue
 

@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import _clip_text
+from banking.accounts.mandate_state import PENDING, READY, effective_mandate_status
 from shared.money import naira_to_json
 from shared.utils.json import json_dumps_safe
 
@@ -90,10 +91,10 @@ def _build_account_lines(accounts: list[dict[str, Any]]) -> tuple[list[str], int
         bank = str(acc.get("bank_name") or "Unknown Bank")
         num = str(acc.get("account_number") or "")
         masked = _mask_account_number(num)
-        status = str(acc.get("mandate_status") or "unknown")
+        status = effective_mandate_status(acc) or "unknown"
         default_tag = " (default)" if acc.get("is_default") else ""
         line = f"{bank} ({masked}) — mandate: {status}{default_tag}"
-        if status == "pending":
+        if status == PENDING:
             extra = acc.get("extra_data", {})
             dests = extra.get("transfer_destinations", []) if isinstance(extra, dict) else []
             if isinstance(dests, list) and dests:
@@ -102,7 +103,7 @@ def _build_account_lines(accounts: list[dict[str, Any]]) -> tuple[list[str], int
                 dest_num = first_dest.get("account_number")
                 if dest_bank and dest_num:
                     line += f" | Activate: ₦50 to {dest_bank} ({dest_num})"
-        elif status == "ready":
+        elif status == READY:
             line = f"{bank} ({masked}) — mandate: ready ✓{default_tag}"
         lines.append(line)
     return lines, max(0, len(accounts) - len(lines))

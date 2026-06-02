@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_con
     CONTEXT_READ_LIST_LIMIT,
     TRANSACTION_EXECUTORS,
 )
+from banking.accounts.mandate_state import READY, effective_mandate_status
 
 
 def _has_context_for_read_subtype(state: OrchestratorState, subtype: str) -> bool:
@@ -26,7 +27,9 @@ def _has_context_for_read_subtype(state: OrchestratorState, subtype: str) -> boo
     if subtype == "default_account_identity":
         return isinstance(accounts_raw, list) and any(bool(acc.get("is_default")) for acc in accounts)
     if subtype == "pending_mandate_explanation":
-        return isinstance(accounts_raw, list) and any(acc.get("mandate_status") == "pending" for acc in accounts)
+        return isinstance(accounts_raw, list) and any(
+            bool(status := effective_mandate_status(acc)) and status != READY for acc in accounts
+        )
     if subtype in CONTEXT_READ_BENEFICIARY_SUBTYPES:
         return isinstance(beneficiaries_raw, list)
     if subtype in CONTEXT_READ_FLOW_SUBTYPES:

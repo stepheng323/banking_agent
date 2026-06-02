@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from banking.accounts.mandate_state import READY, effective_mandate_status
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.bank_aliases import BANK_ALIASES, get_bank_search_terms, normalize_bank_name
@@ -58,8 +59,8 @@ def synthesize_account_context_read_response(
         return None
 
     bank_name = str(match.get("bank_name") or render_message("mandate.bank_fallback", locale))
-    status = str(match.get("mandate_status") or "").strip().lower()
-    if status == "ready":
+    status = effective_mandate_status(match)
+    if status == READY:
         return f"Yes, you have {bank_name} linked and ready."
 
     pending_message = build_pending_mandate_message([match], locale)

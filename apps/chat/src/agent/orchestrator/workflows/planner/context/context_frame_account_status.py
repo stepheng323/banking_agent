@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
+from banking.accounts.mandate_state import READY, effective_mandate_status
 
 
 def pending_account_entities(frame: ContextFrame) -> list[ContextEntity]:
@@ -12,26 +13,28 @@ def pending_account_entities(frame: ContextFrame) -> list[ContextEntity]:
     entities: list[ContextEntity] = []
     for entity in frame.items:
         data = entity.data if isinstance(entity.data, dict) else {}
-        status = str(data.get("mandate_status") or data.get("status") or "").strip().lower()
-        if status and status != "ready":
+        status = effective_mandate_status(data)
+        if status and status != READY:
             entities.append(entity)
     return entities
 
 
 def format_account_status_explanation(entity: ContextEntity) -> str | None:
     data = entity.data if isinstance(entity.data, dict) else {}
-    status = str(data.get("mandate_status") or data.get("status") or "").strip()
+    display_status = str(data.get("mandate_status") or data.get("status") or "").strip()
+    status = effective_mandate_status(data)
     if not status:
         return None
 
     label = entity.label or str(data.get("bank_name") or "This account")
     normalized_status = status.lower()
     if normalized_status in {"pending", "awaiting_authorization"}:
-        readable_status = "pending" if normalized_status == "pending" else "awaiting authorization"
+        raw_display = display_status or status
+        readable_status = "awaiting authorization" if raw_display.lower() == "awaiting_authorization" else "pending"
         lines = [
             f"{label} is still {readable_status} because the account authorization is not complete yet.",
             "",
-            f"Mandate Status: {status}",
+            f"Mandate Status: {raw_display}",
         ]
         lines.extend(["", _format_account_status_instruction(normalized_status, data)])
         return "\n".join(lines)
