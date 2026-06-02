@@ -5,6 +5,7 @@ from typing import Any
 
 from banking.persistence.unit_of_work import UnitOfWork
 from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus
+from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.money import naira_to_json
 from shared.queue.adapter import QueuePublisher
@@ -77,6 +78,7 @@ async def queue_payout_if_all_confirmed(
     transfer.funding_completed_at = datetime.now(UTC).replace(tzinfo=None)
     await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
     amount_naira = naira_to_json(transfer.amount) or "0.00"
+    payout_provider_name = transfer.payout_provider or settings.payout_provider_name
     try:
         await publisher.publish(
             topic="payout.process",
@@ -86,9 +88,9 @@ async def queue_payout_if_all_confirmed(
                 "amount_naira": amount_naira,
                 "recipient_account": transfer.recipient_account_number,
                 "recipient_bank_code": transfer.recipient_bank_code,
-                "recipient_bank_code_provider": transfer.payout_provider or "flutterwave",
-                "recipient_resolution_provider": transfer.payout_provider or "flutterwave",
-                "payout_provider": transfer.payout_provider or "flutterwave",
+                "recipient_bank_code_provider": payout_provider_name,
+                "recipient_resolution_provider": payout_provider_name,
+                "payout_provider": payout_provider_name,
                 "idempotency_key": transfer.idempotency_key,
                 "narration": getattr(transfer, "narration", None),
             },

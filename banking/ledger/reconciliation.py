@@ -28,6 +28,7 @@ from shared.database.enums import (
     TransactionTypeEnum,
 )
 from shared.money import require_naira
+from shared.observability.events import emit_operational_event
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -763,6 +764,17 @@ class LedgerExposureReconciliationConsumer:
                 finding.support_ticket_id = ticket.id
                 if uow.db:
                     uow.db.add(finding)
+                emit_operational_event(
+                    "ledger_reconciliation_support_ticket_reused",
+                    severity="info",
+                    domain="ledger",
+                    identifiers={
+                        "support_ticket_id": getattr(ticket, "id", None),
+                        "funded_transfer_id": getattr(transfer, "id", None),
+                        "finding_key": getattr(finding, "finding_key", None),
+                    },
+                    details={"finding_type": getattr(finding, "finding_type", None)},
+                )
                 return
 
         ticket_code = await tickets.generate_ticket_code()
@@ -787,6 +799,17 @@ class LedgerExposureReconciliationConsumer:
         finding.support_ticket_id = ticket.id
         if uow.db:
             uow.db.add(finding)
+        emit_operational_event(
+            "ledger_reconciliation_support_ticket_created",
+            severity="critical" if getattr(finding, "severity", "") == "critical" else "high",
+            domain="ledger",
+            identifiers={
+                "support_ticket_id": getattr(ticket, "id", None),
+                "funded_transfer_id": getattr(transfer, "id", None),
+                "finding_key": getattr(finding, "finding_key", None),
+            },
+            details={"finding_type": getattr(finding, "finding_type", None)},
+        )
 
     async def _ensure_transaction_support_ticket(self, uow: UnitOfWork, transaction: Any, finding: Any) -> None:
         if not settings.ledger_findings_create_support_ticket:
@@ -801,6 +824,17 @@ class LedgerExposureReconciliationConsumer:
                 finding.support_ticket_id = ticket.id
                 if uow.db:
                     uow.db.add(finding)
+                emit_operational_event(
+                    "ledger_reconciliation_support_ticket_reused",
+                    severity="info",
+                    domain="ledger",
+                    identifiers={
+                        "support_ticket_id": getattr(ticket, "id", None),
+                        "transaction_id": getattr(transaction, "id", None),
+                        "finding_key": getattr(finding, "finding_key", None),
+                    },
+                    details={"finding_type": getattr(finding, "finding_type", None)},
+                )
                 return
 
         ticket_code = await tickets.generate_ticket_code()
@@ -825,6 +859,17 @@ class LedgerExposureReconciliationConsumer:
         finding.support_ticket_id = ticket.id
         if uow.db:
             uow.db.add(finding)
+        emit_operational_event(
+            "ledger_reconciliation_support_ticket_created",
+            severity="critical" if getattr(finding, "severity", "") == "critical" else "high",
+            domain="ledger",
+            identifiers={
+                "support_ticket_id": getattr(ticket, "id", None),
+                "transaction_id": getattr(transaction, "id", None),
+                "finding_key": getattr(finding, "finding_key", None),
+            },
+            details={"finding_type": getattr(finding, "finding_type", None)},
+        )
 
     @staticmethod
     def _is_terminal_transfer(transfer: Any) -> bool:

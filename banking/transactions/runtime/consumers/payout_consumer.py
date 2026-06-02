@@ -5,6 +5,7 @@ from typing import Any
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.executors.payout import PayoutExecutor
 from banking.transactions.runtime.payout_status import apply_payout_result
+from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum
 from shared.money import naira_to_json
 from shared.queue.adapter import QueuePublisher
@@ -97,6 +98,7 @@ class PayoutConsumer:
                 or naira_to_json(getattr(transfer, "amount", None))
                 or "0.00"
             )
+            payout_provider_name = getattr(transfer, "payout_provider", None) or settings.payout_provider_name
             return {
                 **payload,
                 "funded_transfer_id": str(transfer.id),
@@ -107,14 +109,10 @@ class PayoutConsumer:
                 "recipient_bank_code": payload.get("recipient_bank_code")
                 or getattr(transfer, "recipient_bank_code", ""),
                 "recipient_bank_code_provider": payload.get("recipient_bank_code_provider")
-                or getattr(transfer, "payout_provider", None)
-                or "flutterwave",
+                or payout_provider_name,
                 "recipient_resolution_provider": payload.get("recipient_resolution_provider")
-                or getattr(transfer, "payout_provider", None)
-                or "flutterwave",
-                "payout_provider": payload.get("payout_provider")
-                or getattr(transfer, "payout_provider", None)
-                or "flutterwave",
+                or payout_provider_name,
+                "payout_provider": payload.get("payout_provider") or payout_provider_name,
                 "idempotency_key": reference,
                 "narration": payload.get("narration") or getattr(transfer, "narration", None),
             }

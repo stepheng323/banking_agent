@@ -11,6 +11,7 @@ from shared.clients.abstractions.payment import PayoutProvider
 from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
 from shared.money import naira_to_json, to_naira
+from shared.observability.events import emit_operational_event
 from shared.queue.adapter import QueuePublisher
 from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
@@ -59,6 +60,13 @@ class PayoutReconciliationConsumer:
                 )
                 for transfer in transfers
             ]
+        if targets:
+            emit_operational_event(
+                "payout_stuck_transfers_found",
+                severity="warning",
+                domain="payout",
+                details={"count": len(targets), "min_age_seconds": min_age_seconds},
+            )
 
         for target in targets:
             await self._reconcile_target(target)
@@ -152,7 +160,7 @@ class PayoutReconciliationConsumer:
                 transfer=transfer,
                 result=result,
                 publisher=self.publisher,
-                provider_name=getattr(self.payout_provider, "provider_name", "flutterwave"),
+                provider_name=getattr(self.payout_provider, "provider_name", settings.payout_provider_name),
             )
             if outcome == "pending":
                 transfer.payout_retry_count = int(transfer.payout_retry_count or 0) + 1
@@ -171,7 +179,7 @@ class PayoutReconciliationConsumer:
                             "error": error,
                         },
                         publisher=self.publisher,
-                        provider_name=getattr(self.payout_provider, "provider_name", "flutterwave"),
+                        provider_name=getattr(self.payout_provider, "provider_name", settings.payout_provider_name),
                     )
             if uow.db is not None:
                 uow.db.add(transfer)
@@ -183,12 +191,26 @@ class PayoutReconciliationConsumer:
                 outcome=outcome,
                 provider_status=result.get("provider_status") or result.get("status"),
             )
+            emit_operational_event(
+                "payout_reconciliation_applied",
+                severity="high" if outcome == "failed" else "warning" if outcome == "pending" else "info",
+                domain="payout",
+                identifiers={"funded_transfer_id": transfer.id},
+                details={
+                    "outcome": outcome,
+                    "provider_status": result.get("provider_status") or result.get("status"),
+                },
+            )
 
     async def _queue_unclaimed_payout(self, transfer: Any) -> None:
         if not self.publisher:
             logger.error("payout_reconciliation_publish_unavailable", funded_transfer_id=str(transfer.id))
             return
         amount_naira = naira_to_json(getattr(transfer, "amount", None)) or "0.00"
+        payout_provider_name = (
+            getattr(transfer, "payout_provider", None)
+            or getattr(self.payout_provider, "provider_name", settings.payout_provider_name)
+        )
         await self.publisher.publish(
             topic="payout.process",
             message={
@@ -197,14 +219,20 @@ class PayoutReconciliationConsumer:
                 "amount_naira": amount_naira,
                 "recipient_account": getattr(transfer, "recipient_account_number", ""),
                 "recipient_bank_code": getattr(transfer, "recipient_bank_code", ""),
-                "recipient_bank_code_provider": getattr(transfer, "payout_provider", None) or "flutterwave",
-                "recipient_resolution_provider": getattr(transfer, "payout_provider", None) or "flutterwave",
-                "payout_provider": getattr(transfer, "payout_provider", None) or "flutterwave",
+                "recipient_bank_code_provider": payout_provider_name,
+                "recipient_resolution_provider": payout_provider_name,
+                "payout_provider": payout_provider_name,
                 "idempotency_key": transfer.idempotency_key,
                 "narration": getattr(transfer, "narration", None),
             },
         )
         logger.info("payout_reconciliation_requeued_unclaimed_payout", funded_transfer_id=str(transfer.id))
+        emit_operational_event(
+            "payout_reconciliation_requeued_unclaimed_payout",
+            severity="warning",
+            domain="payout",
+            identifiers={"funded_transfer_id": transfer.id},
+        )
 
     async def _fetch_provider_result(self, target: PayoutReconciliationTarget) -> dict[str, Any]:
         """Fetch the authoritative payout state from Flutterwave."""
@@ -234,7 +262,7 @@ class PayoutReconciliationConsumer:
             return {
                 "success": False,
                 "status": "pending",
-                "provider": getattr(self.payout_provider, "provider_name", "flutterwave"),
+                "provider": getattr(self.payout_provider, "provider_name", settings.payout_provider_name),
                 "error": "Payout reconciliation requires provider transfer id or reference",
                 "reference": reference,
             }
@@ -285,6 +313,13 @@ class PayoutReconciliationConsumer:
                 uow.db.add(tx)
         if uow.db is not None:
             uow.db.add(transfer)
+        emit_operational_event(
+            "payout_reconciliation_mismatch",
+            severity="critical",
+            domain="payout",
+            identifiers={"funded_transfer_id": transfer.id},
+            details={"error_type": "provider_result_mismatch"},
+        )
         logger.error(
             "payout_reconciliation_mismatch",
             funded_transfer_id=str(transfer.id),

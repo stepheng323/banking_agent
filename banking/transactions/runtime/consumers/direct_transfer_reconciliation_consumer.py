@@ -10,6 +10,7 @@ from banking.transactions.runtime.transfer_completion_notifications import Trans
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import TransactionStatusEnum
+from shared.observability.events import emit_operational_event
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -39,6 +40,13 @@ class DirectTransferReconciliationConsumer:
             if not uow.transactions:
                 return
             transactions = await uow.transactions.list_recoverable_direct_transfers(cutoff=cutoff, limit=limit)
+        if transactions:
+            emit_operational_event(
+                "direct_transfer_stuck_transactions_found",
+                severity="warning",
+                domain="direct_transfer",
+                details={"count": len(transactions), "min_age_seconds": min_age},
+            )
 
         for tx in transactions:
             await self._process_one(str(tx.id), reference=getattr(tx, "idempotency_key", None))
@@ -78,6 +86,17 @@ class DirectTransferReconciliationConsumer:
             outcome=outcome,
             provider_status=getattr(result.status, "value", result.status),
             found=bool(notifiable_transaction),
+        )
+        emit_operational_event(
+            "direct_transfer_reconciliation_applied",
+            severity="high" if outcome == "failed" else "warning" if outcome == "processing" else "info",
+            domain="direct_transfer",
+            identifiers={"transaction_id": transaction_id},
+            details={
+                "outcome": outcome,
+                "provider_status": getattr(result.status, "value", result.status),
+                "found": bool(notifiable_transaction),
+            },
         )
         if (
             self.notifier

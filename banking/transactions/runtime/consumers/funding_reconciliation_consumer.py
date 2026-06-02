@@ -15,6 +15,7 @@ from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus, D
 from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum
 from shared.money import naira_to_json, require_naira
+from shared.observability.events import emit_operational_event
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -59,6 +60,13 @@ class FundingReconciliationConsumer:
                 )
                 for step in steps
             ]
+        if targets:
+            emit_operational_event(
+                "funding_stuck_steps_found",
+                severity="warning",
+                domain="funding",
+                details={"count": len(targets), "min_age_seconds": min_age_seconds},
+            )
 
         for target in targets:
             await self._reconcile_target(target)
@@ -235,6 +243,13 @@ class FundingReconciliationConsumer:
                 provider_reference=result.reference or getattr(step, "provider_reference", None),
             )
             await queue_payout_if_all_confirmed(uow=uow, transfer=transfer, publisher=self.publisher)
+            emit_operational_event(
+                "funding_reconciliation_repaired",
+                severity="info",
+                domain="funding",
+                identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
+                details={"status": "confirmed"},
+            )
             return
 
         if result.status in {DebitStatus.PENDING, DebitStatus.PROCESSING} or is_retryable_debit_result(result):
@@ -252,6 +267,13 @@ class FundingReconciliationConsumer:
                     error_message=result.error_message or "Funding debit still pending",
                 )
                 logger.info("funding_reconciliation_still_pending", funding_step_id=str(step.id))
+                emit_operational_event(
+                    "funding_reconciliation_still_pending",
+                    severity="warning",
+                    domain="funding",
+                    identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
+                    details={"retry_count": retry_count},
+                )
                 return
 
             result = DebitResult(
@@ -275,5 +297,12 @@ class FundingReconciliationConsumer:
             transfer=transfer,
             publisher=self.publisher,
             error_message=result.error_message or "Funding debit failed",
+        )
+        emit_operational_event(
+            "funding_reconciliation_failed",
+            severity="high",
+            domain="funding",
+            identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
+            details={"error_type": "funding_debit_failed"},
         )
         logger.warning("funding_reconciliation_failed", funding_step_id=str(step.id), error=result.error_message)

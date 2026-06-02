@@ -71,6 +71,7 @@ class DataExecutor:
         self,
         bill_provider: BillPaymentProvider,
         transaction_repo: TransactionRepository,
+        account_provider_name: str = "mono",
         delivery_service: DeliveryService | None = None,
         redis_client: AsyncGroupRedis | None = None,
         beneficiary_suggestion_service: BeneficiarySuggestionServiceProtocol | None = None,
@@ -78,6 +79,7 @@ class DataExecutor:
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
+        self.account_provider_name = account_provider_name
         self.delivery_service = delivery_service or DeliveryService()
         self.redis_client = redis_client
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
@@ -337,6 +339,7 @@ class DataExecutor:
                 transaction=tx,
                 account_id=str(source_account_id),
                 provider_reference=debit_reference_for_transaction(tx),
+                provider_name=self.account_provider_name,
             )
             await uow.commit()
 

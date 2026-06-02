@@ -75,6 +75,7 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
         transaction: Transaction,
         account_id: str,
         provider_reference: str,
+        provider_name: str,
     ) -> tuple[TransactionDebitStep, bool]:
         """Get or create the single debit step for an airtime/data transaction."""
         existing = await self.get_by_transaction(str(transaction.id))
@@ -86,7 +87,7 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
             account_id=self._coerce_id(account_id),
             amount=transaction.amount,
             currency=transaction.currency,
-            provider_name="mono",
+            provider_name=provider_name,
             provider_reference=provider_reference,
             status=TransactionDebitStepStatusEnum.PENDING.value,
         )
@@ -99,6 +100,7 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
         step_id: str,
         *,
         provider_reference: str,
+        provider_name: str | None = None,
     ) -> TransactionDebitStep | None:
         """Atomically claim a pending transaction debit before calling Mono."""
         step = await self.get_by_id_for_update(step_id)
@@ -108,7 +110,8 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
         now = datetime.now(UTC).replace(tzinfo=None)
         step.status = TransactionDebitStepStatusEnum.PROCESSING.value
         step.provider_reference = step.provider_reference or provider_reference
-        step.provider_name = step.provider_name or "mono"
+        if provider_name:
+            step.provider_name = step.provider_name or provider_name
         step.initiated_at = step.initiated_at or now
         self.db.add(step)
         await self.db.flush()

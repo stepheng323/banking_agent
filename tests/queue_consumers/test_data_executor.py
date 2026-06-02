@@ -141,6 +141,7 @@ async def test_data_executor_always_queues_mono_debit(monkeypatch: pytest.Monkey
         transaction=tx,
         account_id="acc-1",
         provider_reference="idem-1-debit",
+        provider_name="mono",
     )
     assert publisher.messages == [
         ("transaction_debit.process", {"transaction_id": "tx-1", "idempotency_key": "idem-1"})

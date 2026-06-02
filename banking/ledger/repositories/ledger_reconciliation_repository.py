@@ -24,6 +24,7 @@ from shared.database.models import (
     TransactionDebitStep,
 )
 from shared.money import to_naira
+from shared.observability.events import emit_operational_event
 from shared.utils.json import to_json_safe_dict
 
 
@@ -271,6 +272,7 @@ class LedgerReconciliationRepository:
         """Create or update an open reconciliation finding."""
         now = datetime.now(UTC).replace(tzinfo=None)
         finding = await self.get_finding_by_key(finding_key)
+        should_emit_open = finding is None or finding.status == "resolved"
         if not finding:
             finding = LedgerReconciliationFinding(
                 finding_key=finding_key,
@@ -301,6 +303,24 @@ class LedgerReconciliationRepository:
             finding.resolved_at = None
         self.db.add(finding)
         await self.db.flush()
+        if should_emit_open:
+            emit_operational_event(
+                "ledger_reconciliation_finding_opened",
+                severity="critical" if severity == "critical" else "high" if severity == "high" else "warning",
+                domain="ledger",
+                identifiers={
+                    "finding_key": finding_key,
+                    "transaction_id": transaction_id,
+                    "funded_transfer_id": funded_transfer_id,
+                    "funding_step_id": funding_step_id,
+                },
+                details={
+                    "finding_type": finding_type,
+                    "severity": severity,
+                    "expected_amount_naira": expected_amount_naira,
+                    "actual_amount_naira": actual_amount_naira,
+                },
+            )
         return finding
 
     async def resolve_finding(self, finding_key: str) -> LedgerReconciliationFinding | None:
@@ -312,4 +332,16 @@ class LedgerReconciliationRepository:
         finding.resolved_at = datetime.now(UTC).replace(tzinfo=None)
         self.db.add(finding)
         await self.db.flush()
+        emit_operational_event(
+            "ledger_reconciliation_finding_resolved",
+            severity="info",
+            domain="ledger",
+            identifiers={
+                "finding_key": finding.finding_key,
+                "transaction_id": finding.transaction_id,
+                "funded_transfer_id": finding.funded_transfer_id,
+                "funding_step_id": finding.funding_step_id,
+            },
+            details={"finding_type": finding.finding_type, "severity": finding.severity},
+        )
         return finding

@@ -9,6 +9,7 @@ from banking.transactions.runtime.transaction_debit_helpers import finalize_tran
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import TransactionDebitStepStatusEnum
+from shared.observability.events import emit_operational_event
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -151,6 +152,13 @@ class TransactionDebitRefundReconciliationConsumer:
                 return
             steps = await uow.transaction_debit_steps.get_stale_refunds(cutoff=cutoff, limit=limit)
             targets = [(str(step.id), str(step.transaction_id)) for step in steps]
+        if targets:
+            emit_operational_event(
+                "transaction_debit_refund_stuck_steps_found",
+                severity="warning",
+                domain="refund",
+                details={"count": len(targets), "min_age_seconds": min_age},
+            )
         for step_id, transaction_id in targets:
             await self._reconcile_step(step_id, transaction_id)
 
@@ -225,6 +233,13 @@ class TransactionDebitRefundReconciliationConsumer:
                 refund_reference=str(step.refund_provider_reference or step.provider_reference or ""),
             )
             await uow.commit()
+        emit_operational_event(
+            "transaction_debit_refund_reconciliation_applied",
+            severity="critical" if outcome == "failed" else "info" if outcome == "refunded" else "warning",
+            domain="refund",
+            identifiers={"transaction_id": transaction_id, "transaction_debit_step_id": step_id},
+            details={"outcome": outcome, "provider_status": getattr(result.status, "value", result.status)},
+        )
         if outcome == "refunded":
             await self._notify(transaction_id, "refunded")
         elif outcome == "failed":

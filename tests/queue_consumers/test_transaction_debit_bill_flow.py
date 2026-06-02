@@ -88,12 +88,20 @@ class _TransactionDebitSteps:
         del kwargs
         return self.state.step, False
 
-    async def claim_for_debit(self, step_id: str, *, provider_reference: str) -> SimpleNamespace | None:
+    async def claim_for_debit(
+        self,
+        step_id: str,
+        *,
+        provider_reference: str,
+        provider_name: str | None = None,
+    ) -> SimpleNamespace | None:
         step = await self.get_by_id_for_update(step_id)
         if not step or step.status != TransactionDebitStepStatusEnum.PENDING.value:
             return None
         step.status = TransactionDebitStepStatusEnum.PROCESSING.value
         step.provider_reference = provider_reference
+        if provider_name:
+            step.provider_name = provider_name
         return step
 
     async def claim_for_refund(self, step_id: str, *, refund_reference: str) -> SimpleNamespace | None:

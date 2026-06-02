@@ -14,6 +14,7 @@ from shared.clients.abstractions.direct_debit import DebitResult, DebitStatus, D
 from shared.config.settings import settings
 from shared.database.enums import TransactionDebitStepStatusEnum, TransactionStatusEnum
 from shared.money import require_naira
+from shared.observability.events import emit_operational_event
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -32,6 +33,10 @@ class TransactionDebitConsumer:
         self.direct_debit_provider = direct_debit_provider
         self.publisher = publisher
         self.notifier = notifier
+
+    @property
+    def account_provider_name(self) -> str:
+        return str(getattr(self.direct_debit_provider, "provider_name", settings.account_provider_name))
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         transaction_id = str(payload.get("transaction_id") or "")
@@ -84,6 +89,7 @@ class TransactionDebitConsumer:
                     transaction=transaction,
                     account_id=str(account_id),
                     provider_reference=debit_reference_for_transaction(transaction),
+                    provider_name=self.account_provider_name,
                 )
 
             if step.status == TransactionDebitStepStatusEnum.CONFIRMED.value:
@@ -103,7 +109,11 @@ class TransactionDebitConsumer:
                 return {"failed": True}
 
             reference = step.provider_reference or debit_reference_for_transaction(transaction)
-            claimed = await uow.transaction_debit_steps.claim_for_debit(str(step.id), provider_reference=reference)
+            claimed = await uow.transaction_debit_steps.claim_for_debit(
+                str(step.id),
+                provider_reference=reference,
+                provider_name=self.account_provider_name,
+            )
             if not claimed:
                 return None
             transaction.status = TransactionStatusEnum.PROCESSING.value
@@ -184,6 +194,10 @@ class TransactionDebitReconciliationConsumer:
         self.publisher = publisher
         self.notifier = notifier
 
+    @property
+    def account_provider_name(self) -> str:
+        return str(getattr(self.direct_debit_provider, "provider_name", settings.account_provider_name))
+
     async def process_job(self, payload: dict[str, Any]) -> None:
         transaction_id = payload.get("transaction_id")
         if transaction_id:
@@ -208,6 +222,20 @@ class TransactionDebitReconciliationConsumer:
             confirmed_steps = await uow.transaction_debit_steps.get_confirmed_without_success(limit=limit)
             targets = [(str(step.id), str(step.transaction_id), step.provider_debit_id) for step in open_steps]
             bill_targets = [str(step.transaction_id) for step in confirmed_steps]
+        if targets:
+            emit_operational_event(
+                "transaction_debit_stuck_steps_found",
+                severity="warning",
+                domain="bill",
+                details={"count": len(targets), "min_age_seconds": min_age},
+            )
+        if bill_targets:
+            emit_operational_event(
+                "transaction_debit_confirmed_bill_missing_found",
+                severity="warning",
+                domain="bill",
+                details={"count": len(bill_targets)},
+            )
 
         for step_id, transaction_id, provider_debit_id in targets:
             if provider_debit_id:
@@ -236,6 +264,13 @@ class TransactionDebitReconciliationConsumer:
                 publisher=self.publisher,
             )
             await uow.commit()
+        emit_operational_event(
+            "transaction_debit_reconciliation_applied",
+            severity="high" if outcome == "failed" else "warning" if outcome == "processing" else "info",
+            domain="bill",
+            identifiers={"transaction_id": transaction_id, "transaction_debit_step_id": step_id},
+            details={"outcome": outcome, "provider_status": getattr(result.status, "value", result.status)},
+        )
         if outcome == "failed":
             await self._notify(transaction_id, "debit_failed", error_message=result.error_message)
 
@@ -315,6 +350,7 @@ class TransactionDebitReconciliationConsumer:
                 claimed = await uow.transaction_debit_steps.claim_for_debit(
                     str(step.id),
                     provider_reference=reference,
+                    provider_name=self.account_provider_name,
                 )
                 if not claimed:
                     return None

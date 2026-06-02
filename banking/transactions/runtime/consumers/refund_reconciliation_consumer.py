@@ -11,6 +11,7 @@ from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitPro
 from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum, SupportTicketPriorityEnum, SupportTicketStatusEnum
 from shared.money import naira_to_json
+from shared.observability.events import emit_operational_event
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -54,6 +55,13 @@ class RefundReconciliationConsumer:
                 )
                 for step in steps
             ]
+        if targets:
+            emit_operational_event(
+                "refund_stuck_steps_found",
+                severity="warning",
+                domain="refund",
+                details={"count": len(targets), "min_age_seconds": min_age_seconds},
+            )
 
         for target in targets:
             await self._reconcile_target(target)
@@ -148,6 +156,12 @@ class RefundReconciliationConsumer:
             },
         )
         logger.info("refund_reconciliation_requeued_unclaimed_refund", funding_step_id=str(step.id))
+        emit_operational_event(
+            "refund_reconciliation_requeued_unclaimed_refund",
+            severity="warning",
+            domain="refund",
+            identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
+        )
 
     async def _apply_result(self, uow: UnitOfWork, step: Any, transfer: Any, result: Any) -> None:
         funding_steps = uow.funding_steps
@@ -178,6 +192,13 @@ class RefundReconciliationConsumer:
             )
             await finalize_refund_state(uow, transfer)
             logger.info("refund_reconciliation_completed", funding_step_id=str(step.id))
+            emit_operational_event(
+                "refund_reconciliation_repaired",
+                severity="info",
+                domain="refund",
+                identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
+                details={"status": "refunded"},
+            )
             return
 
         if result.status == DebitStatus.FAILED:
@@ -199,6 +220,13 @@ class RefundReconciliationConsumer:
             error_message=result.error_message or "Refund still pending",
         )
         logger.info("refund_reconciliation_pending", funding_step_id=str(step.id), attempt_count=attempt_count)
+        emit_operational_event(
+            "refund_reconciliation_still_pending",
+            severity="warning",
+            domain="refund",
+            identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
+            details={"attempt_count": attempt_count},
+        )
 
     async def _mark_refund_failed(self, uow: UnitOfWork, step: Any, transfer: Any, error_message: str) -> None:
         funding_steps = uow.funding_steps
@@ -213,6 +241,13 @@ class RefundReconciliationConsumer:
         await self._record_manual_review(uow, transfer, step, error_message)
         await finalize_refund_state(uow, transfer)
         logger.error("refund_reconciliation_failed", funding_step_id=str(step.id), error=error_message)
+        emit_operational_event(
+            "refund_reconciliation_failed",
+            severity="critical",
+            domain="refund",
+            identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
+            details={"error_type": "refund_failed"},
+        )
 
     async def _record_manual_review(self, uow: UnitOfWork, transfer: Any, step: Any, error_message: str) -> None:
         """Create a support ticket when the current UoW exposes ticket storage."""

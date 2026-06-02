@@ -15,6 +15,7 @@ from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.config.settings import settings
 from shared.database.enums import TransactionDebitStepStatusEnum, TransactionStatusEnum, TransactionTypeEnum
 from shared.money import require_naira
+from shared.observability.events import emit_operational_event
 from shared.queue.adapter import QueuePublisher
 from shared.security.redaction import redact_sensitive_identifiers
 from shared.utils.json import to_json_safe_dict
@@ -180,6 +181,13 @@ class BillFulfillmentConsumer:
                     uow.db.add(tx)
                 await uow.commit()
                 logger.info("bill_fulfillment_successful", transaction_id=str(tx.id))
+                emit_operational_event(
+                    "bill_fulfillment_completed",
+                    severity="info",
+                    domain="bill",
+                    identifiers={"transaction_id": tx.id, "transaction_debit_step_id": step.id},
+                    details={"outcome": "successful", "transaction_type": tx.transaction_type},
+                )
                 return "successful"
 
             if status == "pending":
@@ -189,6 +197,13 @@ class BillFulfillmentConsumer:
                     uow.db.add(tx)
                 await uow.commit()
                 logger.info("bill_fulfillment_pending", transaction_id=str(tx.id))
+                emit_operational_event(
+                    "bill_fulfillment_pending",
+                    severity="warning",
+                    domain="bill",
+                    identifiers={"transaction_id": tx.id, "transaction_debit_step_id": step.id},
+                    details={"outcome": "pending", "transaction_type": tx.transaction_type},
+                )
                 return "pending"
 
             error = provider_results.provider_error_message(result, "Bill payment failed")
@@ -205,6 +220,13 @@ class BillFulfillmentConsumer:
             await queue_transaction_debit_refund(publisher=self.publisher, debit_step=step, transaction=tx)
             await uow.commit()
             logger.warning("bill_fulfillment_failed_refund_queued", transaction_id=str(tx.id), error=error)
+            emit_operational_event(
+                "bill_fulfillment_failed_refund_queued",
+                severity="high",
+                domain="bill",
+                identifiers={"transaction_id": tx.id, "transaction_debit_step_id": step.id},
+                details={"outcome": "failed_refund_pending", "transaction_type": tx.transaction_type},
+            )
             return "failed"
         return "skipped"
 
@@ -253,6 +275,13 @@ class BillReconciliationConsumer:
                 return
             steps = await uow.transaction_debit_steps.get_confirmed_without_success(limit=limit)
             transaction_ids = [str(step.transaction_id) for step in steps]
+        if transaction_ids:
+            emit_operational_event(
+                "bill_fulfillment_stuck_transactions_found",
+                severity="warning",
+                domain="bill",
+                details={"count": len(transaction_ids)},
+            )
 
         for transaction_id in transaction_ids:
             await BillFulfillmentConsumer(self.bill_provider, self.publisher, notifier=self.notifier).process_job(
