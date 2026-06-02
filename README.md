@@ -281,6 +281,12 @@ Chat worker integrations:
 - `CHAT_THREAD_LOCK_RENEW_SECONDS`
 - `CHAT_THREAD_LOCK_WAIT_SECONDS`
 - `CHAT_LATEST_INBOUND_TTL_SECONDS`
+- `LANGSMITH_TRACING`
+- `LANGSMITH_API_KEY`
+- `LANGSMITH_PROJECT`
+- `LLM_OBSERVABILITY_ENABLED` (default `true`)
+- `LLM_TRACE_PRIVACY_MODE` (default `masked`)
+- `LLM_TRACE_SAMPLE_RATE`
 
 Transaction worker integrations:
 
@@ -297,6 +303,99 @@ Receipt worker integrations:
 - `CHAT_PENDING_INPUT_PROMPT_DEBOUNCE_SECONDS`
 
 Missing critical keys should fail startup outside local development.
+
+### Observability
+
+Health and readiness are split deliberately:
+
+- `/health` is shallow process liveness.
+- `/ready` checks required dependencies. Gateway checks DB and Redis, transaction worker checks DB, Redis, and reconciliation loop health, and receipt worker checks Redis.
+
+LangSmith tracing is automatic for LangChain/LangGraph calls when the standard LangSmith environment variables are set:
+
+- `LANGSMITH_TRACING=true`
+- `LANGSMITH_API_KEY`
+- `LANGSMITH_PROJECT`
+
+The app only attaches safe trace tags and metadata. It does not manually attach raw prompts, raw user messages, account numbers, mandate IDs, PINs, OTPs, provider references, flow tokens, or media payloads. Trace metadata uses tags such as runtime, environment, channel, path, LLM role, and task domain, plus hashed channel/message identifiers.
+
+Operational events are emitted as redacted structured logs with event names such as:
+
+- Money flow: `funding_reconciliation_tick_failed`, `payout_reconciliation_tick_failed`, `refund_reconciliation_tick_failed`, `transaction_debit_reconciliation_tick_failed`, `bill_reconciliation_tick_failed`, `direct_transfer_reconciliation_tick_failed`.
+- Ledger: `ledger_reconciliation_finding_opened`, `ledger_reconciliation_finding_resolved`, `ledger_reconciliation_support_ticket_created`.
+- Webhooks: `mono_webhook_invalid_secret`, `mono_webhook_duplicate_ignored`, `flutterwave_webhook_unauthorized`, `flutterwave_webhook_duplicate_ignored`, `flutterwave_webhook_processing_failed`.
+- Queues: `transaction_worker_stream_record_failed`, `receipt_worker_stream_record_failed`, `redis_stream_stale_record_claimed`, `sqs_message_left_for_retry`.
+- LLM: `llm_call_completed`, `llm_orchestrator_safe_fallback`, `llm_media_audio_failed`, `llm_media_image_failed`, `llm_embedding_failed`.
+
+### Incident Runbooks
+
+For all money-flow incidents, start with the user-facing `transactions.id`, `transactions.idempotency_key`, provider reference, and the current `/ready` response from `transaction-worker`.
+
+Stuck Mono funding or transaction debit:
+
+1. Inspect `funding_steps` or `transaction_debit_steps` for `pending` or `processing` rows older than the configured reconciliation age.
+2. Confirm `funding.reconcile` or `transaction_debit.reconcile` loop health in `/ready`.
+3. Check Mono status by provider reference, not by retrying a new debit.
+4. Let reconciliation apply terminal status; only intervene manually if the ledger finding remains open after provider truth is known.
+
+Failed Flutterwave payout after pooled funding:
+
+1. Verify every funding step that reached `confirmed`.
+2. Confirm the funded transfer is `refunding` and refund jobs exist or reconciliation is enabled.
+3. Check `ledger_exposure:*` findings for non-zero liability.
+4. The user-facing transaction should not be `successful` unless Flutterwave payout is terminal successful.
+
+Pending refund:
+
+1. Inspect funding or transaction debit refund metadata: provider reference, attempt count, last checked time, and status.
+2. Confirm `refund.reconcile` or `transaction_debit.refund_reconcile` loop health.
+3. If provider says refunded, reconciliation should post the refund ledger entry before marking `refunded` or `reversed`.
+4. If provider says failed or ambiguous after max attempts, keep the support ticket open and do not mark the transaction successful.
+
+Bill failure after debit:
+
+1. Confirm the Mono debit step is `confirmed`.
+2. Check Flutterwave bill status by `"{idempotency_key}-bill"`.
+3. If bill failed terminally, transaction remains failed while refund is pending; it becomes `reversed` only after refund confirmation.
+4. Confirm completion notification context exists in `transactions.service_metadata`.
+
+Ledger mismatch:
+
+1. Run or wait for `ledger.reconcile.postings` to backfill missing deterministic ledger entries.
+2. Run or wait for `ledger.reconcile.exposure` to calculate liability exposure.
+3. Critical open findings must create or reuse one support ticket with intent `ledger_reconciliation`.
+4. Never mutate ledger entries or lines; corrections are new reversal or adjustment entries.
+
+Webhook replay or spoofing:
+
+1. Confirm the provider signature/hash outcome in webhook operational events.
+2. Check `processed_webhook_events` for the provider event ID.
+3. Duplicate valid webhooks should be acknowledged and ignored; invalid webhooks should be rejected.
+4. Do not replay raw webhook bodies into production unless the event ID and provider reference are understood.
+
+Queue backlog:
+
+1. Check Redis stream or SQS depth and stale-claim operational events.
+2. Confirm only the owning runtime is consuming each queue family.
+3. Restart the affected worker only after checking `/ready`; DB rows are the durable workflow source.
+
+Provider outage:
+
+1. Expect provider timeouts and reconciliation failures to emit operational events.
+2. Keep new provider calls bounded by retry limits; avoid manual retry storms.
+3. User-facing messages should remain processing/pending until provider truth is recovered.
+
+High LLM fallback rate or latency spike:
+
+1. Check `llm_orchestrator_safe_fallback`, `llm_call_completed`, and slow-call operational events.
+2. Use LangSmith tags by runtime, role, channel, path, and task domain to isolate the failing role.
+3. Prefer deterministic fast paths and guardrail fallbacks for money-moving conversations while investigating.
+
+Tracing outage:
+
+1. LangSmith outage must not block chat or financial execution.
+2. Confirm `LLM_OBSERVABILITY_ENABLED` and LangSmith env vars.
+3. Continue using redacted operational logs for runtime diagnosis.
 
 ### VPS Deploy And Rollback
 

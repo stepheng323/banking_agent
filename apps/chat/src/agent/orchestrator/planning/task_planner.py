@@ -34,6 +34,7 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime impor
     build_runtime_planner_system_prompt,
 )
 from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
+from shared.observability.llm import build_llm_runnable_config
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameReplayModifier,
@@ -136,6 +137,13 @@ class TaskPlanner:
                 "baseline_runtime_system_chars": PLANNER_PROMPT_BASELINE_RESULT.char_count,
                 "baseline_runtime_profile": PLANNER_PROMPT_BASELINE_RESULT.profile,
             },
+            config=build_llm_runnable_config(
+                role="planner",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="orchestrator",
+                extra_metadata={"context_mode": "compact" if prompt_signals.compact_context else "full"},
+            ),
         )
         return normalize_planner_transaction_output(result, text)
 
@@ -168,6 +176,12 @@ class TaskPlanner:
                 "context_chars": len(context),
                 "context_mode": "compact" if context == "None" else "full",
             },
+            config=build_llm_runnable_config(
+                role="semantic_router",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="orchestrator",
+            ),
         )
 
     async def route_schedule_read_turn(
@@ -193,6 +207,12 @@ class TaskPlanner:
             model_llm=self.semantic_router_llm,
             path_label=path_label,
             latency_span="schedule_read_router_llm",
+            config=build_llm_runnable_config(
+                role="semantic_router",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="schedule",
+            ),
         )
 
     async def route_pending_input(
@@ -230,6 +250,13 @@ class TaskPlanner:
                 "context_mode": "compact" if context == "None" else "full",
                 "prompt_mode": prompt_mode,
             },
+            config=build_llm_runnable_config(
+                role="interrupt_router",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="interrupt",
+                extra_metadata={"prompt_mode": prompt_mode},
+            ),
         )
 
     async def classify_confirmation_reply(
@@ -243,12 +270,21 @@ class TaskPlanner:
     ) -> ConfirmationDecision:
         """Bounded LLM fallback for prompt-scoped approval/rejection replies."""
         start = time.perf_counter()
+        structured_llm = self.structured_confirmation_decision.with_config(
+            build_llm_runnable_config(
+                role="interrupt_router",
+                path_label=path_label,
+                task_domain="confirmation",
+                locale=locale,
+                extra_metadata={"prompt_kind": prompt_kind},
+            )
+        )
         result = await classify_confirmation_reply(
             text,
             prompt_kind=prompt_kind,
             locale=locale,
             context=context,
-            structured_llm=self.structured_confirmation_decision,
+            structured_llm=structured_llm,
         )
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(
@@ -274,11 +310,19 @@ class TaskPlanner:
     ) -> UnsupportedCapabilitySemanticOutput:
         """Bounded semantic classifier for unsupported capability boundaries."""
         start = time.perf_counter()
+        structured_llm = self.structured_unsupported_capability.with_config(
+            build_llm_runnable_config(
+                role="semantic_router",
+                path_label=path_label,
+                task_domain="unsupported_capability",
+                locale=locale,
+            )
+        )
         result = await classify_unsupported_capability_semantic(
             text,
             locale=locale,
             context=context,
-            structured_llm=self.structured_unsupported_capability,
+            structured_llm=structured_llm,
         )
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(
@@ -311,6 +355,15 @@ class TaskPlanner:
     ) -> UnsupportedBoundaryTurnOutput:
         """Bounded semantic classifier for turns after an unsupported capability refusal."""
         start = time.perf_counter()
+        structured_llm = self.structured_unsupported_boundary_turn.with_config(
+            build_llm_runnable_config(
+                role="semantic_router",
+                path_label=path_label,
+                task_domain="unsupported_capability",
+                locale=locale,
+                extra_metadata={"boundary_key": boundary_key},
+            )
+        )
         result = await classify_unsupported_boundary_turn_semantic(
             text,
             boundary_key=boundary_key,
@@ -318,7 +371,7 @@ class TaskPlanner:
             followup_count=followup_count,
             locale=locale,
             context=context,
-            structured_llm=self.structured_unsupported_boundary_turn,
+            structured_llm=structured_llm,
         )
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(
@@ -368,6 +421,12 @@ class TaskPlanner:
                 "context_chars": len(context),
                 "context_mode": "compact" if context == "None" else "full",
             },
+            config=build_llm_runnable_config(
+                role="context_frame_followup",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="query",
+            ),
         )
 
     async def extract_context_frame_replay_modifiers(
@@ -399,6 +458,12 @@ class TaskPlanner:
                 "context_chars": len(context),
                 "context_mode": "compact" if context == "None" else "full",
             },
+            config=build_llm_runnable_config(
+                role="context_frame_replay_modifier",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="query",
+            ),
         )
 
     async def interpret_pending_action_edit(
@@ -430,6 +495,12 @@ class TaskPlanner:
                 "context_chars": len(context),
                 "context_mode": "compact" if context == "None" else "full",
             },
+            config=build_llm_runnable_config(
+                role="interrupt_router",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="pending_action",
+            ),
         )
 
     async def interpret_quoted_replay(
@@ -450,6 +521,12 @@ class TaskPlanner:
             logger=logger,
             event_name="quoted_replay_llm_call",
             model_llm=self.planner_llm,
+            config=build_llm_runnable_config(
+                role="planner",
+                phone_number=phone_number,
+                path_label="quoted_replay",
+                task_domain="quoted_replay",
+            ),
         )
         logger.info(
             "quoted_replay_decision",

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from shared.cache.redis_client import RedisClient
+from shared.observability.events import emit_operational_event
 from shared.queue.contracts import resolve_contract_from_redis_stream_name
 
 if TYPE_CHECKING:
@@ -88,6 +89,13 @@ class RedisStreamConsumer:
                         topic=topic,
                         payload=payload,
                     )
+                )
+                emit_operational_event(
+                    "redis_stream_stale_record_claimed",
+                    severity="warning",
+                    domain="queue",
+                    identifiers={"stream": stream_name, "record_id": record_id, "topic": topic},
+                    details={"group_name": self.group_name, "consumer_name": self.consumer_name},
                 )
 
         return claimed

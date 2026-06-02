@@ -9,6 +9,7 @@ from typing import Any
 import aioboto3
 
 from shared.config.settings import settings
+from shared.observability.events import emit_operational_event
 from shared.queue.contracts import QueueContract
 from shared.utils.logging import get_logger
 
@@ -71,6 +72,16 @@ class SQSPoller:
                 for message in messages:
                     message_id = message.get("MessageId")
                     if message_id in failures:
+                        emit_operational_event(
+                            "sqs_message_left_for_retry",
+                            severity="warning",
+                            domain="queue",
+                            identifiers={
+                                "logical_topic": self.contract.logical_topic,
+                                "queue_name": self.queue_name,
+                                "message_id": message_id,
+                            },
+                        )
                         logger.warning(
                             "sqs_message_left_for_retry",
                             logical_topic=self.contract.logical_topic,

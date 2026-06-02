@@ -31,6 +31,7 @@ from apps.chat.src.agent.workers.query.models.extraction import (
 from apps.chat.src.agent.workers.query.prompts.main import QUERY_PARSER_PROMPT
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -443,7 +444,17 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
 
     try:
         started_at = perf_counter()
-        raw_extraction = await structured_llm.ainvoke(prompt)
+        raw_extraction = await ainvoke_with_config(
+            structured_llm,
+            prompt,
+            config=build_llm_runnable_config(
+                role="query_parser",
+                task_domain="query",
+                locale=language,
+                extra_metadata={"prompt_chars": len(prompt)},
+            )
+            or None,
+        )
         duration_ms = (perf_counter() - started_at) * 1000.0
         logger.info(
             "query_parser_llm_call",

@@ -17,6 +17,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
     conversation_display_name,
 )
 from banking.presentation.i18n.locale import LocaleManager
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 
 __all__ = ["ConversationResponder"]
 
@@ -91,7 +92,23 @@ class ConversationResponder:
             is_unsupported_capability_followup=is_unsupported_capability_followup,
         )
 
-        reply = await self.llm.ainvoke(responder_prompts.build_conversation_responder_messages(prompt_input))
+        reply = await ainvoke_with_config(
+            self.llm,
+            responder_prompts.build_conversation_responder_messages(prompt_input),
+            config=build_llm_runnable_config(
+                role="conversation_responder",
+                phone_number=str(user_ctx.get("phone_number") or ""),
+                locale=locale,
+                task_domain="conversation",
+                extra_metadata={
+                    "intent": intent,
+                    "casual_streak": casual_streak,
+                    "contextual_worker_followup": is_contextual_worker_followup,
+                    "unsupported_capability_followup": is_unsupported_capability_followup,
+                },
+            )
+            or None,
+        )
 
         raw_content: str | None
         if isinstance(reply, str):

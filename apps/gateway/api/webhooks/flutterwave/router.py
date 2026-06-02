@@ -11,6 +11,7 @@ from apps.gateway.api.webhooks.flutterwave.service import (
     flutterwave_transfer_data,
     transfer_id_from_data,
 )
+from shared.observability.events import emit_operational_event
 from shared.utils.logging import get_logger, log_fingerprint
 
 router = APIRouter(prefix="/webhook", tags=["webhooks"])
@@ -25,10 +26,12 @@ async def flutterwave_webhook(request: Request) -> Response:
     try:
         raw_body = await request.body()
         if not auth.is_authorized_flutterwave_webhook(request, raw_body):
+            emit_operational_event("flutterwave_webhook_unauthorized", severity="high", domain="webhook")
             return Response(status_code=401)
 
         payload = json.loads(raw_body.decode("utf-8") or "{}")
         if not isinstance(payload, dict):
+            emit_operational_event("flutterwave_webhook_non_object_payload", severity="warning", domain="webhook")
             logger.warning("flutterwave_webhook_non_object_payload")
             return Response(status_code=400)
 
@@ -48,6 +51,13 @@ async def flutterwave_webhook(request: Request) -> Response:
             payload=payload,
         )
         if not claimed:
+            emit_operational_event(
+                "flutterwave_webhook_duplicate_ignored",
+                severity="info",
+                domain="webhook",
+                identifiers={"event_id": event_id},
+                details={"event_name": event_name},
+            )
             logger.info(
                 "flutterwave_webhook_duplicate_ignored",
                 event_name=event_name,
@@ -61,6 +71,13 @@ async def flutterwave_webhook(request: Request) -> Response:
             action_completed = True
             await event_ledger.mark_flutterwave_webhook_event_processed(event_id=event_id)
         else:
+            emit_operational_event(
+                "flutterwave_webhook_event_not_queued",
+                severity="warning",
+                domain="webhook",
+                identifiers={"event_id": event_id},
+                details={"event_name": event_name},
+            )
             await event_ledger.mark_flutterwave_webhook_event_failed(
                 event_id=event_id,
                 error="flutterwave_transfer_event_not_queued",
@@ -68,9 +85,17 @@ async def flutterwave_webhook(request: Request) -> Response:
         return Response(status_code=200)
 
     except json.JSONDecodeError:
+        emit_operational_event("flutterwave_webhook_invalid_json", severity="warning", domain="webhook")
         logger.warning("flutterwave_webhook_invalid_json")
         return Response(status_code=400)
     except Exception as e:
+        emit_operational_event(
+            "flutterwave_webhook_processing_failed",
+            severity="high",
+            domain="webhook",
+            identifiers={"event_id": event_id},
+            details={"error_type": type(e).__name__},
+        )
         if event_id and not action_completed:
             try:
                 await event_ledger.mark_flutterwave_webhook_event_failed(event_id=event_id, error=str(e))

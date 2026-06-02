@@ -6,6 +6,10 @@ from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel
 
+from shared.config.settings import settings
+from shared.observability.events import emit_operational_event
+from shared.observability.llm import ainvoke_with_config
+
 StructuredResultT = TypeVar("StructuredResultT", bound=BaseModel)
 
 
@@ -35,15 +39,34 @@ async def invoke_structured_prompt(
     path_label: str | None = None,
     latency_span: str | None = None,
     log_fields: Mapping[str, Any] | None = None,
+    config: Mapping[str, Any] | None = None,
 ) -> StructuredResultT:
     start = time.perf_counter()
-    result = await structured_llm.ainvoke(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-    )
+    try:
+        result = await ainvoke_with_config(
+            structured_llm,
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            config=dict(config or {}) or None,
+        )
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start) * 1000
+        emit_operational_event(
+            "llm_structured_call_failed",
+            severity="high",
+            domain="llm",
+            details={
+                "event_name": event_name,
+                "duration_ms": round(duration_ms, 2),
+                "model": model_name(model_llm),
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
     duration_ms = (time.perf_counter() - start) * 1000
+    total_prompt_chars = len(system_prompt) + len(user_prompt)
     logger.info(
         event_name,
         duration_ms=round(duration_ms, 2),
@@ -52,8 +75,45 @@ async def invoke_structured_prompt(
         user_chars=len(user_prompt),
         **dict(log_fields or {}),
     )
+    emit_operational_event(
+        "llm_call_completed",
+        severity="warning" if duration_ms > settings.llm_slow_call_threshold_ms else "info",
+        domain="llm",
+        details={
+            "event_name": event_name,
+            "duration_ms": round(duration_ms, 2),
+            "model": model_name(model_llm),
+            "prompt_chars": total_prompt_chars,
+            "high_prompt_size": total_prompt_chars > settings.llm_high_prompt_size_chars,
+        },
+    )
+    if total_prompt_chars > settings.llm_high_prompt_size_chars:
+        emit_operational_event(
+            "llm_high_prompt_size_warning",
+            severity="warning",
+            domain="llm",
+            details={
+                "event_name": event_name,
+                "model": model_name(model_llm),
+                "prompt_chars": total_prompt_chars,
+            },
+        )
     if path_label is not None and latency_span:
         log_latency_span(logger, span=latency_span, duration_ms=duration_ms, path_label=path_label)
     if isinstance(result, response_type):
         return result
-    return cast(StructuredResultT, response_type.model_validate(result))
+    try:
+        return cast(StructuredResultT, response_type.model_validate(result))
+    except Exception as exc:
+        emit_operational_event(
+            "llm_structured_output_validation_failed",
+            severity="high",
+            domain="llm",
+            details={
+                "event_name": event_name,
+                "model": model_name(model_llm),
+                "response_type": response_type.__name__,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise

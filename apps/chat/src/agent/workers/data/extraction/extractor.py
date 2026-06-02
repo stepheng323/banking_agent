@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI
 from apps.chat.src.agent.workers.__shared__.models.smart_context import SmartContext
 from apps.chat.src.agent.workers.data.extraction.prompt import DATA_EXTRACTION_PROMPT
 from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -107,11 +108,20 @@ class DataEntityExtractor:
             user_content = f"{user_input}\n\nContext:\n{context_str}"
 
         start = time.perf_counter()
-        result = await self.structured.ainvoke(
+        result = await ainvoke_with_config(
+            self.structured,
             [
                 {"role": "system", "content": DATA_EXTRACTION_PROMPT},
                 {"role": "user", "content": user_content},
-            ]
+            ],
+            config=build_llm_runnable_config(
+                role="data_extractor",
+                phone_number=str(smart_context.get("phone_number") or "") if isinstance(smart_context, dict) else None,
+                locale=str(smart_context.get("language") or "") if isinstance(smart_context, dict) else None,
+                task_domain="data",
+                extra_metadata={"context_mode": context_mode},
+            )
+            or None,
         )
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(

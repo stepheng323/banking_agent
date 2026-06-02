@@ -23,6 +23,7 @@ from apps.chat.src.agent.workers.query.prompts.main import (
 )
 from apps.chat.src.agent.workers.query.services.reasoning import models as reasoner_models
 from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import resolve_query_shortcut
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -354,7 +355,23 @@ class QuerySemanticReasoner:
             reasoner_schema = "active_continuation"
         started_at = perf_counter()
         try:
-            raw_decision = await structured_llm.ainvoke(messages)
+            raw_decision = await ainvoke_with_config(
+                structured_llm,
+                messages,
+                config=build_llm_runnable_config(
+                    role="query_reasoner",
+                    message_id=context.inbound_message_id,
+                    turn_id=context.turn_id,
+                    task_domain="query",
+                    extra_metadata={
+                        "session_mode": context.session_mode,
+                        "reasoner_schema": reasoner_schema,
+                        "prompt_item_count": prompt_item_count,
+                        "prompt_frame_count": prompt_frame_count,
+                    },
+                )
+                or None,
+            )
         except Exception:
             duration_ms = (perf_counter() - started_at) * 1000.0
             self._log_llm_call(

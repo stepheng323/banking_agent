@@ -47,8 +47,9 @@ from banking.identity.repositories.user_repository import UserRepository
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from banking.presentation.i18n.locale import LocaleManager
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.observability.llm import build_llm_runnable_config
 from shared.queue.adapter import QueuePublisher
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 
@@ -247,6 +248,20 @@ class OrchestratorGraphHandler:
                 config["configurable"]["progress_tracker"] = progress_tracker
                 thread_id = config["configurable"]["thread_id"]
                 turn_id = context.message_id or f"invoke-{time.monotonic_ns()}"
+                trace_config = build_llm_runnable_config(
+                    role="orchestrator_graph",
+                    channel=context.channel,
+                    path_label=path_label,
+                    phone_number=phone_number,
+                    channel_identity=context.channel_identity,
+                    message_id=context.message_id,
+                    turn_id=turn_id,
+                    locale=loaded_context["language"],
+                    task_domain="orchestrator",
+                )
+                if trace_config:
+                    config["tags"] = list(trace_config.get("tags", []))
+                    config["metadata"] = dict(trace_config.get("metadata", {}))
                 progress_task = asyncio.create_task(
                     self.progress_delivery.run_updates(
                         tracker=progress_tracker,
@@ -261,7 +276,12 @@ class OrchestratorGraphHandler:
                     name="orchestrator_progress_updates",
                 )
 
-                logger.info("orchestrator_graph_invoke", user=phone_number)
+                logger.info(
+                    "orchestrator_graph_invoke",
+                    phone_hash=log_fingerprint(phone_number),
+                    channel=context.channel,
+                    message_id_hash=log_fingerprint(context.message_id),
+                )
 
                 g_start = time.perf_counter()
                 try:
@@ -363,9 +383,24 @@ class OrchestratorGraphHandler:
 
             config = self._get_config(phone_number, channel=channel)
 
-            logger.info("orchestrator_graph_resume", user=phone_number, payload=payload)
+            logger.info(
+                "orchestrator_graph_resume",
+                phone_hash=log_fingerprint(phone_number),
+                payload_keys=sorted(payload.keys()),
+            )
 
             try:
+                trace_config = build_llm_runnable_config(
+                    role="orchestrator_graph",
+                    channel=channel,
+                    path_label="interrupt_path",
+                    phone_number=phone_number,
+                    task_domain="resume",
+                    extra_metadata={"payload_keys": sorted(payload.keys())},
+                )
+                if trace_config:
+                    config["tags"] = list(trace_config.get("tags", []))
+                    config["metadata"] = dict(trace_config.get("metadata", {}))
                 final_state = await self.graph.ainvoke(inputs, config=config)
                 resolved_locale = LocaleManager.normalize(
                     (final_state.get("loaded_context") or {}).get("language")

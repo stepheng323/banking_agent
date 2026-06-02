@@ -12,6 +12,7 @@ from apps.chat.src.agent.assistant_profile.voice import AssistantVoice, get_runt
 from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -212,11 +213,20 @@ async def generate_meta_reply(
 
         async def _invoke_meta() -> MetaReply:
             start = time.perf_counter()
-            result = await meta_llm.ainvoke(
+            result = await ainvoke_with_config(
+                meta_llm,
                 [
                     {"role": "system", "content": META_SYSTEM_PROMPT},
                     {"role": "user", "content": json.dumps(payload, ensure_ascii=True)},
-                ]
+                ],
+                config=build_llm_runnable_config(
+                    role="meta_reply",
+                    path_label=path_label,
+                    task_domain="conversation",
+                    locale=language,
+                    extra_metadata={"meta_intent": meta_intent.value if meta_intent else None},
+                )
+                or None,
             )
             duration_ms = (time.perf_counter() - start) * 1000
             logger.info(

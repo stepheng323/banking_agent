@@ -10,6 +10,7 @@ from apps.chat.src.agent.workers.transfer.extraction.prompt import (
     TRANSFER_EXTRACTION_PROMPT,
 )
 from apps.chat.src.agent.workers.transfer.models.extraction import TransferExtractionResult
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -172,11 +173,20 @@ class TransferEntityExtractor:
             user_message = {"role": "user", "content": user_content}
 
         start = time.perf_counter()
-        result = await self.structured.ainvoke(
+        result = await ainvoke_with_config(
+            self.structured,
             [
                 {"role": "system", "content": TRANSFER_EXTRACTION_PROMPT},
                 user_message,
-            ]
+            ],
+            config=build_llm_runnable_config(
+                role="transfer_extractor",
+                phone_number=str(smart_context.get("phone_number") or "") if isinstance(smart_context, dict) else None,
+                locale=str(smart_context.get("language") or "") if isinstance(smart_context, dict) else None,
+                task_domain="transfer",
+                extra_metadata={"context_mode": context_mode, "has_image": bool(image_data)},
+            )
+            or None,
         )
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(

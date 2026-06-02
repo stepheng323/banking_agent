@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.source_selection impor
     _is_same_batch_source_selection_sibling,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
+from banking.accounts.mandate_state import is_mandate_debit_ready
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -75,7 +76,7 @@ def _apply_mandate_gate_failure(
         return False
 
     accounts = (state.loaded_context or {}).get("transaction_accounts") or []
-    has_ready = any(isinstance(account, dict) and account.get("mandate_status") == "ready" for account in accounts)
+    has_ready = any(isinstance(account, dict) and is_mandate_debit_ready(account) for account in accounts)
     if has_ready:
         return False
 

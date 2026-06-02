@@ -16,6 +16,7 @@ from apps.chat.src.agent.workers.support.models import (
     TransactionReference,
 )
 from apps.chat.src.agent.workers.support.prompts.classifier import SUPPORT_CLASSIFIER_PROMPT
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -81,7 +82,16 @@ class SupportClassifier:
         prompt = SUPPORT_CLASSIFIER_PROMPT.format(message=message)
 
         try:
-            response = await self.llm.ainvoke(prompt)
+            response = await ainvoke_with_config(
+                self.llm,
+                prompt,
+                config=build_llm_runnable_config(
+                    role="support_classifier",
+                    task_domain="support",
+                    extra_metadata={"prompt_chars": len(prompt)},
+                )
+                or None,
+            )
             content = response.content if hasattr(response, "content") else str(response)
 
             result, should_fallback = self._parse_response(content, message)

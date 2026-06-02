@@ -3,6 +3,7 @@
 from openai import AsyncOpenAI
 
 from shared.config.settings import settings
+from shared.observability.events import emit_operational_event
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,8 +34,20 @@ class EmbeddingService:
                 model=EMBEDDING_MODEL,
                 input=text,
             )
+            emit_operational_event(
+                "llm_embedding_generated",
+                severity="info",
+                domain="llm",
+                details={"model": EMBEDDING_MODEL, "input_count": 1, "input_chars": len(text)},
+            )
             return response.data[0].embedding
         except Exception as e:
+            emit_operational_event(
+                "llm_embedding_failed",
+                severity="warning",
+                domain="llm",
+                details={"model": EMBEDDING_MODEL, "input_count": 1, "error_type": type(e).__name__},
+            )
             logger.error(f"Failed to generate embedding: {e}")
             raise
 
@@ -56,9 +69,21 @@ class EmbeddingService:
                 model=EMBEDDING_MODEL,
                 input=texts,
             )
+            emit_operational_event(
+                "llm_embedding_generated",
+                severity="info",
+                domain="llm",
+                details={"model": EMBEDDING_MODEL, "input_count": len(texts), "input_chars": sum(map(len, texts))},
+            )
             # Return embeddings in the same order as input
             return [item.embedding for item in response.data]
         except Exception as e:
+            emit_operational_event(
+                "llm_embedding_failed",
+                severity="warning",
+                domain="llm",
+                details={"model": EMBEDDING_MODEL, "input_count": len(texts), "error_type": type(e).__name__},
+            )
             logger.error(f"Failed to generate embeddings: {e}")
             raise
 

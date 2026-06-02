@@ -9,6 +9,7 @@ from apps.chat.src.agent.workers.faq.prompts import (
 from apps.chat.src.agent.workers.faq.state import FAQState
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -51,7 +52,18 @@ def create_synthesize_node(llm: Runnable):
                 {"role": "user", "content": user_prompt},
             ]
 
-            response = await llm.ainvoke(messages)
+            response = await ainvoke_with_config(
+                llm,
+                messages,
+                config=build_llm_runnable_config(
+                    role="faq_synthesis",
+                    phone_number=str(state.get("phone_number") or ""),
+                    locale=locale,
+                    task_domain="faq",
+                    extra_metadata={"retrieved_count": len(retrieved)},
+                )
+                or None,
+            )
             answer = response.content if hasattr(response, "content") else str(response)
 
             logger.info(f"Synthesized answer ({len(answer)} chars)")

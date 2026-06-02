@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from shared.observability.events import emit_operational_event
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -25,6 +26,12 @@ class FlutterwaveWebhookService:
         event_name = flutterwave_event_name(payload)
         data = flutterwave_transfer_data(payload)
         if not is_flutterwave_transfer_event(payload):
+            emit_operational_event(
+                "flutterwave_webhook_ignored_non_transfer",
+                severity="info",
+                domain="webhook",
+                details={"event_name": event_name},
+            )
             logger.debug("flutterwave_webhook_ignored", event_name=event_name)
             return True
 
@@ -32,6 +39,12 @@ class FlutterwaveWebhookService:
         transfer_id = transfer_id_from_data(data)
         status = transfer_status(data)
         if not reference and not transfer_id:
+            emit_operational_event(
+                "flutterwave_transfer_webhook_missing_reference",
+                severity="warning",
+                domain="webhook",
+                details={"event_name": event_name},
+            )
             logger.warning("flutterwave_transfer_webhook_missing_reference", event_name=event_name)
             return False
 

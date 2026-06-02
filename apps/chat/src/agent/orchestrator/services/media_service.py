@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config.settings import settings
+from shared.observability.events import emit_operational_event
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -107,10 +108,26 @@ class MediaService:
             )
 
             text = str(transcription).strip()
-            logger.info("transcribed")
+            emit_operational_event(
+                "llm_media_audio_transcribed",
+                severity="info",
+                domain="llm",
+                details={
+                    "model": settings.audio_transcription_model,
+                    "channel": channel,
+                    "audio_bytes": len(audio_content),
+                },
+            )
+            logger.info("transcribed", model=settings.audio_transcription_model, channel=channel)
             return text
 
         except Exception:
+            emit_operational_event(
+                "llm_media_audio_failed",
+                severity="warning",
+                domain="llm",
+                details={"model": settings.audio_transcription_model, "channel": channel},
+            )
             logger.error("failed_to_process")
             return render_message("orchestrator.error.audio_unprocessable", locale)
 
@@ -243,6 +260,12 @@ class MediaService:
 
             max_bytes = max(1, int(settings.media_image_max_bytes))
             if len(image_content) > max_bytes:
+                emit_operational_event(
+                    "llm_media_image_too_large",
+                    severity="warning",
+                    domain="llm",
+                    details={"size_bytes": len(image_content), "max_bytes": max_bytes, "channel": channel},
+                )
                 logger.warning("media_image_too_large", size_bytes=len(image_content), max_bytes=max_bytes)
                 return MediaInterpretation(source="image", error="image_too_large")
 
@@ -289,6 +312,18 @@ class MediaService:
             raw_entities = parsed.get("entities") if isinstance(parsed, dict) else {}
             entities = self._coerce_image_entities(raw_entities or parsed)
             text = self.render_image_interpretation_text(entities)
+            emit_operational_event(
+                "llm_media_image_interpreted",
+                severity="info",
+                domain="llm",
+                details={
+                    "model": settings.media_image_model,
+                    "channel": channel,
+                    "image_bytes": len(image_content),
+                    "entity_keys": sorted(entities.keys()),
+                    "confidence": self._coerce_confidence(parsed.get("confidence")),
+                },
+            )
             return MediaInterpretation(
                 source="image",
                 text=text,
@@ -297,6 +332,17 @@ class MediaService:
             )
 
         except Exception as exc:
+            emit_operational_event(
+                "llm_media_image_failed",
+                severity="warning",
+                domain="llm",
+                details={
+                    "model": settings.media_image_model,
+                    "channel": channel,
+                    "error_type": type(exc).__name__,
+                    "status_code": getattr(exc, "status_code", None),
+                },
+            )
             logger.error(
                 "failed_to_interpret_image",
                 error_type=type(exc).__name__,

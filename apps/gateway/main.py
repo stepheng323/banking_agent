@@ -13,6 +13,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.router import router as flows_rout
 from apps.gateway.api.webhooks.whatsapp.message.router import router as message_router
 from shared.branding import render_brand_template
 from shared.config.settings import settings
+from shared.observability.readiness import dependency_readiness
 from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
 
@@ -104,10 +105,12 @@ async def health() -> dict[str, object]:
 @app.get("/ready")
 async def readiness() -> dict[str, object]:
     """Readiness endpoint exposing service and transport state."""
+    readiness_result = await dependency_readiness(require_db=True, require_redis=True)
     return {
-        "status": "ready",
+        "status": readiness_result["status"],
         "service": "gateway",
         "ingress_enabled": True,
+        "checks": readiness_result["checks"],
         "runtime": build_runtime_status("gateway"),
     }
 

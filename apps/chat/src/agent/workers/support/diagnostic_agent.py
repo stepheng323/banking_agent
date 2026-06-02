@@ -19,6 +19,7 @@ from apps.chat.src.agent.workers.support.models import (
     SupportIntent,
     SupportReferenceCandidate,
 )
+from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 
 _MAX_RECENT_CANDIDATES = 5
 
@@ -187,7 +188,16 @@ class SupportDiagnosticAgent:
                 )
             ),
         ]
-        raw = await self.structured.ainvoke(messages)
+        raw = await ainvoke_with_config(
+            self.structured,
+            messages,
+            config=build_llm_runnable_config(
+                role="support_diagnostic",
+                task_domain="support",
+                extra_metadata={"context_keys": sorted(diagnostic_context.keys())},
+            )
+            or None,
+        )
         if isinstance(raw, SupportDiagnosticDecision):
             return raw
         return SupportDiagnosticDecision.model_validate(raw)

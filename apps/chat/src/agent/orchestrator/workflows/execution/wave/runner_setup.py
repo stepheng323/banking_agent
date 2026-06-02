@@ -5,6 +5,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
+from banking.accounts.mandate_state import is_mandate_debit_ready
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,7 +36,7 @@ def _prepare_transaction_account_view(state: OrchestratorState) -> list[dict[str
         ],
     )
     state.loaded_context["transaction_accounts"] = [
-        account for account in mandate_gate_accounts if account.get("mandate_status") == "ready"
+        account for account in mandate_gate_accounts if is_mandate_debit_ready(account)
     ]
     logger.info(
         "mandate_gate_post_filter",

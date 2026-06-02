@@ -31,6 +31,7 @@ from shared.messaging.intents import Say
 from shared.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.messaging.prompt_suppression import pending_input_prompt_metadata
 from shared.models.messages import ChannelMessage
+from shared.observability.events import emit_operational_event
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger, log_fingerprint
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
@@ -299,6 +300,17 @@ class MessageConsumer:
                     phone_number=phone_number,
                     message_id=message.message_id,
                     exc_info=True,
+                )
+                emit_operational_event(
+                    "llm_orchestrator_safe_fallback",
+                    severity="high",
+                    domain="llm",
+                    identifiers={
+                        "phone_number": phone_number,
+                        "channel_user_id": channel_user_id,
+                        "message_id": message.message_id,
+                    },
+                    details={"error_type": type(exc).__name__, "channel": message.channel},
                 )
                 response_text = render_message("orchestrator.fallback.processing_error", "en")
                 await enqueue_outbox_intents(
