@@ -162,7 +162,7 @@ The main engineering work is around making LLM-driven financial flows behave pre
 banking_agent/
 ├── apps/
 │   ├── gateway/         # ingress, webhooks, channel adapters
-│   ├── chat/            # orchestration, remaining app-owned workers, task planning
+│   ├── chat/            # orchestration, task planning, conversational runtime
 │   ├── transaction/     # transaction worker runtime app
 │   └── receipt/         # receipt rendering and worker entrypoints
 ├── banking/             # banking product core, policy, presentation, runtime, repositories

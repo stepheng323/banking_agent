@@ -11,6 +11,7 @@ SOURCE_ROOTS = ("apps", "banking", "scripts", "tests")
 CHAT_WORKER_MODULE = ".".join(("apps", "chat", "src", "agent", "workers"))
 
 MOVED_WORKER_MODULES = (
+    CHAT_WORKER_MODULE,
     f"{CHAT_WORKER_MODULE}.faq",
     f"{CHAT_WORKER_MODULE}.account",
     f"{CHAT_WORKER_MODULE}.beneficiary",
@@ -25,6 +26,7 @@ MOVED_WORKER_MODULES = (
 )
 
 DELETED_PACKAGE_PATHS = (
+    "/".join(("apps", "chat", "src", "agent", "workers")),
     "/".join(("apps", "chat", "src", "agent", "workers", "faq")),
     "/".join(("apps", "chat", "src", "agent", "workers", "account")),
     "/".join(("apps", "chat", "src", "agent", "workers", "beneficiary")),
