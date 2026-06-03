@@ -4,12 +4,12 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.workers.airtime.nodes.confirmation import ConfirmationStep
-from apps.chat.src.agent.workers.airtime.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.airtime.nodes.selection import SourceSelectionStep
-from apps.chat.src.agent.workers.airtime.nodes.validation import ValidationStep
-from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
+from banking.bills.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from banking.bills.airtime.nodes.confirmation import ConfirmationStep
+from banking.bills.airtime.nodes.extraction import ExtractionStep
+from banking.bills.airtime.nodes.selection import SourceSelectionStep
+from banking.bills.airtime.nodes.validation import ValidationStep
+from banking.bills.airtime.worker import AirtimeWorker
 
 
 class _ExtractorStub:

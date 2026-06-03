@@ -18,7 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pen
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_message
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
+from banking.bills.airtime.worker import AirtimeWorker
 from banking.presentation.formatters.accounts import format_source_account_info_from_account_number
 from banking.presentation.i18n.bridge import render_cancelled_prompt
 from banking.presentation.i18n.renderer import render_message

@@ -6,19 +6,19 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.airtime.models.types import (
+from banking.bills.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
     AirtimePayload,
 )
-from apps.chat.src.agent.workers.airtime.nodes.confirmation import ConfirmationStep
-from apps.chat.src.agent.workers.airtime.nodes.execution import ExecutionStep
-from apps.chat.src.agent.workers.airtime.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.airtime.nodes.resolution import ResolutionStep
-from apps.chat.src.agent.workers.airtime.nodes.security import AuthorizationStep
-from apps.chat.src.agent.workers.airtime.nodes.selection import SourceSelectionStep
-from apps.chat.src.agent.workers.airtime.nodes.validation import ValidationStep
-from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimePipeline, AirtimeStep
+from banking.bills.airtime.nodes.confirmation import ConfirmationStep
+from banking.bills.airtime.nodes.execution import ExecutionStep
+from banking.bills.airtime.nodes.extraction import ExtractionStep
+from banking.bills.airtime.nodes.resolution import ResolutionStep
+from banking.bills.airtime.nodes.security import AuthorizationStep
+from banking.bills.airtime.nodes.selection import SourceSelectionStep
+from banking.bills.airtime.nodes.validation import ValidationStep
+from banking.bills.airtime.pipeline.base import AirtimePipeline, AirtimeStep
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.policy.service import capability_block_message
 from banking.presentation.formatters.currency import format_naira

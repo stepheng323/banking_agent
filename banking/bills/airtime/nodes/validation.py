@@ -3,12 +3,12 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.airtime.models.types import (
+from banking.bills.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
     AirtimePayload,
 )
-from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
+from banking.bills.airtime.pipeline.base import AirtimeStep
 from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger

@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.workers.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.workers.airtime.nodes.confirmation import ConfirmationStep
+from banking.bills.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from banking.bills.airtime.nodes.confirmation import ConfirmationStep
 
 
 class _StubRedis:

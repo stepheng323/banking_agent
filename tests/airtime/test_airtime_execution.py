@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
-from apps.chat.src.agent.workers.airtime.nodes.execution import ExecutionStep
+from banking.bills.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
+from banking.bills.airtime.nodes.execution import ExecutionStep
 
 
 class _TransactionRepoStub:

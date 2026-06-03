@@ -3,12 +3,12 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.airtime.models.types import (
+from banking.bills.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
     AirtimePayload,
 )
-from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
+from banking.bills.airtime.pipeline.base import AirtimeStep
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
 from shared.money import naira_to_json

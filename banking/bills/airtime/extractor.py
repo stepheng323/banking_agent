@@ -5,8 +5,8 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.workers.airtime.models.extraction import AirtimeExtractionResult
-from apps.chat.src.agent.workers.airtime.prompt.airtime_extraction import (
+from banking.bills.airtime.models.extraction import AirtimeExtractionResult
+from banking.bills.airtime.prompt.airtime_extraction import (
     AIRTIME_EXTRACTION_PROMPT,
 )
 from banking.transactions.shared.models.smart_context import SmartContext
