@@ -13,13 +13,13 @@ from apps.chat.src.agent.workers.airtime.extractor import AirtimeEntityExtractor
 from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 from apps.chat.src.agent.workers.data.extraction.extractor import DataEntityExtractor
 from apps.chat.src.agent.workers.data.worker import DataWorker as AgentDataWorker
-from apps.chat.src.agent.workers.onboarding.executor import OnboardingExecutor
-from apps.chat.src.agent.workers.onboarding.service import OnboardingService
 from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEntityExtractor
 from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
+from banking.accounts.onboarding.executor import OnboardingExecutor
 from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
+from banking.accounts.onboarding.service import OnboardingService
 from banking.accounts.runtime import build_account_worker
 from banking.beneficiaries.runtime import build_beneficiary_worker
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService

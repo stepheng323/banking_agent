@@ -84,7 +84,7 @@ User (WhatsApp / Telegram)
 | `apps/chat/` | Orchestration, task planning, conversational runtime, and remaining app-owned workers |
 | `apps/transaction/` | Transaction worker runtime, async financial worker entrypoints |
 | `apps/receipt/` | Receipt rendering and async worker entrypoints |
-| `banking/` | Product core: account, FAQ, support, beneficiary, transaction query, policy, presentation, receipts, persistence, runtime, repositories |
+| `banking/` | Product core: account, account onboarding, FAQ, support, beneficiary, transaction query, policy, presentation, receipts, persistence, runtime, repositories |
 | `shared/` | Infrastructure primitives: config, database models, provider clients, queues, cache, messaging contracts, utilities |
 
 ### Orchestrator / Worker Contract
@@ -129,7 +129,7 @@ The main engineering work is around making LLM-driven financial flows behave pre
 - **Failure-driven hardening**: The test suite is built primarily from observed production failures converted into regression tests — especially around multilingual parsing, query continuation, transfer payload normalization, and recipient resolution.
 
 ### Recent Work
-- Moved account, FAQ, support, beneficiary, and transaction query ownership into `banking/` product modules with no app-side compatibility aliases
+- Moved account, account onboarding, FAQ, support, beneficiary, and transaction query ownership into `banking/` product modules with no app-side compatibility aliases
 - Decomposed the query core into compiler, continuation, grounding, and presentation subsystems
 - Coverage-aware bank transaction mirror for durable local query reads
 - Locale-aware beneficiary summary parsing
@@ -503,7 +503,7 @@ Failure reports should include channel, phone, timestamp, transcript, expected b
 
 ## Code Navigation
 
-Start from public entrypoints and import concrete modules directly. Account, FAQ, support, transaction query, and beneficiary live only under `banking/`.
+Start from public entrypoints and import concrete modules directly. Account, account onboarding, FAQ, support, transaction query, and beneficiary live only under `banking/`.
 
 | Area | Start Here | Notes |
 |------|------------|-------|

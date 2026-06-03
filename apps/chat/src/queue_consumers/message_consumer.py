@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
-from apps.chat.src.agent.workers.onboarding.executor import OnboardingExecutor
 from apps.chat.src.queue_consumers.channel_link_gate import gate_unlinked_whatsapp_identity
 from apps.chat.src.queue_consumers.flow_events import process_flow_event_payload
 from apps.chat.src.queue_consumers.message_inbound import (
@@ -21,6 +20,7 @@ from apps.chat.src.queue_consumers.message_outbound import (
     suppress_spurious_greeting_intents,
 )
 from apps.chat.src.queue_consumers.receipt_choices import handle_receipt_image_choice
+from banking.accounts.onboarding.executor import OnboardingExecutor
 from banking.identity.repositories.user_repository import UserRepository
 from banking.presentation.i18n.renderer import render_message
 from shared.cache.distributed_lock import RedisLockTimeoutError

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.workers.onboarding.service import OnboardingService
+from banking.accounts.onboarding.service import OnboardingService
 from banking.identity.repositories.user_repository import UserRepository
 from banking.persistence.unit_of_work import UnitOfWork
 from shared.database.models import UserOnboardingStatusEnum

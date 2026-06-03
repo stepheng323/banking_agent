@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.workers.onboarding import service as onboarding_service_module
+from banking.accounts.onboarding import service as onboarding_service_module
 from banking.accounts.onboarding.account_add import AccountAddService
 from banking.accounts.onboarding.account_linking import AccountLinkingService
 from banking.accounts.onboarding.bvn_verification import BvnVerificationService
