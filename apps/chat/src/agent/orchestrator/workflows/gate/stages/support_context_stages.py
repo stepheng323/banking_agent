@@ -12,7 +12,7 @@ from apps.chat.src.agent.shared.routing_signals import (
     looks_like_support_problem_statement,
     looks_like_transaction_replay_modifier_request,
 )
-from apps.chat.src.agent.workers.support.context_manager import SupportContextManager
+from banking.support.context_manager import SupportContextManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

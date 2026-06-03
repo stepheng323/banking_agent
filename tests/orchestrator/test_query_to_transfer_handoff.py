@@ -15,7 +15,7 @@ from apps.chat.src.agent.shared.query_contracts import (
     SurfaceView,
     SurfaceViewMode,
 )
-from apps.chat.src.agent.workers.query.models.domain import QueryResult
+from banking.transactions.query.models.domain import QueryResult
 
 
 class _DummyQueryWorker:

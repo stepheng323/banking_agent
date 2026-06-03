@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.workers.support.classifier import SupportClassifier
-from apps.chat.src.agent.workers.support.models import SupportIntent
+from banking.support.classifier import SupportClassifier
+from banking.support.models import SupportIntent
 
 
 class _LLMStub:
@@ -61,8 +61,7 @@ async def test_support_classifier_falls_back_for_empty_llm_output() -> None:
 async def test_support_classifier_does_not_regex_override_explicit_null_intent() -> None:
     classifier = SupportClassifier(
         _LLMStub(
-            '{"intent":null,"confidence":0.93,'
-            '"transaction_ref":{"amount":null,"recipient_name":null,"date_hint":null}}'
+            '{"intent":null,"confidence":0.93,"transaction_ref":{"amount":null,"recipient_name":null,"date_hint":null}}'
         )
     )
 

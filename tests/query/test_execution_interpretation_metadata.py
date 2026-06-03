@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     Aggregation,
     ComparisonDirective,
     Filters,
@@ -14,8 +14,8 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryResult,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.nodes.execution import ExecutionStep
-from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
+from banking.transactions.query.nodes.execution import ExecutionStep
+from banking.transactions.query.utils.timezone import lagos_today
 
 
 @pytest.mark.asyncio
@@ -41,7 +41,7 @@ async def test_execution_populates_interpretation_metadata(monkeypatch: pytest.M
         del self, kwargs
         return QueryResult(summary_text="comparison done")
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.nodes.execution.QueryExecutor.execute", _fake_execute)
+    monkeypatch.setattr("banking.transactions.query.nodes.execution.QueryExecutor.execute", _fake_execute)
 
     step = ExecutionStep()
     result = await step.run(
@@ -99,7 +99,7 @@ async def test_execution_formats_time_scoped_single_transaction_no_results_as_di
         del self, kwargs
         return QueryResult(summary_text="", items=[], query_contract=query_contract)
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.nodes.execution.QueryExecutor.execute", _fake_execute)
+    monkeypatch.setattr("banking.transactions.query.nodes.execution.QueryExecutor.execute", _fake_execute)
 
     step = ExecutionStep()
     result = await step.run(

@@ -9,7 +9,7 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from apps.chat.src.agent.workers.support.resolver import TransactionResolver
+from banking.support.resolver import TransactionResolver
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
 from shared.types.quoted_replay import QuotedReplayInterpretation
@@ -147,7 +147,15 @@ class _ReplayPlannerStub:
         del phone_number, text, context
         return self.interpretation
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> Any:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> Any:
         del phone_number, text, context
         self.plan_called = True
         return None

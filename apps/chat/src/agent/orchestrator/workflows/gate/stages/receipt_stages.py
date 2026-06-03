@@ -18,8 +18,8 @@ from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import (
     _recent_batch_identity_for_state,
     _support_user_id_for_state,
 )
-from apps.chat.src.agent.workers.support.context_manager import SupportContextManager
-from apps.chat.src.agent.workers.support.models import ReceiptBatchThreadState
+from banking.support.context_manager import SupportContextManager
+from banking.support.models import ReceiptBatchThreadState
 from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
 from shared.utils.logging import get_logger
 

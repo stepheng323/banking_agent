@@ -13,7 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_fo
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
-from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import resolve_query_shortcut
+from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

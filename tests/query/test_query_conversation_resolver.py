@@ -4,8 +4,8 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
-from apps.chat.src.agent.workers.query.actions import handle_drill_down
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.actions import handle_drill_down
+from banking.transactions.query.models.domain import (
     Filters,
     QueryExecutionContract,
     QueryFrame,
@@ -14,8 +14,8 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryResult,
     QueryResultItem,
 )
-from apps.chat.src.agent.workers.query.services.conversation.resolver import build_query_conversation_updates
-from apps.chat.src.agent.workers.query.services.reasoning.models import QuerySemanticDecision
+from banking.transactions.query.services.conversation.resolver import build_query_conversation_updates
+from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 
 
 def _payload(entity_id: str, label: str) -> SelectionPayload:

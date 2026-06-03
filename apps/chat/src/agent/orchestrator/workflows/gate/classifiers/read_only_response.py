@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import resolve_query_shortcut
 from banking.presentation.i18n.locale import LocaleManager
+from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
 
 ResponseClass = Literal[
     "FACT_BOOL",

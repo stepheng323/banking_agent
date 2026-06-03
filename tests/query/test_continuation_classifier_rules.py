@@ -1,6 +1,6 @@
 import pytest
 
-from apps.chat.src.agent.workers.query.continuations.classifier import ContinuationClassifier
+from banking.transactions.query.continuations.classifier import ContinuationClassifier
 
 
 def _classifier() -> ContinuationClassifier:

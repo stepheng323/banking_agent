@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
-from apps.chat.src.agent.workers.support.handlers.failure import handle_failure_reason
-from apps.chat.src.agent.workers.support.worker import SupportWorker
+from banking.support.handlers.failure import handle_failure_reason
+from banking.support.worker import SupportWorker
 from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
 
 
@@ -118,7 +118,9 @@ def _tx(
     )
 
 
-def _worker(redis_client: _RedisStub, transactions: dict[str, object], ticket_service: object | None = None) -> SupportWorker:
+def _worker(
+    redis_client: _RedisStub, transactions: dict[str, object], ticket_service: object | None = None
+) -> SupportWorker:
     return SupportWorker(
         llm=_SupportLLMStub(),
         transaction_repo=_TxRepoStub(transactions),
@@ -151,7 +153,9 @@ async def test_support_worker_enqueues_single_transfer_receipt_for_successful_tr
     worker = _worker(
         _RedisStub(),
         {
-            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
+            "tx-1": _tx(
+                "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+            ),
         },
     )
 
@@ -464,7 +468,7 @@ async def test_support_worker_returns_retry_handoff_when_policy_allows_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.support.capabilities.check_unsupported_actions",
+        "banking.support.capabilities.check_unsupported_actions",
         lambda domain, requested_actions: [],
     )
     worker = _worker(
@@ -502,7 +506,7 @@ async def test_support_worker_does_not_retry_replay_modifier_followup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.support.capabilities.check_unsupported_actions",
+        "banking.support.capabilities.check_unsupported_actions",
         lambda domain, requested_actions: [],
     )
     redis = _RedisStub()
@@ -653,8 +657,12 @@ async def test_support_worker_resolves_batch_receipt_followup_by_ordinal() -> No
     worker = _worker(
         redis_client,
         {
-            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
-            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+            "tx-1": _tx(
+                "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+            ),
+            "tx-2": _tx(
+                "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+            ),
         },
     )
 
@@ -798,8 +806,12 @@ async def test_support_worker_enqueues_both_receipts_for_two_leg_batch() -> None
     worker = _worker(
         redis_client,
         {
-            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
-            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+            "tx-1": _tx(
+                "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+            ),
+            "tx-2": _tx(
+                "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+            ),
         },
     )
 
@@ -916,8 +928,12 @@ async def test_support_worker_only_named_leg_selects_single_receipt() -> None:
     worker = _worker(
         redis_client,
         {
-            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
-            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+            "tx-1": _tx(
+                "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+            ),
+            "tx-2": _tx(
+                "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+            ),
         },
     )
 
@@ -936,8 +952,12 @@ async def test_support_worker_only_named_leg_selects_single_receipt() -> None:
 async def test_support_worker_other_one_uses_remaining_receipt_thread_candidate() -> None:
     redis_client = _RedisStub()
     txs = {
-        "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
-        "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+        "tx-1": _tx(
+            "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+        ),
+        "tx-2": _tx(
+            "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+        ),
     }
     await record_group_leg_and_maybe_build_summary(
         redis_client,
@@ -1033,8 +1053,12 @@ async def test_support_worker_remaining_ones_select_rest_after_first_receipt() -
 async def test_support_worker_other_one_after_both_reports_already_sent() -> None:
     redis_client = _RedisStub()
     txs = {
-        "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
-        "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+        "tx-1": _tx(
+            "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+        ),
+        "tx-2": _tx(
+            "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+        ),
     }
     await record_group_leg_and_maybe_build_summary(
         redis_client,
@@ -1115,8 +1139,12 @@ async def test_support_worker_enqueues_all_receipts_for_recent_transfer_batch_in
     worker = _worker(
         redis_client,
         {
-            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
-            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+            "tx-1": _tx(
+                "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+            ),
+            "tx-2": _tx(
+                "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+            ),
         },
     )
 
@@ -1152,7 +1180,11 @@ async def test_support_worker_all_receipts_skips_non_successful_and_non_transfer
     }
     await record_group_leg_and_maybe_build_summary(
         redis_client,
-        message={**base_message, "transaction_id": "tx-1", "async_group": {**base_message["async_group"], "async_group_index": 1}},
+        message={
+            **base_message,
+            "transaction_id": "tx-1",
+            "async_group": {**base_message["async_group"], "async_group_index": 1},
+        },
         task_type="transfer",
         payload=_leg_payload(
             amount=10000,
@@ -1165,7 +1197,11 @@ async def test_support_worker_all_receipts_skips_non_successful_and_non_transfer
     )
     await record_group_leg_and_maybe_build_summary(
         redis_client,
-        message={**base_message, "transaction_id": "tx-2", "async_group": {**base_message["async_group"], "async_group_index": 2}},
+        message={
+            **base_message,
+            "transaction_id": "tx-2",
+            "async_group": {**base_message["async_group"], "async_group_index": 2},
+        },
         task_type="transfer",
         payload={
             **_leg_payload(
@@ -1181,7 +1217,11 @@ async def test_support_worker_all_receipts_skips_non_successful_and_non_transfer
     )
     await record_group_leg_and_maybe_build_summary(
         redis_client,
-        message={**base_message, "transaction_id": "tx-3", "async_group": {**base_message["async_group"], "async_group_index": 3}},
+        message={
+            **base_message,
+            "transaction_id": "tx-3",
+            "async_group": {**base_message["async_group"], "async_group_index": 3},
+        },
         task_type="airtime",
         payload={"amount": 2000, "network": "MTN", "phone_number": "2348012345678", "final_status": "success"},
         locale="en",
@@ -1190,7 +1230,9 @@ async def test_support_worker_all_receipts_skips_non_successful_and_non_transfer
     worker = _worker(
         redis_client,
         {
-            "tx-1": _tx("tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"),
+            "tx-1": _tx(
+                "tx-1", amount=10000, recipient_name="Mercy Johnson", bank_name="Opay", account_number="8162511023"
+            ),
             "tx-2": _tx(
                 "tx-2",
                 amount=5000,
@@ -1264,7 +1306,9 @@ async def test_support_worker_answers_recent_failed_batch_reason_from_failure_ca
                 status="failed",
                 error_message="Provider down",
             ),
-            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+            "tx-2": _tx(
+                "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+            ),
         },
     )
 
@@ -1284,7 +1328,7 @@ async def test_support_worker_recent_failed_retry_uses_category_repair_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.support.capabilities.check_unsupported_actions",
+        "banking.support.capabilities.check_unsupported_actions",
         lambda domain, requested_actions: [],
     )
     redis_client = _RedisStub()
@@ -1329,7 +1373,9 @@ async def test_support_worker_recent_failed_retry_uses_category_repair_prompt(
                 status="failed",
                 error_message="Insufficient funds",
             ),
-            "tx-2": _tx("tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"),
+            "tx-2": _tx(
+                "tx-2", amount=5000, recipient_name="Tolu Adedayo", bank_name="First Bank", account_number="0760505261"
+            ),
         },
     )
 

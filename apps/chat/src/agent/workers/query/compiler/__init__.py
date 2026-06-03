@@ -1,2 +1,0 @@
-"""Query compiler subsystem."""
-

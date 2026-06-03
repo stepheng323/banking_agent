@@ -2,11 +2,11 @@ from datetime import date
 
 import pytest
 
-from apps.chat.src.agent.workers.query.handlers.time_comparison import (
+from banking.transactions.query.handlers.time_comparison import (
     _format_period_label,
     handle_time_comparison,
 )
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
@@ -19,25 +19,19 @@ class _Provider:
 
 
 def test_format_period_label_keeps_full_month_name() -> None:
-    label = _format_period_label(
-        TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 28), granularity="month")
-    )
+    label = _format_period_label(TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 28), granularity="month"))
 
     assert label == "February 2026"
 
 
 def test_format_period_label_uses_date_span_for_partial_month() -> None:
-    label = _format_period_label(
-        TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 7), granularity="month")
-    )
+    label = _format_period_label(TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 7), granularity="month"))
 
     assert label == "Feb 01 - Feb 07"
 
 
 def test_format_period_label_uses_date_span_for_partial_week() -> None:
-    label = _format_period_label(
-        TimeRange(start=date(2026, 2, 23), end=date(2026, 2, 27), granularity="week")
-    )
+    label = _format_period_label(TimeRange(start=date(2026, 2, 23), end=date(2026, 2, 27), granularity="week"))
 
     assert label == "Feb 23 - Feb 27"
 
@@ -61,7 +55,7 @@ async def test_time_comparison_uses_naira_amounts_without_kobo_division(
         return [{"id": "previous", "amount": 3000, "type": "debit"}]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.time_comparison.fetch_and_filter",
+        "banking.transactions.query.handlers.time_comparison.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 

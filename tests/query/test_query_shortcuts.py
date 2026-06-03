@@ -1,4 +1,4 @@
-from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import (
+from banking.transactions.query.services.reasoning.shortcuts import (
     resolve_query_shortcut_with_reason,
 )
 

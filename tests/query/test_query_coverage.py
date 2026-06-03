@@ -5,13 +5,13 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.services.answers.coverage import build_query_coverage_answer
+from banking.transactions.query.services.answers.coverage import build_query_coverage_answer
 
 
 class _CoverageRepo:

@@ -5,8 +5,8 @@ from datetime import date
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.query.models.extraction import QueryExtractionResult
-from apps.chat.src.agent.workers.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.models.extraction import QueryExtractionResult
+from banking.transactions.query.nodes.extraction import ExtractionStep
 
 
 class _DummyStructured:

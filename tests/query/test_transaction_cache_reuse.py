@@ -5,15 +5,15 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.workers.query.handlers.transactions import handle_transaction_list
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.handlers.transactions import handle_transaction_list
+from banking.transactions.query.models.domain import (
     Filters,
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.services.fetching.fetch import (
+from banking.transactions.query.services.fetching.fetch import (
     apply_time_window,
     build_cache_fingerprint,
     build_cache_scope_fingerprint,
@@ -145,7 +145,9 @@ async def test_filter_delta_does_not_reuse_stale_cache() -> None:
         continuation_type="filter_delta",
         continuation_delta_type="filter",
         session_cache={
-            "cached_transactions": [{"id": "stale", "narration": "Old", "amount": 1, "date": "2026-03-01", "type": "debit"}],
+            "cached_transactions": [
+                {"id": "stale", "narration": "Old", "amount": 1, "date": "2026-03-01", "type": "debit"}
+            ],
             "cache_fetched_at": time.time() - 200,
             "cache_fingerprint": fingerprint,
             "cache_scope_fingerprint": scope_fingerprint,
@@ -167,9 +169,7 @@ async def test_time_delta_reuses_fresh_subset_cache() -> None:
         filters=Filters(transaction_type="credit"),
     )
     provider = _Provider(
-        transactions=[
-            {"id": "4", "narration": "Salary", "amount": 90000, "date": "2026-03-03", "type": "credit"}
-        ]
+        transactions=[{"id": "4", "narration": "Salary", "amount": 90000, "date": "2026-03-03", "type": "credit"}]
     )
     cached_query = _query(Filters(transaction_type="credit"))
     scope_fingerprint = build_cache_scope_fingerprint(query, "acc_1", ["acc_1"])
@@ -182,7 +182,9 @@ async def test_time_delta_reuses_fresh_subset_cache() -> None:
         continuation_type="time_delta",
         continuation_delta_type="time",
         session_cache={
-            "cached_transactions": [{"id": "x", "narration": "cached", "amount": 10, "date": "2026-03-03", "type": "credit"}],
+            "cached_transactions": [
+                {"id": "x", "narration": "cached", "amount": 10, "date": "2026-03-03", "type": "credit"}
+            ],
             "cache_fetched_at": time.time() - 5,
             "cache_scope_fingerprint": scope_fingerprint,
             "cache_window_start": cached_query.time_range.start.isoformat(),
@@ -198,9 +200,7 @@ async def test_time_delta_reuses_fresh_subset_cache() -> None:
 async def test_time_delta_does_not_reuse_cache_for_wider_window() -> None:
     query = _query(Filters(transaction_type="credit"))
     provider = _Provider(
-        transactions=[
-            {"id": "4", "narration": "Salary", "amount": 90000, "date": "2026-03-03", "type": "credit"}
-        ]
+        transactions=[{"id": "4", "narration": "Salary", "amount": 90000, "date": "2026-03-03", "type": "credit"}]
     )
     narrower_query = _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
@@ -217,7 +217,9 @@ async def test_time_delta_does_not_reuse_cache_for_wider_window() -> None:
         continuation_type="time_delta",
         continuation_delta_type="time",
         session_cache={
-            "cached_transactions": [{"id": "x", "narration": "cached", "amount": 10, "date": "2026-03-03", "type": "credit"}],
+            "cached_transactions": [
+                {"id": "x", "narration": "cached", "amount": 10, "date": "2026-03-03", "type": "credit"}
+            ],
             "cache_fetched_at": time.time() - 5,
             "cache_scope_fingerprint": scope_fingerprint,
             "cache_window_start": narrower_query.time_range.start.isoformat(),

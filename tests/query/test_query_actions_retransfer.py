@@ -4,8 +4,8 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceViewMode
-from apps.chat.src.agent.workers.query.actions import handle_drill_down
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.actions import handle_drill_down
+from banking.transactions.query.models.domain import (
     QueryResult,
     QueryResultItem,
 )

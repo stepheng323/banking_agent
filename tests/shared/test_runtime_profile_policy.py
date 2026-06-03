@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-import apps.chat.src.agent.workers.query.capabilities as query_capabilities
+import banking.transactions.query.capabilities as query_capabilities
 from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
 from apps.chat.src.agent.assistant_profile.voice import build_planner_voice_block, get_runtime_voice
 from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome

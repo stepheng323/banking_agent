@@ -2,11 +2,11 @@ from datetime import date
 
 import pytest
 
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     QueryIntent,
     QueryOperation,
 )
-from apps.chat.src.agent.workers.query.models.extraction import (
+from banking.transactions.query.models.extraction import (
     ExtractionIntent,
     FactQueryKind,
     QueryAggregation,
@@ -17,7 +17,7 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     QueryTimeRange,
     TimeReference,
 )
-from apps.chat.src.agent.workers.query.services.parsing.parser import QueryParser
+from banking.transactions.query.services.parsing.parser import QueryParser
 
 
 class _DummyLLM:

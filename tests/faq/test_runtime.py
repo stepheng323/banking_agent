@@ -5,13 +5,13 @@ from types import SimpleNamespace
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome
-from apps.chat.src.agent.workers.faq.models import FAQRetrievalHit
-from apps.chat.src.agent.workers.faq.nodes.gate import confidence_gate_node
-from apps.chat.src.agent.workers.faq.nodes.guard import final_guard_node
-from apps.chat.src.agent.workers.faq.nodes.retrieve import create_retrieve_node
-from apps.chat.src.agent.workers.faq.nodes.validate import validate_intent_node
-from apps.chat.src.agent.workers.faq.retrieval import hybrid as hybrid_module
-from apps.chat.src.agent.workers.faq.retrieval.hybrid import HybridRetriever
+from banking.faq.models import FAQRetrievalHit
+from banking.faq.nodes.gate import confidence_gate_node
+from banking.faq.nodes.guard import final_guard_node
+from banking.faq.nodes.retrieve import create_retrieve_node
+from banking.faq.nodes.validate import validate_intent_node
+from banking.faq.retrieval import hybrid as hybrid_module
+from banking.faq.retrieval.hybrid import HybridRetriever
 from banking.presentation.i18n.renderer import render_message
 from shared.config.settings import settings
 
@@ -54,7 +54,7 @@ async def test_retrieve_node_uses_async_session_factory(monkeypatch: pytest.Monk
             )
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.faq.nodes.retrieve.HybridRetriever",
+        "banking.faq.nodes.retrieve.HybridRetriever",
         FakeRetriever,
     )
 
@@ -154,7 +154,7 @@ def test_final_guard_replaces_unsafe_faq_response() -> None:
 async def test_faq_worker_forbidden_scope_returns_support_handoff_before_db(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from apps.chat.src.agent.workers.faq import worker as worker_module
+    from banking.faq import worker as worker_module
 
     monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
     monkeypatch.setattr(worker_module, "capability_block_message", lambda **kwargs: None)
@@ -178,7 +178,7 @@ async def test_faq_worker_forbidden_scope_returns_support_handoff_before_db(
 async def test_faq_worker_high_confidence_single_hit_returns_seeded_answer_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from apps.chat.src.agent.workers.faq import worker as worker_module
+    from banking.faq import worker as worker_module
 
     class FakeSession:
         async def __aenter__(self):
@@ -217,7 +217,7 @@ async def test_faq_worker_high_confidence_single_hit_returns_seeded_answer_witho
     monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
     monkeypatch.setattr(worker_module, "capability_block_message", lambda **kwargs: None)
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.faq.nodes.retrieve.HybridRetriever",
+        "banking.faq.nodes.retrieve.HybridRetriever",
         FakeRetriever,
     )
 
@@ -234,7 +234,7 @@ async def test_faq_worker_high_confidence_single_hit_returns_seeded_answer_witho
 
 @pytest.mark.asyncio
 async def test_faq_worker_multi_hit_uses_llm_synthesis(monkeypatch: pytest.MonkeyPatch) -> None:
-    from apps.chat.src.agent.workers.faq import worker as worker_module
+    from banking.faq import worker as worker_module
 
     class FakeSession:
         async def __aenter__(self):
@@ -283,7 +283,7 @@ async def test_faq_worker_multi_hit_uses_llm_synthesis(monkeypatch: pytest.Monke
     monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
     monkeypatch.setattr(worker_module, "capability_block_message", lambda **kwargs: None)
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.faq.nodes.retrieve.HybridRetriever",
+        "banking.faq.nodes.retrieve.HybridRetriever",
         FakeRetriever,
     )
 
@@ -301,7 +301,7 @@ async def test_faq_worker_multi_hit_uses_llm_synthesis(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_faq_worker_disabled_blocks_before_db_or_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    from apps.chat.src.agent.workers.faq import worker as worker_module
+    from banking.faq import worker as worker_module
 
     monkeypatch.setattr(worker_module, "EmbeddingService", lambda: object())
     monkeypatch.setattr(

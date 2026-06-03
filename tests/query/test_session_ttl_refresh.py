@@ -4,7 +4,7 @@ from time import time
 
 import pytest
 
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     QueryExecutionContract,
     QueryFrame,
     QueryFrameFacts,
@@ -14,7 +14,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryResultItem,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.session import SESSION_TTL, QuerySessionManager
+from banking.transactions.query.session import SESSION_TTL, QuerySessionManager
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

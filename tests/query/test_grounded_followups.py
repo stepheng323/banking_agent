@@ -4,7 +4,8 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.shared.query_contracts import SurfaceViewMode
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
     QueryExecutionContract,
@@ -14,9 +15,8 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryIR,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.query.services.reasoning.models import QuerySemanticDecision
-from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -199,10 +199,7 @@ async def test_grounded_which_one_was_higher_uses_memory_answer() -> None:
     )
 
     assert updates["flow_state"] == "complete"
-    assert (
-        updates["response"]
-        == "You spent less (₦4,000) in Mar 16 - Mar 19 compared to Mar 09 - Mar 15."
-    )
+    assert updates["response"] == "You spent less (₦4,000) in Mar 16 - Mar 19 compared to Mar 09 - Mar 15."
 
 
 @pytest.mark.asyncio

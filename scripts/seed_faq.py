@@ -25,8 +25,8 @@ from sqlalchemy import delete
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from apps.chat.src.agent.workers.faq.retrieval.embeddings import EmbeddingService
-from banking.knowledge.repositories.faq_repository import FAQRepository
+from banking.faq.repositories.faq_repository import FAQRepository
+from banking.faq.retrieval.embeddings import EmbeddingService
 from shared.branding import render_brand_template
 from shared.database.connection import get_db_session
 from shared.database.models import FAQEntry
@@ -220,9 +220,7 @@ def add_embeddings(
         texts = [f"{entry['question']}\n{entry['answer']}" for entry in entries]
         embeddings = embedding_service.get_embeddings_sync(texts)
         if len(embeddings) != len(entries):
-            raise RuntimeError(
-                f"Embedding count mismatch: got {len(embeddings)} for {len(entries)} FAQ entries"
-            )
+            raise RuntimeError(f"Embedding count mismatch: got {len(embeddings)} for {len(entries)} FAQ entries")
         for entry, embedding in zip(entries, embeddings, strict=True):
             entry["embedding"] = embedding
         logger.info("Generated %s FAQ embeddings", len(embeddings))

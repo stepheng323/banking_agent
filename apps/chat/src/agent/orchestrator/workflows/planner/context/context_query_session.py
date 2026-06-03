@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
     _build_query_session_context,
 )
-from apps.chat.src.agent.workers.query.session import _session_has_surface_view, is_query_session_stale
+from banking.transactions.query.session import _session_has_surface_view, is_query_session_stale
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

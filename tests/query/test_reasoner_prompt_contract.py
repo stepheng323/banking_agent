@@ -1,4 +1,4 @@
-from apps.chat.src.agent.workers.query.prompts.main import (
+from banking.transactions.query.prompts.main import (
     QUERY_PARSER_PROMPT,
     QUERY_SEMANTIC_REASONER_CONTEXT,
     QUERY_SEMANTIC_REASONER_SYSTEM,

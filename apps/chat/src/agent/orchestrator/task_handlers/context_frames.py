@@ -156,7 +156,7 @@ def push_query_surface_frame(ctx: Any, query_result: Any) -> None:
     surface_view = getattr(query_result, "surface_view", None)
     if surface_view is None:
         try:
-            from apps.chat.src.agent.workers.query.presentation.surface_builder import build_surface_view
+            from banking.transactions.query.presentation.surface_builder import build_surface_view
 
             surface_view = build_surface_view(query_result)
         except Exception as exc:

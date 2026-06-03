@@ -5,9 +5,9 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_airtime_request,
     _is_obvious_data_request,
 )
-from apps.chat.src.agent.workers.query.services.parsing.parser import QueryParser
-from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import resolve_query_shortcut_with_reason
-from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
+from banking.transactions.query.services.parsing.parser import QueryParser
+from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut_with_reason
+from banking.transactions.query.utils.timezone import lagos_today
 
 
 def _query_followup_bypass_reason(

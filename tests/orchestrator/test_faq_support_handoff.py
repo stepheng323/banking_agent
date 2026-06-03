@@ -16,8 +16,8 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.task_handlers.support import handle_faq_task
-from apps.chat.src.agent.workers.support.worker import SupportWorker
 from banking.policy.loader import get_cached_policy
+from banking.support.worker import SupportWorker
 
 CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 SUPPORT_DISABLED_MESSAGE = (

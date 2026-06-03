@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.workers.query.handlers.analytics import handle_analytics
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.handlers.analytics import handle_analytics
+from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
     QueryExecutionContract,
@@ -12,9 +12,9 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryIR,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.presentation.formatter import QueryFormatter
-from apps.chat.src.agent.workers.query.presentation.scope import build_transaction_heading
-from apps.chat.src.agent.workers.query.services.answers.strategy import select_answer_strategy
+from banking.transactions.query.presentation.formatter import QueryFormatter
+from banking.transactions.query.presentation.scope import build_transaction_heading
+from banking.transactions.query.services.answers.strategy import select_answer_strategy
 
 
 class _Provider:
@@ -47,10 +47,10 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
         ]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
+    monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
@@ -94,10 +94,10 @@ async def test_analytics_sum_response_names_retained_account_scope(monkeypatch: 
         ]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.handlers.analytics.lagos_today", lambda: date(2026, 5, 11))
+    monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 5, 11))
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
@@ -141,10 +141,10 @@ async def test_analytics_sum_response_names_recipient_scope(monkeypatch: pytest.
         ]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.handlers.analytics.lagos_today", lambda: date(2026, 5, 20))
+    monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 5, 20))
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
@@ -166,7 +166,7 @@ async def test_analytics_sum_response_names_recipient_scope(monkeypatch: pytest.
 
 def test_transaction_heading_title_cases_lowercase_recipient_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.presentation.scope.lagos_today",
+        "banking.transactions.query.presentation.scope.lagos_today",
         lambda: date(2026, 5, 20),
     )
 
@@ -191,10 +191,10 @@ async def test_analytics_sum_no_spending_today_is_humanized(monkeypatch: pytest.
         return []
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
+    monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 6))
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
@@ -224,7 +224,7 @@ async def test_analytics_transaction_type_breakdown_uses_human_label(monkeypatch
         ]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 
@@ -312,7 +312,9 @@ async def test_analytics_account_breakdown_includes_safe_account_suffix_when_ava
 
 
 @pytest.mark.asyncio
-async def test_category_breakdown_marks_provider_category_as_provider_confidence(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_category_breakdown_marks_provider_category_as_provider_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         del args, kwargs
         return [
@@ -329,7 +331,7 @@ async def test_category_breakdown_marks_provider_category_as_provider_confidence
         ]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 
@@ -368,7 +370,7 @@ async def test_category_breakdown_marks_narration_category_as_inferred(monkeypat
         ]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 
@@ -414,7 +416,7 @@ async def test_single_largest_debit_renders_detail_not_heading_only(monkeypatch:
         ]
 
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.handlers.analytics.fetch_and_filter",
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
         _fake_fetch_and_filter,
     )
 

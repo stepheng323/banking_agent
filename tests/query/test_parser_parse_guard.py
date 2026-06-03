@@ -2,8 +2,9 @@ from datetime import date, timedelta
 
 import pytest
 
-from apps.chat.src.agent.workers.query.compiler import finalize
-from apps.chat.src.agent.workers.query.models.extraction import (
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.compiler import finalize
+from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
@@ -18,8 +19,7 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
-from apps.chat.src.agent.workers.query.services.parsing.parser import QueryParser
-from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.services.parsing.parser import QueryParser
 
 
 class _DummyStructured:
@@ -82,7 +82,7 @@ async def test_parser_logs_llm_call_metadata(monkeypatch: pytest.MonkeyPatch) ->
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.compiler.finalize.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.compiler.finalize.logger.info", _capture)
 
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.TRANSACTION_LIST,
@@ -179,7 +179,9 @@ async def test_time_vague_clarify_renders_full_message_not_raw_context() -> None
     )
 
     assert result.outcome == ResolverOutcome.NEEDS_INPUT
-    assert result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."
+    assert (
+        result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."
+    )
 
 
 @pytest.mark.asyncio
@@ -313,7 +315,9 @@ async def test_time_vague_matching_transaction_shape_clarifies_without_llm_lates
     )
 
     assert result.outcome == ResolverOutcome.NEEDS_INPUT
-    assert result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."
+    assert (
+        result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."
+    )
     assert result.query_contract is not None
     assert result.query_contract["intent"] == "analytics_summary"
     assert result.query_contract["result_reference"] is None

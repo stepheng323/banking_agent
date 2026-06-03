@@ -4,7 +4,7 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
     QueryExecutionContract,
@@ -15,7 +15,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryResultItem,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.models.extraction import (
+from banking.transactions.query.models.extraction import (
     ExtractionIntent,
     PendingClarificationState,
     QueryExtractionResult,
@@ -25,12 +25,12 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
-from apps.chat.src.agent.workers.query.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.query.services.reasoning.models import (
+from banking.transactions.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.services.reasoning.models import (
     QuerySemanticDecision,
     SemanticReasonerContext,
 )
-from apps.chat.src.agent.workers.query.services.reasoning.reasoner import QuerySemanticReasoner
+from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -542,7 +542,7 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.services.reasoning.reasoner.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.services.reasoning.reasoner.logger.info", _capture)
 
     reasoner = QuerySemanticReasoner(_FailingLLM())
     surface_view = _direct_answer_surface_view(type="single_transaction")
@@ -590,7 +590,7 @@ async def test_reasoner_logs_llm_fact_answer_decision(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.services.reasoning.reasoner.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.services.reasoning.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -657,7 +657,7 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.services.reasoning.reasoner.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.services.reasoning.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -1211,7 +1211,7 @@ async def test_reasoner_logs_single_llm_trace_metadata(monkeypatch: pytest.Monke
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.services.reasoning.reasoner.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.services.reasoning.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -1264,7 +1264,7 @@ async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, dict(kwargs)))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.services.reasoning.reasoner.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.services.reasoning.reasoner.logger.info", _capture)
 
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -1427,14 +1427,14 @@ async def test_extraction_step_fresh_query_uses_deterministic_parser_without_par
             result_limit=1,
             result_reference="latest",
         ),
-            query_contract=_contract(
-                _query_ir(
-                    intent=QueryIntent.TRANSACTION_LIST,
-                    time_range=TimeRange(start=date(2026, 2, 11), end=date(2026, 3, 13)),
-                    result_limit=1,
-                    result_reference="latest",
-                )
-            ).model_dump(mode="json"),
+        query_contract=_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=date(2026, 2, 11), end=date(2026, 3, 13)),
+                result_limit=1,
+                result_reference="latest",
+            )
+        ).model_dump(mode="json"),
     )
 
     def _fail_parse(*args: object, **kwargs: object) -> object:

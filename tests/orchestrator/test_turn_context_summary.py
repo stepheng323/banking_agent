@@ -37,7 +37,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_state import (
     summary_to_state_payload,
 )
-from apps.chat.src.agent.workers.query.models.extraction import (
+from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
@@ -243,7 +243,12 @@ def test_turn_context_summary_builds_compact_shared_view() -> None:
         loaded_context={
             "profile": {"first_name": "Gaines", "last_name": "Doe"},
             "accounts": [
-                {"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready", "is_default": True},
+                {
+                    "bank_name": "Zenith Bank",
+                    "account_number": "00009384",
+                    "mandate_status": "ready",
+                    "is_default": True,
+                },
                 {
                     "bank_name": "First Bank",
                     "account_number": "0334557890",

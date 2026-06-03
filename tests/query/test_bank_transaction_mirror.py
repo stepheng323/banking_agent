@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.workers.query.handlers.analytics import _aggregate_breakdown
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.handlers.analytics import _aggregate_breakdown
+from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
     QueryIntent,
     QueryIR,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.services.fetching.fetch import (
+from banking.transactions.query.services.fetching.fetch import (
     _is_missing_mirror_table_error,
     fetch_and_filter,
     fetch_transactions_base,
@@ -419,7 +419,9 @@ async def test_recent_overlap_sync_captures_same_day_late_transactions(
         }
     )
     monkeypatch.setattr("banking.persistence.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.services.fetching.bank_transaction_mirror.lagos_today", lambda: today)
+    monkeypatch.setattr(
+        "banking.transactions.query.services.fetching.bank_transaction_mirror.lagos_today", lambda: today
+    )
 
     result = await fetch_transactions_base(
         provider,  # type: ignore[arg-type]

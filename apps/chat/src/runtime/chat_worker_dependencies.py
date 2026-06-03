@@ -14,18 +14,15 @@ from apps.chat.src.agent.workers.airtime.extractor import AirtimeEntityExtractor
 from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 from apps.chat.src.agent.workers.data.extraction.extractor import DataEntityExtractor
 from apps.chat.src.agent.workers.data.worker import DataWorker as AgentDataWorker
-from apps.chat.src.agent.workers.faq.worker import FAQWorker
 from apps.chat.src.agent.workers.onboarding.executor import OnboardingExecutor
 from apps.chat.src.agent.workers.onboarding.service import OnboardingService
-from apps.chat.src.agent.workers.query.session import QuerySessionManager
-from apps.chat.src.agent.workers.query.worker import QueryWorker as AgentQueryWorker
-from apps.chat.src.agent.workers.support.worker import SupportWorker
 from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEntityExtractor
 from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
 from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
+from banking.faq.runtime import build_faq_worker
 from banking.identity.repositories.user_repository import UserRepository
 from banking.persistence.session_scoped import (
     SessionScopedAccountRepository,
@@ -39,7 +36,9 @@ from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.policy.loader import get_cached_policy
 from banking.policy.validation import validate_policy_coverage
 from banking.presentation.i18n.renderer import validate_catalog_completeness
+from banking.support.runtime import build_support_worker
 from banking.support.services.ticket_service import TicketService
+from banking.transactions.query.runtime import build_query_worker
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -167,7 +166,7 @@ def _build_orchestrator_runtime_bundle(
         redis_client=shared_redis,
     )
 
-    support_worker = SupportWorker(
+    support_worker = build_support_worker(
         llm=llm,
         transaction_repo=transaction_repository,
         actionable_message_repo=actionable_message_repository,
@@ -176,11 +175,10 @@ def _build_orchestrator_runtime_bundle(
         ticket_service=TicketService(session_factory=session_factory),
     )
 
-    query_session_manager = QuerySessionManager(shared_redis)
-    query_worker = AgentQueryWorker(
+    query_worker = build_query_worker(
         llm=query_llm,
         banking_provider=bank_data_provider,
-        session_manager=query_session_manager,
+        redis_client=shared_redis,
     )
 
     task_queue_service = TaskQueueService()
@@ -198,7 +196,7 @@ def _build_orchestrator_runtime_bundle(
         publisher=queue_publisher,
     )
 
-    faq_worker = FAQWorker(
+    faq_worker = build_faq_worker(
         llm=llm,
         get_db=get_db_session,
     )

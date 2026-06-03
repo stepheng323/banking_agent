@@ -21,7 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_fo
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_types import (
     ContextFrameFollowupResponse,
 )
-from apps.chat.src.agent.workers.query.services.reasoning.shortcuts import resolve_query_shortcut
+from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
 from shared.types.planner import ContextFrameFollowupDecision
 from shared.utils.logging import get_logger
 

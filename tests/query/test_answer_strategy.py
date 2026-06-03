@@ -1,6 +1,6 @@
 from datetime import date
 
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     Filters,
     QueryAnswerStrategy,
     QueryExecutionContract,
@@ -10,7 +10,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryResultItem,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.services.answers.strategy import select_answer_strategy
+from banking.transactions.query.services.answers.strategy import select_answer_strategy
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

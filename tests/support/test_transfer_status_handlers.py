@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from apps.chat.src.agent.workers.support.handlers.failure import handle_failure_reason
-from apps.chat.src.agent.workers.support.handlers.retry import handle_retry
-from apps.chat.src.agent.workers.support.handlers.status import handle_pending, handle_transfer_status
+from banking.support.handlers.failure import handle_failure_reason
+from banking.support.handlers.retry import handle_retry
+from banking.support.handlers.status import handle_pending, handle_transfer_status
 
 
 @pytest.mark.asyncio
@@ -99,9 +99,7 @@ async def test_failure_reason_adds_category_specific_repair_guidance() -> None:
     ],
 )
 @pytest.mark.asyncio
-async def test_failure_reason_uses_catalog_guidance_for_supported_locales(
-    locale: str, expected_guidance: str
-) -> None:
+async def test_failure_reason_uses_catalog_guidance_for_supported_locales(locale: str, expected_guidance: str) -> None:
     response = await handle_failure_reason(
         {
             "status": "failed",

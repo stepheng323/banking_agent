@@ -10,7 +10,8 @@ from apps.chat.src.agent.shared.query_contracts import (
     SurfaceView,
     SurfaceViewMode,
 )
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
     QueryAnswerContext,
@@ -26,10 +27,9 @@ from apps.chat.src.agent.workers.query.models.domain import (
     build_query_execution_plan_from_fields,
     derive_query_intent_spec_from_fields,
 )
-from apps.chat.src.agent.workers.query.presentation.formatter import QueryFormatter
-from apps.chat.src.agent.workers.query.services.answers.strategy import select_answer_strategy
-from apps.chat.src.agent.workers.query.utils.timezone import lagos_today
-from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.presentation.formatter import QueryFormatter
+from banking.transactions.query.services.answers.strategy import select_answer_strategy
+from banking.transactions.query.utils.timezone import lagos_today
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -500,7 +500,7 @@ def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_it
 ) -> None:
     today = date(2026, 4, 15)
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.presentation.scope.lagos_today",
+        "banking.transactions.query.presentation.scope.lagos_today",
         lambda: today,
     )
     result = QueryResult(
@@ -556,7 +556,7 @@ def test_formatter_heading_includes_amount_scope_for_transaction_lists(
 ) -> None:
     today = date(2026, 4, 15)
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.presentation.scope.lagos_today",
+        "banking.transactions.query.presentation.scope.lagos_today",
         lambda: today,
     )
     result = _sample_list_result(
@@ -971,7 +971,7 @@ def test_formatter_breakdown_heading_includes_amount_scope_and_period(
 ) -> None:
     today = date(2026, 4, 15)
     monkeypatch.setattr(
-        "apps.chat.src.agent.workers.query.presentation.scope.lagos_today",
+        "banking.transactions.query.presentation.scope.lagos_today",
         lambda: today,
     )
     result = QueryResult(

@@ -15,9 +15,9 @@ from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _su
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )
-from apps.chat.src.agent.workers.support.context_manager import SupportContextManager
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LocaleCode
+from banking.support.context_manager import SupportContextManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -110,6 +110,8 @@ _ACTION_AFTER_ACK_RE = re.compile(
     r"purchase|recharge|top\s*up|retry|resend|create|open|raise|submit|cancel|stop|use|change|make)\b",
     re.IGNORECASE,
 )
+
+
 def _normalize_text(text: str | None) -> str:
     normalized = unicodedata.normalize("NFKD", text or "")
     without_marks = "".join(char for char in normalized if not unicodedata.combining(char))

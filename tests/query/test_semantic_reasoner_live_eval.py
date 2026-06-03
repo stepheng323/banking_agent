@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     Filters,
     QueryExecutionContract,
     QueryIntent,
@@ -17,15 +17,15 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryResultItem,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.models.extraction import (
+from banking.transactions.query.models.extraction import (
     PendingClarificationState,
     QueryExtractionResult,
 )
-from apps.chat.src.agent.workers.query.services.reasoning.models import (
+from banking.transactions.query.services.reasoning.models import (
     QuerySemanticDecision,
     SemanticReasonerContext,
 )
-from apps.chat.src.agent.workers.query.services.reasoning.reasoner import QuerySemanticReasoner
+from banking.transactions.query.services.reasoning.reasoner import QuerySemanticReasoner
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

@@ -10,8 +10,9 @@ from apps.chat.src.agent.shared.query_contracts import (
     SurfaceView,
     SurfaceViewMode,
 )
-from apps.chat.src.agent.workers.query.actions import handle_drill_down
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.actions import handle_drill_down
+from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
     QueryExecutionContract,
@@ -22,7 +23,7 @@ from apps.chat.src.agent.workers.query.models.domain import (
     QueryResultItem,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.models.extraction import (
+from banking.transactions.query.models.extraction import (
     ExtractionIntent,
     QueryExtractionResult,
     QueryFilters,
@@ -32,9 +33,8 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
-from apps.chat.src.agent.workers.query.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.query.services.reasoning.models import QuerySemanticDecision
-from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
@@ -760,7 +760,9 @@ async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitl
 
 
 @pytest.mark.asyncio
-async def test_show_evidence_follow_up_converts_aggregate_summary_to_scoped_transactions_and_clears_fact_anchor() -> None:
+async def test_show_evidence_follow_up_converts_aggregate_summary_to_scoped_transactions_and_clears_fact_anchor() -> (
+    None
+):
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 29)
     session_query = _query_ir(
@@ -1233,7 +1235,7 @@ async def test_summary_contrastive_last_week_logs_semantic_reasoner_resolution(m
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.nodes.extraction.logger.info", _capture)
 
     async def _fake_reason(_: object) -> QuerySemanticDecision:
         return QuerySemanticDecision(
@@ -1289,7 +1291,7 @@ async def test_low_confidence_unclear_last_week_recovers_via_time_rescope_recove
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.nodes.extraction.logger.info", _capture)
 
     async def _fake_reason(_: object) -> QuerySemanticDecision:
         return QuerySemanticDecision(
@@ -1488,7 +1490,9 @@ async def test_explicit_aggregate_scope_drops_inherited_beneficiary_filter() -> 
 
 
 @pytest.mark.asyncio
-async def test_aggregate_continuation_without_reasoner_extraction_uses_deterministic_fresh_parse_to_drop_inherited_filter() -> None:
+async def test_aggregate_continuation_without_reasoner_extraction_uses_deterministic_fresh_parse_to_drop_inherited_filter() -> (
+    None
+):
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 29)
     session_query = _query_ir(
@@ -1902,6 +1906,7 @@ async def test_low_confidence_unclear_income_followup_clarifies_without_parser_r
         filters=Filters(transaction_type="credit"),
     )
     session_contract = _contract(session_query)
+
     async def _fake_reason(_: object) -> QuerySemanticDecision:
         return QuerySemanticDecision(
             decision="continuation",
@@ -2222,7 +2227,7 @@ async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatc
     def _capture(event: str, **kwargs: object) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.nodes.extraction.logger.info", _capture)
 
     async def _fake_reason(context: object) -> QuerySemanticDecision:
         del context
@@ -2466,7 +2471,7 @@ async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_resco
     def _capture(event: str, **kwargs: Any) -> None:
         events.append((event, kwargs))
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.query.nodes.extraction.logger.info", _capture)
+    monkeypatch.setattr("banking.transactions.query.nodes.extraction.logger.info", _capture)
     session_query = _query_ir(
         intent=QueryIntent.TRANSACTION_SEARCH,
         time_range=TimeRange(start=date(2026, 3, 16), end=today),

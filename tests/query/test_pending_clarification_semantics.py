@@ -3,13 +3,13 @@ from datetime import date, timedelta
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.models.domain import (
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
     TimeRange,
 )
-from apps.chat.src.agent.workers.query.models.extraction import (
+from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
@@ -20,8 +20,8 @@ from apps.chat.src.agent.workers.query.models.extraction import (
     ResolverOutcome,
     TimeReference,
 )
-from apps.chat.src.agent.workers.query.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.query.services.reasoning.models import QuerySemanticDecision
+from banking.transactions.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 
 
 def _query_ir(**kwargs: object) -> QueryIR:

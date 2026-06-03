@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.workers.support.models import TransactionReference
-from apps.chat.src.agent.workers.support.resolver import TransactionResolver
+from banking.support.models import TransactionReference
+from banking.support.resolver import TransactionResolver
 from shared.config.settings import settings
 
 
@@ -77,7 +77,9 @@ class _BankTransactionRepoStub:
         self._rows = rows or []
         self.calls = 0
 
-    async def list_by_user_window(self, user_id: str, *, start_date, end_date, provider: str = "mono", limit: int = 200):
+    async def list_by_user_window(
+        self, user_id: str, *, start_date, end_date, provider: str = "mono", limit: int = 200
+    ):
         del user_id, start_date, end_date, provider, limit
         self.calls += 1
         return list(self._rows)

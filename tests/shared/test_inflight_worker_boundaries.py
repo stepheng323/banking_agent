@@ -1,0 +1,89 @@
+"""Architecture guards for domains moved out of the chat app."""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SOURCE_ROOTS = ("apps", "banking", "scripts", "tests")
+
+CHAT_WORKER_MODULE = ".".join(("apps", "chat", "src", "agent", "workers"))
+
+MOVED_WORKER_MODULES = (
+    f"{CHAT_WORKER_MODULE}.faq",
+    f"{CHAT_WORKER_MODULE}.support",
+    f"{CHAT_WORKER_MODULE}.query",
+    ".".join(("banking", "knowledge")),
+)
+
+DELETED_PACKAGE_PATHS = (
+    "/".join(("apps", "chat", "src", "agent", "workers", "faq")),
+    "/".join(("apps", "chat", "src", "agent", "workers", "support")),
+    "/".join(("apps", "chat", "src", "agent", "workers", "query")),
+    "/".join(("banking", "knowledge")),
+)
+
+
+def _python_files() -> list[Path]:
+    files: list[Path] = []
+    for root_name in SOURCE_ROOTS:
+        root = ROOT / root_name
+        if root.exists():
+            files.extend(root.rglob("*.py"))
+    return sorted(files)
+
+
+def _is_forbidden_module(module: str) -> bool:
+    return any(module == forbidden or module.startswith(f"{forbidden}.") for forbidden in MOVED_WORKER_MODULES)
+
+
+def _import_violations(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if _is_forbidden_module(alias.name):
+                    violations.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if _is_forbidden_module(module):
+                violations.append(module)
+            for alias in node.names:
+                imported = f"{module}.{alias.name}" if module else alias.name
+                if _is_forbidden_module(imported):
+                    violations.append(imported)
+    return violations
+
+
+def test_moved_worker_packages_do_not_exist_under_chat_or_knowledge() -> None:
+    existing = [path for package in DELETED_PACKAGE_PATHS if (path := ROOT / package).exists()]
+
+    assert existing == []
+
+
+def test_moved_workers_are_not_imported_through_old_paths() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_files():
+        if path.resolve() == this_file:
+            continue
+        for module in _import_violations(path):
+            violations.append(f"{path.relative_to(ROOT)} imports {module}")
+
+    assert violations == []
+
+
+def test_moved_worker_old_paths_do_not_appear_in_python_sources() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_files():
+        if path.resolve() == this_file:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for module in MOVED_WORKER_MODULES:
+            if module in text:
+                violations.append(f"{path.relative_to(ROOT)} references {module}")
+
+    assert violations == []

@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from apps.chat.src.agent.workers.query.handlers.affordability import handle_affordability
-from apps.chat.src.agent.workers.query.models.domain import (
+from banking.transactions.query.handlers.affordability import handle_affordability
+from banking.transactions.query.models.domain import (
     QueryExecutionContract,
     QueryIntent,
 )
@@ -39,8 +39,18 @@ async def test_affordability_query_can_answer_single_covering_account() -> None:
         "access",
         ["access", "first"],
         [
-            {"account_id": "access", "bank_name": "Access Bank", "account_number": "6000000003", "mandate_status": "ready"},
-            {"account_id": "first", "bank_name": "First Bank", "account_number": "6000000001", "mandate_status": "ready"},
+            {
+                "account_id": "access",
+                "bank_name": "Access Bank",
+                "account_number": "6000000003",
+                "mandate_status": "ready",
+            },
+            {
+                "account_id": "first",
+                "bank_name": "First Bank",
+                "account_number": "6000000001",
+                "mandate_status": "ready",
+            },
         ],
         language="en",
     )
@@ -58,8 +68,18 @@ async def test_affordability_query_suggests_two_account_pool_when_needed() -> No
         "access",
         ["access", "first", "gtb"],
         [
-            {"account_id": "access", "bank_name": "Access Bank", "account_number": "6000000003", "mandate_status": "ready"},
-            {"account_id": "first", "bank_name": "First Bank", "account_number": "6000000001", "mandate_status": "ready"},
+            {
+                "account_id": "access",
+                "bank_name": "Access Bank",
+                "account_number": "6000000003",
+                "mandate_status": "ready",
+            },
+            {
+                "account_id": "first",
+                "bank_name": "First Bank",
+                "account_number": "6000000001",
+                "mandate_status": "ready",
+            },
             {"account_id": "gtb", "bank_name": "GTBank", "account_number": "6000000002", "mandate_status": "ready"},
         ],
         language="en",
@@ -79,8 +99,18 @@ async def test_affordability_query_ignores_non_ready_accounts() -> None:
         "access",
         ["access", "zenith"],
         [
-            {"account_id": "access", "bank_name": "Access Bank", "account_number": "6000000003", "mandate_status": "ready"},
-            {"account_id": "zenith", "bank_name": "Zenith Bank", "account_number": "1234569384", "mandate_status": "pending"},
+            {
+                "account_id": "access",
+                "bank_name": "Access Bank",
+                "account_number": "6000000003",
+                "mandate_status": "ready",
+            },
+            {
+                "account_id": "zenith",
+                "bank_name": "Zenith Bank",
+                "account_number": "1234569384",
+                "mandate_status": "pending",
+            },
         ],
         language="en",
     )
