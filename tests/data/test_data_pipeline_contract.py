@@ -3,8 +3,8 @@ from typing import Any
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import DataPipeline, PipelineStep
+from banking.bills.data.models.types import DataContext, DataGates, DataPayload
+from banking.bills.data.pipeline.base import DataPipeline, PipelineStep
 
 
 class _PatchStep(PipelineStep):

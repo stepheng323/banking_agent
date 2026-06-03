@@ -3,8 +3,8 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep
+from banking.bills.data.models.types import DataContext, DataGates, DataPayload
+from banking.bills.data.pipeline.base import PipelineStep
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
 from shared.money import naira_to_json

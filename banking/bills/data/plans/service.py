@@ -6,7 +6,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
-from apps.chat.src.agent.workers.data.models.plans import DataPlan
+from banking.bills.data.models.plans import DataPlan
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.utils.logging import get_logger
 

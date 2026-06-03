@@ -1,8 +1,8 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.bills.data.models.types import DataContext, DataGates, DataPayload
+from banking.bills.data.pipeline.base import PipelineStep, continue_pipeline
 from banking.presentation.formatters.accounts import format_accounts_list
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.shared.source_account_guard import (

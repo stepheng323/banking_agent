@@ -19,9 +19,9 @@ from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, Or
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
-from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult, DataPurchaseEntities
-from apps.chat.src.agent.workers.data.worker import DataWorker
 from banking.bills.airtime.worker import AirtimeWorker
+from banking.bills.data.models.extraction import DataExtractionResult, DataPurchaseEntities
+from banking.bills.data.worker import DataWorker
 from shared.types.planner import PendingActionEditDecision, SemanticRouteDecision
 from tests.orchestrator.conversation_harness import (
     ConversationScenario,

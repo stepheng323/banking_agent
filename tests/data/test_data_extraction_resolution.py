@@ -4,11 +4,11 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult, DataPurchaseEntities
-from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.nodes.confirmation import ConfirmationStep
-from apps.chat.src.agent.workers.data.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.data.nodes.resolution import ResolutionStep
+from banking.bills.data.models.extraction import DataExtractionResult, DataPurchaseEntities
+from banking.bills.data.models.types import DataContext, DataGates, DataPayload
+from banking.bills.data.nodes.confirmation import ConfirmationStep
+from banking.bills.data.nodes.extraction import ExtractionStep
+from banking.bills.data.nodes.resolution import ResolutionStep
 
 
 class _ExtractorStub:

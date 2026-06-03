@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult
+from banking.bills.data.models.extraction import DataExtractionResult
 from shared.money import MoneyAmount
 
 

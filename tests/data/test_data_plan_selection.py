@@ -4,13 +4,13 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult, DataPurchaseEntities
-from apps.chat.src.agent.workers.data.models.plans import DataPlan
-from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.data.nodes.plan_selection import DataPlanQueryStep, DataPlanSelectionStep
-from apps.chat.src.agent.workers.data.plans.service import DataPlanService
-from apps.chat.src.agent.workers.data.worker import DataWorker
+from banking.bills.data.models.extraction import DataExtractionResult, DataPurchaseEntities
+from banking.bills.data.models.plans import DataPlan
+from banking.bills.data.models.types import DataContext, DataGates, DataPayload
+from banking.bills.data.nodes.extraction import ExtractionStep
+from banking.bills.data.nodes.plan_selection import DataPlanQueryStep, DataPlanSelectionStep
+from banking.bills.data.plans.service import DataPlanService
+from banking.bills.data.worker import DataWorker
 
 
 class _PlanServiceStub:

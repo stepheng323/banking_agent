@@ -10,8 +10,8 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.data_domain_stages i
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import (
     _build_planner_task_updates,
 )
-from apps.chat.src.agent.workers.data.worker import DataWorker
 from apps.chat.src.agent.workers.transfer.worker import TransferWorker
+from banking.bills.data.worker import DataWorker
 from banking.faq.worker import FAQWorker
 from banking.policy.adapters import is_capability_supported
 from banking.policy.loader import get_cached_policy, load_policy

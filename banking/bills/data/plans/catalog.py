@@ -6,9 +6,9 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.data.models.plans import DataPlan
-from apps.chat.src.agent.workers.data.models.types import DataContext, DataPayload
-from apps.chat.src.agent.workers.data.plans.service import dedupe_data_plans
+from banking.bills.data.models.plans import DataPlan
+from banking.bills.data.models.types import DataContext, DataPayload
+from banking.bills.data.plans.service import dedupe_data_plans
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
 from shared.money import to_naira

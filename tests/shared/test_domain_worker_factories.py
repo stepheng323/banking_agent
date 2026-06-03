@@ -10,6 +10,8 @@ from banking.beneficiaries.runtime import build_beneficiary_worker
 from banking.beneficiaries.worker import BeneficiaryWorker
 from banking.bills.airtime.runtime import build_airtime_worker
 from banking.bills.airtime.worker import AirtimeWorker
+from banking.bills.data.runtime import build_data_worker
+from banking.bills.data.worker import DataWorker
 from banking.faq.runtime import build_faq_worker
 from banking.faq.worker import FAQWorker
 from banking.support.runtime import build_support_worker
@@ -96,6 +98,20 @@ def test_airtime_factory_preserves_worker_protocol() -> None:
 
     assert isinstance(worker, AirtimeWorker)
     assert worker.__class__.__module__ == "banking.bills.airtime.worker"
+    assert isinstance(worker, WorkerProtocol)
+
+
+def test_data_factory_preserves_worker_protocol() -> None:
+    worker = build_data_worker(
+        extractor_llm=_LLMStub(),  # type: ignore[arg-type]
+        bill_provider=object(),
+        transaction_repo=object(),
+        publisher=object(),
+        redis_client=_RedisStub(),
+    )
+
+    assert isinstance(worker, DataWorker)
+    assert worker.__class__.__module__ == "banking.bills.data.worker"
     assert isinstance(worker, WorkerProtocol)
 
 

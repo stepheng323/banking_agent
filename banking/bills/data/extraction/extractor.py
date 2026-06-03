@@ -5,8 +5,8 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.workers.data.extraction.prompt import DATA_EXTRACTION_PROMPT
-from apps.chat.src.agent.workers.data.models.extraction import DataExtractionResult
+from banking.bills.data.extraction.prompt import DATA_EXTRACTION_PROMPT
+from banking.bills.data.models.extraction import DataExtractionResult
 from banking.transactions.shared.models.smart_context import SmartContext
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger

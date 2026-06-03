@@ -9,8 +9,6 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder import
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
 from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
-from apps.chat.src.agent.workers.data.extraction.extractor import DataEntityExtractor
-from apps.chat.src.agent.workers.data.worker import DataWorker as AgentDataWorker
 from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEntityExtractor
 from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
@@ -22,6 +20,7 @@ from banking.accounts.runtime import build_account_worker
 from banking.beneficiaries.runtime import build_beneficiary_worker
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.bills.airtime.runtime import build_airtime_worker
+from banking.bills.data.runtime import build_data_worker
 from banking.faq.runtime import build_faq_worker
 from banking.identity.repositories.user_repository import UserRepository
 from banking.persistence.session_scoped import (
@@ -159,8 +158,8 @@ def _build_orchestrator_runtime_bundle(
     bill_provider = ProviderFactory.get_bill_provider()
     if bill_provider is None:
         raise RuntimeError("Bill provider is not configured")
-    data_worker = AgentDataWorker(
-        extractor=DataEntityExtractor(llm=extractor_chat),
+    data_worker = build_data_worker(
+        extractor_llm=extractor_chat,
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         publisher=queue_publisher,

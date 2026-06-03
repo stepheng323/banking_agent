@@ -13,14 +13,14 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.chat.src.agent.workers.data.models.types import (
+from banking.bills.data.models.types import (
     DataContext,
     DataGates,
     DataPayload,
 )
-from apps.chat.src.agent.workers.data.pipeline_factory import build_data_pipeline, build_data_plan_query_pipeline
-from apps.chat.src.agent.workers.data.plans.service import DataPlanService
-from apps.chat.src.agent.workers.data.scheduling import SCHEDULING_ACTIONS, DataSchedulingHandler
+from banking.bills.data.pipeline_factory import build_data_pipeline, build_data_plan_query_pipeline
+from banking.bills.data.plans.service import DataPlanService
+from banking.bills.data.scheduling import SCHEDULING_ACTIONS, DataSchedulingHandler
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message

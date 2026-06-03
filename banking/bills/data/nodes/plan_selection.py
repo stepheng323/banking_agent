@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
-from apps.chat.src.agent.workers.data.pipeline.base import PipelineStep, continue_pipeline
-from apps.chat.src.agent.workers.data.plans.catalog import (
+from banking.bills.data.models.types import DataContext, DataGates, DataPayload
+from banking.bills.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.bills.data.plans.catalog import (
     MAX_PLAN_OPTIONS,
     _apply_early_target_context,
     _apply_inferred_network,
