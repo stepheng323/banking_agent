@@ -5,11 +5,11 @@ from typing import Any, cast
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.workers.__shared__.models.smart_context import SmartContext
 from apps.chat.src.agent.workers.transfer.extraction.prompt import (
     TRANSFER_EXTRACTION_PROMPT,
 )
 from apps.chat.src.agent.workers.transfer.models.extraction import TransferExtractionResult
+from banking.transactions.shared.models.smart_context import SmartContext
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 

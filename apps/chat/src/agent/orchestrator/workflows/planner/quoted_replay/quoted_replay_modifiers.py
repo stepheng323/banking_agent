@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.workers.__shared__.account_selection.reference import (
+from banking.transactions.shared.account_selection.reference import (
     build_source_account_patch,
     match_source_account_reference,
 )

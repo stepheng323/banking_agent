@@ -3,12 +3,6 @@
 from typing import Any, Protocol, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.scheduling import (
-    base_schedule_fields,
-    missing_schedule_fields,
-    schedule_recurrence_label,
-    schedule_required_prompt,
-)
 from apps.chat.src.agent.workers.data.models.types import DataContext, DataGates, DataPayload
 from apps.chat.src.agent.workers.data.pipeline.base import DataPipeline, PipelineStep, continue_pipeline
 from banking.persistence.unit_of_work import UnitOfWork
@@ -20,6 +14,12 @@ from banking.scheduling.services.recurrence import (
     compute_initial_next_run_utc,
     format_lagos_schedule_datetime,
     today_lagos,
+)
+from banking.transactions.shared.scheduling import (
+    base_schedule_fields,
+    missing_schedule_fields,
+    schedule_recurrence_label,
+    schedule_required_prompt,
 )
 from shared.database.enums import ScheduledInstructionStatusEnum
 

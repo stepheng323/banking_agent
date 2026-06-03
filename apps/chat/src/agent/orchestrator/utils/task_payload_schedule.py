@@ -6,12 +6,12 @@ import re
 from datetime import datetime
 from typing import Any
 
-from apps.chat.src.agent.workers.__shared__.scheduling import parse_schedule_date
 from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     normalize_time_local,
     now_lagos,
 )
+from banking.transactions.shared.scheduling import parse_schedule_date
 
 SCHEDULE_DATE_PATTERN = r"(?:tomorrow|tommorow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})"
 SCHEDULE_MANAGEMENT_ACTIONS = {

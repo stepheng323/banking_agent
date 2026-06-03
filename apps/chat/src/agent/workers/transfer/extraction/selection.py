@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from apps.chat.src.agent.workers.__shared__.account_selection.reference import build_source_account_patch
 from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
 from banking.beneficiaries.services.matcher import BeneficiaryMatcher
 from banking.beneficiaries.services.selection import match_beneficiary_candidate_selection
 from banking.presentation.i18n.renderer import render_message
+from banking.transactions.shared.account_selection.reference import build_source_account_patch
 from shared.database.models import Beneficiary
 from shared.utils.logging import get_logger
 

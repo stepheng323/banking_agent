@@ -9,10 +9,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.scheduling import (
-    format_schedule_confirmation_line,
-    schedule_recurrence_label,
-)
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
@@ -22,6 +18,10 @@ from banking.scheduling.services.recurrence import (
     format_lagos_schedule_datetime,
     normalize_time_local,
     today_lagos,
+)
+from banking.transactions.shared.scheduling import (
+    format_schedule_confirmation_line,
+    schedule_recurrence_label,
 )
 from shared.database.enums import ScheduledInstructionStatusEnum
 from shared.money import naira_to_json, to_naira

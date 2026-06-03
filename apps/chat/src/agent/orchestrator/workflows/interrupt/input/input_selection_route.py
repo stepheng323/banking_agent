@@ -3,7 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.workers.__shared__.account_selection.reference import match_source_account_reference
+from banking.transactions.shared.account_selection.reference import match_source_account_reference
 from shared.types.planner import InterruptRouteDecision
 
 

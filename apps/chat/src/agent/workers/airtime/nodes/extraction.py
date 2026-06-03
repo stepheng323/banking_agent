@@ -4,17 +4,6 @@ import re
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.account_selection.reference import (
-    build_source_account_patch,
-    match_source_account_reference,
-)
-from apps.chat.src.agent.workers.__shared__.extraction_utils import try_extract_numeric_index
-from apps.chat.src.agent.workers.__shared__.scheduling import (
-    SCHEDULE_FIELD_NAMES,
-    parse_schedule_slot_patch,
-    schedule_required_prompt,
-)
-from apps.chat.src.agent.workers.__shared__.source_account_guard import find_account_by_bank_name
 from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -22,6 +11,17 @@ from apps.chat.src.agent.workers.airtime.models.types import (
 )
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
 from banking.presentation.i18n.renderer import render_message
+from banking.transactions.shared.account_selection.reference import (
+    build_source_account_patch,
+    match_source_account_reference,
+)
+from banking.transactions.shared.extraction_utils import try_extract_numeric_index
+from banking.transactions.shared.scheduling import (
+    SCHEDULE_FIELD_NAMES,
+    parse_schedule_slot_patch,
+    schedule_required_prompt,
+)
+from banking.transactions.shared.source_account_guard import find_account_by_bank_name
 from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone

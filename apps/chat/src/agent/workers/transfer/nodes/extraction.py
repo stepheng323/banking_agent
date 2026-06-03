@@ -4,16 +4,6 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.account_selection.reference import (
-    build_source_account_patch,
-    match_source_account_reference,
-)
-from apps.chat.src.agent.workers.__shared__.extraction_utils import try_extract_numeric_index
-from apps.chat.src.agent.workers.__shared__.scheduling import (
-    SCHEDULE_FIELD_NAMES,
-    parse_schedule_slot_patch,
-    schedule_required_prompt,
-)
 from apps.chat.src.agent.workers.transfer.extraction.parsers import (
     parse_account_and_bank_input,
     parse_amount_input,
@@ -38,6 +28,16 @@ from apps.chat.src.agent.workers.transfer.models.types import (
     TransferPayload,
 )
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
+from banking.transactions.shared.account_selection.reference import (
+    build_source_account_patch,
+    match_source_account_reference,
+)
+from banking.transactions.shared.extraction_utils import try_extract_numeric_index
+from banking.transactions.shared.scheduling import (
+    SCHEDULE_FIELD_NAMES,
+    parse_schedule_slot_patch,
+    schedule_required_prompt,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

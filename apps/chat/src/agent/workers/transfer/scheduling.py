@@ -4,19 +4,6 @@ from datetime import datetime
 from typing import Any, Protocol, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.schedule_management import (
-    apply_schedule_edit,
-    build_schedule_context_items,
-    build_schedule_edit_patch,
-    build_schedule_edit_success_message,
-    build_schedule_update_summary,
-    cancelled_now,
-    disambiguation_result,
-    format_schedule_row,
-    resolve_schedule_selection,
-    schedule_edit_requires_auth,
-)
-from apps.chat.src.agent.workers.__shared__.scheduling import schedule_recurrence_label, schedule_required_prompt
 from apps.chat.src.agent.workers.transfer.authorization.pin_token import persist_schedule_pin_token
 from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferPipeline, TransferStep
@@ -30,6 +17,19 @@ from banking.scheduling.services.recurrence import (
     format_lagos_schedule_datetime,
     today_lagos,
 )
+from banking.transactions.shared.schedule_management import (
+    apply_schedule_edit,
+    build_schedule_context_items,
+    build_schedule_edit_patch,
+    build_schedule_edit_success_message,
+    build_schedule_update_summary,
+    cancelled_now,
+    disambiguation_result,
+    format_schedule_row,
+    resolve_schedule_selection,
+    schedule_edit_requires_auth,
+)
+from banking.transactions.shared.scheduling import schedule_recurrence_label, schedule_required_prompt
 from shared.database.enums import ScheduledInstructionStatusEnum
 
 SCHEDULING_ACTIONS = {

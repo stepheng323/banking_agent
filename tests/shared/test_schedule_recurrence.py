@@ -1,12 +1,12 @@
 from datetime import UTC, datetime
 
-from apps.chat.src.agent.workers.__shared__.scheduling import parse_schedule_date, parse_schedule_slot_patch
 from banking.scheduling.services.recurrence import (
     compute_initial_next_run_utc,
     compute_next_run_utc,
     format_lagos_schedule_datetime,
     now_lagos,
 )
+from banking.transactions.shared.scheduling import parse_schedule_date, parse_schedule_slot_patch
 
 
 def test_compute_initial_weekly_defaults_to_future_due_date() -> None:

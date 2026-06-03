@@ -5,11 +5,11 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.workers.__shared__.models.smart_context import SmartContext
 from apps.chat.src.agent.workers.airtime.models.extraction import AirtimeExtractionResult
 from apps.chat.src.agent.workers.airtime.prompt.airtime_extraction import (
     AIRTIME_EXTRACTION_PROMPT,
 )
+from banking.transactions.shared.models.smart_context import SmartContext
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 

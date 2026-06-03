@@ -3,8 +3,6 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.confirmation_updates import build_airtime_confirmation_update_message
-from apps.chat.src.agent.workers.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -13,6 +11,8 @@ from apps.chat.src.agent.workers.airtime.models.types import (
 from apps.chat.src.agent.workers.airtime.pipeline.base import AirtimeStep
 from banking.presentation.formatters.airtime import format_airtime_summary
 from banking.presentation.i18n.personality import PersonalityContext
+from banking.transactions.shared.confirmation_updates import build_airtime_confirmation_update_message
+from banking.transactions.shared.scheduling import format_schedule_confirmation_line
 from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
 

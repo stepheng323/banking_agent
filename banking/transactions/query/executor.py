@@ -4,7 +4,6 @@ from collections.abc import Awaitable, Callable
 from time import perf_counter
 from typing import Any, cast
 
-from apps.chat.src.agent.workers.__shared__.account_selection.service import find_account_by_bank_name
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.handlers.registry import HANDLER_REGISTRY
 from banking.transactions.query.models.domain import (
@@ -12,6 +11,7 @@ from banking.transactions.query.models.domain import (
     QueryIntent,
     QueryResult,
 )
+from banking.transactions.shared.account_selection.service import find_account_by_bank_name
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.utils.logging import get_logger
 

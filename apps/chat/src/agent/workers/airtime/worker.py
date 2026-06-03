@@ -6,12 +6,6 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.scheduling import (
-    base_schedule_fields,
-    missing_schedule_fields,
-    schedule_recurrence_label,
-    schedule_required_prompt,
-)
 from apps.chat.src.agent.workers.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -36,6 +30,12 @@ from banking.scheduling.services.recurrence import (
     compute_initial_next_run_utc,
     format_lagos_schedule_datetime,
     today_lagos,
+)
+from banking.transactions.shared.scheduling import (
+    base_schedule_fields,
+    missing_schedule_fields,
+    schedule_recurrence_label,
+    schedule_required_prompt,
 )
 from shared.config.settings import settings
 from shared.database.enums import ScheduledInstructionStatusEnum

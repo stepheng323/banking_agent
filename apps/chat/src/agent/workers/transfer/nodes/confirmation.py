@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.scheduling import format_schedule_confirmation_line
 from apps.chat.src.agent.workers.transfer.authorization.pin_token import persist_transfer_pin_token
 from apps.chat.src.agent.workers.transfer.models.types import (
     TransferContext,
@@ -28,6 +27,7 @@ from banking.presentation.i18n.personality import (
 from banking.presentation.i18n.renderer import render_message, render_text
 from banking.risk.service import RiskDecisionResult, RiskDecisionService
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
+from banking.transactions.shared.scheduling import format_schedule_confirmation_line
 from shared.money import require_naira, to_naira
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger

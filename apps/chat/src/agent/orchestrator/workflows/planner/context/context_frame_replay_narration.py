@@ -12,7 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_re
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_modifier_text import (
     _clean_replay_modifier_text,
 )
-from apps.chat.src.agent.workers.__shared__.account_selection.reference import match_source_account_reference
+from banking.transactions.shared.account_selection.reference import match_source_account_reference
 from shared.types.planner import ContextFrameReplayModifier
 
 _REPLAY_NARRATION_RE = re.compile(

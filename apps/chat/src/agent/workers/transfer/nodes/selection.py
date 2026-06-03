@@ -3,13 +3,6 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.__shared__.source_account_guard import (
-    build_nonready_source_account_message,
-    find_account_by_bank_name,
-    find_account_by_id,
-    find_account_by_index,
-    is_account_ready,
-)
 from apps.chat.src.agent.workers.transfer.models.types import (
     TransferContext,
     TransferGates,
@@ -18,6 +11,13 @@ from apps.chat.src.agent.workers.transfer.models.types import (
 from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
 from banking.presentation.formatters.accounts import format_accounts_list
 from banking.presentation.i18n.renderer import render_message
+from banking.transactions.shared.source_account_guard import (
+    build_nonready_source_account_message,
+    find_account_by_bank_name,
+    find_account_by_id,
+    find_account_by_index,
+    is_account_ready,
+)
 
 
 def _build_account_options(accounts: list[dict[str, Any]]) -> list[dict[str, str]]:

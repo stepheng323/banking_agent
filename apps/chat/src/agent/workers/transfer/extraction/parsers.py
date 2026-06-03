@@ -3,9 +3,9 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.workers.__shared__.source_account_guard import find_account_by_bank_name
 from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
 from banking.presentation.formatters.currency import format_naira
+from banking.transactions.shared.source_account_guard import find_account_by_bank_name
 from shared.utils.sanitize import normalize_bank_account_number
 
 _ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN = re.compile(r"^\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s+(?P<bank>.+?)\s*$")
