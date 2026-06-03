@@ -9,7 +9,6 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder import
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
 from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
-from apps.chat.src.agent.workers.account.worker import AccountWorker
 from apps.chat.src.agent.workers.airtime.extractor import AirtimeEntityExtractor
 from apps.chat.src.agent.workers.airtime.worker import AirtimeWorker
 from apps.chat.src.agent.workers.data.extraction.extractor import DataEntityExtractor
@@ -21,6 +20,7 @@ from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
 from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
+from banking.accounts.runtime import build_account_worker
 from banking.beneficiaries.runtime import build_beneficiary_worker
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.faq.runtime import build_faq_worker
@@ -147,7 +147,7 @@ def _build_orchestrator_runtime_bundle(
             f"Account provider direct-debit capability is not configured: {settings.account_provider_name}"
         )
 
-    account_worker = AccountWorker(
+    account_worker = build_account_worker(
         account_repo=account_repository,
         user_repo=user_repository,
         llm=llm,

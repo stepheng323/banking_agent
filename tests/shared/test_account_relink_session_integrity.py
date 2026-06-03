@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.workers.account.linking import build_link_account_flow
-from apps.chat.src.agent.workers.account.worker import AccountWorker
+from banking.accounts.management.linking import build_link_account_flow
+from banking.accounts.management.worker import AccountWorker
 from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.config.settings import settings
@@ -68,9 +68,7 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr(
-        "apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token"
-    )
+    monkeypatch.setattr("banking.accounts.management.linking.secrets.token_urlsafe", lambda _: "opaque-link-token")
 
     flow = await build_link_account_flow(
         context={
@@ -109,9 +107,7 @@ async def test_build_link_account_flow_returns_retryable_error_when_session_stor
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr(
-        "apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token"
-    )
+    monkeypatch.setattr("banking.accounts.management.linking.secrets.token_urlsafe", lambda _: "opaque-link-token")
 
     flow = await build_link_account_flow(
         context={

@@ -3,8 +3,8 @@
 from decimal import Decimal
 from typing import Any
 
-from apps.chat.src.agent.workers.account.formatter import AccountFormatter
-from apps.chat.src.agent.workers.account.serialization import find_account_by_bank_name, serialize_accounts
+from banking.accounts.management.formatter import AccountFormatter
+from banking.accounts.management.serialization import find_account_by_bank_name, serialize_accounts
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.banking import BankDataProvider

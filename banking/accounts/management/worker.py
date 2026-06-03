@@ -8,18 +8,18 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
-from apps.chat.src.agent.workers.account.balances import check_balance
-from apps.chat.src.agent.workers.account.capabilities import (
+from banking.accounts.management.balances import check_balance
+from banking.accounts.management.capabilities import (
     AccountCapability,
     check_capabilities,
     derive_requirements,
     generate_limitation_message,
 )
-from apps.chat.src.agent.workers.account.formatter import AccountFormatter
-from apps.chat.src.agent.workers.account.linking import build_link_account_flow
-from apps.chat.src.agent.workers.account.mutations import missing_identifier_prompt, set_default_account, unlink_account
-from apps.chat.src.agent.workers.account.parser import AccountParser
-from apps.chat.src.agent.workers.account.serialization import serialize_accounts
+from banking.accounts.management.formatter import AccountFormatter
+from banking.accounts.management.linking import build_link_account_flow
+from banking.accounts.management.mutations import missing_identifier_prompt, set_default_account, unlink_account
+from banking.accounts.management.parser import AccountParser
+from banking.accounts.management.serialization import serialize_accounts
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.identity.repositories.user_repository import UserRepository
 from banking.presentation.i18n.locale import LocaleManager

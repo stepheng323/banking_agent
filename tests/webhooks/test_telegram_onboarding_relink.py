@@ -5,8 +5,6 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.workers.account.linking import build_link_account_flow
-from apps.chat.src.agent.workers.account.worker import AccountWorker
 from apps.gateway.api.webhooks.telegram.onboarding import (
     AccountInput,
     LinkingAccountInput,
@@ -17,6 +15,8 @@ from apps.gateway.api.webhooks.telegram.onboarding import (
     telegram_linking_otp,
     telegram_onboarding_account,
 )
+from banking.accounts.management.linking import build_link_account_flow
+from banking.accounts.management.worker import AccountWorker
 from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 from shared.cache.flow_session_manager import FlowSessionManager, SessionReadResult
 from shared.config.settings import settings
@@ -272,9 +272,7 @@ async def test_account_worker_link_token_bootstraps_telegram_relink_session(
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr(
-        "apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token"
-    )
+    monkeypatch.setattr("banking.accounts.management.linking.secrets.token_urlsafe", lambda _: "opaque-link-token")
     monkeypatch.setattr(
         "apps.gateway.api.webhooks.telegram.onboarding.bvn_service",
         BvnVerificationService(session_manager),

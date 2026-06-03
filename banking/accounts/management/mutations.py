@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from apps.chat.src.agent.workers.account.serialization import find_account_by_bank_name
+from banking.accounts.management.serialization import find_account_by_bank_name
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.identity.repositories.user_repository import UserRepository
 from banking.persistence.unit_of_work import UnitOfWork

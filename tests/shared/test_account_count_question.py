@@ -1,8 +1,8 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome
-from apps.chat.src.agent.workers.account.serialization import serialize_accounts
-from apps.chat.src.agent.workers.account.worker import AccountWorker
+from banking.accounts.management.serialization import serialize_accounts
+from banking.accounts.management.worker import AccountWorker
 
 
 class _StructuredLLM:

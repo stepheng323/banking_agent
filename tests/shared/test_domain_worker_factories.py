@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from apps.chat.src.agent.protocols import WorkerProtocol
+from banking.accounts.management.worker import AccountWorker
+from banking.accounts.runtime import build_account_worker
 from banking.beneficiaries.runtime import build_beneficiary_worker
 from banking.beneficiaries.worker import BeneficiaryWorker
 from banking.faq.runtime import build_faq_worker
@@ -63,6 +65,21 @@ def test_beneficiary_factory_preserves_worker_protocol() -> None:
 
     assert isinstance(worker, BeneficiaryWorker)
     assert worker.__class__.__module__ == "banking.beneficiaries.worker"
+    assert isinstance(worker, WorkerProtocol)
+
+
+def test_account_factory_preserves_worker_protocol() -> None:
+    worker = build_account_worker(
+        account_repo=object(),  # type: ignore[arg-type]
+        user_repo=object(),  # type: ignore[arg-type]
+        llm=_LLMStub(),  # type: ignore[arg-type]
+        banking_provider=object(),  # type: ignore[arg-type]
+        session_manager=object(),  # type: ignore[arg-type]
+        direct_debit_provider=object(),  # type: ignore[arg-type]
+    )
+
+    assert isinstance(worker, AccountWorker)
+    assert worker.__class__.__module__ == "banking.accounts.management.worker"
     assert isinstance(worker, WorkerProtocol)
 
 

@@ -1,4 +1,4 @@
-from apps.chat.src.agent.workers.account.formatter import AccountFormatter
+from banking.accounts.management.formatter import AccountFormatter
 
 
 def test_format_balance_response_single_account_natural_sentence() -> None:

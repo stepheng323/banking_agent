@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from apps.chat.src.agent.workers.account.formatter import AccountFormatter
+from banking.accounts.management.formatter import AccountFormatter
 from banking.accounts.mandate_state import (
     APPROVED,
     EXPIRED,
