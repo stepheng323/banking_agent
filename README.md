@@ -84,14 +84,14 @@ User (WhatsApp / Telegram)
 | `apps/chat/` | Orchestration, task planning, conversational runtime, and remaining app-owned workers |
 | `apps/transaction/` | Transaction worker runtime, async financial worker entrypoints |
 | `apps/receipt/` | Receipt rendering and async worker entrypoints |
-| `banking/` | Product core: FAQ, support, transaction query, policy, presentation, receipts, persistence, runtime, repositories |
+| `banking/` | Product core: FAQ, support, beneficiary, transaction query, policy, presentation, receipts, persistence, runtime, repositories |
 | `shared/` | Infrastructure primitives: config, database models, provider clients, queues, cache, messaging contracts, utilities |
 
 ### Orchestrator / Worker Contract
 
 The chat runtime deliberately separates domain readiness from conversation control.
 
-Domain workers are stateless task evaluators. Transfer, airtime, data, account, support, query, and FAQ workers inspect the current task payload plus loaded context, then return a typed result. Transaction workers can request:
+Domain workers are stateless task evaluators. Transfer, airtime, data, account, beneficiary, support, query, and FAQ workers inspect the current task payload plus loaded context, then return a typed result. Transaction workers can request:
 
 - `NEEDS_INPUT` when task-specific details are missing or ambiguous.
 - `NEEDS_CONFIRMATION` when a complete money-moving task needs user confirmation.
@@ -129,7 +129,7 @@ The main engineering work is around making LLM-driven financial flows behave pre
 - **Failure-driven hardening**: The test suite is built primarily from observed production failures converted into regression tests — especially around multilingual parsing, query continuation, transfer payload normalization, and recipient resolution.
 
 ### Recent Work
-- Moved FAQ, support, and transaction query ownership into `banking/` product modules with no app-side compatibility aliases
+- Moved FAQ, support, beneficiary, and transaction query ownership into `banking/` product modules with no app-side compatibility aliases
 - Decomposed the query core into compiler, continuation, grounding, and presentation subsystems
 - Coverage-aware bank transaction mirror for durable local query reads
 - Locale-aware beneficiary summary parsing
@@ -503,7 +503,7 @@ Failure reports should include channel, phone, timestamp, transcript, expected b
 
 ## Code Navigation
 
-Start from public entrypoints and import concrete modules directly. FAQ, support, and transaction query live only under `banking/`.
+Start from public entrypoints and import concrete modules directly. FAQ, support, transaction query, and beneficiary live only under `banking/`.
 
 | Area | Start Here | Notes |
 |------|------------|-------|
@@ -511,12 +511,13 @@ Start from public entrypoints and import concrete modules directly. FAQ, support
 | Graph workflows | `apps/chat/src/agent/orchestrator/workflows/` | Organized by phase: lifecycle, gate, interrupt, planner, execution |
 | Gate workflow | `apps/chat/src/agent/orchestrator/workflows/gate/node.py` | Ordered pre-planner fast paths and semantic routing; stage order in `registry.py` is behavior |
 | Task handlers | `apps/chat/src/agent/orchestrator/task_handlers/runtime.py` | Post-planner task-family routing and aggregation |
-| Domain workers | `banking/faq/`, `banking/support/`, `banking/transactions/query/`, and remaining app worker packages | Migrated domains are product-owned under `banking/`; remaining transfer/airtime/data/account workers still live under `apps/chat/src/agent/workers/` |
+| Domain workers | `banking/faq/`, `banking/support/`, `banking/transactions/query/`, `banking/beneficiaries/`, and remaining app worker packages | Migrated domains are product-owned under `banking/`; remaining transfer/airtime/data/account workers still live under `apps/chat/src/agent/workers/` |
 | Query worker | `banking/transactions/query/worker.py` | Parser/compiler, continuations, grounding, fetching, answer handlers, presentation |
 | Transfer worker | `apps/chat/src/agent/workers/transfer/worker.py` | Extraction, resolution, validation, funding, confirmation, payout preparation, execution |
 | Data worker | `apps/chat/src/agent/workers/data/worker.py` | Extraction, plan selection/query, source selection, validation, confirmation, execution |
 | Support worker | `banking/support/worker.py` | Policy check, reference follow-up, classification, resolver, handler dispatch |
 | FAQ worker | `banking/faq/worker.py` | FAQ intent guard, retrieval, synthesis, final answer safety |
+| Beneficiary worker | `banking/beneficiaries/worker.py` | Beneficiary list/delete management; save-from-suggestion remains in the suggestion service |
 | Presentation copy | `banking/presentation/formatters/` | Deterministic user-facing copy shared by workers and webhooks |
 
 ## Positioning
@@ -533,6 +534,7 @@ If you are evaluating this repository for hiring or technical partnership, the s
 | Area | Path |
 |------|------|
 | Query orchestration | `banking/transactions/query/` |
+| Beneficiary management | `banking/beneficiaries/` |
 | Transfer engine | `apps/chat/src/agent/workers/transfer/` |
 | Task planner + guardrails | `apps/chat/src/agent/orchestrator/` |
 | Account linking | `banking/accounts/onboarding/` |

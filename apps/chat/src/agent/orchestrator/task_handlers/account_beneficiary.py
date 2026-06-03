@@ -83,12 +83,21 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
     )
 
     if is_management:
-        from apps.chat.src.agent.workers.beneficiary.worker import BeneficiaryWorker
+        worker = _get_worker(
+            ctx.services,
+            "beneficiary",
+            task,
+            log_key="beneficiary_worker_missing",
+            error_message=render_message(
+                "orchestrator.error.beneficiary_operation_failed",
+                _state_locale(ctx.state),
+            ),
+        )
+        if not worker:
+            return
 
         if not task.payload.get("intent") and action:
             task.payload["intent"] = action
-
-        worker = BeneficiaryWorker()
 
         provider = None
         transfer_worker = ctx.services.get("transfer")
@@ -102,7 +111,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
             "language": _state_locale(ctx.state),
         }
 
-        result = await worker.run(task.payload, context_data)
+        result = await worker.run(payload=task.payload, context=context_data)
         _apply_result_patch(task, result)
 
         if result.outcome == TransactionOutcome.OK:

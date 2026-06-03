@@ -36,6 +36,7 @@ class OrchestratorDependencies:
     airtime_service: WorkerProtocol
     query_service: WorkerProtocol
     account_service: WorkerProtocol
+    beneficiary_service: WorkerProtocol
     media_service: MediaService
     data_service: WorkerProtocol
     support_service: WorkerProtocol

@@ -67,6 +67,7 @@ class OrchestratorGraphHandler:
         query_service: WorkerProtocol,
         data_service: WorkerProtocol,
         account_service: WorkerProtocol,
+        beneficiary_service: WorkerProtocol,
         support_service: WorkerProtocol,
         faq_service: WorkerProtocol,
         user_repo: UserRepository,
@@ -102,6 +103,7 @@ class OrchestratorGraphHandler:
             "query": query_service,
             "data": data_service,
             "account": account_service,
+            "beneficiary": beneficiary_service,
             "support": support_service,
             "faq": faq_service,
         }

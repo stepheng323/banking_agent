@@ -6,7 +6,7 @@ Handles basic CRUD operations for beneficiaries using UnitOfWork.
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.beneficiary.models import BeneficiaryIntent
+from banking.beneficiaries.models import BeneficiaryIntent
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
@@ -22,8 +22,11 @@ class BeneficiaryWorker:
         self,
         payload: dict[str, Any],
         context: dict[str, Any],
+        user_message: str | None = None,
+        pin_verified: bool = False,
     ) -> TransactionResult:
         """Run beneficiary operation."""
+        del user_message, pin_verified
         locale = LocaleManager.normalize(context.get("language")).value
         try:
             intent = payload.get("intent")
@@ -46,14 +49,14 @@ class BeneficiaryWorker:
             if intent == BeneficiaryIntent.LIST or payload.get("list_intent"):
                 return await self._list_beneficiaries(user_id, context)
 
-            elif intent == BeneficiaryIntent.ADD:
+            if intent == BeneficiaryIntent.ADD:
                 return await self._add_beneficiary(user_id, payload, context)
 
-            elif intent == BeneficiaryIntent.DELETE:
+            if intent == BeneficiaryIntent.DELETE:
                 return await self._delete_beneficiary(user_id, payload, context)
 
-            elif intent == BeneficiaryIntent.UPDATE:
-                # Default to list if ambiguous but routed here
+            if intent == BeneficiaryIntent.UPDATE:
+                # Default to list if ambiguous but routed here.
                 return await self._list_beneficiaries(user_id, context)
 
             return await self._list_beneficiaries(user_id, context)
@@ -70,7 +73,6 @@ class BeneficiaryWorker:
         async with UnitOfWork() as uow:
             beneficiaries = await uow.beneficiaries.get_by_user(user_id)
 
-            # Format for context
             simple_list = [
                 {"name": b.account_name, "alias": b.alias, "bank": b.bank_name, "account": b.account_number}
                 for b in beneficiaries
@@ -106,7 +108,9 @@ class BeneficiaryWorker:
                 lines.append("")
 
             return TransactionResult(
-                outcome=TransactionOutcome.OK, response="\n".join(lines), details={"viewed_beneficiaries": simple_list}
+                outcome=TransactionOutcome.OK,
+                response="\n".join(lines),
+                details={"viewed_beneficiaries": simple_list},
             )
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
@@ -170,7 +174,6 @@ class BeneficiaryWorker:
         )
 
     async def _update_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
-        # Placeholder for update logic
         del user_id, payload
         locale = LocaleManager.normalize(context.get("language")).value
         return TransactionResult(

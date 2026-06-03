@@ -36,6 +36,7 @@ class OrchestratorAgent:
             query_service=self.deps.query_service,
             data_service=self.deps.data_service,
             account_service=self.deps.account_service,
+            beneficiary_service=self.deps.beneficiary_service,
             support_service=self.deps.support_service,
             faq_service=self.deps.faq_service,
             context_manager=self.context_manager,

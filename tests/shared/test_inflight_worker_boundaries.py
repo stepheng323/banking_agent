@@ -12,6 +12,7 @@ CHAT_WORKER_MODULE = ".".join(("apps", "chat", "src", "agent", "workers"))
 
 MOVED_WORKER_MODULES = (
     f"{CHAT_WORKER_MODULE}.faq",
+    f"{CHAT_WORKER_MODULE}.beneficiary",
     f"{CHAT_WORKER_MODULE}.support",
     f"{CHAT_WORKER_MODULE}.query",
     ".".join(("banking", "knowledge")),
@@ -19,6 +20,7 @@ MOVED_WORKER_MODULES = (
 
 DELETED_PACKAGE_PATHS = (
     "/".join(("apps", "chat", "src", "agent", "workers", "faq")),
+    "/".join(("apps", "chat", "src", "agent", "workers", "beneficiary")),
     "/".join(("apps", "chat", "src", "agent", "workers", "support")),
     "/".join(("apps", "chat", "src", "agent", "workers", "query")),
     "/".join(("banking", "knowledge")),

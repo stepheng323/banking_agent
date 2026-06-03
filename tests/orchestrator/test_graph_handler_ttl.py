@@ -148,6 +148,7 @@ def _build_handler(
         query_service=SimpleNamespace(),
         data_service=SimpleNamespace(),
         account_service=SimpleNamespace(),
+        beneficiary_service=SimpleNamespace(),
         support_service=SimpleNamespace(),
         faq_service=SimpleNamespace(),
         user_repo=SimpleNamespace(),

@@ -21,6 +21,7 @@ from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
 from banking.accounts.onboarding.runtime import session_manager as onboarding_session_manager
+from banking.beneficiaries.runtime import build_beneficiary_worker
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.faq.runtime import build_faq_worker
 from banking.identity.repositories.user_repository import UserRepository
@@ -154,6 +155,7 @@ def _build_orchestrator_runtime_bundle(
         session_manager=onboarding_session_manager,
         direct_debit_provider=direct_debit_provider,
     )
+    beneficiary_worker = build_beneficiary_worker()
 
     bill_provider = ProviderFactory.get_bill_provider()
     if bill_provider is None:
@@ -230,6 +232,7 @@ def _build_orchestrator_runtime_bundle(
         query_service=query_worker,
         support_service=support_worker,
         account_service=account_worker,
+        beneficiary_service=beneficiary_worker,
         media_service=media_service,
         data_service=data_worker,
         user_cache=user_data_cache,
