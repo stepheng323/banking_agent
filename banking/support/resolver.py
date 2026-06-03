@@ -11,16 +11,16 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from apps.chat.src.agent.shared.unified_transactions import (
-    UnifiedTransactionRecord,
-    UnifiedTransactionService,
-    default_support_window,
-)
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from banking.support.handlers.status_utils import normalize_transaction_status
 from banking.support.models import TransactionReference
 from banking.transactions.repositories.bank_transaction_repository import BankTransactionRepository
 from banking.transactions.repositories.transaction_repository import TransactionRepository
+from banking.transactions.services.unified_transactions import (
+    UnifiedTransactionRecord,
+    UnifiedTransactionService,
+    default_support_window,
+)
 from shared.config.settings import settings
 from shared.database.models import Transaction
 from shared.utils.logging import get_logger

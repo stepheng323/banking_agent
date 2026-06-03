@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.grounding.frames import build_grounded_query_contract
 from banking.transactions.query.grounding.memory import build_memory_answer
 

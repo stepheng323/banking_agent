@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.bills.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
 from banking.bills.airtime.nodes.execution import ExecutionStep
+from banking.runtime.results import TransactionOutcome
 
 
 class _TransactionRepoStub:

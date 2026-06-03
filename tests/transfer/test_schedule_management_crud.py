@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from banking.runtime.results import TransactionOutcome
 from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,

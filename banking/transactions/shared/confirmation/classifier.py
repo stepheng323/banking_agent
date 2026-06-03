@@ -4,18 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_guardrails import (
+from banking.presentation.i18n.models import LocaleCode
+from banking.transactions.shared.confirmation.guardrails import (
     confirmation_guardrail_decision,
     is_safe_guarded_approval_text,
 )
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import (
+from banking.transactions.shared.confirmation.models import (
     APPROVAL_CONFIDENCE_THRESHOLD,
     REJECTION_CONFIDENCE_THRESHOLD,
     ConfirmationDecision,
     ConfirmationDecisionOutput,
     ConfirmationPromptKind,
 )
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import (
+from banking.transactions.shared.confirmation.phrases import (
     CANCEL_PHRASES_BY_LOCALE,
     confirmation_approve_phrases,
     confirmation_locale_candidates,
@@ -23,7 +24,6 @@ from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import (
     normalize_confirmation_locale,
     normalize_confirmation_text,
 )
-from banking.presentation.i18n.models import LocaleCode
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

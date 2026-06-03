@@ -3,13 +3,13 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.bills.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
 from banking.bills.airtime.nodes.confirmation import ConfirmationStep
 from banking.bills.airtime.nodes.extraction import ExtractionStep
 from banking.bills.airtime.nodes.selection import SourceSelectionStep
 from banking.bills.airtime.nodes.validation import ValidationStep
 from banking.bills.airtime.worker import AirtimeWorker
+from banking.runtime.results import TransactionOutcome
 
 
 class _ExtractorStub:

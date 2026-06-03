@@ -4,13 +4,13 @@ from datetime import date, timedelta
 
 import pytest
 
-from apps.chat.src.agent.shared.query_contracts import (
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.contracts import (
     SelectionPayload,
     SurfaceItemView,
     SurfaceView,
     SurfaceViewMode,
 )
-from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,

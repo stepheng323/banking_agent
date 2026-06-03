@@ -4,9 +4,9 @@ import re
 import uuid
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import SupportOutcome, SupportResult
 from banking.support.handlers.escalation import handle_escalation
 from banking.support.handlers.retry import build_retry_quoted_data
 from banking.support.models import SupportIntent, SupportResponse

@@ -5,10 +5,10 @@ Stateless worker for Support tasks.
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import SupportOutcome, SupportResult
 from banking.support.capabilities import SUPPORT_LIMITS
 from banking.support.classifier import SupportClassifier
 from banking.support.context_manager import SupportContextManager

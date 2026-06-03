@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.shared.query_contracts import FocusedReferent, SelectionPayload, SurfaceView, SurfaceViewMode
+from banking.transactions.query.contracts import FocusedReferent, SelectionPayload, SurfaceView, SurfaceViewMode
 
 _SENSITIVE_DATA_FRAGMENTS = ("pin", "otp", "password", "token", "secret", "auth")
 

@@ -7,7 +7,7 @@ from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.money import MoneyAmount
 
 AirtimeResult = TransactionResult

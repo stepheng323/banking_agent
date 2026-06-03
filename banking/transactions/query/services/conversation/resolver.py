@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceView
+from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.contracts import SelectionPayload, SurfaceView
 from banking.transactions.query.models.domain import QueryFrame, QueryResult
 from banking.transactions.query.services.conversation.targets import (
     decision_has_target_reference,

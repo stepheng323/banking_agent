@@ -1,6 +1,6 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.models.types import (
     TransferConfirmation,
     TransferContext,

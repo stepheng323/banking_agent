@@ -1,10 +1,11 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, FAQOutcome, SupportOutcome, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionContext, _get_worker, _state_locale
 from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
-from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
+from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import FAQOutcome, SupportOutcome
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

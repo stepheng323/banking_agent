@@ -5,13 +5,7 @@ import time
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.orchestrator.models.domain import (
-    PendingInterrupt,
-    TaskSpec,
-    TaskStage,
-    TransactionOutcome,
-    TransactionResult,
-)
+from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
@@ -19,6 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finali
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.worker import TransferWorker
 from shared.config.settings import settings
 from shared.types.planner import ContextFrameFollowupDecision

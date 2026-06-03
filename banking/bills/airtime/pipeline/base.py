@@ -3,12 +3,12 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
     AirtimePayload,
 )
+from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
 class AirtimeStep(ABC):

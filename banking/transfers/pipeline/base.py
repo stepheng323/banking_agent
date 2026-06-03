@@ -4,8 +4,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.presentation.formatters.transaction_copy_context import build_copy_context
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.models.types import (
     TransferConfirmation,
     TransferContext,

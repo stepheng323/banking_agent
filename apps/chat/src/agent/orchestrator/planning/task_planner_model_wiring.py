@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models
     UnsupportedBoundaryTurnOutput,
     UnsupportedCapabilitySemanticOutput,
 )
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecisionOutput
+from banking.transactions.shared.confirmation.models import ConfirmationDecisionOutput
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameReplayModifier,

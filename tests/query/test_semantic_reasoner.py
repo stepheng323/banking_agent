@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,

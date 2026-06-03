@@ -8,12 +8,12 @@ from langchain_openai import ChatOpenAI
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
 from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
-from apps.chat.src.agent.protocols import WorkerProtocol
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.identity.repositories.user_repository import UserRepository
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
+from banking.runtime.protocols import WorkerProtocol
 from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.queue.adapter import QueuePublisher

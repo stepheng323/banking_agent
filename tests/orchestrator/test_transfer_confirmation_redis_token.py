@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from banking.runtime.results import TransactionOutcome
 from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
 from banking.transfers.nodes.confirmation import ConfirmationStep
 from banking.transfers.nodes.execution import ExecutionStep

@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
+from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,

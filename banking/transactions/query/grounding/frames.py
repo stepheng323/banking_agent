@@ -5,8 +5,8 @@ from __future__ import annotations
 from calendar import monthrange
 from typing import Any, SupportsFloat, SupportsInt, cast
 
-from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.continuations.transforms import rebuild_query_contract
+from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
     ComparisonDirective,
     QueryExecutionContract,

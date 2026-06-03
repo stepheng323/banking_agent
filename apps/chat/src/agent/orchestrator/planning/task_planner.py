@@ -17,11 +17,6 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semant
     classify_unsupported_boundary_turn_semantic,
     classify_unsupported_capability_semantic,
 )
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import (
-    ConfirmationDecision,
-    ConfirmationPromptKind,
-)
 from apps.chat.src.agent.orchestrator.planning.task_planner_model_wiring import build_task_planner_structured_outputs
 from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer import normalize_planner_transaction_output
 from apps.chat.src.agent.orchestrator.planning.task_planner_observability import (
@@ -34,6 +29,11 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime impor
     build_runtime_planner_system_prompt,
 )
 from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
+from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply
+from banking.transactions.shared.confirmation.models import (
+    ConfirmationDecision,
+    ConfirmationPromptKind,
+)
 from shared.observability.llm import build_llm_runnable_config
 from shared.types.planner import (
     ContextFrameFollowupDecision,

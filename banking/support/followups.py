@@ -3,7 +3,7 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
+from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.support.models import SupportIntent, TransactionReference
 
 _RECENT_TRANSACTION_STATUS_ASSERTION_RE = re.compile(

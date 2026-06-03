@@ -8,8 +8,8 @@ from datetime import date
 from difflib import SequenceMatcher
 from typing import Any, Literal, cast
 
-from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from banking.presentation.formatters.currency import format_naira_compact
+from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import Filters, QueryFrame, QueryResult, QueryResultItem
 
 _STOPWORDS = {

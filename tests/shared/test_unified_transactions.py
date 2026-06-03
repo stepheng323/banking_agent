@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
-from apps.chat.src.agent.shared.unified_transactions import UnifiedTransactionService
+from banking.transactions.services.unified_transactions import UnifiedTransactionService
 
 
 def _local(**overrides):

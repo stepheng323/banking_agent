@@ -8,8 +8,6 @@ import pytest
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedBoundaryTurnOutput
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import (
-    AccountOutcome,
-    AccountResult,
     ActiveSession,
     PendingInterrupt,
     TaskSpec,
@@ -22,6 +20,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pen
 from banking.bills.airtime.worker import AirtimeWorker
 from banking.bills.data.models.extraction import DataExtractionResult, DataPurchaseEntities
 from banking.bills.data.worker import DataWorker
+from banking.runtime.results import AccountOutcome, AccountResult
 from shared.types.planner import PendingActionEditDecision, SemanticRouteDecision
 from tests.orchestrator.conversation_harness import (
     ConversationScenario,

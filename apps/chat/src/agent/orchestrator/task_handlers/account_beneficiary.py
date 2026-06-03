@@ -1,6 +1,6 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, TaskStage, TransactionOutcome
+from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import (
     push_account_list_frame,
     push_beneficiary_list_frame,
@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _state_locale,
 )
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import AccountOutcome, TransactionOutcome
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

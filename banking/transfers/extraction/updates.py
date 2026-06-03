@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.extraction.parsers import (
     extract_media_caption_amount,
     extract_media_caption_narration,

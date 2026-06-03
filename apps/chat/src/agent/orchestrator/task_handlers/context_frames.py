@@ -6,7 +6,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.surface_adapter import build_context_frame_from_surface_view
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from apps.chat.src.agent.shared.query_contracts import FocusedReferent, SelectionPayload
+from banking.transactions.query.contracts import FocusedReferent, SelectionPayload
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

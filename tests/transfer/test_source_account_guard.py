@@ -2,8 +2,8 @@ from datetime import timedelta
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.accounts.mandate_state import mandate_authorization_metadata
+from banking.runtime.results import TransactionOutcome
 from banking.transfers.models.types import TransferContext, TransferPayload
 from banking.transfers.nodes.selection import select_source_account
 from shared.utils.datetime import utc_now_naive

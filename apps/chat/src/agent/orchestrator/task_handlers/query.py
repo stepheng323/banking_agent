@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage, TransactionOutcome
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import (
     push_query_followup_referent_frame,
     push_query_surface_frame,
@@ -17,8 +17,9 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _next_query_handoff_transfer_task_id,
     _state_locale,
 )
-from apps.chat.src.agent.shared.query_contracts import FocusedReferent
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.contracts import FocusedReferent
 
 
 async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:

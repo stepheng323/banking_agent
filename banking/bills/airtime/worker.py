@@ -5,7 +5,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -24,6 +23,7 @@ from banking.policy.service import capability_block_message
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.scheduling.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
 from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,

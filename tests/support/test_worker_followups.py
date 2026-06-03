@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
+from banking.runtime.results import SupportOutcome
 from banking.support.handlers.failure import handle_failure_reason
 from banking.support.worker import SupportWorker
 from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary

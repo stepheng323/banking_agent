@@ -6,7 +6,7 @@ from datetime import date
 from typing import Any, cast
 
 import banking.transactions.query.continuations.compiler_paths as compiler_paths
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.aggregate_continuations import (
     compile_aggregate_continuation_updates,
 )

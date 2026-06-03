@@ -2,12 +2,12 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.account_selection.reference import (
     build_source_account_patch,
     match_source_account_reference,
 )
+from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply_sync
 from banking.transactions.shared.extraction_utils import try_extract_numeric_index
 from banking.transactions.shared.scheduling import (
     SCHEDULE_FIELD_NAMES,

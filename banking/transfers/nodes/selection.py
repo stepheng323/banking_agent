@@ -2,9 +2,9 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.presentation.formatters.accounts import format_accounts_list
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.source_account_guard import (
     build_nonready_source_account_message,
     find_account_by_bank_name,

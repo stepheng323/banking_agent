@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.beneficiaries.services.matcher import BeneficiaryMatcher
 from banking.presentation.formatters.currency import format_naira_compact
 from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.models.types import (
     TransferContext,
     TransferPayload,

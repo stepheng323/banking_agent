@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome
 from banking.faq.models import FAQRetrievalHit
 from banking.faq.nodes.gate import confidence_gate_node
 from banking.faq.nodes.guard import final_guard_node
@@ -13,6 +12,7 @@ from banking.faq.nodes.validate import validate_intent_node
 from banking.faq.retrieval import hybrid as hybrid_module
 from banking.faq.retrieval.hybrid import HybridRetriever
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import FAQOutcome
 from shared.config.settings import settings
 
 

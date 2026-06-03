@@ -5,13 +5,7 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import (
-    PendingInterrupt,
-    TaskSpec,
-    TaskStage,
-    TransactionOutcome,
-    TransactionResult,
-)
+from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
@@ -22,6 +16,7 @@ from banking.bills.airtime.worker import AirtimeWorker
 from banking.presentation.formatters.accounts import format_source_account_info_from_account_number
 from banking.presentation.i18n.bridge import render_cancelled_prompt
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,

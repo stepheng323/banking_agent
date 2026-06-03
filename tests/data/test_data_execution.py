@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.bills.data.nodes.execution import ExecutionStep
+from banking.runtime.results import TransactionOutcome
 
 
 class _TransactionRepoStub:

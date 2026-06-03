@@ -5,7 +5,6 @@ Stateless worker for FAQ tasks.
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome, FAQResult
 from banking.faq.nodes.gate import confidence_gate_node
 from banking.faq.nodes.guard import final_guard_node
 from banking.faq.nodes.normalize import normalize_query_node
@@ -17,6 +16,7 @@ from banking.faq.state import FAQState
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import FAQOutcome, FAQResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

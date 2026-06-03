@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

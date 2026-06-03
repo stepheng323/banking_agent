@@ -3,9 +3,9 @@
 from typing import Any
 from uuid import UUID
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.presentation.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.funding.planner import FundingPlanner
 from banking.transfers.models.types import (
     TransferContext,

@@ -5,7 +5,6 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
@@ -13,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.ingest import ingest_m
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import SAFE_CAPABILITY_FALLBACK
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.config.settings import settings
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
@@ -88,7 +88,7 @@ class _MockAccountWorker:
         pin_verified: bool = False,
     ) -> Any:
         del payload, context, user_message, pin_verified
-        from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, AccountResult
+        from banking.runtime.results import AccountOutcome, AccountResult
 
         return AccountResult(outcome=AccountOutcome.OK, response="Balance is available.")
 

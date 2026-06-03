@@ -3,9 +3,9 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.presentation.formatters.confirmation import build_confirmation_summary
 from banking.presentation.i18n.personality import PersonalityContext
+from banking.runtime.results import TransactionOutcome
 from banking.transfers.models.types import TransferContext, TransferPayload
 from banking.transfers.nodes import confirmation as confirmation_module
 from banking.transfers.nodes.confirmation import _build_dynamic_risk_patch, build_confirmation

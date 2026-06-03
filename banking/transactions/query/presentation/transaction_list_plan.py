@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-from apps.chat.src.agent.shared.query_contracts import PresentationMode, PresentationPlan, SurfaceView
 from banking.presentation.formatters.query_transaction_copy import format_transaction_list_item
 from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.contracts import PresentationMode, PresentationPlan, SurfaceView
 from banking.transactions.query.models.domain import QueryResult, QueryResultItem
 from banking.transactions.query.presentation.formatting import format_query_date, parse_summary_parts
 from banking.transactions.query.presentation.scope import build_transaction_heading

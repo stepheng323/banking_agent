@@ -1,7 +1,7 @@
 from typing import Any, Literal
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TransactionOutcome
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import push_schedule_list_frame
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     ExecutionContext,
@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _state_locale,
 )
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -8,10 +8,10 @@ from langchain_core.runnables import Runnable
 import banking.transactions.query.continuations.compiler_paths as compiler_paths
 import banking.transactions.query.continuations.extraction_paths as extraction_paths
 import banking.transactions.query.continuations.pending_clarification as pending_clarification
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.grounding.frames import (
     restore_query_frames,
 )

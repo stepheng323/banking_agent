@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.bills.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
 from banking.bills.airtime.nodes.resolution import ResolutionStep
+from banking.runtime.results import TransactionOutcome
 
 
 @pytest.mark.asyncio

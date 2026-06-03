@@ -39,13 +39,13 @@ from apps.chat.src.agent.orchestrator.graph.route_metrics import (
 from apps.chat.src.agent.orchestrator.graph.thread_lock import thread_invocation_lock
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
-from apps.chat.src.agent.protocols import WorkerProtocol
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.identity.repositories.user_repository import UserRepository
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from banking.presentation.i18n.locale import LocaleManager
+from banking.runtime.protocols import WorkerProtocol
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.observability.llm import build_llm_runnable_config
 from shared.queue.adapter import QueuePublisher

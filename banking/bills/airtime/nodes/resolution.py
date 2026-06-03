@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.beneficiaries.services.matcher import BeneficiaryMatcher
 from banking.bills.airtime.models.types import (
     AirtimeContext,
@@ -12,6 +11,7 @@ from banking.bills.airtime.models.types import (
 from banking.bills.airtime.pipeline.base import AirtimeStep
 from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone, resolve_network_from_phone

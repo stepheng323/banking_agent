@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from apps.chat.src.agent.shared.query_contracts import FocusedReferent, SurfaceView, SurfaceViewMode
+from banking.transactions.query.contracts import FocusedReferent, SurfaceView, SurfaceViewMode
 
 
 class QueryIntent(str, Enum):

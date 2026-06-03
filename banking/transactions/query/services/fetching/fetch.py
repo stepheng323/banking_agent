@@ -8,7 +8,6 @@ from datetime import date, datetime
 from time import perf_counter
 from typing import Any, cast
 
-from apps.chat.src.agent.shared.unified_transactions import UnifiedTransactionService
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     Filters,
@@ -22,6 +21,7 @@ from banking.transactions.query.services.fetching.bank_transaction_mirror import
     load_mirrored_transactions,
 )
 from banking.transactions.query.utils.timezone import lagos_today
+from banking.transactions.services.unified_transactions import UnifiedTransactionService
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.config.settings import settings
 from shared.utils.logging import get_logger

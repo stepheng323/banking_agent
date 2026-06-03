@@ -9,8 +9,8 @@ from typing import Any, Literal, cast
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 
-from apps.chat.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.continuations.classifier import ContinuationClassifier
+from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.models.domain import (
     QueryExecutionContract,
     QueryFrame,

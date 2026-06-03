@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from banking.runtime.results import TransactionOutcome
 from banking.transfers.extraction.extractor import TransferEntityExtractor
 from banking.transfers.extraction.updates import extract_transfer_update
 from banking.transfers.models.entities import TransferEntities

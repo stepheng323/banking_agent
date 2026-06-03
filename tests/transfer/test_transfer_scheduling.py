@@ -1,5 +1,5 @@
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.presentation.formatters.transaction_confirmation_copy import build_confirmation_header
+from banking.runtime.results import TransactionOutcome
 from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
 from banking.transfers.nodes.confirmation import build_confirmation
 from banking.transfers.scheduling import ScheduleRequirementsStep

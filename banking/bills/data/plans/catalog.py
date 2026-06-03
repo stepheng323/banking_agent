@@ -5,12 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.data.models.plans import DataPlan
 from banking.bills.data.models.types import DataContext, DataPayload
 from banking.bills.data.plans.service import dedupe_data_plans
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.money import to_naira
 from shared.utils.network_utils import (
     format_network_display_name,

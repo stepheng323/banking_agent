@@ -7,18 +7,13 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMemoryItem
-from apps.chat.src.agent.orchestrator.models.domain import (
-    PendingInterrupt,
-    TaskSpec,
-    TaskStage,
-    TransactionOutcome,
-    TransactionResult,
-)
+from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.task_handlers.session import handle_orchestrator_task
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
 def _resume_frame() -> ContextFrame:

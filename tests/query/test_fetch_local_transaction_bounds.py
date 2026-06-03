@@ -4,7 +4,6 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.shared.unified_transactions import UnifiedTransactionService
 from banking.transactions.query.handlers.transactions import handle_transaction_list
 from banking.transactions.query.models.domain import (
     Filters,
@@ -14,6 +13,7 @@ from banking.transactions.query.models.domain import (
     TimeRange,
 )
 from banking.transactions.query.presentation.formatter import QueryFormatter
+from banking.transactions.services.unified_transactions import UnifiedTransactionService
 from shared.config.settings import settings
 
 

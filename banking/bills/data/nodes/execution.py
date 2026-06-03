@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.bills.data.pipeline.base import PipelineStep
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.money import naira_to_json
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger

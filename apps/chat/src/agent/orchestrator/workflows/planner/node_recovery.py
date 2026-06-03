@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from apps.chat.src.agent.shared.routing_signals import looks_like_transaction_replay_modifier_request
+from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from shared.types.planner import PlannedTask, TaskParameters
 from shared.utils.logging import get_logger
 

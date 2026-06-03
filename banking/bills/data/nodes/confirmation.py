@@ -1,11 +1,11 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.bills.data.pipeline.base import PipelineStep, continue_pipeline
 from banking.presentation.formatters.data import format_data_summary
 from banking.presentation.i18n.personality import PersonalityContext
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.confirmation_updates import build_data_confirmation_update_message
 from banking.transactions.shared.scheduling import format_schedule_confirmation_line
 from shared.cache.redis_client import RedisClient

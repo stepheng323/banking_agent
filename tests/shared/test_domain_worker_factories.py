@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from apps.chat.src.agent.protocols import WorkerProtocol
 from banking.accounts.management.worker import AccountWorker
 from banking.accounts.runtime import build_account_worker
 from banking.beneficiaries.runtime import build_beneficiary_worker
@@ -14,6 +13,7 @@ from banking.bills.data.runtime import build_data_worker
 from banking.bills.data.worker import DataWorker
 from banking.faq.runtime import build_faq_worker
 from banking.faq.worker import FAQWorker
+from banking.runtime.protocols import WorkerProtocol
 from banking.support.runtime import build_support_worker
 from banking.support.worker import SupportWorker
 from banking.transactions.query.runtime import build_query_worker

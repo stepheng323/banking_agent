@@ -7,8 +7,8 @@ from datetime import date
 from typing import Any
 
 import banking.transactions.query.continuations.compiler_paths as compiler_paths
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.presentation.i18n.locale import LocaleManager
+from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.grounded_followups import resolve_grounded_followup
 from banking.transactions.query.models.extraction import AmbiguityCode
 from banking.transactions.query.utils.timezone import lagos_today

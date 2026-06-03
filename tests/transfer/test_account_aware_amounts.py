@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from banking.runtime.results import TransactionOutcome
 from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
 from banking.transfers.nodes.validation import ValidationStep
 from banking.transfers.validation.service import ValidationService

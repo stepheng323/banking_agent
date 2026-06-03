@@ -2,10 +2,10 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.presentation.formatters.accounts import format_accounts_list
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.source_account_guard import find_account_by_id
 from banking.transfers.models.types import (
     TransferContext,

@@ -11,10 +11,10 @@ from typing import Any, cast
 
 from langchain_core.runnables import Runnable
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.presentation.formatters.transaction_copy_context import build_copy_context
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.grounding.frames import append_query_frame, restore_query_frames
 from banking.transactions.query.models.domain import (
     Filters,

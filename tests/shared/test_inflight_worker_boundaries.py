@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOTS = ("apps", "banking", "scripts", "tests")
 
 CHAT_WORKER_MODULE = ".".join(("apps", "chat", "src", "agent", "workers"))
+CHAT_AGENT_MODULE = ".".join(("apps", "chat", "src", "agent"))
 
 MOVED_WORKER_MODULES = (
     CHAT_WORKER_MODULE,
@@ -22,10 +23,18 @@ MOVED_WORKER_MODULES = (
     f"{CHAT_WORKER_MODULE}.transfer",
     f"{CHAT_WORKER_MODULE}.support",
     f"{CHAT_WORKER_MODULE}.query",
+    f"{CHAT_AGENT_MODULE}.protocols",
+    f"{CHAT_AGENT_MODULE}.shared",
+    f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.confirmation_classifier",
+    f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.confirmation_guardrails",
+    f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.confirmation_models",
+    f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.confirmation_phrases",
     ".".join(("banking", "knowledge")),
 )
 
 DELETED_PACKAGE_PATHS = (
+    "/".join(("apps", "chat", "src", "agent", "protocols.py")),
+    "/".join(("apps", "chat", "src", "agent", "shared")),
     "/".join(("apps", "chat", "src", "agent", "workers")),
     "/".join(("apps", "chat", "src", "agent", "workers", "faq")),
     "/".join(("apps", "chat", "src", "agent", "workers", "account")),
@@ -37,6 +46,10 @@ DELETED_PACKAGE_PATHS = (
     "/".join(("apps", "chat", "src", "agent", "workers", "transfer")),
     "/".join(("apps", "chat", "src", "agent", "workers", "support")),
     "/".join(("apps", "chat", "src", "agent", "workers", "query")),
+    "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_classifier.py")),
+    "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_guardrails.py")),
+    "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_models.py")),
+    "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_phrases.py")),
     "/".join(("banking", "knowledge")),
 )
 
@@ -52,6 +65,10 @@ def _python_files() -> list[Path]:
 
 def _is_forbidden_module(module: str) -> bool:
     return any(module == forbidden or module.startswith(f"{forbidden}.") for forbidden in MOVED_WORKER_MODULES)
+
+
+def _is_chat_app_module(module: str) -> bool:
+    return module == "apps.chat" or module.startswith("apps.chat.")
 
 
 def _import_violations(path: Path) -> list[str]:
@@ -71,6 +88,18 @@ def _import_violations(path: Path) -> list[str]:
                 if _is_forbidden_module(imported):
                     violations.append(imported)
     return violations
+
+
+def _imported_modules(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                modules.append(node.module)
+    return modules
 
 
 def test_moved_worker_packages_do_not_exist_under_chat_or_knowledge() -> None:
@@ -101,5 +130,16 @@ def test_moved_worker_old_paths_do_not_appear_in_python_sources() -> None:
         for module in MOVED_WORKER_MODULES:
             if module in text:
                 violations.append(f"{path.relative_to(ROOT)} references {module}")
+
+    assert violations == []
+
+
+def test_banking_modules_do_not_import_chat_app_internals() -> None:
+    banking_root = ROOT / "banking"
+    violations: list[str] = []
+    for path in sorted(banking_root.rglob("*.py")):
+        for module in _imported_modules(path):
+            if _is_chat_app_module(module):
+                violations.append(f"{path.relative_to(ROOT)} imports {module}")
 
     assert violations == []

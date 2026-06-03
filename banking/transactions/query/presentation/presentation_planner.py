@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import cast
 
-from apps.chat.src.agent.shared.query_contracts import (
+from banking.presentation.formatters.currency import format_naira
+from banking.presentation.formatters.query_transaction_copy import build_transaction_detail_lines
+from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import render_message
+from banking.transactions.query.contracts import (
     PresentationMode,
     PresentationPlan,
     SurfaceView,
     SurfaceViewMode,
 )
-from banking.presentation.formatters.currency import format_naira
-from banking.presentation.formatters.query_transaction_copy import build_transaction_detail_lines
-from banking.presentation.i18n.message_keys import MessageKey
-from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.models.domain import (
     QueryAnswerStrategy,
     QueryExecutionContract,

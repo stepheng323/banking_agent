@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from apps.chat.src.agent.shared.query_contracts import FocusedReferent, SelectionPayload
+from banking.transactions.query.contracts import FocusedReferent, SelectionPayload
 
 
 class EntityType(str, Enum):

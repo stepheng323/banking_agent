@@ -3,9 +3,9 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import SupportOutcome, SupportResult
 from banking.support.diagnostic_routing import support_identity
 from banking.support.handler_dispatch import SupportHandlerDispatcher
 from banking.support.models import (

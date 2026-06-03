@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
+from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.models.domain import (
     QueryExecutionContract,
     QueryIntent,

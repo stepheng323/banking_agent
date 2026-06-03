@@ -2,12 +2,9 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import (
-    TransactionOutcome,
-    TransactionResult,
-)
 from banking.presentation.i18n.renderer import render_message
 from banking.risk.service import RiskDecisionService
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.models.types import (
     TransferContext,
     TransferGates,

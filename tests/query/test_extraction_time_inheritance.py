@@ -3,15 +3,15 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.shared.query_contracts import (
+from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome
+from banking.transactions.query.actions import handle_drill_down
+from banking.transactions.query.contracts import (
     SelectionPayload,
     SurfaceItemView,
     SurfaceView,
     SurfaceViewMode,
 )
-from banking.presentation.i18n.renderer import render_message
-from banking.transactions.query.actions import handle_drill_down
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,

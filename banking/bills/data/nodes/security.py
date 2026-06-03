@@ -1,8 +1,8 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.bills.data.pipeline.base import PipelineStep, continue_pipeline
+from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
 class AuthorizationStep(PipelineStep):

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from langchain_core.runnables import Runnable
 
-from apps.chat.src.agent.shared.routing_signals import (
+from banking.intent.routing_signals import (
     looks_like_support_problem_statement,
     looks_like_transaction_replay_modifier_request,
 )

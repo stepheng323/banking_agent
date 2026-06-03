@@ -1,6 +1,6 @@
 import pytest
 
-from apps.chat.src.agent.shared.routing_signals import looks_like_support_problem_statement
+from banking.intent.routing_signals import looks_like_support_problem_statement
 
 
 @pytest.mark.parametrize(

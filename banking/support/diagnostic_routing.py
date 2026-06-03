@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from banking.policy.adapters import is_capability_supported
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import SupportOutcome, SupportResult
 from banking.support.capabilities import SupportAction
 from banking.support.diagnostic_agent import (
     SupportDiagnosticAgent,

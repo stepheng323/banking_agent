@@ -11,11 +11,11 @@ from typing import Literal
 
 from langchain_core.language_models import BaseChatModel
 
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import (
+from banking.transactions.shared.confirmation.classifier import (
     classify_confirmation_reply,
     classify_confirmation_reply_sync,
 )
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import (
+from banking.transactions.shared.confirmation.models import (
     ConfirmationDecision,
     ConfirmationDecisionOutput,
 )

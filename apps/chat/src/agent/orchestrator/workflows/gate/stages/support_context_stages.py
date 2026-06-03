@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id_for_state
-from apps.chat.src.agent.shared.routing_signals import (
+from banking.intent.routing_signals import (
     looks_like_support_problem_statement,
     looks_like_transaction_replay_modifier_request,
 )

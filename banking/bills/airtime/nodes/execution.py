@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -11,6 +10,7 @@ from banking.bills.airtime.models.types import (
 from banking.bills.airtime.pipeline.base import AirtimeStep
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.money import naira_to_json
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger

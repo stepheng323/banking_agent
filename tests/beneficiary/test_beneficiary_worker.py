@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.beneficiaries import worker as worker_module
 from banking.beneficiaries.worker import BeneficiaryWorker
+from banking.runtime.results import TransactionOutcome
 
 
 class _FakeBeneficiaryRepo:

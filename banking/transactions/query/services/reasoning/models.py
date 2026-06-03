@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from apps.chat.src.agent.shared.query_contracts import SurfaceView
+from banking.transactions.query.contracts import SurfaceView
 from banking.transactions.query.models.domain import (
     Filters,
     QueryExecutionContract,

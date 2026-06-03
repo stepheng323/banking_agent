@@ -7,7 +7,7 @@ import unicodedata
 from calendar import monthrange
 from datetime import date
 
-from apps.chat.src.agent.shared.routing_signals import looks_like_support_problem_statement
+from banking.intent.routing_signals import looks_like_support_problem_statement
 from banking.transactions.query.models.domain import TimeRange
 from banking.transactions.query.models.extraction import (
     AmbiguityCode,

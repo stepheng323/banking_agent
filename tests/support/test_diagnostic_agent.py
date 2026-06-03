@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from apps.chat.src.agent.orchestrator.models.domain import SupportOutcome
+from banking.runtime.results import SupportOutcome
 from banking.support.diagnostic_agent import (
     SupportDiagnosticAgent,
     build_support_diagnostic_context,

@@ -3,12 +3,12 @@ from typing import Any
 import pytest
 
 from apps.chat.src.agent.orchestrator.confirmation.affirmation.service import AffirmationService
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import (
+from banking.presentation.i18n.models import LocaleCode
+from banking.transactions.shared.confirmation.classifier import (
     classify_confirmation_reply,
     classify_confirmation_reply_sync,
 )
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import ConfirmationDecisionOutput
-from banking.presentation.i18n.models import LocaleCode
+from banking.transactions.shared.confirmation.models import ConfirmationDecisionOutput
 
 
 class _StructuredConfirmationLLM:

@@ -4,10 +4,6 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
-from apps.chat.src.agent.orchestrator.models.domain import (
-    AccountOutcome,
-    AccountResult,
-)
 from banking.accounts.management.balances import check_balance
 from banking.accounts.management.capabilities import (
     AccountCapability,
@@ -24,6 +20,7 @@ from banking.accounts.repositories.account_repository import AccountRepository
 from banking.identity.repositories.user_repository import UserRepository
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import AccountOutcome, AccountResult
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider

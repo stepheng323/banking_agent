@@ -6,8 +6,8 @@ from datetime import date
 from typing import Any
 
 import banking.transactions.query.continuations.compiler_paths as compiler_paths
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.presentation.i18n.locale import LocaleManager
+from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.continuations.active_result_facts import (
     maybe_build_fact_answer_from_decision,
 )

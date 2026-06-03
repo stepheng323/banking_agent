@@ -4,11 +4,12 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
-from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
-from apps.chat.src.agent.shared.query_contracts import (
+from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.query.contracts import (
     FocusedReferent,
     SelectionPayload,
     SurfaceItemView,

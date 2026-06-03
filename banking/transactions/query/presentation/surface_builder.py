@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from apps.chat.src.agent.shared.query_contracts import (
+from banking.transactions.query.contracts import (
     FocusedReferent,
     SelectionPayload,
     SurfaceItemView,

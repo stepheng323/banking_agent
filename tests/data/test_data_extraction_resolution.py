@@ -3,12 +3,12 @@ from uuid import uuid4
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.bills.data.models.extraction import DataExtractionResult, DataPurchaseEntities
 from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.bills.data.nodes.confirmation import ConfirmationStep
 from banking.bills.data.nodes.extraction import ExtractionStep
 from banking.bills.data.nodes.resolution import ResolutionStep
+from banking.runtime.results import TransactionOutcome
 
 
 class _ExtractorStub:

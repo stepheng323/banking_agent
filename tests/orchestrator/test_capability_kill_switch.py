@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.models.domain import FAQOutcome, SupportOutcome, TransactionOutcome
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.data_domain_stages import _stage_data_domain
@@ -16,6 +15,7 @@ from banking.policy.adapters import is_capability_supported
 from banking.policy.loader import get_cached_policy, load_policy
 from banking.policy.models import CapabilityPolicy
 from banking.policy.service import capability_block_message
+from banking.runtime.results import FAQOutcome, SupportOutcome, TransactionOutcome
 from banking.support.worker import SupportWorker
 from banking.transfers.worker import TransferWorker
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters

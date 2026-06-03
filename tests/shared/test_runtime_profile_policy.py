@@ -10,7 +10,6 @@ import pytest
 import banking.transactions.query.capabilities as query_capabilities
 from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile, load_assistant_profile
 from apps.chat.src.agent.assistant_profile.voice import build_planner_voice_block, get_runtime_voice
-from apps.chat.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_unsupported import _build_policy_notice
 from banking.accounts.management.worker import AccountWorker
 from banking.bills.airtime.worker import AirtimeWorker
@@ -19,6 +18,7 @@ from banking.policy.adapters import resolve_capability_message, resolve_capabili
 from banking.policy.guardrails.loader import get_cached_guardrails, load_guardrails
 from banking.policy.loader import get_cached_policy, load_policy
 from banking.policy.validation import validate_policy_coverage
+from banking.runtime.results import AccountOutcome, TransactionOutcome
 from banking.transfers.worker import TransferWorker
 from shared.config.settings import settings
 

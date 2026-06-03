@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from apps.chat.src.agent.shared.query_contracts import SelectionPayload, SurfaceView
+from banking.transactions.query.contracts import SelectionPayload, SurfaceView
 
 
 def find_selection_payload(

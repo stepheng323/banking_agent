@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionResult
+from banking.runtime.results import TransactionResult
 from banking.transfers.models.types import (
     TransferContext,
     TransferGates,

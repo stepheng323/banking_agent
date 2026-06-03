@@ -9,9 +9,10 @@ from typing import Any, Literal, cast
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskStage, TransactionOutcome
+from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from banking.presentation.i18n.locale import LocaleManager
+from banking.runtime.results import TransactionOutcome
 from shared.utils.logging import get_logger
 from shared.utils.serialization import sqlalchemy_to_dict
 

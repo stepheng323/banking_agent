@@ -6,9 +6,9 @@ from datetime import date
 from time import perf_counter
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome
 from banking.transactions.query.compiler.lexical_recovery import looks_like_support_problem_statement
 from banking.transactions.query.models.domain import QueryExecutionContract
 from banking.transactions.query.models.extraction import (

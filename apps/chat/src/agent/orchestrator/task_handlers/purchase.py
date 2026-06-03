@@ -1,7 +1,6 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import push_data_plan_frames_from_result
 from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     ExecutionContext,
@@ -13,6 +12,7 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _state_locale,
 )
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome
 
 
 async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:

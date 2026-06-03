@@ -6,8 +6,8 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
-from apps.chat.src.agent.shared.query_contracts import SelectionPayload
 from banking.presentation.formatters.transaction_copy_context import format_amount_compact
+from banking.transactions.query.contracts import SelectionPayload
 
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 ASYNC_RECEIPT_STATUSES = {"queued", "processing", "pending"}

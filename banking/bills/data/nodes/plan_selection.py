@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.bills.data.pipeline.base import PipelineStep, continue_pipeline
 from banking.bills.data.plans.catalog import (
@@ -35,6 +34,7 @@ from banking.bills.data.plans.catalog import (
     _top_plan_is_decisive,
 )
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
 class DataPlanSelectionStep(PipelineStep):

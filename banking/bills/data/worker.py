@@ -9,10 +9,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import (
-    TransactionOutcome,
-    TransactionResult,
-)
 from banking.bills.data.models.types import (
     DataContext,
     DataGates,
@@ -24,6 +20,7 @@ from banking.bills.data.scheduling import SCHEDULING_ACTIONS, DataSchedulingHand
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
 

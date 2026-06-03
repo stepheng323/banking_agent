@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import re
 
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_models import (
+from banking.transactions.shared.confirmation.models import (
     ConfirmationDecision,
     ConfirmationPromptKind,
 )
-from apps.chat.src.agent.orchestrator.confirmation.confirmation_phrases import normalize_confirmation_text
+from banking.transactions.shared.confirmation.phrases import normalize_confirmation_text
 
 _ACCOUNT_NUMBER_RE = re.compile(r"\b\d{10,11}\b")
 _AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?\b", re.IGNORECASE)

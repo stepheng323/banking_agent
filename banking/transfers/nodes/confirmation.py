@@ -5,7 +5,6 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.presentation.formatters.currency import format_naira
@@ -19,6 +18,7 @@ from banking.presentation.i18n.personality import (
 )
 from banking.presentation.i18n.renderer import render_message, render_text
 from banking.risk.service import RiskDecisionResult, RiskDecisionService
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from banking.transactions.shared.scheduling import format_schedule_confirmation_line
 from banking.transfers.authorization.pin_token import persist_transfer_pin_token

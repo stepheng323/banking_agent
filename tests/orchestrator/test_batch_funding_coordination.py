@@ -2,14 +2,10 @@ from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import (
-    TaskSpec,
-    TaskStage,
-    TransactionOutcome,
-    TransactionResult,
-)
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.direct_debit import BalanceResult
 
 

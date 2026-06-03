@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transfers.models.types import TransferContext, TransferPayload
 from banking.transfers.resolution.names import (
     ask_account_and_bank_prompt,

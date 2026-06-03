@@ -12,13 +12,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import (
-    TransactionOutcome,
-    TransactionResult,
-)
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.repositories.transaction_repository import (
     TransactionRepository,
 )

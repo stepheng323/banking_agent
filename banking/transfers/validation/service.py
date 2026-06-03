@@ -1,10 +1,7 @@
 """Validation service for transfer operations."""
 
-from apps.chat.src.agent.orchestrator.models.domain import (
-    TransactionOutcome,
-    TransactionResult,
-)
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.shared.validation.amount_validator import (
     TRANSFER_LIMITS,
     validate_percentage,

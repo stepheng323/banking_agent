@@ -5,20 +5,22 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import (
-    AccountOutcome,
-    AccountResult,
     ActiveSession,
     PendingInterrupt,
     TaskSpec,
     TaskStage,
-    TransactionOutcome,
-    TransactionResult,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
 from banking.presentation.i18n.bridge import render_cancelled_prompt
 from banking.presentation.i18n.renderer import render_message
+from banking.runtime.results import (
+    AccountOutcome,
+    AccountResult,
+    TransactionOutcome,
+    TransactionResult,
+)
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
