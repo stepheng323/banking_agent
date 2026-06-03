@@ -48,9 +48,7 @@ def _expand_underproduced_transfer_tasks(
 
     recipient_allocations = _planned_recipient_allocations(source_task)
     source_text = (
-        clause_text_by_index.get(source_task.source_clause_index or 0, user_text)
-        if clause_text_by_index
-        else user_text
+        clause_text_by_index.get(source_task.source_clause_index or 0, user_text) if clause_text_by_index else user_text
     )
     recipients = derive_recipients_from_user_text(source_text)
     if recipient_allocations is None and len(recipients) < 2:

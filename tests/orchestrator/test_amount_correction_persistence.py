@@ -14,7 +14,15 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 

@@ -35,11 +35,7 @@ def _target_task_ids_from_decision(
     state: OrchestratorState,
     removed: bool = False,
 ) -> list[str]:
-    explicit_ids = [
-        str(task_id)
-        for task_id in getattr(decision, "target_task_ids", [])
-        if str(task_id) in task_ids
-    ]
+    explicit_ids = [str(task_id) for task_id in getattr(decision, "target_task_ids", []) if str(task_id) in task_ids]
     if explicit_ids:
         return list(dict.fromkeys(explicit_ids))
 
@@ -52,8 +48,7 @@ def _target_task_ids_from_decision(
         return [
             task_id
             for task_id in task_ids
-            if (task := _task_for_target_id(state, task_id, removed=removed)) is not None
-            and task.type in target_types
+            if (task := _task_for_target_id(state, task_id, removed=removed)) is not None and task.type in target_types
         ]
 
     matched_task_ids: list[str] = []

@@ -215,7 +215,7 @@ class TelegramWebhookService:
             stored = await session_manager.update_session_strict(
                 flow_token,
                 {
-                            "purpose": CHANNEL_LINK_SESSION_PURPOSE,
+                    "purpose": CHANNEL_LINK_SESSION_PURPOSE,
                     "user_id": str(user.id),
                     "phone_number": phone,
                     "requested_channel": _TELEGRAM_CHANNEL,

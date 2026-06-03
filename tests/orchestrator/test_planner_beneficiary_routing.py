@@ -17,7 +17,7 @@ class _MockPlanner:
         *,
         context: str = "None",
         prompt_signals: object | None = None,
-    path_label: str = "planner_path",
+        path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         return self._output
@@ -26,9 +26,7 @@ class _MockPlanner:
 class _RedisWithSuggestionOnly:
     async def get(self, key: str) -> str | None:
         if ":beneficiary_suggestion" in key:
-            return (
-                '{"recipient_name":"Tolu Adedayo","recipient_account":"0760505261","bank_name":"First Bank"}'
-            )
+            return '{"recipient_name":"Tolu Adedayo","recipient_account":"0760505261","bank_name":"First Bank"}'
         if "query:session:" in key:
             return None
         return None

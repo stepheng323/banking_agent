@@ -150,7 +150,12 @@ class _SharedState:
             funding_completed_at=None,
             error_message=None,
         )
-        self.tx = SimpleNamespace(idempotency_key="idem-1", status=TransactionStatusEnum.PROCESSING.value, error_message=None, provider_status=None)
+        self.tx = SimpleNamespace(
+            idempotency_key="idem-1",
+            status=TransactionStatusEnum.PROCESSING.value,
+            error_message=None,
+            provider_status=None,
+        )
         self.funding_steps = _FakeFundingSteps(steps)
         self.funded_transfers = _FakeFundedTransfers(self.transfer)
         self.accounts = _FakeAccounts()

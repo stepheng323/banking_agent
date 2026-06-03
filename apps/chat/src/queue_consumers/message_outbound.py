@@ -85,9 +85,7 @@ def is_pending_input_prompt_outbox(raw_outbox: Any) -> bool:
     if not isinstance(raw_outbox, list) or not raw_outbox:
         return False
     items = [item for item in raw_outbox if isinstance(item, dict)]
-    return len(items) == len(raw_outbox) and all(
-        item.get("prompt_kind") == PENDING_INPUT_PROMPT_KIND for item in items
-    )
+    return len(items) == len(raw_outbox) and all(item.get("prompt_kind") == PENDING_INPUT_PROMPT_KIND for item in items)
 
 
 def should_suppress_intermediate_input_prompt(
@@ -124,11 +122,7 @@ def prepare_orchestrator_outbound(
             isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions, ShowFlow))
             for intent in intents
         )
-        if (
-            response_text
-            and not has_primary_interaction
-            and not any(isinstance(intent, Say) for intent in intents)
-        ):
+        if response_text and not has_primary_interaction and not any(isinstance(intent, Say) for intent in intents):
             intents.append(Say(text=response_text))
         return list(intents), raw_outbox, response_text, delivery_metadata
 

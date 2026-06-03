@@ -14,18 +14,14 @@ from .pending_action_source_account_resolution import (
 
 
 def _account_source_patch(account: dict[str, Any]) -> dict[str, Any]:
-    bank_name = str(
-        account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or ""
-    ).strip()
+    bank_name = str(account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or "").strip()
     account_number = str(
         account.get("account_number") or account.get("number") or account.get("source_account_number") or ""
     ).strip()
     account_name = str(
         account.get("account_name") or account.get("name") or account.get("source_account_name") or ""
     ).strip()
-    account_id = str(
-        account.get("id") or account.get("account_id") or account.get("source_account_id") or ""
-    ).strip()
+    account_id = str(account.get("id") or account.get("account_id") or account.get("source_account_id") or "").strip()
     return {
         "confirmation": {"confirmed": False},
         "source_account_id": account_id or None,

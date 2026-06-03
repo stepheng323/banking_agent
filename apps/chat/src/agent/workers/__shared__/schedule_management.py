@@ -171,7 +171,11 @@ def _target_label(schedule: Any, locale: str = "en") -> str:
     payload = _payload(schedule)
     domain = _domain(schedule)
     if domain == "airtime":
-        phone = payload.get("recipient_phone") or payload.get("phone") or render_message("schedule.fallback.recipient", locale)
+        phone = (
+            payload.get("recipient_phone")
+            or payload.get("phone")
+            or render_message("schedule.fallback.recipient", locale)
+        )
         network = payload.get("network")
         if network:
             return render_message(
@@ -181,9 +185,13 @@ def _target_label(schedule: Any, locale: str = "en") -> str:
             )
         return render_message("schedule.target.airtime", locale, {"phone": str(phone)})
     if domain == "data":
-        phone = payload.get("target_phone") or payload.get("recipient_phone") or render_message(
-            "schedule.fallback.recipient",
-            locale,
+        phone = (
+            payload.get("target_phone")
+            or payload.get("recipient_phone")
+            or render_message(
+                "schedule.fallback.recipient",
+                locale,
+            )
         )
         plan = payload.get("plan_name") or payload.get("plan") or render_message("schedule.fallback.data_plan", locale)
         network = payload.get("network")
@@ -234,11 +242,7 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
         amount_money = to_naira(amount_raw)
         amount = _format_schedule_amount(amount_raw)
         next_run_at_utc = getattr(schedule, "next_run_at_utc", None)
-        next_run = (
-            format_lagos_schedule_datetime(next_run_at_utc)
-            if isinstance(next_run_at_utc, datetime)
-            else None
-        )
+        next_run = format_lagos_schedule_datetime(next_run_at_utc) if isinstance(next_run_at_utc, datetime) else None
         row = format_schedule_row(index, schedule, include_id=False, locale=locale)
         label = row.split(". ", 1)[1] if row.startswith(f"{index}. ") else row
         data: dict[str, Any] = {
@@ -250,7 +254,9 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
             "amount_value": naira_to_json(amount_money),
             "target": _target_label(schedule, locale),
             "recurrence": _recurrence_label(schedule, locale),
-            "schedule_time": render_message("schedule.time.with_timezone", locale, {"time": _time_label(schedule, locale)}),
+            "schedule_time": render_message(
+                "schedule.time.with_timezone", locale, {"time": _time_label(schedule, locale)}
+            ),
             "next_run": next_run,
             "status": str(getattr(schedule, "status", "") or "active"),
             "source_bank_name": payload.get("source_bank_name"),
@@ -380,10 +386,16 @@ def _merged_schedule_state(schedule: Any, edit_patch: dict[str, Any]) -> dict[st
     payload = _payload(schedule)
     merged = {**payload, **edit_patch}
     return {
-        "recurrence_type": str(edit_patch.get("recurrence_type") or getattr(schedule, "recurrence_type", None) or "one_time"),
-        "start_date": str(edit_patch.get("schedule_start_date") or getattr(schedule, "start_date", None) or today_lagos().isoformat()),
+        "recurrence_type": str(
+            edit_patch.get("recurrence_type") or getattr(schedule, "recurrence_type", None) or "one_time"
+        ),
+        "start_date": str(
+            edit_patch.get("schedule_start_date") or getattr(schedule, "start_date", None) or today_lagos().isoformat()
+        ),
         "local_time": str(edit_patch.get("schedule_time_local") or getattr(schedule, "local_time", None) or ""),
-        "timezone": str(edit_patch.get("schedule_timezone") or getattr(schedule, "timezone", None) or SCHEDULE_TIMEZONE),
+        "timezone": str(
+            edit_patch.get("schedule_timezone") or getattr(schedule, "timezone", None) or SCHEDULE_TIMEZONE
+        ),
         "day_of_week": edit_patch.get("schedule_day_of_week", getattr(schedule, "day_of_week", None)),
         "day_of_month": edit_patch.get("schedule_day_of_month", getattr(schedule, "day_of_month", None)),
         "end_date": edit_patch.get("schedule_end_date", getattr(schedule, "end_date", None)),
@@ -577,7 +589,9 @@ def disambiguation_result(
             patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
         )
     lines = [render_message("schedule.disambiguation.prompt", locale, {"action": action_label})]
-    lines.extend(format_schedule_row(index, schedule, locale=locale) for index, schedule in enumerate(schedules, start=1))
+    lines.extend(
+        format_schedule_row(index, schedule, locale=locale) for index, schedule in enumerate(schedules, start=1)
+    )
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=[required_field],

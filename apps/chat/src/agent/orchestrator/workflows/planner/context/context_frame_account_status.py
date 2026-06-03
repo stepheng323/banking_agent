@@ -133,8 +133,7 @@ def _format_account_status_instruction(normalized_status: str, data: dict[str, A
         return _format_pending_account_completion_steps(data)
     if normalized_status == "approved":
         return (
-            "Next step: wait for NIBSS/bank verification. "
-            "This usually takes a few minutes but can take up to 24 hours."
+            "Next step: wait for NIBSS/bank verification. This usually takes a few minutes but can take up to 24 hours."
         )
     if normalized_status == "ready":
         return "Next step: no action needed. You can use this account for payments."

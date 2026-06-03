@@ -255,6 +255,7 @@ ContextFrameRequestedField: TypeAlias = Literal[
 
 ContextFrameRank: TypeAlias = Literal["largest", "smallest", "newest", "oldest"]
 
+
 class ContextFrameFollowupFilters(BaseModel):
     """Structured filters for grounding follow-ups against displayed result frames."""
 
@@ -268,6 +269,7 @@ class ContextFrameFollowupFilters(BaseModel):
     direction: str | None = Field(default=None, description="Visible transaction direction filter")
     bank: str | None = Field(default=None, description="Visible bank name/reference filter")
     counterparty: str | None = Field(default=None, description="Visible counterparty/recipient/merchant filter")
+
 
 PendingActionEditOperation: TypeAlias = Literal[
     "remove_tasks",

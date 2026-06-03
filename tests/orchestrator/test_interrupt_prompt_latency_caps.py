@@ -126,9 +126,9 @@ def test_interrupt_context_includes_compact_active_task_state() -> None:
     )
 
     assert "active_task_state=" in context
-    assert "\"t9\"" in context
-    assert "\"recipient_name\": \"Mum\"" in context
-    assert "\"has_recipient_account\": true" in context
+    assert '"t9"' in context
+    assert '"recipient_name": "Mum"' in context
+    assert '"has_recipient_account": true' in context
 
 
 def test_interrupt_context_includes_data_confirmation_plan_state() -> None:
@@ -173,12 +173,12 @@ def test_interrupt_context_includes_data_confirmation_plan_state() -> None:
     )
 
     assert "active_task_state=" in context
-    assert "\"t_data\"" in context
-    assert "\"target_phone\": \"08162511023\"" in context
-    assert "\"network\": \"MTN\"" in context
-    assert "\"plan_name\": \"MTN 5 GB data bundle\"" in context
-    assert "\"plan_size_gb\": 5.0" in context
-    assert "\"plan_validity_days\": 30" in context
+    assert '"t_data"' in context
+    assert '"target_phone": "08162511023"' in context
+    assert '"network": "MTN"' in context
+    assert '"plan_name": "MTN 5 GB data bundle"' in context
+    assert '"plan_size_gb": 5.0' in context
+    assert '"plan_validity_days": 30' in context
 
 
 def test_interrupt_context_includes_airtime_self_target_state() -> None:
@@ -220,9 +220,9 @@ def test_interrupt_context_includes_airtime_self_target_state() -> None:
     )
 
     assert "active_task_state=" in context
-    assert "\"recipient_phone\": \"08162511023\"" in context
-    assert "\"network\": \"MTN\"" in context
-    assert "\"is_self\": true" in context
+    assert '"recipient_phone": "08162511023"' in context
+    assert '"network": "MTN"' in context
+    assert '"is_self": true' in context
 
 
 def test_interrupt_context_logs_raw_and_clipped_component_sizes(monkeypatch: pytest.MonkeyPatch) -> None:

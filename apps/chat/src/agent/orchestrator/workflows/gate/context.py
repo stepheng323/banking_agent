@@ -69,11 +69,7 @@ class GateContext:
             if self.live_pending_interrupt
             else (
                 "direct_path"
-                if (
-                    not self.state.has_quote
-                    and self.task_planner is not None
-                    and should_invoke
-                )
+                if (not self.state.has_quote and self.task_planner is not None and should_invoke)
                 else "planner_path"
             )
         )

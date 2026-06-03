@@ -98,11 +98,7 @@ def build_context_frame_followup_response_from_request(
     request: SurfaceAnswerRequest,
 ) -> ContextFrameFollowupResponse | None:
     """Build a grounded follow-up response from a typed surface-answer request."""
-    decision = (
-        decision_with_grounding_hints(request.decision, request.text)
-        if request.decision is not None
-        else None
-    )
+    decision = decision_with_grounding_hints(request.decision, request.text) if request.decision is not None else None
     if decision is None:
         return None
 

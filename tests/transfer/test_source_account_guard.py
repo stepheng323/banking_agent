@@ -31,9 +31,7 @@ async def test_transfer_source_bank_pending_account_requires_revision() -> None:
                 "account_name": "First Account",
                 "account_number": "0334555167",
                 "mandate_status": "pending",
-                "extra_data": {
-                    "transfer_destinations": [{"bank_name": "NIBSS Bank", "account_number": "0001112223"}]
-                },
+                "extra_data": {"transfer_destinations": [{"bank_name": "NIBSS Bank", "account_number": "0001112223"}]},
             },
             {
                 "id": "ready-1",

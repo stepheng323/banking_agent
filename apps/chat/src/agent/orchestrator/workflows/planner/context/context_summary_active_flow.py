@@ -30,9 +30,7 @@ def _build_active_flow_details(state: OrchestratorState) -> ActiveFlowDetails:
         return ActiveFlowDetails(None, None, [], interrupt_kind)
 
     payload_view = {
-        key: value
-        for key, value in active_task.payload.items()
-        if key not in ["result", "error", "confirmation"]
+        key: value for key, value in active_task.payload.items() if key not in ["result", "error", "confirmation"]
     }
     payload_preview = _compact_payload_for_prompt(payload_view)
     summary = (

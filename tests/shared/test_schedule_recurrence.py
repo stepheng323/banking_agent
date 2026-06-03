@@ -107,7 +107,4 @@ def test_initial_schedule_without_start_date_defaults_to_lagos_date() -> None:
 
 
 def test_lagos_schedule_datetime_copy_does_not_show_utc() -> None:
-    assert (
-        format_lagos_schedule_datetime(datetime(2026, 5, 22, 7, 0))
-        == "May 22, 2026 at 8:00 AM WAT"
-    )
+    assert format_lagos_schedule_datetime(datetime(2026, 5, 22, 7, 0)) == "May 22, 2026 at 8:00 AM WAT"

@@ -113,8 +113,7 @@ class RiskDecisionService:
             return False
 
         has_saved_binding = bool(
-            getattr(payload, "beneficiary_id", None)
-            or getattr(payload, "resolved_from_saved_beneficiary", False)
+            getattr(payload, "beneficiary_id", None) or getattr(payload, "resolved_from_saved_beneficiary", False)
         )
         if not has_saved_binding and amount >= settings.new_beneficiary_limit_ngn:
             metadata["beneficiary_state"] = "unsaved"
@@ -137,8 +136,7 @@ class RiskDecisionService:
         age_seconds = (now - created_at).total_seconds()
         metadata["beneficiary_age_seconds"] = age_seconds
         return (
-            age_seconds < int(settings.new_beneficiary_cooling_seconds)
-            and amount >= settings.new_beneficiary_limit_ngn
+            age_seconds < int(settings.new_beneficiary_cooling_seconds) and amount >= settings.new_beneficiary_limit_ngn
         )
 
     async def _is_new_channel_identity(
@@ -187,9 +185,7 @@ class RiskDecisionService:
             for tx in await uow.transactions.get_transfers_since(user_id, one_day, statuses=tracked_statuses)
             if str(getattr(tx, "idempotency_key", "")) != idempotency_key
         ]
-        hourly_amount = amount + sum(
-            (to_naira(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in hourly
-        )
+        hourly_amount = amount + sum((to_naira(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in hourly)
         daily_amount = amount + sum((to_naira(getattr(tx, "amount", None)) or Decimal("0.00")) for tx in daily)
         metadata.update(
             {

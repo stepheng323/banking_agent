@@ -48,8 +48,10 @@ def _task_capability_target(task: Any) -> tuple[str, str] | None:
 
     if action in SCHEDULE_ACTIONS:
         return "schedule", action
-    if executor == "transfer" and action == "send_money" and (
-        getattr(parameters, "schedule", None) or getattr(parameters, "scheduled", None)
+    if (
+        executor == "transfer"
+        and action == "send_money"
+        and (getattr(parameters, "schedule", None) or getattr(parameters, "scheduled", None))
     ):
         return "schedule", "schedule_transfer"
 

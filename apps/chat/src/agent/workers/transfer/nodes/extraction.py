@@ -93,7 +93,9 @@ class ExtractionStep(TransferStep):
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=remaining_schedule_fields or schedule_required_fields,
-                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields, context.language),
+                    prompt=schedule_required_prompt(
+                        remaining_schedule_fields or schedule_required_fields, context.language
+                    ),
                     patch=_with_skip_patch({}),
                 )
         if (
@@ -252,7 +254,7 @@ class ExtractionStep(TransferStep):
                             "confirmation": {"confirmed": False},
                         }
                     ),
-        )
+                )
         if waiting_for_referent_recipient:
             selection_referent_patch, invalid_referents = resolve_referent_recipient_selection_from_input(
                 self.user_message,

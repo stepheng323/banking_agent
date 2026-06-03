@@ -213,9 +213,7 @@ async def test_reconciliation_completes_only_verified_success(monkeypatch) -> No
     await consumer.process_job({"funded_transfer_id": "funded-1", "provider_transfer_id": "trf-1"})
 
     assert provider.status_calls == ["trf-1"]
-    assert state.funded_transfers.status_updates == [
-        ("funded-1", FundedTransferStatusEnum.COMPLETED.value, None)
-    ]
+    assert state.funded_transfers.status_updates == [("funded-1", FundedTransferStatusEnum.COMPLETED.value, None)]
     assert transfer.completed_at is not None
     assert tx.status == TransactionStatusEnum.SUCCESSFUL.value
     assert tx.transaction_id == "trf-1"
@@ -244,9 +242,7 @@ async def test_reconciliation_keeps_pending_and_increments_retry(monkeypatch) ->
 
     await consumer.process_job({"funded_transfer_id": "funded-1", "provider_transfer_id": "trf-1"})
 
-    assert state.funded_transfers.status_updates == [
-        ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None)
-    ]
+    assert state.funded_transfers.status_updates == [("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None)]
     assert transfer.payout_retry_count == 1
     assert tx.status == TransactionStatusEnum.PROCESSING.value
     assert publisher.published == []

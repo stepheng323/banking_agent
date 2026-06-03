@@ -557,9 +557,7 @@ class LedgerExposureReconciliationConsumer:
                 key=transaction_debit_refund_entry_key(str(step.id)),
                 finding_type="missing_transaction_debit_refund_ledger_entry",
                 entry_type=TRANSACTION_DEBIT_REFUND_ENTRY_TYPE,
-                severity="critical"
-                if transaction_status == TransactionStatusEnum.REVERSED.value
-                else "high",
+                severity="critical" if transaction_status == TransactionStatusEnum.REVERSED.value else "high",
                 expected_amount_naira=require_naira(getattr(step, "amount", None)),
             )
         return count

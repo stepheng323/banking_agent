@@ -55,4 +55,3 @@ def safe_user_error_message(message: str | None, *, task_type: str | None = None
 
 
 __all__ = ["looks_technical_error", "safe_user_error_message"]
-

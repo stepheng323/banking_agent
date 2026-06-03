@@ -107,15 +107,21 @@ def _assert_turn_expectations(
 
     if turn.expect_task_types is not None:
         task_types = tuple(task.type for task in result.state.tasks.values())
-        assert task_types == turn.expect_task_types, f"{label} expected task types {turn.expect_task_types}; got {task_types}"
+        assert task_types == turn.expect_task_types, (
+            f"{label} expected task types {turn.expect_task_types}; got {task_types}"
+        )
 
     if turn.expect_planner_route_calls_delta is not None:
         delta = route_calls_after - route_calls_before
-        assert delta == turn.expect_planner_route_calls_delta, f"{label} expected route-call delta {turn.expect_planner_route_calls_delta}; got {delta}"
+        assert delta == turn.expect_planner_route_calls_delta, (
+            f"{label} expected route-call delta {turn.expect_planner_route_calls_delta}; got {delta}"
+        )
 
     for field_name, expected_value in turn.expect_state.items():
         actual_value = getattr(result.state, field_name)
-        assert actual_value == expected_value, f"{label} expected state.{field_name}={expected_value!r}; got {actual_value!r}"
+        assert actual_value == expected_value, (
+            f"{label} expected state.{field_name}={expected_value!r}; got {actual_value!r}"
+        )
 
 
 async def run_conversation_scenario(scenario: ConversationScenario) -> ConversationScenarioResult:

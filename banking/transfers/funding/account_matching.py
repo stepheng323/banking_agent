@@ -49,13 +49,10 @@ def match_ineligible_requested_account(all_accounts: list[Any], eligible: list[A
             continue
         account_bank = str(getattr(account, "bank_name", "") or "")
         normalized_bank = normalize_bank_name(account_bank)
-        if (
-            normalized_request
-            and (
-                normalized_request in normalized_bank
-                or normalized_bank in normalized_request
-                or normalized_request.replace(" ", "") in normalized_bank.replace(" ", "")
-            )
+        if normalized_request and (
+            normalized_request in normalized_bank
+            or normalized_bank in normalized_request
+            or normalized_request.replace(" ", "") in normalized_bank.replace(" ", "")
         ):
             return account
     return None

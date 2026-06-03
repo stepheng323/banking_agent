@@ -130,24 +130,21 @@ class ConversationResponder:
                 return f"{joke}\n{redirect_text}"
             return redirect_text
         if is_contextual_worker_followup:
-            if (
-                contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(preface)
-                or contextual_responder.CONTEXTUAL_UNGROUNDED_PREFACE_RE.search(preface)
-            ):
+            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(
+                preface
+            ) or contextual_responder.CONTEXTUAL_UNGROUNDED_PREFACE_RE.search(preface):
                 return contextual_responder.contextual_worker_fallback_reply(text, user_ctx, locale=locale)
             return preface
         if is_contextual_meta_followup:
-            if (
-                contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(preface)
-                or responder_text.is_banking_refusal_reply(preface, locale=locale)
-            ):
+            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(
+                preface
+            ) or responder_text.is_banking_refusal_reply(preface, locale=locale):
                 return contextual_responder.contextual_meta_fallback_reply(user_ctx, locale=locale)
             return preface
         if is_unsupported_capability_followup:
-            if (
-                contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(preface)
-                or unsupported_responder.UNSUPPORTED_CAPABILITY_PROMISE_RE.search(preface)
-            ):
+            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(
+                preface
+            ) or unsupported_responder.UNSUPPORTED_CAPABILITY_PROMISE_RE.search(preface):
                 return unsupported_responder.unsupported_capability_fallback_reply(user_ctx, locale)
             return preface
         if is_banking_reaction:

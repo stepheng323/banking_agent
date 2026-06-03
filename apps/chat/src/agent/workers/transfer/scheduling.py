@@ -45,6 +45,7 @@ SCHEDULING_ACTIONS = {
 CANCEL_SCHEDULE_ACTIONS = {"cancel_scheduled_transfer", "cancel_scheduled_transaction"}
 EDIT_SCHEDULE_ACTIONS = {"edit_scheduled_transaction"}
 
+
 class TransferPipelineBuilder(Protocol):
     def __call__(
         self,
@@ -53,7 +54,6 @@ class TransferPipelineBuilder(Protocol):
         include_execution: bool = True,
         require_schedule_fields: bool = False,
     ) -> TransferPipeline: ...
-
 
 
 def missing_schedule_fields(data: TransferPayload) -> list[str]:
@@ -145,7 +145,9 @@ class TransferSchedulingHandler:
             )
 
         lines = [render_message("schedule.list.header", locale)]
-        lines.extend(format_schedule_row(idx, schedule, locale=locale) for idx, schedule in enumerate(schedules, start=1))
+        lines.extend(
+            format_schedule_row(idx, schedule, locale=locale) for idx, schedule in enumerate(schedules, start=1)
+        )
 
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -442,9 +444,13 @@ class TransferSchedulingHandler:
             await uow.commit()
 
         amount = format_naira(data.amount)
-        recipient = data.recipient_name or data.recipient_resolved_name or render_message(
-            "schedule.fallback.recipient",
-            locale,
+        recipient = (
+            data.recipient_name
+            or data.recipient_resolved_name
+            or render_message(
+                "schedule.fallback.recipient",
+                locale,
+            )
         )
         next_run_text = format_lagos_schedule_datetime(next_run_at)
         response = render_message(

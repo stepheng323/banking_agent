@@ -212,7 +212,6 @@ class TestFundingPlannerEdgeCases:
 class TestFundingPlannerExplicitPooling:
     """Tests for explicit pooling and split behavior."""
 
-
     @pytest.mark.asyncio
     async def test_requested_pending_source_account_returns_pending_message(self, sample_accounts):
         provider = MockDirectDebitProvider({"acc1": 50000.0, "acc2": 30000.0, "acc3": 20000.0})

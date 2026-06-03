@@ -41,10 +41,7 @@ def _build_async_db_url_and_connect_args(raw_database_url: str) -> tuple[str, di
 
     if removed_params:
         db_url = parsed.set(query=query).render_as_string(hide_password=False)
-        print(
-            "⚙️  Normalized DATABASE_URL for asyncpg; removed unsupported params: "
-            + ", ".join(removed_params)
-        )
+        print("⚙️  Normalized DATABASE_URL for asyncpg; removed unsupported params: " + ", ".join(removed_params))
 
     return db_url, connect_args
 

@@ -69,8 +69,7 @@ def main() -> int:
         print("Secret token enabled.")
     else:
         print(
-            "Warning: TELEGRAM_WEBHOOK_SECRET_TOKEN is empty; "
-            "local endpoint will not verify Telegram's secret header."
+            "Warning: TELEGRAM_WEBHOOK_SECRET_TOKEN is empty; local endpoint will not verify Telegram's secret header."
         )
     return 0
 

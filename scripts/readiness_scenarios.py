@@ -248,8 +248,7 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
     scenarios = readiness_scenarios()
     if name == "all":
         return tuple(
-            scenarios[key]
-            for key in ("core", "transfer", "data", "airtime", "faq", "unsupported", "schedule")
+            scenarios[key] for key in ("core", "transfer", "data", "airtime", "faq", "unsupported", "schedule")
         )
     if name == "mvp":
         return tuple(scenarios[key] for key in ("quick", "transfer", "airtime"))

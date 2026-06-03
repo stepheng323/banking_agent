@@ -12,9 +12,7 @@ from shared.utils.sanitize import normalize_bank_account_number
 _PHONE_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
 _ACCOUNT_PATTERN = re.compile(r"(?:\d[\s,.\-]?){10,11}")
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
-_AMOUNT_TOKEN_PATTERN = re.compile(
-    r"(?<!\d)(?:₦|ngn)?\s*(?P<number>\d[\d,]*(?:\.\d+)?)(?P<suffix>[kKmMhH]?)(?!\d)"
-)
+_AMOUNT_TOKEN_PATTERN = re.compile(r"(?<!\d)(?:₦|ngn)?\s*(?P<number>\d[\d,]*(?:\.\d+)?)(?P<suffix>[kKmMhH]?)(?!\d)")
 DATA_PLAN_PATTERN = re.compile(r"(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(gb|mb)(?!\w)", re.IGNORECASE)
 BALANCE_SHARE_PERCENT_PATTERN = re.compile(r"\b(?P<pct>\d{1,3})\s*%\b", re.IGNORECASE)
 

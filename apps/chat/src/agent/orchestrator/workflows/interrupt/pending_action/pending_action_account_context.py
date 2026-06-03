@@ -26,10 +26,7 @@ def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
                 account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or ""
             ).strip()
             account_number = str(
-                account.get("account_number")
-                or account.get("number")
-                or account.get("source_account_number")
-                or ""
+                account.get("account_number") or account.get("number") or account.get("source_account_number") or ""
             ).strip()
             key = account_id or f"{bank_name}:{account_number}"
             if key and key not in accounts_by_key:

@@ -133,7 +133,9 @@ async def test_mono_provider_failed_status_with_non_zero_code_is_failure() -> No
 @pytest.mark.asyncio
 async def test_mono_provider_missing_response_code_falls_back_to_status_only() -> None:
     provider = MonoDirectDebitProvider(
-        _MonoClientStub(status_response={"id": "debit-1", "status": "processing", "reference": "ref-1", "amount": 500000})
+        _MonoClientStub(
+            status_response={"id": "debit-1", "status": "processing", "reference": "ref-1", "amount": 500000}
+        )
     )
 
     result = await provider.get_debit_status("debit-1")

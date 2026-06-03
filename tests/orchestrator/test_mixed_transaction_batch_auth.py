@@ -43,7 +43,15 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -64,7 +72,15 @@ class _SequentialPlanner:
         self._outputs = outputs
         self._idx = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text, context
         if not self._outputs:
             raise AssertionError("expected at least one planner output")
@@ -858,8 +874,7 @@ async def test_expired_transaction_confirmation_continuation_gets_standard_respo
     assert updates["tasks"] == {}
     assert updates["waves"] == []
     assert updates["final_response"] == (
-        "That transaction session has expired, so I can't continue it. "
-        "Please start the transaction again."
+        "That transaction session has expired, so I can't continue it. Please start the transaction again."
     )
     assert updates["semantic_path_shape"] == "expired_transaction_session"
     assert updates["outbox"] == [{"type": "say", "text": updates["final_response"]}]
@@ -1216,7 +1231,7 @@ async def test_mixed_two_transfers_and_airtime_keep_all_tasks_after_late_source_
             "services": {
                 "transfer": _TransferTwoRecipientsOneNeedsDetailsWorker(),
                 "airtime": _AirtimeNeedsConfirmationWorker(),
-            }
+            },
         },
         "recursion_limit": 50,
     }
@@ -2341,7 +2356,10 @@ async def test_pending_action_edit_ambiguity_blocks_same_flow_switch_router() ->
     assert updates["tasks"] == state.tasks
     assert updates["tasks"]["t_transfer"].stage == TaskStage.AWAITING_CONFIRMATION
     assert updates["tasks"]["t_transfer"].payload["amount"] == 10000
-    assert updates["tasks"]["t_transfer"].payload["confirmation"] == {"summary": "Confirm transfer", "snapshot": {"amount": 10000}}
+    assert updates["tasks"]["t_transfer"].payload["confirmation"] == {
+        "summary": "Confirm transfer",
+        "snapshot": {"amount": 10000},
+    }
     assert updates["outbox"][0]["type"] == "say"
     assert "which" in updates["outbox"][0]["text"].lower()
 
@@ -2804,9 +2822,7 @@ async def test_semantic_pending_action_edit_adds_airtime_to_single_transfer_conf
 
     assert interrupt_updates["pending_interrupt"] is None
     assert "t_transfer" in interrupt_updates["tasks"]
-    added_airtime_ids = [
-        task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"
-    ]
+    added_airtime_ids = [task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"]
     assert len(added_airtime_ids) == 1
     added_airtime_id = added_airtime_ids[0]
     assert interrupt_updates["waves"] == [["t_transfer", added_airtime_id]]
@@ -3300,9 +3316,7 @@ async def test_semantic_pending_add_self_airtime_uses_context_phone_before_promp
 
     interrupt_updates = await handle_pending_interrupt(state, config)
 
-    added_airtime_id = next(
-        task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"
-    )
+    added_airtime_id = next(task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime")
     assert interrupt_updates["tasks"][added_airtime_id].payload["is_self"] is True
     assert "recipient_phone" not in interrupt_updates["tasks"][added_airtime_id].payload
 
@@ -3409,9 +3423,7 @@ async def test_pending_add_task_uses_semantic_route_when_edit_target_type_is_wro
 
     interrupt_updates = await handle_pending_interrupt(state, config)
 
-    added_airtime_ids = [
-        task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"
-    ]
+    added_airtime_ids = [task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"]
     added_transfer_ids = [
         task_id
         for task_id, task in interrupt_updates["tasks"].items()
@@ -3512,9 +3524,7 @@ async def test_pending_add_task_semantic_route_uses_fresh_instruction_context_on
 
     interrupt_updates = await handle_pending_interrupt(state, config)
 
-    added_airtime_ids = [
-        task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"
-    ]
+    added_airtime_ids = [task_id for task_id, task in interrupt_updates["tasks"].items() if task.type == "airtime"]
     assert len(added_airtime_ids) == 1
     assert "Tolu" not in planner.semantic_contexts[-1]
     assert "GTBank" not in planner.semantic_contexts[-1]

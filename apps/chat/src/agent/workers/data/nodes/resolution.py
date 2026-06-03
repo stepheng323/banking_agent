@@ -85,7 +85,9 @@ class ResolutionStep(PipelineStep):
                             },
                         )
 
-                    payload.target_phone = normalize_nigerian_phone(str(single.account_number or "")) or single.account_number
+                    payload.target_phone = (
+                        normalize_nigerian_phone(str(single.account_number or "")) or single.account_number
+                    )
                     payload.recipient_name = single.account_name or single.alias or recipient_name
                     if single.id:
                         payload.beneficiary_id = str(single.id)

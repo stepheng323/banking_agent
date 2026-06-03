@@ -69,9 +69,7 @@ async def test_invoke_does_not_inject_processing_error_when_flow_exists(monkeypa
     def _fake_create_background_task(coro: Any) -> None:
         scheduled.append(coro)
 
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task)
 
     result = await agent.invoke(
         phone_number="2348000000010",
@@ -111,9 +109,7 @@ async def test_invoke_keeps_processing_error_when_no_text_or_interaction(monkeyp
     def _fake_create_background_task(coro: Any) -> None:
         scheduled.append(coro)
 
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task)
 
     result = await agent.invoke(
         phone_number="2348000000011",
@@ -160,9 +156,7 @@ async def test_invoke_allows_silent_async_completion_when_fallback_suppressed(
     def _fake_create_background_task(coro: Any) -> None:
         scheduled.append(coro)
 
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task
-    )
+    monkeypatch.setattr("apps.chat.src.agent.orchestrator.agent.create_background_task", _fake_create_background_task)
 
     result = await agent.invoke(
         phone_number="2348000000012",

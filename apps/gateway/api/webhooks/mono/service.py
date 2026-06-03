@@ -548,9 +548,7 @@ class MonoWebhookService:
             )
         else:
             error = str(
-                getattr(tx, "error_message", None)
-                or self._response_message(provider_response)
-                or "Provider failed"
+                getattr(tx, "error_message", None) or self._response_message(provider_response) or "Provider failed"
             )
             text = render_message("transfer.execution.failed", locale, {"error": error})
 

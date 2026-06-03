@@ -38,8 +38,7 @@ def build_router_context_from_summary(
 
     if summary.query_session_summary and summary.query_session_active:
         sections.append(
-            "QUERY_SESSION:\n"
-            + _clip_text(summary.query_session_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
+            "QUERY_SESSION:\n" + _clip_text(summary.query_session_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
         )
 
     if summary.active_flow_summary:
@@ -52,13 +51,11 @@ def build_router_context_from_summary(
 
     if summary.short_term_memory_summary:
         sections.append(
-            "RECENT_CONTEXT:\n"
-            + _clip_text(summary.short_term_memory_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
+            "RECENT_CONTEXT:\n" + _clip_text(summary.short_term_memory_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
         )
     if summary.referent_memory_summary:
         sections.append(
-            "REFERENT_MEMORY:\n"
-            + _clip_text(summary.referent_memory_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
+            "REFERENT_MEMORY:\n" + _clip_text(summary.referent_memory_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
         )
     elif not summary.short_term_memory_summary and summary.history_lines:
         sections.append(

@@ -24,10 +24,7 @@ flow_router_module = importlib.import_module("apps.gateway.api.webhooks.whatsapp
 
 
 def _request(body: bytes, headers: Mapping[str, str] | None = None) -> Request:
-    raw_headers = [
-        (name.lower().encode("latin-1"), value.encode("latin-1"))
-        for name, value in (headers or {}).items()
-    ]
+    raw_headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in (headers or {}).items()]
     scope = {
         "type": "http",
         "method": "POST",
@@ -69,9 +66,7 @@ async def test_verify_meta_signature_rejects_missing_signature(monkeypatch: pyte
 async def test_whatsapp_webhook_returns_403_for_invalid_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(meta_whatsapp.settings.whatsapp, "app_secret", "test-secret")
 
-    response = await whatsapp_webhook(
-        _request(b'{"entry":[]}', {"X-Hub-Signature-256": "sha256=bad"})
-    )
+    response = await whatsapp_webhook(_request(b'{"entry":[]}', {"X-Hub-Signature-256": "sha256=bad"}))
 
     assert response.status_code == 403
 

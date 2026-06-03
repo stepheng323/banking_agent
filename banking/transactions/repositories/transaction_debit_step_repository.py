@@ -27,9 +27,7 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
     async def get_by_transaction(self, transaction_id: str) -> TransactionDebitStep | None:
         """Return the debit step for a transaction."""
         result = await self.db.execute(
-            select(TransactionDebitStep).filter(
-                TransactionDebitStep.transaction_id == self._coerce_id(transaction_id)
-            )
+            select(TransactionDebitStep).filter(TransactionDebitStep.transaction_id == self._coerce_id(transaction_id))
         )
         return result.scalars().first()
 
@@ -45,27 +43,21 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
     async def get_by_id_for_update(self, step_id: str) -> TransactionDebitStep | None:
         """Return and lock the debit step by ID."""
         result = await self.db.execute(
-            select(TransactionDebitStep)
-            .filter(TransactionDebitStep.id == self._coerce_id(step_id))
-            .with_for_update()
+            select(TransactionDebitStep).filter(TransactionDebitStep.id == self._coerce_id(step_id)).with_for_update()
         )
         return result.scalars().first()
 
     async def get_by_provider_reference_for_update(self, reference: str) -> TransactionDebitStep | None:
         """Return and lock a step by Mono provider reference."""
         result = await self.db.execute(
-            select(TransactionDebitStep)
-            .filter(TransactionDebitStep.provider_reference == reference)
-            .with_for_update()
+            select(TransactionDebitStep).filter(TransactionDebitStep.provider_reference == reference).with_for_update()
         )
         return result.scalars().first()
 
     async def get_by_provider_debit_id_for_update(self, debit_id: str) -> TransactionDebitStep | None:
         """Return and lock a step by Mono debit identifier."""
         result = await self.db.execute(
-            select(TransactionDebitStep)
-            .filter(TransactionDebitStep.provider_debit_id == debit_id)
-            .with_for_update()
+            select(TransactionDebitStep).filter(TransactionDebitStep.provider_debit_id == debit_id).with_for_update()
         )
         return result.scalars().first()
 
@@ -189,12 +181,8 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
             select(TransactionDebitStep)
             .join(Transaction, Transaction.id == TransactionDebitStep.transaction_id)
             .filter(
-                Transaction.transaction_type.in_(
-                    [TransactionTypeEnum.AIRTIME.value, TransactionTypeEnum.DATA.value]
-                ),
-                Transaction.status.in_(
-                    [TransactionStatusEnum.PENDING.value, TransactionStatusEnum.PROCESSING.value]
-                ),
+                Transaction.transaction_type.in_([TransactionTypeEnum.AIRTIME.value, TransactionTypeEnum.DATA.value]),
+                Transaction.status.in_([TransactionStatusEnum.PENDING.value, TransactionStatusEnum.PROCESSING.value]),
                 or_(
                     and_(
                         TransactionDebitStep.status == TransactionDebitStepStatusEnum.PENDING.value,
@@ -221,12 +209,8 @@ class TransactionDebitStepRepository(BaseRepository[TransactionDebitStep]):
             .join(Transaction, Transaction.id == TransactionDebitStep.transaction_id)
             .filter(
                 TransactionDebitStep.status == TransactionDebitStepStatusEnum.CONFIRMED.value,
-                Transaction.transaction_type.in_(
-                    [TransactionTypeEnum.AIRTIME.value, TransactionTypeEnum.DATA.value]
-                ),
-                Transaction.status.in_(
-                    [TransactionStatusEnum.PENDING.value, TransactionStatusEnum.PROCESSING.value]
-                ),
+                Transaction.transaction_type.in_([TransactionTypeEnum.AIRTIME.value, TransactionTypeEnum.DATA.value]),
+                Transaction.status.in_([TransactionStatusEnum.PENDING.value, TransactionStatusEnum.PROCESSING.value]),
             )
             .order_by(TransactionDebitStep.confirmed_at.asc().nullsfirst())
             .limit(limit)

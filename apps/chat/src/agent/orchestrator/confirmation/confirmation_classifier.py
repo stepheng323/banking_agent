@@ -70,11 +70,7 @@ def confirmation_decision_messages(
         "receipt, beneficiary list, or transaction query. Return unclear when uncertain. "
         "Do not invent transaction facts."
     )
-    user_prompt = (
-        f"Prompt kind: {prompt_kind}\n"
-        f"Context: {context or 'None'}\n"
-        f"User reply: \"\"\"{text}\"\"\""
-    )
+    user_prompt = f'Prompt kind: {prompt_kind}\nContext: {context or "None"}\nUser reply: """{text}"""'
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},

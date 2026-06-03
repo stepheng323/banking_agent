@@ -19,9 +19,11 @@ def enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorSta
         account_id = str(
             account.get("id") or account.get("account_id") or account.get("source_account_id") or ""
         ).strip()
-        bank_name = str(
-            account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or ""
-        ).strip().casefold()
+        bank_name = (
+            str(account.get("bank_name") or account.get("bank") or account.get("source_bank_name") or "")
+            .strip()
+            .casefold()
+        )
         if source_account_id and account_id == source_account_id:
             matched_account = account
             break
@@ -34,17 +36,13 @@ def enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorSta
 
     if not payload.get("source_account_id"):
         source_id = (
-            matched_account.get("id")
-            or matched_account.get("account_id")
-            or matched_account.get("source_account_id")
+            matched_account.get("id") or matched_account.get("account_id") or matched_account.get("source_account_id")
         )
         if source_id:
             payload["source_account_id"] = source_id
     if not payload.get("source_bank_name"):
         matched_bank_name = (
-            matched_account.get("bank_name")
-            or matched_account.get("bank")
-            or matched_account.get("source_bank_name")
+            matched_account.get("bank_name") or matched_account.get("bank") or matched_account.get("source_bank_name")
         )
         if matched_bank_name:
             payload["source_bank_name"] = matched_bank_name

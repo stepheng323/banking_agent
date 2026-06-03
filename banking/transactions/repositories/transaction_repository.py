@@ -500,8 +500,6 @@ class TransactionRepository(BaseRepository[Transaction]):
     async def _has_transaction_debit_accounting(self, transaction: Transaction) -> bool:
         """Return true when this transaction is represented by debit/bill ledger entries."""
         result = await self.db.execute(
-            select(TransactionDebitStep.id)
-            .filter(TransactionDebitStep.transaction_id == transaction.id)
-            .limit(1)
+            select(TransactionDebitStep.id).filter(TransactionDebitStep.transaction_id == transaction.id).limit(1)
         )
         return result.scalar_one_or_none() is not None

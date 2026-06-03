@@ -31,7 +31,10 @@ def test_format_transaction_status_reply_handles_unified_processing_bank_posted(
         bank_status="posted",
     )
 
-    assert message == "That transaction is still processing in our app, but a matching debit is posted in your bank history."
+    assert (
+        message
+        == "That transaction is still processing in our app, but a matching debit is posted in your bank history."
+    )
 
 
 def test_format_transaction_status_reply_handles_unified_failed_bank_posted_review() -> None:

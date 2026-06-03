@@ -26,7 +26,15 @@ class _MockPlanner:
         self._output = output
         self.planner_llm = planner_llm
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -385,7 +393,11 @@ async def test_conversational_identity_renders_deterministically_even_when_meta_
             "task_planner": _MockPlanner(
                 planner_output,
                 planner_llm=_FakeMetaLLM(
-                    {"handoff": "meta", "language": "en", "message": f"I am {settings.app_name}, built by Unknown Labs."}
+                    {
+                        "handoff": "meta",
+                        "language": "en",
+                        "message": f"I am {settings.app_name}, built by Unknown Labs.",
+                    }
                 ),
             ),
             "services": {},
@@ -1388,8 +1400,5 @@ async def test_mixed_request_runs_in_order_without_resume_prompt() -> None:
     assert all("resume your transfer" not in item.get("text", "").lower() for item in outbox)
     texts = [item.get("text", "") for item in outbox if isinstance(item, dict)]
     assert any("balance is available." in text.lower() for text in texts)
-    assert any(
-        "transaction summary" in text.lower() or "transfers complete" in text.lower()
-        for text in texts
-    )
+    assert any("transaction summary" in text.lower() or "transfers complete" in text.lower() for text in texts)
     assert all("account: completed" not in text.lower() for text in texts)

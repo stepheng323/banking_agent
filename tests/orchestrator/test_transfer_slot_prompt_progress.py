@@ -522,7 +522,9 @@ async def test_airtime_known_phone_missing_network_prompt_is_natural() -> None:
 
 
 async def test_airtime_bare_purchase_missing_phone_and_amount_prompt_is_natural() -> None:
-    worker = _MockNonTransferNeedsInputWorker(["recipient_phone", "amount"], "Please provide the phone number and amount.")
+    worker = _MockNonTransferNeedsInputWorker(
+        ["recipient_phone", "amount"], "Please provide the phone number and amount."
+    )
     state = OrchestratorState(
         user_id="u_airtime_prompt_bare",
         phone_number="2348000000100",

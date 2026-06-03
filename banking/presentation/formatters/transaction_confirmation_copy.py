@@ -112,14 +112,10 @@ def build_completion_frame(*, task_types: Iterable[str], locale: str, task_count
 
     if mix == "data":
         header_key = (
-            "transaction_copy.completion.header.data_plural"
-            if plural
-            else "transaction_copy.completion.header.data"
+            "transaction_copy.completion.header.data_plural" if plural else "transaction_copy.completion.header.data"
         )
         footer_key = (
-            "transaction_copy.completion.footer.data_plural"
-            if plural
-            else "transaction_copy.completion.footer.data"
+            "transaction_copy.completion.footer.data_plural" if plural else "transaction_copy.completion.footer.data"
         )
         return render_message(header_key, locale), render_message(footer_key, locale)
 

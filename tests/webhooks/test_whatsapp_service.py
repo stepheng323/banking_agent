@@ -125,9 +125,7 @@ def test_whatsapp_contact_profile_name_reaches_channel_metadata() -> None:
                     "changes": [
                         {
                             "value": {
-                                "contacts": [
-                                    {"wa_id": "2348162511023", "profile": {"name": "Gaines Abiodun"}}
-                                ],
+                                "contacts": [{"wa_id": "2348162511023", "profile": {"name": "Gaines Abiodun"}}],
                                 "messages": [
                                     {
                                         "id": "wamid-text",

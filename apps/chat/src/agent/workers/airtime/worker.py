@@ -142,7 +142,9 @@ class AirtimeWorker:
     @staticmethod
     def _policy_gate_message(action: str, *, locale: str = "en") -> str | None:
         if action in SCHEDULING_ACTIONS:
-            return capability_block_message(domain="schedule", action=action, locale=locale) or capability_block_message(
+            return capability_block_message(
+                domain="schedule", action=action, locale=locale
+            ) or capability_block_message(
                 domain="airtime",
                 action="buy_airtime",
                 locale=locale,

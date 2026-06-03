@@ -484,11 +484,14 @@ class MonoClient:
                 updates["response_code"] = "51"
                 updates["message"] = str(mock_debit.get("message") or "Debit failed")
             if next_status != current_status:
-                mock_debit = mock_data.update_mock_debit(
-                    debit_id,
-                    status=next_status,
-                    **updates,
-                ) or mock_debit
+                mock_debit = (
+                    mock_data.update_mock_debit(
+                        debit_id,
+                        status=next_status,
+                        **updates,
+                    )
+                    or mock_debit
+                )
             elif current_status == "failed" and current_code in (None, "00"):
                 mock_debit = mock_data.update_mock_debit(debit_id, **updates) or mock_debit
             return mock_debit

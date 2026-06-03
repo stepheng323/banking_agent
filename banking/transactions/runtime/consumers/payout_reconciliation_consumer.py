@@ -207,9 +207,8 @@ class PayoutReconciliationConsumer:
             logger.error("payout_reconciliation_publish_unavailable", funded_transfer_id=str(transfer.id))
             return
         amount_naira = naira_to_json(getattr(transfer, "amount", None)) or "0.00"
-        payout_provider_name = (
-            getattr(transfer, "payout_provider", None)
-            or getattr(self.payout_provider, "provider_name", settings.payout_provider_name)
+        payout_provider_name = getattr(transfer, "payout_provider", None) or getattr(
+            self.payout_provider, "provider_name", settings.payout_provider_name
         )
         await self.publisher.publish(
             topic="payout.process",
@@ -246,11 +245,7 @@ class PayoutReconciliationConsumer:
                 status_code = int(result.get("status_code") or 0)
             except (TypeError, ValueError):
                 status_code = 0
-            if (
-                normalize_payout_status(result.get("status")) == "failed"
-                and status_code in {400, 404}
-                and reference
-            ):
+            if normalize_payout_status(result.get("status")) == "failed" and status_code in {400, 404} and reference:
                 lookup = await self._get_transfer_by_reference(reference)
                 if lookup:
                     result = lookup

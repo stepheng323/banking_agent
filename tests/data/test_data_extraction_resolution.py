@@ -615,8 +615,7 @@ async def test_data_confirmation_self_summary_uses_plan_first_copy_with_phone() 
     assert result is not None
     assert result.outcome == TransactionOutcome.NEEDS_CONFIRMATION
     assert (
-        result.confirmation_summary
-        == "*MTN 5 GB data bundle for your number (08162511023)*\n"
+        result.confirmation_summary == "*MTN 5 GB data bundle for your number (08162511023)*\n"
         "Network: MTN • Amount: ₦3,500\n\n"
         "From: GTBank (···0002)"
     )

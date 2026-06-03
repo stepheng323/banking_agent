@@ -127,9 +127,7 @@ class DataExecutor:
         channel = str(data.get("channel") or "whatsapp")
 
         if policy_message := (
-            capability_block_message(domain="schedule", action="schedule_data", locale=locale)
-            if is_scheduled
-            else None
+            capability_block_message(domain="schedule", action="schedule_data", locale=locale) if is_scheduled else None
         ) or capability_block_message(domain="data", action="buy_data", locale=locale):
             logger.info("data_execution_capability_blocked", transaction_id=transaction_id)
             await scheduled_runs.update_scheduled_run(
@@ -238,7 +236,7 @@ class DataExecutor:
                         ),
                         metadata={"source": "data_executor", "transaction_id": transaction_id},
                         dedupe_key=f"data:failed:{transaction_id}",
-                )
+                    )
                 return
 
             await self._queue_transaction_debit(

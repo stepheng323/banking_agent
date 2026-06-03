@@ -14,7 +14,9 @@ class _BalanceProviderStub:
 
     async def get_balance(self, account_id: str, real_time: bool = True) -> BalanceResult:
         self.calls.append((account_id, real_time))
-        return BalanceResult(success=True, available_balance=self.available_balance, ledger_balance=self.available_balance)
+        return BalanceResult(
+            success=True, available_balance=self.available_balance, ledger_balance=self.available_balance
+        )
 
 
 async def test_transfer_percentage_resolves_against_selected_source_account_balance() -> None:
@@ -96,4 +98,3 @@ async def test_transfer_all_resolves_against_selected_source_account_balance() -
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["amount"] == 84250
-

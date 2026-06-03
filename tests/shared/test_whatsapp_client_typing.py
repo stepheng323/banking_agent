@@ -157,10 +157,7 @@ async def test_whatsapp_typing_resolves_current_message_id_from_redis(monkeypatc
 
     monkeypatch.setattr(whatsapp_typing.RedisClient, "get_client", staticmethod(lambda: _Redis()))
 
-    assert (
-        await whatsapp_typing.resolve_current_message_id(to="2348000000000", message_id=None)
-        == "wamid.redis"
-    )
+    assert await whatsapp_typing.resolve_current_message_id(to="2348000000000", message_id=None) == "wamid.redis"
 
 
 @pytest.mark.asyncio
@@ -191,7 +188,9 @@ async def test_whatsapp_client_reuses_http_client(monkeypatch: pytest.MonkeyPatc
             del kwargs
             self.gets.append(url)
             if url.endswith("/media-id"):
-                return httpx.Response(200, request=httpx.Request("GET", url), json={"url": "https://media.example/file"})
+                return httpx.Response(
+                    200, request=httpx.Request("GET", url), json={"url": "https://media.example/file"}
+                )
             return httpx.Response(200, request=httpx.Request("GET", url), content=b"media")
 
         async def aclose(self) -> None:

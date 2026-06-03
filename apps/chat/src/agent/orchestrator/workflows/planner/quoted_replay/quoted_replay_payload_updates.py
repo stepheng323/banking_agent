@@ -70,14 +70,10 @@ def _build_quoted_replay_execution_updates(
     task_inputs: list[tuple[str, dict[str, Any]]] = []
     if use_seed_tasks:
         task_inputs = [
-            (str(seed_task.get("task_type") or "").strip().lower(), dict(seed_task))
-            for seed_task in seed_tasks
+            (str(seed_task.get("task_type") or "").strip().lower(), dict(seed_task)) for seed_task in seed_tasks
         ]
     else:
-        task_inputs = [
-            (item.task_type, item.payload.model_dump(exclude_none=True))
-            for item in interpretation.tasks
-        ]
+        task_inputs = [(item.task_type, item.payload.model_dump(exclude_none=True)) for item in interpretation.tasks]
 
     for task_type, payload in task_inputs:
         sanitized_payload = _sanitize_replay_task_payload(

@@ -58,9 +58,7 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
     async def cleanup_expired(self) -> int:
         """Delete expired messages. Returns count deleted."""
 
-        result = await self.db.execute(
-            delete(ActionableMessage).where(ActionableMessage.expires_at <= utc_now_naive())
-        )
+        result = await self.db.execute(delete(ActionableMessage).where(ActionableMessage.expires_at <= utc_now_naive()))
         await self.db.commit()
 
         cursor_result = cast(CursorResult[Any], result)

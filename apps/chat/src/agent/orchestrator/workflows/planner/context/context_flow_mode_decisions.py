@@ -50,9 +50,7 @@ def _is_narrow_transfer_replan(
     if active_intent != "transfer":
         task_ids = getattr(state.pending_interrupt, "task_ids", None) or []
         active_interrupt_types = {
-            state.tasks[task_id].type
-            for task_id in task_ids
-            if isinstance(task_id, str) and task_id in state.tasks
+            state.tasks[task_id].type for task_id in task_ids if isinstance(task_id, str) and task_id in state.tasks
         }
         if active_interrupt_types != {"transfer"} and state.routing_target_domain != "transfer":
             return False

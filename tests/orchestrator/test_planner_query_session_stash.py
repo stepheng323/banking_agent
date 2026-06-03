@@ -13,7 +13,15 @@ class _StaticPlanner:
         self.output = output
         self.last_context: str | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text
         self.last_context = context
         return self.output

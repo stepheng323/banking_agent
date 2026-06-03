@@ -112,8 +112,7 @@ def resolve_beneficiary_selection_from_input(
 def render_referent_recipient_retry_prompt(candidates: list[dict[str, Any]], locale: str) -> str:
     prompt = render_message("transfer.resolve.which_recipient", locale, fallback_en="Which recipient did you mean?")
     lines = "\n".join(
-        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}"
-        for idx, candidate in enumerate(candidates, start=1)
+        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)
     )
     reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
     return f"{prompt}\n{lines}\n{reply_hint}" if lines else f"{prompt}\n{reply_hint}"
@@ -161,11 +160,7 @@ def resolve_referent_recipient_selection_from_input(
         "recipient_resolution_provider",
         "resolved_from_saved_beneficiary",
     )
-    patch = {
-        field: selected.get(field)
-        for field in patch_fields
-        if selected.get(field) not in (None, "")
-    }
+    patch = {field: selected.get(field) for field in patch_fields if selected.get(field) not in (None, "")}
     patch["referent_recipient_candidates"] = []
     patch["confirmation"] = {"confirmed": False}
     return patch, None
@@ -214,8 +209,7 @@ def build_resolved_referent_patch(data: TransferPayload, context: TransferContex
         if source_account:
             source_patch = build_source_account_patch(source_account)
             if any(
-                source_patch.get(field)
-                for field in ("source_account_id", "source_bank_name", "source_account_number")
+                source_patch.get(field) for field in ("source_account_id", "source_bank_name", "source_account_number")
             ):
                 patch.update(source_patch)
 

@@ -137,8 +137,7 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
             "orchestrator.session.transaction_expired",
             ctx.current_locale,
             fallback_en=(
-                "That transaction session has expired, so I can't continue it. "
-                "Please start the transaction again."
+                "That transaction session has expired, so I can't continue it. Please start the transaction again."
             ),
         ),
         **_route_observability_updates(owner="guardrail", decision="expired_pin_session"),

@@ -362,9 +362,7 @@ async def test_quality_audit_data_price_query_to_buy_it_reuses_catalog_plan_to_c
 
     state = _apply_updates(state, gate_updates)
     query_updates = await advance_wave(state, config)
-    assert query_updates["outbox"] == [
-        {"type": "say", "text": "MTN 5 GB data bundle is ₦3,500, valid for 30 days."}
-    ]
+    assert query_updates["outbox"] == [{"type": "say", "text": "MTN 5 GB data bundle is ₦3,500, valid for 30 days."}]
     state = _apply_updates(state, query_updates)
     assert state.context_frames[-1].frame_type == ContextFrameType.DATA_PLAN_LIST
     assert any(item.referent_type == "data_plan" for item in state.referent_memory.items)

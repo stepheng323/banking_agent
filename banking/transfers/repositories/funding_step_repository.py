@@ -297,10 +297,14 @@ class FundingStepRepository(BaseRepository[FundingStep]):
         now = datetime.now(UTC).replace(tzinfo=None)
         if status:
             step.status = status
-            if status in (
-                FundingStepStatusEnum.REFUND_PENDING.value,
-                FundingStepStatusEnum.REFUND_PROCESSING.value,
-            ) and not step.refund_initiated_at:
+            if (
+                status
+                in (
+                    FundingStepStatusEnum.REFUND_PENDING.value,
+                    FundingStepStatusEnum.REFUND_PROCESSING.value,
+                )
+                and not step.refund_initiated_at
+            ):
                 step.refund_initiated_at = now
             elif status == FundingStepStatusEnum.REFUNDED.value:
                 step.refunded_at = now

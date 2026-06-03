@@ -76,9 +76,7 @@ def _approve_confirmation_updates(state: OrchestratorState, interrupt: Any) -> d
             and task.payload.get("schedule_edit_requires_auth") is False
         )
         task.stage = (
-            TaskStage.EXECUTING
-            if state.pin_verified or schedule_edit_without_auth
-            else TaskStage.AWAITING_AUTH
+            TaskStage.EXECUTING if state.pin_verified or schedule_edit_without_auth else TaskStage.AWAITING_AUTH
         )
         new_tasks[tid] = task
     return {

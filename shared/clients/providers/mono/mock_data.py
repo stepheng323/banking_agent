@@ -196,6 +196,8 @@ def get_mock_transactions_page(
         mock_account_slot=mock_account_slot,
     )
     return paginate_transactions(filtered, limit=limit, page=page)
+
+
 def get_mock_account(account_id: str) -> AccountData:
     return AccountData(
         id=account_id,

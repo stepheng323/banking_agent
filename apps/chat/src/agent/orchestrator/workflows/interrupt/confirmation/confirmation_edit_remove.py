@@ -51,20 +51,9 @@ def remove_confirmation_tasks_and_reconfirm_updates(
             continue
         removed_tasks[task_id] = _removed_task_entry(state=state, task_id=task_id, task=task)
 
-    tasks = {
-        task_id: task.model_copy(deep=True)
-        for task_id, task in state.tasks.items()
-        if task_id not in remove_set
-    }
-    task_results = {
-        task_id: result
-        for task_id, result in state.task_results.items()
-        if task_id not in remove_set
-    }
-    waves = [
-        [task_id for task_id in wave if task_id not in remove_set]
-        for wave in state.waves
-    ]
+    tasks = {task_id: task.model_copy(deep=True) for task_id, task in state.tasks.items() if task_id not in remove_set}
+    task_results = {task_id: result for task_id, result in state.task_results.items() if task_id not in remove_set}
+    waves = [[task_id for task_id in wave if task_id not in remove_set] for wave in state.waves]
     waves = [wave for wave in waves if wave]
     current_wave_index = min(state.current_wave_index, max(len(waves) - 1, 0))
 

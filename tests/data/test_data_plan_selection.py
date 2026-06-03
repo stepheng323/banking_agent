@@ -302,7 +302,10 @@ async def test_data_plan_selection_bare_purchase_unknown_user_network_asks_netwo
     assert result is not None
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["network", "data_plan_preference"]
-    assert result.prompt == "Sure. I'll use your number. Which network is it on, and what budget or data size should I use?"
+    assert (
+        result.prompt
+        == "Sure. I'll use your number. Which network is it on, and what budget or data size should I use?"
+    )
     assert payload.target_phone == "07001234567"
     assert payload.network is None
     assert payload.is_self is True

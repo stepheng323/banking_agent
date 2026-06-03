@@ -170,7 +170,7 @@ async def test_payout_consumer_completes_only_terminal_success(monkeypatch) -> N
 
     assert uow.funded_transfers.status_updates == [
         ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
-        ("funded-1", FundedTransferStatusEnum.COMPLETED.value, None)
+        ("funded-1", FundedTransferStatusEnum.COMPLETED.value, None),
     ]
     assert transfer.completed_at is not None
     assert tx.status == TransactionStatusEnum.SUCCESSFUL.value
@@ -201,7 +201,7 @@ async def test_payout_consumer_keeps_pending_payout_processing(monkeypatch) -> N
 
     assert uow.funded_transfers.status_updates == [
         ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
-        ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None)
+        ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
     ]
     assert transfer.completed_at is None
     assert tx.status == TransactionStatusEnum.PROCESSING.value
@@ -241,7 +241,7 @@ async def test_payout_consumer_failed_payout_queues_refunds(monkeypatch) -> None
 
     assert uow.funded_transfers.status_updates == [
         ("funded-1", FundedTransferStatusEnum.PAYOUT_PENDING.value, None),
-        ("funded-1", FundedTransferStatusEnum.REFUNDING.value, "Invalid recipient")
+        ("funded-1", FundedTransferStatusEnum.REFUNDING.value, "Invalid recipient"),
     ]
     assert tx.status == TransactionStatusEnum.FAILED.value
     assert tx.error_message == "Invalid recipient"

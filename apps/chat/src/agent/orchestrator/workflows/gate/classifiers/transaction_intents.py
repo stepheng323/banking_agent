@@ -130,9 +130,7 @@ def _looks_like_multi_recipient_transfer(normalized: str) -> bool:
     if "split" in normalized or " each " in f" {normalized} " or re.search(r"\b(?:between|btw)\b", normalized):
         return True
     amount_matches = [
-        match
-        for match in _TRANSFER_DIRECT_AMOUNT_RE.findall(normalized)
-        if not re.fullmatch(r"\s*\d{10,11}\s*", match)
+        match for match in _TRANSFER_DIRECT_AMOUNT_RE.findall(normalized) if not re.fullmatch(r"\s*\d{10,11}\s*", match)
     ]
     if len(amount_matches) >= 2:
         return True

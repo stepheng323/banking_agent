@@ -531,8 +531,7 @@ class TransferExecutor:
                     )
                 elif not is_grouped_async_message(data):
                     recipient_name = str(
-                        recipient.get("name")
-                        or render_message("transfer.format.summary.recipient_fallback", locale)
+                        recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale)
                     )
                     success_context = await enrich_transfer_personality_context(
                         success_context,
@@ -587,8 +586,7 @@ class TransferExecutor:
                     )
                 elif not is_grouped_async_message(data):
                     recipient_name = str(
-                        recipient.get("name")
-                        or render_message("transfer.format.summary.recipient_fallback", locale)
+                        recipient.get("name") or render_message("transfer.format.summary.recipient_fallback", locale)
                     )
                     await self._deliver_text(
                         data=data,

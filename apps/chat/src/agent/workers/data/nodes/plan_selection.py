@@ -236,7 +236,9 @@ class DataPlanSelectionStep(PipelineStep):
 
         if validity_days is not None and budget is None and size_gb is None:
             exact_validity_matches = [plan for plan in candidate_pool if plan.validity_days == validity_days]
-            candidate_pool = exact_validity_matches or _closest_validity(candidate_pool, validity_days)[:MAX_PLAN_OPTIONS]
+            candidate_pool = (
+                exact_validity_matches or _closest_validity(candidate_pool, validity_days)[:MAX_PLAN_OPTIONS]
+            )
             if len(candidate_pool) == 1:
                 return _finish_plan_selection(payload, candidate_pool[0], context=context, locale=locale)
             payload.data_plan_candidates = [_plan_option(plan, idx) for idx, plan in enumerate(candidate_pool, start=1)]

@@ -116,7 +116,9 @@ def _extract_source_bank_hint(message: str, accounts: list[dict[str, Any]]) -> s
             continue
         for term in _source_bank_terms(bank_name):
             escaped = re.escape(term).replace(r"\ ", r"\s+")
-            if re.search(rf"\b{_SOURCE_BANK_PREFIX_RE}\s+(?:my\s+)?{escaped}(?:\s+(?:account|acct|bank))?\b", normalized_message):
+            if re.search(
+                rf"\b{_SOURCE_BANK_PREFIX_RE}\s+(?:my\s+)?{escaped}(?:\s+(?:account|acct|bank))?\b", normalized_message
+            ):
                 return bank_name
     return None
 
@@ -219,7 +221,9 @@ def _referent_phone_candidates(context: AirtimeContext) -> list[dict[str, Any]]:
             continue
         raw_data = item.get("data")
         data = raw_data if isinstance(raw_data, dict) else {}
-        phone = normalize_nigerian_phone(str(data.get("phone") or data.get("recipient_phone") or item.get("label") or ""))
+        phone = normalize_nigerian_phone(
+            str(data.get("phone") or data.get("recipient_phone") or item.get("label") or "")
+        )
         if phone:
             network = data.get("network")
             label = str(item.get("label") or data.get("recipient_name") or phone).strip()
@@ -240,7 +244,9 @@ def _referent_phone_candidates(context: AirtimeContext) -> list[dict[str, Any]]:
 
 
 def _ambiguous_phone_referent_prompt(candidates: list[dict[str, Any]], locale: str) -> str | None:
-    lines = [f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)]
+    lines = [
+        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)
+    ]
     if not lines:
         return None
     prompt = render_message("referent.phone.which_number", locale)
@@ -383,7 +389,9 @@ class ExtractionStep(AirtimeStep):
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=remaining_schedule_fields or schedule_required_fields,
-                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields, context.language),
+                    prompt=schedule_required_prompt(
+                        remaining_schedule_fields or schedule_required_fields, context.language
+                    ),
                     patch=_with_skip_patch({"is_scheduled_operation": True, "skip_finalize_summary": True}),
                 )
         source_account = None

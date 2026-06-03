@@ -37,8 +37,7 @@ def _focus_beneficiary_ambiguity(
 
 def _suppress_execution_only_prompts(agg: ExecutionAggregation) -> None:
     has_basic_blocker = any(
-        any(field not in EXECUTION_ONLY_FIELDS for field in fields)
-        for fields in agg.missing_fields_by_task.values()
+        any(field not in EXECUTION_ONLY_FIELDS for field in fields) for fields in agg.missing_fields_by_task.values()
     )
     if not has_basic_blocker:
         return

@@ -108,10 +108,8 @@ class PayoutConsumer:
                 or getattr(transfer, "recipient_account_number", ""),
                 "recipient_bank_code": payload.get("recipient_bank_code")
                 or getattr(transfer, "recipient_bank_code", ""),
-                "recipient_bank_code_provider": payload.get("recipient_bank_code_provider")
-                or payout_provider_name,
-                "recipient_resolution_provider": payload.get("recipient_resolution_provider")
-                or payout_provider_name,
+                "recipient_bank_code_provider": payload.get("recipient_bank_code_provider") or payout_provider_name,
+                "recipient_resolution_provider": payload.get("recipient_resolution_provider") or payout_provider_name,
                 "payout_provider": payload.get("payout_provider") or payout_provider_name,
                 "idempotency_key": reference,
                 "narration": payload.get("narration") or getattr(transfer, "narration", None),

@@ -115,7 +115,9 @@ class ValidationStep(AirtimeStep):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["network"],
-                prompt=render_message("response.templates.ask_network", locale, {"phone_masked": data.recipient_phone or ""}),
+                prompt=render_message(
+                    "response.templates.ask_network", locale, {"phone_masked": data.recipient_phone or ""}
+                ),
             )
 
         return TransactionResult(outcome=TransactionOutcome.OK)

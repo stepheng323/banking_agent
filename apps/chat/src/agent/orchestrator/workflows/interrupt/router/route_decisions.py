@@ -58,9 +58,8 @@ async def _apply_interrupt_route_decision(
     if route.decision == "approve_flow":
         if interrupt.kind == "confirmation":
             explicit_approval = _is_explicit_confirmation_approval_text(state, text)
-            guarded_llm_approval = (
-                route.confidence >= APPROVAL_CONFIDENCE_THRESHOLD
-                and is_safe_guarded_approval_text(text, prompt_kind="transaction_confirmation")
+            guarded_llm_approval = route.confidence >= APPROVAL_CONFIDENCE_THRESHOLD and is_safe_guarded_approval_text(
+                text, prompt_kind="transaction_confirmation"
             )
             if not (explicit_approval or guarded_llm_approval):
                 logger.info(

@@ -117,8 +117,7 @@ class BankTransactionCoverageRepository(BaseRepository[BankTransactionCoverage])
         overlap_start = start_date - timedelta(days=1)
         overlap_end = end_date + timedelta(days=1)
         result = await self.db.execute(
-            select(BankTransactionCoverage)
-            .filter(
+            select(BankTransactionCoverage).filter(
                 BankTransactionCoverage.linked_account_id == lookup_id,
                 BankTransactionCoverage.provider == provider,
                 BankTransactionCoverage.coverage_type == "full",

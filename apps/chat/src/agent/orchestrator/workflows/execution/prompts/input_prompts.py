@@ -113,6 +113,7 @@ def _build_missing_field_interrupt_updates(
             updates[key] = agg.updates[key]
     return updates
 
+
 __all__ = [
     "_build_missing_field_interrupt_updates",
 ]

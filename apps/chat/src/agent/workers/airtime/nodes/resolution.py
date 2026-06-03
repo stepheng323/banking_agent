@@ -103,7 +103,9 @@ class ResolutionStep(AirtimeStep):
                             "provided_network": requested_network,
                         },
                     )
-                patch["recipient_phone"] = normalize_nigerian_phone(str(single.account_number or "")) or single.account_number
+                patch["recipient_phone"] = (
+                    normalize_nigerian_phone(str(single.account_number or "")) or single.account_number
+                )
                 patch["recipient_name"] = single.account_name or single.alias or data.recipient_name
                 if single.id:
                     patch["beneficiary_id"] = str(single.id)
@@ -124,7 +126,9 @@ class ResolutionStep(AirtimeStep):
         elif not data.recipient_phone:
             default_phone = normalize_nigerian_phone(context.phone_number) or context.phone_number
             inferred_network = resolve_network_from_phone(default_phone)
-            if default_phone and (not requested_network or not inferred_network or inferred_network == requested_network):
+            if default_phone and (
+                not requested_network or not inferred_network or inferred_network == requested_network
+            ):
                 patch["recipient_phone"] = default_phone
                 patch["recipient_name"] = "My Number"
                 patch["is_self"] = True

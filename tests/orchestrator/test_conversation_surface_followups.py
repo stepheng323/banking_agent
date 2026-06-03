@@ -65,7 +65,7 @@ class _SurfaceFollowupPlanner:
         *,
         context: str = "None",
         prompt_signals: object | None = None,
-    path_label: str = "planner_path",
+        path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context, prompt_signals
         self.plan_calls += 1

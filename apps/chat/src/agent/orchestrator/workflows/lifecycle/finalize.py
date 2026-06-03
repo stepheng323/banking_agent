@@ -94,15 +94,13 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     resumable_stashed_sessions = [
         session
         for session in state.stashed_sessions
-        if isinstance(session, dict)
-        and is_resumable_stashed_session(cast(dict[str, Any], session), now_ts=now_ts)
+        if isinstance(session, dict) and is_resumable_stashed_session(cast(dict[str, Any], session), now_ts=now_ts)
     ]
     if len(resumable_stashed_sessions) != len(state.stashed_sessions):
         stale_stash_ids = {
             stash_id
             for session in state.stashed_sessions
-            if isinstance(session, dict)
-            and session not in resumable_stashed_sessions
+            if isinstance(session, dict) and session not in resumable_stashed_sessions
             for stash_id in [stashed_session_id(session)]
             if stash_id
         }

@@ -114,6 +114,7 @@ async def readiness() -> dict[str, object]:
         "runtime": build_runtime_status("gateway"),
     }
 
+
 if __name__ == "__main__":
     import uvicorn
 

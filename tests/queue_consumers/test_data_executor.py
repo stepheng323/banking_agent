@@ -207,7 +207,9 @@ async def test_data_executor_missing_source_account_fails_before_debit(monkeypat
 async def test_data_executor_policy_block_does_not_call_provider(tmp_path: Path) -> None:
     _install_disabled_data_policy(tmp_path)
     try:
-        provider = SimpleNamespace(purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"}))
+        provider = SimpleNamespace(
+            purchase_data=AsyncMock(return_value={"success": True, "transaction_id": "provider-1"})
+        )
         transaction_repo = SimpleNamespace(update_status=AsyncMock())
         delivery_service = SimpleNamespace(deliver_text=AsyncMock())
         payload = _payload()

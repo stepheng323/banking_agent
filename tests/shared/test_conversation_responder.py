@@ -26,17 +26,14 @@ class _FakeLLM:
 
 @pytest.mark.asyncio
 async def test_conversation_responder_appends_deterministic_banking_redirect() -> None:
-    responder = ConversationResponder(_FakeLLM("Today is Thursday, April 09, 2026.") )  # type: ignore[arg-type]
+    responder = ConversationResponder(_FakeLLM("Today is Thursday, April 09, 2026."))  # type: ignore[arg-type]
 
     reply = await responder.generate_reply(
         "What's today's date?",
         {"language": "en", "history": [], "profile": {}},
     )
 
-    assert reply == (
-        "Today is Thursday, April 09, 2026.\n"
-        + render_message("conversational.out_of_scope", "en")
-    )
+    assert reply == ("Today is Thursday, April 09, 2026.\n" + render_message("conversational.out_of_scope", "en"))
 
 
 @pytest.mark.asyncio
@@ -78,10 +75,7 @@ async def test_conversation_responder_keeps_redirect_for_reaction_without_bankin
         {"language": "en", "history": [], "profile": {}},
     )
 
-    assert reply == (
-        "No, your worth is not defined by money.\n"
-        + render_message("conversational.out_of_scope", "en")
-    )
+    assert reply == ("No, your worth is not defined by money.\n" + render_message("conversational.out_of_scope", "en"))
 
 
 @pytest.mark.asyncio
@@ -173,8 +167,7 @@ async def test_conversation_responder_uses_firm_redirect_after_longer_casual_str
                 {"role": "user", "content": "Another one"},
                 {
                     "role": "assistant",
-                    "content": "Another bank joke.\n"
-                    + render_message("conversational.out_of_scope_followup", "en"),
+                    "content": "Another bank joke.\n" + render_message("conversational.out_of_scope_followup", "en"),
                 },
             ],
             "profile": {},
@@ -519,9 +512,7 @@ async def test_conversation_responder_contextual_meta_prompt_includes_safe_groun
                 "display_name": "Gaines",
                 "last_topic": "brand_origin",
                 "last_assistant_message": "The name Nenya comes from the Ring of Water.",
-                "recent_turns": [
-                    {"role": "assistant", "content": "The name Nenya comes from the Ring of Water."}
-                ],
+                "recent_turns": [{"role": "assistant", "content": "The name Nenya comes from the Ring of Water."}],
             },
         },
         intent="contextual_meta_followup",

@@ -46,7 +46,9 @@ def _plan_option(plan: DataPlan, index: int) -> dict[str, Any]:
 
 
 def _plan_label(plan: DataPlan) -> str:
-    validity = render_message("data.format.validity_days", "en", {"days": plan.validity_days}) if plan.validity_days else ""
+    validity = (
+        render_message("data.format.validity_days", "en", {"days": plan.validity_days}) if plan.validity_days else ""
+    )
     suffix = f" • {validity}" if validity else ""
     return f"{plan.name} — {format_naira(plan.amount)}{suffix}"
 
@@ -294,10 +296,7 @@ def _network_matches_phone(network: str | None, phone: str | None) -> bool:
 
 
 def _has_named_recipient(payload: DataPayload) -> bool:
-    return bool(
-        payload.recipient_name
-        or (payload.extraction and payload.extraction.entities.recipient_name)
-    )
+    return bool(payload.recipient_name or (payload.extraction and payload.extraction.entities.recipient_name))
 
 
 def _apply_early_target_context(payload: DataPayload, context: DataContext) -> None:

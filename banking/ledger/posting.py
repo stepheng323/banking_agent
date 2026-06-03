@@ -506,8 +506,7 @@ class LedgerPostingService:
         amount = require_naira(amount_naira)
         if existing.entry_type != entry_type or existing_amount != amount or existing.currency != currency:
             raise LedgerEntryConflict(
-                "Ledger entry key exists with different accounting details: "
-                f"entry_key={existing.entry_key}"
+                f"Ledger entry key exists with different accounting details: entry_key={existing.entry_key}"
             )
 
     @classmethod

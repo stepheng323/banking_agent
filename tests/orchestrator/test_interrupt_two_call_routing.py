@@ -53,8 +53,13 @@ class _CountingPlanner:
         return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
     async def plan_tasks(
-        self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None,
-    path_label: str = "planner_path",
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
     ) -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1

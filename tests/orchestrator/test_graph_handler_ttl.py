@@ -110,7 +110,7 @@ class _RedisStub:
         del numkeys, args
         if self.values.get(key) != token:
             return 0
-        if "redis.call(\"del\", KEYS[1])" in script:
+        if 'redis.call("del", KEYS[1])' in script:
             self.values.pop(key, None)
             return 1
         return 1

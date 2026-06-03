@@ -7,6 +7,7 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 def _approve_auth_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
     if not state.pin_verified and interrupt.auth_method == "pin":
         logger.info("auth_approval_requires_verified_pin", tasks=interrupt.task_ids)

@@ -350,9 +350,7 @@ async def test_message_consumer_passes_channel_metadata_to_orchestrator(monkeypa
         _enqueue_outbox_intents,
     )
 
-    message = _message("wamid-meta").model_copy(
-        update={"channel_metadata": {"sender_display_name": "Gaines Abiodun"}}
-    )
+    message = _message("wamid-meta").model_copy(update={"channel_metadata": {"sender_display_name": "Gaines Abiodun"}})
 
     result = await consumer._handle_message(message)
 

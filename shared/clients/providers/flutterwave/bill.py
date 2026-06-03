@@ -171,8 +171,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
     @staticmethod
     def _network_from_biller(item: dict[str, Any]) -> str | None:
         text = " ".join(
-            str(item.get(key) or "")
-            for key in ("name", "description", "short_name", "biller_name", "group_name")
+            str(item.get(key) or "") for key in ("name", "description", "short_name", "biller_name", "group_name")
         ).upper()
         if "MTN" in text:
             return "MTN"

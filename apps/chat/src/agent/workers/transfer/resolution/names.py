@@ -137,9 +137,9 @@ def matches_selected_beneficiary(payload: TransferPayload, selected: dict[str, A
     """Return True when current payload still targets the selected beneficiary."""
     selected_account = str(selected.get("account_number") or "").strip()
     selected_bank_code = str(selected.get("bank_code") or "").strip()
-    selected_bank_code_provider = str(
-        selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name
-    ).strip().lower()
+    selected_bank_code_provider = (
+        str(selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name).strip().lower()
+    )
     selected_bank_name = str(selected.get("bank_name") or "").strip()
     selected_alias = str(selected.get("alias") or "").strip()
     selected_account_name = str(selected.get("account_name") or "").strip()
@@ -175,9 +175,9 @@ def clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[str
     """Detach payload from previously selected beneficiary when recipient changes."""
     selected_account = str(selected.get("account_number") or "").strip()
     selected_bank_code = str(selected.get("bank_code") or "").strip()
-    selected_bank_code_provider = str(
-        selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name
-    ).strip().lower()
+    selected_bank_code_provider = (
+        str(selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name).strip().lower()
+    )
     selected_bank_name = str(selected.get("bank_name") or "").strip()
 
     payload.beneficiary_id = None

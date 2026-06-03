@@ -36,9 +36,7 @@ def configure_logger() -> None:
     )
 
     renderer: Any = (
-        structlog.processors.JSONRenderer()
-        if settings.runtime.is_production
-        else structlog.dev.ConsoleRenderer()
+        structlog.processors.JSONRenderer() if settings.runtime.is_production else structlog.dev.ConsoleRenderer()
     )
 
     formatter = structlog.stdlib.ProcessorFormatter(

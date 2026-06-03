@@ -53,8 +53,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R05_CANCEL_CONFIRM": "cancel_word->is_cancellation; pure_approve->is_confirmation",
     "R06_AMOUNT_NORMALIZATION": "5k->5000",
     "R07_OUT_OF_SCOPE": (
-        "harmless_non_banking->conversational.casual_chat;"
-        " unsupported_non_banking->conversational.out_of_scope"
+        "harmless_non_banking->conversational.casual_chat; unsupported_non_banking->conversational.out_of_scope"
     ),
     "R08_ACTION_EXECUTOR": "action==executor_family",
     "R09_CONTEXT_OVERRIDE": "active_flow_reply->slot_update unless switch/cancel",
@@ -165,10 +164,10 @@ PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
     "## TARGETED EXAMPLES (MONEY_MOVE)\n"
-    "- Active transfer flow + \"send it to her\" -> send_money with selector={\"selector\":\"previous\"}.\n"
-    "- Active transfer flow + \"make it 20k\" -> send_money amount=20000.\n"
+    '- Active transfer flow + "send it to her" -> send_money with selector={"selector":"previous"}.\n'
+    '- Active transfer flow + "make it 20k" -> send_money amount=20000.\n'
     "- Send 10k to Mum tomorrow 9am -> schedule_transfer amount=10000, recipient_name=Mum.\n"
-    "- Send it to her every Friday -> recurring_transfer with selector={\"selector\":\"previous\"}.\n"
+    '- Send it to her every Friday -> recurring_transfer with selector={"selector":"previous"}.\n'
     "- Buy 2k airtime tomorrow 8am -> schedule_airtime amount=2000.\n"
     "- Buy 1GB data every Friday 8am -> recurring_data.\n"
     "- Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.\n"

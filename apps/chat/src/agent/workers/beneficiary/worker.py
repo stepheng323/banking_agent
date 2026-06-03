@@ -87,11 +87,7 @@ class BeneficiaryWorker:
                 alias = b.alias or b.account_name
                 account_name = b.account_name
 
-                if (
-                    isinstance(alias, str)
-                    and isinstance(account_name, str)
-                    and alias.lower() != account_name.lower()
-                ):
+                if isinstance(alias, str) and isinstance(account_name, str) and alias.lower() != account_name.lower():
                     name_line = f"*{alias}* ({account_name})"
                 else:
                     name_line = f"*{alias}*"

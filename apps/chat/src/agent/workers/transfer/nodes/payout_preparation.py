@@ -36,7 +36,11 @@ def _is_multi_source_funding_plan(plan: dict[str, Any] | None) -> bool:
 
 
 def _provider_name(provider: Any, default: str | None = None) -> str:
-    return str(getattr(provider, "provider_name", None) or default or settings.payout_resolver_provider_name).strip().lower()
+    return (
+        str(getattr(provider, "provider_name", None) or default or settings.payout_resolver_provider_name)
+        .strip()
+        .lower()
+    )
 
 
 def _ask_account_and_bank_prompt(locale: str, recipient_name: str | None) -> str:

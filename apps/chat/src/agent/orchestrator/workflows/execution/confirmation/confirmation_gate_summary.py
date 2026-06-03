@@ -139,8 +139,7 @@ def _build_mixed_confirmation_summary(
         return append_source_account_info(merged, source_infos[0], locale=locale)
 
     return "\n\n".join(
-        format_confirmation_section(task_type=task.type, summary=summary, locale=locale)
-        for task, summary in non_empty
+        format_confirmation_section(task_type=task.type, summary=summary, locale=locale) for task, summary in non_empty
     )
 
 

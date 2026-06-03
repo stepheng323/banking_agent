@@ -344,11 +344,7 @@ def _bank_to_record(tx: Any) -> UnifiedTransactionRecord:
     tx_type = _clean(_tx_attr(tx, "type") or _tx_attr(tx, "transaction_type")) or "debit"
     narration = _clean(_tx_attr(tx, "narration"))
     counterparty = _clean(_tx_attr(tx, "counterparty"))
-    bank_id = _clean(
-        _tx_attr(tx, "provider_transaction_id")
-        or _tx_attr(tx, "transaction_id")
-        or _tx_attr(tx, "id")
-    )
+    bank_id = _clean(_tx_attr(tx, "provider_transaction_id") or _tx_attr(tx, "transaction_id") or _tx_attr(tx, "id"))
     bank_name = _clean(_tx_attr(tx, "bank_name") or _tx_attr(tx, "source_account_label"))
     return UnifiedTransactionRecord(
         source="bank",
@@ -513,11 +509,7 @@ class UnifiedTransactionService:
             )
 
         rows = await transaction_repo.get_by_user(user_id, limit=limit)
-        return [
-            row
-            for row in rows
-            if start_date <= _local_effective_at(row).date() <= end_date
-        ]
+        return [row for row in rows if start_date <= _local_effective_at(row).date() <= end_date]
 
     async def _load_bank_rows(self, user_id: str, *, start_date: date, end_date: date) -> list[Any]:
         bank_transaction_repo = self.bank_transaction_repo

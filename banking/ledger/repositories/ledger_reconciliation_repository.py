@@ -153,9 +153,7 @@ class LedgerReconciliationRepository:
             .join(TransactionDebitStep, TransactionDebitStep.transaction_id == Transaction.id)
             .filter(
                 Transaction.status == TransactionStatusEnum.SUCCESSFUL.value,
-                Transaction.transaction_type.in_(
-                    [TransactionTypeEnum.AIRTIME.value, TransactionTypeEnum.DATA.value]
-                ),
+                Transaction.transaction_type.in_([TransactionTypeEnum.AIRTIME.value, TransactionTypeEnum.DATA.value]),
                 TransactionDebitStep.status == TransactionDebitStepStatusEnum.CONFIRMED.value,
             )
             .order_by(Transaction.completed_at.asc().nullsfirst(), Transaction.created_at.asc())
@@ -250,9 +248,7 @@ class LedgerReconciliationRepository:
     async def get_finding_by_key(self, finding_key: str) -> LedgerReconciliationFinding | None:
         """Return a reconciliation finding by stable key."""
         result = await self.db.execute(
-            select(LedgerReconciliationFinding).filter(
-                LedgerReconciliationFinding.finding_key == finding_key
-            )
+            select(LedgerReconciliationFinding).filter(LedgerReconciliationFinding.finding_key == finding_key)
         )
         return result.scalars().first()
 

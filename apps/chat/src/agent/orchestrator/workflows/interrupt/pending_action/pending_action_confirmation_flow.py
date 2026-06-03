@@ -22,11 +22,7 @@ async def _remove_or_cancel_confirmation_tasks(
     redis_client: Any | None,
     task_ids_to_remove: list[str],
 ) -> dict[str, Any]:
-    active_task_ids = {
-        str(task_id)
-        for task_id in getattr(interrupt, "task_ids", [])
-        if str(task_id) in state.tasks
-    }
+    active_task_ids = {str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks}
     if active_task_ids and set(task_ids_to_remove) >= active_task_ids:
         return await _cancel_updates(state, interrupt, redis_client)
     return remove_confirmation_tasks_and_reconfirm_updates(

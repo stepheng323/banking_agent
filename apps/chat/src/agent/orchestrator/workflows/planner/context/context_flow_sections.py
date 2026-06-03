@@ -97,9 +97,7 @@ def build_planner_context_sections(
         logger.info("planner_context_injected", context="recent_answer_focus", focus=recent_answer_focus)
 
     user_state_summary = (
-        build_user_state_summary_from_summary(turn_summary)
-        if not compact_transaction_context
-        else None
+        build_user_state_summary_from_summary(turn_summary) if not compact_transaction_context else None
     )
     if user_state_summary:
         has_user_state_summary = True

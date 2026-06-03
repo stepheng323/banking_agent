@@ -47,9 +47,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_scheduled_instructions_id"), "scheduled_instructions", ["id"], unique=False)
-    op.create_index(
-        op.f("ix_scheduled_instructions_user_id"), "scheduled_instructions", ["user_id"], unique=False
-    )
+    op.create_index(op.f("ix_scheduled_instructions_user_id"), "scheduled_instructions", ["user_id"], unique=False)
     op.create_index(op.f("ix_scheduled_instructions_domain"), "scheduled_instructions", ["domain"], unique=False)
     op.create_index(op.f("ix_scheduled_instructions_status"), "scheduled_instructions", ["status"], unique=False)
     op.create_index(

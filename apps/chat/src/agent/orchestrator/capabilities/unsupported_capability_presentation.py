@@ -22,9 +22,7 @@ def unsupported_capability_supported_alternatives(
 ) -> str:
     return capability.supported_alternatives_by_locale.get(
         locale_key(locale),
-        capability.supported_alternatives
-        if locale is None
-        else localized_supported_alternatives(locale),
+        capability.supported_alternatives if locale is None else localized_supported_alternatives(locale),
     )
 
 

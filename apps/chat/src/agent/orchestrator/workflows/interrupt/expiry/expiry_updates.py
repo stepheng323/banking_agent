@@ -53,8 +53,7 @@ async def _expired_transaction_interrupt_updates(
         "orchestrator.session.transaction_expired",
         locale,
         fallback_en=(
-            "That transaction session has expired, so I can't continue it. "
-            "Please start the transaction again."
+            "That transaction session has expired, so I can't continue it. Please start the transaction again."
         ),
     )
     return {

@@ -23,5 +23,6 @@ async def _build_bounded_conversational_reply(
         )
     except Exception as exc:
         import structlog
+
         structlog.get_logger(__name__).warning("gate_conversational_responder_failed", error=str(exc))
         return None

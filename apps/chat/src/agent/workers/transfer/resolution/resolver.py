@@ -38,6 +38,7 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 async def resolve_beneficiary(
     payload: TransferPayload,
     ctx: TransferContext,
@@ -129,7 +130,9 @@ async def resolve_beneficiary(
                         "recipient_resolution_provider": resolver_name,
                         "resolved_from_saved_beneficiary": False,
                     }
-                    if (not payload.recipient_name or is_unsafe_recipient_placeholder(payload.recipient_name)) and resolved_name:
+                    if (
+                        not payload.recipient_name or is_unsafe_recipient_placeholder(payload.recipient_name)
+                    ) and resolved_name:
                         patch["recipient_name"] = resolved_name
                     patch.update(build_name_consistency_patch(payload, resolved_name, locale))
                     return TransactionResult(
@@ -331,7 +334,11 @@ async def resolve_beneficiary(
         recipient_display_name = sanitize_recipient_display_name(recipient_name_for_match, locale)
         base = render_message("transfer.resolve.ready_to_send", locale, {"recipient_name": recipient_display_name})
         if payload.amount:
-            amt = format_naira_compact(payload.amount) if isinstance(payload.amount, (int, float)) else str(payload.amount)
+            amt = (
+                format_naira_compact(payload.amount)
+                if isinstance(payload.amount, (int, float))
+                else str(payload.amount)
+            )
             base = render_message(
                 "transfer.resolve.can_send_amount",
                 locale,

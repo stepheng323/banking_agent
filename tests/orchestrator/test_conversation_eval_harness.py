@@ -108,9 +108,7 @@ async def test_conversation_eval_self_data_request_routes_directly() -> None:
     result = await run_conversation_scenario(
         ConversationScenario(
             id="self_data_request_direct",
-            initial_state=_state(user_id="u_eval_self_data_1").model_copy(
-                update={"phone_number": "2348162511023"}
-            ),
+            initial_state=_state(user_id="u_eval_self_data_1").model_copy(update={"phone_number": "2348162511023"}),
             planner=planner,
             turns=(
                 ConversationTurn(

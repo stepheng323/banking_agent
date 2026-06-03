@@ -30,9 +30,7 @@ def _select_confirmation_continue_flow_task_ids(
         return task_ids, "collective_scope", []
 
     matched_task_ids = [
-        task_id
-        for task_id in task_ids
-        if _message_targets_confirmation_task(message_text, state.tasks[task_id])
+        task_id for task_id in task_ids if _message_targets_confirmation_task(message_text, state.tasks[task_id])
     ]
     if 0 < len(matched_task_ids) < len(task_ids):
         return matched_task_ids, "matched_subset", matched_task_ids

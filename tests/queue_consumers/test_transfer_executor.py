@@ -222,7 +222,12 @@ async def test_transfer_executor_single_success_delivers_and_enqueues_receipt() 
                 status=DebitStatus.SUCCESSFUL,
                 debit_id="debit-1",
                 reference="ref-1",
-                provider_response={"id": "debit-1", "status": "successful", "reference": "ref-1", "response_code": "00"},
+                provider_response={
+                    "id": "debit-1",
+                    "status": "successful",
+                    "reference": "ref-1",
+                    "response_code": "00",
+                },
             )
         )
     )
@@ -279,7 +284,12 @@ async def test_transfer_executor_single_success_sends_visible_beneficiary_sugges
                 status=DebitStatus.SUCCESSFUL,
                 debit_id="debit-1",
                 reference="ref-1",
-                provider_response={"id": "debit-1", "status": "successful", "reference": "ref-1", "response_code": "00"},
+                provider_response={
+                    "id": "debit-1",
+                    "status": "successful",
+                    "reference": "ref-1",
+                    "response_code": "00",
+                },
             )
         )
     )
@@ -315,7 +325,12 @@ async def test_transfer_executor_batch_success_does_not_suggest_beneficiary() ->
                 status=DebitStatus.SUCCESSFUL,
                 debit_id="debit-1",
                 reference="ref-1",
-                provider_response={"id": "debit-1", "status": "successful", "reference": "ref-1", "response_code": "00"},
+                provider_response={
+                    "id": "debit-1",
+                    "status": "successful",
+                    "reference": "ref-1",
+                    "response_code": "00",
+                },
             )
         )
     )
@@ -353,7 +368,12 @@ async def test_transfer_executor_success_uses_celebratory_tone_for_first_transfe
                 status=DebitStatus.SUCCESSFUL,
                 debit_id="debit-1",
                 reference="ref-1",
-                provider_response={"id": "debit-1", "status": "successful", "reference": "ref-1", "response_code": "00"},
+                provider_response={
+                    "id": "debit-1",
+                    "status": "successful",
+                    "reference": "ref-1",
+                    "response_code": "00",
+                },
             )
         )
     )

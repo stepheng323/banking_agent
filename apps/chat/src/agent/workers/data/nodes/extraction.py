@@ -237,7 +237,9 @@ def _referent_phone_candidates(context: DataContext) -> list[dict[str, Any]]:
 
 
 def _ambiguous_phone_referent_prompt(candidates: list[dict[str, Any]], locale: str) -> str | None:
-    lines = [f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)]
+    lines = [
+        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)
+    ]
     if not lines:
         return None
     prompt = render_message("referent.phone.which_number", locale)
@@ -381,7 +383,9 @@ class ExtractionStep(PipelineStep):
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=remaining_schedule_fields or schedule_required_fields,
-                    prompt=schedule_required_prompt(remaining_schedule_fields or schedule_required_fields, context.language),
+                    prompt=schedule_required_prompt(
+                        remaining_schedule_fields or schedule_required_fields, context.language
+                    ),
                     patch={"is_scheduled_operation": True, "skip_finalize_summary": True},
                 )
         source_account = None

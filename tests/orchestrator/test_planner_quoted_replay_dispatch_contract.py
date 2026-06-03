@@ -17,7 +17,15 @@ class _PlannerStub:
         del phone_number, text, context
         return self.interpretation
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> Any:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> Any:
         del phone_number, text, context
         self.plan_called = True
         return PlannerOutput(

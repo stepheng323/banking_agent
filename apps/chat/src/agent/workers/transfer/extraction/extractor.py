@@ -57,7 +57,9 @@ class TransferEntityExtractor:
             if isinstance(beneficiary, dict):
                 alias = cast(str | None, beneficiary.get("alias") or beneficiary.get("account_name"))
             else:
-                alias = cast(str | None, getattr(beneficiary, "alias", None) or getattr(beneficiary, "account_name", None))
+                alias = cast(
+                    str | None, getattr(beneficiary, "alias", None) or getattr(beneficiary, "account_name", None)
+                )
             if not alias:
                 continue
             bucket = prioritized if normalized_hint and normalized_hint in alias.lower() else fallback

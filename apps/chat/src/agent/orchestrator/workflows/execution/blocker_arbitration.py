@@ -105,9 +105,7 @@ def choose_wave_blocker(
     if input_task_ids:
         kind: BlockerKind = "input"
         task_ids = input_task_ids
-        suppressed_counts = {
-            key: count for key, count in blocker_counts.items() if key != "input" and count > 0
-        }
+        suppressed_counts = {key: count for key, count in blocker_counts.items() if key != "input" and count > 0}
     elif confirmation_task_ids:
         kind = "confirmation"
         task_ids = confirmation_task_ids

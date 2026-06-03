@@ -350,9 +350,7 @@ class RiskDecision(Base):
 
     user: Mapped["User"] = relationship("User")
 
-    __table_args__ = (
-        UniqueConstraint("idempotency_key", name="uq_risk_decisions_idempotency_key"),
-    )
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_risk_decisions_idempotency_key"),)
 
     def __repr__(self):
         return f"<RiskDecision(idempotency_key={self.idempotency_key}, decision={self.decision})>"
@@ -560,9 +558,7 @@ class FundingStep(Base):
     funded_transfer: Mapped["FundedTransfer"] = relationship("FundedTransfer", back_populates="funding_steps")
     account: Mapped["Account"] = relationship("Account")
 
-    __table_args__ = (
-        UniqueConstraint("funded_transfer_id", "sequence", name="uq_funding_steps_transfer_sequence"),
-    )
+    __table_args__ = (UniqueConstraint("funded_transfer_id", "sequence", name="uq_funding_steps_transfer_sequence"),)
 
     def __repr__(self):
         return f"<FundingStep(id={self.id}, amount={self.amount}, status={self.status}, seq={self.sequence})>"
@@ -617,9 +613,7 @@ class TransactionDebitStep(Base):
     transaction: Mapped["Transaction"] = relationship("Transaction")
     account: Mapped["Account"] = relationship("Account")
 
-    __table_args__ = (
-        CheckConstraint("amount > 0", name="ck_transaction_debit_steps_positive_amount"),
-    )
+    __table_args__ = (CheckConstraint("amount > 0", name="ck_transaction_debit_steps_positive_amount"),)
 
     def __repr__(self):
         return f"<TransactionDebitStep(id={self.id}, transaction={self.transaction_id}, status={self.status})>"
@@ -705,9 +699,7 @@ class LedgerEntry(Base):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (
-        CheckConstraint("amount_naira > 0", name="ck_ledger_entries_positive_amount"),
-    )
+    __table_args__ = (CheckConstraint("amount_naira > 0", name="ck_ledger_entries_positive_amount"),)
 
 
 class LedgerLine(Base):
@@ -831,9 +823,7 @@ class ProcessedWebhookEvent(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    __table_args__ = (
-        UniqueConstraint("provider", "event_id", name="uq_processed_webhook_events_provider_event_id"),
-    )
+    __table_args__ = (UniqueConstraint("provider", "event_id", name="uq_processed_webhook_events_provider_event_id"),)
 
     def __repr__(self):
         return f"<ProcessedWebhookEvent(provider={self.provider}, event={self.event_name}, status={self.status})>"
@@ -940,8 +930,7 @@ class ScheduledRun(Base):
 
     def __repr__(self):
         return (
-            f"<ScheduledRun(id={self.id}, schedule_id={self.schedule_id}, "
-            f"status={self.status}, due={self.due_at_utc})>"
+            f"<ScheduledRun(id={self.id}, schedule_id={self.schedule_id}, status={self.status}, due={self.due_at_utc})>"
         )
 
 

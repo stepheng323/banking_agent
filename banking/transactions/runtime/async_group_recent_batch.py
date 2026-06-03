@@ -105,9 +105,7 @@ def build_recent_batch_leg(leg: dict[str, Any]) -> RecentBatchLeg | None:
 
     normalized_status = normalize_final_status(str(payload.get("final_status") or "success"))
     recipient_name = (
-        str(payload.get("recipient_name")).strip()
-        if isinstance(payload.get("recipient_name"), str)
-        else None
+        str(payload.get("recipient_name")).strip() if isinstance(payload.get("recipient_name"), str) else None
     )
     recipient_resolved_name = (
         str(payload.get("recipient_resolved_name")).strip()
@@ -133,9 +131,7 @@ def build_recent_batch_leg(leg: dict[str, Any]) -> RecentBatchLeg | None:
         RecentBatchLeg,
         {
             "index": int(leg.get("index") or 0),
-            "transaction_id": str(leg.get("transaction_id")).strip()
-            if leg.get("transaction_id") is not None
-            else None,
+            "transaction_id": str(leg.get("transaction_id")).strip() if leg.get("transaction_id") is not None else None,
             "task_type": task_type,
             "amount": _coerce_amount(payload.get("amount")),
             "recipient_name": recipient_name,

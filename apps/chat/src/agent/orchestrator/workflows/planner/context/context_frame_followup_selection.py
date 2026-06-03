@@ -23,11 +23,7 @@ from shared.types.planner import ContextFrameFollowupDecision
 
 def active_context_frames(state: OrchestratorState) -> list[ContextFrame]:
     now = int(time.time())
-    return [
-        frame
-        for frame in state.context_frames
-        if frame.items and (frame.created_at_ts + frame.ttl_seconds) > now
-    ]
+    return [frame for frame in state.context_frames if frame.items and (frame.created_at_ts + frame.ttl_seconds) > now]
 
 
 def _decision_has_entity_match(frame: ContextFrame, decision: ContextFrameFollowupDecision) -> bool:

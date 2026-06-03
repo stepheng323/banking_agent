@@ -101,7 +101,9 @@ async def test_render_receipt_uses_fast_wait_and_local_font_html(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_render_receipt_renders_safe_fallbacks_when_optional_fields_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_render_receipt_renders_safe_fallbacks_when_optional_fields_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     renderer = ReceiptRenderer()
 
     element = cast(Any, SimpleNamespace(screenshot=AsyncMock(return_value=b"png-bytes")))

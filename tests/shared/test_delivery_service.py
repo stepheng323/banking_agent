@@ -42,7 +42,9 @@ class _PresenterStub:
 @pytest.mark.asyncio
 async def test_delivery_service_returns_delivered_status(monkeypatch: pytest.MonkeyPatch) -> None:
     presenter = _PresenterStub(message_ids=["tg-msg-1"])
-    service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
+    service = DeliveryService(
+        messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))}
+    )
     service.redis = _RedisStub()
 
     monkeypatch.setattr("banking.messaging.delivery.service.PresenterFactory.create", lambda channel, client: presenter)
@@ -62,7 +64,9 @@ async def test_delivery_service_returns_delivered_status(monkeypatch: pytest.Mon
 @pytest.mark.asyncio
 async def test_delivery_service_returns_deduped_completed_status(monkeypatch: pytest.MonkeyPatch) -> None:
     presenter = _PresenterStub()
-    service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
+    service = DeliveryService(
+        messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))}
+    )
     redis = _RedisStub()
     service.redis = redis
 
@@ -97,7 +101,9 @@ async def test_delivery_service_returns_deduped_completed_status(monkeypatch: py
 @pytest.mark.asyncio
 async def test_delivery_service_returns_deduped_resumed_status(monkeypatch: pytest.MonkeyPatch) -> None:
     presenter = _PresenterStub()
-    service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
+    service = DeliveryService(
+        messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))}
+    )
     redis = _RedisStub()
     service.redis = redis
 
@@ -132,7 +138,9 @@ async def test_delivery_service_returns_deduped_resumed_status(monkeypatch: pyte
 @pytest.mark.asyncio
 async def test_delivery_service_defers_non_strict_actionable_persist(monkeypatch: pytest.MonkeyPatch) -> None:
     presenter = _PresenterStub(message_ids=["tg-msg-3"])
-    service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
+    service = DeliveryService(
+        messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))}
+    )
     service.redis = _RedisStub()
     started = asyncio.Event()
     release = asyncio.Event()
@@ -166,7 +174,9 @@ async def test_delivery_service_defers_non_strict_actionable_persist(monkeypatch
 @pytest.mark.asyncio
 async def test_delivery_service_keeps_strict_actionable_persist_inline(monkeypatch: pytest.MonkeyPatch) -> None:
     presenter = _PresenterStub(message_ids=["tg-msg-4"])
-    service = DeliveryService(messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))})
+    service = DeliveryService(
+        messaging_clients={"telegram": cast(MessagingClient, SimpleNamespace(supports_flows=True))}
+    )
     service.redis = _RedisStub()
     call_order: list[str] = []
 

@@ -36,13 +36,17 @@ class _CaptureTransferWorker:
 
 
 class _BeneficiaryRepoStub:
-    def __init__(self, *, search_rows: list[dict[str, Any]] | None = None, full_rows: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self, *, search_rows: list[dict[str, Any]] | None = None, full_rows: list[dict[str, Any]] | None = None
+    ) -> None:
         self.search_rows = search_rows or []
         self.full_rows = full_rows or []
         self.search_calls: list[tuple[str, str, str | None]] = []
         self.full_calls: list[tuple[str, str | None]] = []
 
-    async def search_by_name(self, user_id: str, search_term: str, beneficiary_type: str | None = None) -> list[dict[str, Any]]:
+    async def search_by_name(
+        self, user_id: str, search_term: str, beneficiary_type: str | None = None
+    ) -> list[dict[str, Any]]:
         self.search_calls.append((user_id, search_term, beneficiary_type))
         return self.search_rows
 

@@ -273,15 +273,9 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     assert "explicit mixed transaction requests" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "include every mentioned executor" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '["transfer","airtime"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert "Do NOT add executors for non-transaction clauses inside a mixed request." in (
-        SEMANTIC_ROUTER_SYSTEM_PROMPT
-    )
-    assert (
-        '"send 10k to mum and show my last 3 credits" -> ["transfer"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    )
-    assert 'Do not infer data executor from words like "credit", "transaction data"' in (
-        SEMANTIC_ROUTER_SYSTEM_PROMPT
-    )
+    assert "Do NOT add executors for non-transaction clauses inside a mixed request." in (SEMANTIC_ROUTER_SYSTEM_PROMPT)
+    assert '"send 10k to mum and show my last 3 credits" -> ["transfer"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert 'Do not infer data executor from words like "credit", "transaction data"' in (SEMANTIC_ROUTER_SYSTEM_PROMPT)
     assert '"Can I use First Bank now?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Is First Bank ready?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Is my First Bank account ready?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
@@ -292,7 +286,9 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     assert '"Where did we stop?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"What are we doing again?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Show my last transaction" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert "Scheduled/recurring instruction management is not transaction-history query" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert (
+        "Scheduled/recurring instruction management is not transaction-history query" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
     assert "never use this for scheduled/recurring instruction status or counts; use domain_schedule" in (
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
@@ -317,7 +313,9 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     assert '"Send 10k to Mum and 5k to Gaines" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Split 20k between Mum and Dad" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Buy airtime and tell me my balance" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert '"Buy 200 airtime for 08031234567, 08067892221, 08033038674" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert (
+        '"Buy 200 airtime for 08031234567, 08067892221, 08033038674" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
     assert '"More" while viewing transactions -> domain_query with mode=continuation' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"send 10k to mum and show my last 3 credits" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
 
@@ -325,7 +323,10 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
 def test_semantic_router_language_switch_contract_present() -> None:
     """Semantic-router contract must expose explicit language-switch request capture."""
     assert "requested_language: English | Pidgin | Yoruba | Hausa | Igbo | null" in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert "If user asks to switch language (for example, \"Can you switch to Pidgin?\", \"speak Yoruba now\"), set" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert (
+        'If user asks to switch language (for example, "Can you switch to Pidgin?", "speak Yoruba now"), set'
+        in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
     assert '"Can you switch to Pidgin?"' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"speak Yoruba now"' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "requested_language to the requested locale" in SEMANTIC_ROUTER_SYSTEM_PROMPT
@@ -336,8 +337,14 @@ def test_semantic_router_language_switch_contract_present() -> None:
 def test_semantic_router_pending_query_clarification_contract_present() -> None:
     """Semantic-router prompt should route pending clarification answers back to query."""
     assert "If the context shows a pending query clarification" in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert 'pending query clarification + "last 3 days" -> domain_query with mode=continuation' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert 'pending query clarification + "this month" -> domain_query with mode=continuation' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert (
+        'pending query clarification + "last 3 days" -> domain_query with mode=continuation'
+        in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert (
+        'pending query clarification + "this month" -> domain_query with mode=continuation'
+        in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
 
 
 def test_semantic_router_multilingual_query_examples_present() -> None:

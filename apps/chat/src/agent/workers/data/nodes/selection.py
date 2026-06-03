@@ -51,7 +51,9 @@ class SourceSelectionStep(PipelineStep):
                         return TransactionResult(
                             outcome=TransactionOutcome.NEEDS_INPUT,
                             required_fields=["source_account_id"],
-                            prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                            prompt=render_message(
+                                "source_account.choose_prompt", locale, {"accounts_list": accounts_list}
+                            ),
                             update_message=build_nonready_source_account_message(linked_account, locale),
                             details={"options": _build_account_options(context.accounts)},
                         )

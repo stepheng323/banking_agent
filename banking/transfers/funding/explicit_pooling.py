@@ -215,8 +215,7 @@ async def plan_with_explicit_split(
                 requested_sources=requested_source_banks,
                 explicit_split_applied=True,
                 error=(
-                    f"I could not match '{requested_bank}' to your eligible linked accounts. "
-                    "Please revise the split."
+                    f"I could not match '{requested_bank}' to your eligible linked accounts. Please revise the split."
                 ),
             )
 

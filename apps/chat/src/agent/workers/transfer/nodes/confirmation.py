@@ -354,8 +354,7 @@ def _build_change_text(changed_fields: list[str], current_snapshot: dict[str, An
             parts.append(render_message("transfer.confirmation.change.amount_to", locale, {"amount": formatted_amount}))
     if "recipient_name" in changed_fields:
         recipient_name = str(
-            current_snapshot.get("recipient_name")
-            or render_message("response.common.recipient_fallback", locale)
+            current_snapshot.get("recipient_name") or render_message("response.common.recipient_fallback", locale)
         ).strip()
         if recipient_name:
             parts.append(
@@ -460,8 +459,7 @@ def _deterministic_transition_message(
         )
     if changed_fields == ["recipient_name"]:
         recipient_name = str(
-            current_snapshot.get("recipient_name")
-            or render_message("response.common.recipient_fallback", locale)
+            current_snapshot.get("recipient_name") or render_message("response.common.recipient_fallback", locale)
         ).strip()
         return render_message(
             "response.templates.recipient_changed",
@@ -578,7 +576,9 @@ def build_confirmation(
                 or render_message("transfer.format.funding_plan.bank_fallback", ctx.language)
             )
             balance_val = funding_plan.get("primary_available_balance")
-            primary_balance = to_naira(balance_val if balance_val is not None else steps[0].get("amount")) or require_naira(0)
+            primary_balance = to_naira(
+                balance_val if balance_val is not None else steps[0].get("amount")
+            ) or require_naira(0)
             funding_summary = format_funding_plan_summary(
                 steps=steps,
                 amount=to_naira(payload.amount or funding_plan.get("transfer_amount")) or require_naira(0),

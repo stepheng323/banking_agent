@@ -145,9 +145,7 @@ class Settings:
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
         self.flutterwave_webhook_secret_hash: str = os.getenv("FLUTTERWAVE_WEBHOOK_SECRET_HASH", "").strip()
-        self.payout_reconciliation_min_age_seconds: int = int(
-            os.getenv("PAYOUT_RECONCILIATION_MIN_AGE_SECONDS", "300")
-        )
+        self.payout_reconciliation_min_age_seconds: int = int(os.getenv("PAYOUT_RECONCILIATION_MIN_AGE_SECONDS", "300"))
         self.payout_reconciliation_batch_size: int = int(os.getenv("PAYOUT_RECONCILIATION_BATCH_SIZE", "50"))
         self.payout_reconciliation_interval_seconds: int = int(
             os.getenv("PAYOUT_RECONCILIATION_INTERVAL_SECONDS", "300")
@@ -178,16 +176,10 @@ class Settings:
         self.direct_transfer_reconciliation_interval_seconds: int = int(
             os.getenv("DIRECT_TRANSFER_RECONCILIATION_INTERVAL_SECONDS", "300")
         )
-        self.bill_reconciliation_min_age_seconds: int = int(
-            os.getenv("BILL_RECONCILIATION_MIN_AGE_SECONDS", "300")
-        )
+        self.bill_reconciliation_min_age_seconds: int = int(os.getenv("BILL_RECONCILIATION_MIN_AGE_SECONDS", "300"))
         self.bill_reconciliation_batch_size: int = int(os.getenv("BILL_RECONCILIATION_BATCH_SIZE", "50"))
-        self.bill_reconciliation_interval_seconds: int = int(
-            os.getenv("BILL_RECONCILIATION_INTERVAL_SECONDS", "300")
-        )
-        self.refund_reconciliation_min_age_seconds: int = int(
-            os.getenv("REFUND_RECONCILIATION_MIN_AGE_SECONDS", "300")
-        )
+        self.bill_reconciliation_interval_seconds: int = int(os.getenv("BILL_RECONCILIATION_INTERVAL_SECONDS", "300"))
+        self.refund_reconciliation_min_age_seconds: int = int(os.getenv("REFUND_RECONCILIATION_MIN_AGE_SECONDS", "300"))
         self.refund_reconciliation_batch_size: int = int(os.getenv("REFUND_RECONCILIATION_BATCH_SIZE", "50"))
         self.refund_reconciliation_interval_seconds: int = int(
             os.getenv("REFUND_RECONCILIATION_INTERVAL_SECONDS", "900")
@@ -228,9 +220,7 @@ class Settings:
         self.mono_use_mock_override: bool | None = self._parse_optional_bool(os.getenv("MONO_USE_MOCK"))
         self.account_provider_name: str = os.getenv("ACCOUNT_PROVIDER", "mono").strip().lower() or "mono"
         self.bill_provider_name: str = os.getenv("BILL_PROVIDER", "flutterwave").strip().lower() or "flutterwave"
-        self.payout_provider_name: str = (
-            os.getenv("PAYOUT_PROVIDER", "flutterwave").strip().lower() or "flutterwave"
-        )
+        self.payout_provider_name: str = os.getenv("PAYOUT_PROVIDER", "flutterwave").strip().lower() or "flutterwave"
         self.transfer_resolver_provider_name: str = (
             os.getenv("TRANSFER_RESOLVER_PROVIDER", self.account_provider_name).strip().lower()
             or self.account_provider_name

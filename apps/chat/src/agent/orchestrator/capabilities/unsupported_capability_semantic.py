@@ -99,11 +99,7 @@ def unsupported_capability_semantic_messages(
         "- Choose all_time_history only for all-time, lifetime, entire, or all-ever transaction history requests.\n"
         "- Be semantic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed language."
     )
-    user_prompt = (
-        f"Locale hint: {locale or 'unknown'}\n"
-        f"Context: {context or 'None'}\n"
-        f"User message: \"\"\"{text}\"\"\""
-    )
+    user_prompt = f'Locale hint: {locale or "unknown"}\nContext: {context or "None"}\nUser message: """{text}"""'
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -176,7 +172,7 @@ def unsupported_boundary_turn_messages(
         f"Locale hint: {locale or 'unknown'}\n"
         f"Follow-up count so far: {followup_count}\n"
         f"Context: {context or 'None'}\n"
-        f"User message: \"\"\"{text}\"\"\""
+        f'User message: """{text}"""'
     )
     return [
         {"role": "system", "content": system_prompt},

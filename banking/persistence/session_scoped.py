@@ -119,15 +119,18 @@ class SessionScopedBeneficiaryRepository(_SessionScopedRepositoryMixin, Benefici
         bank_name: str | None = None,
         beneficiary_type: str = "transfer",
     ) -> bool:
-        return cast(bool, await self._call_with_session(
-            BeneficiaryRepository,
-            "should_suggest_beneficiary",
-            user_id,
-            account_number,
-            bank_code,
-            bank_name,
-            beneficiary_type,
-        ))
+        return cast(
+            bool,
+            await self._call_with_session(
+                BeneficiaryRepository,
+                "should_suggest_beneficiary",
+                user_id,
+                account_number,
+                bank_code,
+                bank_name,
+                beneficiary_type,
+            ),
+        )
 
     async def should_suggest_mobile_beneficiary(self, user_id: str, phone_number: str, network: str):
         return await self._call_with_session(
@@ -307,12 +310,15 @@ class SessionScopedBankTransactionRepository(_SessionScopedRepositoryMixin, Bank
         )
 
     async def get_latest_posted_at(self, linked_account_id: str | UUID, *, provider: str = "mono") -> datetime | None:
-        return cast(datetime | None, await self._call_with_session(
-            BankTransactionRepository,
-            "get_latest_posted_at",
-            linked_account_id,
-            provider=provider,
-        ))
+        return cast(
+            datetime | None,
+            await self._call_with_session(
+                BankTransactionRepository,
+                "get_latest_posted_at",
+                linked_account_id,
+                provider=provider,
+            ),
+        )
 
 
 class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMixin, BankTransactionCoverageRepository):

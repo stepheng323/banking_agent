@@ -68,7 +68,9 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token")
+    monkeypatch.setattr(
+        "apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token"
+    )
 
     flow = await build_link_account_flow(
         context={
@@ -107,7 +109,9 @@ async def test_build_link_account_flow_returns_retryable_error_when_session_stor
         direct_debit_provider=None,
     )
 
-    monkeypatch.setattr("apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token")
+    monkeypatch.setattr(
+        "apps.chat.src.agent.workers.account.linking.secrets.token_urlsafe", lambda _: "opaque-link-token"
+    )
 
     flow = await build_link_account_flow(
         context={

@@ -79,8 +79,7 @@ def _resolve_deterministic_input_slot_route(
         return _continue_flow_decision("shortcut_input_phone_entry")
 
     if active_task_type in {"airtime", "data"} and (
-        required_fields in ({"recipient_phone"}, {"phone"}, {"target_phone"})
-        or bool(required_fields & phone_fields)
+        required_fields in ({"recipient_phone"}, {"phone"}, {"target_phone"}) or bool(required_fields & phone_fields)
     ):
         if _INPUT_SELF_PHONE_REPLY_RE.fullmatch(stripped_text):
             return _continue_flow_decision("shortcut_input_self_phone_entry")

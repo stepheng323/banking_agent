@@ -43,7 +43,15 @@ class _MockPlanner:
         self._semantic_route = semantic_route
         self.route_calls = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -157,7 +165,15 @@ class _RouteOnlyPlanner:
             reason="mock default",
         )
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for direct switch targets")
 
@@ -186,7 +202,15 @@ class _FailIfRouterCalledPlanner:
         del phone_number, text, context, path_label
         return PendingActionEditDecision(operation="unclear", confidence=0.0, reason="not an edit")
 
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None, path_label: str = "planner_path") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+        path_label: str = "planner_path",
+    ) -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for callback auto-approve")
 
@@ -336,9 +360,7 @@ async def test_pending_schedule_confirmation_allows_read_only_schedule_view() ->
                 stage=TaskStage.AWAITING_CONFIRMATION,
                 payload={
                     "action": "edit_scheduled_transaction",
-                    "confirmation": {
-                        "summary": "Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 9:00 AM Lagos time"
-                    },
+                    "confirmation": {"summary": "Transfer: ₦20,000 FATIMA ZAHRA MUSA • One Time at 9:00 AM Lagos time"},
                 },
             )
         },
@@ -2439,7 +2461,10 @@ async def test_confirmation_continue_flow_scopes_multi_recipient_narration_updat
                 payload={
                     "recipient_name": "Tolu",
                     "idempotency_key": "idem-tolu",
-                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 10000, "recipient_name": "Tolu"}},
+                    "confirmation": {
+                        "summary": "Confirm Tolu",
+                        "snapshot": {"amount": 10000, "recipient_name": "Tolu"},
+                    },
                 },
             ),
         },
@@ -2518,7 +2543,10 @@ async def test_confirmation_continue_flow_scopes_multi_recipient_amount_and_narr
                     "recipient_name": "Tolu",
                     "amount": 10000,
                     "idempotency_key": "idem-tolu",
-                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 10000, "recipient_name": "Tolu"}},
+                    "confirmation": {
+                        "summary": "Confirm Tolu",
+                        "snapshot": {"amount": 10000, "recipient_name": "Tolu"},
+                    },
                 },
             ),
         },
@@ -2576,7 +2604,10 @@ async def test_confirmation_continue_flow_scopes_same_as_amount_to_target_recipi
                     "recipient_resolved_name": "Fatima Zahra Musa",
                     "amount": 10000,
                     "idempotency_key": "idem-gaines",
-                    "confirmation": {"summary": "Confirm Gaines", "snapshot": {"amount": 10000, "recipient_name": "Gaines"}},
+                    "confirmation": {
+                        "summary": "Confirm Gaines",
+                        "snapshot": {"amount": 10000, "recipient_name": "Gaines"},
+                    },
                 },
             ),
             "t_tolu": TaskSpec(
@@ -2588,7 +2619,10 @@ async def test_confirmation_continue_flow_scopes_same_as_amount_to_target_recipi
                     "recipient_resolved_name": "Tolu Adebayo",
                     "amount": 5000,
                     "idempotency_key": "idem-tolu",
-                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 5000, "recipient_name": "Tolu Adebayo"}},
+                    "confirmation": {
+                        "summary": "Confirm Tolu",
+                        "snapshot": {"amount": 5000, "recipient_name": "Tolu Adebayo"},
+                    },
                 },
             ),
             "t_airtime": TaskSpec(
@@ -2668,7 +2702,10 @@ async def test_confirmation_continue_flow_rerenders_multi_transfer_summary_from_
                     "recipient_account": "0760505261",
                     "amount": 10000,
                     "source_account_id": "acct-1",
-                    "confirmation": {"summary": "Confirm Tolu", "snapshot": {"amount": 10000, "recipient_name": "Tolu"}},
+                    "confirmation": {
+                        "summary": "Confirm Tolu",
+                        "snapshot": {"amount": 10000, "recipient_name": "Tolu"},
+                    },
                 },
             ),
         },
@@ -3467,7 +3504,9 @@ async def test_input_obvious_cancel_shortcut_resets_for_fresh_start() -> None:
         channel="whatsapp",
         last_message_text="stop this transfer",
         loaded_context={"language": "en"},
-        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t_transfer"], fields_by_task={"t_transfer": ["amount"]}),
+        pending_interrupt=PendingInterrupt(
+            kind="input", task_ids=["t_transfer"], fields_by_task={"t_transfer": ["amount"]}
+        ),
         tasks={
             "t_transfer": TaskSpec(
                 id="t_transfer",

@@ -45,11 +45,7 @@ async def _resolve_add_task_operation(
     ]
     # For add-task edits, the concrete transaction type is the safest signal.
     # Some models populate target_intent even though the operation is add_tasks.
-    target_intent = (
-        target_types[0]
-        if len(set(target_types)) == 1
-        else (decision.target_intent or "").strip().lower()
-    )
+    target_intent = target_types[0] if len(set(target_types)) == 1 else (decision.target_intent or "").strip().lower()
     if target_intent not in TRANSACTION_INTENTS:
         return None
 

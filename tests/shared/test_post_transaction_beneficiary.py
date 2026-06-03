@@ -46,9 +46,7 @@ async def _suggest_transfer(service: Any, **overrides: Any) -> str | None:
 
 
 def test_append_beneficiary_suggestion_adds_visible_block() -> None:
-    assert append_beneficiary_suggestion("Done.", "Save this beneficiary?") == (
-        "Done.\n\nSave this beneficiary?"
-    )
+    assert append_beneficiary_suggestion("Done.", "Save this beneficiary?") == ("Done.\n\nSave this beneficiary?")
     assert append_beneficiary_suggestion("Done.", "") == "Done."
     assert append_beneficiary_suggestion("", "Save this beneficiary?") == "Save this beneficiary?"
 

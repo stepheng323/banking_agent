@@ -110,21 +110,16 @@ def _append_transfer_lines(lines: list[str], transfer_tasks: list[Any], *, local
 
 
 def _format_batch_transfer_line(recipient_entry: dict[str, Any], *, amount: float, locale: str) -> str:
-    recipient = (
-        format_summary_recipient_display_label(
-            recipient_entry.get("recipient_name") or recipient_entry.get("alias"),
-            recipient_entry.get("recipient_resolved_name") or recipient_entry.get("name"),
-        )
-        or render_message("transaction_summary.multi.recipient_unknown", locale)
-    )
-    bank = (
-        str(recipient_entry.get("bank_name") or recipient_entry.get("recipient_bank_name") or "").strip()
-        or render_message("transaction_summary.multi.bank_fallback", locale)
-    )
-    account = (
-        str(recipient_entry.get("account") or recipient_entry.get("recipient_account") or "").strip()
-        or render_message("transaction_summary.multi.account_fallback", locale)
-    )
+    recipient = format_summary_recipient_display_label(
+        recipient_entry.get("recipient_name") or recipient_entry.get("alias"),
+        recipient_entry.get("recipient_resolved_name") or recipient_entry.get("name"),
+    ) or render_message("transaction_summary.multi.recipient_unknown", locale)
+    bank = str(
+        recipient_entry.get("bank_name") or recipient_entry.get("recipient_bank_name") or ""
+    ).strip() or render_message("transaction_summary.multi.bank_fallback", locale)
+    account = str(
+        recipient_entry.get("account") or recipient_entry.get("recipient_account") or ""
+    ).strip() or render_message("transaction_summary.multi.account_fallback", locale)
     status = _normalize_final_status(str(recipient_entry.get("status", "success")).lower())
     return _format_transfer_line(
         amount=amount,
@@ -137,13 +132,10 @@ def _format_batch_transfer_line(recipient_entry: dict[str, Any], *, amount: floa
 
 
 def _format_single_transfer_line(payload: dict[str, Any], *, amount: float, status: str, locale: str) -> str:
-    recipient = (
-        format_summary_recipient_display_label(
-            payload.get("recipient_name"),
-            payload.get("recipient_resolved_name"),
-        )
-        or render_message("transaction_summary.multi.recipient_fallback", locale)
-    )
+    recipient = format_summary_recipient_display_label(
+        payload.get("recipient_name"),
+        payload.get("recipient_resolved_name"),
+    ) or render_message("transaction_summary.multi.recipient_fallback", locale)
     bank = str(payload.get("recipient_bank_name") or "").strip() or render_message(
         "transaction_summary.multi.bank_fallback",
         locale,
@@ -216,9 +208,13 @@ def _append_data_lines(lines: list[str], data_tasks: list[Any], *, locale: str, 
     for task in data_tasks:
         amount = float(task.payload.get("amount", 0) or 0)
         status = _normalize_final_status(str(task.payload.get("final_status") or "success").lower())
-        phone = task.payload.get("phone_number") or task.payload.get("target_phone") or render_message(
-            "transaction_summary.multi.phone_fallback",
-            locale,
+        phone = (
+            task.payload.get("phone_number")
+            or task.payload.get("target_phone")
+            or render_message(
+                "transaction_summary.multi.phone_fallback",
+                locale,
+            )
         )
         plan = task.payload.get("plan_name") or render_message(
             "transaction_summary.multi.data_plan_fallback",

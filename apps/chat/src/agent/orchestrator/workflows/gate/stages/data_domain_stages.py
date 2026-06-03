@@ -76,8 +76,10 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
 
 async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any] | None:
     """Route "buy it" after a data-plan answer into a normal data purchase."""
-    if ctx.live_pending_interrupt or ctx.state.has_quote or not _is_data_plan_reference_purchase_request(
-        ctx.message_text
+    if (
+        ctx.live_pending_interrupt
+        or ctx.state.has_quote
+        or not _is_data_plan_reference_purchase_request(ctx.message_text)
     ):
         return None
     data = _resolved_data_plan_payload(ctx)

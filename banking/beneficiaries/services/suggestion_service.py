@@ -86,8 +86,7 @@ class BeneficiarySuggestionService:
                     bank_name = _clean_text(recipient_data.get("bank_name"))
                     recipient_name = _clean_text(recipient_data.get("name"))
                     bank_code_provider = _clean_provider(
-                        recipient_data.get("recipient_bank_code_provider")
-                        or recipient_data.get("bank_code_provider")
+                        recipient_data.get("recipient_bank_code_provider") or recipient_data.get("bank_code_provider")
                     )
                     resolution_provider = _clean_provider(
                         recipient_data.get("recipient_resolution_provider")

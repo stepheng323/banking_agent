@@ -58,8 +58,7 @@ def _pending_edit_target_task_ids(
             return [
                 task_id
                 for task_id in type_matches
-                if (task := state.tasks.get(task_id)) is not None
-                and _field_applies_to_task(field, task.type)
+                if (task := state.tasks.get(task_id)) is not None and _field_applies_to_task(field, task.type)
             ]
         if field in {"source_bank_name", "source_account_index"}:
             return type_matches
@@ -69,8 +68,7 @@ def _pending_edit_target_task_ids(
     compatible_task_ids = [
         task_id
         for task_id in active_task_ids
-        if (task := state.tasks.get(task_id)) is not None
-        and _field_applies_to_task(field, task.type)
+        if (task := state.tasks.get(task_id)) is not None and _field_applies_to_task(field, task.type)
     ]
     if field in {"source_bank_name", "source_account_index"}:
         return compatible_task_ids
@@ -119,6 +117,7 @@ def _field_applies_to_task(field: str, task_type: str) -> bool:
     if field in _DATA_PLAN_EDIT_FIELDS:
         return task_type == "data"
     return False
+
 
 __all__ = [
     "TRANSACTION_INTENTS",

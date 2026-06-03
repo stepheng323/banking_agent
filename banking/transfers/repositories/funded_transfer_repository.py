@@ -53,9 +53,7 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
     async def get_by_id_for_update(self, transfer_id: str) -> FundedTransfer | None:
         """Get a funded transfer by ID and lock it for state transitions."""
         lookup_id = self._coerce_transfer_id(transfer_id) or transfer_id
-        result = await self.db.execute(
-            select(FundedTransfer).filter(FundedTransfer.id == lookup_id).with_for_update()
-        )
+        result = await self.db.execute(select(FundedTransfer).filter(FundedTransfer.id == lookup_id).with_for_update())
         return result.scalars().first()
 
     async def get_by_payout_reference(self, payout_reference: str) -> FundedTransfer | None:

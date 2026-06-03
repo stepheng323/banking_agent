@@ -85,6 +85,7 @@ STATUS_REQUIREMENTS_PHRASES: dict[LocaleCode, set[str]] = {
     LocaleCode.IG: {"gini ka ichoro n'aka m", "gini foduru"},
 }
 
+
 def _normalize_text(text: str) -> str:
     return normalize_confirmation_text(text)
 

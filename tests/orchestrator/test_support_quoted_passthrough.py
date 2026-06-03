@@ -119,7 +119,9 @@ async def test_support_handler_enqueues_receipt_jobs() -> None:
 
     await handle_support_task(task, "t1", ctx)
 
-    publisher.publish.assert_awaited_once_with("receipt.process", {"transaction_reference": "tx-2", "phone_number": "2348000000001"})
+    publisher.publish.assert_awaited_once_with(
+        "receipt.process", {"transaction_reference": "tx-2", "phone_number": "2348000000001"}
+    )
     assert ctx.agg.updates["outbox"] == [{"type": "say", "text": "sending"}]
 
 

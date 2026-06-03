@@ -55,9 +55,7 @@ def test_brand_template_params_are_centralized(monkeypatch) -> None:
     assert params["app_public_base_url"] == "https://aurora.example"
     assert brand_name_aliases() == {"aurora pay", "aurora", "auro"}
     assert legacy_brand_names() == {"old aurora"}
-    assert render_brand_template("{app_name_short} -> {app_public_base_url}") == (
-        "Aurora -> https://aurora.example"
-    )
+    assert render_brand_template("{app_name_short} -> {app_public_base_url}") == ("Aurora -> https://aurora.example")
 
 
 def test_brand_aliases_load_from_env(monkeypatch) -> None:

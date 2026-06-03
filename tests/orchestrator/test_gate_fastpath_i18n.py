@@ -1128,6 +1128,7 @@ async def test_gate_investment_followup_stays_in_capability_boundary() -> None:
     assert updates["capability_boundary"].key == "investments"
     assert updates["capability_boundary"].followup_count == 1
 
+
 async def test_gate_lending_followup_gets_firm_redirect_after_two_followups() -> None:
     state = OrchestratorState(
         user_id="u_gate_lending_firm",
@@ -5509,7 +5510,9 @@ class _UnsupportedCapabilityPlanner(_RouteTurnPlanner):
         self.unsupported_decision = unsupported_decision
         self.unsupported_calls = 0
 
-    async def classify_unsupported_capability(self, *args: object, **kwargs: object) -> UnsupportedCapabilitySemanticOutput:
+    async def classify_unsupported_capability(
+        self, *args: object, **kwargs: object
+    ) -> UnsupportedCapabilitySemanticOutput:
         del args, kwargs
         self.unsupported_calls += 1
         return self.unsupported_decision
@@ -5526,7 +5529,9 @@ class _BoundaryTurnPlanner(_RouteTurnPlanner):
         self.boundary_decision = boundary_decision
         self.boundary_calls = 0
 
-    async def classify_unsupported_boundary_turn(self, *args: object, **kwargs: object) -> UnsupportedBoundaryTurnOutput:
+    async def classify_unsupported_boundary_turn(
+        self, *args: object, **kwargs: object
+    ) -> UnsupportedBoundaryTurnOutput:
         del args, kwargs
         self.boundary_calls += 1
         return self.boundary_decision

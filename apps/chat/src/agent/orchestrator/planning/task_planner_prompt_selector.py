@@ -44,6 +44,7 @@ def _include_money_move_bundle(signals: PlannerPromptSignals) -> bool:
         return True
     return False
 
+
 def _include_context_bundle(signals: PlannerPromptSignals) -> bool:
     if signals.has_short_term_memory:
         return True
