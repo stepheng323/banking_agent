@@ -1,4 +1,5 @@
 """Transfer extraction prompt. Pure extraction, no business logic."""
+# ruff: noqa: E501
 
 TRANSFER_EXTRACTION_PROMPT = """
 ## ROLE

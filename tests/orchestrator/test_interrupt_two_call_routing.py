@@ -6,9 +6,9 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
-from apps.chat.src.agent.workers.transfer.models.entities import TransferEntities
-from apps.chat.src.agent.workers.transfer.models.extraction import TransferExtractionResult
 from banking.presentation.i18n.bridge import render_cancelled_prompt
+from banking.transfers.models.entities import TransferEntities
+from banking.transfers.models.extraction import TransferExtractionResult
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,

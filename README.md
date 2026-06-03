@@ -81,10 +81,10 @@ User (WhatsApp / Telegram)
 | Service | Responsibility |
 |---------|---------------|
 | `apps/gateway/` | Ingress endpoints, webhook routing, channel adapters (WhatsApp, Telegram) |
-| `apps/chat/` | Orchestration, task planning, conversational runtime, and remaining app-owned workers |
+| `apps/chat/` | Orchestration, task planning, conversational runtime, and domain worker dispatch |
 | `apps/transaction/` | Transaction worker runtime, async financial worker entrypoints |
 | `apps/receipt/` | Receipt rendering and async worker entrypoints |
-| `banking/` | Product core: account, account onboarding, FAQ, support, beneficiary, airtime, data, transaction query, transaction-flow helpers, policy, presentation, receipts, persistence, runtime, repositories |
+| `banking/` | Product core: account, account onboarding, FAQ, support, beneficiary, airtime, data, transfer, transaction query, transaction-flow helpers, policy, presentation, receipts, persistence, runtime, repositories |
 | `shared/` | Infrastructure primitives: config, database models, provider clients, queues, cache, messaging contracts, utilities |
 
 ### Orchestrator / Worker Contract
@@ -503,7 +503,7 @@ Failure reports should include channel, phone, timestamp, transcript, expected b
 
 ## Code Navigation
 
-Start from public entrypoints and import concrete modules directly. Account, account onboarding, FAQ, support, transaction query, beneficiary, airtime, data, and shared transaction-flow helpers live only under `banking/`.
+Start from public entrypoints and import concrete modules directly. Account, account onboarding, FAQ, support, transaction query, beneficiary, airtime, data, transfer, and shared transaction-flow helpers live only under `banking/`.
 
 | Area | Start Here | Notes |
 |------|------------|-------|
@@ -511,10 +511,10 @@ Start from public entrypoints and import concrete modules directly. Account, acc
 | Graph workflows | `apps/chat/src/agent/orchestrator/workflows/` | Organized by phase: lifecycle, gate, interrupt, planner, execution |
 | Gate workflow | `apps/chat/src/agent/orchestrator/workflows/gate/node.py` | Ordered pre-planner fast paths and semantic routing; stage order in `registry.py` is behavior |
 | Task handlers | `apps/chat/src/agent/orchestrator/task_handlers/runtime.py` | Post-planner task-family routing and aggregation |
-| Domain workers | `banking/accounts/`, `banking/faq/`, `banking/support/`, `banking/transactions/query/`, `banking/transactions/shared/`, `banking/beneficiaries/`, `banking/bills/airtime/`, `banking/bills/data/`, and remaining app worker packages | Migrated domains and shared transaction-flow helpers are product-owned under `banking/`; the remaining transfer worker still lives under `apps/chat/src/agent/workers/` |
+| Domain workers | `banking/accounts/`, `banking/faq/`, `banking/support/`, `banking/transactions/query/`, `banking/transactions/shared/`, `banking/beneficiaries/`, `banking/bills/airtime/`, `banking/bills/data/`, `banking/transfers/` | Product-owned domains and shared transaction-flow helpers live under `banking/`; chat owns orchestration and dispatch |
 | Query worker | `banking/transactions/query/worker.py` | Parser/compiler, continuations, grounding, fetching, answer handlers, presentation |
 | Account worker | `banking/accounts/management/worker.py` | Account list/count/balance, link-account flow start, default-account changes, unlink handling |
-| Transfer worker | `apps/chat/src/agent/workers/transfer/worker.py` | Extraction, resolution, validation, funding, confirmation, payout preparation, execution |
+| Transfer worker | `banking/transfers/worker.py` | Extraction, resolution, validation, funding, confirmation, payout preparation, execution |
 | Airtime worker | `banking/bills/airtime/worker.py` | Extraction, resolution, validation, source selection, confirmation, scheduling, execution |
 | Data worker | `banking/bills/data/worker.py` | Extraction, plan selection/query, source selection, validation, confirmation, scheduling, execution |
 | Support worker | `banking/support/worker.py` | Policy check, reference follow-up, classification, resolver, handler dispatch |
@@ -538,7 +538,7 @@ If you are evaluating this repository for hiring or technical partnership, the s
 | Query orchestration | `banking/transactions/query/` |
 | Account management | `banking/accounts/management/` |
 | Beneficiary management | `banking/beneficiaries/` |
-| Transfer engine | `apps/chat/src/agent/workers/transfer/` |
+| Transfer engine | `banking/transfers/` |
 | Task planner + guardrails | `apps/chat/src/agent/orchestrator/` |
 | Account linking | `banking/accounts/onboarding/` |
 | Query regression tests | `tests/query/` |

@@ -4,9 +4,6 @@ from datetime import datetime
 from typing import Any, Protocol, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.transfer.authorization.pin_token import persist_schedule_pin_token
-from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.workers.transfer.pipeline.base import TransferPipeline, TransferStep
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.renderer import render_message
@@ -30,6 +27,9 @@ from banking.transactions.shared.schedule_management import (
     schedule_edit_requires_auth,
 )
 from banking.transactions.shared.scheduling import schedule_recurrence_label, schedule_required_prompt
+from banking.transfers.authorization.pin_token import persist_schedule_pin_token
+from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
+from banking.transfers.pipeline.base import TransferPipeline, TransferStep
 from shared.database.enums import ScheduledInstructionStatusEnum
 
 SCHEDULING_ACTIONS = {

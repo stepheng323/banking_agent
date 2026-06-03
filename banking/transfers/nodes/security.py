@@ -3,13 +3,13 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.transfer.authorization.pin_token import persist_transfer_pin_token
-from apps.chat.src.agent.workers.transfer.models.types import (
+from banking.transfers.authorization.pin_token import persist_transfer_pin_token
+from banking.transfers.models.types import (
     TransferContext,
     TransferGates,
     TransferPayload,
 )
-from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
+from banking.transfers.pipeline.base import TransferStep
 
 
 class AuthorizationStep(TransferStep):

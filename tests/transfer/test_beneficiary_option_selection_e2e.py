@@ -3,10 +3,10 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.workers.transfer.nodes.extraction import ExtractionStep
 from apps.gateway.adapters.meta_whatsapp import parse_payload
 from apps.gateway.adapters.telegram import parse_update
+from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
+from banking.transfers.nodes.extraction import ExtractionStep
 
 
 def _beneficiaries() -> tuple[list[dict], str, str]:

@@ -5,11 +5,11 @@ from typing import Any, cast
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.workers.transfer.extraction.prompt import (
+from banking.transactions.shared.models.smart_context import SmartContext
+from banking.transfers.extraction.prompt import (
     TRANSFER_EXTRACTION_PROMPT,
 )
-from apps.chat.src.agent.workers.transfer.models.extraction import TransferExtractionResult
-from banking.transactions.shared.models.smart_context import SmartContext
+from banking.transfers.models.extraction import TransferExtractionResult
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
 from shared.utils.logging import get_logger
 
@@ -118,7 +118,8 @@ class TransferEntityExtractor:
                 amount = item.get("amount")
                 if task_id and (recipient or resolved or isinstance(amount, (int, float))):
                     task_lines.append(
-                        f"{task_id}: recipient={recipient or resolved}, resolved={resolved or recipient}, amount={amount}"
+                        f"{task_id}: recipient={recipient or resolved}, "
+                        f"resolved={resolved or recipient}, amount={amount}"
                     )
             if task_lines:
                 parts.append("ActiveConfirmationTasks:\n" + "\n".join(task_lines))

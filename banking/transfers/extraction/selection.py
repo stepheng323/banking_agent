@@ -2,11 +2,11 @@
 
 from typing import Any
 
-from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
 from banking.beneficiaries.services.matcher import BeneficiaryMatcher
 from banking.beneficiaries.services.selection import match_beneficiary_candidate_selection
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.shared.account_selection.reference import build_source_account_patch
+from banking.transfers.models.types import TransferContext, TransferPayload
 from shared.database.models import Beneficiary
 from shared.utils.logging import get_logger
 
@@ -62,7 +62,10 @@ def resolve_beneficiary_selection_from_input(
                     "index": idx,
                     "beneficiary_id": str(candidate.id),
                     "option_id": f"bene:{candidate.id}",
-                    "label": f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}",
+                    "label": (
+                        f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • "
+                        f"****{str(candidate.account_number)[-4:]}"
+                    ),
                 }
                 for idx, candidate in enumerate(matched_candidates, start=1)
             ]

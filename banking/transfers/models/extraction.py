@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from apps.chat.src.agent.workers.transfer.models.entities import TransferEntities
+from banking.transfers.models.entities import TransferEntities
 
 SCHEMA_VERSION = 1
 

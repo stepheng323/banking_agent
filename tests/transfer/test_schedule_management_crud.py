@@ -4,15 +4,15 @@ from types import SimpleNamespace
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.transfer.models.types import TransferGates, TransferPayload
-from apps.chat.src.agent.workers.transfer.pipeline_factory import build_transfer_pipeline
-from apps.chat.src.agent.workers.transfer.scheduling import TransferSchedulingHandler
 from banking.scheduling.services.recurrence import (
     SCHEDULE_TIMEZONE,
     compute_initial_next_run_utc,
     format_lagos_schedule_datetime,
     today_lagos,
 )
+from banking.transfers.models.types import TransferGates, TransferPayload
+from banking.transfers.pipeline_factory import build_transfer_pipeline
+from banking.transfers.scheduling import TransferSchedulingHandler
 
 
 class _FakeScheduleRepo:
@@ -126,7 +126,7 @@ async def test_schedule_management_list_shows_transfer_airtime_and_data(monkeypa
             ),
         ]
     )
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await _scheduling().list_schedules(user_id="user-1", locale="en")
 
@@ -156,7 +156,7 @@ async def test_schedule_management_count_mode_reports_pending_count(monkeypatch:
             ),
         ]
     )
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await _scheduling().list_schedules(
         data=TransferPayload(schedule_response_mode="count"),
@@ -173,7 +173,7 @@ async def test_schedule_management_count_mode_reports_pending_count(monkeypatch:
 @pytest.mark.asyncio
 async def test_schedule_management_empty_list_uses_locale_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _FakeScheduleRepo([])
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await _scheduling().list_schedules(user_id="user-1", locale="pcm")
 
@@ -192,7 +192,7 @@ async def test_schedule_management_list_uses_locale_row_copy(monkeypatch: pytest
             ),
         ]
     )
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
 
     result = await _scheduling().list_schedules(user_id="user-1", locale="pcm")
 
@@ -212,7 +212,7 @@ async def test_schedule_management_cancel_deletes_by_disabling_active_schedule(
         payload_snapshot={"amount": 1000, "recipient_phone": "08162511023", "network": "MTN"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
 
     result = await _scheduling().cancel_schedule(
         data=TransferPayload(schedule_selector="1"),
@@ -238,7 +238,7 @@ async def test_schedule_management_material_edit_requires_pin_without_text_confi
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
     scheduling = _scheduling()
     payload = TransferPayload(
         schedule_selector="1",
@@ -291,7 +291,7 @@ async def test_schedule_management_material_edit_persists_schedule_pin_token(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
 
     from shared.cache.redis_client import RedisClient
 
@@ -331,7 +331,7 @@ async def test_schedule_management_time_only_edit_updates_after_confirmation_wit
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
     scheduling = _scheduling()
     payload = TransferPayload(
         schedule_selector="1",
@@ -379,7 +379,7 @@ async def test_schedule_management_time_edit_success_uses_locale_copy(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
     scheduling = _scheduling()
     payload = TransferPayload(
         schedule_selector="1",
@@ -420,7 +420,7 @@ async def test_schedule_management_narration_only_edit_does_not_require_pin(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum", "narration": "Old note"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
     scheduling = _scheduling()
 
     confirmation = await scheduling.edit_schedule(
@@ -456,7 +456,7 @@ async def test_schedule_management_recurrence_edit_requires_pin(
         payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
     )
     uow = _FakeUnitOfWork(_FakeScheduleRepo([schedule]))
-    monkeypatch.setattr("apps.chat.src.agent.workers.transfer.scheduling.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: uow)
     scheduling = _scheduling()
 
     auth = await scheduling.edit_schedule(

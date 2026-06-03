@@ -3,13 +3,13 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionResult
-from apps.chat.src.agent.workers.transfer.models.types import (
+from banking.transfers.models.types import (
     TransferContext,
     TransferGates,
     TransferPayload,
 )
-from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
-from apps.chat.src.agent.workers.transfer.resolution.resolver import resolve_beneficiary
+from banking.transfers.pipeline.base import TransferStep
+from banking.transfers.resolution.resolver import resolve_beneficiary
 
 
 class ResolutionStep(TransferStep):

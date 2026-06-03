@@ -9,8 +9,6 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder import
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
 from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
-from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEntityExtractor
-from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.common import build_messaging_clients
 from banking.accounts.onboarding.executor import OnboardingExecutor
@@ -38,6 +36,7 @@ from banking.presentation.i18n.renderer import validate_catalog_completeness
 from banking.support.runtime import build_support_worker
 from banking.support.services.ticket_service import TicketService
 from banking.transactions.query.runtime import build_query_worker
+from banking.transfers.runtime import build_transfer_worker
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -202,10 +201,10 @@ def _build_orchestrator_runtime_bundle(
         get_db=get_db_session,
     )
 
-    agent_transfer_worker = TransferWorker(
+    agent_transfer_worker = build_transfer_worker(
+        extractor_llm=extractor_chat,
         validation_service=None,
         publisher=queue_publisher,
-        extractor=TransferEntityExtractor(llm=extractor_chat),
         resolver_provider=resolver_provider,
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,

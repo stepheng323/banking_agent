@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.workers.transfer.nodes.confirmation import ConfirmationStep
-from apps.chat.src.agent.workers.transfer.nodes.execution import ExecutionStep
-from apps.chat.src.agent.workers.transfer.nodes.security import AuthorizationStep
+from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
+from banking.transfers.nodes.confirmation import ConfirmationStep
+from banking.transfers.nodes.execution import ExecutionStep
+from banking.transfers.nodes.security import AuthorizationStep
 
 
 class _StubRedis:

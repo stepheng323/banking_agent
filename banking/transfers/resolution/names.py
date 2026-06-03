@@ -5,10 +5,10 @@ import re
 import unicodedata
 from typing import Any
 
-from apps.chat.src.agent.workers.transfer.models.types import TransferPayload
 from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.presentation.formatters.recipient_prompt_names import sanitize_recipient_display_name
 from banking.presentation.i18n.renderer import render_message
+from banking.transfers.models.types import TransferPayload
 from shared.config.settings import settings
 
 _RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}

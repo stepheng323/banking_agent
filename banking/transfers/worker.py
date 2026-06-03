@@ -16,20 +16,20 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.chat.src.agent.workers.transfer.models.types import (
-    TransferContext,
-    TransferGates,
-    TransferPayload,
-)
-from apps.chat.src.agent.workers.transfer.pipeline_factory import build_transfer_pipeline
-from apps.chat.src.agent.workers.transfer.scheduling import SCHEDULING_ACTIONS, TransferSchedulingHandler
-from apps.chat.src.agent.workers.transfer.validation.service import ValidationService
 from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.repositories.transaction_repository import (
     TransactionRepository,
 )
+from banking.transfers.models.types import (
+    TransferContext,
+    TransferGates,
+    TransferPayload,
+)
+from banking.transfers.pipeline_factory import build_transfer_pipeline
+from banking.transfers.scheduling import SCHEDULING_ACTIONS, TransferSchedulingHandler
+from banking.transfers.validation.service import ValidationService
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
 

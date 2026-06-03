@@ -4,13 +4,6 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.chat.src.agent.workers.transfer.models.types import (
-    TransferContext,
-    TransferPayload,
-)
-from apps.chat.src.agent.workers.transfer.resolution.self_transfer_validator import (
-    SelfTransferValidator,
-)
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.shared.validation.amount_validator import (
     TRANSFER_LIMITS,
@@ -18,6 +11,13 @@ from banking.transactions.shared.validation.amount_validator import (
 )
 from banking.transactions.shared.validation.amount_validator import (
     validate_amount as validate_amount_limits,
+)
+from banking.transfers.models.types import (
+    TransferContext,
+    TransferPayload,
+)
+from banking.transfers.resolution.self_transfer_validator import (
+    SelfTransferValidator,
 )
 
 

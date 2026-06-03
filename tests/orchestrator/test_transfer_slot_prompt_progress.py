@@ -19,7 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finali
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
-from apps.chat.src.agent.workers.transfer.worker import TransferWorker
+from banking.transfers.worker import TransferWorker
 from shared.config.settings import settings
 from shared.types.planner import ContextFrameFollowupDecision
 

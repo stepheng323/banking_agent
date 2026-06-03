@@ -19,6 +19,8 @@ from banking.support.worker import SupportWorker
 from banking.transactions.query.runtime import build_query_worker
 from banking.transactions.query.session import QuerySessionManager
 from banking.transactions.query.worker import QueryWorker
+from banking.transfers.runtime import build_transfer_worker
+from banking.transfers.worker import TransferWorker
 
 
 class _LLMStub:
@@ -112,6 +114,24 @@ def test_data_factory_preserves_worker_protocol() -> None:
 
     assert isinstance(worker, DataWorker)
     assert worker.__class__.__module__ == "banking.bills.data.worker"
+    assert isinstance(worker, WorkerProtocol)
+
+
+def test_transfer_factory_preserves_worker_protocol() -> None:
+    worker = build_transfer_worker(
+        extractor_llm=_LLMStub(),  # type: ignore[arg-type]
+        publisher=object(),
+        resolver_provider=object(),
+        bank_cache=object(),
+        transaction_repo=object(),
+        dd_provider=object(),
+        redis_client=_RedisStub(),
+        payout_resolver_provider=object(),
+        payout_bank_cache=object(),
+    )
+
+    assert isinstance(worker, TransferWorker)
+    assert worker.__class__.__module__ == "banking.transfers.worker"
     assert isinstance(worker, WorkerProtocol)
 
 

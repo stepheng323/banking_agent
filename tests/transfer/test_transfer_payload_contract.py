@@ -1,4 +1,4 @@
-from apps.chat.src.agent.workers.transfer.models.types import TransferPayload
+from banking.transfers.models.types import TransferPayload
 
 
 def test_transfer_payload_normalizes_none_transfer_all_to_false() -> None:

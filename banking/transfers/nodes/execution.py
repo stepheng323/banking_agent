@@ -6,14 +6,14 @@ from apps.chat.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from apps.chat.src.agent.workers.transfer.models.types import (
+from banking.presentation.i18n.renderer import render_message
+from banking.risk.service import RiskDecisionService
+from banking.transfers.models.types import (
     TransferContext,
     TransferGates,
     TransferPayload,
 )
-from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
-from banking.presentation.i18n.renderer import render_message
-from banking.risk.service import RiskDecisionService
+from banking.transfers.pipeline.base import TransferStep
 from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.money import naira_to_json, require_naira

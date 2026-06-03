@@ -10,7 +10,6 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.data_domain_stages i
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import (
     _build_planner_task_updates,
 )
-from apps.chat.src.agent.workers.transfer.worker import TransferWorker
 from banking.bills.data.worker import DataWorker
 from banking.faq.worker import FAQWorker
 from banking.policy.adapters import is_capability_supported
@@ -18,6 +17,7 @@ from banking.policy.loader import get_cached_policy, load_policy
 from banking.policy.models import CapabilityPolicy
 from banking.policy.service import capability_block_message
 from banking.support.worker import SupportWorker
+from banking.transfers.worker import TransferWorker
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"

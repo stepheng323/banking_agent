@@ -4,30 +4,6 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.confirmation.confirmation_classifier import classify_confirmation_reply_sync
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.transfer.extraction.parsers import (
-    parse_account_and_bank_input,
-    parse_amount_input,
-    parse_bank_name_slot_reply,
-    parse_recipient_name_slot_reply,
-    parse_simple_transfer_command,
-    parse_single_confirmation_transfer_edit,
-    recipient_schedule_cleanup_patch,
-    should_override_skip_extraction,
-)
-from apps.chat.src.agent.workers.transfer.extraction.selection import (
-    build_resolved_referent_patch,
-    render_beneficiary_retry_prompt,
-    render_referent_recipient_retry_prompt,
-    resolve_beneficiary_selection_from_input,
-    resolve_referent_recipient_selection_from_input,
-)
-from apps.chat.src.agent.workers.transfer.extraction.updates import extract_transfer_update
-from apps.chat.src.agent.workers.transfer.models.types import (
-    TransferContext,
-    TransferGates,
-    TransferPayload,
-)
-from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
 from banking.transactions.shared.account_selection.reference import (
     build_source_account_patch,
     match_source_account_reference,
@@ -38,6 +14,30 @@ from banking.transactions.shared.scheduling import (
     parse_schedule_slot_patch,
     schedule_required_prompt,
 )
+from banking.transfers.extraction.parsers import (
+    parse_account_and_bank_input,
+    parse_amount_input,
+    parse_bank_name_slot_reply,
+    parse_recipient_name_slot_reply,
+    parse_simple_transfer_command,
+    parse_single_confirmation_transfer_edit,
+    recipient_schedule_cleanup_patch,
+    should_override_skip_extraction,
+)
+from banking.transfers.extraction.selection import (
+    build_resolved_referent_patch,
+    render_beneficiary_retry_prompt,
+    render_referent_recipient_retry_prompt,
+    resolve_beneficiary_selection_from_input,
+    resolve_referent_recipient_selection_from_input,
+)
+from banking.transfers.extraction.updates import extract_transfer_update
+from banking.transfers.models.types import (
+    TransferContext,
+    TransferGates,
+    TransferPayload,
+)
+from banking.transfers.pipeline.base import TransferStep
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

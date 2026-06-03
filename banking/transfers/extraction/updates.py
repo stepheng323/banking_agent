@@ -3,13 +3,13 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.transfer.extraction.parsers import (
+from banking.transfers.extraction.parsers import (
     extract_media_caption_amount,
     extract_media_caption_narration,
     recipient_name_matches_existing_binding,
     strip_recipient_schedule_suffix,
 )
-from apps.chat.src.agent.workers.transfer.models.types import TransferPayload
+from banking.transfers.models.types import TransferPayload
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

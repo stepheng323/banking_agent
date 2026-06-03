@@ -3,15 +3,15 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferPayload
-from apps.chat.src.agent.workers.transfer.resolution.names import (
+from banking.presentation.i18n.renderer import render_message
+from banking.transfers.models.types import TransferContext, TransferPayload
+from banking.transfers.resolution.names import (
     ask_account_and_bank_prompt,
     beneficiary_provider,
     build_name_consistency_patch,
     optional_text,
     provider_name,
 )
-from banking.presentation.i18n.renderer import render_message
 from shared.database.models import Beneficiary
 from shared.utils.logging import get_logger
 
@@ -183,7 +183,10 @@ def build_beneficiary_clarify_result(
     for idx, candidate in enumerate(candidates, start=1):
         beneficiary_id = str(candidate.id)
         option_id = f"bene:{beneficiary_id}"
-        label = f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
+        label = (
+            f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • "
+            f"****{str(candidate.account_number)[-4:]}"
+        )
         candidate_list.append(
             {
                 "index": idx,

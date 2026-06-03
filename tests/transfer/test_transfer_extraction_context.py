@@ -4,19 +4,19 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.chat.src.agent.workers.transfer.extraction.extractor import TransferEntityExtractor
-from apps.chat.src.agent.workers.transfer.extraction.updates import extract_transfer_update
-from apps.chat.src.agent.workers.transfer.models.entities import TransferEntities
-from apps.chat.src.agent.workers.transfer.models.extraction import (
+from banking.transfers.extraction.extractor import TransferEntityExtractor
+from banking.transfers.extraction.updates import extract_transfer_update
+from banking.transfers.models.entities import TransferEntities
+from banking.transfers.models.extraction import (
     Correction,
     CorrectionField,
     TransferExtractionResult,
 )
-from apps.chat.src.agent.workers.transfer.models.types import TransferContext, TransferGates, TransferPayload
-from apps.chat.src.agent.workers.transfer.nodes.extraction import ExtractionStep
-from apps.chat.src.agent.workers.transfer.nodes.validation import ValidationStep
-from apps.chat.src.agent.workers.transfer.pipeline.base import TransferPipeline
-from apps.chat.src.agent.workers.transfer.validation.service import ValidationService
+from banking.transfers.models.types import TransferContext, TransferGates, TransferPayload
+from banking.transfers.nodes.extraction import ExtractionStep
+from banking.transfers.nodes.validation import ValidationStep
+from banking.transfers.pipeline.base import TransferPipeline
+from banking.transfers.validation.service import ValidationService
 
 
 class _CaptureExtractor:

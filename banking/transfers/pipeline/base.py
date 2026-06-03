@@ -5,13 +5,13 @@ from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.transfer.models.types import (
+from banking.presentation.formatters.transaction_copy_context import build_copy_context
+from banking.transfers.models.types import (
     TransferConfirmation,
     TransferContext,
     TransferGates,
     TransferPayload,
 )
-from banking.presentation.formatters.transaction_copy_context import build_copy_context
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import normalize_bank_account_number
 

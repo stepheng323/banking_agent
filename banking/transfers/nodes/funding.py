@@ -4,15 +4,15 @@ from typing import Any
 from uuid import UUID
 
 from apps.chat.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.chat.src.agent.workers.transfer.models.types import (
+from banking.presentation.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
+from banking.presentation.i18n.renderer import render_message
+from banking.transfers.funding.planner import FundingPlanner
+from banking.transfers.models.types import (
     TransferContext,
     TransferGates,
     TransferPayload,
 )
-from apps.chat.src.agent.workers.transfer.pipeline.base import TransferStep
-from banking.presentation.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
-from banking.presentation.i18n.renderer import render_message
-from banking.transfers.funding.planner import FundingPlanner
+from banking.transfers.pipeline.base import TransferStep
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.money import naira_to_json, require_naira
 from shared.utils.logging import get_logger
