@@ -1,6 +1,7 @@
 """Personality context selection for confirmation prompts."""
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get_task
 from banking.presentation.i18n.personality import PersonalityContext, transfer_personality_context_from_payload
 
 
@@ -11,7 +12,7 @@ def _confirmation_personality_context(
     if len(confirm_task_ids) != 1:
         return None
 
-    confirmation_task = state.tasks.get(confirm_task_ids[0])
+    confirmation_task = get_task(state, confirm_task_ids[0])
     if confirmation_task and confirmation_task.type == "transfer":
         return transfer_personality_context_from_payload(
             confirmation_task.payload,
