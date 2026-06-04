@@ -15,6 +15,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import 
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -77,8 +78,9 @@ async def _handle_purchase_task(
 
     context = loaded_context(ctx.state)
     surface = context_surface(ctx.state)
+    turn = turn_metadata(ctx.state)
     context_data = {
-        "phone_number": ctx.state.phone_number,
+        "phone_number": turn.phone_number,
         "user_id": context.user_id,
         "accounts": context.transaction_accounts_or_accounts,
         "all_accounts": context.accounts,
@@ -90,8 +92,8 @@ async def _handle_purchase_task(
         "previous_response": previous_response,
     }
     if include_channel:
-        context_data["channel"] = ctx.state.channel
-        context_data["channel_identity"] = ctx.state.channel_identity
+        context_data["channel"] = turn.channel
+        context_data["channel_identity"] = turn.channel_identity
     _stamp_async_group_metadata(task, ctx)
 
     result = cast(
@@ -100,7 +102,7 @@ async def _handle_purchase_task(
             payload=task.payload,
             context=context_data,
             user_message=user_msg,
-            pin_verified=ctx.state.pin_verified,
+            pin_verified=turn.pin_verified,
         ),
     )
 

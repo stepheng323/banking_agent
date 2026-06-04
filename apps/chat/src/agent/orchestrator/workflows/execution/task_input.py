@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import pop_task_payload_value
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,7 +26,7 @@ def _maybe_user_message(task: TaskSpec, state: OrchestratorState) -> str | None:
         scoped_user_message = pop_task_payload_value(task, "pending_user_message")
         if isinstance(scoped_user_message, str) and scoped_user_message.strip():
             return scoped_user_message
-        return cast(str | None, state.last_message_text)
+        return turn_metadata(state).last_message_text
     return None
 
 

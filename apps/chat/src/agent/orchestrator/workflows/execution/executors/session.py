@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import complete_task, fail_task
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -30,14 +31,21 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
     if action not in {"resume_session", "dismiss_resume_session"}:
         return
 
-    if not ctx.state.stashed_sessions:
+    turn = turn_metadata(ctx.state)
+    if not turn.has_stashed_sessions:
         no_stash_message = render_message("orchestrator.session.no_stashed", locale)
         ctx.accumulator.say(no_stash_message)
         fail_task(task, no_stash_message)
         return
 
-    last_session = ctx.state.stashed_sessions[-1]
-    remaining_stash = ctx.state.stashed_sessions[:-1]
+    last_session = turn.latest_stashed_session
+    if last_session is None:
+        no_stash_message = render_message("orchestrator.session.no_stashed", locale)
+        ctx.accumulator.say(no_stash_message)
+        fail_task(task, no_stash_message)
+        return
+
+    remaining_stash = turn.remaining_stashed_sessions
     intent = str(last_session.get("intent", render_message("orchestrator.session.default_intent", locale)))
     ctx.accumulator.set_stashed_sessions(remaining_stash)
     replace_context_frames(ctx, clear_resume_prompt_frames(context_surface(ctx.state).frames))

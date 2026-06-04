@@ -17,6 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import 
     set_task_stage,
     set_task_type,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.presentation.i18n.renderer import render_message
@@ -47,9 +48,10 @@ async def _execute_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCont
     if not worker:
         return
 
-    user_msg = ctx.state.last_message_text
+    turn = turn_metadata(ctx.state)
+    user_msg = turn.last_message_text
     context_data = {
-        "phone_number": ctx.state.phone_number,
+        "phone_number": turn.phone_number,
         "language": _state_locale(ctx.state),
     }
 
@@ -85,7 +87,8 @@ async def _execute_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCont
 
 
 async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
-    user_msg = ctx.state.last_message_text
+    turn = turn_metadata(ctx.state)
+    user_msg = turn.last_message_text
     if looks_like_transaction_replay_modifier_request(user_msg):
         logger.info("support_task_replay_modifier_rerouted_to_transfer", task_id=task_id)
         set_task_type(task, "transfer")
@@ -111,16 +114,16 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
 
     context = loaded_context(ctx.state)
     context_data = {
-        "phone_number": ctx.state.phone_number,
-        "channel": ctx.state.channel,
-        "channel_identity": ctx.state.channel_identity,
+        "phone_number": turn.phone_number,
+        "channel": turn.channel,
+        "channel_identity": turn.channel_identity,
         "user_id": context.user_id,
         "email": context.email,
         "language": _state_locale(ctx.state),
     }
 
     support_payload = dict(task.payload)
-    support_payload["quoted_message_id"] = ctx.state.quoted_message_id
+    support_payload["quoted_message_id"] = turn.quoted_message_id
 
     result = cast(
         SupportResult,

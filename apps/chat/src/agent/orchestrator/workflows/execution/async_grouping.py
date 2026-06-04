@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks, iter_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import update_task_payload
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import current_wave_index
 
 _TERMINAL_TRANSACTION_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
@@ -57,7 +58,7 @@ def _stamp_async_group_metadata(task: TaskSpec, ctx: ExecutionTurnContext) -> No
 
     group_fingerprint = "|".join(
         [
-            str(ctx.state.last_message_id or ""),
+            str(turn_metadata(ctx.state).last_message_id or ""),
             str(current_wave_index(ctx.state)),
             *transaction_task_ids,
         ]

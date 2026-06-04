@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import 
     set_task_payload_value,
     set_task_stage,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import AccountOutcome, AccountResult, TransactionOutcome, TransactionResult
@@ -50,8 +51,9 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         message_from_payload = task.payload.get("message") or task.payload.get("instruction")
         user_msg = message_from_payload if isinstance(message_from_payload, str) else None
     context = loaded_context(ctx.state)
+    turn = turn_metadata(ctx.state)
     context_data = {
-        "phone_number": ctx.state.phone_number,
+        "phone_number": turn.phone_number,
         "user_id": context.user_id,
         "profile": context.profile,
         "accounts": context.accounts,
@@ -128,9 +130,10 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
             provider = transfer_worker.resolver_provider
 
         context = loaded_context(ctx.state)
+        turn = turn_metadata(ctx.state)
         context_data = {
             "user_id": context.user_id,
-            "phone_number": ctx.state.phone_number,
+            "phone_number": turn.phone_number,
             "resolver_provider": provider,
             "language": _state_locale(ctx.state),
         }
@@ -170,9 +173,10 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
         return
 
     alias = task.payload.get("alias")
+    turn = turn_metadata(ctx.state)
     try:
         msg = await suggestion_service.save_beneficiary(
-            ctx.state.phone_number,
+            turn.phone_number,
             alias=alias,
             locale=_state_locale(ctx.state),
         )

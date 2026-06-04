@@ -28,6 +28,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import remove_task_payload_values
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -85,6 +86,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
 
     context = loaded_context(ctx.state)
     surface = context_surface(ctx.state)
+    turn = turn_metadata(ctx.state)
     beneficiaries = context.beneficiaries
 
     recipient_name = task.payload.get("recipient_name")
@@ -148,9 +150,9 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
 
     resolved_referents = build_resolved_referents(ctx.state, user_msg)
     context_data = {
-        "phone_number": ctx.state.phone_number,
-        "channel": ctx.state.channel,
-        "channel_identity": ctx.state.channel_identity,
+        "phone_number": turn.phone_number,
+        "channel": turn.channel,
+        "channel_identity": turn.channel_identity,
         "user_id": context.user_id,
         "accounts": context.transaction_accounts_or_accounts,
         "all_accounts": context.accounts,
@@ -174,7 +176,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             payload=task.payload,
             context=context_data,
             user_message=user_msg,
-            pin_verified=ctx.state.pin_verified,
+            pin_verified=turn.pin_verified,
         ),
     )
     logger.info(
@@ -249,10 +251,11 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         return
 
     context = loaded_context(ctx.state)
+    turn = turn_metadata(ctx.state)
     context_data = {
-        "phone_number": ctx.state.phone_number,
-        "channel": ctx.state.channel,
-        "channel_identity": ctx.state.channel_identity,
+        "phone_number": turn.phone_number,
+        "channel": turn.channel,
+        "channel_identity": turn.channel_identity,
         "user_id": context.user_id,
         "accounts": context.accounts,
         "all_accounts": context.accounts,
@@ -271,7 +274,7 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             payload=task.payload,
             context=context_data,
             user_message=user_msg,
-            pin_verified=ctx.state.pin_verified,
+            pin_verified=turn.pin_verified,
         ),
     )
     logger.info("schedule_worker_returned", outcome=result.outcome, task_id=task_id)

@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.context.surface_adapter import build_conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import push_context_frame
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from banking.transactions.query.contracts import FocusedReferent, SelectionPayload
 from shared.utils.logging import get_logger
 
@@ -77,7 +78,7 @@ def push_query_followup_referent_frame(
         items=[entity],
         focus_index=0,
         created_at_ts=int(time.time()),
-        source_message_id=ctx.state.last_message_id,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
     )
     _push_frame(ctx, frame)
 
@@ -107,7 +108,7 @@ def push_account_list_frame(ctx: ExecutionTurnContext, accounts: list[dict[str, 
         items=entities,
         focus_index=0,
         created_at_ts=int(time.time()),
-        source_message_id=ctx.state.last_message_id,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
     )
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type="account_list", count=len(entities))
@@ -143,7 +144,7 @@ def push_schedule_list_frame(ctx: ExecutionTurnContext, items: list[dict[str, An
         items=entities,
         focus_index=0,
         created_at_ts=int(time.time()),
-        source_message_id=ctx.state.last_message_id,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
     )
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type="schedule_list", count=len(entities))
@@ -168,7 +169,7 @@ def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> No
     frame = build_context_frame_from_surface_view(
         surface_view,
         source="query",
-        source_message_id=ctx.state.last_message_id,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
     )
     if frame is None:
         return
@@ -178,7 +179,7 @@ def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> No
 
 
 def query_pagination_actionable_payload(ctx: ExecutionTurnContext, result: Any) -> dict[str, Any] | None:
-    if ctx.state.channel != "telegram" or not isinstance(result.patch, dict):
+    if not turn_metadata(ctx.state).is_telegram or not isinstance(result.patch, dict):
         return None
 
     query_result = result.patch.get("query_result")
@@ -251,7 +252,7 @@ def push_data_plan_frame(ctx: ExecutionTurnContext, results: Any) -> None:
         items=entities,
         focus_index=0,
         created_at_ts=int(time.time()),
-        source_message_id=ctx.state.last_message_id,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
         ttl_seconds=900,
     )
     _push_frame(ctx, frame)
@@ -286,7 +287,7 @@ def push_beneficiary_list_frame(ctx: ExecutionTurnContext, viewed_beneficiaries:
         frame_type=ContextFrameType.BENEFICIARY_LIST,
         items=entities,
         created_at_ts=int(time.time()),
-        source_message_id=ctx.state.last_message_id,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
     )
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type="beneficiary_list", count=len(entities))

@@ -26,6 +26,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import 
     set_task_payload_value,
     set_task_stage,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import next_wave_index, wave_list
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
@@ -50,15 +51,16 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         return
 
     context = loaded_context(ctx.state)
+    turn = turn_metadata(ctx.state)
     context_data = {
-        "phone_number": ctx.state.phone_number,
+        "phone_number": turn.phone_number,
         "user_id": context.user_id,
         "profile": context.profile,
         "accounts": context.accounts,
         "language": _state_locale(ctx.state),
-        "inbound_message_id": ctx.state.last_message_id,
-        "turn_id": ctx.state.last_message_id,
-        "stashed_query_session": ctx.state.stashed_query_session,
+        "inbound_message_id": turn.last_message_id,
+        "turn_id": turn.last_message_id,
+        "stashed_query_session": turn.stashed_query_session,
         "progress_tracker": ctx.dependencies.progress_tracker,
     }
 
@@ -71,7 +73,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
     )
 
     _apply_result_patch(task, result)
-    if ctx.state.stashed_query_session is not None:
+    if turn.has_stashed_query_session:
         ctx.accumulator.clear_stashed_query_session()
     handoff_payload = None
     followup_referent: FocusedReferent | dict[str, Any] | None = None
@@ -110,7 +112,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             transfer_payload = dict(handoff_payload)
             transfer_payload.setdefault("action", "send_money")
             transfer_payload.setdefault("instruction", "Resend the selected transaction")
-            transfer_payload.setdefault("message", ctx.state.last_message_text or "Resend the selected transaction")
+            transfer_payload.setdefault("message", turn.last_message_text_or("Resend the selected transaction"))
             transfer_payload.setdefault("skip_extraction", True)
 
             tasks = ctx.accumulator.get_tasks(task_map(ctx.state))
