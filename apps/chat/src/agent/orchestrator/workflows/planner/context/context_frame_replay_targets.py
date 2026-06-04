@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_fi
     find_filtered_entities,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_accounts import (
-    _loaded_accounts,
+    _loaded_accounts_for_view,
     _replay_source_account_candidate,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_amounts import (
@@ -23,6 +23,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_re
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_search import (
     find_matching_entities,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_text import (
     amount_reference_values,
@@ -78,6 +82,20 @@ def _target_text_is_replay_modifier(
     state: OrchestratorState,
     replay_modifier: ContextFrameReplayModifier | None,
 ) -> bool:
+    return _target_text_is_replay_modifier_for_view(
+        decision,
+        text,
+        context_frame_state_view(state),
+        replay_modifier,
+    )
+
+
+def _target_text_is_replay_modifier_for_view(
+    decision: ContextFrameFollowupDecision,
+    text: str,
+    state_view: ContextFrameStateView,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> bool:
     target_text = _decision_target_text(decision)
     if not target_text:
         return False
@@ -92,7 +110,7 @@ def _target_text_is_replay_modifier(
 
     narration = _replay_narration_override(
         text,
-        accounts=_loaded_accounts(state),
+        accounts=_loaded_accounts_for_view(state_view),
         replay_modifier=replay_modifier,
     )
     return _modifier_matches_target_text(narration, target_text)
@@ -106,6 +124,23 @@ def replay_target_entities(
     state: OrchestratorState,
     replay_modifier: ContextFrameReplayModifier | None,
 ) -> list[ContextEntity]:
+    return replay_target_entities_for_view(
+        frame,
+        decision,
+        text=text,
+        state_view=context_frame_state_view(state),
+        replay_modifier=replay_modifier,
+    )
+
+
+def replay_target_entities_for_view(
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+    *,
+    text: str,
+    state_view: ContextFrameStateView,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> list[ContextEntity]:
     if decision.selection_index is not None:
         idx = decision.selection_index - 1
         if 0 <= idx < len(frame.items):
@@ -115,7 +150,7 @@ def replay_target_entities(
     target_text = _decision_target_text(decision)
     if target_text:
         matches = find_matching_entities(frame, target_text)
-        if matches or not _target_text_is_replay_modifier(decision, text, state, replay_modifier):
+        if matches or not _target_text_is_replay_modifier_for_view(decision, text, state_view, replay_modifier):
             return matches
 
     filtered = find_filtered_entities(frame, decision.filters)
@@ -125,4 +160,4 @@ def replay_target_entities(
     return list(frame.items)
 
 
-__all__ = ["replay_target_entities"]
+__all__ = ["replay_target_entities", "replay_target_entities_for_view"]

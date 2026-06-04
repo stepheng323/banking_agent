@@ -10,6 +10,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_re
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_modifier_text import (
     _clean_replay_modifier_text,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
+)
 from banking.transactions.shared.account_selection.reference import match_source_account_reference
 from shared.types.planner import ContextFrameReplayModifier
 
@@ -40,7 +44,11 @@ def _replay_source_account_candidate(text: str | None) -> str | None:
 
 
 def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
-    loaded_context = state.loaded_context or {}
+    return _loaded_accounts_for_view(context_frame_state_view(state))
+
+
+def _loaded_accounts_for_view(state_view: ContextFrameStateView) -> list[dict[str, Any]]:
+    loaded_context = state_view.loaded_context_or_empty
     account_sources = (
         loaded_context.get("transaction_accounts"),
         loaded_context.get("accounts"),
@@ -82,13 +90,21 @@ def _replay_source_account_override(
     state: OrchestratorState,
     replay_modifier: ContextFrameReplayModifier | None,
 ) -> tuple[bool, dict[str, Any] | None, str | None]:
+    return _replay_source_account_override_for_view(text, context_frame_state_view(state), replay_modifier)
+
+
+def _replay_source_account_override_for_view(
+    text: str | None,
+    state_view: ContextFrameStateView,
+    replay_modifier: ContextFrameReplayModifier | None,
+) -> tuple[bool, dict[str, Any] | None, str | None]:
     candidate = _replay_source_account_candidate(text)
     if not candidate:
         candidate = _modifier_source_account_candidate(text, replay_modifier)
     if not candidate:
         return False, None, None
 
-    matched_account = match_source_account_reference(candidate, _loaded_accounts(state))
+    matched_account = match_source_account_reference(candidate, _loaded_accounts_for_view(state_view))
     if not matched_account:
         return True, None, candidate
 
@@ -97,7 +113,9 @@ def _replay_source_account_override(
 
 __all__ = [
     "_loaded_accounts",
+    "_loaded_accounts_for_view",
     "_replay_source_account_candidate",
     "_replay_source_account_override",
+    "_replay_source_account_override_for_view",
     "_source_account_patch",
 ]

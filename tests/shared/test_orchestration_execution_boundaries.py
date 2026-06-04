@@ -77,6 +77,21 @@ PLANNER_CONTEXT_READ_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "execution_context_read.py",
     PLANNER_ROOT / "execution_flow.py",
 )
+PLANNER_CONTEXT_FRAME_STATE_VIEW_MODULES = (
+    PLANNER_ROOT / "context" / "context_flow_followup.py",
+    PLANNER_ROOT / "context" / "context_frame_followup_context_builder.py",
+    PLANNER_ROOT / "context" / "context_frame_followup_focus.py",
+    PLANNER_ROOT / "context" / "context_frame_followup_response_builder.py",
+    PLANNER_ROOT / "context" / "context_frame_followup_selection.py",
+    PLANNER_ROOT / "context" / "context_frame_followup_surface_engine.py",
+    PLANNER_ROOT / "context" / "context_frame_followup_types.py",
+    PLANNER_ROOT / "context" / "context_frame_replay.py",
+    PLANNER_ROOT / "context" / "context_frame_replay_accounts.py",
+    PLANNER_ROOT / "context" / "context_frame_replay_payload_source.py",
+    PLANNER_ROOT / "context" / "context_frame_replay_targets.py",
+    PLANNER_ROOT / "context" / "context_frame_replay_tasks.py",
+    PLANNER_ROOT / "context" / "context_frame_schedule.py",
+)
 EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
@@ -843,6 +858,33 @@ def test_planner_context_read_modules_use_typed_state_view() -> None:
                 and target.attr == "state"
                 and isinstance(target.value, ast.Name)
                 and target.value.id in {"ctx", "runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_planner_context_frame_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "context_frames",
+        "loaded_context",
+        "phone_number",
+        "tasks",
+    }
+    for path in PLANNER_CONTEXT_FRAME_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "request", "self"}
             ):
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 

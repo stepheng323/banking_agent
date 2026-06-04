@@ -2,17 +2,19 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_types import PlannerContextBuildResult
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
-    build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
+    build_surface_answer_context_for_state_view as build_context_frame_followup_context_for_state_view,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
-    build_surface_answer_response as build_context_frame_followup_response,
+    build_surface_answer_response_for_state_view as build_context_frame_followup_response_for_state_view,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    context_frame_state_view,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
 from shared.utils.logging import get_logger
 
@@ -21,16 +23,17 @@ logger = get_logger(__name__)
 
 async def try_context_frame_followup_shortcut(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     text: str,
     locale_updates: dict[str, Any],
     task_planner: TaskPlanner | None,
 ) -> PlannerContextBuildResult | None:
-    frame = OrchestratorContextManager().latest_active_frame(state)
+    frame_state_view = context_frame_state_view(state_view.state)
+    frame = frame_state_view.latest_active_frame()
     if not frame or task_planner is None:
         return None
 
-    shortcut = resolve_query_shortcut(text, state.loaded_context.get("language"))
+    shortcut = resolve_query_shortcut(text, state_view.current_locale)
     if shortcut is not None and shortcut.kind == "pagination":
         logger.info(
             "context_frame_followup_skipped_for_query_pagination",
@@ -42,16 +45,16 @@ async def try_context_frame_followup_shortcut(
 
     try:
         decision = await task_planner.interpret_context_frame_followup(
-            state.phone_number,
+            state_view.phone_number,
             text,
-            context=build_context_frame_followup_context_for_state(state),
+            context=build_context_frame_followup_context_for_state_view(frame_state_view),
             path_label="planner_path",
         )
     except Exception as exc:
         logger.warning("context_frame_followup_interpreter_failed", error=str(exc))
         return None
 
-    frame_followup = build_context_frame_followup_response(state, text, decision=decision)
+    frame_followup = build_context_frame_followup_response_for_state_view(frame_state_view, text, decision=decision)
     logger.info(
         "context_frame_followup_decision",
         decision=decision.decision,
@@ -67,9 +70,9 @@ async def try_context_frame_followup_shortcut(
     if decision.decision in {"replay_tasks", "replay"}:
         try:
             replay_modifier = await task_planner.extract_context_frame_replay_modifiers(
-                state.phone_number,
+                state_view.phone_number,
                 text,
-                context=build_context_frame_followup_context_for_state(state),
+                context=build_context_frame_followup_context_for_state_view(frame_state_view),
                 path_label="planner_path",
             )
         except Exception as exc:
@@ -85,8 +88,8 @@ async def try_context_frame_followup_shortcut(
                     has_narration=bool(replay_modifier.narration),
                     reason=replay_modifier.reason,
                 )
-                frame_followup = build_context_frame_followup_response(
-                    state,
+                frame_followup = build_context_frame_followup_response_for_state_view(
+                    frame_state_view,
                     text,
                     decision=decision,
                     replay_modifier=replay_modifier,
@@ -120,7 +123,7 @@ async def try_context_frame_followup_shortcut(
         ),
         shortcut_updates={
             "semantic_path_shape": frame_followup.semantic_path_shape,
-            "context_frames": frame_followup.context_frames or state.context_frames,
+            "context_frames": frame_followup.context_frames or state_view.context_frames,
             **({"final_response": frame_followup.response} if frame_followup.response else {}),
             **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
             **({"waves": frame_followup.waves} if frame_followup.waves else {}),

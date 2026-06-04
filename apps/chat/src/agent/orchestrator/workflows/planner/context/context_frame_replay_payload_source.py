@@ -4,18 +4,26 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_accounts import (
-    _loaded_accounts,
+    _loaded_accounts_for_view,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
 )
 
 
 def enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorState) -> None:
+    enrich_replay_source_account_for_view(payload, context_frame_state_view(state))
+
+
+def enrich_replay_source_account_for_view(payload: dict[str, Any], state_view: ContextFrameStateView) -> None:
     if payload.get("source_account_number"):
         return
 
     source_account_id = str(payload.get("source_account_id") or "").strip()
     source_bank_name = str(payload.get("source_bank_name") or "").strip().casefold()
     matched_account: dict[str, Any] | None = None
-    for account in _loaded_accounts(state):
+    for account in _loaded_accounts_for_view(state_view):
         account_id = str(
             account.get("id") or account.get("account_id") or account.get("source_account_id") or ""
         ).strip()
@@ -55,4 +63,4 @@ def enrich_replay_source_account(payload: dict[str, Any], state: OrchestratorSta
         payload["source_account_number"] = account_number
 
 
-__all__ = ["enrich_replay_source_account"]
+__all__ = ["enrich_replay_source_account", "enrich_replay_source_account_for_view"]

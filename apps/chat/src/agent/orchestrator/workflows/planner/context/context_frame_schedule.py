@@ -13,6 +13,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_de
     decision_target_text,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_search import find_matching_entities
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
+)
 from shared.types.planner import ContextFrameFollowupDecision
 
 
@@ -25,6 +29,20 @@ class ScheduleManagementResult:
 
 def build_schedule_management_result(
     state: OrchestratorState,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+    text: str,
+) -> ScheduleManagementResult | None:
+    return build_schedule_management_result_for_view(
+        context_frame_state_view(state),
+        frame,
+        decision,
+        text,
+    )
+
+
+def build_schedule_management_result_for_view(
+    state_view: ContextFrameStateView,
     frame: ContextFrame,
     decision: ContextFrameFollowupDecision,
     text: str,
@@ -60,7 +78,7 @@ def build_schedule_management_result(
         )
         payload.update(schedule_fields)
 
-    task_id = _new_schedule_management_task_id(state)
+    task_id = _new_schedule_management_task_id_for_view(state_view)
     task = TaskSpec(
         id=task_id,
         type="schedule",
@@ -71,7 +89,14 @@ def build_schedule_management_result(
 
 
 def _new_schedule_management_task_id(state: OrchestratorState, allocated_ids: set[str] | None = None) -> str:
-    seen = set(state.tasks.keys()) | set(allocated_ids or set())
+    return _new_schedule_management_task_id_for_view(context_frame_state_view(state), allocated_ids)
+
+
+def _new_schedule_management_task_id_for_view(
+    state_view: ContextFrameStateView,
+    allocated_ids: set[str] | None = None,
+) -> str:
+    seen = state_view.task_ids | set(allocated_ids or set())
     idx = 1
     task_id = "context_schedule_management_1"
     while task_id in seen:
@@ -100,4 +125,4 @@ def _schedule_entity_for_management(
     return None
 
 
-__all__ = ["ScheduleManagementResult", "build_schedule_management_result"]
+__all__ = ["ScheduleManagementResult", "build_schedule_management_result", "build_schedule_management_result_for_view"]

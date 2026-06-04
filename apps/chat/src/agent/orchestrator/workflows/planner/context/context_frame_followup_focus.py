@@ -17,6 +17,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_ra
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_search import (
     find_matching_entities,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
+)
 from shared.types.planner import ContextFrameFollowupDecision
 
 
@@ -90,14 +94,26 @@ def context_frames_after_surface_answer(
     frame: ContextFrame,
     decision: ContextFrameFollowupDecision,
 ) -> list[ContextFrame]:
-    refreshed = refresh_context_frame(state, frame)
+    return context_frames_after_surface_answer_for_view(context_frame_state_view(state), frame, decision)
+
+
+def context_frames_after_surface_answer_for_view(
+    state_view: ContextFrameStateView,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+) -> list[ContextFrame]:
+    refreshed = refresh_context_frame_for_view(state_view, frame)
     return _append_focus_detail_frame(refreshed, frame, decision)
 
 
 def refresh_context_frame(state: OrchestratorState, active_frame: ContextFrame) -> list[ContextFrame]:
+    return refresh_context_frame_for_view(context_frame_state_view(state), active_frame)
+
+
+def refresh_context_frame_for_view(state_view: ContextFrameStateView, active_frame: ContextFrame) -> list[ContextFrame]:
     now = int(time.time())
     refreshed: list[ContextFrame] = []
-    for frame in state.context_frames:
+    for frame in state_view.context_frames:
         if frame.frame_id == active_frame.frame_id:
             refreshed.append(frame.model_copy(update={"created_at_ts": now}))
         elif (frame.created_at_ts + frame.ttl_seconds) > now:
@@ -107,5 +123,7 @@ def refresh_context_frame(state: OrchestratorState, active_frame: ContextFrame) 
 
 __all__ = [
     "context_frames_after_surface_answer",
+    "context_frames_after_surface_answer_for_view",
     "refresh_context_frame",
+    "refresh_context_frame_for_view",
 ]

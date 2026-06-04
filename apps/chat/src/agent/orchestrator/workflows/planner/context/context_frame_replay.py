@@ -6,13 +6,17 @@ from apps.chat.src.agent.orchestrator.context.models import ContextFrame, Contex
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_accounts import (
-    _replay_source_account_override,
+    _replay_source_account_override_for_view,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_targets import (
-    replay_target_entities,
+    replay_target_entities_for_view,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_replay_tasks import (
-    build_context_frame_replay_tasks,
+    build_context_frame_replay_tasks_for_view,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
 )
 from shared.types.planner import ContextFrameFollowupDecision, ContextFrameReplayModifier
 
@@ -33,6 +37,22 @@ def build_context_frame_replay_response(
     text: str,
     replay_modifier: ContextFrameReplayModifier | None = None,
 ) -> ContextFrameReplayResult | None:
+    return build_context_frame_replay_response_for_view(
+        context_frame_state_view(state),
+        frame,
+        decision,
+        text,
+        replay_modifier=replay_modifier,
+    )
+
+
+def build_context_frame_replay_response_for_view(
+    state_view: ContextFrameStateView,
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+    text: str,
+    replay_modifier: ContextFrameReplayModifier | None = None,
+) -> ContextFrameReplayResult | None:
     if frame.frame_type not in {
         ContextFrameType.TRANSACTION_LIST,
         ContextFrameType.TRANSACTION_DETAIL,
@@ -40,7 +60,11 @@ def build_context_frame_replay_response(
     }:
         return None
 
-    source_requested, source_patch, requested_source = _replay_source_account_override(text, state, replay_modifier)
+    source_requested, source_patch, requested_source = _replay_source_account_override_for_view(
+        text,
+        state_view,
+        replay_modifier,
+    )
     if source_requested and source_patch is None:
         source_label = requested_source or "that source account"
         return ContextFrameReplayResult(
@@ -51,15 +75,15 @@ def build_context_frame_replay_response(
             semantic_path_shape="context_frame_replay_source_unmatched",
         )
 
-    entities = replay_target_entities(
+    entities = replay_target_entities_for_view(
         frame,
         decision,
         text=text,
-        state=state,
+        state_view=state_view,
         replay_modifier=replay_modifier,
     )
-    tasks, wave_ids = build_context_frame_replay_tasks(
-        state=state,
+    tasks, wave_ids = build_context_frame_replay_tasks_for_view(
+        state_view=state_view,
         entities=entities,
         text=text,
         source_patch=source_patch,
@@ -72,4 +96,8 @@ def build_context_frame_replay_response(
     return ContextFrameReplayResult(tasks=tasks, waves=[wave_ids])
 
 
-__all__ = ["ContextFrameReplayResult", "build_context_frame_replay_response"]
+__all__ = [
+    "ContextFrameReplayResult",
+    "build_context_frame_replay_response",
+    "build_context_frame_replay_response_for_view",
+]

@@ -17,13 +17,23 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_ra
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_search import (
     find_matching_entities,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_text import amount_reference_values
 from shared.types.planner import ContextFrameFollowupDecision
 
 
 def active_context_frames(state: OrchestratorState) -> list[ContextFrame]:
+    return active_context_frames_for_view(context_frame_state_view(state))
+
+
+def active_context_frames_for_view(state_view: ContextFrameStateView) -> list[ContextFrame]:
     now = int(time.time())
-    return [frame for frame in state.context_frames if frame.items and (frame.created_at_ts + frame.ttl_seconds) > now]
+    return [
+        frame for frame in state_view.context_frames if frame.items and (frame.created_at_ts + frame.ttl_seconds) > now
+    ]
 
 
 def _decision_has_entity_match(frame: ContextFrame, decision: ContextFrameFollowupDecision) -> bool:
@@ -64,7 +74,14 @@ def select_frame_for_decision(
     state: OrchestratorState,
     decision: ContextFrameFollowupDecision,
 ) -> ContextFrame | None:
-    active_frames = active_context_frames(state)
+    return select_frame_for_decision_from_view(context_frame_state_view(state), decision)
+
+
+def select_frame_for_decision_from_view(
+    state_view: ContextFrameStateView,
+    decision: ContextFrameFollowupDecision,
+) -> ContextFrame | None:
+    active_frames = active_context_frames_for_view(state_view)
     if not active_frames:
         return None
 
@@ -98,6 +115,8 @@ def decision_with_grounding_hints(
 
 __all__ = [
     "active_context_frames",
+    "active_context_frames_for_view",
     "decision_with_grounding_hints",
     "select_frame_for_decision",
+    "select_frame_for_decision_from_view",
 ]

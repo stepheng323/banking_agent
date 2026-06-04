@@ -37,8 +37,9 @@ async def _build_planner_context(
     locale_updates: dict[str, Any],
     task_planner: Any | None = None,
 ) -> PlannerContextBuildResult:
+    state_view = planner_state_view(state)
     followup_shortcut = await try_context_frame_followup_shortcut(
-        state=state,
+        state_view=state_view,
         text=text,
         locale_updates=locale_updates,
         task_planner=task_planner,
@@ -46,7 +47,6 @@ async def _build_planner_context(
     if followup_shortcut is not None:
         return followup_shortcut
 
-    state_view = planner_state_view(state)
     flow_state = await build_context_flow_state(state_view=state_view, text=text, redis_client=redis_client)
     if _should_use_minimal_planner_context(
         state_view=state_view,

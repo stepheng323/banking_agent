@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import ContextFrameStateView
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameReplayModifier,
@@ -23,7 +23,7 @@ class ContextFrameFollowupResponse:
 
 @dataclass(frozen=True, slots=True)
 class SurfaceAnswerRequest:
-    state: OrchestratorState
+    state_view: ContextFrameStateView
     text: str
     decision: ContextFrameFollowupDecision | None = None
     replay_modifier: ContextFrameReplayModifier | None = None

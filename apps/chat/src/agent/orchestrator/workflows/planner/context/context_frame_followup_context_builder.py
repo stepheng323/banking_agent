@@ -1,9 +1,13 @@
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_selection import (
-    active_context_frames,
+    active_context_frames_for_view,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_search import SEARCHABLE_DATA_KEYS
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_state_view import (
+    ContextFrameStateView,
+    context_frame_state_view,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import (
     CONTEXT_READ_LIST_LIMIT,
 )
@@ -28,8 +32,12 @@ def build_context_frame_followup_context(frame: ContextFrame) -> str:
 
 
 def build_context_frame_followup_context_for_state(state: OrchestratorState) -> str:
+    return build_context_frame_followup_context_for_state_view(context_frame_state_view(state))
+
+
+def build_context_frame_followup_context_for_state_view(state_view: ContextFrameStateView) -> str:
     """Build follow-up interpreter context from current and related active frames."""
-    frames = active_context_frames(state)
+    frames = active_context_frames_for_view(state_view)
     if not frames:
         return ""
     if len(frames) == 1:
@@ -52,4 +60,5 @@ def build_context_frame_followup_context_for_state(state: OrchestratorState) -> 
 __all__ = [
     "build_context_frame_followup_context",
     "build_context_frame_followup_context_for_state",
+    "build_context_frame_followup_context_for_state_view",
 ]
