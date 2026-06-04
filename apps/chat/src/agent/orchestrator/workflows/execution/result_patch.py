@@ -41,12 +41,6 @@ class ExecutionResultPatch:
     def set_referent_memory(self, referent_memory: Any) -> None:
         self._updates["referent_memory"] = referent_memory
 
-    def copy_context_updates_to(self, patch: ExecutionResultPatch) -> None:
-        if "context_frames" in self._updates:
-            patch.set_context_frames(self._updates["context_frames"])
-        if "referent_memory" in self._updates:
-            patch.set_referent_memory(self._updates["referent_memory"])
-
     def set_tasks(self, tasks: dict[str, Any]) -> None:
         self._updates["tasks"] = tasks
 

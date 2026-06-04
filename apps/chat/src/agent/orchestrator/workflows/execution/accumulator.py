@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 
 
@@ -21,9 +21,6 @@ class ExecutionAccumulator:
         self.prompts_by_task: dict[str, str] = {}
         self.feedback_messages: list[str] = []
         self.source_bank_hints: list[str] = []
-
-    def apply_context_updates_to(self, patch: ExecutionResultPatch) -> None:
-        self.result_patch.copy_context_updates_to(patch)
 
     def set_context_frames(self, context_frames: Any) -> None:
         self.result_patch.set_context_frames(context_frames)
@@ -49,7 +46,7 @@ class ExecutionAccumulator:
     def has_current_wave_index(self) -> bool:
         return self.result_patch.has_current_wave_index()
 
-    def set_pending_interrupt(self, interrupt: Any) -> None:
+    def set_pending_interrupt(self, interrupt: PendingInterrupt | None) -> None:
         self.result_patch.set_pending_interrupt(interrupt)
 
     def has_pending_interrupt(self) -> bool:
@@ -78,6 +75,10 @@ class ExecutionAccumulator:
 
     def set_outbox(self, entries: list[dict[str, Any]]) -> None:
         self.result_patch.set_outbox(entries)
+
+    def set_interrupt_outbox(self, interrupt: PendingInterrupt, entries: list[dict[str, Any]]) -> None:
+        self.set_pending_interrupt(interrupt)
+        self.set_outbox(entries)
 
     def get_outbox(self) -> list[dict[str, Any]]:
         return self.result_patch.get_outbox()

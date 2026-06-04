@@ -273,12 +273,31 @@ def test_execution_accumulator_callers_do_not_mutate_prompt_maps_directly() -> N
     assert violations == []
 
 
-def test_execution_interrupt_builders_use_result_patch_contract() -> None:
+def test_execution_result_patch_is_constructed_only_by_accumulator() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name in {"accumulator.py", "result_patch.py"}:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "ExecutionResultPatch"
+            ):
+                violations.append(f"{path.relative_to(ROOT)} constructs ExecutionResultPatch")
+
+    assert violations == []
+
+
+def test_execution_interrupt_builders_use_accumulator_contract() -> None:
     violations: list[str] = []
     for path in EXECUTION_INTERRUPT_PATCH_MODULES:
         text = path.read_text(encoding="utf-8")
-        if "ExecutionResultPatch" not in text:
-            violations.append(f"{path.relative_to(ROOT)} does not use ExecutionResultPatch")
+        if "ExecutionResultPatch" in text:
+            violations.append(f"{path.relative_to(ROOT)} imports ExecutionResultPatch")
+        if "set_interrupt_outbox" not in text:
+            violations.append(f"{path.relative_to(ROOT)} does not use accumulator interrupt outbox contract")
         if "updates = {" in text or "updates: dict[str, Any] = {" in text or "\n    return {" in text:
             violations.append(f"{path.relative_to(ROOT)} assembles raw update dict")
 

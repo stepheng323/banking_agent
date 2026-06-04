@@ -27,7 +27,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queu
     _append_queued_notice,
     _queued_transaction_tasks_for_focus,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 
 
 def _build_missing_field_interrupt_updates(
@@ -103,12 +102,9 @@ def _build_missing_field_interrupt_updates(
     fallback_outbox_entries[0]["prompt_kind"] = "pending_input"
     if fallback_queue_meta is not None:
         fallback_outbox_entries[0]["queue"] = fallback_queue_meta
-    patch = ExecutionResultPatch({"tasks": state.tasks})
-    patch.set_pending_interrupt(interrupt)
-    patch.set_outbox(_with_policy_notice(state, fallback_outbox_entries))
-    patch.clear_policy_notice()
-    agg.apply_context_updates_to(patch)
-    return patch.to_updates()
+    agg.set_interrupt_outbox(interrupt, _with_policy_notice(state, fallback_outbox_entries))
+    agg.clear_policy_notice()
+    return agg.to_updates()
 
 
 __all__ = [

@@ -44,6 +44,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         state=state,
         current_wave=current_wave,
         services=runtime.services,
+        agg=runtime.accumulator,
         locale=runtime.locale,
     )
     if batch_block:

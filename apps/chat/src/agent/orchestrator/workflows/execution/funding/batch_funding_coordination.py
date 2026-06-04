@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_demands import (
     _build_transfer_demand,
@@ -10,7 +11,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
@@ -24,6 +24,7 @@ async def _maybe_coordinate_batch_funding(
     state: OrchestratorState,
     current_wave: list[str],
     services: OrchestrationServices,
+    agg: ExecutionAccumulator,
     locale: str,
 ) -> dict[str, Any] | None:
     transfer_task_ids = [task_id for task_id in current_wave if _is_plannable_transfer_task(state.tasks.get(task_id))]
@@ -76,11 +77,9 @@ async def _maybe_coordinate_batch_funding(
         total_demanded=result.total_demanded,
         total_available=result.total_available,
     )
-    patch = ExecutionResultPatch({"tasks": state.tasks})
-    patch.set_pending_interrupt(interrupt)
-    patch.set_outbox(_with_policy_notice(state, [{"type": "say", "text": prompt}]))
-    patch.clear_policy_notice()
-    return patch.to_updates()
+    agg.set_interrupt_outbox(interrupt, _with_policy_notice(state, [{"type": "say", "text": prompt}]))
+    agg.clear_policy_notice()
+    return agg.to_updates()
 
 
 __all__ = ["_maybe_coordinate_batch_funding"]

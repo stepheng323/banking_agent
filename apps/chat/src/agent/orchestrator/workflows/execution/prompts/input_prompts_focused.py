@@ -22,7 +22,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queu
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import (
     _recipient_prompt_label,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
 from banking.presentation.formatters.transfer_input_prompts import format_single_transfer_recipient_prompt
 
@@ -138,12 +137,9 @@ def _build_focused_missing_field_updates(
     outbox_entries[0]["prompt_kind"] = "pending_input"
     if queue_meta is not None:
         outbox_entries[0]["queue"] = queue_meta
-    patch = ExecutionResultPatch({"tasks": state.tasks})
-    patch.set_pending_interrupt(interrupt)
-    patch.set_outbox(_with_policy_notice(state, outbox_entries))
-    patch.clear_policy_notice()
-    agg.apply_context_updates_to(patch)
-    return patch.to_updates()
+    agg.set_interrupt_outbox(interrupt, _with_policy_notice(state, outbox_entries))
+    agg.clear_policy_notice()
+    return agg.to_updates()
 
 
 __all__ = ["_build_focused_missing_field_updates"]
