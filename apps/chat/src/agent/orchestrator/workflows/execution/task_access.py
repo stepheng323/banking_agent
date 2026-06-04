@@ -24,12 +24,20 @@ def get_task(state: OrchestratorState, task_id: str) -> TaskSpec | None:
     return state.tasks.get(task_id)
 
 
+def require_task(state: OrchestratorState, task_id: str) -> TaskSpec:
+    return state.tasks[task_id]
+
+
 def iter_tasks(state: OrchestratorState) -> list[tuple[str, TaskSpec]]:
     return list(state.tasks.items())
 
 
 def existing_tasks(state: OrchestratorState, task_ids: list[str]) -> list[tuple[str, TaskSpec]]:
     return [(task_id, task) for task_id in task_ids if (task := state.tasks.get(task_id)) is not None]
+
+
+def required_tasks(state: OrchestratorState, task_ids: list[str]) -> list[tuple[str, TaskSpec]]:
+    return [(task_id, require_task(state, task_id)) for task_id in task_ids]
 
 
 def non_terminal_tasks(state: OrchestratorState, task_ids: list[str]) -> list[tuple[str, TaskSpec]]:
@@ -68,6 +76,8 @@ __all__ = [
     "iter_tasks",
     "non_terminal_task_ids",
     "non_terminal_tasks",
+    "require_task",
+    "required_tasks",
     "task_log_shapes",
     "task_map",
     "task_types_for_ids",

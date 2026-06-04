@@ -43,9 +43,12 @@ EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
     EXECUTION_ROOT / "executors" / "transfer.py",
 )
 EXECUTION_TASK_ACCESS_CONTRACT_MODULES = (
+    EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "async_grouping.py",
     EXECUTION_ROOT / "blocker_arbitration.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_auth.py",
+    EXECUTION_ROOT / "confirmation" / "confirmation_gate_summary.py",
+    EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_personality.py",
     EXECUTION_ROOT / "source_selection.py",
     EXECUTION_ROOT / "wave" / "runner_finalize.py",

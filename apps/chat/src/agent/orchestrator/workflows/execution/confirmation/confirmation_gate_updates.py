@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_update_message import (
     _compact_confirmation_update_message,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import required_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
 )
@@ -63,17 +64,19 @@ def _build_confirmation_gate_updates(
         accounts=accounts,
     )
 
-    first_task_payload = state.tasks[confirm_task_ids[0]].payload.get("confirmation", {})
+    confirmation_tasks = required_tasks(state, confirm_task_ids)
+    first_task = confirmation_tasks[0][1]
+    first_task_payload = first_task.payload.get("confirmation", {})
     snap = first_task_payload.get("snapshot", {})
     update_messages: list[str] = []
-    for task_id in confirm_task_ids:
-        confirmation_payload = state.tasks[task_id].payload.get("confirmation", {})
+    for _task_id, task in confirmation_tasks:
+        confirmation_payload = task.payload.get("confirmation", {})
         candidate = confirmation_payload.get("update_message")
         if isinstance(candidate, str) and candidate.strip():
             update_messages.append(candidate)
     update_msg = _compact_confirmation_update_message(update_messages, locale)
     snapshots_by_task = {
-        tid: state.tasks[tid].payload.get("confirmation", {}).get("snapshot", {}) for tid in confirm_task_ids
+        task_id: task.payload.get("confirmation", {}).get("snapshot", {}) for task_id, task in confirmation_tasks
     }
 
     outbox: list[dict[str, Any]] = []
@@ -87,26 +90,20 @@ def _build_confirmation_gate_updates(
             "type": "request_confirmation",
             "task_ids": confirm_task_ids,
             "header": build_confirmation_header(
-                task_types=[state.tasks[task_id].type for task_id in confirm_task_ids if task_id in state.tasks],
+                task_types=[task.type for _task_id, task in confirmation_tasks],
                 locale=locale,
                 task_count=len(confirm_task_ids),
-                task_actions=[
-                    str(state.tasks[task_id].payload.get("action") or "")
-                    for task_id in confirm_task_ids
-                    if task_id in state.tasks
-                ],
+                task_actions=[str(task.payload.get("action") or "") for _task_id, task in confirmation_tasks],
                 personality_context=confirmation_personality_context,
             ),
             "summary": summ,
             "snapshot": snap,
             "snapshots_by_task": snapshots_by_task,
-            "idempotency_key": state.tasks[confirm_task_ids[0]].payload.get(
+            "idempotency_key": first_task.payload.get(
                 "idempotency_key",
                 "unknown",
             ),
-            "actionable_payload": build_actionable_payload_for_tasks(
-                [state.tasks[task_id] for task_id in confirm_task_ids if task_id in state.tasks]
-            ),
+            "actionable_payload": build_actionable_payload_for_tasks([task for _task_id, task in confirmation_tasks]),
         }
     )
 

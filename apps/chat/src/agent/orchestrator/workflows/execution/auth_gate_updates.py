@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_summary import (
     _build_confirmation_gate_summary,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import required_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
 )
@@ -51,7 +52,8 @@ def _build_auth_gate_updates(
         agg.set_current_wave_index(state.current_wave_index + 1)
         return cast(dict[str, Any], agg.to_updates())
 
-    first_task = state.tasks[auth_task_ids[0]]
+    auth_tasks = required_tasks(state, auth_task_ids)
+    first_task = auth_tasks[0][1]
     accounts_raw = state.loaded_context.get("accounts") or []
     accounts = [account for account in accounts_raw if isinstance(account, dict)]
     summ = _build_confirmation_gate_summary(
@@ -64,7 +66,7 @@ def _build_auth_gate_updates(
         summ = render_message("orchestrator.execution.pin_prompt_default", locale)
     snap = first_task.payload.get("confirmation", {}).get("snapshot", {})
     snapshots_by_task = {
-        tid: state.tasks[tid].payload.get("confirmation", {}).get("snapshot", {}) for tid in auth_task_ids
+        task_id: task.payload.get("confirmation", {}).get("snapshot", {}) for task_id, task in auth_tasks
     }
 
     idem_key = first_task.payload.get("idempotency_key", "no-key")
@@ -83,9 +85,7 @@ def _build_auth_gate_updates(
                 "summary": summ,
                 "snapshot": snap,
                 "snapshots_by_task": snapshots_by_task,
-                "actionable_payload": build_actionable_payload_for_tasks(
-                    [state.tasks[task_id] for task_id in auth_task_ids if task_id in state.tasks]
-                ),
+                "actionable_payload": build_actionable_payload_for_tasks([task for _task_id, task in auth_tasks]),
             }
         ],
     )

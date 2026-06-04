@@ -7,6 +7,12 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
     _render_task_confirmation_summary,
     _strip_batch_name_mismatch_warning,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
+    existing_tasks,
+    require_task,
+    required_tasks,
+    task_types_for_ids,
+)
 from banking.presentation.formatters.batch_transfer_summary import format_batch_transfer_summary
 from banking.presentation.formatters.confirmation import (
     append_source_account_info,
@@ -27,10 +33,10 @@ def _build_confirmation_gate_summary(
         return ""
 
     if len(task_ids) == 1:
-        task = state.tasks[task_ids[0]]
+        task = require_task(state, task_ids[0])
         return _render_task_confirmation_summary(task=task, locale=locale, accounts=accounts)
 
-    task_types = {state.tasks[tid].type for tid in task_ids if tid in state.tasks}
+    task_types = task_types_for_ids(state, task_ids)
     if task_types == {"transfer"}:
         return _build_batch_transfer_confirmation_summary(
             state=state,
@@ -57,8 +63,7 @@ def _build_batch_transfer_confirmation_summary(
     total_amount = 0.0
     source_account_info: str | None = None
     summaries: list[str] = []
-    for tid in task_ids:
-        task = state.tasks[tid]
+    for _tid, task in required_tasks(state, task_ids):
         confirmation_payload = task.payload.get("confirmation") or {}
         snapshot = confirmation_payload.get("snapshot") or {}
         payload_amount = task.payload.get("amount")
@@ -101,19 +106,15 @@ def _build_mixed_confirmation_summary(
     accounts: list[dict[str, Any]],
 ) -> str:
     task_summaries = [
-        (state.tasks[tid], _render_task_confirmation_summary(task=state.tasks[tid], locale=locale, accounts=accounts))
-        for tid in task_ids
-        if tid in state.tasks
+        (task, _render_task_confirmation_summary(task=task, locale=locale, accounts=accounts))
+        for _tid, task in existing_tasks(state, task_ids)
     ]
     non_empty = [(task, summary) for task, summary in task_summaries if summary]
     if not non_empty:
         return ""
 
     source_infos: list[str] = []
-    for tid in task_ids:
-        task = state.tasks.get(tid)
-        if not task:
-            continue
+    for _tid, task in existing_tasks(state, task_ids):
         confirmation_payload = task.payload.get("confirmation") or {}
         snapshot = confirmation_payload.get("snapshot")
         source_info = build_source_account_info(
