@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 
 async def _clear_stale_beneficiary_suggestion(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_context: str,
     planner_output: Any,
     redis_client: Any | None,
@@ -22,9 +22,9 @@ async def _clear_stale_beneficiary_suggestion(
     if is_saving:
         return
 
-    suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
+    suggestion_key = f"user:{state_view.phone_number}:beneficiary_suggestion"
     await redis_client.delete(suggestion_key)
-    logger.info("cleared_stale_beneficiary_context", phone_hash=log_fingerprint(state.phone_number))
+    logger.info("cleared_stale_beneficiary_context", phone_hash=log_fingerprint(state_view.phone_number))
 
 
 __all__ = ["_clear_stale_beneficiary_suggestion"]

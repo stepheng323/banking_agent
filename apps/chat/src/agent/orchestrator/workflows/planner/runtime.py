@@ -9,7 +9,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from banking.presentation.i18n.locale import LocaleManager
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView, planner_state_view
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,7 @@ class PlannerRuntime:
     """Typed state derived once at the LangGraph planner node boundary."""
 
     state: OrchestratorState
+    state_view: PlannerStateView
     config: RunnableConfig
     dependencies: PlannerDependencies
     text: str
@@ -47,12 +48,14 @@ def build_planner_runtime(state: OrchestratorState, config: RunnableConfig) -> P
     if not isinstance(configurable, Mapping):
         configurable = {}
 
+    state_view = planner_state_view(state)
     return PlannerRuntime(
         state=state,
+        state_view=state_view,
         config=config,
         dependencies=PlannerDependencies.from_configurable(configurable),
-        text=state.last_message_text or "",
-        current_locale=LocaleManager.normalize(state.loaded_context.get("language")).value,
+        text=state_view.last_message_text_or_empty,
+        current_locale=state_view.current_locale,
     )
 
 

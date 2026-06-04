@@ -2,9 +2,9 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node_updates import _planner_route_updates
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_unsupported import _build_policy_notice
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,12 +30,12 @@ def _resolve_task_policy_notice(
 
 def _build_planner_task_response(
     *,
-    state: OrchestratorState,
     task_updates: dict[str, Any],
     planner_output: Any,
     text: str,
     current_locale: str,
     locale_updates: dict[str, Any],
+    state_view: PlannerStateView,
 ) -> dict[str, Any]:
     if task_updates.get("capability_block_response"):
         return {
@@ -71,7 +71,7 @@ def _build_planner_task_response(
         ),
         "semantic_path_shape": "planner",
         "stashed_query_session": (
-            stashed_query_session_update if stashed_query_session_update else state.stashed_query_session
+            stashed_query_session_update if stashed_query_session_update else state_view.stashed_query_session
         ),
         **_planner_route_updates(
             decision=str(getattr(planner_output, "primary_intent", "") or "planner_task_plan"),

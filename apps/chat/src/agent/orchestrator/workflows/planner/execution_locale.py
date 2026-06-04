@@ -2,14 +2,14 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LanguageDetectionSignal
 
 
 async def _resolve_planner_detected_locale(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     current_locale: str,
     redis_client: Any | None,
@@ -25,7 +25,7 @@ async def _resolve_planner_detected_locale(
             source="planner",
             explicit=False,
         )
-        resolved_locale = await LocaleManager.update_locale(state.phone_number, signal)
+        resolved_locale = await LocaleManager.update_locale(state_view.phone_number, signal)
         return resolved_locale.value
     return LocaleManager.from_detection(detected_language).value
 

@@ -26,6 +26,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.guardrails_beneficiary i
 from apps.chat.src.agent.orchestrator.workflows.planner.guardrails_mandate import (
     _deescalate_mandate_acknowledgement,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -48,9 +49,10 @@ async def _execute_planner_with_context(
     active_intent: str | None,
     current_locale: str,
     redis_client: Any | None,
+    state_view: PlannerStateView,
 ) -> PlannerExecutionResult:
     planner_output = await task_planner.plan_tasks(
-        state.phone_number,
+        state_view.phone_number,
         text,
         context=planner_context,
         prompt_signals=prompt_signals,
@@ -59,16 +61,16 @@ async def _execute_planner_with_context(
     planner_output = _filter_spurious_affirmation_tasks(
         planner_output,
         active_intent=active_intent,
-        pending_interrupt_kind=state.pending_interrupt.kind if state.pending_interrupt else None,
+        pending_interrupt_kind=state_view.pending_interrupt_kind,
     )
     planner_output = _deescalate_mandate_acknowledgement(
         planner_output,
-        loaded_context=state.loaded_context,
+        loaded_context=state_view.loaded_context,
         locale=current_locale,
     )
     planner_output = _enforce_beneficiary_routing_contract(
         planner_output,
-        message_id=state.last_message_id,
+        message_id=state_view.last_message_id,
         user_text=text,
         has_beneficiary_suggestion=prompt_signals.has_beneficiary_suggestion,
     )
@@ -81,13 +83,13 @@ async def _execute_planner_with_context(
         current_locale=current_locale,
     )
     current_locale = await _resolve_planner_detected_locale(
-        state=state,
+        state_view=state_view,
         planner_output=planner_output,
         current_locale=current_locale,
         redis_client=redis_client,
     )
     await _clear_stale_beneficiary_suggestion(
-        state=state,
+        state_view=state_view,
         planner_context=planner_context,
         planner_output=planner_output,
         redis_client=redis_client,

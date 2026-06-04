@@ -49,6 +49,14 @@ LIFECYCLE_STATE_VIEW_MODULES = (
     LIFECYCLE_ROOT / "ingest.py",
     LIFECYCLE_ROOT / "runtime.py",
 )
+PLANNER_STATE_VIEW_MODULES = (
+    PLANNER_ROOT / "execution_cleanup.py",
+    PLANNER_ROOT / "execution_flow.py",
+    PLANNER_ROOT / "execution_locale.py",
+    PLANNER_ROOT / "node.py",
+    PLANNER_ROOT / "node_task_response.py",
+    PLANNER_ROOT / "runtime.py",
+)
 EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
@@ -685,6 +693,37 @@ def test_typed_planner_core_reads_configurable_only_in_runtime_builder() -> None
         for forbidden in FORBIDDEN_PLANNER_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_planner_entry_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "last_message_id",
+        "last_message_text",
+        "loaded_context",
+        "pending_interrupt",
+        "phone_number",
+        "session_stack",
+        "stashed_query_session",
+        "waves",
+    }
+    for path in PLANNER_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []
 
