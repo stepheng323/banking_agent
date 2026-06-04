@@ -42,6 +42,12 @@ EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
     EXECUTION_ROOT / "executors" / "support.py",
     EXECUTION_ROOT / "executors" / "transfer.py",
 )
+EXECUTION_TASK_ACCESS_CONTRACT_MODULES = (
+    EXECUTION_ROOT / "wave" / "runner_finalize.py",
+    EXECUTION_ROOT / "wave" / "runner_task_guards.py",
+    EXECUTION_ROOT / "wave" / "runner_tasks.py",
+    EXECUTION_ROOT / "wave" / "wave_state.py",
+)
 
 DELETED_EXECUTION_MODULE_PATHS = (
     TASK_HANDLERS_ROOT,
@@ -419,6 +425,17 @@ def test_execution_session_stack_mutations_use_typed_helpers() -> None:
                         and isinstance(target.value, ast.Subscript)
                     ):
                         violations.append(f"{path.relative_to(ROOT)} assigns {ast.unparse(target)}")
+
+    assert violations == []
+
+
+def test_execution_wave_task_reads_use_typed_helpers() -> None:
+    violations: list[str] = []
+    for path in EXECUTION_TASK_ACCESS_CONTRACT_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr == "tasks":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []
 

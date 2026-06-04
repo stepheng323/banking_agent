@@ -1,12 +1,10 @@
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.execution.common import (
-    TERMINAL_STAGES,
-    TRANSACTION_TASK_TYPES,
-)
+from apps.chat.src.agent.orchestrator.workflows.execution.common import TRANSACTION_TASK_TYPES
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _propagate_batch_source_selection,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get_task, non_terminal_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_guards import (
     _active_input_task_types,
@@ -28,11 +26,7 @@ async def execute_current_wave_tasks(
     progressed = False
     active_input_task_types = _active_input_task_types(state)
 
-    for task_id in runtime.current_wave:
-        task = state.tasks.get(task_id)
-        if not task or task.stage in TERMINAL_STAGES:
-            continue
-
+    for task_id, task in non_terminal_tasks(state, runtime.current_wave):
         if task.stage == TaskStage.AWAITING_CONFIRMATION:
             runtime.accumulator.add_confirmation_task(task_id)
             progressed = True
@@ -78,7 +72,7 @@ async def execute_current_wave_tasks(
                 selected_task_id=task_id,
                 locale=runtime.locale,
             ):
-                propagated_task = state.tasks.get(propagated_task_id)
+                propagated_task = get_task(state, propagated_task_id)
                 if propagated_task and propagated_task.stage == TaskStage.AWAITING_CONFIRMATION:
                     runtime.accumulator.add_confirmation_task(propagated_task_id)
         progressed = True

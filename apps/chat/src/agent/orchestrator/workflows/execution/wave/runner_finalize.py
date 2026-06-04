@@ -1,16 +1,19 @@
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.auth_gate_updates import _build_auth_gate_updates
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import choose_wave_blocker
-from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, _with_policy_notice
+from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_updates import (
     _build_confirmation_gate_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts import (
     _build_missing_field_interrupt_updates,
+)
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
+    all_existing_tasks_terminal,
+    task_log_shapes,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import _fail_stalled_wave_tasks
@@ -24,13 +27,7 @@ def _current_wave_is_terminal(
     state: OrchestratorState,
     current_wave: list[str],
 ) -> bool:
-    for task_id in current_wave:
-        task = state.tasks.get(task_id)
-        if not task:
-            continue
-        if task.stage not in TERMINAL_STAGES:
-            return False
-    return True
+    return all_existing_tasks_terminal(state, current_wave)
 
 
 def _advance_or_fail_stalled_wave(
@@ -56,16 +53,7 @@ def _advance_or_fail_stalled_wave(
         "advance_wave_stalled_without_stop_condition",
         wave=current_wave,
         stalled_tasks=stalled,
-        task_shapes=[
-            {
-                "task_id": task_id,
-                "type": state.tasks[task_id].type,
-                "stage": cast(TaskStage, state.tasks[task_id].stage).value,
-                "action": state.tasks[task_id].payload.get("action"),
-            }
-            for task_id in stalled
-            if task_id in state.tasks
-        ],
+        task_shapes=task_log_shapes(state, stalled),
     )
     accumulator.set_current_wave_index(state.current_wave_index + 1)
 

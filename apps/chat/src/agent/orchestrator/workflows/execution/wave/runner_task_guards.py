@@ -4,7 +4,6 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import (
     INPUT_MUTABLE_STAGES,
-    TERMINAL_STAGES,
     TRANSACTION_TASK_TYPES,
     _build_mandate_gate_error,
     _dependency_resolution,
@@ -12,6 +11,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import (
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _is_same_batch_source_selection_sibling,
+)
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
+    non_terminal_tasks,
+    task_map,
+    task_types_for_ids,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import cancel_task, fail_task
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
@@ -24,11 +28,7 @@ logger = get_logger(__name__)
 def _active_input_task_types(state: OrchestratorState) -> set[str]:
     if not state.last_interrupt:
         return set()
-    return {
-        state.tasks[active_task_id].type
-        for active_task_id in state.last_interrupt.task_ids
-        if active_task_id in state.tasks
-    }
+    return task_types_for_ids(state, state.last_interrupt.task_ids)
 
 
 def _should_defer_during_input_interrupt(
@@ -55,7 +55,7 @@ def _apply_dependency_status(
     task_id: str,
     state: OrchestratorState,
 ) -> bool | None:
-    dep_status, dep_id = _dependency_resolution(task, state.tasks)
+    dep_status, dep_id = _dependency_resolution(task, task_map(state))
     if dep_status == "cancel":
         cancel_task(task, f"dependency {dep_id} not successful")
         logger.info("task_cancelled_by_dependency", task_id=task_id, dependency=dep_id)
@@ -96,17 +96,14 @@ def _cancel_deadlocked_wave_tasks(
     state: OrchestratorState,
     current_wave: list[str],
 ) -> None:
-    pending = [
-        task_id
-        for task_id in current_wave
-        if (task := state.tasks.get(task_id)) is not None and task.stage not in TERMINAL_STAGES
-    ]
+    pending_tasks = non_terminal_tasks(state, current_wave)
+    pending = [task_id for task_id, _task in pending_tasks]
     if not pending:
         return
 
     logger.warning("dependency_deadlock_wave_cancelled", wave=current_wave, pending_tasks=pending)
-    for task_id in pending:
-        cancel_task(state.tasks[task_id], "unresolved dependency deadlock")
+    for _task_id, task in pending_tasks:
+        cancel_task(task, "unresolved dependency deadlock")
 
 
 __all__ = [
