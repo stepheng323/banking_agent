@@ -92,7 +92,7 @@ async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dic
         }
 
     supported = match.supported[0]
-    if block_message := _direct_domain_capability_block_message(ctx.state, supported.domain):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, supported.domain):
         return {
             **ctx.gate_updates,
             "capability_boundary": None,

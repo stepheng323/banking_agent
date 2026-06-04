@@ -81,6 +81,7 @@ GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "node.py",
     GATE_ROOT / "query_session_exit.py",
     GATE_ROOT / "runtime.py",
+    GATE_ROOT / "support_identity.py",
     GATE_ROOT / "unsupported_capability_routing.py",
 )
 GATE_STATE_VIEW_STAGE_MODULES = (
@@ -90,10 +91,12 @@ GATE_STATE_VIEW_STAGE_MODULES = (
     GATE_ROOT / "stages" / "core_stages.py",
     GATE_ROOT / "stages" / "data_domain_stages.py",
     GATE_ROOT / "stages" / "direct_domain_stages.py",
+    GATE_ROOT / "stages" / "domain_data_plan.py",
     GATE_ROOT / "stages" / "helpers.py",
     GATE_ROOT / "stages" / "meta_stages.py",
     GATE_ROOT / "stages" / "mixed_capability_stages.py",
     GATE_ROOT / "stages" / "query_transfer_stages.py",
+    GATE_ROOT / "stages" / "receipt_stages.py",
     GATE_ROOT / "stages" / "resume_stages.py",
     GATE_ROOT / "stages" / "schedule_read_stage.py",
     GATE_ROOT / "stages" / "semantic_direct_response.py",
@@ -944,14 +947,24 @@ def test_gate_foundational_modules_use_typed_state_view() -> None:
     violations: list[str] = []
     guarded_attrs = {
         "active_domain",
+        "capability_boundary",
+        "channel_identity",
+        "context_frames",
+        "final_response",
         "has_quote",
+        "last_callback",
         "last_message_text",
         "loaded_context",
         "pending_interrupt",
         "phone_number",
+        "pin_verified",
+        "preplanner_expected_transaction_executors",
         "session_stack",
+        "stashed_sessions",
         "stashed_query_session",
+        "task_results",
         "tasks",
+        "user_id",
         "waves",
     }
     for path in GATE_STATE_VIEW_CONTRACT_MODULES + GATE_STATE_VIEW_STAGE_MODULES:

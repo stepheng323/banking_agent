@@ -69,7 +69,7 @@ def build_gate_runtime(state: OrchestratorState, config: RunnableConfig) -> Gate
 
     state_view = gate_state_view(state)
     message_text = state_view.message_text
-    current_locale = _current_locale(state)
+    current_locale = _current_locale(state_view)
     return GateRuntime(
         state=state,
         config=config,

@@ -89,7 +89,7 @@ async def _handle_semantic_domain_dispatch(
             decision=canonical_decision,
             mode=canonical_mode,
         )
-        if block_message := _direct_domain_capability_block_message(ctx.state, "transfer"):
+        if block_message := _direct_domain_capability_block_message(ctx.state_view, "transfer"):
             logger.info(
                 "gate_semantic_router_replay_modifier_transfer_policy_blocked",
                 decision=canonical_decision,
@@ -166,7 +166,7 @@ async def _handle_semantic_domain_dispatch(
             **updates,
         }
 
-    if block_message := _direct_domain_capability_block_message(ctx.state, domain):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, domain):
         logger.info(
             "gate_semantic_router_domain_policy_blocked",
             decision=canonical_decision,

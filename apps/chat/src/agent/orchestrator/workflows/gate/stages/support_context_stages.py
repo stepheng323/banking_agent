@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
     _direct_domain_capability_block_message,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
-from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id_for_state
+from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id
 from banking.intent.routing_signals import (
     looks_like_support_problem_statement,
     looks_like_transaction_replay_modifier_request,
@@ -71,10 +71,10 @@ async def _stage_support_context_followup(ctx: GateContext) -> dict[str, Any] | 
     """Route active support clarification/detail follow-ups back to support."""
     if ctx.live_pending_interrupt or not ctx.redis_client:
         return None
-    support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id_for_state(ctx.state))
+    support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id(ctx.state_view))
     if not _looks_like_support_context_followup(ctx.message_text, support_ctx):
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_support_context_followup_policy_blocked")
         return {
             **ctx.gate_updates,

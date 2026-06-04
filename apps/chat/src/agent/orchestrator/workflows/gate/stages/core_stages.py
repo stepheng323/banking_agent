@@ -58,7 +58,7 @@ async def _stage_language_switch(ctx: GateContext) -> dict[str, Any] | None:
         **ctx.gate_updates,
         "direct_path_triggered": True,
         "final_response": render_locale_switched(next_locale),
-        **_locale_update(ctx.state, next_locale),
+        **_locale_update(ctx.state_view, next_locale),
         **_route_observability_updates(owner="guardrail", decision="language_switch"),
     }
 
@@ -123,7 +123,7 @@ async def _stage_gibberish_filter(ctx: GateContext) -> dict[str, Any] | None:
 
 async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
     """PIN verified but no active session (checkpoint was cleaned)."""
-    if not ctx.state.pin_verified or ctx.live_pending_interrupt:
+    if not ctx.state_view.pin_verified or ctx.live_pending_interrupt:
         return None
     ctx.gate_updates["pin_verified"] = False
     if not _stale_pin_message_targets_missing_session(ctx):
@@ -144,7 +144,7 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
 
 
 def _stale_pin_message_targets_missing_session(ctx: GateContext) -> bool:
-    callback = ctx.state.last_callback if isinstance(ctx.state.last_callback, dict) else {}
+    callback = ctx.state_view.last_callback if isinstance(ctx.state_view.last_callback, dict) else {}
     if callback.get("pin_verified"):
         return True
 

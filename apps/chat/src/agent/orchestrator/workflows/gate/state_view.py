@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, OrchestratorState
 
 
 @dataclass(frozen=True)
@@ -20,8 +21,20 @@ class GateStateView:
         return self.state.phone_number
 
     @property
+    def user_id(self) -> str:
+        return self.state.user_id
+
+    @property
+    def channel_identity(self) -> str | None:
+        return self.state.channel_identity
+
+    @property
     def last_message_text(self) -> str | None:
         return self.state.last_message_text
+
+    @property
+    def last_callback(self) -> dict[str, Any] | None:
+        return self.state.last_callback
 
     @property
     def last_message_text_or_empty(self) -> str:
@@ -34,6 +47,10 @@ class GateStateView:
     @property
     def has_quote(self) -> bool:
         return self.state.has_quote
+
+    @property
+    def pin_verified(self) -> bool:
+        return self.state.pin_verified
 
     @property
     def pending_interrupt(self) -> PendingInterrupt | None:
@@ -72,6 +89,14 @@ class GateStateView:
         return bool(self.waves)
 
     @property
+    def task_results(self) -> dict[str, Any]:
+        return self.state.task_results
+
+    @property
+    def has_task_results(self) -> bool:
+        return bool(self.task_results)
+
+    @property
     def loaded_context(self) -> dict[str, Any]:
         return self.state.loaded_context
 
@@ -83,6 +108,21 @@ class GateStateView:
     @property
     def stashed_query_session(self) -> dict[str, Any] | None:
         return self.state.stashed_query_session
+
+    @property
+    def stashed_sessions(self) -> list[dict[str, Any]]:
+        return list(self.state.stashed_sessions)
+
+    @property
+    def has_stashed_sessions(self) -> bool:
+        return bool(self.stashed_sessions)
+
+    @property
+    def latest_stashed_session_intent(self) -> str:
+        sessions = self.stashed_sessions
+        if not sessions:
+            return "transaction"
+        return str(sessions[-1].get("intent") or "transaction")
 
     @property
     def session_stack(self) -> list[ActiveSession]:
@@ -107,6 +147,26 @@ class GateStateView:
         return self.has_pending_interrupt or self.has_quote or self.has_session_stack or self.has_waves
 
     @property
+    def final_response(self) -> str | None:
+        return self.state.final_response
+
+    @property
+    def has_final_response(self) -> bool:
+        return bool(self.final_response)
+
+    @property
+    def capability_boundary(self) -> CapabilityBoundary | None:
+        return self.state.capability_boundary
+
+    @property
+    def context_frames(self) -> list[ContextFrame]:
+        return list(self.state.context_frames)
+
+    @property
+    def has_context_frames(self) -> bool:
+        return bool(self.context_frames)
+
+    @property
     def has_live_pending_interrupt(self) -> bool:
         interrupt = self.pending_interrupt
         if interrupt is None:
@@ -127,6 +187,10 @@ class GateStateView:
     @property
     def active_domain(self) -> str | None:
         return self.state.active_domain
+
+    @property
+    def preplanner_expected_transaction_executors(self) -> list[str]:
+        return list(self.state.preplanner_expected_transaction_executors)
 
     def session_stack_without_domain(self, domain: str) -> list[ActiveSession]:
         return [session for session in self.session_stack if session.domain != domain]

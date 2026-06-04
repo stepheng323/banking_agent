@@ -84,7 +84,7 @@ def _context_frame_followup_updates(
         **ctx.gate_updates,
         "direct_path_triggered": True,
         "semantic_path_shape": frame_followup.semantic_path_shape,
-        "context_frames": frame_followup.context_frames or ctx.state.context_frames,
+        "context_frames": frame_followup.context_frames or ctx.state_view.context_frames,
         **({"final_response": frame_followup.response} if frame_followup.response else {}),
         **({"tasks": frame_followup.tasks} if frame_followup.tasks else {}),
         **({"waves": frame_followup.waves} if frame_followup.waves else {}),

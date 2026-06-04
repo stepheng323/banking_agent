@@ -38,7 +38,7 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any
         return None
 
     now = time()
-    boundary = coerce_boundary(ctx.state.capability_boundary)
+    boundary = coerce_boundary(ctx.state_view.capability_boundary)
     if boundary is not None and not is_live_boundary(boundary, now=now):
         ctx.gate_updates["capability_boundary"] = None
         return None
@@ -62,7 +62,7 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any
         return None
 
     boundary_decision: UnsupportedBoundaryTurnOutput | None = None
-    if detected_capability is None and looks_like_followup and ctx.state.context_frames:
+    if detected_capability is None and looks_like_followup and ctx.state_view.has_context_frames:
         boundary_decision = await semantic_boundary_turn(ctx, boundary=boundary, capability=capability)
         if boundary_decision is not None:
             if boundary_decision.action == "same_unsupported":

@@ -99,7 +99,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
             message_text=ctx.message_text,
             locale=ctx.current_locale,
             query_session_snapshot=ctx.query_session_snapshot if isinstance(ctx.query_session_snapshot, dict) else None,
-            has_context_frames=bool(ctx.state.context_frames),
+            has_context_frames=ctx.state_view.has_context_frames,
         )
         if bypass_reason is not None:
             logger.info(

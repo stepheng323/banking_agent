@@ -145,7 +145,7 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_obvious_airtime_request(ctx.message_text)
     ):
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "airtime"):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "airtime"):
         logger.info("gate_deterministic_airtime_domain_policy_blocked")
         return {
             **ctx.gate_updates,

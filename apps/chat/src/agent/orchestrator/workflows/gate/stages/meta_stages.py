@@ -65,7 +65,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
     response_key = deterministic_meta.response_key
     response_locale = deterministic_meta.response_locale
     locale = response_locale or ctx.current_locale
-    locale_updates = _locale_update(ctx.state, locale) if response_locale else {}
+    locale_updates = _locale_update(ctx.state_view, locale) if response_locale else {}
     await ctx.ensure_query_session()
     exit_updates = _build_query_session_exit_updates(
         ctx.state,

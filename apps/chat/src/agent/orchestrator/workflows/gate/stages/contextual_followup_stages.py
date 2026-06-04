@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.services.context_manager import Orchestrat
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
-from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id_for_state
+from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )
@@ -149,9 +149,9 @@ def _has_recent_history_context(ctx: GateContext) -> bool:
 
 
 def _has_state_result_context(ctx: GateContext) -> bool:
-    if ctx.state.final_response:
+    if ctx.state_view.has_final_response:
         return True
-    if ctx.state.task_results:
+    if ctx.state_view.has_task_results:
         return True
     if OrchestratorContextManager().latest_active_frame(ctx.state) is not None:
         return True
@@ -179,7 +179,7 @@ async def _support_context_summary(ctx: GateContext) -> dict[str, Any] | None:
     if ctx.redis_client is None:
         return None
     try:
-        support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id_for_state(ctx.state))
+        support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id(ctx.state_view))
     except Exception as exc:
         logger.warning("gate_contextual_worker_support_context_failed", error=str(exc))
         return None

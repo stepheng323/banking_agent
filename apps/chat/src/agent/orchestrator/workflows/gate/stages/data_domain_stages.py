@@ -31,7 +31,7 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_data_plan_query_request(ctx.message_text)
     ):
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "data"):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_data_plan_query_policy_blocked")
         return {
             **ctx.gate_updates,
@@ -85,7 +85,7 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
     data = _resolved_data_plan_payload(ctx)
     if not data:
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "data"):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_data_plan_reference_purchase_policy_blocked")
         return {
             **ctx.gate_updates,
@@ -150,7 +150,7 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_obvious_data_request(ctx.message_text)
     ):
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "data"):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_deterministic_data_domain_policy_blocked")
         return {
             **ctx.gate_updates,

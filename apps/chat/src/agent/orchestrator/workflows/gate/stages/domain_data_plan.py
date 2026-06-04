@@ -181,7 +181,7 @@ def _data_plan_display_key(entity: ContextEntity) -> tuple[str, str, float | Non
 
 def _active_data_plan_entities_from_frames(ctx: GateContext) -> list[ContextEntity]:
     now = int(time.time())
-    for frame in reversed(ctx.state.context_frames):
+    for frame in reversed(ctx.state_view.context_frames):
         if not frame.items or (frame.created_at_ts + frame.ttl_seconds) <= now:
             continue
         entities = [entity for entity in frame.items if _is_data_plan_entity(entity)]

@@ -112,7 +112,7 @@ async def semantic_locale_switch_updates(
     return {
         "direct_path_triggered": True,
         "final_response": render_locale_switched(next_locale),
-        **_locale_update(ctx.state, next_locale),
+        **_locale_update(ctx.state_view, next_locale),
         **_route_observability_updates(
             owner="semantic_router",
             decision=canonical_decision or "direct_reply",
@@ -144,7 +144,7 @@ async def semantic_cancel_updates(
         return None
 
     locale, detected_locale_updates = await _effective_response_locale(
-        state=ctx.state,
+        state_view=ctx.state_view,
         redis_client=ctx.redis_client,
         detected_language=getattr(route, "detected_language", None),
     )

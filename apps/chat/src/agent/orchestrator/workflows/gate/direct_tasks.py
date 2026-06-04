@@ -10,7 +10,7 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _current_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import DIRECT_DOMAIN_ACTIONS
-from apps.chat.src.agent.orchestrator.workflows.gate.state_view import gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView, gate_state_view
 from banking.policy.service import capability_block_message
 
 
@@ -109,10 +109,10 @@ def _build_direct_domain_task(
 
 
 def _direct_domain_capability_block_message(
-    state: OrchestratorState,
+    state_view: GateStateView,
     domain: str,
 ) -> str | None:
     action = DIRECT_DOMAIN_ACTIONS.get(domain)
     if not action:
         return None
-    return capability_block_message(domain=domain, action=action, locale=_current_locale(state))
+    return capability_block_message(domain=domain, action=action, locale=_current_locale(state_view))

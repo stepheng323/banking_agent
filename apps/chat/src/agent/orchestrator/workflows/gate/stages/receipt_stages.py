@@ -15,8 +15,8 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import (
-    _recent_batch_identity_for_state,
-    _support_user_id_for_state,
+    _recent_batch_identity,
+    _support_user_id,
 )
 from banking.support.context_manager import SupportContextManager
 from banking.support.models import ReceiptBatchThreadState
@@ -49,13 +49,13 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
         or not _looks_like_receipt_selector_followup(ctx.message_text)
     ):
         return None
-    support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id_for_state(ctx.state))
+    support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id(ctx.state_view))
     receipt_thread_state = getattr(support_ctx, "receipt_thread_state", None)
     if not isinstance(receipt_thread_state, ReceiptBatchThreadState) or not _has_receipt_thread_candidates(
         receipt_thread_state
     ):
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_receipt_thread_support_policy_blocked")
         return {
             **ctx.gate_updates,
@@ -103,11 +103,11 @@ async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
         or not _looks_like_receipt_request(ctx.message_text)
     ):
         return None
-    recent_batch_identity = _recent_batch_identity_for_state(ctx.state)
+    recent_batch_identity = _recent_batch_identity(ctx.state_view)
     recent_batch = await get_recent_batch_reference(ctx.redis_client, identity=recent_batch_identity)
     if recent_batch is None or not recent_batch.get("legs"):
         return None
-    if block_message := _direct_domain_capability_block_message(ctx.state, "support"):
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_recent_batch_receipt_support_policy_blocked")
         return {
             **ctx.gate_updates,

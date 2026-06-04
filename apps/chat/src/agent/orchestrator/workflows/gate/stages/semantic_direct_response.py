@@ -37,7 +37,7 @@ async def _handle_semantic_direct_response(
         return None
 
     locale, detected_locale_updates = await _effective_response_locale(
-        state=ctx.state,
+        state_view=ctx.state_view,
         redis_client=ctx.redis_client,
         detected_language=getattr(route, "detected_language", None),
     )

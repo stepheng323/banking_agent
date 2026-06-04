@@ -56,7 +56,7 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
         try:
             route_context = _build_semantic_router_context(
                 ctx.turn_summary,
-                ctx.state.preplanner_expected_transaction_executors,
+                ctx.state_view.preplanner_expected_transaction_executors,
                 message_text=ctx.message_text,
             )
             route_context = append_routing_hints(route_context, ctx.routing_hints)

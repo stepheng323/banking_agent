@@ -37,9 +37,7 @@ async def _classify_resume_prompt_reply(ctx: GateContext) -> ConfirmationDecisio
     if ctx.task_planner is None:
         return decision
 
-    intent = "transaction"
-    if ctx.state.stashed_sessions:
-        intent = str(ctx.state.stashed_sessions[-1].get("intent") or "transaction")
+    intent = ctx.state_view.latest_stashed_session_intent
     try:
         return await ctx.task_planner.classify_confirmation_reply(
             ctx.message_text,
@@ -55,7 +53,7 @@ async def _classify_resume_prompt_reply(ctx: GateContext) -> ConfirmationDecisio
 
 def _has_live_resume_prompt_frame(ctx: GateContext) -> bool:
     now = int(time.time())
-    for frame in ctx.state.context_frames:
+    for frame in ctx.state_view.context_frames:
         if frame.frame_type != ContextFrameType.GENERIC:
             continue
         if frame.created_at_ts + frame.ttl_seconds <= now:
@@ -96,7 +94,7 @@ async def _stage_resume_prompt_action(ctx: GateContext) -> dict[str, Any] | None
     if (
         ctx.live_pending_interrupt
         or ctx.state_view.has_gate_blocking_state
-        or not ctx.state.stashed_sessions
+        or not ctx.state_view.has_stashed_sessions
         or not _has_live_resume_prompt_frame(ctx)
     ):
         return None
