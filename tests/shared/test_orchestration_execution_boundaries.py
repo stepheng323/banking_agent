@@ -47,6 +47,16 @@ INTERRUPT_PENDING_ACTION_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "pending_action" / "pending_action_payload_overrides.py",
     INTERRUPT_ROOT / "pending_action" / "pending_action_targets.py",
 )
+INTERRUPT_CONFIRMATION_STATE_VIEW_MODULES = (
+    INTERRUPT_ROOT / "auth" / "auth_resolve.py",
+    INTERRUPT_ROOT / "confirmation" / "confirmation_edit_remove.py",
+    INTERRUPT_ROOT / "confirmation" / "confirmation_edit_restore.py",
+    INTERRUPT_ROOT / "confirmation" / "confirmation_edit_target_tasks.py",
+    INTERRUPT_ROOT / "confirmation" / "confirmation_edit_targets.py",
+    INTERRUPT_ROOT / "confirmation" / "confirmation_repeat.py",
+    INTERRUPT_ROOT / "confirmation" / "confirmation_selection.py",
+    INTERRUPT_ROOT / "confirmation" / "confirmation_updates.py",
+)
 GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "context.py",
     GATE_ROOT / "direct_tasks.py",
@@ -789,6 +799,36 @@ def test_interrupt_pending_action_modules_use_typed_state_view() -> None:
     violations: list[str] = []
     guarded_attrs = {"loaded_context", "removed_confirmation_tasks", "tasks"}
     for path in INTERRUPT_PENDING_ACTION_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "request", "runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_interrupt_confirmation_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "current_wave_index",
+        "last_message_text",
+        "pin_verified",
+        "removed_confirmation_tasks",
+        "task_results",
+        "tasks",
+        "waves",
+    }
+    for path in INTERRUPT_CONFIRMATION_STATE_VIEW_MODULES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:

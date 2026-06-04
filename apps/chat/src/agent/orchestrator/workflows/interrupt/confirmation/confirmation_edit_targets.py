@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_edit_target_tasks import (
     _removed_task_from_entry,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def confirmation_scoped_task_removal_ids(
@@ -21,7 +22,7 @@ def confirmation_scoped_task_removal_ids(
     if getattr(interrupt, "kind", None) != "confirmation":
         return []
 
-    task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
+    task_ids = interrupt_state_view(state).active_task_ids_for_interrupt(interrupt)
     if len(task_ids) < 2:
         return []
 
@@ -46,7 +47,7 @@ def confirmation_scoped_task_restore_ids(
     if getattr(interrupt, "kind", None) != "confirmation":
         return []
 
-    removed = state.removed_confirmation_tasks or {}
+    removed = interrupt_state_view(state).removed_confirmation_tasks or {}
     if not removed:
         return []
 

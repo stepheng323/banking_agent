@@ -46,8 +46,9 @@ def _synth_confirmation_followup_message(task: TaskSpec) -> str | None:
 
 
 def _stash_previous_confirmation_snapshots(state: OrchestratorState, task_ids: list[str]) -> None:
+    state_view = interrupt_state_view(state)
     for task_id in task_ids:
-        task = state.tasks.get(task_id)
+        task = state_view.task(task_id)
         if task is None:
             continue
         confirmation = task.payload.get("confirmation")
@@ -64,8 +65,9 @@ def _is_explicit_confirmation_approval_text(state: OrchestratorState, text: str)
 
 
 def _approve_confirmation_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
-    new_tasks = state.tasks.copy()
-    logger.info("confirmation_confirmed", tasks=interrupt.task_ids, via_pin=state.pin_verified)
+    state_view = interrupt_state_view(state)
+    new_tasks = state_view.task_map_copy()
+    logger.info("confirmation_confirmed", tasks=interrupt.task_ids, via_pin=state_view.pin_verified)
     for tid in interrupt.task_ids:
         task = new_tasks[tid].model_copy(deep=True)
         task.payload.setdefault("confirmation", {})
@@ -76,7 +78,7 @@ def _approve_confirmation_updates(state: OrchestratorState, interrupt: Any) -> d
             and task.payload.get("schedule_edit_requires_auth") is False
         )
         task.stage = (
-            TaskStage.EXECUTING if state.pin_verified or schedule_edit_without_auth else TaskStage.AWAITING_AUTH
+            TaskStage.EXECUTING if state_view.pin_verified or schedule_edit_without_auth else TaskStage.AWAITING_AUTH
         )
         new_tasks[tid] = task
     return {

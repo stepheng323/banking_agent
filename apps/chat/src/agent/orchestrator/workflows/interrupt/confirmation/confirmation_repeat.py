@@ -7,6 +7,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_text import (
     _normalize_recipient_match_text,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from shared.types.planner import InterruptRouteDecision
 from shared.utils.logging import get_logger
 
@@ -27,12 +28,13 @@ def _resolve_deterministic_confirmation_repeat_route(
         return None
 
     matched_task_ids: list[str] = []
-    for task_id in getattr(interrupt, "task_ids", []) or []:
-        task = state.tasks.get(str(task_id))
+    state_view = interrupt_state_view(state)
+    for task_id in state_view.active_task_ids_for_interrupt(interrupt):
+        task = state_view.task(task_id)
         if task is None:
             continue
         if normalized_text in _task_request_variants(task):
-            matched_task_ids.append(str(task_id))
+            matched_task_ids.append(task_id)
 
     if not matched_task_ids:
         return None

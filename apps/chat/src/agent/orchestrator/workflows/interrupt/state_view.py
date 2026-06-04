@@ -59,6 +59,13 @@ class InterruptStateView:
         return self.tasks.copy()
 
     @property
+    def task_results(self) -> dict[str, Any]:
+        return self.state.task_results
+
+    def task_result(self, task_id: str) -> Any:
+        return self.task_results.get(task_id)
+
+    @property
     def task_ids(self) -> set[str]:
         return set(self.tasks.keys())
 
@@ -89,6 +96,18 @@ class InterruptStateView:
     @property
     def removed_confirmation_tasks(self) -> dict[str, dict[str, Any]]:
         return self.state.removed_confirmation_tasks
+
+    @property
+    def waves(self) -> list[list[str]]:
+        return self.state.waves
+
+    @property
+    def current_wave_index(self) -> int:
+        return self.state.current_wave_index
+
+    @property
+    def pin_verified(self) -> bool:
+        return self.state.pin_verified
 
     @property
     def session_stack(self) -> list[ActiveSession]:

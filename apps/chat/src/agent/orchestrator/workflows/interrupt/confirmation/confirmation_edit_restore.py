@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_edit_targets import (
     _removed_task_from_entry,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,10 +42,11 @@ def restore_confirmation_tasks_and_reconfirm_updates(
     if not restore_set:
         return {}
 
-    removed_tasks = dict(state.removed_confirmation_tasks)
-    tasks = {task_id: task.model_copy(deep=True) for task_id, task in state.tasks.items()}
-    task_results = dict(state.task_results)
-    waves = [list(wave) for wave in state.waves]
+    state_view = interrupt_state_view(state)
+    removed_tasks = dict(state_view.removed_confirmation_tasks)
+    tasks = {task_id: task.model_copy(deep=True) for task_id, task in state_view.tasks.items()}
+    task_results = dict(state_view.task_results)
+    waves = [list(wave) for wave in state_view.waves]
 
     restored_task_ids: list[str] = []
     for task_id in restore_set:
@@ -84,7 +86,7 @@ def restore_confirmation_tasks_and_reconfirm_updates(
         "tasks": tasks,
         "task_results": task_results,
         "waves": [wave for wave in waves if wave],
-        "current_wave_index": min(state.current_wave_index, max(len(waves) - 1, 0)),
+        "current_wave_index": min(state_view.current_wave_index, max(len(waves) - 1, 0)),
         "removed_confirmation_tasks": removed_tasks,
         "pin_verified": False,
         "last_callback": None,

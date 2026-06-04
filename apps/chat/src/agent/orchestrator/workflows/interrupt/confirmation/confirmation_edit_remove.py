@@ -7,6 +7,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_edit_reconfirm import (
     _reset_confirmation_tasks_for_reconfirm,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import InterruptStateView, interrupt_state_view
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,13 +15,13 @@ logger = get_logger(__name__)
 
 def _removed_task_entry(
     *,
-    state: OrchestratorState,
+    state_view: InterruptStateView,
     task_id: str,
     task: TaskSpec,
 ) -> dict[str, Any]:
     wave_index = None
     position = None
-    for idx, wave in enumerate(state.waves):
+    for idx, wave in enumerate(state_view.waves):
         if task_id in wave:
             wave_index = idx
             position = wave.index(task_id)
@@ -30,7 +31,7 @@ def _removed_task_entry(
         "task": task.model_copy(deep=True),
         "wave_index": wave_index,
         "position": position,
-        "task_result": state.task_results.get(task_id),
+        "task_result": state_view.task_result(task_id),
     }
 
 
@@ -44,18 +45,21 @@ def remove_confirmation_tasks_and_reconfirm_updates(
     if not remove_set:
         return {}
 
-    removed_tasks = dict(state.removed_confirmation_tasks)
+    state_view = interrupt_state_view(state)
+    removed_tasks = dict(state_view.removed_confirmation_tasks)
     for task_id in remove_set:
-        task = state.tasks.get(task_id)
+        task = state_view.task(task_id)
         if task is None:
             continue
-        removed_tasks[task_id] = _removed_task_entry(state=state, task_id=task_id, task=task)
+        removed_tasks[task_id] = _removed_task_entry(state_view=state_view, task_id=task_id, task=task)
 
-    tasks = {task_id: task.model_copy(deep=True) for task_id, task in state.tasks.items() if task_id not in remove_set}
-    task_results = {task_id: result for task_id, result in state.task_results.items() if task_id not in remove_set}
-    waves = [[task_id for task_id in wave if task_id not in remove_set] for wave in state.waves]
+    tasks = {
+        task_id: task.model_copy(deep=True) for task_id, task in state_view.tasks.items() if task_id not in remove_set
+    }
+    task_results = {task_id: result for task_id, result in state_view.task_results.items() if task_id not in remove_set}
+    waves = [[task_id for task_id in wave if task_id not in remove_set] for wave in state_view.waves]
     waves = [wave for wave in waves if wave]
-    current_wave_index = min(state.current_wave_index, max(len(waves) - 1, 0))
+    current_wave_index = min(state_view.current_wave_index, max(len(waves) - 1, 0))
 
     remaining_interrupt_task_ids = [
         str(task_id)
