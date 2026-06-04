@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_schedule_list_frame
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import (
     loaded_context,
@@ -83,6 +84,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             logger.info("user_msg_synthesized", msg=user_msg)
 
     context = loaded_context(ctx.state)
+    surface = context_surface(ctx.state)
     beneficiaries = context.beneficiaries
 
     recipient_name = task.payload.get("recipient_name")
@@ -153,7 +155,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         "accounts": context.transaction_accounts_or_accounts,
         "all_accounts": context.accounts,
         "beneficiaries": beneficiaries,
-        "referent_memory": ctx.state.referent_memory.model_dump(mode="json"),
+        "referent_memory": surface.referent_memory_payload(),
         "resolved_referents": resolved_referents,
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,

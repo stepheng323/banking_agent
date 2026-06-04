@@ -5,6 +5,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_data_plan_frames_from_result
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
@@ -75,13 +76,14 @@ async def _handle_purchase_task(
         previous_response = interrupt.prompt
 
     context = loaded_context(ctx.state)
+    surface = context_surface(ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": context.user_id,
         "accounts": context.transaction_accounts_or_accounts,
         "all_accounts": context.accounts,
         "beneficiaries": context.beneficiaries,
-        "referent_memory": ctx.state.referent_memory.model_dump(mode="json"),
+        "referent_memory": surface.referent_memory_payload(),
         "resolved_referents": build_resolved_referents(ctx.state, user_msg),
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,

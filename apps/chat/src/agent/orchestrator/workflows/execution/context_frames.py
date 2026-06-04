@@ -6,8 +6,8 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.surface_adapter import build_context_frame_from_surface_view
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import push_context_frame
 from banking.transactions.query.contracts import FocusedReferent, SelectionPayload
 from shared.utils.logging import get_logger
 
@@ -25,9 +25,7 @@ def clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame]
 
 
 def _push_frame(ctx: ExecutionTurnContext, frame: ContextFrame) -> None:
-    OrchestratorContextManager().push_frame(ctx.state, frame)
-    ctx.accumulator.set_context_frames(ctx.state.context_frames)
-    ctx.accumulator.set_referent_memory(ctx.state.referent_memory)
+    push_context_frame(ctx, frame)
 
 
 def push_query_followup_referent_frame(

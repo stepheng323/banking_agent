@@ -42,6 +42,7 @@ EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
     EXECUTION_ROOT / "executors" / "support.py",
     EXECUTION_ROOT / "executors" / "transfer.py",
 )
+EXECUTION_CONTEXT_SURFACE_MODULE = EXECUTION_ROOT / "context_surface.py"
 EXECUTION_LAST_INTERRUPT_MODULE = EXECUTION_ROOT / "last_interrupt.py"
 EXECUTION_LOADED_CONTEXT_MODULE = EXECUTION_ROOT / "loaded_context.py"
 EXECUTION_TASK_ACCESS_MODULE = EXECUTION_ROOT / "task_access.py"
@@ -460,6 +461,20 @@ def test_execution_last_interrupt_reads_use_typed_helpers() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "last_interrupt":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_execution_context_surface_reads_use_typed_helpers() -> None:
+    violations: list[str] = []
+    guarded_attrs = {"context_frames", "referent_memory"}
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.resolve() == EXECUTION_CONTEXT_SURFACE_MODULE.resolve():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in guarded_attrs:
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []

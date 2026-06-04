@@ -3,6 +3,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_coordination import (
     _maybe_coordinate_batch_funding,
 )
@@ -28,8 +29,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         return {}
 
     current_wave = state.waves[state.current_wave_index]
+    surface = context_surface(state)
     logger.info(
-        "advance_wave", index=state.current_wave_index, tasks=current_wave, context_frames_len=len(state.context_frames)
+        "advance_wave",
+        index=state.current_wave_index,
+        tasks=current_wave,
+        context_frames_len=surface.frame_count,
     )
 
     # [SAFETY] If pending_interrupt is already set (e.g. valid restoration), do NOT execute tasks.

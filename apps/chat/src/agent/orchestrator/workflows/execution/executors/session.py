@@ -4,6 +4,11 @@ from apps.chat.src.agent.orchestrator.context.referents.store import forget_stas
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import clear_resume_prompt_frames
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import (
+    context_surface,
+    replace_context_frames,
+    sync_referent_memory,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import complete_task, fail_task
 from banking.presentation.i18n.renderer import render_message
@@ -35,11 +40,11 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
     remaining_stash = ctx.state.stashed_sessions[:-1]
     intent = str(last_session.get("intent", render_message("orchestrator.session.default_intent", locale)))
     ctx.accumulator.set_stashed_sessions(remaining_stash)
-    ctx.accumulator.set_context_frames(clear_resume_prompt_frames(ctx.state.context_frames))
+    replace_context_frames(ctx, clear_resume_prompt_frames(context_surface(ctx.state).frames))
     stash_id = str(last_session.get("stash_id") or "").strip()
     if stash_id:
         forget_stashed_referents(ctx.state, {stash_id})
-        ctx.accumulator.set_referent_memory(ctx.state.referent_memory)
+        sync_referent_memory(ctx)
 
     if action == "resume_session":
         p_interrupt = last_session.get("pending_interrupt")
