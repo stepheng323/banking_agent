@@ -5,9 +5,9 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.query import QueryTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
@@ -57,7 +57,7 @@ async def test_handle_query_task_passes_and_clears_stashed_query_session() -> No
         accumulator=agg,
     )
 
-    await handle_query_task(query_task, "t_query_stashed", ctx)
+    await QueryTaskExecutor().execute(query_task, "t_query_stashed", ctx)
 
     assert worker.last_context is not None
     assert worker.last_context["stashed_query_session"] == stashed_query_session

@@ -5,9 +5,9 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.transfer import TransferTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
@@ -82,7 +82,7 @@ async def _run_transfer_with_message(last_message_text: str | None) -> str | Non
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
-    await handle_transfer_task(task, "t1", ctx)
+    await TransferTaskExecutor().execute(task, "t1", ctx)
     return worker.last_user_message
 
 
@@ -137,7 +137,7 @@ async def test_transfer_handler_drops_null_source_affinity_mode_before_worker() 
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_transfer_task(task, "t1", ctx)
+    await TransferTaskExecutor().execute(task, "t1", ctx)
 
     assert worker.last_payload is not None
     assert "source_affinity_mode" not in worker.last_payload
@@ -178,7 +178,7 @@ async def test_transfer_handler_prefers_scoped_confirmation_user_message_overrid
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_transfer_task(task, "t1", ctx)
+    await TransferTaskExecutor().execute(task, "t1", ctx)
 
     assert worker.last_user_message == "for allowance"
     assert "pending_user_message" not in task.payload
@@ -231,7 +231,7 @@ async def test_transfer_handler_uses_targeted_beneficiary_reload_for_cache_only_
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_transfer_task(task, "t1", ctx)
+    await TransferTaskExecutor().execute(task, "t1", ctx)
 
     assert repo.search_calls == [("u_transfer_guard", "Mum", "transfer")]
     assert repo.full_calls == []
@@ -286,7 +286,7 @@ async def test_transfer_handler_reloads_beneficiaries_before_fresh_direct_extrac
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_transfer_task(task, "t1", ctx)
+    await TransferTaskExecutor().execute(task, "t1", ctx)
 
     assert repo.search_calls == []
     assert repo.full_calls == [("u_transfer_guard", "transfer")]
@@ -343,7 +343,7 @@ async def test_transfer_handler_falls_back_to_full_beneficiary_reload_after_targ
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_transfer_task(task, "t1", ctx)
+    await TransferTaskExecutor().execute(task, "t1", ctx)
 
     assert repo.search_calls == [("u_transfer_guard", "Mum", "transfer")]
     assert repo.full_calls == [("u_transfer_guard", "transfer")]
@@ -408,7 +408,7 @@ async def test_transfer_handler_reloads_targeted_beneficiary_when_cache_preview_
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_transfer_task(task, "t2", ctx)
+    await TransferTaskExecutor().execute(task, "t2", ctx)
 
     assert repo.search_calls == [("u_transfer_guard", "Tolu", "transfer")]
     assert repo.full_calls == []

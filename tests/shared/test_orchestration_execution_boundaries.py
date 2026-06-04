@@ -8,18 +8,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 GRAPH_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "graph"
 EXECUTION_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "execution"
+TASK_HANDLERS_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers"
 INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "interrupt"
 GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
 PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
 LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "lifecycle"
 
 DELETED_EXECUTION_MODULE_PATHS = (
+    TASK_HANDLERS_ROOT,
     ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers" / "runtime.py",
     EXECUTION_ROOT / "runtime.py",
     EXECUTION_ROOT / "wave" / "runner_task_handlers.py",
 )
 
 FORBIDDEN_EXECUTION_TEXT = (
+    "apps.chat.src.agent.orchestrator.task_handlers",
     "apps.chat.src.agent.orchestrator.task_handlers.runtime",
     "apps.chat.src.agent.orchestrator.workflows.execution.runtime",
     "apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_handlers",

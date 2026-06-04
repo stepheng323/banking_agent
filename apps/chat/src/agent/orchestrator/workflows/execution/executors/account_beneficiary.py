@@ -1,11 +1,11 @@
 from typing import cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.task_handlers.context_frames import (
+from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import (
     push_account_list_frame,
     push_beneficiary_list_frame,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
@@ -17,7 +17,17 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def handle_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+class AccountTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_account_task(task, task_id, ctx)
+
+
+class BeneficiaryTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_beneficiary_task(task, task_id, ctx)
+
+
+async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "account",
@@ -75,7 +85,7 @@ async def handle_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         ctx.accumulator.say(result.response)
 
 
-async def handle_beneficiary_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     del task_id
     action = task.payload.get("action")
     is_management = (
@@ -163,3 +173,6 @@ async def handle_beneficiary_task(task: TaskSpec, task_id: str, ctx: ExecutionTu
         logger.error("save_beneficiary_exec_error", error=str(exc))
         task.stage = TaskStage.FAILED
         task.payload["error"] = render_message("orchestrator.error.save_beneficiary_failed", _state_locale(ctx.state))
+
+
+__all__ = ["AccountTaskExecutor", "BeneficiaryTaskExecutor"]

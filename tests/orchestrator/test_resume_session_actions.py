@@ -10,9 +10,9 @@ from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMe
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from apps.chat.src.agent.orchestrator.task_handlers.session import handle_orchestrator_task
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.session import OrchestratorTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -155,7 +155,7 @@ async def test_resume_session_restores_stash_without_replaying_outbox() -> None:
     )
 
     ctx = _ctx(state)
-    await handle_orchestrator_task(orchestrator_task, "o1", ctx)
+    await OrchestratorTaskExecutor().execute(orchestrator_task, "o1", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
     assert list(ctx.accumulator.updates["tasks"].keys()) == ["t_stashed"]
@@ -211,7 +211,7 @@ async def test_resume_session_clears_matching_stashed_referents() -> None:
     ]
 
     ctx = _ctx(state)
-    await handle_orchestrator_task(orchestrator_task, "o1", ctx)
+    await OrchestratorTaskExecutor().execute(orchestrator_task, "o1", ctx)
 
     assert [item.label for item in ctx.accumulator.updates["referent_memory"].items] == ["Emeka"]
 
@@ -257,7 +257,7 @@ async def test_dismiss_resume_session_clears_matching_stashed_referents() -> Non
     ]
 
     ctx = _ctx(state)
-    await handle_orchestrator_task(orchestrator_task, "o1", ctx)
+    await OrchestratorTaskExecutor().execute(orchestrator_task, "o1", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
     assert ctx.accumulator.updates["stashed_sessions"] == []
@@ -539,7 +539,7 @@ async def test_dismiss_resume_session_clears_stash_and_acknowledges() -> None:
     )
 
     ctx = _ctx(state)
-    await handle_orchestrator_task(orchestrator_task, "o6", ctx)
+    await OrchestratorTaskExecutor().execute(orchestrator_task, "o6", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
     assert ctx.accumulator.updates["stashed_sessions"] == []
@@ -565,7 +565,7 @@ async def test_dismiss_resume_session_without_stash_is_safe() -> None:
     )
 
     ctx = _ctx(state)
-    await handle_orchestrator_task(orchestrator_task, "o7", ctx)
+    await OrchestratorTaskExecutor().execute(orchestrator_task, "o7", ctx)
 
     assert orchestrator_task.stage == TaskStage.FAILED
     assert orchestrator_task.payload["error"] == "No session to resume."

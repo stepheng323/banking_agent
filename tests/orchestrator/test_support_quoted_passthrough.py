@@ -4,9 +4,9 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.support import handle_support_task
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.support import SupportTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import (
     SupportOutcome,
@@ -77,7 +77,7 @@ async def test_support_handler_passes_quoted_message_id_without_mutating_task_pa
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_support_task(task, "t1", ctx)
+    await SupportTaskExecutor().execute(task, "t1", ctx)
 
     assert worker.last_payload is not None
     assert worker.last_payload["quoted_message_id"] == "wamid.receipt.1"
@@ -118,7 +118,7 @@ async def test_support_handler_enqueues_receipt_jobs() -> None:
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_support_task(task, "t1", ctx)
+    await SupportTaskExecutor().execute(task, "t1", ctx)
 
     publisher.publish.assert_awaited_once_with(
         "receipt.process", {"transaction_reference": "tx-2", "phone_number": "2348000000001"}
@@ -154,7 +154,7 @@ async def test_support_handler_reroutes_replay_modifier_to_transfer() -> None:
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_support_task(task, "t1", ctx)
+    await SupportTaskExecutor().execute(task, "t1", ctx)
 
     assert support_worker.last_payload is None
     assert task.type == "transfer"

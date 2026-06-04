@@ -2,8 +2,8 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.store import forget_stashed_referents
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.task_handlers.context_frames import clear_resume_prompt_frames
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import clear_resume_prompt_frames
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
@@ -11,7 +11,12 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def handle_orchestrator_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+class OrchestratorTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_orchestrator_task(task, task_id, ctx)
+
+
+async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     """Handle orchestrator tasks such as accepting or dismissing a stashed session."""
     del task_id
     action = task.payload.get("action")
@@ -53,3 +58,6 @@ async def handle_orchestrator_task(task: TaskSpec, task_id: str, ctx: ExecutionT
     logger.info("resume_session_declined", intent=intent)
     ctx.accumulator.say(render_message("orchestrator.session.resume_declined", locale))
     task.stage = TaskStage.COMPLETED
+
+
+__all__ = ["OrchestratorTaskExecutor"]

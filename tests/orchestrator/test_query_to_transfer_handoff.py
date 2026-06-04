@@ -6,9 +6,9 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.query import QueryTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import (
@@ -126,7 +126,7 @@ async def test_query_handoff_injects_transfer_task_and_wave() -> None:
         accumulator=agg,
     )
 
-    await handle_query_task(query_task, "t1", ctx)
+    await QueryTaskExecutor().execute(query_task, "t1", ctx)
 
     assert query_task.stage == TaskStage.COMPLETED
 
@@ -170,7 +170,7 @@ async def test_query_direct_answer_pushes_focused_beneficiary_context_frame() ->
         accumulator=agg,
     )
 
-    await handle_query_task(query_task, "t1", ctx)
+    await QueryTaskExecutor().execute(query_task, "t1", ctx)
 
     assert query_task.stage == TaskStage.COMPLETED
     assert "context_frames" in agg.updates
@@ -214,7 +214,7 @@ async def test_query_result_surface_view_pushes_transaction_context_frame() -> N
         accumulator=agg,
     )
 
-    await handle_query_task(query_task, "t1", ctx)
+    await QueryTaskExecutor().execute(query_task, "t1", ctx)
 
     assert query_task.stage == TaskStage.COMPLETED
     pushed_frame = agg.updates["context_frames"][-1]

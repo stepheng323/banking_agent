@@ -2,9 +2,9 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.account_beneficiary import handle_beneficiary_task
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.account_beneficiary import BeneficiaryTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
@@ -44,7 +44,7 @@ async def test_beneficiary_management_uses_injected_service() -> None:
         accumulator=ExecutionAccumulator(state.tasks),
     )
 
-    await handle_beneficiary_task(task, "beneficiary_1", ctx)
+    await BeneficiaryTaskExecutor().execute(task, "beneficiary_1", ctx)
 
     assert len(worker.calls) == 1
     assert worker.calls[0]["payload"]["intent"] == "list_beneficiaries"

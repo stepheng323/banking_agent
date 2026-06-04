@@ -2,9 +2,9 @@ from typing import Literal, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
-from apps.chat.src.agent.orchestrator.task_handlers.context_frames import push_data_plan_frames_from_result
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_data_plan_frames_from_result
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
     _apply_result_patch,
@@ -18,7 +18,17 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 PurchaseWorkerName = Literal["airtime", "data"]
 
 
-async def handle_airtime_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+class AirtimeTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_airtime_task(task, task_id, ctx)
+
+
+class DataTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_data_task(task, task_id, ctx)
+
+
+async def _execute_airtime_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     locale = _state_locale(ctx.state)
     await _handle_purchase_task(
         task,
@@ -108,7 +118,7 @@ async def _handle_purchase_task(
     )
 
 
-async def handle_data_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+async def _execute_data_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     locale = _state_locale(ctx.state)
     await _handle_purchase_task(
         task,
@@ -120,3 +130,6 @@ async def handle_data_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnConte
         default_error=render_message("orchestrator.error.data_purchase_failed", locale),
         include_channel=True,
     )
+
+
+__all__ = ["AirtimeTaskExecutor", "DataTaskExecutor"]

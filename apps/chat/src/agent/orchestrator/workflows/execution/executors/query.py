@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.task_handlers.context_frames import (
+from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import (
     push_query_followup_referent_frame,
     push_query_surface_frame,
     query_pagination_actionable_payload,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.query_handoff import _next_query_handoff_transfer_task_id
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
@@ -20,7 +20,12 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import FocusedReferent
 
 
-async def handle_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+class QueryTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_query_task(task, task_id, ctx)
+
+
+async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "query",
@@ -144,3 +149,6 @@ async def handle_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCont
                 stack.append(new_session)
 
         ctx.accumulator.set_update("session_stack", stack)
+
+
+__all__ = ["QueryTaskExecutor"]

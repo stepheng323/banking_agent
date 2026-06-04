@@ -2,7 +2,6 @@ from typing import Any, Literal, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec
-from apps.chat.src.agent.orchestrator.task_handlers.context_frames import push_schedule_list_frame
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution import (
     _beneficiary_cache_contains_recipient,
@@ -10,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution
     _recipient_supports_targeted_beneficiary_lookup,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_schedule_list_frame
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
     _apply_result_patch,
@@ -26,7 +26,17 @@ logger = get_logger(__name__)
 SessionState = Literal["WAITING_FOR_INPUT", "WAITING_FOR_AUTH", "RUNNING"]
 
 
-async def handle_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+class TransferTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_transfer_task(task, task_id, ctx)
+
+
+class ScheduleTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_schedule_task(task, task_id, ctx)
+
+
+async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "transfer",
@@ -219,7 +229,7 @@ async def handle_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnC
             ctx.accumulator.set_update("session_stack", stack)
 
 
-async def handle_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     """Run scheduled transaction management through the transfer scheduler worker.
 
     Schedule management is planner-owned and can be read-only. It must not pass
@@ -280,3 +290,6 @@ async def handle_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnC
         confirmation_gate="snapshot",
         default_error=None,
     )
+
+
+__all__ = ["ScheduleTaskExecutor", "TransferTaskExecutor"]

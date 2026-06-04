@@ -7,9 +7,9 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.support import handle_faq_task
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.support import FAQTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.policy.loader import get_cached_policy
 from banking.runtime.results import (
@@ -85,7 +85,7 @@ async def test_faq_handoff_runs_support_same_turn_without_duplicate_handoff_text
     support_worker = _SupportOKWorker()
     task, ctx = _ctx(support_worker=support_worker)
 
-    await handle_faq_task(task, task.id, ctx)
+    await FAQTaskExecutor().execute(task, task.id, ctx)
 
     assert task.type == "support"
     assert task.stage == TaskStage.COMPLETED
@@ -114,7 +114,7 @@ async def test_faq_handoff_respects_disabled_support_policy(tmp_path: Path) -> N
             )
         )
 
-        await handle_faq_task(task, task.id, ctx)
+        await FAQTaskExecutor().execute(task, task.id, ctx)
 
         assert task.type == "support"
         assert task.stage == TaskStage.COMPLETED

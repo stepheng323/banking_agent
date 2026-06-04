@@ -1,8 +1,8 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.executors.transfer import TransferTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
@@ -13,7 +13,17 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def handle_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+class FAQTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_faq_task(task, task_id, ctx)
+
+
+class SupportTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await _execute_support_task(task, task_id, ctx)
+
+
+async def _execute_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "faq",
@@ -44,7 +54,7 @@ async def handle_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContex
             logger.info("faq_task_delegating_to_support", task_id=task_id)
             task.type = "support"
             task.payload["action"] = "handle_request"
-            await handle_support_task(task, task_id, ctx)
+            await _execute_support_task(task, task_id, ctx)
             return
 
         task.stage = TaskStage.COMPLETED
@@ -58,7 +68,7 @@ async def handle_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContex
         ctx.accumulator.say(render_message("faq.info_trouble", _state_locale(ctx.state)))
 
 
-async def handle_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     user_msg = ctx.state.last_message_text
     if looks_like_transaction_replay_modifier_request(user_msg):
         logger.info("support_task_replay_modifier_rerouted_to_transfer", task_id=task_id)
@@ -70,7 +80,7 @@ async def handle_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
                 "instruction": user_msg,
             }
         )
-        await handle_transfer_task(task, task_id, ctx)
+        await TransferTaskExecutor().execute(task, task_id, ctx)
         return
 
     worker = _get_worker(
@@ -152,3 +162,6 @@ async def handle_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         if stack and stack[-1].domain == "support":
             stack.pop()
             ctx.accumulator.set_update("session_stack", stack)
+
+
+__all__ = ["FAQTaskExecutor", "SupportTaskExecutor"]
