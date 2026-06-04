@@ -24,7 +24,8 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
-from apps.chat.src.runtime.chat_worker_dependencies import _build_orchestrator_runtime_bundle, _resolve_role_model
+from apps.chat.src.runtime.chat_worker_dependencies import _build_orchestrator_runtime_bundle
+from apps.chat.src.runtime.model_roles import resolve_role_model
 from banking.identity.repositories.user_repository import UserRepository
 from banking.policy.guardrails.loader import get_cached_guardrails
 from banking.policy.loader import get_cached_policy
@@ -235,25 +236,25 @@ async def build_dry_run_agent() -> tuple[UserRepository, OrchestratorAgent, Noop
     publisher = NoopPublisher()
     planner_llm = _build_chat_model(role="planner", model=settings.planner_model, timeout=30.0)
     app_env = settings.runtime.app_env
-    query_model = _resolve_role_model(
+    query_model = resolve_role_model(
         role="query",
         configured_model=settings.query_model,
         planner_model=settings.planner_model,
         app_env=app_env,
     )
-    semantic_router_model = _resolve_role_model(
+    semantic_router_model = resolve_role_model(
         role="semantic_router",
         configured_model=settings.semantic_router_model,
         planner_model=settings.planner_model,
         app_env=app_env,
     )
-    interrupt_model = _resolve_role_model(
+    interrupt_model = resolve_role_model(
         role="interrupt_router",
         configured_model=settings.interrupt_router_model,
         planner_model=settings.planner_model,
         app_env=app_env,
     )
-    extractor_model = _resolve_role_model(
+    extractor_model = resolve_role_model(
         role="extractor",
         configured_model=settings.extractor_model,
         planner_model=settings.planner_model,
