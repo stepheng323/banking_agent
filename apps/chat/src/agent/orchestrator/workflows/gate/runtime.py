@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.interrupt_state import _has
 from apps.chat.src.agent.orchestrator.workflows.gate.language import _allow_phrase_heavy_fastpath
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _current_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView, gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
 
 
 @dataclass(frozen=True)
@@ -63,17 +64,14 @@ class GateRuntime:
 
 
 def build_gate_runtime(state: OrchestratorState, config: RunnableConfig) -> GateRuntime:
-    configurable = config.get("configurable", {})
-    if not isinstance(configurable, Mapping):
-        configurable = {}
-
+    runtime_config = OrchestrationConfig.from_runnable_config(config)
     state_view = gate_state_view(state)
     message_text = state_view.message_text
     current_locale = _current_locale(state_view)
     return GateRuntime(
         state=state,
         config=config,
-        dependencies=GateDependencies.from_configurable(configurable),
+        dependencies=GateDependencies.from_configurable(runtime_config.configurable),
         state_view=state_view,
         message_text=message_text,
         current_locale=current_locale,

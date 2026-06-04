@@ -8,6 +8,8 @@ from typing import Any, Protocol, cast
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
+
 
 class BeneficiaryLookupRepositoryProtocol(Protocol):
     async def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[Any]: ...
@@ -64,10 +66,8 @@ class ExecutionDependencies:
 
     @classmethod
     def from_config(cls, config: RunnableConfig) -> ExecutionDependencies:
-        configurable = config.get("configurable", {})
-        if isinstance(configurable, Mapping):
-            return cls.from_configurable(cast(Mapping[str, Any], configurable))
-        return cls.empty()
+        runtime_config = OrchestrationConfig.from_runnable_config(config)
+        return cls.from_configurable(runtime_config.configurable)
 
 
 __all__ = [

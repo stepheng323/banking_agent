@@ -1,6 +1,5 @@
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
@@ -17,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.wave.executor_registry
     DEFAULT_TASK_EXECUTORS,
     TaskExecutorRegistry,
 )
+from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.accounts.mandate_state import is_mandate_debit_ready
 from shared.utils.logging import get_logger
@@ -65,12 +65,9 @@ def build_execution_wave_runtime(
     config: RunnableConfig,
     current_wave: list[str],
 ) -> ExecutionWaveRuntime:
-    configurable = config.get("configurable", {})
-    if not isinstance(configurable, Mapping):
-        configurable = {}
-    raw_services = cast(Mapping[str, object] | None, configurable.get("services"))
-    services = OrchestrationServices.from_mapping(raw_services)
-    dependencies = ExecutionDependencies.from_configurable(configurable)
+    runtime_config = OrchestrationConfig.from_runnable_config(config)
+    services = runtime_config.services()
+    dependencies = ExecutionDependencies.from_configurable(runtime_config.configurable)
     accumulator = ExecutionAccumulator(task_map(state))
     ctx = ExecutionTurnContext(
         state=state,

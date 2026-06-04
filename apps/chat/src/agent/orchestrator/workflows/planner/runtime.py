@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView, planner_state_view
+from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
 
 
 @dataclass(frozen=True)
@@ -44,16 +45,13 @@ class PlannerRuntime:
 
 
 def build_planner_runtime(state: OrchestratorState, config: RunnableConfig) -> PlannerRuntime:
-    configurable = config.get("configurable", {})
-    if not isinstance(configurable, Mapping):
-        configurable = {}
-
+    runtime_config = OrchestrationConfig.from_runnable_config(config)
     state_view = planner_state_view(state)
     return PlannerRuntime(
         state=state,
         state_view=state_view,
         config=config,
-        dependencies=PlannerDependencies.from_configurable(configurable),
+        dependencies=PlannerDependencies.from_configurable(runtime_config.configurable),
         text=state_view.last_message_text_or_empty,
         current_locale=state_view.current_locale,
     )

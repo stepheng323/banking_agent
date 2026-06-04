@@ -1,6 +1,5 @@
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
@@ -10,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import (
     InterruptStateView,
     interrupt_state_view,
 )
+from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 
 
@@ -35,19 +35,16 @@ def build_interrupt_runtime(
     if interrupt is None:
         raise RuntimeError("pending_interrupt_required")
     current_task_types = _current_task_types_for_view(state_view, interrupt.task_ids)
-    configurable = config.get("configurable", {})
-    if not isinstance(configurable, Mapping):
-        configurable = {}
-    raw_services = cast(OrchestrationServices | Mapping[str, object] | None, configurable.get("services"))
+    runtime_config = OrchestrationConfig.from_runnable_config(config)
     return InterruptRuntime(
         state_view=state_view,
         interrupt=interrupt,
         text=state_view.message_text,
         current_task_types=current_task_types,
         active_type=_active_intent(current_task_types),
-        task_planner=configurable.get("task_planner"),
-        redis_client=configurable.get("redis_client"),
-        services=OrchestrationServices.from_mapping(raw_services),
+        task_planner=runtime_config.get("task_planner"),
+        redis_client=runtime_config.get("redis_client"),
+        services=runtime_config.services(),
     )
 
 

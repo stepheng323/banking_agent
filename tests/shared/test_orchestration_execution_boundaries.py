@@ -7,12 +7,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GRAPH_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "graph"
+WORKFLOWS_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows"
 EXECUTION_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "execution"
 TASK_HANDLERS_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers"
 INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "interrupt"
 GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
 PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
 LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "lifecycle"
+WORKFLOW_RUNTIME_CONFIG_MODULE = WORKFLOWS_ROOT / "runtime_config.py"
 INTERRUPT_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "context.py",
     INTERRUPT_ROOT / "node.py",
@@ -952,6 +954,23 @@ def test_typed_gate_core_reads_configurable_only_in_runtime_builder() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         for forbidden in FORBIDDEN_GATE_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_workflow_configurable_reads_live_only_in_runtime_config_accessor() -> None:
+    violations: list[str] = []
+    forbidden_text = (
+        'config["configurable"]',
+        'config.get("configurable"',
+    )
+    for path in sorted(WORKFLOWS_ROOT.rglob("*.py")):
+        if path.resolve() == WORKFLOW_RUNTIME_CONFIG_MODULE.resolve():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in forbidden_text:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
 

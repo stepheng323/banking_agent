@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.state_view import (
     LifecycleStateView,
     lifecycle_state_view,
 )
+from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
 from banking.beneficiaries.services.post_transaction_beneficiary import BeneficiarySuggestionServiceProtocol
 
 
@@ -49,16 +50,13 @@ class FinalizeRuntime:
 
 
 def build_finalize_runtime(state: OrchestratorState, config: RunnableConfig) -> FinalizeRuntime:
-    configurable = config.get("configurable", {})
-    if not isinstance(configurable, Mapping):
-        configurable = {}
-
+    runtime_config = OrchestrationConfig.from_runnable_config(config)
     state_view = lifecycle_state_view(state)
     return FinalizeRuntime(
         state=state,
         state_view=state_view,
         config=config,
-        dependencies=LifecycleDependencies.from_configurable(configurable),
+        dependencies=LifecycleDependencies.from_configurable(runtime_config.configurable),
         outbox=state_view.outbox,
         locale=state_view.locale,
         completed_tasks=state_view.completed_tasks,
