@@ -6,7 +6,6 @@ import uuid
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.completed_transaction_frames import (
     ASYNC_RECEIPT_STATUSES,
@@ -18,6 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.completed_transaction_
     receipt_status,
 )
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.runtime import LifecycleDependencies
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.state_view import LifecycleStateView
 from banking.beneficiaries.services.post_transaction_beneficiary import (
     BeneficiarySuggestionServiceProtocol,
     append_beneficiary_suggestion,
@@ -25,7 +25,6 @@ from banking.beneficiaries.services.post_transaction_beneficiary import (
     suggest_transfer_beneficiary,
 )
 from banking.presentation.formatters.multi_action_summary import format_multi_action_summary
-from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message, render_text
 from banking.receipts.choice import build_receipt_choice_intent
 from shared.utils.logging import get_logger
@@ -55,7 +54,7 @@ def append_transfer_processing_message(task: TaskSpec, outbox: list[dict[str, An
 async def enqueue_finalize_transfer_receipt(
     *,
     task: TaskSpec,
-    state: OrchestratorState,
+    state_view: LifecycleStateView,
     locale: str,
 ) -> dict[str, Any] | None:
     transaction_reference = task.payload.get("transaction_id")
@@ -64,9 +63,9 @@ async def enqueue_finalize_transfer_receipt(
 
     recipient_account = task.payload.get("recipient_account")
     payload: dict[str, Any] = {
-        "phone_number": state.phone_number,
-        "channel": state.channel,
-        "channel_identity": state.channel_identity,
+        "phone_number": state_view.phone_number,
+        "channel": state_view.channel,
+        "channel_identity": state_view.channel_identity,
         "transfer_data": {
             "amount": task.payload.get("amount"),
             "source": {
@@ -80,7 +79,7 @@ async def enqueue_finalize_transfer_receipt(
                 "bank_name": task.payload.get("recipient_bank_name"),
             },
             "narration": task.payload.get("narration"),
-            "channel": state.channel,
+            "channel": state_view.channel,
             "session_id": task.payload.get("idempotency_key") or transaction_reference,
         },
         "transaction_reference": transaction_reference,
@@ -93,7 +92,7 @@ async def enqueue_finalize_transfer_receipt(
 async def build_single_task_beneficiary_suggestion(
     *,
     task: TaskSpec,
-    state: OrchestratorState,
+    state_view: LifecycleStateView,
     suggestion_service: BeneficiarySuggestionServiceProtocol | None,
     locale: str,
 ) -> str | None:
@@ -111,8 +110,8 @@ async def build_single_task_beneficiary_suggestion(
     if task.type == "transfer":
         return await suggest_transfer_beneficiary(
             suggestion_service,
-            phone_number=state.phone_number,
-            channel=state.channel,
+            phone_number=state_view.phone_number,
+            channel=state_view.channel,
             locale=locale,
             transaction_id=transaction_reference,
             account_number=payload.get("recipient_account"),
@@ -128,8 +127,8 @@ async def build_single_task_beneficiary_suggestion(
     if task.type == "airtime":
         return await suggest_mobile_beneficiary(
             suggestion_service,
-            phone_number=state.phone_number,
-            channel=state.channel,
+            phone_number=state_view.phone_number,
+            channel=state_view.channel,
             locale=locale,
             transaction_id=transaction_reference,
             beneficiary_type="airtime",
@@ -147,8 +146,8 @@ async def build_single_task_beneficiary_suggestion(
     if task.type == "data":
         return await suggest_mobile_beneficiary(
             suggestion_service,
-            phone_number=state.phone_number,
-            channel=state.channel,
+            phone_number=state_view.phone_number,
+            channel=state_view.channel,
             locale=locale,
             transaction_id=transaction_reference,
             beneficiary_type="data",
@@ -168,12 +167,12 @@ async def build_single_task_beneficiary_suggestion(
 
 async def handle_completed_tasks(
     completed_tasks: list[TaskSpec],
-    state: OrchestratorState,
+    state_view: LifecycleStateView,
     dependencies: LifecycleDependencies,
     outbox: list[dict[str, Any]],
 ) -> bool:
     """Handle completed tasks and generate receipts or summaries."""
-    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    locale = state_view.locale
     visible_tasks = [task for task in completed_tasks if not task.payload.get("skip_finalize_summary")]
     if not visible_tasks:
         return False
@@ -215,14 +214,14 @@ async def handle_completed_tasks(
 
         receipt_offer = await enqueue_finalize_transfer_receipt(
             task=task,
-            state=state,
+            state_view=state_view,
             locale=locale,
         )
         if receipt_offer:
             outbox.append(receipt_offer)
         if suggestion := await build_single_task_beneficiary_suggestion(
             task=task,
-            state=state,
+            state_view=state_view,
             suggestion_service=dependencies.beneficiary_suggestion_service,
             locale=locale,
         ):
@@ -261,7 +260,7 @@ async def handle_completed_tasks(
         if str(receipt.get("status") or "").lower() not in ASYNC_RECEIPT_STATUSES:
             if suggestion := await build_single_task_beneficiary_suggestion(
                 task=task,
-                state=state,
+                state_view=state_view,
                 suggestion_service=dependencies.beneficiary_suggestion_service,
                 locale=locale,
             ):

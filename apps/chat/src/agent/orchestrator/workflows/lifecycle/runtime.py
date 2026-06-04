@@ -8,10 +8,13 @@ from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.state_view import (
+    LifecycleStateView,
+    lifecycle_state_view,
+)
 from banking.beneficiaries.services.post_transaction_beneficiary import BeneficiarySuggestionServiceProtocol
-from banking.presentation.i18n.locale import LocaleManager
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,7 @@ class FinalizeRuntime:
     """Typed state derived once at the LangGraph finalize node boundary."""
 
     state: OrchestratorState
+    state_view: LifecycleStateView
     config: RunnableConfig
     dependencies: LifecycleDependencies
     outbox: list[dict[str, Any]]
@@ -49,15 +53,17 @@ def build_finalize_runtime(state: OrchestratorState, config: RunnableConfig) -> 
     if not isinstance(configurable, Mapping):
         configurable = {}
 
+    state_view = lifecycle_state_view(state)
     return FinalizeRuntime(
         state=state,
+        state_view=state_view,
         config=config,
         dependencies=LifecycleDependencies.from_configurable(configurable),
-        outbox=list(state.outbox),
-        locale=LocaleManager.normalize((state.loaded_context or {}).get("language")).value,
-        completed_tasks=[task for task in state.tasks.values() if task.stage == TaskStage.COMPLETED],
-        failed_tasks=[task for task in state.tasks.values() if task.stage == TaskStage.FAILED],
-        cancelled_tasks=[task for task in state.tasks.values() if task.stage == TaskStage.CANCELLED],
+        outbox=state_view.outbox,
+        locale=state_view.locale,
+        completed_tasks=state_view.completed_tasks,
+        failed_tasks=state_view.failed_tasks,
+        cancelled_tasks=state_view.cancelled_tasks,
     )
 
 

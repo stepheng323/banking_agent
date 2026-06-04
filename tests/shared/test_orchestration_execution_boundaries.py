@@ -43,6 +43,12 @@ GATE_STATE_VIEW_STAGE_MODULES = (
     GATE_ROOT / "stages" / "support_context_stages.py",
     GATE_ROOT / "stages" / "unsupported_boundary_followup_stage.py",
 )
+LIFECYCLE_STATE_VIEW_MODULES = (
+    LIFECYCLE_ROOT / "finalize.py",
+    LIFECYCLE_ROOT / "finalize_completed.py",
+    LIFECYCLE_ROOT / "ingest.py",
+    LIFECYCLE_ROOT / "runtime.py",
+)
 EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
@@ -692,6 +698,45 @@ def test_typed_lifecycle_core_reads_configurable_only_in_runtime_builder() -> No
         for forbidden in FORBIDDEN_LIFECYCLE_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_lifecycle_core_uses_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "channel",
+        "channel_identity",
+        "context_frames",
+        "current_wave_index",
+        "last_activity_date",
+        "last_callback",
+        "last_message_id",
+        "last_message_text",
+        "loaded_context",
+        "outbox",
+        "pending_interrupt",
+        "phone_number",
+        "referent_memory",
+        "stashed_sessions",
+        "tasks",
+        "waves",
+    }
+    for path in LIFECYCLE_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []
 

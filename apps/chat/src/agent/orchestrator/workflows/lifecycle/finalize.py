@@ -38,6 +38,7 @@ from shared.utils.user_error import safe_user_error_message
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Final Step. Generate response and queue receipts."""
     runtime = build_finalize_runtime(state, config)
+    state_view = runtime.state_view
     outbox = runtime.outbox
     locale = runtime.locale
     completed_tasks = runtime.completed_tasks
@@ -48,7 +49,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     if completed_tasks:
         suppress_empty_fallback = await handle_completed_tasks(
             completed_tasks=completed_tasks,
-            state=state,
+            state_view=state_view,
             dependencies=runtime.dependencies,
             outbox=outbox,
         )
@@ -79,40 +80,40 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     for task in completed_tasks:
         remember_referents_from_completed_task(state, task)
     if completed_tasks:
-        context_updates["referent_memory"] = state.referent_memory
+        context_updates["referent_memory"] = state_view.referent_memory
 
     visible_completed_tasks = [task for task in completed_tasks if not task.payload.get("skip_finalize_summary")]
     completed_transaction_frame = build_completed_transaction_frame(
         visible_tasks=visible_completed_tasks,
-        source_message_id=state.last_message_id,
+        source_message_id=state_view.last_message_id,
     )
     if completed_transaction_frame is not None:
         OrchestratorContextManager().push_frame(state, completed_transaction_frame)
-        context_updates["context_frames"] = state.context_frames
-        context_updates["referent_memory"] = state.referent_memory
+        context_updates["context_frames"] = state_view.context_frames
+        context_updates["referent_memory"] = state_view.referent_memory
 
     resumable_stashed_sessions = [
         session
-        for session in state.stashed_sessions
+        for session in state_view.stashed_sessions
         if isinstance(session, dict) and is_resumable_stashed_session(cast(dict[str, Any], session), now_ts=now_ts)
     ]
-    if len(resumable_stashed_sessions) != len(state.stashed_sessions):
+    if len(resumable_stashed_sessions) != len(state_view.stashed_sessions):
         stale_stash_ids = {
             stash_id
-            for session in state.stashed_sessions
+            for session in state_view.stashed_sessions
             if isinstance(session, dict) and session not in resumable_stashed_sessions
             for stash_id in [stashed_session_id(session)]
             if stash_id
         }
         if stale_stash_ids:
             forget_stashed_referents(state, stale_stash_ids)
-            context_updates["referent_memory"] = state.referent_memory
+            context_updates["referent_memory"] = state_view.referent_memory
         context_updates["stashed_sessions"] = resumable_stashed_sessions
 
     if (
         resumable_stashed_sessions
         and has_completed_non_transaction
-        and not has_live_resume_prompt_frame(state.context_frames)
+        and not has_live_resume_prompt_frame(state_view.context_frames)
     ):
         last_session = resumable_stashed_sessions[-1]
         intent = last_session.get("intent", render_message("orchestrator.session.default_intent", locale))
@@ -141,7 +142,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
             created_at_ts=int(time.time()),
             ttl_seconds=300,
         )
-        current_frames = list(state.context_frames)
+        current_frames = state_view.context_frames
         current_frames.append(frame)
         context_updates["context_frames"] = current_frames
 

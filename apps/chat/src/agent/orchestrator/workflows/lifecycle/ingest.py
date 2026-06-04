@@ -2,40 +2,33 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.state_view import (
+    LifecycleStateView,
+    lifecycle_state_view,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 SESSION_TZ = ZoneInfo("Africa/Lagos")
-_TERMINAL_TASK_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 
 
 def _current_session_date() -> str:
     return datetime.now(SESSION_TZ).date().isoformat()
 
 
-def _all_tasks_terminal(state: OrchestratorState) -> bool:
-    if not state.tasks:
-        return False
-    return all(task.stage in _TERMINAL_TASK_STAGES for task in state.tasks.values())
+def _all_tasks_terminal(state_view: LifecycleStateView) -> bool:
+    return state_view.all_tasks_terminal
 
 
-def _has_unblocked_nonterminal_wave(state: OrchestratorState) -> bool:
-    if not state.tasks or state.pending_interrupt is not None:
-        return False
-    if not state.waves or state.current_wave_index >= len(state.waves):
-        return False
-    current_wave = state.waves[state.current_wave_index]
-    return any(
-        (task := state.tasks.get(task_id)) is not None and task.stage not in _TERMINAL_TASK_STAGES
-        for task_id in current_wave
-    )
+def _has_unblocked_nonterminal_wave(state_view: LifecycleStateView) -> bool:
+    return state_view.has_unblocked_nonterminal_wave
 
 
 async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
     """Entry point. Setup state for the new turn."""
-    logger.info("ingest_message", user=state.phone_number, text=state.last_message_text)
+    state_view = lifecycle_state_view(state)
+    logger.info("ingest_message", user=state_view.phone_number, text=state_view.last_message_text)
 
     today = _current_session_date()
     updates: dict[str, Any] = {
@@ -55,11 +48,11 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
         "planner_used": False,
     }
 
-    if state.last_activity_date and state.last_activity_date != today:
+    if state_view.last_activity_date and state_view.last_activity_date != today:
         logger.info(
             "ingest_day_rollover_reset",
-            phone_number=state.phone_number,
-            previous=state.last_activity_date,
+            phone_number=state_view.phone_number,
+            previous=state_view.last_activity_date,
             current=today,
         )
         updates.update(
@@ -79,12 +72,12 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
             }
         )
 
-    if _all_tasks_terminal(state) and state.pending_interrupt is None:
+    if _all_tasks_terminal(state_view) and not state_view.has_pending_interrupt:
         logger.info(
             "ingest_terminal_state_reset",
-            phone_number=state.phone_number,
-            task_count=len(state.tasks),
-            wave_count=len(state.waves),
+            phone_number=state_view.phone_number,
+            task_count=state_view.task_count,
+            wave_count=state_view.wave_count,
         )
         updates.update(
             {
@@ -99,22 +92,13 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
                 "pin_verified": False,
             }
         )
-    elif _has_unblocked_nonterminal_wave(state):
+    elif _has_unblocked_nonterminal_wave(state_view):
         logger.warning(
             "ingest_unblocked_nonterminal_state_reset",
-            phone_number=state.phone_number,
-            current_wave_index=state.current_wave_index,
-            wave_count=len(state.waves),
-            task_shapes=[
-                {
-                    "task_id": task_id,
-                    "type": state.tasks[task_id].type,
-                    "stage": state.tasks[task_id].stage.value,
-                    "action": state.tasks[task_id].payload.get("action"),
-                }
-                for task_id in state.waves[state.current_wave_index]
-                if task_id in state.tasks and state.tasks[task_id].stage not in _TERMINAL_TASK_STAGES
-            ],
+            phone_number=state_view.phone_number,
+            current_wave_index=state_view.current_wave_index,
+            wave_count=state_view.wave_count,
+            task_shapes=state_view.active_nonterminal_wave_task_shapes,
         )
         updates.update(
             {
@@ -130,11 +114,11 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
             }
         )
 
-    if state.last_callback:
-        logger.info("processing_callback", payload=state.last_callback)
+    if state_view.has_last_callback:
+        logger.info("processing_callback", payload=state_view.last_callback)
         updates["last_message_text"] = None
         updates["last_message_id"] = None
-        if state.last_callback.get("pin_verified"):
+        if state_view.last_callback_pin_verified:
             updates["pin_verified"] = True
 
     return updates
