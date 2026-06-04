@@ -20,6 +20,7 @@ from apps.chat.src.queue_consumers.message_outbound import (
     suppress_spurious_greeting_intents,
 )
 from apps.chat.src.queue_consumers.receipt_choices import handle_receipt_image_choice
+from apps.chat.src.runtime.bundles import ChatRuntimeBundle, ChatRuntimeBundleFactory
 from banking.accounts.onboarding.executor import OnboardingExecutor
 from banking.identity.repositories.user_repository import UserRepository
 from banking.presentation.i18n.renderer import render_message
@@ -38,10 +39,6 @@ from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
 _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
-RuntimeBundleFactory = Callable[
-    [],
-    tuple[UserRepository, OnboardingExecutor, OrchestratorAgent],
-]
 
 
 class _NoopPublisher:
@@ -58,7 +55,7 @@ class MessageConsumer:
         onboarding_executor: OnboardingExecutor | None,
         orchestrator: OrchestratorAgent | None,
         publisher: QueuePublisher | None = None,
-        runtime_bundle_factory: RuntimeBundleFactory | None = None,
+        runtime_bundle_factory: ChatRuntimeBundleFactory | None = None,
         latest_inbound_redis_client: Any | None = None,
         telegram_client_factory: Callable[[], TelegramClient] | None = None,
     ) -> None:
@@ -70,7 +67,7 @@ class MessageConsumer:
         self.latest_inbound_redis_client = latest_inbound_redis_client
         self.telegram_client_factory = telegram_client_factory or TelegramClient
 
-    def _runtime_bundle(self) -> tuple[UserRepository, OnboardingExecutor, OrchestratorAgent]:
+    def _runtime_bundle(self) -> ChatRuntimeBundle:
         """Resolve runtime dependencies without a long-lived DB session."""
         if self.runtime_bundle_factory is None:
             if self.user_repository is None or self.onboarding_executor is None or self.orchestrator is None:
