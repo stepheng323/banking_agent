@@ -32,6 +32,7 @@ GATE_STATE_VIEW_STAGE_MODULES = (
     GATE_ROOT / "stages" / "helpers.py",
     GATE_ROOT / "stages" / "meta_stages.py",
     GATE_ROOT / "stages" / "mixed_capability_stages.py",
+    GATE_ROOT / "stages" / "query_transfer_stages.py",
     GATE_ROOT / "stages" / "resume_stages.py",
     GATE_ROOT / "stages" / "schedule_read_stage.py",
     GATE_ROOT / "stages" / "semantic_direct_response.py",

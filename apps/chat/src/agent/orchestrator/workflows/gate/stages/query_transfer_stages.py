@@ -36,7 +36,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
     has_active_query_session = bool(
         isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active")
     )
-    session = ctx.state.session_stack[-1] if ctx.state.session_stack else None
+    session = ctx.state_view.active_session
     has_query_session_stack = bool(session and session.domain == "query")
     logger.info(
         "gate_query_routing_breadcrumb",
@@ -48,14 +48,12 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
 
     contextual_casual_followup = (
         not ctx.live_pending_interrupt
-        and not ctx.state.has_quote
+        and not ctx.state_view.has_quote
         and not has_active_query_session
-        and not ctx.state.session_stack
-        and not ctx.state.waves
-        and ctx.state.pending_interrupt is None
+        and not ctx.state_view.has_gate_blocking_state
         and is_contextual_casual_followup_turn(
             ctx.message_text,
-            (ctx.state.loaded_context or {}).get("history") if isinstance(ctx.state.loaded_context, dict) else None,
+            ctx.state_view.loaded_context_or_empty.get("history"),
         )
     )
     if contextual_casual_followup:
@@ -76,7 +74,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
 
     if (
         not ctx.live_pending_interrupt
-        and not ctx.state.has_quote
+        and not ctx.state_view.has_quote
         and _is_direct_context_recap_request(ctx.message_text)
     ):
         response = _build_direct_context_recap_response(ctx.turn_summary)
@@ -96,7 +94,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
             }
         logger.info("gate_direct_context_recap_miss", reason="no_active_context")
 
-    if not ctx.live_pending_interrupt and not ctx.state.has_quote:
+    if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         bypass_reason, bypass_detail = _query_followup_bypass_reason(
             message_text=ctx.message_text,
             locale=ctx.current_locale,
@@ -130,7 +128,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
 
     can_consider_query_domain = (
         not ctx.live_pending_interrupt
-        and not ctx.state.has_quote
+        and not ctx.state_view.has_quote
         and not has_active_query_session
         and ctx.phrase_heavy_fastpath_allowed
     )
@@ -171,7 +169,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
         logger.info("gate_query_domain_hint_attached")
         return None
 
-    if not ctx.live_pending_interrupt and not ctx.state.has_quote:
+    if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         transfer_request_reason = (
             _classify_obvious_transfer_request(ctx.message_text) if ctx.phrase_heavy_fastpath_allowed else None
         )
@@ -182,7 +180,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
         }:
             transfer_updates: dict[str, Any] = {}
             if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
-                await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+                await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
                 transfer_updates.update(
                     _build_query_session_exit_updates(
                         ctx.state,
@@ -224,7 +222,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
                 "preplanner_expected_transaction_executors": ["transfer"],
             }
             if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
-                await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+                await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
                 transfer_updates.update(
                     _build_query_session_exit_updates(
                         ctx.state,
