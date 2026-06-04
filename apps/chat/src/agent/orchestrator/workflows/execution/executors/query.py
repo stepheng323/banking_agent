@@ -26,6 +26,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import 
     set_task_payload_value,
     set_task_stage,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import next_wave_index, wave_list
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -122,8 +123,8 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             )
             ctx.accumulator.set_tasks(tasks)
 
-            waves = list(ctx.accumulator.get_waves(ctx.state.waves))
-            insert_index = min(ctx.state.current_wave_index + 1, len(waves))
+            waves = list(ctx.accumulator.get_waves(wave_list(ctx.state)))
+            insert_index = min(next_wave_index(ctx.state), len(waves))
             waves.insert(insert_index, [transfer_task_id])
             ctx.accumulator.set_waves(waves)
 

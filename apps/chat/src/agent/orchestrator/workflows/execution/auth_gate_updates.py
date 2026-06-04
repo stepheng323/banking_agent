@@ -17,6 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import 
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import required_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
+    next_wave_index,
 )
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
@@ -50,7 +51,7 @@ def _build_auth_gate_updates(
             stalled_tasks=stalled,
             candidate_task_ids=agg.auth_task_ids(),
         )
-        agg.set_current_wave_index(state.current_wave_index + 1)
+        agg.set_current_wave_index(next_wave_index(state))
         return cast(dict[str, Any], agg.to_updates())
 
     auth_tasks = required_tasks(state, auth_task_ids)

@@ -7,6 +7,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks, iter_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import current_wave_index
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -126,7 +127,7 @@ def choose_wave_blocker(
         task_ids=task_ids,
         suppressed_counts=suppressed_counts,
         blocker_counts=blocker_counts,
-        current_wave_index=state.current_wave_index,
+        current_wave_index=current_wave_index(state),
         current_wave=list(current_wave),
     )
     logger.info(

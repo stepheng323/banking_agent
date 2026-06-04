@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup impo
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_tasks import (
     execute_current_wave_tasks,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import wave_position
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,15 +25,16 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
     Invokes Domain Workers.
     Aggregates outcomes and sets PendingInterrupt if blocked.
     """
-    if not state.waves or state.current_wave_index >= len(state.waves):
-        logger.info("advance_wave_skip", index=state.current_wave_index, count=len(state.waves))
+    position = wave_position(state)
+    if not position.has_current_wave:
+        logger.info("advance_wave_skip", index=position.index, count=position.wave_count)
         return {}
 
-    current_wave = state.waves[state.current_wave_index]
+    current_wave = position.current_wave
     surface = context_surface(state)
     logger.info(
         "advance_wave",
-        index=state.current_wave_index,
+        index=position.index,
         tasks=current_wave,
         context_frames_len=surface.frame_count,
     )

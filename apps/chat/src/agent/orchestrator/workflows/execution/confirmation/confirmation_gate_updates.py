@@ -20,6 +20,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import 
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import required_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
+    next_wave_index,
 )
 from banking.presentation.formatters.transaction_confirmation_copy import build_confirmation_header
 from shared.utils.logging import get_logger
@@ -53,7 +54,7 @@ def _build_confirmation_gate_updates(
             stalled_tasks=stalled,
             candidate_task_ids=agg.confirmation_task_ids(),
         )
-        agg.set_current_wave_index(state.current_wave_index + 1)
+        agg.set_current_wave_index(next_wave_index(state))
         return cast(dict[str, Any], agg.to_updates())
 
     accounts = loaded_context(state).account_rows

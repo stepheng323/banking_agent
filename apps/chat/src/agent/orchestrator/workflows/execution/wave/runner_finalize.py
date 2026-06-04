@@ -16,7 +16,10 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
     task_log_shapes,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
-from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import _fail_stalled_wave_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
+    _fail_stalled_wave_tasks,
+    next_wave_index,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -38,7 +41,7 @@ def _advance_or_fail_stalled_wave(
 ) -> None:
     if _current_wave_is_terminal(state=state, current_wave=current_wave):
         if not accumulator.has_current_wave_index():
-            accumulator.set_current_wave_index(state.current_wave_index + 1)
+            accumulator.set_current_wave_index(next_wave_index(state))
         return
 
     if accumulator.has_pending_interrupt():
@@ -55,7 +58,7 @@ def _advance_or_fail_stalled_wave(
         stalled_tasks=stalled,
         task_shapes=task_log_shapes(state, stalled),
     )
-    accumulator.set_current_wave_index(state.current_wave_index + 1)
+    accumulator.set_current_wave_index(next_wave_index(state))
 
 
 def finalize_execution_wave_updates(

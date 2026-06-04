@@ -46,6 +46,7 @@ EXECUTION_CONTEXT_SURFACE_MODULE = EXECUTION_ROOT / "context_surface.py"
 EXECUTION_LAST_INTERRUPT_MODULE = EXECUTION_ROOT / "last_interrupt.py"
 EXECUTION_LOADED_CONTEXT_MODULE = EXECUTION_ROOT / "loaded_context.py"
 EXECUTION_TASK_ACCESS_MODULE = EXECUTION_ROOT / "task_access.py"
+EXECUTION_WAVE_STATE_MODULE = EXECUTION_ROOT / "wave" / "wave_state.py"
 
 DELETED_EXECUTION_MODULE_PATHS = (
     TASK_HANDLERS_ROOT,
@@ -475,6 +476,30 @@ def test_execution_context_surface_reads_use_typed_helpers() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in guarded_attrs:
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_execution_wave_position_reads_use_typed_helpers() -> None:
+    violations: list[str] = []
+    guarded_attrs = {"current_wave_index", "waves"}
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.resolve() == EXECUTION_WAVE_STATE_MODULE.resolve():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "ctx"
+            ):
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []
