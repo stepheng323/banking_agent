@@ -9,7 +9,6 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.referents.store import forget_stashed_referents
 from apps.chat.src.agent.orchestrator.context.referents.task_memory import remember_referents_from_completed_task
-from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.completed_transaction_frames import (
@@ -25,11 +24,11 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.resume_prompt import (
     is_resumable_stashed_session,
     stashed_session_id,
 )
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.runtime import build_finalize_runtime
 from banking.presentation.i18n.bridge import (
     render_cancelled_prompt,
     render_generic_capability_blocked,
 )
-from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import (
     render_message,
 )
@@ -38,18 +37,19 @@ from shared.utils.user_error import safe_user_error_message
 
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Final Step. Generate response and queue receipts."""
-    outbox = list(state.outbox)
-    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
-    completed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.COMPLETED]
-    failed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.FAILED]
-    cancelled_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.CANCELLED]
+    runtime = build_finalize_runtime(state, config)
+    outbox = runtime.outbox
+    locale = runtime.locale
+    completed_tasks = runtime.completed_tasks
+    failed_tasks = runtime.failed_tasks
+    cancelled_tasks = runtime.cancelled_tasks
 
     suppress_empty_fallback = False
     if completed_tasks:
         suppress_empty_fallback = await handle_completed_tasks(
             completed_tasks=completed_tasks,
             state=state,
-            config=config,
+            dependencies=runtime.dependencies,
             outbox=outbox,
         )
 

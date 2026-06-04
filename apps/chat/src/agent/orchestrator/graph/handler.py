@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 import redis.asyncio as redis
-from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph.state import CompiledStateGraph
 
@@ -35,6 +34,12 @@ from apps.chat.src.agent.orchestrator.graph.route_metrics import (
     record_guardrail_signal,
     resolve_path_label,
     resolve_semantic_path_shape,
+)
+from apps.chat.src.agent.orchestrator.graph.runtime import (
+    GraphConfigDependencies,
+    GraphRunnableConfig,
+    build_graph_runnable_config,
+    graph_thread_id,
 )
 from apps.chat.src.agent.orchestrator.graph.thread_lock import thread_invocation_lock
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
@@ -132,33 +137,42 @@ class OrchestratorGraphHandler:
 
     @staticmethod
     def _thread_id(phone_number: str, channel: str) -> str:
-        return f"{channel}:{phone_number}"
+        return graph_thread_id(phone_number, channel)
 
     @asynccontextmanager
     async def _thread_invocation_lock(self, thread_id: str) -> AsyncIterator[None]:
         async with thread_invocation_lock(self.redis_client, thread_id, logger=logger):
             yield
 
-    def _get_config(self, phone_number: str, channel: str) -> RunnableConfig:
+    def _graph_config_dependencies(self) -> GraphConfigDependencies:
+        return GraphConfigDependencies(
+            task_planner=self.task_planner,
+            services=self.services,
+            user_repo=self.user_repo,
+            beneficiary_repo=self.beneficiary_repo,
+            account_repo=self.account_repo,
+            actionable_message_repo=self.actionable_message_repo,
+            banking_provider=self.banking_provider,
+            beneficiary_suggestion_service=self.beneficiary_suggestion_service,
+            redis_client=self.redis_client,
+            publisher=self.publisher,
+            conversation_responder=self.conversation_responder,
+        )
+
+    def _get_config(
+        self,
+        phone_number: str,
+        channel: str,
+        *,
+        progress_tracker: TurnProgressTracker | None = None,
+    ) -> GraphRunnableConfig:
         """Create LangGraph configuration."""
-        thread_id = self._thread_id(phone_number, channel)
-        return {
-            "configurable": {
-                "thread_id": thread_id,
-                "task_planner": self.task_planner,
-                "services": self.services,
-                "user_repo": self.user_repo,
-                "beneficiary_repo": self.beneficiary_repo,
-                "account_repo": self.account_repo,
-                "actionable_message_repo": self.actionable_message_repo,
-                "banking_provider": self.banking_provider,
-                "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
-                "redis_client": self.redis_client,
-                "publisher": self.publisher,
-                "conversation_responder": self.conversation_responder,
-            },
-            "recursion_limit": 50,
-        }
+        return build_graph_runnable_config(
+            phone_number=phone_number,
+            channel=channel,
+            dependencies=self._graph_config_dependencies(),
+            progress_tracker=progress_tracker,
+        )
 
     def _log_latency_span(
         self,
@@ -245,10 +259,14 @@ class OrchestratorGraphHandler:
 
                 inputs["loaded_context"] = loaded_context
 
-                config = self._get_config(phone_number, channel=context.channel)
                 progress_tracker = TurnProgressTracker(locale=loaded_context["language"])
-                config["configurable"]["progress_tracker"] = progress_tracker
-                thread_id = config["configurable"]["thread_id"]
+                graph_config = self._get_config(
+                    phone_number,
+                    channel=context.channel,
+                    progress_tracker=progress_tracker,
+                )
+                config = graph_config.config
+                thread_id = graph_config.thread_id
                 turn_id = context.message_id or f"invoke-{time.monotonic_ns()}"
                 trace_config = build_llm_runnable_config(
                     role="orchestrator_graph",
@@ -383,7 +401,8 @@ class OrchestratorGraphHandler:
                 "quoted_message_id": None,
             }
 
-            config = self._get_config(phone_number, channel=channel)
+            graph_config = self._get_config(phone_number, channel=channel)
+            config = graph_config.config
 
             logger.info(
                 "orchestrator_graph_resume",

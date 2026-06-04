@@ -5,8 +5,6 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
-
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
@@ -19,7 +17,9 @@ from apps.chat.src.agent.orchestrator.workflows.lifecycle.completed_transaction_
     is_grouped_or_batch_task,
     receipt_status,
 )
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.runtime import LifecycleDependencies
 from banking.beneficiaries.services.post_transaction_beneficiary import (
+    BeneficiarySuggestionServiceProtocol,
     append_beneficiary_suggestion,
     suggest_mobile_beneficiary,
     suggest_transfer_beneficiary,
@@ -94,13 +94,12 @@ async def build_single_task_beneficiary_suggestion(
     *,
     task: TaskSpec,
     state: OrchestratorState,
-    config: RunnableConfig,
+    suggestion_service: BeneficiarySuggestionServiceProtocol | None,
     locale: str,
 ) -> str | None:
     if is_grouped_or_batch_task(task):
         return None
 
-    suggestion_service = config.get("configurable", {}).get("beneficiary_suggestion_service")
     if suggestion_service is None:
         return None
 
@@ -170,7 +169,7 @@ async def build_single_task_beneficiary_suggestion(
 async def handle_completed_tasks(
     completed_tasks: list[TaskSpec],
     state: OrchestratorState,
-    config: RunnableConfig,
+    dependencies: LifecycleDependencies,
     outbox: list[dict[str, Any]],
 ) -> bool:
     """Handle completed tasks and generate receipts or summaries."""
@@ -224,7 +223,7 @@ async def handle_completed_tasks(
         if suggestion := await build_single_task_beneficiary_suggestion(
             task=task,
             state=state,
-            config=config,
+            suggestion_service=dependencies.beneficiary_suggestion_service,
             locale=locale,
         ):
             outbox.append({"type": "say", "text": suggestion})
@@ -263,7 +262,7 @@ async def handle_completed_tasks(
             if suggestion := await build_single_task_beneficiary_suggestion(
                 task=task,
                 state=state,
-                config=config,
+                suggestion_service=dependencies.beneficiary_suggestion_service,
                 locale=locale,
             ):
                 text = append_beneficiary_suggestion(text, suggestion)

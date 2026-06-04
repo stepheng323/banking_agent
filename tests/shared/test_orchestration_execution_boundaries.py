@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+GRAPH_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "graph"
 EXECUTION_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "execution"
 INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "interrupt"
 GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
 PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
+LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "lifecycle"
 
 DELETED_EXECUTION_MODULE_PATHS = (
     ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers" / "runtime.py",
@@ -34,6 +36,16 @@ FORBIDDEN_GATE_TEXT = (
 )
 
 FORBIDDEN_PLANNER_TEXT = (
+    'config["configurable"]',
+    'config.get("configurable"',
+)
+
+FORBIDDEN_LIFECYCLE_TEXT = (
+    'config["configurable"]',
+    'config.get("configurable"',
+)
+
+FORBIDDEN_GRAPH_CONFIG_TEXT = (
     'config["configurable"]',
     'config.get("configurable"',
 )
@@ -98,6 +110,32 @@ def test_typed_planner_core_reads_configurable_only_in_runtime_builder() -> None
             continue
         text = path.read_text(encoding="utf-8")
         for forbidden in FORBIDDEN_PLANNER_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_typed_lifecycle_core_reads_configurable_only_in_runtime_builder() -> None:
+    violations: list[str] = []
+    for path in sorted(LIFECYCLE_ROOT.rglob("*.py")):
+        if path.name == "runtime.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_LIFECYCLE_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_graph_handler_does_not_reach_into_runnable_configurable() -> None:
+    violations: list[str] = []
+    for path in sorted(GRAPH_ROOT.rglob("*.py")):
+        if path.name == "runtime.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_GRAPH_CONFIG_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
 
