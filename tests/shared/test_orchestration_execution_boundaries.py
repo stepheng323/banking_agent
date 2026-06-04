@@ -37,6 +37,11 @@ EXECUTION_TASK_MUTATION_CONTRACT_MODULES = (
     EXECUTION_ROOT / "wave" / "runner_task_guards.py",
     EXECUTION_ROOT / "wave" / "wave_state.py",
 )
+EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
+    EXECUTION_ROOT / "executors" / "query.py",
+    EXECUTION_ROOT / "executors" / "support.py",
+    EXECUTION_ROOT / "executors" / "transfer.py",
+)
 
 DELETED_EXECUTION_MODULE_PATHS = (
     TASK_HANDLERS_ROOT,
@@ -391,6 +396,29 @@ def test_execution_task_mutations_use_typed_helpers() -> None:
                     and node.func.attr in {"clear", "pop", "setdefault", "update"}
                 ):
                     violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.{node.func.attr}()")
+
+    assert violations == []
+
+
+def test_execution_session_stack_mutations_use_typed_helpers() -> None:
+    violations: list[str] = []
+    for path in EXECUTION_SESSION_STACK_CONTRACT_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr == "session_stack":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "set_session_stack":
+                    violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(node.func)}()")
+            if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and target.attr == "state"
+                        and isinstance(target.value, ast.Subscript)
+                    ):
+                        violations.append(f"{path.relative_to(ROOT)} assigns {ast.unparse(target)}")
 
     assert violations == []
 

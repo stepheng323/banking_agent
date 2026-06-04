@@ -1,9 +1,13 @@
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.executors.transfer import TransferTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
+    pop_active_session,
+    upsert_active_session,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
     complete_task,
     fail_task,
@@ -158,24 +162,16 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         )
         ctx.accumulator.say(render_message("support.unavailable", _state_locale(ctx.state)))
 
-    stack = list(ctx.state.session_stack)
     if result.outcome == SupportOutcome.NEEDS_INPUT:
-        if stack and stack[-1].domain == "support":
-            stack[-1].state = "WAITING_FOR_INPUT"
-        else:
-            stack.append(
-                ActiveSession(
-                    domain="support",
-                    state="WAITING_FOR_INPUT",
-                    interrupt_policy="ALLOW",
-                    resume_hint={"task_id": task_id},
-                )
-            )
-        ctx.accumulator.set_session_stack(stack)
+        upsert_active_session(
+            ctx,
+            domain="support",
+            state="WAITING_FOR_INPUT",
+            interrupt_policy="ALLOW",
+            task_id=task_id,
+        )
     elif result.outcome in (SupportOutcome.OK, SupportOutcome.FAILED):
-        if stack and stack[-1].domain == "support":
-            stack.pop()
-            ctx.accumulator.set_session_stack(stack)
+        pop_active_session(ctx, domain="support")
 
 
 __all__ = ["FAQTaskExecutor", "SupportTaskExecutor"]

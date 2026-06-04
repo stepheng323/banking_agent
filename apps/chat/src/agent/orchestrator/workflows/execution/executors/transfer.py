@@ -1,7 +1,7 @@
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution import (
     _beneficiary_cache_contains_recipient,
@@ -15,6 +15,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import 
     _apply_result_patch,
     _handle_transaction_outcome,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
+    SessionState,
+    pop_active_session,
+    upsert_active_session,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import remove_task_payload_values
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
@@ -23,8 +28,6 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-SessionState = Literal["WAITING_FOR_INPUT", "WAITING_FOR_AUTH", "RUNNING"]
 
 
 class TransferTaskExecutor:
@@ -198,7 +201,6 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         default_error=None,
     )
 
-    stack = list(ctx.state.session_stack)
     if result.outcome in (
         TransactionOutcome.NEEDS_INPUT,
         TransactionOutcome.NEEDS_AUTH,
@@ -211,23 +213,16 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         }
         current_state: SessionState = state_map[result.outcome]
 
-        if stack and stack[-1].domain == "transfer":
-            stack[-1].state = current_state
-        else:
-            stack.append(
-                ActiveSession(
-                    domain="transfer",
-                    state=current_state,
-                    interrupt_policy="BLOCK" if result.outcome == TransactionOutcome.NEEDS_AUTH else "CONFIRM",
-                    resume_hint={"task_id": task_id},
-                )
-            )
-        ctx.accumulator.set_session_stack(stack)
+        upsert_active_session(
+            ctx,
+            domain="transfer",
+            state=current_state,
+            interrupt_policy="BLOCK" if result.outcome == TransactionOutcome.NEEDS_AUTH else "CONFIRM",
+            task_id=task_id,
+        )
 
     elif result.outcome in (TransactionOutcome.OK, TransactionOutcome.FAILED) and result.is_terminal:
-        if stack and stack[-1].domain == "transfer":
-            stack.pop()
-            ctx.accumulator.set_session_stack(stack)
+        pop_active_session(ctx, domain="transfer")
 
 
 async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:

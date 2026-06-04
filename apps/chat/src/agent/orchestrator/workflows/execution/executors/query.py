@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import (
     push_query_followup_referent_frame,
@@ -14,6 +14,10 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.query_handoff import _next_query_handoff_transfer_task_id
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
+from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
+    pop_active_session,
+    upsert_active_session,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
     complete_task,
     fail_task,
@@ -141,23 +145,16 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         ctx.accumulator.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
 
     if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT):
-        stack = list(ctx.state.session_stack)
         if handoff_payload and result.outcome == TransactionOutcome.OK:
-            if stack and stack[-1].domain == "query":
-                stack.pop()
+            pop_active_session(ctx, domain="query")
         else:
-            if stack and stack[-1].domain == "query":
-                stack[-1].state = "WAITING_FOR_INPUT" if result.outcome == TransactionOutcome.NEEDS_INPUT else "RUNNING"
-            else:
-                new_session = ActiveSession(
-                    domain="query",
-                    state="WAITING_FOR_INPUT" if result.outcome == TransactionOutcome.NEEDS_INPUT else "RUNNING",
-                    interrupt_policy="ALLOW",
-                    resume_hint={"task_id": task_id},
-                )
-                stack.append(new_session)
-
-        ctx.accumulator.set_session_stack(stack)
+            upsert_active_session(
+                ctx,
+                domain="query",
+                state="WAITING_FOR_INPUT" if result.outcome == TransactionOutcome.NEEDS_INPUT else "RUNNING",
+                interrupt_policy="ALLOW",
+                task_id=task_id,
+            )
 
 
 __all__ = ["QueryTaskExecutor"]
