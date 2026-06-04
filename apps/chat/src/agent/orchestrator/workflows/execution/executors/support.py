@@ -157,11 +157,11 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
                     resume_hint={"task_id": task_id},
                 )
             )
-        ctx.accumulator.set_update("session_stack", stack)
+        ctx.accumulator.set_session_stack(stack)
     elif result.outcome in (SupportOutcome.OK, SupportOutcome.FAILED):
         if stack and stack[-1].domain == "support":
             stack.pop()
-            ctx.accumulator.set_update("session_stack", stack)
+            ctx.accumulator.set_session_stack(stack)
 
 
 __all__ = ["FAQTaskExecutor", "SupportTaskExecutor"]

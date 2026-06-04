@@ -221,12 +221,12 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
                     resume_hint={"task_id": task_id},
                 )
             )
-        ctx.accumulator.set_update("session_stack", stack)
+        ctx.accumulator.set_session_stack(stack)
 
     elif result.outcome in (TransactionOutcome.OK, TransactionOutcome.FAILED) and result.is_terminal:
         if stack and stack[-1].domain == "transfer":
             stack.pop()
-            ctx.accumulator.set_update("session_stack", stack)
+            ctx.accumulator.set_session_stack(stack)
 
 
 async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:

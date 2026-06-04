@@ -58,7 +58,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
 
     _apply_result_patch(task, result)
     if ctx.state.stashed_query_session is not None:
-        ctx.accumulator.set_update("stashed_query_session", None)
+        ctx.accumulator.clear_stashed_query_session()
     handoff_payload = None
     followup_referent: FocusedReferent | dict[str, Any] | None = None
     if result.patch and isinstance(result.patch, dict):
@@ -99,7 +99,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             transfer_payload.setdefault("message", ctx.state.last_message_text or "Resend the selected transaction")
             transfer_payload.setdefault("skip_extraction", True)
 
-            tasks = cast(dict[str, Any], ctx.accumulator.get_update("tasks", ctx.state.tasks))
+            tasks = ctx.accumulator.get_tasks(ctx.state.tasks)
             transfer_task_id = _next_query_handoff_transfer_task_id(tasks)
             tasks[transfer_task_id] = TaskSpec(
                 id=transfer_task_id,
@@ -107,12 +107,12 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
                 stage=TaskStage.DRAFT,
                 payload=transfer_payload,
             )
-            ctx.accumulator.set_update("tasks", tasks)
+            ctx.accumulator.set_tasks(tasks)
 
-            waves = list(cast(list[list[str]], ctx.accumulator.get_update("waves", ctx.state.waves)))
+            waves = list(ctx.accumulator.get_waves(ctx.state.waves))
             insert_index = min(ctx.state.current_wave_index + 1, len(waves))
             waves.insert(insert_index, [transfer_task_id])
-            ctx.accumulator.set_update("waves", waves)
+            ctx.accumulator.set_waves(waves)
 
             if not result.response:
                 ctx.accumulator.say("Okay. I will resend that transfer now.")
@@ -148,7 +148,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
                 )
                 stack.append(new_session)
 
-        ctx.accumulator.set_update("session_stack", stack)
+        ctx.accumulator.set_session_stack(stack)
 
 
 __all__ = ["QueryTaskExecutor"]

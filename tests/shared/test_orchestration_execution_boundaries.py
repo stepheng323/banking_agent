@@ -75,6 +75,7 @@ MOVED_EXECUTION_RUNTIME_SYMBOLS = {
     "ExecutionTurnContext",
 }
 
+FORBIDDEN_ACCUMULATOR_METHODS = {"set_update", "get_update", "has_update"}
 FORBIDDEN_RESULT_PATCH_METHODS = {"set_update", "get_update", "has_update"}
 
 
@@ -139,6 +140,28 @@ def test_execution_result_patch_callers_use_typed_methods() -> None:
             target = node.func.value
             if isinstance(target, ast.Name) and target.id == "patch":
                 violations.append(f"{path.relative_to(ROOT)} calls patch.{node.func.attr}()")
+
+    assert violations == []
+
+
+def test_execution_accumulator_callers_use_typed_methods() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name == "accumulator.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in FORBIDDEN_ACCUMULATOR_METHODS:
+                continue
+            target = node.func.value
+            if isinstance(target, ast.Attribute) and target.attr == "accumulator":
+                violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.{node.func.attr}()")
+            elif isinstance(target, ast.Name) and target.id == "accumulator":
+                violations.append(f"{path.relative_to(ROOT)} calls accumulator.{node.func.attr}()")
 
     assert violations == []
 

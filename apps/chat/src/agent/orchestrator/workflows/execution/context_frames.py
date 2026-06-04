@@ -26,8 +26,8 @@ def clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame]
 
 def _push_frame(ctx: ExecutionTurnContext, frame: ContextFrame) -> None:
     OrchestratorContextManager().push_frame(ctx.state, frame)
-    ctx.accumulator.set_update("context_frames", ctx.state.context_frames)
-    ctx.accumulator.set_update("referent_memory", ctx.state.referent_memory)
+    ctx.accumulator.set_context_frames(ctx.state.context_frames)
+    ctx.accumulator.set_referent_memory(ctx.state.referent_memory)
 
 
 def push_query_followup_referent_frame(

@@ -34,24 +34,24 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
     last_session = ctx.state.stashed_sessions[-1]
     remaining_stash = ctx.state.stashed_sessions[:-1]
     intent = str(last_session.get("intent", render_message("orchestrator.session.default_intent", locale)))
-    ctx.accumulator.set_update("stashed_sessions", remaining_stash)
-    ctx.accumulator.set_update("context_frames", clear_resume_prompt_frames(ctx.state.context_frames))
+    ctx.accumulator.set_stashed_sessions(remaining_stash)
+    ctx.accumulator.set_context_frames(clear_resume_prompt_frames(ctx.state.context_frames))
     stash_id = str(last_session.get("stash_id") or "").strip()
     if stash_id:
         forget_stashed_referents(ctx.state, {stash_id})
-        ctx.accumulator.set_update("referent_memory", ctx.state.referent_memory)
+        ctx.accumulator.set_referent_memory(ctx.state.referent_memory)
 
     if action == "resume_session":
         p_interrupt = last_session.get("pending_interrupt")
         logger.info("resuming_session", intent=intent, has_interrupt=bool(p_interrupt))
         restored_tasks = cast(dict[str, Any], last_session["tasks"])
 
-        ctx.accumulator.set_update("tasks", restored_tasks)
-        ctx.accumulator.set_update("waves", last_session["waves"])
-        ctx.accumulator.set_update("current_wave_index", last_session["current_wave_index"])
-        ctx.accumulator.set_update("pending_interrupt", None)
-        ctx.accumulator.set_update("last_interrupt", p_interrupt)
-        ctx.accumulator.set_update("last_message_text", None)
+        ctx.accumulator.set_tasks(restored_tasks)
+        ctx.accumulator.set_waves(last_session["waves"])
+        ctx.accumulator.set_current_wave_index(last_session["current_wave_index"])
+        ctx.accumulator.clear_pending_interrupt()
+        ctx.accumulator.set_last_interrupt(p_interrupt)
+        ctx.accumulator.clear_last_message_text()
         task.stage = TaskStage.COMPLETED
         return
 
