@@ -4,6 +4,14 @@ from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSp
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.executors.transfer import TransferTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
+    complete_task,
+    fail_task,
+    replace_task_payload,
+    set_task_payload_value,
+    set_task_stage,
+    set_task_type,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.presentation.i18n.renderer import render_message
@@ -52,18 +60,21 @@ async def _execute_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCont
     if result.outcome == FAQOutcome.OK:
         if result.should_route_to_support:
             logger.info("faq_task_delegating_to_support", task_id=task_id)
-            task.type = "support"
-            task.payload["action"] = "handle_request"
+            set_task_type(task, "support")
+            set_task_payload_value(task, "action", "handle_request")
             await _execute_support_task(task, task_id, ctx)
             return
 
-        task.stage = TaskStage.COMPLETED
+        complete_task(task)
         ctx.accumulator.say(result.response)
     elif result.outcome == FAQOutcome.FAILED:
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message(
-            "orchestrator.error.faq_failed",
-            _state_locale(ctx.state),
+        fail_task(
+            task,
+            result.error
+            or render_message(
+                "orchestrator.error.faq_failed",
+                _state_locale(ctx.state),
+            ),
         )
         ctx.accumulator.say(render_message("faq.info_trouble", _state_locale(ctx.state)))
 
@@ -72,13 +83,13 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     user_msg = ctx.state.last_message_text
     if looks_like_transaction_replay_modifier_request(user_msg):
         logger.info("support_task_replay_modifier_rerouted_to_transfer", task_id=task_id)
-        task.type = "transfer"
-        task.payload.clear()
-        task.payload.update(
+        set_task_type(task, "transfer")
+        replace_task_payload(
+            task,
             {
                 "message": user_msg,
                 "instruction": user_msg,
-            }
+            },
         )
         await TransferTaskExecutor().execute(task, task_id, ctx)
         return
@@ -115,7 +126,7 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     )
 
     if result.outcome == SupportOutcome.OK:
-        task.stage = TaskStage.COMPLETED
+        complete_task(task)
         receipt_jobs = [job for job in result.receipt_jobs if isinstance(job, dict)]
         if receipt_jobs:
             publisher = ctx.dependencies.publisher
@@ -132,15 +143,18 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         else:
             ctx.accumulator.say(result.response)
     elif result.outcome == SupportOutcome.NEEDS_INPUT:
-        task.stage = TaskStage.EXTRACTED
+        set_task_stage(task, TaskStage.EXTRACTED)
         if result.response:
             ctx.accumulator.add_prompt(result.response, task_id)
             ctx.accumulator.add_missing_fields(task_id, ["clarification"])
     elif result.outcome == SupportOutcome.FAILED:
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message(
-            "orchestrator.error.support_flow_failed",
-            _state_locale(ctx.state),
+        fail_task(
+            task,
+            result.error
+            or render_message(
+                "orchestrator.error.support_flow_failed",
+                _state_locale(ctx.state),
+            ),
         )
         ctx.accumulator.say(render_message("support.unavailable", _state_locale(ctx.state)))
 

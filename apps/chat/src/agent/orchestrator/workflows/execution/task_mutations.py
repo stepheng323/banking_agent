@@ -2,16 +2,38 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+
+TaskType = Literal[
+    "transfer",
+    "query",
+    "airtime",
+    "data",
+    "account",
+    "support",
+    "faq",
+    "beneficiary",
+    "schedule",
+    "orchestrator",
+]
 
 
 def set_task_stage(task: TaskSpec, stage: TaskStage) -> None:
     task.stage = stage
 
 
+def set_task_type(task: TaskSpec, task_type: TaskType) -> None:
+    task.type = task_type
+
+
 def update_task_payload(task: TaskSpec, values: dict[str, Any]) -> None:
+    task.payload.update(values)
+
+
+def replace_task_payload(task: TaskSpec, values: dict[str, Any]) -> None:
+    task.payload.clear()
     task.payload.update(values)
 
 
@@ -64,8 +86,11 @@ __all__ = [
     "complete_task",
     "fail_task",
     "remove_task_payload_values",
+    "replace_task_payload",
     "set_task_confirmation",
     "set_task_payload_value",
     "set_task_stage",
+    "set_task_type",
+    "TaskType",
     "update_task_payload",
 ]

@@ -14,6 +14,12 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.query_handoff import _next_query_handoff_transfer_task_id
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
+    complete_task,
+    fail_task,
+    set_task_payload_value,
+    set_task_stage,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -71,9 +77,9 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             followup_referent = referent_candidate
 
     if result.outcome == TransactionOutcome.OK:
-        task.stage = TaskStage.COMPLETED
+        complete_task(task)
         if result.response:
-            task.payload["result"] = result.response
+            set_task_payload_value(task, "result", result.response)
             pagination_payload = query_pagination_actionable_payload(ctx, result)
             if pagination_payload:
                 ctx.accumulator.add_outbox(
@@ -118,16 +124,19 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
                 ctx.accumulator.say("Okay. I will resend that transfer now.")
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
-        task.stage = TaskStage.EXTRACTED
+        set_task_stage(task, TaskStage.EXTRACTED)
         if result.response:
             ctx.accumulator.add_prompt(result.response, task_id)
             ctx.accumulator.add_missing_fields(task_id, ["clarification"])
 
     elif result.outcome == TransactionOutcome.FAILED:
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message(
-            "orchestrator.error.query_processing_failed",
-            _state_locale(ctx.state),
+        fail_task(
+            task,
+            result.error
+            or render_message(
+                "orchestrator.error.query_processing_failed",
+                _state_locale(ctx.state),
+            ),
         )
         ctx.accumulator.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
 

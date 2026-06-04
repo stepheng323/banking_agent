@@ -21,6 +21,9 @@ EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
 )
 EXECUTION_TASK_MUTATION_CONTRACT_MODULES = (
+    EXECUTION_ROOT / "executors" / "query.py",
+    EXECUTION_ROOT / "executors" / "session.py",
+    EXECUTION_ROOT / "executors" / "support.py",
     EXECUTION_ROOT / "result_reducer.py",
     EXECUTION_ROOT / "wave" / "runner_task_guards.py",
     EXECUTION_ROOT / "wave" / "wave_state.py",
@@ -363,7 +366,7 @@ def test_execution_task_mutations_use_typed_helpers() -> None:
             if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                 for target in targets:
-                    if isinstance(target, ast.Attribute) and target.attr == "stage":
+                    if isinstance(target, ast.Attribute) and target.attr in {"stage", "type"}:
                         violations.append(f"{path.relative_to(ROOT)} assigns {ast.unparse(target)}")
                     if (
                         isinstance(target, ast.Subscript)
@@ -376,7 +379,7 @@ def test_execution_task_mutations_use_typed_helpers() -> None:
                 if (
                     isinstance(target, ast.Attribute)
                     and target.attr == "payload"
-                    and node.func.attr in {"pop", "setdefault", "update"}
+                    and node.func.attr in {"clear", "pop", "setdefault", "update"}
                 ):
                     violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.{node.func.attr}()")
 

@@ -1,10 +1,11 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.store import forget_stashed_referents
-from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import clear_resume_prompt_frames
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import complete_task, fail_task
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -27,8 +28,7 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
     if not ctx.state.stashed_sessions:
         no_stash_message = render_message("orchestrator.session.no_stashed", locale)
         ctx.accumulator.say(no_stash_message)
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = no_stash_message
+        fail_task(task, no_stash_message)
         return
 
     last_session = ctx.state.stashed_sessions[-1]
@@ -52,12 +52,12 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
         ctx.accumulator.clear_pending_interrupt()
         ctx.accumulator.set_last_interrupt(p_interrupt)
         ctx.accumulator.clear_last_message_text()
-        task.stage = TaskStage.COMPLETED
+        complete_task(task)
         return
 
     logger.info("resume_session_declined", intent=intent)
     ctx.accumulator.say(render_message("orchestrator.session.resume_declined", locale))
-    task.stage = TaskStage.COMPLETED
+    complete_task(task)
 
 
 __all__ = ["OrchestratorTaskExecutor"]
