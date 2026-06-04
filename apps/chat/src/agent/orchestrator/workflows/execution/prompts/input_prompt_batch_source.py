@@ -2,6 +2,10 @@
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
+    get_task,
+    require_task,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
 from banking.presentation.formatters.transfer_input_prompts import format_batch_transfer_source_prompt
 from banking.presentation.i18n.renderer import render_message
@@ -11,7 +15,9 @@ def _transfer_tasks_only_missing_source(state: OrchestratorState, agg: Execution
     return [
         tid
         for tid, fields in agg.input_request_items()
-        if state.tasks.get(tid) and state.tasks[tid].type == "transfer" and set(fields) == {"source_account_id"}
+        if (task := get_task(state, tid)) is not None
+        and task.type == "transfer"
+        and set(fields) == {"source_account_id"}
     ]
 
 
@@ -33,7 +39,7 @@ def build_batch_source_prompt_if_needed(
     total_amount = 0.0
     amounts = []
     for tid in transfer_tasks_only_source:
-        task = state.tasks[tid]
+        task = require_task(state, tid)
         amt = task.payload.get("amount") or 0.0
         total_amount += amt
         amounts.append(amt)
@@ -80,7 +86,7 @@ def build_batch_source_prompt_if_needed(
         locale=locale,
     )
     for tid in transfer_tasks_only_source:
-        set_task_payload_value(state.tasks[tid], "recipient_ui_confirmed", True)
+        set_task_payload_value(require_task(state, tid), "recipient_ui_confirmed", True)
     return prompt_text
 
 

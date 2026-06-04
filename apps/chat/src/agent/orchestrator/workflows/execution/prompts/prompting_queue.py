@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, TRANSACTION_TASK_TYPES
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks
 from banking.presentation.formatters.transaction_copy_context import format_amount_compact
 from banking.presentation.formatters.transaction_intent_lines import format_intent_line
 from banking.presentation.i18n.renderer import render_message
@@ -16,11 +17,10 @@ def _queued_transaction_tasks_for_focus(
     focused_tid: str,
 ) -> list[Any]:
     queued: list[Any] = []
-    for tid in current_wave:
+    for tid, task in existing_tasks(state, current_wave):
         if tid == focused_tid:
             continue
-        task = state.tasks.get(tid)
-        if not task or task.type not in TRANSACTION_TASK_TYPES:
+        if task.type not in TRANSACTION_TASK_TYPES:
             continue
         if task.stage in TERMINAL_STAGES:
             continue
@@ -65,11 +65,10 @@ def _ready_airtime_acknowledgements(
     missing_fields_by_task: dict[str, list[str]],
 ) -> list[str]:
     acknowledgements: list[str] = []
-    for tid in current_wave:
+    for tid, task in existing_tasks(state, current_wave):
         if tid == focused_tid:
             continue
-        task = state.tasks.get(tid)
-        if not task or task.type != "airtime" or task.stage in TERMINAL_STAGES:
+        if task.type != "airtime" or task.stage in TERMINAL_STAGES:
             continue
         if tid in missing_fields_by_task:
             continue

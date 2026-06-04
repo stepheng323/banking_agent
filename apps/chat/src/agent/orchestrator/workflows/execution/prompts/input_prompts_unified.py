@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import _recipient_prompt_label
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
 from banking.presentation.formatters.missing_detail_prompts import (
     format_missing_details_prompt,
@@ -24,9 +25,8 @@ def _build_unified_missing_field_prompt(
     found_names = []
     missing_prompts = []
 
-    for tid in current_wave:
-        task = state.tasks.get(tid)
-        if not task or task.stage in TERMINAL_STAGES:
+    for tid, task in existing_tasks(state, current_wave):
+        if task.stage in TERMINAL_STAGES:
             continue
 
         if not task.payload.get("recipient_ui_confirmed"):
@@ -43,9 +43,8 @@ def _build_unified_missing_field_prompt(
 
     if repair_hint and feedback_messages:
         intents = []
-        for tid in current_wave:
-            task = state.tasks.get(tid)
-            if not task or task.stage in TERMINAL_STAGES:
+        for _tid, task in existing_tasks(state, current_wave):
+            if task.stage in TERMINAL_STAGES:
                 continue
             intents.append(format_intent_line(task.type, task.payload, locale=locale))
 
@@ -64,10 +63,7 @@ def _build_unified_missing_field_prompt(
             locale=locale,
         )
 
-    for tid in current_wave:
-        task = state.tasks.get(tid)
-        if not task:
-            continue
+    for _tid, task in existing_tasks(state, current_wave):
         name = _recipient_prompt_label(cast(dict[str, Any], task.payload))
         if name and name in found_names:
             set_task_payload_value(task, "recipient_ui_confirmed", True)

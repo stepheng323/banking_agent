@@ -21,6 +21,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queu
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import (
     _recipient_prompt_label,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
+    existing_tasks,
+    get_task,
+    require_task,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
 from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
 from banking.presentation.formatters.transfer_input_prompts import format_single_transfer_recipient_prompt
@@ -34,7 +39,7 @@ def _build_focused_missing_field_updates(
     locale: str,
     focused_tid: str,
 ) -> dict[str, Any]:
-    focused_task = state.tasks[focused_tid]
+    focused_task = require_task(state, focused_tid)
     focused_name = (
         focused_task.payload.get("recipient_name")
         or focused_task.payload.get("recipient_resolved_name")
@@ -45,18 +50,17 @@ def _build_focused_missing_field_updates(
     just_resolved_bank = None
     if state.last_interrupt and state.last_interrupt.task_ids:
         for tid in state.last_interrupt.task_ids:
-            if not agg.has_input_request(tid) and state.tasks.get(tid):
+            task = get_task(state, tid)
+            if not agg.has_input_request(tid) and task:
                 just_resolved_tid = tid
-                rt = state.tasks[just_resolved_tid]
-                just_resolved_name = _recipient_prompt_label(cast(dict[str, Any], rt.payload))
-                just_resolved_bank = rt.payload.get("recipient_bank_name")
+                just_resolved_name = _recipient_prompt_label(cast(dict[str, Any], task.payload))
+                just_resolved_bank = task.payload.get("recipient_bank_name")
                 break
 
     found_names = []
     if just_resolved_tid is None:
-        for tid in current_wave:
-            task = state.tasks.get(tid)
-            if not task or task.stage in TERMINAL_STAGES:
+        for tid, task in existing_tasks(state, current_wave):
+            if task.stage in TERMINAL_STAGES:
                 continue
             if task.type != "transfer":
                 continue
@@ -112,10 +116,7 @@ def _build_focused_missing_field_updates(
         locale=locale,
     )
 
-    for tid in current_wave:
-        task = state.tasks.get(tid)
-        if not task:
-            continue
+    for tid, task in existing_tasks(state, current_wave):
         if tid == focused_tid:
             continue
         name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
