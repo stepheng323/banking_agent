@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_demands import (
     _build_transfer_demand,
@@ -75,12 +76,11 @@ async def _maybe_coordinate_batch_funding(
         total_demanded=result.total_demanded,
         total_available=result.total_available,
     )
-    return {
-        "pending_interrupt": interrupt,
-        "tasks": state.tasks,
-        "outbox": _with_policy_notice(state, [{"type": "say", "text": prompt}]),
-        "policy_notice": None,
-    }
+    patch = ExecutionResultPatch({"tasks": state.tasks})
+    patch.set_update("pending_interrupt", interrupt)
+    patch.set_update("outbox", _with_policy_notice(state, [{"type": "say", "text": prompt}]))
+    patch.set_update("policy_notice", None)
+    return patch.to_updates()
 
 
 __all__ = ["_maybe_coordinate_batch_funding"]
