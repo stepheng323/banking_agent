@@ -162,6 +162,21 @@ PLANNER_QUOTED_REPLAY_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "quoted_replay" / "quoted_replay_modifiers.py",
     PLANNER_ROOT / "quoted_replay" / "quoted_replay_payload_updates.py",
 )
+PLANNER_RESPONSE_STATE_VIEW_MODULES = (
+    PLANNER_ROOT / "policy" / "policy_locale.py",
+    PLANNER_ROOT / "postprocess" / "postprocess_flow.py",
+    PLANNER_ROOT / "response" / "non_task_response.py",
+    PLANNER_ROOT / "response" / "response_flow_cancellation.py",
+    PLANNER_ROOT / "response" / "response_flow_common.py",
+    PLANNER_ROOT / "response" / "response_flow_conversational.py",
+    PLANNER_ROOT / "response" / "response_flow_conversational_casual.py",
+    PLANNER_ROOT / "response" / "response_flow_conversational_direct.py",
+    PLANNER_ROOT / "response" / "response_flow_conversational_missing.py",
+    PLANNER_ROOT / "response" / "response_flow_conversational_out_of_scope.py",
+    PLANNER_ROOT / "response" / "response_flow_conversational_special.py",
+    PLANNER_ROOT / "response" / "response_flow_conversational_standard.py",
+    PLANNER_ROOT / "response" / "response_flow_logging.py",
+)
 EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
@@ -1168,6 +1183,37 @@ def test_planner_quoted_replay_modules_use_typed_state_view() -> None:
         "user_id",
     }
     for path in PLANNER_QUOTED_REPLAY_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "runtime", "request", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_planner_response_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "current_wave_index",
+        "last_message_text",
+        "loaded_context",
+        "pending_interrupt",
+        "phone_number",
+        "session_stack",
+        "tasks",
+        "waves",
+    }
+    for path in PLANNER_RESPONSE_STATE_VIEW_MODULES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:

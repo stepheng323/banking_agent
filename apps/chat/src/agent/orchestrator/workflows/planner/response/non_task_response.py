@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _build_conversational_non_task_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.bridge import render_safe_capability_fallback
 from shared.utils.logging import get_logger
 
@@ -25,6 +26,7 @@ logger = get_logger(__name__)
 async def _build_non_task_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     redis_client: Any | None,
@@ -38,6 +40,7 @@ async def _build_non_task_response(
 
     cancellation_response = await _build_cancellation_response(
         state=state,
+        state_view=state_view,
         planner_output=planner_output,
         redis_client=redis_client,
         current_locale=current_locale,
@@ -54,6 +57,7 @@ async def _build_non_task_response(
     if planner_output and planner_output.primary_intent == "conversational":
         return await _build_conversational_non_task_response(
             state=state,
+            state_view=state_view,
             planner_output=planner_output,
             text=text,
             redis_client=redis_client,
@@ -65,7 +69,7 @@ async def _build_non_task_response(
             route_logger=logger,
         )
 
-    if state.waves and planner_output and planner_output.primary_intent != "conversational":
+    if state_view.has_waves and planner_output and planner_output.primary_intent != "conversational":
         if planner_output.primary_intent != active_intent:
             logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
             return {
@@ -90,9 +94,9 @@ async def _build_non_task_response(
             **locale_updates,
             **context_read_updates,
         }
-    if not state.session_stack and state.pending_interrupt is None:
+    if not state_view.has_session_stack and state_view.pending_interrupt is None:
         responder_reply = await _build_bounded_conversational_reply(
-            state=state,
+            state_view=state_view,
             text=text,
             locale=current_locale,
             conversation_responder=conversation_responder,
@@ -112,7 +116,7 @@ async def _build_non_task_response(
                 **locale_updates,
                 **context_read_updates,
             }
-    if state.pending_interrupt is not None:
+    if state_view.pending_interrupt is not None:
         _log_unexpected_turn_route(
             state=state,
             planner_output=planner_output,
@@ -123,7 +127,7 @@ async def _build_non_task_response(
             route_logger=logger,
         )
         return {
-            **_reprompt_updates(state, state.pending_interrupt),
+            **_reprompt_updates(state, state_view.pending_interrupt),
             **context_read_updates,
         }
     _log_unexpected_turn_route(

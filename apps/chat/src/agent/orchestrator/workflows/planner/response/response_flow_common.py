@@ -2,8 +2,8 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_locale_update
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_text
 from shared.utils.logging import get_logger
@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 async def _resolved_locale_with_precedence(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     current_locale: str,
     detected_locale: str | None,
     redis_client: Any | None,
@@ -21,9 +21,9 @@ async def _resolved_locale_with_precedence(
 ) -> tuple[str, dict[str, Any]]:
     if detected_locale is None or detected_locale == current_locale:
         return current_locale, locale_updates
-    if redis_client and await LocaleManager.is_explicit_locale(state.phone_number):
+    if redis_client and await LocaleManager.is_explicit_locale(state_view.phone_number):
         return current_locale, locale_updates
-    return detected_locale, _build_locale_update(state, detected_locale)
+    return detected_locale, _build_locale_update(state_view, detected_locale)
 
 
 def _localized_planner_response(raw_response: str | None, locale: str) -> str:
@@ -34,7 +34,7 @@ def _localized_planner_response(raw_response: str | None, locale: str) -> str:
 
 async def _build_bounded_conversational_reply(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     text: str,
     locale: str,
     conversation_responder: Any | None,
@@ -45,7 +45,7 @@ async def _build_bounded_conversational_reply(
         return await conversation_responder.generate_reply(
             text,
             {
-                **(state.loaded_context or {}),
+                **state_view.loaded_context_or_empty,
                 "language": locale,
             },
             intent="non_banking_conversational",

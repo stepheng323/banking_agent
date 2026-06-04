@@ -48,7 +48,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         logger.error("task_planner_missing")
         return _planner_unavailable_response(current_locale)
 
-    locale_updates = _build_locale_update(state, current_locale)
+    locale_updates = _build_locale_update(state_view, current_locale)
 
     quoted_replay_updates = await _handle_quoted_replay_shortcut(
         state_view=state_view,
@@ -98,12 +98,13 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     current_locale = execution_result.current_locale
     context_read_updates = execution_result.context_read_updates
 
-    locale_updates = _build_locale_update(state, current_locale)
+    locale_updates = _build_locale_update(state_view, current_locale)
 
     _apply_planner_recovery(planner_output, text, active_session_present=state_view.has_session_stack)
 
     handled_response = await _build_non_task_response(
         state=state,
+        state_view=state_view,
         planner_output=planner_output,
         text=text,
         redis_client=redis_client,

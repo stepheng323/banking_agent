@@ -14,11 +14,13 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_conversational_out_of_scope import (
     _out_of_scope_response,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 
 
 async def _build_standard_conversational_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     conversational_locale: str,
@@ -31,6 +33,7 @@ async def _build_standard_conversational_response(
     if response_key == "conversational.casual_chat":
         return await _casual_chat_response(
             state=state,
+            state_view=state_view,
             planner_output=planner_output,
             text=text,
             conversational_locale=conversational_locale,
@@ -42,6 +45,7 @@ async def _build_standard_conversational_response(
     if response_key == "conversational.out_of_scope":
         return await _out_of_scope_response(
             state=state,
+            state_view=state_view,
             planner_output=planner_output,
             text=text,
             conversational_locale=conversational_locale,
@@ -71,6 +75,7 @@ async def _build_standard_conversational_response(
         )
     return await _missing_conversational_response_fallback(
         state=state,
+        state_view=state_view,
         planner_output=planner_output,
         text=text,
         conversational_locale=conversational_locale,

@@ -5,12 +5,14 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _build_bounded_conversational_reply,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.renderer import render_message
 
 
 async def _casual_chat_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     conversational_locale: str,
@@ -20,7 +22,7 @@ async def _casual_chat_response(
     route_logger: Any | None,
 ) -> dict[str, Any]:
     responder_reply = await _build_bounded_conversational_reply(
-        state=state,
+        state_view=state_view,
         text=text,
         locale=conversational_locale,
         conversation_responder=conversation_responder,

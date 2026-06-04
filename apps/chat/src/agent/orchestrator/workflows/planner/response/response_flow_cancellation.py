@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_locale_update
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 async def _build_cancellation_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     redis_client: Any | None,
     current_locale: str,
@@ -31,7 +33,7 @@ async def _build_cancellation_response(
     logger.info("planner_cancellation_detected", intent=planner_output.primary_intent)
     cancel_locale = detected_locale or current_locale
     cancel_locale_updates = (
-        locale_updates if cancel_locale == current_locale else _build_locale_update(state, cancel_locale)
+        locale_updates if cancel_locale == current_locale else _build_locale_update(state_view, cancel_locale)
     )
     if not has_cancelable_state(state):
         return {

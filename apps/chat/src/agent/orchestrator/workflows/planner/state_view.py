@@ -38,6 +38,10 @@ class PlannerStateView:
         return self.last_message_text or ""
 
     @property
+    def message_text(self) -> str:
+        return self.last_message_text_or_empty.strip()
+
+    @property
     def last_message_id(self) -> str | None:
         return self.state.last_message_id
 
@@ -111,6 +115,10 @@ class PlannerStateView:
     @property
     def has_waves(self) -> bool:
         return bool(self.state.waves)
+
+    @property
+    def has_no_active_flow(self) -> bool:
+        return not self.has_session_stack and self.pending_interrupt is None and not self.has_waves
 
     @property
     def pending_interrupt(self) -> PendingInterrupt | None:

@@ -12,11 +12,13 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _build_bounded_conversational_reply,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 
 
 async def _build_banking_ambiguity_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     conversational_locale: str,
@@ -25,12 +27,7 @@ async def _build_banking_ambiguity_response(
     route_logger: Any | None,
 ) -> dict[str, Any] | None:
     ambiguous_banking_domain = classify_banking_coded_ambiguity(text)
-    if (
-        ambiguous_banking_domain is not None
-        and state.pending_interrupt is None
-        and not state.session_stack
-        and not state.waves
-    ):
+    if ambiguous_banking_domain is not None and state_view.has_no_active_flow:
         _log_unexpected_turn_route(
             state=state,
             planner_output=planner_output,
@@ -51,6 +48,7 @@ async def _build_banking_ambiguity_response(
 async def _build_contextual_casual_followup_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     conversational_locale: str,
@@ -59,20 +57,15 @@ async def _build_contextual_casual_followup_response(
     conversation_responder: Any | None,
     route_logger: Any | None,
 ) -> dict[str, Any] | None:
-    contextual_casual_followup = (
-        state.pending_interrupt is None
-        and not state.session_stack
-        and not state.waves
-        and is_contextual_casual_followup_turn(
-            text,
-            (state.loaded_context or {}).get("history") if isinstance(state.loaded_context, dict) else None,
-        )
+    contextual_casual_followup = state_view.has_no_active_flow and is_contextual_casual_followup_turn(
+        text,
+        state_view.loaded_context_or_empty.get("history"),
     )
     if not contextual_casual_followup:
         return None
 
     responder_reply = await _build_bounded_conversational_reply(
-        state=state,
+        state_view=state_view,
         text=text,
         locale=conversational_locale,
         conversation_responder=conversation_responder,

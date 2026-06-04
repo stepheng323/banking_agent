@@ -5,6 +5,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _build_bounded_conversational_reply,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
@@ -15,6 +16,7 @@ logger = get_logger(__name__)
 async def _missing_conversational_response_fallback(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     conversational_locale: str,
@@ -29,7 +31,7 @@ async def _missing_conversational_response_fallback(
         detected_language=getattr(planner_output, "detected_language", None),
     )
     responder_reply = await _build_bounded_conversational_reply(
-        state=state,
+        state_view=state_view,
         text=text,
         locale=conversational_locale,
         conversation_responder=conversation_responder,

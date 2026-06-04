@@ -8,11 +8,13 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _localized_planner_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 
 
 async def _out_of_scope_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     conversational_locale: str,
@@ -27,7 +29,7 @@ async def _out_of_scope_response(
         locale=conversational_locale,
     ):
         responder_reply = await _build_bounded_conversational_reply(
-            state=state,
+            state_view=state_view,
             text=text,
             locale=conversational_locale,
             conversation_responder=conversation_responder,

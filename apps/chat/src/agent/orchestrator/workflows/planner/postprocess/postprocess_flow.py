@@ -3,24 +3,26 @@
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
 from shared.types.planner import PlannedTask
 
 
 def _should_replan_active_wave(state: OrchestratorState) -> bool:
     """Allow replanning active waves only for explicit pre-execution update turns."""
-    if not state.waves or state.pending_interrupt is not None:
+    state_view = planner_state_view(state)
+    if not state_view.has_waves or state_view.pending_interrupt is not None:
         return False
-    if not (state.last_message_text or "").strip():
+    if not state_view.message_text:
         return False
-    if state.current_wave_index >= len(state.waves):
+    if state_view.current_wave_index >= len(state_view.waves):
         return False
 
-    current_wave = state.waves[state.current_wave_index]
+    current_wave = state_view.current_wave_task_ids
     if not current_wave:
         return False
 
     replannable_stages = {TaskStage.AWAITING_CONFIRMATION, TaskStage.AWAITING_AUTH}
-    active_tasks = [task for task_id in current_wave if (task := state.tasks.get(task_id)) is not None]
+    active_tasks = [task for task_id in current_wave if (task := state_view.tasks.get(task_id)) is not None]
     if not active_tasks:
         return False
     return all(task.stage in replannable_stages for task in active_tasks)

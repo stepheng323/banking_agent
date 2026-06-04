@@ -2,7 +2,7 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 
@@ -77,9 +77,9 @@ def _supported_executor_label(executor: str, locale: str) -> str:
     )
 
 
-def _build_locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
+def _build_locale_update(state_view: PlannerStateView, locale: str) -> dict[str, Any]:
     """Prepare loaded_context patch with updated locale."""
-    loaded_context = dict(state.loaded_context or {})
+    loaded_context = dict(state_view.loaded_context_or_empty)
     loaded_context["language"] = locale
     loaded_context["detected_language"] = locale
     return {"loaded_context": loaded_context}
