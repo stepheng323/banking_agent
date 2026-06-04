@@ -119,7 +119,7 @@ def _normalize_text(text: str | None) -> str:
 
 
 def _candidate_locales(ctx: GateContext) -> list[LocaleCode]:
-    loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    loaded_context = ctx.state_view.loaded_context_or_empty
     raw_candidates = [
         ctx.current_locale,
         loaded_context.get("detected_language"),
@@ -136,7 +136,7 @@ def _candidate_locales(ctx: GateContext) -> list[LocaleCode]:
 
 
 def _has_recent_history_context(ctx: GateContext) -> bool:
-    loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    loaded_context = ctx.state_view.loaded_context_or_empty
     history = loaded_context.get("history")
     if not isinstance(history, list):
         return False
@@ -217,10 +217,7 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
     candidate_locales = _candidate_locales(ctx)
     if (
         ctx.live_pending_interrupt
-        or ctx.state.pending_interrupt is not None
-        or ctx.state.has_quote
-        or ctx.state.session_stack
-        or ctx.state.waves
+        or ctx.state_view.has_gate_blocking_state
         or not _looks_like_contextual_worker_acknowledgement(ctx.message_text, candidate_locales)
     ):
         return None
@@ -240,7 +237,7 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
         return None
 
     context_summary = _contextual_summary_text(ctx, support_context)
-    loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    loaded_context = ctx.state_view.loaded_context_or_empty
     grounding = loaded_context.get("conversation_grounding")
     if not isinstance(grounding, dict):
         grounding = build_conversation_grounding(loaded_context)

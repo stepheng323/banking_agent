@@ -19,14 +19,7 @@ logger = get_logger(__name__)
 
 async def _stage_semantic_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
     """Semantic fallback for unsupported capability boundaries not caught by registry phrases."""
-    if (
-        ctx.live_pending_interrupt
-        or ctx.state.pending_interrupt is not None
-        or ctx.state.has_quote
-        or ctx.state.session_stack
-        or ctx.state.waves
-        or not ctx.phrase_heavy_fastpath_allowed
-    ):
+    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or not ctx.phrase_heavy_fastpath_allowed:
         return None
     if detect_unsupported_capability(ctx.message_text) is not None:
         return None

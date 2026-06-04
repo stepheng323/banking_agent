@@ -21,6 +21,14 @@ GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "query_session_exit.py",
     GATE_ROOT / "runtime.py",
 )
+GATE_STATE_VIEW_STAGE_MODULES = (
+    GATE_ROOT / "stages" / "context_frame_stages.py",
+    GATE_ROOT / "stages" / "contextual_followup_stages.py",
+    GATE_ROOT / "stages" / "mixed_capability_stages.py",
+    GATE_ROOT / "stages" / "schedule_read_stage.py",
+    GATE_ROOT / "stages" / "semantic_unsupported_capability_stage.py",
+    GATE_ROOT / "stages" / "unsupported_boundary_followup_stage.py",
+)
 EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
@@ -629,7 +637,7 @@ def test_gate_foundational_modules_use_typed_state_view() -> None:
         "tasks",
         "waves",
     }
-    for path in GATE_STATE_VIEW_CONTRACT_MODULES:
+    for path in GATE_STATE_VIEW_CONTRACT_MODULES + GATE_STATE_VIEW_STAGE_MODULES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:

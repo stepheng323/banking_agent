@@ -34,13 +34,7 @@ logger = get_logger(__name__)
 
 async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any] | None:
     """Handle short follow-ups after unsupported capability refusals before stale context reuse."""
-    if (
-        ctx.live_pending_interrupt
-        or ctx.state.pending_interrupt is not None
-        or ctx.state.has_quote
-        or ctx.state.session_stack
-        or ctx.state.waves
-    ):
+    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state:
         return None
 
     now = time()

@@ -76,21 +76,14 @@ def _build_direct_schedule_read_updates(
 
 async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None:
     """Use a small semantic classifier for simple scheduled-transaction read turns."""
-    if (
-        ctx.live_pending_interrupt
-        or ctx.state.pending_interrupt is not None
-        or ctx.state.has_quote
-        or ctx.state.session_stack
-        or ctx.state.waves
-        or ctx.task_planner is None
-    ):
+    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or ctx.task_planner is None:
         return None
     if not _could_be_schedule_read_request(ctx.message_text):
         return None
 
     try:
         route = await ctx.task_planner.route_schedule_read_turn(
-            ctx.state.phone_number,
+            ctx.state_view.phone_number,
             ctx.message_text,
             path_label="direct_path",
         )

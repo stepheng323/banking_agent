@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView, gate_state_view
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -28,40 +29,33 @@ def _temporary_state_with_message(state: OrchestratorState, message_text: str) -
     return state.model_copy(update={"last_message_text": message_text})
 
 
-def _build_supported_task(state: OrchestratorState, supported: SupportedClause) -> tuple[str, TaskSpec]:
+def _build_supported_task(state_view: GateStateView, supported: SupportedClause) -> tuple[str, TaskSpec]:
     if supported.domain == "account" and supported.heuristic_name == "balance_request":
-        task_id = _next_direct_account_task_id(state.tasks)
+        task_id = _next_direct_account_task_id(state_view.tasks)
         spec = TaskSpec(
             id=task_id,
             type="account",
             stage=TaskStage.DRAFT,
             payload={
                 "action": "check_balance",
-                "message": state.last_message_text,
-                "instruction": state.last_message_text,
+                "message": state_view.last_message_text,
+                "instruction": state_view.last_message_text,
             },
         )
         return task_id, spec
     if supported.domain == "schedule":
         return _build_direct_domain_task(
-            state=state,
+            state=state_view.state,
             domain="schedule",
             mode="new",
             schedule_response_mode="list",
         )
-    return _build_direct_domain_task(state=state, domain=supported.domain, mode="new")
+    return _build_direct_domain_task(state=state_view.state, domain=supported.domain, mode="new")
 
 
 async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
     """Route one supported banking clause while refusing unsupported clauses."""
-    if (
-        ctx.live_pending_interrupt
-        or ctx.state.pending_interrupt is not None
-        or ctx.state.has_quote
-        or ctx.state.session_stack
-        or ctx.state.waves
-        or not ctx.phrase_heavy_fastpath_allowed
-    ):
+    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or not ctx.phrase_heavy_fastpath_allowed:
         return None
 
     match = analyze_mixed_supported_unsupported(ctx.message_text)
@@ -113,8 +107,8 @@ async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dic
             ),
         }
 
-    supported_state = _temporary_state_with_message(ctx.state, supported.text)
-    task_id, spec = _build_supported_task(supported_state, supported)
+    supported_state_view = gate_state_view(_temporary_state_with_message(ctx.state, supported.text))
+    task_id, spec = _build_supported_task(supported_state_view, supported)
     task_updates: dict[str, Any] = {}
     if supported.domain == "transfer":
         await ctx.ensure_query_session()
@@ -123,7 +117,7 @@ async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dic
             and isinstance(ctx.query_session_snapshot, dict)
             and ctx.query_session_snapshot.get("session_active")
         ):
-            await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+            await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
             task_updates.update(
                 _build_query_session_exit_updates(
                     ctx.state,

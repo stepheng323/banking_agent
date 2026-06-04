@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
@@ -63,6 +64,23 @@ class GateStateView:
         return self.state.tasks
 
     @property
+    def waves(self) -> list[list[str]]:
+        return self.state.waves
+
+    @property
+    def has_waves(self) -> bool:
+        return bool(self.waves)
+
+    @property
+    def loaded_context(self) -> dict[str, Any]:
+        return self.state.loaded_context
+
+    @property
+    def loaded_context_or_empty(self) -> dict[str, Any]:
+        loaded_context = self.loaded_context
+        return loaded_context if isinstance(loaded_context, dict) else {}
+
+    @property
     def session_stack(self) -> list[ActiveSession]:
         return list(self.state.session_stack)
 
@@ -79,6 +97,10 @@ class GateStateView:
     def active_session_domain(self) -> str | None:
         session = self.active_session
         return session.domain if session is not None else None
+
+    @property
+    def has_gate_blocking_state(self) -> bool:
+        return self.has_pending_interrupt or self.has_quote or self.has_session_stack or self.has_waves
 
     @property
     def has_live_pending_interrupt(self) -> bool:

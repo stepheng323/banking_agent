@@ -99,14 +99,7 @@ def _context_frame_followup_updates(
 
 async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | None:
     """Resolve semantic follow-ups against the latest displayed response frame before domain routing."""
-    if (
-        ctx.live_pending_interrupt
-        or ctx.state.pending_interrupt is not None
-        or ctx.state.has_quote
-        or ctx.state.session_stack
-        or ctx.state.waves
-        or ctx.task_planner is None
-    ):
+    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or ctx.task_planner is None:
         return None
 
     await ctx.ensure_query_session()
@@ -158,7 +151,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
 
     try:
         decision = await ctx.task_planner.interpret_context_frame_followup(
-            ctx.state.phone_number,
+            ctx.state_view.phone_number,
             ctx.message_text,
             context=build_context_frame_followup_context_for_state(ctx.state),
             path_label="direct_path",
@@ -171,7 +164,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
     if decision.decision in {"replay_tasks", "replay"}:
         try:
             replay_modifier = await ctx.task_planner.extract_context_frame_replay_modifiers(
-                ctx.state.phone_number,
+                ctx.state_view.phone_number,
                 ctx.message_text,
                 context=build_context_frame_followup_context_for_state(ctx.state),
                 path_label="direct_path",
