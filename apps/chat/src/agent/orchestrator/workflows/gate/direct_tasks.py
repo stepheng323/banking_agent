@@ -3,14 +3,13 @@
 from typing import Any, Literal
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
     derive_transfer_schedule_fields,
     infer_schedule_action_from_text,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _current_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import DIRECT_DOMAIN_ACTIONS
-from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView, gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView
 from banking.policy.service import capability_block_message
 
 
@@ -52,27 +51,28 @@ def _next_direct_beneficiary_task_id(existing_tasks: dict[str, TaskSpec]) -> str
 
 def _build_direct_domain_task(
     *,
-    state: OrchestratorState,
+    state_view: GateStateView,
     domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule"],
     mode: str | None = None,
     schedule_response_mode: Literal["list", "count"] | None = None,
+    message_text: str | None = None,
 ) -> tuple[str, TaskSpec]:
-    state_view = gate_state_view(state)
     if domain == "query":
         task_id = _next_direct_query_task_id(state_view.tasks)
     else:
         task_id = _next_direct_domain_task_id(state_view.tasks, domain)
 
+    task_message = state_view.last_message_text if message_text is None else message_text
     payload: dict[str, Any] = {
-        "message": state_view.last_message_text,
-        "instruction": state_view.last_message_text,
+        "message": task_message,
+        "instruction": task_message,
     }
     if domain == "query":
         if mode == "new":
             payload["force_new_query"] = True
     elif domain in {"transfer", "airtime", "data"}:
-        message_text = state_view.last_message_text_or_empty
-        inferred_schedule_action = infer_schedule_action_from_text(message_text)
+        schedule_message_text = task_message or ""
+        inferred_schedule_action = infer_schedule_action_from_text(schedule_message_text)
         if inferred_schedule_action:
             domain_schedule_action = {
                 "transfer": inferred_schedule_action,
@@ -84,7 +84,7 @@ def _build_direct_domain_task(
             payload["action"] = domain_schedule_action
             payload.update(
                 derive_transfer_schedule_fields(
-                    message_text,
+                    schedule_message_text,
                     schedule_text=None,
                     scheduled_text=None,
                     recurring_flag=domain_schedule_action.startswith("recurring_"),

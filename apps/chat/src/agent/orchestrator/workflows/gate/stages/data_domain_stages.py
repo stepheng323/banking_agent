@@ -49,7 +49,7 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
             ),
         }
 
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="data", mode="new")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
     spec.payload.clear()
     spec.payload.update(_extract_data_query_payload(ctx.message_text))
     logger.info("gate_deterministic_data_plan_query", task_id=task_id)
@@ -103,7 +103,7 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
             ),
         }
 
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="data", mode="new")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
     spec.payload.update(
         {
             "action": "buy_data",
@@ -167,7 +167,7 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
                 heuristic_name="obvious_data_request",
             ),
         }
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="data", mode="new")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
     spec.payload.update(_extract_data_purchase_hints(ctx.message_text, phone_number=ctx.state_view.phone_number))
     logger.info("gate_deterministic_data_domain", task_id=task_id)
     return {

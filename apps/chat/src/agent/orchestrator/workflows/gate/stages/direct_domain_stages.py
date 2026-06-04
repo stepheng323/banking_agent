@@ -80,7 +80,7 @@ async def _stage_account_domain(ctx: GateContext) -> dict[str, Any] | None:
     cleanup_updates: dict[str, Any] = {}
     if has_explicit_cancel(ctx.message_text):
         cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="account", mode="new")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="account", mode="new")
     logger.info("gate_deterministic_account_domain", task_id=task_id)
     return {
         **ctx.gate_updates,
@@ -113,7 +113,7 @@ async def _stage_beneficiary_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_beneficiary_domain_request(ctx.message_text)
     ):
         return None
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="beneficiary", mode="new")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="beneficiary", mode="new")
     logger.info("gate_deterministic_beneficiary_domain", task_id=task_id)
     return {
         **ctx.gate_updates,
@@ -162,7 +162,7 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
                 heuristic_name="obvious_airtime_request",
             ),
         }
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="airtime", mode="new")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="airtime", mode="new")
     logger.info("gate_deterministic_airtime_domain", task_id=task_id)
     return {
         **ctx.gate_updates,

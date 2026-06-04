@@ -46,7 +46,7 @@ async def _handle_semantic_direct_response(
         isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active")
     )
     if had_active_query_session and canonical_decision == "direct_reply" and route.response_key != "planner.cancelled":
-        task_id, spec = _build_direct_domain_task(state=ctx.state, domain="query")
+        task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query")
         logger.info(
             "gate_active_query_session_owns_direct_reply",
             semantic_decision=canonical_decision,

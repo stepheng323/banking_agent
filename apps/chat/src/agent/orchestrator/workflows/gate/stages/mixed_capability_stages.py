@@ -2,7 +2,6 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import clear_query_session
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilities import (
     SupportedClause,
     analyze_mixed_supported_unsupported,
@@ -18,15 +17,11 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
-from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView, gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def _temporary_state_with_message(state: OrchestratorState, message_text: str) -> OrchestratorState:
-    return state.model_copy(update={"last_message_text": message_text})
 
 
 def _build_supported_task(state_view: GateStateView, supported: SupportedClause) -> tuple[str, TaskSpec]:
@@ -38,19 +33,25 @@ def _build_supported_task(state_view: GateStateView, supported: SupportedClause)
             stage=TaskStage.DRAFT,
             payload={
                 "action": "check_balance",
-                "message": state_view.last_message_text,
-                "instruction": state_view.last_message_text,
+                "message": supported.text,
+                "instruction": supported.text,
             },
         )
         return task_id, spec
     if supported.domain == "schedule":
         return _build_direct_domain_task(
-            state=state_view.state,
+            state_view=state_view,
             domain="schedule",
             mode="new",
             schedule_response_mode="list",
+            message_text=supported.text,
         )
-    return _build_direct_domain_task(state=state_view.state, domain=supported.domain, mode="new")
+    return _build_direct_domain_task(
+        state_view=state_view,
+        domain=supported.domain,
+        mode="new",
+        message_text=supported.text,
+    )
 
 
 async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
@@ -107,8 +108,7 @@ async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dic
             ),
         }
 
-    supported_state_view = gate_state_view(_temporary_state_with_message(ctx.state, supported.text))
-    task_id, spec = _build_supported_task(supported_state_view, supported)
+    task_id, spec = _build_supported_task(ctx.state_view, supported)
     task_updates: dict[str, Any] = {}
     if supported.domain == "transfer":
         await ctx.ensure_query_session()

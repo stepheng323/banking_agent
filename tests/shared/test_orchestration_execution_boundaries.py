@@ -1001,6 +1001,29 @@ def test_gate_foundational_modules_use_typed_state_view() -> None:
     assert violations == []
 
 
+def test_gate_modules_do_not_clone_raw_orchestrator_state() -> None:
+    violations: list[str] = []
+    for path in GATE_STATE_VIEW_CONTRACT_MODULES + GATE_STATE_VIEW_STAGE_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute) or node.func.attr != "model_copy":
+                continue
+            target = node.func.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} clones raw {ast.unparse(target)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "self", "state_view"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} clones raw {ast.unparse(target)}")
+
+    assert violations == []
+
+
 def test_typed_planner_core_reads_configurable_only_in_runtime_builder() -> None:
     violations: list[str] = []
     for path in sorted(PLANNER_ROOT.rglob("*.py")):

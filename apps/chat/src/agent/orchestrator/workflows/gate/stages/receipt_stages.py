@@ -68,7 +68,7 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
                 target_domain="support",
             ),
         }
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="support")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
     spec.payload["intent"] = "receipt_request"
     spec.payload["recent_batch_followup"] = True
     spec.payload["receipt_thread_followup"] = True
@@ -120,7 +120,7 @@ async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
                 target_domain="support",
             ),
         }
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="support")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
     spec.payload["intent"] = "receipt_request"
     spec.payload["recent_batch_followup"] = True
     logger.info(

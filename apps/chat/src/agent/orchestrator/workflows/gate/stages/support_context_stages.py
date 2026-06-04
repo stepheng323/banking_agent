@@ -91,7 +91,7 @@ async def _stage_support_context_followup(ctx: GateContext) -> dict[str, Any] | 
             ),
         }
 
-    task_id, spec = _build_direct_domain_task(state=ctx.state, domain="support")
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
     logger.info("gate_support_context_followup_handoff", task_id=task_id)
     return {
         **ctx.gate_updates,

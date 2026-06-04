@@ -121,7 +121,7 @@ async def _handle_semantic_domain_dispatch(
                 )
             )
         task_id, spec = _build_direct_domain_task(
-            state=ctx.state,
+            state_view=ctx.state_view,
             domain="transfer",
             mode=canonical_mode,
         )
@@ -202,7 +202,7 @@ async def _handle_semantic_domain_dispatch(
         )
 
     task_id, spec = _build_direct_domain_task(
-        state=ctx.state,
+        state_view=ctx.state_view,
         domain=domain,
         mode=canonical_mode,
     )

@@ -108,7 +108,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
                 detail=bypass_detail,
                 query_session_source=ctx.query_session_source,
             )
-            task_id, spec = _build_direct_domain_task(state=ctx.state, domain="query")
+            task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query")
             return {
                 **ctx.gate_updates,
                 **(ctx.summary_updates or {}),
@@ -134,7 +134,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
     )
     if can_consider_query_domain and _is_structural_query_domain_request(ctx.message_text):
         semantic_router_available = ctx.task_planner is not None
-        task_id, spec = _build_direct_domain_task(state=ctx.state, domain="query", mode="new")
+        task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query", mode="new")
         logger.info(
             "gate_deterministic_query_domain",
             task_id=task_id,
@@ -187,7 +187,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
                         query_session_snapshot=ctx.query_session_snapshot,
                     )
                 )
-            task_id, spec = _build_direct_domain_task(state=ctx.state, domain="transfer", mode="new")
+            task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="transfer", mode="new")
             if transfer_request_reason == "recipient_bank_details_only":
                 spec.payload["amount_suggestion_disabled"] = True
             logger.info(

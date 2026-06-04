@@ -49,7 +49,7 @@ def _build_direct_schedule_read_updates(
     route_source: str,
 ) -> dict[str, Any]:
     task_id, spec = _build_direct_domain_task(
-        state=ctx.state,
+        state_view=ctx.state_view,
         domain="schedule",
         mode=canonical_mode,
         schedule_response_mode="count" if schedule_response_mode == "count" else "list",
