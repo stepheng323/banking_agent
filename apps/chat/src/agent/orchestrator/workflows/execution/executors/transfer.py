@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import 
     _handle_transaction_outcome,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import remove_task_payload_values
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -156,7 +157,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     }
     _stamp_async_group_metadata(task, ctx)
     if task.payload.get("source_affinity_mode") is None:
-        task.payload.pop("source_affinity_mode", None)
+        remove_task_payload_values(task, "source_affinity_mode")
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
     result = cast(

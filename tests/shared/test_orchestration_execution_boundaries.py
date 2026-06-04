@@ -26,6 +26,7 @@ EXECUTION_TASK_MUTATION_CONTRACT_MODULES = (
     EXECUTION_ROOT / "executors" / "query.py",
     EXECUTION_ROOT / "executors" / "session.py",
     EXECUTION_ROOT / "executors" / "support.py",
+    EXECUTION_ROOT / "executors" / "transfer.py",
     EXECUTION_ROOT / "result_reducer.py",
     EXECUTION_ROOT / "wave" / "runner_task_guards.py",
     EXECUTION_ROOT / "wave" / "wave_state.py",
