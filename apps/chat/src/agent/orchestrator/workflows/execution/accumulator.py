@@ -28,10 +28,10 @@ class ExecutionAccumulator:
     def set_referent_memory(self, referent_memory: Any) -> None:
         self._result_patch.set_referent_memory(referent_memory)
 
-    def set_tasks(self, tasks: dict[str, Any]) -> None:
+    def set_tasks(self, tasks: dict[str, TaskSpec]) -> None:
         self._result_patch.set_tasks(tasks)
 
-    def get_tasks(self, default: dict[str, Any]) -> dict[str, Any]:
+    def get_tasks(self, default: dict[str, TaskSpec]) -> dict[str, TaskSpec]:
         return self._result_patch.get_tasks(default)
 
     def set_waves(self, waves: list[list[str]]) -> None:

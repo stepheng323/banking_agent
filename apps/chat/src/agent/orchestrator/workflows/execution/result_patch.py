@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 
 
 class ExecutionResultPatch:
@@ -41,11 +41,11 @@ class ExecutionResultPatch:
     def set_referent_memory(self, referent_memory: Any) -> None:
         self._updates["referent_memory"] = referent_memory
 
-    def set_tasks(self, tasks: dict[str, Any]) -> None:
+    def set_tasks(self, tasks: dict[str, TaskSpec]) -> None:
         self._updates["tasks"] = tasks
 
-    def get_tasks(self, default: dict[str, Any]) -> dict[str, Any]:
-        return cast(dict[str, Any], self._updates.get("tasks", default))
+    def get_tasks(self, default: dict[str, TaskSpec]) -> dict[str, TaskSpec]:
+        return cast(dict[str, TaskSpec], self._updates.get("tasks", default))
 
     def set_waves(self, waves: list[list[str]]) -> None:
         self._updates["waves"] = waves

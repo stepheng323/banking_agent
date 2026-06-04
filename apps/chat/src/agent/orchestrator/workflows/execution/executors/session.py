@@ -1,4 +1,4 @@
-from typing import Any, cast
+from typing import cast
 
 from apps.chat.src.agent.orchestrator.context.referents.store import forget_stashed_referents
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
@@ -44,7 +44,7 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
     if action == "resume_session":
         p_interrupt = last_session.get("pending_interrupt")
         logger.info("resuming_session", intent=intent, has_interrupt=bool(p_interrupt))
-        restored_tasks = cast(dict[str, Any], last_session["tasks"])
+        restored_tasks = cast(dict[str, TaskSpec], last_session["tasks"])
 
         ctx.accumulator.set_tasks(restored_tasks)
         ctx.accumulator.set_waves(last_session["waves"])
