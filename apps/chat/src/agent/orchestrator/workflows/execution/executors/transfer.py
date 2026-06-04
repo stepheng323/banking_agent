@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_schedule_list_frame
+from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import (
     loaded_context,
     set_loaded_context_value,
@@ -58,12 +59,12 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     required_fields: list[str] = []
     previous_response: str | None = None
     confirmation_task_count: int | None = None
-    if ctx.state.last_interrupt and task_id in ctx.state.last_interrupt.task_ids:
-        raw_required_fields = ctx.state.last_interrupt.fields_by_task.get(task_id, [])
-        required_fields = [field for field in raw_required_fields if isinstance(field, str)]
-        previous_response = ctx.state.last_interrupt.prompt
-        if ctx.state.last_interrupt.kind == "confirmation":
-            confirmation_task_count = len(ctx.state.last_interrupt.task_ids)
+    interrupt = last_interrupt(ctx.state)
+    if interrupt.includes_task(task_id):
+        required_fields = interrupt.fields_for_task(task_id)
+        previous_response = interrupt.prompt
+        if interrupt.is_kind("confirmation"):
+            confirmation_task_count = interrupt.task_count
 
     user_msg = _maybe_user_message(task, ctx.state)
 

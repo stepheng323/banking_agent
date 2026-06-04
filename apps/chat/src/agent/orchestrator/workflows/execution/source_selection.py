@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, TRANSACTION_TASK_TYPES
+from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get_task, iter_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import update_task_payload
 from banking.presentation.formatters.confirmation import strip_source_account_info_lines
@@ -13,16 +14,16 @@ logger = get_logger(__name__)
 
 
 def _is_source_selection_reply(state: OrchestratorState, task_id: str) -> bool:
-    interrupt = state.last_interrupt
-    if not interrupt or interrupt.kind != "input" or task_id not in interrupt.task_ids:
+    interrupt = last_interrupt(state)
+    if not interrupt.is_kind("input") or not interrupt.includes_task(task_id):
         return False
-    required_fields = set(interrupt.fields_by_task.get(task_id) or [])
+    required_fields = set(interrupt.fields_for_task(task_id))
     return required_fields == {"source_account_id"}
 
 
 def _is_same_batch_source_selection_sibling(state: OrchestratorState, task_id: str) -> bool:
-    interrupt = state.last_interrupt
-    if not interrupt or interrupt.kind != "input":
+    interrupt = last_interrupt(state)
+    if not interrupt.is_kind("input"):
         return False
 
     task = get_task(state, task_id)
@@ -34,7 +35,7 @@ def _is_same_batch_source_selection_sibling(state: OrchestratorState, task_id: s
         return False
 
     for active_task_id in interrupt.task_ids:
-        required_fields = set(interrupt.fields_by_task.get(active_task_id) or [])
+        required_fields = set(interrupt.fields_for_task(active_task_id))
         if required_fields != {"source_account_id"}:
             continue
         active_task = get_task(state, active_task_id)

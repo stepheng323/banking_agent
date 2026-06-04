@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import (
     TERMINAL_STAGES,
     _with_policy_notice,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_options import (
     _build_show_options_entry,
     _compact_prompt_for_options,
@@ -45,11 +46,12 @@ def _build_focused_missing_field_updates(
         or focused_task.payload.get("recipient_resolved_name")
         or "this recipient"
     )
+    interrupt = last_interrupt(state)
     just_resolved_tid = None
     just_resolved_name = None
     just_resolved_bank = None
-    if state.last_interrupt and state.last_interrupt.task_ids:
-        for tid in state.last_interrupt.task_ids:
+    if interrupt.task_ids:
+        for tid in interrupt.task_ids:
             task = get_task(state, tid)
             if not agg.has_input_request(tid) and task:
                 just_resolved_tid = tid

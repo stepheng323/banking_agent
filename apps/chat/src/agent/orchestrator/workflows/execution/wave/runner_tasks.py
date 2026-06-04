@@ -1,6 +1,7 @@
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TRANSACTION_TASK_TYPES
+from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _propagate_batch_source_selection,
 )
@@ -24,6 +25,7 @@ async def execute_current_wave_tasks(
     runtime: ExecutionWaveRuntime,
 ) -> None:
     progressed = False
+    interrupt = last_interrupt(state)
     active_input_task_types = _active_input_task_types(state)
 
     for task_id, task in non_terminal_tasks(state, runtime.current_wave):
@@ -46,7 +48,7 @@ async def execute_current_wave_tasks(
             logger.info(
                 "task_deferred_during_input_interrupt",
                 task_id=task_id,
-                active_task_ids=state.last_interrupt.task_ids if state.last_interrupt is not None else [],
+                active_task_ids=interrupt.task_ids,
             )
             continue
 

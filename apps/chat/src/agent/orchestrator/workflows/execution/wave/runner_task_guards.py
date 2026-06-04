@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import (
     _dependency_resolution,
     _is_read_only_data_plan_query,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _is_same_batch_source_selection_sibling,
@@ -27,9 +28,10 @@ logger = get_logger(__name__)
 
 
 def _active_input_task_types(state: OrchestratorState) -> set[str]:
-    if not state.last_interrupt:
+    interrupt = last_interrupt(state)
+    if not interrupt.exists:
         return set()
-    return task_types_for_ids(state, state.last_interrupt.task_ids)
+    return task_types_for_ids(state, interrupt.task_ids)
 
 
 def _should_defer_during_input_interrupt(
@@ -39,11 +41,11 @@ def _should_defer_during_input_interrupt(
     task: TaskSpec,
     active_input_task_types: set[str],
 ) -> bool:
+    interrupt = last_interrupt(state)
     return bool(
-        state.last_interrupt
-        and state.last_interrupt.kind == "input"
-        and state.last_interrupt.task_ids
-        and task_id not in state.last_interrupt.task_ids
+        interrupt.is_kind("input")
+        and interrupt.task_ids
+        and not interrupt.includes_task(task_id)
         and task.type in active_input_task_types
         and task.stage in INPUT_MUTABLE_STAGES
         and not _is_same_batch_source_selection_sibling(state, task_id)

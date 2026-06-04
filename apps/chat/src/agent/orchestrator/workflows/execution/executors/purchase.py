@@ -5,6 +5,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_data_plan_frames_from_result
+from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
@@ -68,10 +69,10 @@ async def _handle_purchase_task(
     user_msg = _maybe_user_message(task, ctx.state)
     required_fields: list[str] = []
     previous_response: str | None = None
-    if ctx.state.last_interrupt and task_id in ctx.state.last_interrupt.task_ids:
-        raw_required_fields = ctx.state.last_interrupt.fields_by_task.get(task_id, [])
-        required_fields = [field for field in raw_required_fields if isinstance(field, str)]
-        previous_response = ctx.state.last_interrupt.prompt
+    interrupt = last_interrupt(ctx.state)
+    if interrupt.includes_task(task_id):
+        required_fields = interrupt.fields_for_task(task_id)
+        previous_response = interrupt.prompt
 
     context = loaded_context(ctx.state)
     context_data = {
