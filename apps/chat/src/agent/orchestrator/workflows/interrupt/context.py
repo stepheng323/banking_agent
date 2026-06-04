@@ -1,4 +1,4 @@
-from typing import Any, cast
+from typing import Any
 
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     build_cancellation_reset_updates,
@@ -23,18 +23,29 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
     TRANSACTION_INTENTS,
 )
-from banking.presentation.i18n.locale import LocaleManager
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import (
+    InterruptStateView,
+    interrupt_state_view,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger("apps.chat.src.agent.orchestrator.workflows.interrupt")
 
 
 def _state_locale(state: OrchestratorState) -> str:
-    return cast(str, LocaleManager.normalize((state.loaded_context or {}).get("language")).value)
+    return _state_locale_for_view(interrupt_state_view(state))
+
+
+def _state_locale_for_view(state_view: InterruptStateView) -> str:
+    return state_view.current_locale
 
 
 def _current_task_types(state: OrchestratorState, task_ids: list[str]) -> set[str]:
-    return {state.tasks[tid].type for tid in task_ids if tid in state.tasks}
+    return _current_task_types_for_view(interrupt_state_view(state), task_ids)
+
+
+def _current_task_types_for_view(state_view: InterruptStateView, task_ids: list[str]) -> set[str]:
+    return state_view.task_types_for(task_ids)
 
 
 def _active_intent(current_task_types: set[str]) -> str:
@@ -47,20 +58,17 @@ def _next_interrupt_task_id(
     target_intent: str,
     start_index: int = 1,
 ) -> str:
+    state_view = interrupt_state_view(state)
     index = max(start_index, 1)
     while True:
         candidate = f"interrupt_{target_intent}_{index}"
-        if candidate not in state.tasks:
+        if not state_view.has_task_id(candidate):
             return candidate
         index += 1
 
 
 def _clear_current_domain_sessions(state: OrchestratorState, domains: set[str]) -> tuple[list[Any], str | None]:
-    if not domains:
-        stack = list(state.session_stack)
-        return stack, (stack[-1].domain if stack else None)
-
-    stack = [session for session in state.session_stack if session.domain not in domains]
+    stack = interrupt_state_view(state).session_stack_without_domains(domains)
     return stack, (stack[-1].domain if stack else None)
 
 
@@ -126,6 +134,7 @@ __all__ = [
     "_clip_text",
     "_compact_task_payload_for_interrupt_router",
     "_current_task_types",
+    "_current_task_types_for_view",
     "_is_resumable_interrupt",
     "_is_transaction_intent",
     "_is_transaction_replacement",
@@ -134,4 +143,5 @@ __all__ = [
     "_select_interrupt_router_prompt_mode",
     "_should_stash_switch",
     "_state_locale",
+    "_state_locale_for_view",
 ]

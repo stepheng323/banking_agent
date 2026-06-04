@@ -13,6 +13,11 @@ INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "wo
 GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
 PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
 LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "lifecycle"
+INTERRUPT_STATE_VIEW_MODULES = (
+    INTERRUPT_ROOT / "context.py",
+    INTERRUPT_ROOT / "node.py",
+    INTERRUPT_ROOT / "runtime.py",
+)
 GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "context.py",
     GATE_ROOT / "direct_tasks.py",
@@ -676,6 +681,34 @@ def test_typed_interrupt_core_does_not_forward_raw_service_mappings() -> None:
         for forbidden in FORBIDDEN_INTERRUPT_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_interrupt_foundational_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "last_message_text",
+        "loaded_context",
+        "pending_interrupt",
+        "session_stack",
+        "tasks",
+    }
+    for path in INTERRUPT_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "request", "runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []
 

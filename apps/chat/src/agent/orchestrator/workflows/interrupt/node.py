@@ -9,11 +9,13 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.router.runner_routing 
     _route_and_apply_interrupt_decision,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import build_interrupt_runtime
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 async def handle_pending_interrupt(state: OrchestratorState, config: RunnableConfig) -> dict[str, object]:
     """Process user input against the pending interrupt (if any)."""
-    interrupt = state.pending_interrupt
+    state_view = interrupt_state_view(state)
+    interrupt = state_view.pending_interrupt
     if not interrupt:
         return {}
 
