@@ -71,11 +71,15 @@ class PlannerStateView:
         return list(self.waves[self.current_wave_index])
 
     @property
-    def current_wave_first_task_type(self) -> str | None:
+    def current_wave_first_task(self) -> TaskSpec | None:
         task_ids = self.current_wave_task_ids
         if not task_ids:
             return None
-        task = self.tasks.get(task_ids[0])
+        return self.tasks.get(task_ids[0])
+
+    @property
+    def current_wave_first_task_type(self) -> str | None:
+        task = self.current_wave_first_task
         return task.type if task else None
 
     @property
@@ -119,13 +123,33 @@ class PlannerStateView:
     def pending_interrupt_task_types(self) -> set[str]:
         return {self.tasks[task_id].type for task_id in self.pending_interrupt_task_ids if task_id in self.tasks}
 
+    def pending_interrupt_fields_for_task(self, task_id: str) -> list[str]:
+        pending_interrupt = self.pending_interrupt
+        if pending_interrupt is None or task_id not in pending_interrupt.task_ids:
+            return []
+        return list(pending_interrupt.fields_by_task.get(task_id, []) or [])
+
     @property
     def has_session_stack(self) -> bool:
         return bool(self.state.session_stack)
 
     @property
+    def session_domain(self) -> str | None:
+        if not self.state.session_stack:
+            return None
+        return self.state.session_stack[-1].domain
+
+    @property
+    def active_domain(self) -> str | None:
+        return self.state.active_domain
+
+    @property
     def context_frames(self) -> list[ContextFrame]:
         return list(self.state.context_frames)
+
+    @property
+    def turn_context_summary(self) -> dict[str, Any] | None:
+        return self.state.turn_context_summary
 
     @property
     def direct_path_triggered(self) -> bool:

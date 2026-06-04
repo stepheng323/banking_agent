@@ -5,8 +5,8 @@ from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_types import TurnContextSummary
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 
 
 def summary_to_state_payload(summary: TurnContextSummary) -> dict[str, Any]:
@@ -22,7 +22,7 @@ def summary_from_state_payload(payload: Any) -> TurnContextSummary | None:
 
 
 def _get_or_build_turn_context_summary(
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     *,
     query_session_snapshot: dict[str, Any] | None = None,
     query_session_source: str | None = None,
@@ -30,13 +30,13 @@ def _get_or_build_turn_context_summary(
     builder: Callable[..., TurnContextSummary],
     perf_logger: Any,
 ) -> tuple[TurnContextSummary, dict[str, Any] | None]:
-    cached = summary_from_state_payload(state.turn_context_summary)
+    cached = summary_from_state_payload(state_view.turn_context_summary)
     if cached is not None:
         return cached, None
 
     build_start = time.perf_counter()
     summary = builder(
-        state,
+        state_view.state,
         query_session_snapshot=query_session_snapshot,
         query_session_source=query_session_source,
     )
@@ -47,7 +47,7 @@ def _get_or_build_turn_context_summary(
             span="turn_context_summary_build",
             duration_ms=round((time.perf_counter() - build_start) * 1000, 2),
             path_label=path_label,
-            phone_number=state.phone_number,
+            phone_number=state_view.phone_number,
         )
     return summary, {"turn_context_summary": summary_to_state_payload(summary)}
 

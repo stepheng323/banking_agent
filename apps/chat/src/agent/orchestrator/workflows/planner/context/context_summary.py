@@ -42,7 +42,8 @@ def build_turn_context_summary(
     query_session_snapshot: dict[str, Any] | None = None,
     query_session_source: str | None = None,
 ) -> TurnContextSummary:
-    ctx = state.loaded_context or {}
+    state_view = planner_state_view(state)
+    ctx = state_view.loaded_context_or_empty
     profile = ctx.get("profile") or {}
     accounts = ctx.get("accounts") or []
     beneficiaries = ctx.get("beneficiaries") or []
@@ -58,8 +59,7 @@ def build_turn_context_summary(
     )
     history_lines = _build_history_lines(history if isinstance(history, list) else [])
     query_session_summary, query_session_active = _query_session_summary_text(query_session_snapshot)
-    active_flow = _build_active_flow_details(state)
-    state_view = planner_state_view(state)
+    active_flow = _build_active_flow_details(state_view)
 
     from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
     from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_focus import (
@@ -67,8 +67,8 @@ def build_turn_context_summary(
     )
 
     return TurnContextSummary(
-        active_domain=state.active_domain,
-        session_domain=state.session_stack[-1].domain if state.session_stack else None,
+        active_domain=state_view.active_domain,
+        session_domain=state_view.session_domain,
         recent_domain_focus=_infer_recent_domain_focus(state_view),
         recent_answer_focus=_derive_recent_answer_focus(state_view),
         profile_name=profile_name,
@@ -98,8 +98,9 @@ def get_or_build_turn_context_summary(
     builder: Any | None = None,
     perf_logger: Any | None = None,
 ) -> tuple[TurnContextSummary, dict[str, Any] | None]:
+    state_view = planner_state_view(state)
     return _get_or_build_turn_context_summary(
-        state,
+        state_view,
         query_session_snapshot=query_session_snapshot,
         query_session_source=query_session_source,
         path_label=path_label,

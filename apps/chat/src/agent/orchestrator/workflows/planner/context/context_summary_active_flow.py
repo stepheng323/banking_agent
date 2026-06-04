@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_payload import (
     _compact_payload_for_prompt,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 
 
 @dataclass(frozen=True)
@@ -16,16 +16,9 @@ class ActiveFlowDetails:
     interrupt_kind: str | None
 
 
-def _build_active_flow_details(state: OrchestratorState) -> ActiveFlowDetails:
-    interrupt_kind = state.pending_interrupt.kind if state.pending_interrupt else None
-    if not state.waves or state.current_wave_index >= len(state.waves):
-        return ActiveFlowDetails(None, None, [], interrupt_kind)
-
-    current_wave = state.waves[state.current_wave_index]
-    if not current_wave:
-        return ActiveFlowDetails(None, None, [], interrupt_kind)
-
-    active_task = state.tasks.get(current_wave[0])
+def _build_active_flow_details(state_view: PlannerStateView) -> ActiveFlowDetails:
+    interrupt_kind = state_view.pending_interrupt_kind
+    active_task = state_view.current_wave_first_task
     if not active_task:
         return ActiveFlowDetails(None, None, [], interrupt_kind)
 
@@ -38,9 +31,7 @@ def _build_active_flow_details(state: OrchestratorState) -> ActiveFlowDetails:
         f"Current Task Data: {payload_preview}\n"
         f"Routing: slot_updates_keep_intent_unless_user_clearly_switches"
     )
-    missing_fields: list[str] = []
-    if state.pending_interrupt and active_task.id in state.pending_interrupt.task_ids:
-        missing_fields = list(state.pending_interrupt.fields_by_task.get(active_task.id, []) or [])
+    missing_fields = state_view.pending_interrupt_fields_for_task(active_task.id)
     return ActiveFlowDetails(summary, active_task.type, missing_fields, interrupt_kind)
 
 
