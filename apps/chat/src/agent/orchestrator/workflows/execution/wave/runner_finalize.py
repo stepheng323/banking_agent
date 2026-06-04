@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_po
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_updates import (
     _build_confirmation_gate_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.control_state import execution_control_state
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts import (
     _build_missing_field_interrupt_updates,
 )
@@ -75,7 +76,7 @@ def finalize_execution_wave_updates(
             locale=runtime.locale,
         )
 
-    if state.policy_notice:
+    if execution_control_state(state).has_policy_notice:
         runtime.accumulator.set_outbox(_with_policy_notice(state, runtime.accumulator.get_outbox()))
         runtime.accumulator.clear_policy_notice()
 

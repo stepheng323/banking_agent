@@ -4,6 +4,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface
+from apps.chat.src.agent.orchestrator.workflows.execution.control_state import execution_control_state
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_coordination import (
     _maybe_coordinate_batch_funding,
 )
@@ -41,9 +42,10 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
     # [SAFETY] If pending_interrupt is already set (e.g. valid restoration), do NOT execute tasks.
     # Return it to force graph to stop/route correctly.
-    if state.pending_interrupt:
-        logger.info("advance_wave_blocked_by_interrupt", kind=state.pending_interrupt.kind)
-        return {"pending_interrupt": state.pending_interrupt}
+    control = execution_control_state(state)
+    if control.has_pending_interrupt:
+        logger.info("advance_wave_blocked_by_interrupt", kind=control.pending_interrupt_kind)
+        return control.pending_interrupt_update()
 
     runtime = build_execution_wave_runtime(state=state, config=config, current_wave=current_wave)
 

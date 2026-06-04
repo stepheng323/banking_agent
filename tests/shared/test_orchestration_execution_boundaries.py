@@ -42,6 +42,7 @@ EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
     EXECUTION_ROOT / "executors" / "support.py",
     EXECUTION_ROOT / "executors" / "transfer.py",
 )
+EXECUTION_CONTROL_STATE_MODULE = EXECUTION_ROOT / "control_state.py"
 EXECUTION_CONTEXT_SURFACE_MODULE = EXECUTION_ROOT / "context_surface.py"
 EXECUTION_LAST_INTERRUPT_MODULE = EXECUTION_ROOT / "last_interrupt.py"
 EXECUTION_LOADED_CONTEXT_MODULE = EXECUTION_ROOT / "loaded_context.py"
@@ -521,6 +522,30 @@ def test_execution_turn_metadata_reads_use_typed_helpers() -> None:
     }
     for path in sorted(EXECUTION_ROOT.rglob("*.py")):
         if path.resolve() == EXECUTION_TURN_METADATA_MODULE.resolve():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "ctx"
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_execution_control_state_reads_use_typed_helpers() -> None:
+    violations: list[str] = []
+    guarded_attrs = {"pending_interrupt", "policy_notice"}
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.resolve() == EXECUTION_CONTROL_STATE_MODULE.resolve():
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

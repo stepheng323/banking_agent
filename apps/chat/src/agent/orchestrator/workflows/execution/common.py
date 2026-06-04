@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.control_state import execution_control_state
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
@@ -33,10 +34,11 @@ def _build_mandate_gate_error(accounts: list[dict], locale: str) -> str:
 
 def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Prepend policy notice once per turn when present."""
-    if not state.policy_notice:
+    control = execution_control_state(state)
+    if not control.has_policy_notice:
         return outbox
     logger.info("policy_notice_injected")
-    return [{"type": "say", "text": state.policy_notice}, *outbox]
+    return control.prepend_policy_notice(outbox)
 
 
 def _dependency_resolution(task: Any, all_tasks: dict[str, Any]) -> tuple[str, str | None]:
