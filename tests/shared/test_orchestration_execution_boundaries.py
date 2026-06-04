@@ -22,8 +22,10 @@ GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "runtime.py",
 )
 GATE_STATE_VIEW_STAGE_MODULES = (
+    GATE_ROOT / "stages" / "beneficiary_suggestion_stage.py",
     GATE_ROOT / "stages" / "context_frame_stages.py",
     GATE_ROOT / "stages" / "contextual_followup_stages.py",
+    GATE_ROOT / "stages" / "direct_domain_stages.py",
     GATE_ROOT / "stages" / "mixed_capability_stages.py",
     GATE_ROOT / "stages" / "schedule_read_stage.py",
     GATE_ROOT / "stages" / "semantic_unsupported_capability_stage.py",

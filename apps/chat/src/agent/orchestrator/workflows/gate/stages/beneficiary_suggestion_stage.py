@@ -17,7 +17,7 @@ async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | No
     if ctx.live_pending_interrupt or not ctx.redis_client:
         return None
 
-    suggestion_key = f"user:{ctx.state.phone_number}:beneficiary_suggestion"
+    suggestion_key = f"user:{ctx.state_view.phone_number}:beneficiary_suggestion"
     try:
         suggestion_data = await ctx.redis_client.get(suggestion_key)
     except Exception as exc:
@@ -39,11 +39,11 @@ async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | No
         alias_present=bool(decision.alias),
     )
     if decision.action in {"save_default", "save_alias"}:
-        task_id = _next_direct_beneficiary_task_id(ctx.state.tasks)
+        task_id = _next_direct_beneficiary_task_id(ctx.state_view.tasks)
         task_payload: dict[str, Any] = {
             "action": "save_beneficiary",
-            "instruction": ctx.state.last_message_text,
-            "message": ctx.state.last_message_text,
+            "instruction": ctx.state_view.last_message_text,
+            "message": ctx.state_view.last_message_text,
         }
         if decision.alias:
             task_payload["alias"] = decision.alias

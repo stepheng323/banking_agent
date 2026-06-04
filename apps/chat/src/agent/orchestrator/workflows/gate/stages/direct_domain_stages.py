@@ -34,15 +34,15 @@ async def _stage_balance_direct(ctx: GateContext) -> dict[str, Any] | None:
     cleanup_updates: dict[str, Any] = {}
     if has_explicit_cancel(ctx.message_text):
         cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
-    task_id = _next_direct_account_task_id(ctx.state.tasks)
+    task_id = _next_direct_account_task_id(ctx.state_view.tasks)
     spec = TaskSpec(
         id=task_id,
         type="account",
         stage=TaskStage.DRAFT,
         payload={
             "action": "check_balance",
-            "message": ctx.state.last_message_text,
-            "instruction": ctx.state.last_message_text,
+            "message": ctx.state_view.last_message_text,
+            "instruction": ctx.state_view.last_message_text,
         },
     )
     logger.info("gate_direct_account_balance", task_id=task_id, with_cleanup=bool(cleanup_updates))
@@ -72,7 +72,7 @@ async def _stage_account_domain(ctx: GateContext) -> dict[str, Any] | None:
     """Deterministic account domain shortcut."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.has_quote
+        or ctx.state_view.has_quote
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_account_domain_request(ctx.message_text)
     ):
@@ -108,7 +108,7 @@ async def _stage_beneficiary_domain(ctx: GateContext) -> dict[str, Any] | None:
     """Deterministic beneficiary domain shortcut."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.has_quote
+        or ctx.state_view.has_quote
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_beneficiary_domain_request(ctx.message_text)
     ):
@@ -140,7 +140,7 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
     """Deterministic airtime domain shortcut."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.has_quote
+        or ctx.state_view.has_quote
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_obvious_airtime_request(ctx.message_text)
     ):
