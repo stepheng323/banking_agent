@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Protocol
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
@@ -27,35 +26,75 @@ from apps.chat.src.agent.orchestrator.task_handlers.transfer import (
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 
-TaskHandler = Callable[[TaskSpec, str, ExecutionTurnContext], Awaitable[None]]
-
 
 class TaskExecutor(Protocol):
     async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
         """Execute one task and record state changes through the execution context."""
 
 
-@dataclass(frozen=True)
-class FunctionTaskExecutor:
-    handler: TaskHandler
-
+class TransferTaskExecutor:
     async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
-        await self.handler(task, task_id, ctx)
+        await handle_transfer_task(task, task_id, ctx)
+
+
+class AccountTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_account_task(task, task_id, ctx)
+
+
+class BeneficiaryTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_beneficiary_task(task, task_id, ctx)
+
+
+class AirtimeTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_airtime_task(task, task_id, ctx)
+
+
+class QueryTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_query_task(task, task_id, ctx)
+
+
+class DataTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_data_task(task, task_id, ctx)
+
+
+class FAQTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_faq_task(task, task_id, ctx)
+
+
+class SupportTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_support_task(task, task_id, ctx)
+
+
+class ScheduleTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_schedule_task(task, task_id, ctx)
+
+
+class OrchestratorTaskExecutor:
+    async def execute(self, task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
+        await handle_orchestrator_task(task, task_id, ctx)
 
 
 TaskExecutorRegistry = Mapping[str, TaskExecutor]
 
 DEFAULT_TASK_EXECUTORS: TaskExecutorRegistry = {
-    "transfer": FunctionTaskExecutor(handle_transfer_task),
-    "account": FunctionTaskExecutor(handle_account_task),
-    "beneficiary": FunctionTaskExecutor(handle_beneficiary_task),
-    "airtime": FunctionTaskExecutor(handle_airtime_task),
-    "query": FunctionTaskExecutor(handle_query_task),
-    "data": FunctionTaskExecutor(handle_data_task),
-    "faq": FunctionTaskExecutor(handle_faq_task),
-    "support": FunctionTaskExecutor(handle_support_task),
-    "schedule": FunctionTaskExecutor(handle_schedule_task),
-    "orchestrator": FunctionTaskExecutor(handle_orchestrator_task),
+    "transfer": TransferTaskExecutor(),
+    "account": AccountTaskExecutor(),
+    "beneficiary": BeneficiaryTaskExecutor(),
+    "airtime": AirtimeTaskExecutor(),
+    "query": QueryTaskExecutor(),
+    "data": DataTaskExecutor(),
+    "faq": FAQTaskExecutor(),
+    "support": SupportTaskExecutor(),
+    "schedule": ScheduleTaskExecutor(),
+    "orchestrator": OrchestratorTaskExecutor(),
 }
 
 
@@ -64,9 +103,18 @@ def get_task_executor(task_type: str, registry: TaskExecutorRegistry = DEFAULT_T
 
 
 __all__ = [
+    "AccountTaskExecutor",
+    "AirtimeTaskExecutor",
+    "BeneficiaryTaskExecutor",
+    "DataTaskExecutor",
     "DEFAULT_TASK_EXECUTORS",
-    "FunctionTaskExecutor",
+    "FAQTaskExecutor",
+    "OrchestratorTaskExecutor",
+    "QueryTaskExecutor",
+    "ScheduleTaskExecutor",
+    "SupportTaskExecutor",
     "TaskExecutor",
     "TaskExecutorRegistry",
+    "TransferTaskExecutor",
     "get_task_executor",
 ]

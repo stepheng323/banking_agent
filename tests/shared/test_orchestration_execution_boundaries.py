@@ -24,6 +24,8 @@ FORBIDDEN_EXECUTION_TEXT = (
     "apps.chat.src.agent.orchestrator.workflows.execution.runtime",
     "apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_handlers",
     "ExecutionServices",
+    "FunctionTaskExecutor",
+    "TaskHandler =",
     "_HANDLERS",
     'config["configurable"].get("services"',
     "config_value(",
