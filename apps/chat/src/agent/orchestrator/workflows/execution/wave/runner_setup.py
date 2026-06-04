@@ -8,6 +8,10 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.dependencies import ExecutionDependencies
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import (
+    loaded_context,
+    set_loaded_context_value,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import task_map
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.executor_registry import (
     DEFAULT_TASK_EXECUTORS,
@@ -32,10 +36,11 @@ class ExecutionWaveRuntime:
 
 
 def _prepare_transaction_account_view(state: OrchestratorState) -> list[dict[str, Any]]:
-    if not state.loaded_context or "accounts" not in state.loaded_context:
+    context = loaded_context(state)
+    raw_accounts = context.accounts
+    if not raw_accounts:
         return []
 
-    raw_accounts = state.loaded_context["accounts"]
     mandate_gate_accounts = [account for account in raw_accounts if isinstance(account, dict)]
     logger.info(
         "mandate_gate_pre_filter",
@@ -45,12 +50,11 @@ def _prepare_transaction_account_view(state: OrchestratorState) -> list[dict[str
             if isinstance(account, dict)
         ],
     )
-    state.loaded_context["transaction_accounts"] = [
-        account for account in mandate_gate_accounts if is_mandate_debit_ready(account)
-    ]
+    transaction_accounts = [account for account in mandate_gate_accounts if is_mandate_debit_ready(account)]
+    set_loaded_context_value(state, "transaction_accounts", transaction_accounts)
     logger.info(
         "mandate_gate_post_filter",
-        ready_count=len(state.loaded_context["transaction_accounts"]),
+        ready_count=len(transaction_accounts),
     )
     return mandate_gate_accounts
 
@@ -83,7 +87,7 @@ def build_execution_wave_runtime(
         accumulator=accumulator,
         ctx=ctx,
         task_executors=DEFAULT_TASK_EXECUTORS,
-        locale=(state.loaded_context or {}).get("language", "en"),
+        locale=loaded_context(state).value("language", "en"),
         mandate_gate_accounts=_prepare_transaction_account_view(state),
     )
 

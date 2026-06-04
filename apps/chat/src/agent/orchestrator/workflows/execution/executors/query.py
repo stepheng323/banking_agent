@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
     push_query_surface_frame,
     query_pagination_actionable_payload,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.query_handoff import _next_query_handoff_transfer_task_id
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
@@ -47,11 +48,12 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
     if not worker:
         return
 
+    context = loaded_context(ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
-        "user_id": ctx.state.loaded_context.get("user_id"),
-        "profile": ctx.state.loaded_context.get("profile", {}),
-        "accounts": ctx.state.loaded_context.get("accounts", []),
+        "user_id": context.user_id,
+        "profile": context.profile,
+        "accounts": context.accounts,
         "language": _state_locale(ctx.state),
         "inbound_message_id": ctx.state.last_message_id,
         "turn_id": ctx.state.last_message_id,

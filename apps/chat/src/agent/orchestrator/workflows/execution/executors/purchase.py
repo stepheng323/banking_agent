@@ -5,6 +5,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_data_plan_frames_from_result
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
     _apply_result_patch,
@@ -72,12 +73,13 @@ async def _handle_purchase_task(
         required_fields = [field for field in raw_required_fields if isinstance(field, str)]
         previous_response = ctx.state.last_interrupt.prompt
 
+    context = loaded_context(ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
-        "user_id": ctx.state.loaded_context.get("user_id"),
-        "accounts": ctx.state.loaded_context.get("transaction_accounts", ctx.state.loaded_context.get("accounts", [])),
-        "all_accounts": ctx.state.loaded_context.get("accounts", []),
-        "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "user_id": context.user_id,
+        "accounts": context.transaction_accounts_or_accounts,
+        "all_accounts": context.accounts,
+        "beneficiaries": context.beneficiaries,
         "referent_memory": ctx.state.referent_memory.model_dump(mode="json"),
         "resolved_referents": build_resolved_referents(ctx.state, user_msg),
         "language": _state_locale(ctx.state),

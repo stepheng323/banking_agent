@@ -42,6 +42,7 @@ EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
     EXECUTION_ROOT / "executors" / "support.py",
     EXECUTION_ROOT / "executors" / "transfer.py",
 )
+EXECUTION_LOADED_CONTEXT_MODULE = EXECUTION_ROOT / "loaded_context.py"
 EXECUTION_TASK_ACCESS_MODULE = EXECUTION_ROOT / "task_access.py"
 
 DELETED_EXECUTION_MODULE_PATHS = (
@@ -432,6 +433,19 @@ def test_execution_wave_task_reads_use_typed_helpers() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "tasks":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_execution_loaded_context_reads_use_typed_helpers() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.resolve() == EXECUTION_LOADED_CONTEXT_MODULE.resolve():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr == "loaded_context":
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []

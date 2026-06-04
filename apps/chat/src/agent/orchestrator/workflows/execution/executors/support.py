@@ -3,6 +3,7 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.executors.transfer import TransferTaskExecutor
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
     pop_active_session,
@@ -108,12 +109,13 @@ async def _execute_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     if not worker:
         return
 
+    context = loaded_context(ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
         "channel": ctx.state.channel,
         "channel_identity": ctx.state.channel_identity,
-        "user_id": ctx.state.loaded_context.get("user_id"),
-        "email": ctx.state.loaded_context.get("profile", {}).get("email"),
+        "user_id": context.user_id,
+        "email": context.email,
         "language": _state_locale(ctx.state),
     }
 

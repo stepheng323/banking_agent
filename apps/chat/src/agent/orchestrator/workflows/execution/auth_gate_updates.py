@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_summary import (
     _build_confirmation_gate_summary,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import required_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
@@ -54,8 +55,7 @@ def _build_auth_gate_updates(
 
     auth_tasks = required_tasks(state, auth_task_ids)
     first_task = auth_tasks[0][1]
-    accounts_raw = state.loaded_context.get("accounts") or []
-    accounts = [account for account in accounts_raw if isinstance(account, dict)]
+    accounts = loaded_context(state).account_rows
     summ = _build_confirmation_gate_summary(
         state=state,
         task_ids=auth_task_ids,

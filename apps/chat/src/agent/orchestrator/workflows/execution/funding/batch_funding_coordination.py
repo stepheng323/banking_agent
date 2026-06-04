@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.presentation.i18n.renderer import render_message
@@ -40,9 +41,7 @@ async def _maybe_coordinate_batch_funding(
         logger.info("batch_funding_coordinator_skipped", reason="dd_provider_missing", task_ids=transfer_task_ids)
         return None
 
-    accounts_raw = (state.loaded_context or {}).get("accounts") or []
-    transaction_accounts_raw = (state.loaded_context or {}).get("transaction_accounts") or accounts_raw
-    accounts = [account for account in transaction_accounts_raw if isinstance(account, dict)]
+    accounts = loaded_context(state).transaction_account_rows_or_account_rows
     demands = [_build_transfer_demand(task_id, cast(dict[str, Any], task.payload)) for task_id, task in transfer_tasks]
     coordinator = BatchFundingCoordinator(dd_provider=dd_provider)
     result = await coordinator.coordinate(demands=demands, accounts=accounts, locale=locale)

@@ -10,6 +10,10 @@ from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import push_schedule_list_frame
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import (
+    loaded_context,
+    set_loaded_context_value,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
     _apply_result_patch,
@@ -77,16 +81,15 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
             user_msg = f"Send {amt} to {r_name}"
             logger.info("user_msg_synthesized", msg=user_msg)
 
-    beneficiaries = ctx.state.loaded_context.get("beneficiaries", [])
-    if not isinstance(beneficiaries, list):
-        beneficiaries = []
+    context = loaded_context(ctx.state)
+    beneficiaries = context.beneficiaries
 
     recipient_name = task.payload.get("recipient_name")
     has_recipient_hint = isinstance(recipient_name, str) and bool(recipient_name.strip())
     recipient_name_text = recipient_name.strip() if isinstance(recipient_name, str) else ""
     beneficiary_repo = ctx.dependencies.beneficiary_repo
-    user_id = ctx.state.loaded_context.get("user_id")
-    beneficiary_context_mode = str(ctx.state.loaded_context.get("beneficiary_context_mode") or "full")
+    user_id = context.user_id
+    beneficiary_context_mode = context.beneficiary_context_mode
     if (
         beneficiary_repo
         and user_id
@@ -126,8 +129,7 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
                     reload_mode = "full"
 
             beneficiaries = _normalize_beneficiary_rows(fetched_rows if isinstance(fetched_rows, list) else [])
-            if isinstance(ctx.state.loaded_context, dict):
-                ctx.state.loaded_context["beneficiaries"] = beneficiaries
+            set_loaded_context_value(ctx.state, "beneficiaries", beneficiaries)
             logger.info(
                 "transfer_beneficiaries_reloaded_for_resolution",
                 user_id=str(user_id),
@@ -146,9 +148,9 @@ async def _execute_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         "phone_number": ctx.state.phone_number,
         "channel": ctx.state.channel,
         "channel_identity": ctx.state.channel_identity,
-        "user_id": ctx.state.loaded_context.get("user_id"),
-        "accounts": ctx.state.loaded_context.get("transaction_accounts", ctx.state.loaded_context.get("accounts", [])),
-        "all_accounts": ctx.state.loaded_context.get("accounts", []),
+        "user_id": context.user_id,
+        "accounts": context.transaction_accounts_or_accounts,
+        "all_accounts": context.accounts,
         "beneficiaries": beneficiaries,
         "referent_memory": ctx.state.referent_memory.model_dump(mode="json"),
         "resolved_referents": resolved_referents,
@@ -243,14 +245,15 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
     if not worker:
         return
 
+    context = loaded_context(ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
         "channel": ctx.state.channel,
         "channel_identity": ctx.state.channel_identity,
-        "user_id": ctx.state.loaded_context.get("user_id"),
-        "accounts": ctx.state.loaded_context.get("accounts", []),
-        "all_accounts": ctx.state.loaded_context.get("accounts", []),
-        "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "user_id": context.user_id,
+        "accounts": context.accounts,
+        "all_accounts": context.accounts,
+        "beneficiaries": context.beneficiaries,
         "language": _state_locale(ctx.state),
         "required_fields": [],
         "previous_response": None,

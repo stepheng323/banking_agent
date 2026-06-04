@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
     push_account_list_frame,
     push_beneficiary_list_frame,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
@@ -48,11 +49,12 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     if not user_msg:
         message_from_payload = task.payload.get("message") or task.payload.get("instruction")
         user_msg = message_from_payload if isinstance(message_from_payload, str) else None
+    context = loaded_context(ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
-        "user_id": ctx.state.loaded_context.get("user_id"),
-        "profile": ctx.state.loaded_context.get("profile", {}),
-        "accounts": ctx.state.loaded_context.get("accounts", []),
+        "user_id": context.user_id,
+        "profile": context.profile,
+        "accounts": context.accounts,
         "language": _state_locale(ctx.state),
     }
 
@@ -125,8 +127,9 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
         if transfer_worker and hasattr(transfer_worker, "resolver_provider"):
             provider = transfer_worker.resolver_provider
 
+        context = loaded_context(ctx.state)
         context_data = {
-            "user_id": ctx.state.loaded_context.get("user_id"),
+            "user_id": context.user_id,
             "phone_number": ctx.state.phone_number,
             "resolver_provider": provider,
             "language": _state_locale(ctx.state),

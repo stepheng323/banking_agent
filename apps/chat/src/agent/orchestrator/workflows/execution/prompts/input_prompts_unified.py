@@ -5,6 +5,7 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import _recipient_prompt_label
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
@@ -48,7 +49,7 @@ def _build_unified_missing_field_prompt(
                 continue
             intents.append(format_intent_line(task.type, task.payload, locale=locale))
 
-        accounts = state.loaded_context.get("transaction_accounts", [])
+        accounts = loaded_context(state).transaction_accounts
         prompt_text = format_source_repair_prompt(
             intents=intents,
             failed_hint=repair_hint,

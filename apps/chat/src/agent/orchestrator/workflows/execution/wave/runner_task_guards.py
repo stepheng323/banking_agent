@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import (
     _dependency_resolution,
     _is_read_only_data_plan_query,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _is_same_batch_source_selection_sibling,
 )
@@ -75,7 +76,7 @@ def _apply_mandate_gate_failure(
     if task.type not in TRANSACTION_TASK_TYPES or _is_read_only_data_plan_query(task):
         return False
 
-    accounts = (state.loaded_context or {}).get("transaction_accounts") or []
+    accounts = loaded_context(state).transaction_accounts
     has_ready = any(isinstance(account, dict) and is_mandate_debit_ready(account) for account in accounts)
     if has_ready:
         return False

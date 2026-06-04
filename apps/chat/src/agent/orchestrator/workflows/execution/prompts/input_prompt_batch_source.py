@@ -2,6 +2,7 @@
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import loaded_context
 from apps.chat.src.agent.orchestrator.workflows.execution.task_access import (
     get_task,
     require_task,
@@ -34,7 +35,7 @@ def build_batch_source_prompt_if_needed(
     if not all_batch_source:
         return None
 
-    accounts = state.loaded_context.get("transaction_accounts") or []
+    accounts = loaded_context(state).transaction_accounts
     lines = []
     total_amount = 0.0
     amounts = []
