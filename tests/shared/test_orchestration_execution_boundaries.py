@@ -206,6 +206,9 @@ def test_execution_accumulator_callers_use_typed_methods() -> None:
 
 def test_execution_accumulator_result_patch_is_private() -> None:
     violations: list[str] = []
+    accumulator_text = (EXECUTION_ROOT / "accumulator.py").read_text(encoding="utf-8")
+    if "self.result_patch" in accumulator_text:
+        violations.append("ExecutionAccumulator exposes public result_patch attribute")
     for path in sorted(EXECUTION_ROOT.rglob("*.py")):
         if path.name == "accumulator.py":
             continue

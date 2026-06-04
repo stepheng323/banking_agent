@@ -12,7 +12,7 @@ class ExecutionAccumulator:
     """Collects state and output mutations while a wave executes."""
 
     def __init__(self, tasks: dict[str, TaskSpec]) -> None:
-        self.result_patch = ExecutionResultPatch({"tasks": tasks})
+        self._result_patch = ExecutionResultPatch({"tasks": tasks})
         self.missing_fields_by_task: dict[str, list[str]] = {}
         self.details_by_task: dict[str, dict[str, Any]] = {}
         self.needs_confirm_tasks: list[str] = []
@@ -23,75 +23,75 @@ class ExecutionAccumulator:
         self.source_bank_hints: list[str] = []
 
     def set_context_frames(self, context_frames: Any) -> None:
-        self.result_patch.set_context_frames(context_frames)
+        self._result_patch.set_context_frames(context_frames)
 
     def set_referent_memory(self, referent_memory: Any) -> None:
-        self.result_patch.set_referent_memory(referent_memory)
+        self._result_patch.set_referent_memory(referent_memory)
 
     def set_tasks(self, tasks: dict[str, Any]) -> None:
-        self.result_patch.set_tasks(tasks)
+        self._result_patch.set_tasks(tasks)
 
     def get_tasks(self, default: dict[str, Any]) -> dict[str, Any]:
-        return self.result_patch.get_tasks(default)
+        return self._result_patch.get_tasks(default)
 
     def set_waves(self, waves: list[list[str]]) -> None:
-        self.result_patch.set_waves(waves)
+        self._result_patch.set_waves(waves)
 
     def get_waves(self, default: list[list[str]]) -> list[list[str]]:
-        return self.result_patch.get_waves(default)
+        return self._result_patch.get_waves(default)
 
     def set_current_wave_index(self, index: int) -> None:
-        self.result_patch.set_current_wave_index(index)
+        self._result_patch.set_current_wave_index(index)
 
     def has_current_wave_index(self) -> bool:
-        return self.result_patch.has_current_wave_index()
+        return self._result_patch.has_current_wave_index()
 
     def set_pending_interrupt(self, interrupt: PendingInterrupt | None) -> None:
-        self.result_patch.set_pending_interrupt(interrupt)
+        self._result_patch.set_pending_interrupt(interrupt)
 
     def has_pending_interrupt(self) -> bool:
-        return self.result_patch.has_pending_interrupt()
+        return self._result_patch.has_pending_interrupt()
 
     def clear_pending_interrupt(self) -> None:
-        self.result_patch.set_pending_interrupt(None)
+        self._result_patch.set_pending_interrupt(None)
 
     def set_session_stack(self, stack: list[ActiveSession]) -> None:
-        self.result_patch.set_session_stack(stack)
+        self._result_patch.set_session_stack(stack)
 
     def set_stashed_sessions(self, sessions: list[dict[str, Any]]) -> None:
-        self.result_patch.set_stashed_sessions(sessions)
+        self._result_patch.set_stashed_sessions(sessions)
 
     def clear_stashed_query_session(self) -> None:
-        self.result_patch.clear_stashed_query_session()
+        self._result_patch.clear_stashed_query_session()
 
     def set_last_interrupt(self, interrupt: Any) -> None:
-        self.result_patch.set_last_interrupt(interrupt)
+        self._result_patch.set_last_interrupt(interrupt)
 
     def clear_last_message_text(self) -> None:
-        self.result_patch.clear_last_message_text()
+        self._result_patch.clear_last_message_text()
 
     def to_updates(self) -> dict[str, Any]:
-        return self.result_patch.to_updates()
+        return self._result_patch.to_updates()
 
     def set_outbox(self, entries: list[dict[str, Any]]) -> None:
-        self.result_patch.set_outbox(entries)
+        self._result_patch.set_outbox(entries)
 
     def set_interrupt_outbox(self, interrupt: PendingInterrupt, entries: list[dict[str, Any]]) -> None:
         self.set_pending_interrupt(interrupt)
         self.set_outbox(entries)
 
     def get_outbox(self) -> list[dict[str, Any]]:
-        return self.result_patch.get_outbox()
+        return self._result_patch.get_outbox()
 
     def clear_policy_notice(self) -> None:
-        self.result_patch.clear_policy_notice()
+        self._result_patch.clear_policy_notice()
 
     def add_outbox(self, entry: dict[str, Any]) -> None:
-        self.result_patch.append_outbox(entry)
+        self._result_patch.append_outbox(entry)
 
     def extend_outbox(self, entries: list[dict[str, Any]] | None) -> None:
         if entries:
-            self.result_patch.extend_outbox(entries)
+            self._result_patch.extend_outbox(entries)
 
     def say(self, text: str | None) -> None:
         if text:
