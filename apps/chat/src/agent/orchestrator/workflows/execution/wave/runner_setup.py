@@ -8,6 +8,10 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.dependencies import ExecutionDependencies
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.executor_registry import (
+    DEFAULT_TASK_EXECUTORS,
+    TaskExecutorRegistry,
+)
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.accounts.mandate_state import is_mandate_debit_ready
 from shared.utils.logging import get_logger
@@ -21,6 +25,7 @@ class ExecutionWaveRuntime:
     services: OrchestrationServices
     accumulator: ExecutionAccumulator
     ctx: ExecutionTurnContext
+    task_executors: TaskExecutorRegistry
     locale: str
     mandate_gate_accounts: list[dict[str, Any]]
 
@@ -76,6 +81,7 @@ def build_execution_wave_runtime(
         services=services,
         accumulator=accumulator,
         ctx=ctx,
+        task_executors=DEFAULT_TASK_EXECUTORS,
         locale=(state.loaded_context or {}).get("language", "en"),
         mandate_gate_accounts=_prepare_transaction_account_view(state),
     )

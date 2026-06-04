@@ -48,10 +48,6 @@ DEFAULT_TASK_EXECUTORS: TaskExecutorRegistry = {
 }
 
 
-def get_task_executor(task_type: str, registry: TaskExecutorRegistry = DEFAULT_TASK_EXECUTORS) -> TaskExecutor | None:
-    return registry.get(task_type)
-
-
 __all__ = [
     "AccountTaskExecutor",
     "AirtimeTaskExecutor",
@@ -66,5 +62,4 @@ __all__ = [
     "TaskExecutor",
     "TaskExecutorRegistry",
     "TransferTaskExecutor",
-    "get_task_executor",
 ]

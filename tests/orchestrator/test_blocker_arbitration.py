@@ -124,6 +124,7 @@ def test_no_blocker_allows_terminal_wave_to_advance() -> None:
         services=OrchestrationServices.empty(),
         accumulator=agg,
         ctx=ctx,
+        task_executors={},
         locale="en",
         mandate_gate_accounts=[],
     )

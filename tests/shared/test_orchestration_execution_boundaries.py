@@ -29,6 +29,7 @@ FORBIDDEN_EXECUTION_TEXT = (
     "ExecutionServices",
     "FunctionTaskExecutor",
     "TaskHandler =",
+    "get_task_executor(",
     "_HANDLERS",
     'config["configurable"].get("services"',
     "config_value(",

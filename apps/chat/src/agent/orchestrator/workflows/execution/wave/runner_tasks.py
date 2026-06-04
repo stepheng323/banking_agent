@@ -7,7 +7,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import (
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _propagate_batch_source_selection,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.wave.executor_registry import get_task_executor
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_guards import (
     _active_input_task_types,
@@ -64,7 +63,7 @@ async def execute_current_wave_tasks(
         if dependency_progress is None:
             continue
 
-        executor = get_task_executor(task.type)
+        executor = runtime.task_executors.get(task.type)
         if not executor:
             continue
 
