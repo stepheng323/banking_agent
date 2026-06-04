@@ -37,11 +37,9 @@ EXECUTION_TASK_MUTATION_CONTRACT_MODULES = (
     EXECUTION_ROOT / "wave" / "runner_task_guards.py",
     EXECUTION_ROOT / "wave" / "wave_state.py",
 )
-EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
-    EXECUTION_ROOT / "executors" / "query.py",
-    EXECUTION_ROOT / "executors" / "support.py",
-    EXECUTION_ROOT / "executors" / "transfer.py",
-)
+EXECUTION_ACCUMULATOR_MODULE = EXECUTION_ROOT / "accumulator.py"
+EXECUTION_RESULT_PATCH_MODULE = EXECUTION_ROOT / "result_patch.py"
+EXECUTION_SESSION_STACK_MODULE = EXECUTION_ROOT / "session_stack.py"
 EXECUTION_CONTROL_STATE_MODULE = EXECUTION_ROOT / "control_state.py"
 EXECUTION_CONTEXT_SURFACE_MODULE = EXECUTION_ROOT / "context_surface.py"
 EXECUTION_LAST_INTERRUPT_MODULE = EXECUTION_ROOT / "last_interrupt.py"
@@ -409,7 +407,14 @@ def test_execution_task_mutations_use_typed_helpers() -> None:
 
 def test_execution_session_stack_mutations_use_typed_helpers() -> None:
     violations: list[str] = []
-    for path in EXECUTION_SESSION_STACK_CONTRACT_MODULES:
+    allowed_modules = {
+        EXECUTION_ACCUMULATOR_MODULE.resolve(),
+        EXECUTION_RESULT_PATCH_MODULE.resolve(),
+        EXECUTION_SESSION_STACK_MODULE.resolve(),
+    }
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.resolve() in allowed_modules:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "session_stack":
