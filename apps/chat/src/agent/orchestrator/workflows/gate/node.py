@@ -27,12 +27,12 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
     Architecture: a pipeline of focused stage functions. Each stage returns a dict
     (short-circuit with a gate response) or None (continue to the next stage).
     """
-    session = state.session_stack[-1] if state.session_stack else None
-    logger.info(
-        "gate_entry", session_domain=session.domain if session else None, interrupt=state.pending_interrupt is not None
-    )
-
     runtime = build_gate_runtime(state, config)
+    logger.info(
+        "gate_entry",
+        session_domain=runtime.state_view.active_session_domain,
+        interrupt=runtime.state_view.has_pending_interrupt,
+    )
     ctx = runtime.build_context()
 
     _stage_stale_interrupt_cleanup(ctx)

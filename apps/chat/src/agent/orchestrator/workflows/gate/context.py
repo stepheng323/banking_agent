@@ -5,6 +5,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.gate.router_context import _should_invoke_semantic_router
+from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_query_session import (
     _load_query_session_snapshot,
 )
@@ -25,6 +26,7 @@ class GateContext:
     redis_client: Any | None
     task_planner: Any | None
     conversation_responder: Any | None
+    state_view: GateStateView
     message_text: str
     current_locale: str
     gate_updates: dict[str, Any]
@@ -69,7 +71,7 @@ class GateContext:
             if self.live_pending_interrupt
             else (
                 "direct_path"
-                if (not self.state.has_quote and self.task_planner is not None and should_invoke)
+                if (not self.state_view.has_quote and self.task_planner is not None and should_invoke)
                 else "planner_path"
             )
         )

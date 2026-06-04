@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.interrupt_state import _has_live_pending_interrupt
 from apps.chat.src.agent.orchestrator.workflows.gate.language import _allow_phrase_heavy_fastpath
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _current_locale
+from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView, gate_state_view
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class GateRuntime:
     state: OrchestratorState
     config: RunnableConfig
     dependencies: GateDependencies
+    state_view: GateStateView
     message_text: str
     current_locale: str
     live_pending_interrupt: bool
@@ -51,6 +53,7 @@ class GateRuntime:
             redis_client=self.dependencies.redis_client,
             task_planner=self.dependencies.task_planner,
             conversation_responder=self.dependencies.conversation_responder,
+            state_view=self.state_view,
             message_text=self.message_text,
             current_locale=self.current_locale,
             gate_updates={},
@@ -64,12 +67,14 @@ def build_gate_runtime(state: OrchestratorState, config: RunnableConfig) -> Gate
     if not isinstance(configurable, Mapping):
         configurable = {}
 
-    message_text = (state.last_message_text or "").strip()
+    state_view = gate_state_view(state)
+    message_text = state_view.message_text
     current_locale = _current_locale(state)
     return GateRuntime(
         state=state,
         config=config,
         dependencies=GateDependencies.from_configurable(configurable),
+        state_view=state_view,
         message_text=message_text,
         current_locale=current_locale,
         live_pending_interrupt=_has_live_pending_interrupt(state),

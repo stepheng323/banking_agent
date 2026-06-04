@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import _stage_context_frame_followup
+from apps.chat.src.agent.orchestrator.workflows.gate.state_view import gate_state_view
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import (
@@ -1753,6 +1754,7 @@ async def test_gate_context_frame_display_shortcut_avoids_llm_for_schedule_show_
     )
     ctx = GateContext(
         state=state,
+        state_view=gate_state_view(state),
         config=_config(planner),
         redis_client=None,
         task_planner=planner,
@@ -1817,6 +1819,7 @@ async def test_gate_context_frame_display_formats_data_plan_details_naturally() 
     )
     ctx = GateContext(
         state=state,
+        state_view=gate_state_view(state),
         config=_config(planner),
         redis_client=None,
         task_planner=planner,
@@ -1917,6 +1920,7 @@ async def test_gate_context_frame_replay_applies_structured_modifier_extraction(
     )
     ctx = GateContext(
         state=state,
+        state_view=gate_state_view(state),
         config=_config(planner),
         redis_client=None,
         task_planner=planner,
