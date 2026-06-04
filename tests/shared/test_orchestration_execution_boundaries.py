@@ -113,6 +113,7 @@ LIFECYCLE_STATE_VIEW_MODULES = (
     LIFECYCLE_ROOT / "finalize.py",
     LIFECYCLE_ROOT / "finalize_completed.py",
     LIFECYCLE_ROOT / "ingest.py",
+    LIFECYCLE_ROOT / "reducer.py",
     LIFECYCLE_ROOT / "runtime.py",
 )
 PLANNER_STATE_VIEW_MODULES = (
@@ -1324,6 +1325,24 @@ def test_lifecycle_core_uses_typed_state_view() -> None:
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []
+
+
+def test_finalize_node_delegates_to_lifecycle_reducer() -> None:
+    finalize_path = LIFECYCLE_ROOT / "finalize.py"
+    tree = ast.parse(finalize_path.read_text(encoding="utf-8"))
+    finalize_defs = [node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "finalize"]
+
+    assert len(finalize_defs) == 1
+    assert "reduce_finalize_runtime" in finalize_path.read_text(encoding="utf-8")
+
+    non_docstring_body = [
+        node
+        for node in finalize_defs[0].body
+        if not (
+            isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+        )
+    ]
+    assert len(non_docstring_body) <= 2
 
 
 def test_graph_handler_does_not_reach_into_runnable_configurable() -> None:
