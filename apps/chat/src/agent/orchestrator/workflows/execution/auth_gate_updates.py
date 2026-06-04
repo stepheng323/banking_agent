@@ -13,7 +13,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_summary import (
     _build_confirmation_gate_summary,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
 )
@@ -29,7 +28,6 @@ def _build_auth_gate_updates(
     current_wave: list[str],
     agg: ExecutionAccumulator,
     locale: str,
-    patch: ExecutionResultPatch,
     task_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     auth_task_ids = task_ids or gate_task_ids(
@@ -50,8 +48,8 @@ def _build_auth_gate_updates(
             stalled_tasks=stalled,
             candidate_task_ids=agg.needs_auth_tasks,
         )
-        patch.set_current_wave_index(state.current_wave_index + 1)
-        return cast(dict[str, Any], patch.to_updates())
+        agg.set_current_wave_index(state.current_wave_index + 1)
+        return cast(dict[str, Any], agg.to_updates())
 
     first_task = state.tasks[auth_task_ids[0]]
     accounts_raw = state.loaded_context.get("accounts") or []
@@ -73,7 +71,7 @@ def _build_auth_gate_updates(
     reason = _auth_header_for_tasks(state, auth_task_ids, locale=locale)
 
     interrupt = PendingInterrupt(kind="auth", task_ids=auth_task_ids, auth_method="pin", prompt=summ)
-    patch.set_outbox(
+    agg.set_outbox(
         [
             {
                 "type": "auth_request",
@@ -90,8 +88,8 @@ def _build_auth_gate_updates(
             }
         ]
     )
-    patch.set_pending_interrupt(interrupt)
-    return cast(dict[str, Any], patch.to_updates())
+    agg.set_pending_interrupt(interrupt)
+    return cast(dict[str, Any], agg.to_updates())
 
 
 __all__ = ["_build_auth_gate_updates"]

@@ -46,6 +46,15 @@ class ExecutionAccumulator:
     def set_current_wave_index(self, index: int) -> None:
         self.result_patch.set_current_wave_index(index)
 
+    def has_current_wave_index(self) -> bool:
+        return self.result_patch.has_current_wave_index()
+
+    def set_pending_interrupt(self, interrupt: Any) -> None:
+        self.result_patch.set_pending_interrupt(interrupt)
+
+    def has_pending_interrupt(self) -> bool:
+        return self.result_patch.has_pending_interrupt()
+
     def clear_pending_interrupt(self) -> None:
         self.result_patch.set_pending_interrupt(None)
 
@@ -66,6 +75,15 @@ class ExecutionAccumulator:
 
     def to_updates(self) -> dict[str, Any]:
         return self.result_patch.to_updates()
+
+    def set_outbox(self, entries: list[dict[str, Any]]) -> None:
+        self.result_patch.set_outbox(entries)
+
+    def get_outbox(self) -> list[dict[str, Any]]:
+        return self.result_patch.get_outbox()
+
+    def clear_policy_notice(self) -> None:
+        self.result_patch.clear_policy_notice()
 
     def add_outbox(self, entry: dict[str, Any]) -> None:
         self.result_patch.append_outbox(entry)

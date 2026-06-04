@@ -16,7 +16,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_update_message import (
     _compact_confirmation_update_message,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
 )
@@ -32,7 +31,6 @@ def _build_confirmation_gate_updates(
     current_wave: list[str],
     agg: ExecutionAccumulator,
     locale: str,
-    patch: ExecutionResultPatch,
     task_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     confirm_task_ids = task_ids or gate_task_ids(
@@ -53,8 +51,8 @@ def _build_confirmation_gate_updates(
             stalled_tasks=stalled,
             candidate_task_ids=agg.needs_confirm_tasks,
         )
-        patch.set_current_wave_index(state.current_wave_index + 1)
-        return cast(dict[str, Any], patch.to_updates())
+        agg.set_current_wave_index(state.current_wave_index + 1)
+        return cast(dict[str, Any], agg.to_updates())
 
     accounts_raw = state.loaded_context.get("accounts") or []
     accounts = [account for account in accounts_raw if isinstance(account, dict)]
@@ -118,9 +116,9 @@ def _build_confirmation_gate_updates(
         }
     )
 
-    patch.set_outbox(outbox)
-    patch.set_pending_interrupt(interrupt)
-    return cast(dict[str, Any], patch.to_updates())
+    agg.set_outbox(outbox)
+    agg.set_pending_interrupt(interrupt)
+    return cast(dict[str, Any], agg.to_updates())
 
 
 __all__ = ["_build_confirmation_gate_updates"]

@@ -204,6 +204,19 @@ def test_execution_accumulator_callers_use_typed_methods() -> None:
     assert violations == []
 
 
+def test_execution_accumulator_result_patch_is_private() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name == "accumulator.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr == "result_patch":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
 def test_execution_accumulator_callers_do_not_mutate_reducer_lists_directly() -> None:
     violations: list[str] = []
     for path in sorted(EXECUTION_ROOT.rglob("*.py")):
