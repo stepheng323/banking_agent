@@ -1,10 +1,6 @@
-"""Orchestrator Graph Handler.
-
-Integrates the Top-Level LangGraph into the Message Processing Pipeline.
-"""
+"""Orchestrator graph handler facade."""
 
 import asyncio
-import time
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -18,23 +14,11 @@ from apps.chat.src.agent.orchestrator.context.context_manager import ContextMana
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.chat.src.agent.orchestrator.graph.housekeeping import OrchestratorHousekeeping
-from apps.chat.src.agent.orchestrator.graph.invocation_context import (
-    build_graph_inputs,
-    build_invocation_result,
-    load_invocation_context,
-    typing_visibility_delay_ms,
-)
-from apps.chat.src.agent.orchestrator.graph.preflight import plan_invocation_preflight
+from apps.chat.src.agent.orchestrator.graph.invocation_runner import GraphInvocationRunner
 from apps.chat.src.agent.orchestrator.graph.progress import TurnProgressTracker
 from apps.chat.src.agent.orchestrator.graph.progress_delivery import OrchestratorProgressDelivery
-from apps.chat.src.agent.orchestrator.graph.route_metrics import (
-    log_latency_span,
-    log_route_metrics,
-    log_semantic_path_shape,
-    record_guardrail_signal,
-    resolve_path_label,
-    resolve_semantic_path_shape,
-)
+from apps.chat.src.agent.orchestrator.graph.resume_runner import GraphResumeRunner
+from apps.chat.src.agent.orchestrator.graph.route_metrics import log_latency_span
 from apps.chat.src.agent.orchestrator.graph.runtime import (
     GraphConfigDependencies,
     GraphRunnableConfig,
@@ -42,7 +26,6 @@ from apps.chat.src.agent.orchestrator.graph.runtime import (
     graph_thread_id,
 )
 from apps.chat.src.agent.orchestrator.graph.thread_lock import thread_invocation_lock
-from apps.chat.src.agent.orchestrator.graph.turn_trace import log_orchestrator_turn_trace
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from banking.accounts.repositories.account_repository import AccountRepository
@@ -50,20 +33,32 @@ from banking.beneficiaries.repositories.beneficiary_repository import Beneficiar
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
 from banking.identity.repositories.user_repository import UserRepository
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
-from banking.presentation.i18n.locale import LocaleManager
 from banking.runtime.protocols import WorkerProtocol
 from shared.clients.abstractions.banking import BankDataProvider
-from shared.observability.llm import build_llm_runnable_config
 from shared.queue.adapter import QueuePublisher
-from shared.utils.logging import get_logger, log_fingerprint
+from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
+def _log_housekeeping_latency_span(
+    *,
+    span: str,
+    duration_ms: float,
+    phone_number: str,
+    path_label: str,
+) -> None:
+    log_latency_span(
+        logger,
+        span=span,
+        duration_ms=duration_ms,
+        phone_number=phone_number,
+        path_label=path_label,
+    )
+
+
 class OrchestratorGraphHandler:
-    """
-    Handler that drives the LangGraph Orchestrator.
-    """
+    """Handler that drives the LangGraph orchestrator."""
 
     def __init__(
         self,
@@ -123,7 +118,23 @@ class OrchestratorGraphHandler:
         self.housekeeping = OrchestratorHousekeeping(
             redis_client=redis_client,
             checkpointer=self.checkpointer,
-            log_latency_span=self._log_latency_span,
+            log_latency_span=_log_housekeeping_latency_span,
+        )
+        self.invocation_runner = GraphInvocationRunner(
+            graph=self.graph,
+            context_manager=self.context_manager,
+            progress_delivery=self.progress_delivery,
+            housekeeping=self.housekeeping,
+            get_config=self._get_config,
+            error_window=self._error_window,
+            logger=logger,
+            progress_tracker_factory=TurnProgressTracker,
+        )
+        self.resume_runner = GraphResumeRunner(
+            graph=self.graph,
+            housekeeping=self.housekeeping,
+            get_config=self._get_config,
+            logger=logger,
         )
 
     async def _ensure_checkpointer(self) -> None:
@@ -175,279 +186,16 @@ class OrchestratorGraphHandler:
             progress_tracker=progress_tracker,
         )
 
-    def _log_latency_span(
-        self,
-        *,
-        span: str,
-        duration_ms: float,
-        phone_number: str,
-        path_label: str,
-    ) -> None:
-        log_latency_span(
-            logger,
-            span=span,
-            duration_ms=duration_ms,
-            phone_number=phone_number,
-            path_label=path_label,
-        )
-
-    def _log_semantic_path_shape(self, *, semantic_path_shape: str, path_label: str, phone_number: str) -> None:
-        log_semantic_path_shape(
-            logger,
-            semantic_path_shape=semantic_path_shape,
-            path_label=path_label,
-            phone_number=phone_number,
-        )
-
-    def _log_route_metrics(
-        self,
-        *,
-        final_state: dict[str, Any],
-        phone_number: str,
-        path_label: str,
-        semantic_path_shape: str,
-        total_duration_ms: float,
-        progress_count: int,
-    ) -> None:
-        log_route_metrics(
-            logger,
-            final_state=final_state,
-            phone_number=phone_number,
-            path_label=path_label,
-            semantic_path_shape=semantic_path_shape,
-            total_duration_ms=total_duration_ms,
-            progress_count=progress_count,
-        )
-
-    def _record_guardrail_signal(self, *, path_label: str, duration_ms: float, errored: bool) -> None:
-        record_guardrail_signal(
-            self._error_window,
-            logger,
-            path_label=path_label,
-            duration_ms=duration_ms,
-            errored=errored,
-        )
-
     async def invoke(self, context: MessageContext) -> dict[str, Any]:
-        """
-        Run the graph.
-
-        Returns:
-            str: Response message if any
-            None: If no response generated
-        """
+        """Run the graph for one inbound message."""
         await self._ensure_checkpointer()
         thread_id = self._thread_id(context.phone_number, context.channel)
         async with self._thread_invocation_lock(thread_id):
-            turn_start = time.perf_counter()
-
-            phone_number = context.phone_number
-            preflight = plan_invocation_preflight(context, logger=logger)
-            path_label = preflight.path_label
-
-            try:
-                inputs = build_graph_inputs(context)
-
-                # Hydrate via ContextManager (Parallel Fetch)
-                h_start = time.perf_counter()
-                loaded_context = await load_invocation_context(
-                    context_manager=self.context_manager,
-                    context=context,
-                    preflight=preflight,
-                    path_label=path_label,
-                )
-                h_duration = (time.perf_counter() - h_start) * 1000
-
-                inputs["loaded_context"] = loaded_context
-
-                progress_tracker = TurnProgressTracker(locale=loaded_context["language"])
-                graph_config = self._get_config(
-                    phone_number,
-                    channel=context.channel,
-                    progress_tracker=progress_tracker,
-                )
-                config = graph_config.config
-                thread_id = graph_config.thread_id
-                turn_id = context.message_id or f"invoke-{time.monotonic_ns()}"
-                trace_config = build_llm_runnable_config(
-                    role="orchestrator_graph",
-                    channel=context.channel,
-                    path_label=path_label,
-                    phone_number=phone_number,
-                    channel_identity=context.channel_identity,
-                    message_id=context.message_id,
-                    turn_id=turn_id,
-                    locale=loaded_context["language"],
-                    task_domain="orchestrator",
-                )
-                if trace_config:
-                    config["tags"] = list(trace_config.get("tags", []))
-                    config["metadata"] = dict(trace_config.get("metadata", {}))
-                progress_task = asyncio.create_task(
-                    self.progress_delivery.run_updates(
-                        tracker=progress_tracker,
-                        phone_number=phone_number,
-                        channel=context.channel,
-                        channel_identity=context.channel_identity,
-                        inbound_message_id=context.message_id,
-                        thread_id=thread_id,
-                        turn_id=turn_id,
-                        enable_initial_typing=preflight.enable_initial_typing,
-                    ),
-                    name="orchestrator_progress_updates",
-                )
-
-                logger.info(
-                    "orchestrator_graph_invoke",
-                    phone_hash=log_fingerprint(phone_number),
-                    channel=context.channel,
-                    message_id_hash=log_fingerprint(context.message_id),
-                )
-
-                g_start = time.perf_counter()
-                try:
-                    final_state = await self.graph.ainvoke(inputs, config=config)
-                finally:
-                    progress_task.cancel()
-                    try:
-                        await progress_task
-                    except asyncio.CancelledError:
-                        pass
-                progress_snapshot = await progress_tracker.snapshot()
-                g_duration = (time.perf_counter() - g_start) * 1000
-                path_label = resolve_path_label(context, final_state)
-                semantic_path_shape = resolve_semantic_path_shape(context, final_state, path_label)
-                self._log_latency_span(
-                    span="context_hydration",
-                    duration_ms=h_duration,
-                    phone_number=phone_number,
-                    path_label=path_label,
-                )
-                self._log_latency_span(
-                    span="graph_execution",
-                    duration_ms=g_duration,
-                    phone_number=phone_number,
-                    path_label=path_label,
-                )
-                # Apply cleanup policy
-                await self.housekeeping.run(
-                    thread_id=thread_id,
-                    state=final_state,
-                    phone_number=phone_number,
-                    path_label=path_label,
-                )
-
-                result = build_invocation_result(
-                    final_state=final_state,
-                    loaded_context=loaded_context,
-                    semantic_path_shape=semantic_path_shape,
-                )
-                logger.info(
-                    "orchestrator_progress_delivery_summary",
-                    progress_stage=progress_snapshot.stage_key,
-                    progress_count=progress_snapshot.progress_count,
-                    visible_progress_sent=progress_snapshot.progress_count > 0,
-                    typing_policy=(
-                        "explicit_progress_typing_only"
-                        if preflight.enable_initial_typing
-                        else "suppressed_for_fastpath"
-                    ),
-                    typing_visibility_delay_ms=typing_visibility_delay_ms(context.channel),
-                )
-                total_duration = (time.perf_counter() - turn_start) * 1000
-                self._log_latency_span(
-                    span="orchestrator_turn_total",
-                    duration_ms=total_duration,
-                    phone_number=phone_number,
-                    path_label=path_label,
-                )
-                logger.info("orchestrator_path_label", path_label=path_label, phone_number=phone_number)
-                self._log_semantic_path_shape(
-                    semantic_path_shape=semantic_path_shape,
-                    path_label=path_label,
-                    phone_number=phone_number,
-                )
-                self._log_route_metrics(
-                    final_state=final_state,
-                    phone_number=phone_number,
-                    path_label=path_label,
-                    semantic_path_shape=semantic_path_shape,
-                    total_duration_ms=total_duration,
-                    progress_count=progress_snapshot.progress_count,
-                )
-                log_orchestrator_turn_trace(
-                    logger,
-                    final_state=final_state,
-                    path_label=path_label,
-                    semantic_path_shape=semantic_path_shape,
-                    total_duration_ms=total_duration,
-                    progress_count=progress_snapshot.progress_count,
-                )
-                self._record_guardrail_signal(path_label=path_label, duration_ms=total_duration, errored=False)
-                return result
-            except Exception:
-                total_duration = (time.perf_counter() - turn_start) * 1000
-                self._log_latency_span(
-                    span="orchestrator_turn_total",
-                    duration_ms=total_duration,
-                    phone_number=phone_number,
-                    path_label=path_label,
-                )
-                self._record_guardrail_signal(path_label=path_label, duration_ms=total_duration, errored=True)
-                raise
+            return await self.invocation_runner.run(context)
 
     async def resume_flow(self, phone_number: str, payload: dict[str, Any], channel: str) -> dict[str, Any]:
-        """Resume flow externally (e.g. from auth callback)."""
-
+        """Resume flow externally, for example from an auth callback."""
         await self._ensure_checkpointer()
         thread_id = self._thread_id(phone_number, channel)
         async with self._thread_invocation_lock(thread_id):
-            inputs = {
-                "user_id": phone_number,
-                "phone_number": phone_number,
-                "last_callback": payload,
-                "has_quote": False,
-                "quoted_message_id": None,
-            }
-
-            graph_config = self._get_config(phone_number, channel=channel)
-            config = graph_config.config
-
-            logger.info(
-                "orchestrator_graph_resume",
-                phone_hash=log_fingerprint(phone_number),
-                payload_keys=sorted(payload.keys()),
-            )
-
-            try:
-                trace_config = build_llm_runnable_config(
-                    role="orchestrator_graph",
-                    channel=channel,
-                    path_label="interrupt_path",
-                    phone_number=phone_number,
-                    task_domain="resume",
-                    extra_metadata={"payload_keys": sorted(payload.keys())},
-                )
-                if trace_config:
-                    config["tags"] = list(trace_config.get("tags", []))
-                    config["metadata"] = dict(trace_config.get("metadata", {}))
-                final_state = await self.graph.ainvoke(inputs, config=config)
-                resolved_locale = LocaleManager.normalize(
-                    (final_state.get("loaded_context") or {}).get("language")
-                ).value
-
-                await self.housekeeping.run(
-                    thread_id=thread_id,
-                    state=final_state,
-                    phone_number=phone_number,
-                    path_label="interrupt_path",
-                )
-
-                return {
-                    "text": final_state.get("final_response"),
-                    "outbox": final_state.get("outbox", []),
-                    "locale": resolved_locale,
-                }
-            except Exception as e:
-                logger.exception("graph_resume_error", error=str(e))
-                return {"text": None, "outbox": [], "locale": LocaleManager.DEFAULT_LOCALE.value}
+            return await self.resume_runner.run(phone_number=phone_number, payload=payload, channel=channel)
