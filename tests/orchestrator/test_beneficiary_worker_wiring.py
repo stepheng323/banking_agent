@@ -52,4 +52,4 @@ async def test_beneficiary_management_uses_injected_service() -> None:
     assert worker.calls[0]["context"]["phone_number"] == "2348000000001"
     assert task.stage == TaskStage.COMPLETED
     assert task.payload["result"] == "Saved beneficiaries"
-    assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": "Saved beneficiaries"}]
+    assert ctx.accumulator.to_updates()["outbox"] == [{"type": "say", "text": "Saved beneficiaries"}]

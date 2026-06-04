@@ -158,15 +158,15 @@ async def test_resume_session_restores_stash_without_replaying_outbox() -> None:
     await OrchestratorTaskExecutor().execute(orchestrator_task, "o1", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
-    assert list(ctx.accumulator.updates["tasks"].keys()) == ["t_stashed"]
-    assert ctx.accumulator.updates["waves"] == [["t_stashed"]]
-    assert ctx.accumulator.updates["pending_interrupt"] is None
-    assert ctx.accumulator.updates["last_interrupt"] == pending_interrupt
-    assert ctx.accumulator.updates["last_message_text"] is None
-    assert ctx.accumulator.updates["stashed_sessions"] == []
-    assert len(ctx.accumulator.updates["context_frames"]) == 1
-    assert ctx.accumulator.updates["context_frames"][0].frame_id == "keep-frame"
-    assert "outbox" not in ctx.accumulator.updates
+    assert list(ctx.accumulator.to_updates()["tasks"].keys()) == ["t_stashed"]
+    assert ctx.accumulator.to_updates()["waves"] == [["t_stashed"]]
+    assert ctx.accumulator.to_updates()["pending_interrupt"] is None
+    assert ctx.accumulator.to_updates()["last_interrupt"] == pending_interrupt
+    assert ctx.accumulator.to_updates()["last_message_text"] is None
+    assert ctx.accumulator.to_updates()["stashed_sessions"] == []
+    assert len(ctx.accumulator.to_updates()["context_frames"]) == 1
+    assert ctx.accumulator.to_updates()["context_frames"][0].frame_id == "keep-frame"
+    assert "outbox" not in ctx.accumulator.to_updates()
 
 
 async def test_resume_session_clears_matching_stashed_referents() -> None:
@@ -213,7 +213,7 @@ async def test_resume_session_clears_matching_stashed_referents() -> None:
     ctx = _ctx(state)
     await OrchestratorTaskExecutor().execute(orchestrator_task, "o1", ctx)
 
-    assert [item.label for item in ctx.accumulator.updates["referent_memory"].items] == ["Emeka"]
+    assert [item.label for item in ctx.accumulator.to_updates()["referent_memory"].items] == ["Emeka"]
 
 
 async def test_dismiss_resume_session_clears_matching_stashed_referents() -> None:
@@ -260,8 +260,8 @@ async def test_dismiss_resume_session_clears_matching_stashed_referents() -> Non
     await OrchestratorTaskExecutor().execute(orchestrator_task, "o1", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
-    assert ctx.accumulator.updates["stashed_sessions"] == []
-    assert ctx.accumulator.updates["referent_memory"].items == []
+    assert ctx.accumulator.to_updates()["stashed_sessions"] == []
+    assert ctx.accumulator.to_updates()["referent_memory"].items == []
 
 
 async def test_resume_session_reruns_worker_and_regenerates_confirmation_prompt() -> None:
@@ -542,10 +542,10 @@ async def test_dismiss_resume_session_clears_stash_and_acknowledges() -> None:
     await OrchestratorTaskExecutor().execute(orchestrator_task, "o6", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
-    assert ctx.accumulator.updates["stashed_sessions"] == []
-    assert len(ctx.accumulator.updates["context_frames"]) == 1
-    assert ctx.accumulator.updates["context_frames"][0].frame_id == "keep-frame"
-    assert ctx.accumulator.updates["outbox"][0]["text"] == "Okay, I won't resume that request."
+    assert ctx.accumulator.to_updates()["stashed_sessions"] == []
+    assert len(ctx.accumulator.to_updates()["context_frames"]) == 1
+    assert ctx.accumulator.to_updates()["context_frames"][0].frame_id == "keep-frame"
+    assert ctx.accumulator.to_updates()["outbox"][0]["text"] == "Okay, I won't resume that request."
 
 
 async def test_dismiss_resume_session_without_stash_is_safe() -> None:
@@ -569,7 +569,7 @@ async def test_dismiss_resume_session_without_stash_is_safe() -> None:
 
     assert orchestrator_task.stage == TaskStage.FAILED
     assert orchestrator_task.payload["error"] == "No session to resume."
-    assert ctx.accumulator.updates["outbox"][0]["text"] == "No session to resume."
+    assert ctx.accumulator.to_updates()["outbox"][0]["text"] == "No session to resume."
 
 
 def test_context_manager_summary_includes_resume_prompt_context() -> None:

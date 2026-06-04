@@ -130,7 +130,7 @@ async def test_query_handoff_injects_transfer_task_and_wave() -> None:
 
     assert query_task.stage == TaskStage.COMPLETED
 
-    tasks = agg.updates["tasks"]
+    tasks = agg.to_updates()["tasks"]
     assert "query_handoff_transfer_1" in tasks
     transfer_task = tasks["query_handoff_transfer_1"]
     assert transfer_task.type == "transfer"
@@ -138,7 +138,7 @@ async def test_query_handoff_injects_transfer_task_and_wave() -> None:
     assert transfer_task.payload["recipient_name"] == "Tolu"
     assert transfer_task.payload["recipient_account"] == "8162511023"
 
-    waves = agg.updates["waves"]
+    waves = agg.to_updates()["waves"]
     assert waves == [["t1"], ["query_handoff_transfer_1"]]
 
 
@@ -173,8 +173,8 @@ async def test_query_direct_answer_pushes_focused_beneficiary_context_frame() ->
     await QueryTaskExecutor().execute(query_task, "t1", ctx)
 
     assert query_task.stage == TaskStage.COMPLETED
-    assert "context_frames" in agg.updates
-    pushed_frame = agg.updates["context_frames"][-1]
+    assert "context_frames" in agg.to_updates()
+    pushed_frame = agg.to_updates()["context_frames"][-1]
     assert pushed_frame.frame_type == ContextFrameType.BENEFICIARY_LIST
     assert len(pushed_frame.items) == 1
     assert pushed_frame.items[0].label == "Mum"
@@ -217,7 +217,7 @@ async def test_query_result_surface_view_pushes_transaction_context_frame() -> N
     await QueryTaskExecutor().execute(query_task, "t1", ctx)
 
     assert query_task.stage == TaskStage.COMPLETED
-    pushed_frame = agg.updates["context_frames"][-1]
+    pushed_frame = agg.to_updates()["context_frames"][-1]
     assert pushed_frame.frame_type == ContextFrameType.TRANSACTION_LIST
     assert pushed_frame.source_message_id == "msg-surface-1"
     assert pushed_frame.items[0].label == "Credit from Ada"

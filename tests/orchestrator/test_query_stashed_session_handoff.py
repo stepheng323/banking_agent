@@ -61,4 +61,4 @@ async def test_handle_query_task_passes_and_clears_stashed_query_session() -> No
 
     assert worker.last_context is not None
     assert worker.last_context["stashed_query_session"] == stashed_query_session
-    assert agg.updates["stashed_query_session"] is None
+    assert agg.to_updates()["stashed_query_session"] is None

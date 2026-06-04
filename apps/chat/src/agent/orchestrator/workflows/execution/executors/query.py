@@ -99,7 +99,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             transfer_payload.setdefault("message", ctx.state.last_message_text or "Resend the selected transaction")
             transfer_payload.setdefault("skip_extraction", True)
 
-            tasks = cast(dict[str, Any], ctx.accumulator.updates.get("tasks", ctx.state.tasks))
+            tasks = cast(dict[str, Any], ctx.accumulator.get_update("tasks", ctx.state.tasks))
             transfer_task_id = _next_query_handoff_transfer_task_id(tasks)
             tasks[transfer_task_id] = TaskSpec(
                 id=transfer_task_id,
@@ -109,7 +109,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             )
             ctx.accumulator.set_update("tasks", tasks)
 
-            waves = list(cast(list[list[str]], ctx.accumulator.updates.get("waves", ctx.state.waves)))
+            waves = list(cast(list[list[str]], ctx.accumulator.get_update("waves", ctx.state.waves)))
             insert_index = min(ctx.state.current_wave_index + 1, len(waves))
             waves.insert(insert_index, [transfer_task_id])
             ctx.accumulator.set_update("waves", waves)

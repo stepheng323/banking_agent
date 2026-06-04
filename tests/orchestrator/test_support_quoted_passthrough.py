@@ -123,7 +123,7 @@ async def test_support_handler_enqueues_receipt_jobs() -> None:
     publisher.publish.assert_awaited_once_with(
         "receipt.process", {"transaction_reference": "tx-2", "phone_number": "2348000000001"}
     )
-    assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": "sending"}]
+    assert ctx.accumulator.to_updates()["outbox"] == [{"type": "say", "text": "sending"}]
 
 
 @pytest.mark.asyncio

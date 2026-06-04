@@ -8,13 +8,13 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from banking.runtime.results import TransactionOutcome
 
-ExecutionResultPatch = dict[str, Any]
+WorkerResultPatch = dict[str, Any]
 
 
 def _apply_result_patch(task: TaskSpec, result: Any) -> None:
     patch = getattr(result, "patch", None)
     if patch:
-        task.payload.update(cast(ExecutionResultPatch, patch))
+        task.payload.update(cast(WorkerResultPatch, patch))
 
 
 def _set_confirmation(task: TaskSpec, result: Any, *, gate_on: str) -> None:
@@ -78,4 +78,4 @@ def _handle_transaction_outcome(
             task.payload["error"] = result.error or default_error
 
 
-__all__ = ["ExecutionResultPatch", "_apply_result_patch", "_handle_transaction_outcome"]
+__all__ = ["WorkerResultPatch", "_apply_result_patch", "_handle_transaction_outcome"]

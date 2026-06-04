@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.execution.auth_gate_updates import _build_auth_gate_updates
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import choose_wave_blocker
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, _with_policy_notice
@@ -36,14 +37,14 @@ def _advance_or_fail_stalled_wave(
     *,
     state: OrchestratorState,
     current_wave: list[str],
-    updates: dict[str, Any],
+    patch: ExecutionResultPatch,
 ) -> None:
     if _current_wave_is_terminal(state=state, current_wave=current_wave):
-        if "current_wave_index" not in updates:
-            updates["current_wave_index"] = state.current_wave_index + 1
+        if not patch.has_update("current_wave_index"):
+            patch.set_update("current_wave_index", state.current_wave_index + 1)
         return
 
-    if "pending_interrupt" in updates:
+    if patch.has_update("pending_interrupt"):
         return
 
     stalled = _fail_stalled_wave_tasks(
@@ -66,7 +67,7 @@ def _advance_or_fail_stalled_wave(
             if task_id in state.tasks
         ],
     )
-    updates["current_wave_index"] = state.current_wave_index + 1
+    patch.set_update("current_wave_index", state.current_wave_index + 1)
 
 
 def finalize_execution_wave_updates(
@@ -83,11 +84,11 @@ def finalize_execution_wave_updates(
             locale=runtime.locale,
         )
 
-    updates = runtime.accumulator.updates
+    patch = runtime.accumulator.result_patch
     if state.policy_notice:
-        existing = updates.get("outbox", [])
-        updates["outbox"] = _with_policy_notice(state, existing)
-        updates["policy_notice"] = None
+        existing = patch.get_update("outbox", [])
+        patch.set_update("outbox", _with_policy_notice(state, existing))
+        patch.set_update("policy_notice", None)
 
     if blocker.kind == "confirmation":
         return _build_confirmation_gate_updates(
@@ -95,7 +96,7 @@ def finalize_execution_wave_updates(
             current_wave=runtime.current_wave,
             agg=runtime.accumulator,
             locale=runtime.locale,
-            updates=updates,
+            patch=patch,
             task_ids=blocker.task_ids,
         )
 
@@ -105,16 +106,16 @@ def finalize_execution_wave_updates(
             current_wave=runtime.current_wave,
             agg=runtime.accumulator,
             locale=runtime.locale,
-            updates=updates,
+            patch=patch,
             task_ids=blocker.task_ids,
         )
 
     _advance_or_fail_stalled_wave(
         state=state,
         current_wave=runtime.current_wave,
-        updates=updates,
+        patch=patch,
     )
-    return cast(dict[str, Any], updates)
+    return cast(dict[str, Any], patch.to_updates())
 
 
 __all__ = ["finalize_execution_wave_updates"]

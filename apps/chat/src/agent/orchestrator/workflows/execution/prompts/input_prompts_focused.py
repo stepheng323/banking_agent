@@ -144,8 +144,8 @@ def _build_focused_missing_field_updates(
         "policy_notice": None,
     }
     for key in ("context_frames", "referent_memory"):
-        if key in agg.updates:
-            updates[key] = agg.updates[key]
+        if agg.has_update(key):
+            updates[key] = agg.get_update(key)
     return updates
 
 

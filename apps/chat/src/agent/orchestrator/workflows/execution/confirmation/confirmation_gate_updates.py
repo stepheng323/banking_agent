@@ -5,7 +5,10 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
-from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import (
+    ExecutionAccumulator,
+    ExecutionResultPatch,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import gate_task_ids
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_summary import (
     _build_confirmation_gate_summary,
@@ -31,7 +34,7 @@ def _build_confirmation_gate_updates(
     current_wave: list[str],
     agg: ExecutionAccumulator,
     locale: str,
-    updates: dict[str, Any],
+    patch: ExecutionResultPatch,
     task_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     confirm_task_ids = task_ids or gate_task_ids(
@@ -52,8 +55,8 @@ def _build_confirmation_gate_updates(
             stalled_tasks=stalled,
             candidate_task_ids=agg.needs_confirm_tasks,
         )
-        updates["current_wave_index"] = state.current_wave_index + 1
-        return cast(dict[str, Any], updates)
+        patch.set_update("current_wave_index", state.current_wave_index + 1)
+        return cast(dict[str, Any], patch.to_updates())
 
     accounts_raw = state.loaded_context.get("accounts") or []
     accounts = [account for account in accounts_raw if isinstance(account, dict)]
@@ -117,9 +120,9 @@ def _build_confirmation_gate_updates(
         }
     )
 
-    updates["outbox"] = outbox
-    updates["pending_interrupt"] = interrupt
-    return cast(dict[str, Any], updates)
+    patch.set_update("outbox", outbox)
+    patch.set_update("pending_interrupt", interrupt)
+    return cast(dict[str, Any], patch.to_updates())
 
 
 __all__ = ["_build_confirmation_gate_updates"]

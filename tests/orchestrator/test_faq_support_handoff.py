@@ -92,7 +92,7 @@ async def test_faq_handoff_runs_support_same_turn_without_duplicate_handoff_text
     assert support_worker.calls
     assert support_worker.calls[0]["user_message"] == "Why did my transfer fail?"
     assert support_worker.calls[0]["payload"]["action"] == "handle_request"
-    assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": "Support handled this."}]
+    assert ctx.accumulator.to_updates()["outbox"] == [{"type": "say", "text": "Support handled this."}]
 
 
 @pytest.mark.asyncio
@@ -118,6 +118,6 @@ async def test_faq_handoff_respects_disabled_support_policy(tmp_path: Path) -> N
 
         assert task.type == "support"
         assert task.stage == TaskStage.COMPLETED
-        assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": SUPPORT_DISABLED_MESSAGE}]
+        assert ctx.accumulator.to_updates()["outbox"] == [{"type": "say", "text": SUPPORT_DISABLED_MESSAGE}]
     finally:
         get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)
