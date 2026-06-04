@@ -19,6 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_slot_entit
     _looks_like_network_reply,
     _looks_like_simple_transfer_recipient_reply,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from banking.beneficiaries.services.selection import match_beneficiary_candidate_selection
 from shared.types.planner import InterruptRouteDecision
 
@@ -41,6 +42,7 @@ def _resolve_deterministic_input_slot_route(
     interrupt: Any,
     text: str,
 ) -> InterruptRouteDecision | None:
+    state_view = interrupt_state_view(state)
     if getattr(interrupt, "kind", None) != "input":
         return None
 
@@ -48,7 +50,7 @@ def _resolve_deterministic_input_slot_route(
     if len(task_ids) != 1:
         return None
 
-    active_task = state.tasks.get(str(task_ids[0]))
+    active_task = state_view.task(str(task_ids[0]))
     active_task_type = active_task.type if active_task is not None else None
 
     fields_by_task = getattr(interrupt, "fields_by_task", None) or {}

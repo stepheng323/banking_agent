@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from banking.transactions.shared.account_selection.reference import match_source_account_reference
 from shared.types.planner import InterruptRouteDecision
 
@@ -25,7 +26,7 @@ def _resolve_deterministic_input_selection_route(
     if set(required_fields) != {"source_account_id"}:
         return None
     if not text.strip().isdigit():
-        loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
+        loaded_context = interrupt_state_view(state).loaded_context_or_empty
         accounts = (
             loaded_context.get("transaction_accounts")
             or loaded_context.get("accounts")

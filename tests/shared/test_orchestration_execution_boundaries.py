@@ -29,6 +29,9 @@ INTERRUPT_LOCALE_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "router" / "runner_routing.py",
 )
 INTERRUPT_REPROMPT_STATUS_STATE_VIEW_MODULES = (
+    INTERRUPT_ROOT / "input" / "input_continue.py",
+    INTERRUPT_ROOT / "input" / "input_selection_route.py",
+    INTERRUPT_ROOT / "input" / "input_slot_route.py",
     INTERRUPT_ROOT / "reprompt" / "reprompt_auth.py",
     INTERRUPT_ROOT / "reprompt" / "reprompt_confirmation.py",
     INTERRUPT_ROOT / "reprompt" / "reprompt_flow.py",

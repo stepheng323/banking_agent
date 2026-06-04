@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
     _synth_confirmation_followup_message,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _continue_flow_updates(
@@ -19,6 +20,7 @@ def _continue_flow_updates(
     interrupt: Any,
     precomputed_payload_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    state_view = interrupt_state_view(state)
     if interrupt.kind in {"input", "confirmation"}:
         task_ids_to_reset = [str(task_id) for task_id in interrupt.task_ids]
         selection_reason = "input_flow"
@@ -44,7 +46,7 @@ def _continue_flow_updates(
         if interrupt.kind == "confirmation":
             _stash_previous_confirmation_snapshots(state, task_ids_to_reset)
         reset_tasks_to_extracted(
-            state.tasks,
+            state_view.tasks,
             task_ids_to_reset,
             copy_task=True,
             clear_idempotency=True,
@@ -61,7 +63,7 @@ def _continue_flow_updates(
                     task_ids=sorted(message_overrides.keys()),
                 )
             for task_id in task_ids_to_reset:
-                task = state.tasks.get(task_id)
+                task = state_view.task(task_id)
                 if task is None:
                     continue
                 if task_id in payload_overrides:
@@ -86,7 +88,7 @@ def _continue_flow_updates(
                 task_ids=sorted(payload_overrides.keys()),
             )
             for task_id in task_ids_to_reset:
-                task = state.tasks.get(task_id)
+                task = state_view.task(task_id)
                 if task is None or task_id not in payload_overrides:
                     continue
                 task.payload.update(payload_overrides[task_id])
@@ -99,7 +101,7 @@ def _continue_flow_updates(
         return {
             "pending_interrupt": None,
             "last_interrupt": last_interrupt,
-            "tasks": state.tasks,
+            "tasks": state_view.tasks,
             "pin_verified": False,
             "last_callback": None,
         }
