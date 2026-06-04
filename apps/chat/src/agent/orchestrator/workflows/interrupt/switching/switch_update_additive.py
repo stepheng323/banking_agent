@@ -4,6 +4,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from shared.types.planner import PlannerOutput
 
 
@@ -12,6 +13,7 @@ def _shared_confirmation_source_payload(
     state: OrchestratorState,
     active_task_ids: list[str],
 ) -> dict[str, Any]:
+    state_view = interrupt_state_view(state)
     source_fields = (
         "source_account_id",
         "source_bank_name",
@@ -22,7 +24,7 @@ def _shared_confirmation_source_payload(
     shared: dict[str, Any] = {}
     saw_source = False
     for task_id in active_task_ids:
-        task = state.tasks.get(task_id)
+        task = state_view.task(task_id)
         payload = task.payload if task and isinstance(task.payload, dict) else {}
         source_account_id = payload.get("source_account_id")
         if not source_account_id:
@@ -71,13 +73,14 @@ def _build_confirmation_additive_transaction_updates(
     text: str,
     planner_output: PlannerOutput | None,
 ) -> dict[str, Any]:
-    active_task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
+    state_view = interrupt_state_view(state)
+    active_task_ids = state_view.active_task_ids_for_interrupt(interrupt)
     shared_source = _shared_confirmation_source_payload(state=state, active_task_ids=active_task_ids)
     new_tasks = _inherit_shared_source_for_new_tasks(new_tasks=new_tasks, shared_source=shared_source)
     new_task_ids = [task_id for wave in waves for task_id in wave if task_id in new_tasks]
     merged_wave = list(dict.fromkeys([*active_task_ids, *new_task_ids]))
-    merged_tasks = {**state.tasks, **new_tasks}
-    cleaned_stack = [session for session in state.session_stack if session.domain not in TRANSACTION_INTENTS]
+    merged_tasks = {**state_view.tasks, **new_tasks}
+    cleaned_stack = state_view.session_stack_without_domains(TRANSACTION_INTENTS)
 
     logger.info(
         "interrupt_confirmation_additive_transaction_merge",
@@ -96,7 +99,7 @@ def _build_confirmation_additive_transaction_updates(
         "waves": [merged_wave] if merged_wave else waves,
         "current_wave_index": 0,
         "normalized_instruction": text,
-        "task_results": state.task_results,
+        "task_results": state_view.task_results,
         "session_stack": cleaned_stack,
         "active_domain": cleaned_stack[-1].domain if cleaned_stack else None,
         "pin_verified": False,

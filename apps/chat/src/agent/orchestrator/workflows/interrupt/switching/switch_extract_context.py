@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _interrupt_required_fields(interrupt: Any) -> list[str]:
@@ -29,11 +30,13 @@ def _build_transaction_extractor_context(
     interrupt: Any,
     target_intent: str,
 ) -> dict[str, Any]:
+    state_view = interrupt_state_view(state)
+    loaded_context = state_view.loaded_context_or_empty
     context: dict[str, Any] = {
-        "phone_number": state.phone_number,
+        "phone_number": state_view.phone_number,
         "language": _state_locale(state),
-        "accounts": (state.loaded_context or {}).get("accounts", []),
-        "beneficiaries": (state.loaded_context or {}).get("beneficiaries", []),
+        "accounts": loaded_context.get("accounts", []),
+        "beneficiaries": loaded_context.get("beneficiaries", []),
         "required_fields": _interrupt_required_fields(interrupt),
         "previousResponse": getattr(interrupt, "prompt", None),
         "previous_response": getattr(interrupt, "prompt", None),
@@ -43,7 +46,7 @@ def _build_transaction_extractor_context(
         return context
 
     first_task_id = next(iter(getattr(interrupt, "task_ids", []) or []), None)
-    task = state.tasks.get(str(first_task_id)) if first_task_id else None
+    task = state_view.task(str(first_task_id)) if first_task_id else None
     payload = task.payload if task and isinstance(task.payload, dict) else {}
     context["known_recipient"] = {
         "recipient_name": payload.get("recipient_name"),

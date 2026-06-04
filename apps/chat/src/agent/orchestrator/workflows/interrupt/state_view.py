@@ -35,6 +35,10 @@ class InterruptStateView:
         return self.last_message_text or ""
 
     @property
+    def phone_number(self) -> str:
+        return self.state.phone_number
+
+    @property
     def loaded_context(self) -> dict[str, Any]:
         return self.state.loaded_context
 
@@ -117,6 +121,10 @@ class InterruptStateView:
         if not domains:
             return self.session_stack
         return [session for session in self.session_stack if session.domain not in domains]
+
+    @property
+    def stashed_sessions(self) -> list[dict[str, Any]]:
+        return list(self.state.stashed_sessions)
 
 
 def interrupt_state_view(state: OrchestratorState) -> InterruptStateView:
