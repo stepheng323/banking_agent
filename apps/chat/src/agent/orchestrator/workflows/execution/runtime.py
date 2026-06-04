@@ -12,6 +12,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices, WorkerName
 from banking.presentation.i18n.locale import LocaleManager
 from banking.runtime.protocols import WorkerProtocol
 from banking.runtime.results import TransactionOutcome
@@ -21,97 +22,8 @@ from shared.utils.serialization import sqlalchemy_to_dict
 logger = get_logger(__name__)
 
 ExecutionResultPatch = dict[str, Any]
-WorkerName = Literal[
-    "transfer",
-    "account",
-    "beneficiary",
-    "airtime",
-    "query",
-    "data",
-    "faq",
-    "support",
-]
-
-_WORKER_NAMES: tuple[WorkerName, ...] = (
-    "transfer",
-    "account",
-    "beneficiary",
-    "airtime",
-    "query",
-    "data",
-    "faq",
-    "support",
-)
 _RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}
 _TERMINAL_TRANSACTION_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
-
-
-@dataclass(frozen=True)
-class ExecutionServices:
-    """Typed worker registry available to one execution wave."""
-
-    transfer: WorkerProtocol | None = None
-    account: WorkerProtocol | None = None
-    beneficiary: WorkerProtocol | None = None
-    airtime: WorkerProtocol | None = None
-    query: WorkerProtocol | None = None
-    data: WorkerProtocol | None = None
-    faq: WorkerProtocol | None = None
-    support: WorkerProtocol | None = None
-
-    @classmethod
-    def empty(cls) -> ExecutionServices:
-        return cls()
-
-    @classmethod
-    def from_mapping(cls, services: Mapping[str, object] | ExecutionServices | None) -> ExecutionServices:
-        if isinstance(services, ExecutionServices):
-            return services
-
-        def _worker(name: WorkerName) -> WorkerProtocol | None:
-            candidate = services.get(name) if services is not None else None
-            if candidate is None:
-                return None
-            if isinstance(candidate, WorkerProtocol):
-                return candidate
-            logger.warning(
-                "execution_service_ignored_invalid_worker",
-                worker=name,
-                worker_type=type(candidate).__name__,
-            )
-            return None
-
-        return cls(
-            transfer=_worker("transfer"),
-            account=_worker("account"),
-            beneficiary=_worker("beneficiary"),
-            airtime=_worker("airtime"),
-            query=_worker("query"),
-            data=_worker("data"),
-            faq=_worker("faq"),
-            support=_worker("support"),
-        )
-
-    def get(self, name: WorkerName | str) -> WorkerProtocol | None:
-        if name not in _WORKER_NAMES:
-            return None
-        return getattr(self, name)
-
-    def require(
-        self,
-        name: WorkerName,
-        task: TaskSpec,
-        *,
-        log_key: str,
-        error_message: str,
-    ) -> WorkerProtocol | None:
-        worker = self.get(name)
-        if worker:
-            return worker
-        logger.error(log_key)
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = error_message
-        return None
 
 
 class ExecutionAccumulator:
@@ -166,7 +78,7 @@ class ExecutionAccumulator:
 class ExecutionTurnContext:
     state: OrchestratorState
     config: RunnableConfig
-    services: ExecutionServices
+    services: OrchestrationServices
     current_wave_len: int
     accumulator: ExecutionAccumulator
     current_wave_task_ids: list[str] | None = None
@@ -313,7 +225,7 @@ def _maybe_user_message(task: TaskSpec, state: OrchestratorState) -> str | None:
 
 
 def _get_worker(
-    services: ExecutionServices,
+    services: OrchestrationServices,
     name: WorkerName,
     task: TaskSpec,
     *,

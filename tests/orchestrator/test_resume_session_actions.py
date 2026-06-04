@@ -14,9 +14,9 @@ from apps.chat.src.agent.orchestrator.task_handlers.session import handle_orches
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
@@ -61,7 +61,7 @@ def _ctx(state: OrchestratorState) -> ExecutionTurnContext:
     return ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.empty(),
+        services=OrchestrationServices.empty(),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )

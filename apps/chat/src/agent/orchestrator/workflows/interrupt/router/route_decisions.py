@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch i
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_flow import _status_query_updates
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.transactions.shared.confirmation.guardrails import is_safe_guarded_approval_text
 from banking.transactions.shared.confirmation.models import APPROVAL_CONFIDENCE_THRESHOLD
 from shared.types.planner import InterruptRouteDecision
@@ -32,7 +33,7 @@ async def _apply_interrupt_route_decision(
     task_planner: Any,
     text: str,
     active_type: str,
-    services: dict[str, Any],
+    services: OrchestrationServices,
     redis_client: Any,
 ) -> dict[str, Any]:
     if route.decision == "status_query":

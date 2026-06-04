@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extra
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_context import (
     _build_transaction_extractor_context,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 
 
 async def _extract_interrupt_switch_entities(
@@ -15,7 +16,7 @@ async def _extract_interrupt_switch_entities(
     state: OrchestratorState,
     interrupt: Any,
     text: str,
-    services: dict[str, Any],
+    services: OrchestrationServices,
     target_intent: str,
 ) -> tuple[dict[str, Any], set[str], str | None]:
     worker = services.get(target_intent)

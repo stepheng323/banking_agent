@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch i
     _handle_switch_intent_route,
     _is_same_flow_transactional_switch,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 
 
 async def _handle_auth_interrupt(
@@ -29,7 +30,7 @@ async def _handle_auth_interrupt(
     redis_client: Any,
     active_type: str,
     current_task_types: set[str],
-    services: dict[str, Any],
+    services: OrchestrationServices,
 ) -> dict[str, Any]:
     shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
     shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(

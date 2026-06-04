@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch import _handle_switch_intent_route
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.types.planner import InterruptRouteDecision
 
 
@@ -23,7 +24,7 @@ async def _resolve_add_task_operation(
     task_planner: Any,
     active_type: str,
     current_task_types: set[str],
-    services: dict[str, Any],
+    services: OrchestrationServices,
 ) -> dict[str, Any] | None:
     restore_task_ids = _restore_fallback_task_ids_for_misclassified_add(
         state=state,

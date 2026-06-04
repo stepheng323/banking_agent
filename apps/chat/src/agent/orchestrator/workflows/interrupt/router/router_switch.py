@@ -19,6 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_updat
     _build_planner_switch_updates,
     _switch_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.types.planner import InterruptRouteDecision
 
 
@@ -50,7 +51,7 @@ async def _handle_switch_intent_route(
     text: str,
     active_type: str,
     current_task_types: set[str],
-    services: dict[str, Any],
+    services: OrchestrationServices,
 ) -> dict[str, Any]:
     from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_flow import _reprompt_updates
 

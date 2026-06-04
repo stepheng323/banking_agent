@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extra
     _extract_interrupt_switch_entities,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_values import _coerce_money
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.money import MoneyAmount
 from shared.types.planner import RecipientAllocation, TaskParameters
 
@@ -68,7 +69,7 @@ async def _seed_transfer_switch_payload(
     state: OrchestratorState,
     interrupt: Any,
     text: str,
-    services: dict[str, Any],
+    services: OrchestrationServices,
 ) -> tuple[TaskParameters, dict[str, Any], str, bool]:
     parameters = TaskParameters()
     payload_seed: dict[str, Any] = {}

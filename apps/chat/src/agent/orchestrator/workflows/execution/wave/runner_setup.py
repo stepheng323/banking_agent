@@ -7,9 +7,9 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.accounts.mandate_state import is_mandate_debit_ready
 from shared.utils.logging import get_logger
 
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 @dataclass(frozen=True)
 class ExecutionWaveRuntime:
     current_wave: list[str]
-    services: ExecutionServices
+    services: OrchestrationServices
     accumulator: ExecutionAccumulator
     ctx: ExecutionTurnContext
     locale: str
@@ -60,7 +60,7 @@ def build_execution_wave_runtime(
     if not isinstance(configurable, Mapping):
         configurable = {}
     raw_services = cast(Mapping[str, object] | None, configurable.get("services"))
-    services = ExecutionServices.from_mapping(raw_services)
+    services = OrchestrationServices.from_mapping(raw_services)
     accumulator = ExecutionAccumulator(state.tasks)
     ctx = ExecutionTurnContext(
         state=state,

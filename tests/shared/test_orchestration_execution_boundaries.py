@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "execution"
+INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "interrupt"
 
 DELETED_EXECUTION_MODULE_PATHS = (
     ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers" / "runtime.py",
@@ -15,7 +16,13 @@ DELETED_EXECUTION_MODULE_PATHS = (
 FORBIDDEN_EXECUTION_TEXT = (
     "apps.chat.src.agent.orchestrator.task_handlers.runtime",
     "apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_handlers",
+    "ExecutionServices",
     "_HANDLERS",
+    'config["configurable"].get("services"',
+)
+
+FORBIDDEN_INTERRUPT_TEXT = (
+    "services: dict[str, Any]",
     'config["configurable"].get("services"',
 )
 
@@ -42,6 +49,17 @@ def test_typed_execution_core_does_not_reference_deleted_paths_or_raw_handler_ma
             continue
         text = path.read_text(encoding="utf-8")
         for forbidden in FORBIDDEN_EXECUTION_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_typed_interrupt_core_does_not_forward_raw_service_mappings() -> None:
+    violations: list[str] = []
+    for path in sorted(INTERRUPT_ROOT.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_INTERRUPT_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
 

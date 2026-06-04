@@ -19,6 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_transfer_fanout_reconcile import (
     _reconcile_multi_transfer_recipient_tasks,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.types.planner import InterruptRouteDecision, PlannedTask
 
 
@@ -28,7 +29,7 @@ async def _build_enriched_transaction_switch_tasks(
     text: str,
     target_intent: str,
     interrupt: Any,
-    services: dict[str, Any],
+    services: OrchestrationServices,
 ) -> tuple[dict[str, TaskSpec], list[list[str]], set[str]]:
     if target_intent == "transfer":
         parameters, payload_seed, action, preseeded = await _seed_transfer_switch_payload(

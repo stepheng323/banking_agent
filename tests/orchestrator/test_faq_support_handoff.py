@@ -10,9 +10,9 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.support import handle_faq_task
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.policy.loader import get_cached_policy
 from banking.runtime.results import (
     FAQOutcome,
@@ -75,7 +75,7 @@ def _ctx(*, support_worker) -> tuple[TaskSpec, ExecutionTurnContext]:
     return task, ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services=ExecutionServices.from_mapping({"faq": _FAQHandoffWorker(), "support": support_worker}),
+        services=OrchestrationServices.from_mapping({"faq": _FAQHandoffWorker(), "support": support_worker}),
         current_wave_len=1,
         accumulator=agg,
         current_wave_task_ids=[task.id],

@@ -5,11 +5,11 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import choose_wave_blocker
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_finalize import finalize_execution_wave_updates
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 
 
 def _task(task_id: str, *, stage: TaskStage, task_type: str = "transfer", group_id: str | None = None) -> TaskSpec:
@@ -116,14 +116,14 @@ def test_no_blocker_allows_terminal_wave_to_advance() -> None:
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.empty(),
+        services=OrchestrationServices.empty(),
         current_wave_len=1,
         accumulator=agg,
         current_wave_task_ids=["done"],
     )
     runtime = ExecutionWaveRuntime(
         current_wave=["done"],
-        services=ExecutionServices.empty(),
+        services=OrchestrationServices.empty(),
         accumulator=agg,
         ctx=ctx,
         locale="en",

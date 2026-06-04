@@ -9,9 +9,9 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import (
     FocusedReferent,
@@ -123,7 +123,7 @@ async def test_query_handoff_injects_transfer_task_and_wave() -> None:
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"query": _DummyQueryWorker()}),
+        services=OrchestrationServices.from_mapping({"query": _DummyQueryWorker()}),
         current_wave_len=1,
         accumulator=agg,
     )
@@ -167,7 +167,7 @@ async def test_query_direct_answer_pushes_focused_beneficiary_context_frame() ->
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"query": _DummyQueryReferentWorker()}),
+        services=OrchestrationServices.from_mapping({"query": _DummyQueryReferentWorker()}),
         current_wave_len=1,
         accumulator=agg,
     )
@@ -211,7 +211,7 @@ async def test_query_result_surface_view_pushes_transaction_context_frame() -> N
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"query": _DummyQuerySurfaceWorker()}),
+        services=OrchestrationServices.from_mapping({"query": _DummyQuerySurfaceWorker()}),
         current_wave_len=1,
         accumulator=agg,
     )

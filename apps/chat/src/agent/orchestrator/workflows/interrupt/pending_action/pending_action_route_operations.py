@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch import _handle_switch_intent_route
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import KNOWN_SWITCH_INTENTS, TRANSACTION_INTENTS
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_flow import _status_query_updates
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.types.planner import InterruptRouteDecision
 
 
@@ -26,7 +27,7 @@ async def _resolve_status_query_operation(
     task_planner: Any,
     active_type: str,
     current_task_types: set[str],
-    services: dict[str, Any],
+    services: OrchestrationServices,
     redis_client: Any | None,
 ) -> dict[str, Any]:
     route = InterruptRouteDecision(
@@ -59,7 +60,7 @@ async def _resolve_switch_intent_operation(
     task_planner: Any,
     active_type: str,
     current_task_types: set[str],
-    services: dict[str, Any],
+    services: OrchestrationServices,
 ) -> dict[str, Any] | None:
     target_intent = str(decision.target_intent or "").strip().lower()
     if target_intent not in KNOWN_SWITCH_INTENTS:

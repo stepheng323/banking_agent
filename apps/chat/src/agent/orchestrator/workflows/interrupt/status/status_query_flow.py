@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_re
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_text import (
     _build_status_query_response,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.types.planner import InterruptRouteDecision
 
 
@@ -24,7 +25,7 @@ async def _status_query_updates(
     task_planner: Any,
     text: str,
     active_type: str,
-    services: dict[str, Any],
+    services: OrchestrationServices,
     redis_client: Any | None,
 ) -> dict[str, Any]:
     if not current_task_types or not current_task_types.issubset(TRANSACTION_INTENTS):

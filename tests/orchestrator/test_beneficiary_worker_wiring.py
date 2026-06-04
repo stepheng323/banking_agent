@@ -5,9 +5,9 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.account_beneficiary import handle_beneficiary_task
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
@@ -41,7 +41,7 @@ async def test_beneficiary_management_uses_injected_service() -> None:
     ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services=ExecutionServices.from_mapping({"beneficiary": worker}),
+        services=OrchestrationServices.from_mapping({"beneficiary": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )

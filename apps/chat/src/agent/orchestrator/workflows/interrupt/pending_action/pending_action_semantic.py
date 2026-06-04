@@ -30,6 +30,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
     _resolve_status_query_operation,
     _resolve_switch_intent_operation,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 
 
 async def _resolve_semantic_pending_action_edit_updates(
@@ -40,7 +41,7 @@ async def _resolve_semantic_pending_action_edit_updates(
     task_planner: TaskPlanner | None,
     active_type: str,
     current_task_types: set[str],
-    services: dict[str, Any],
+    services: OrchestrationServices,
     redis_client: Any | None,
 ) -> dict[str, Any] | None:
     resolution = await PendingActionEditEngine().interpret(

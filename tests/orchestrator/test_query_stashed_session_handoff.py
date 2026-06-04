@@ -8,9 +8,9 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
@@ -54,7 +54,7 @@ async def test_handle_query_task_passes_and_clears_stashed_query_session() -> No
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"query": worker}),
+        services=OrchestrationServices.from_mapping({"query": worker}),
         current_wave_len=1,
         accumulator=agg,
     )

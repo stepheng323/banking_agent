@@ -7,9 +7,9 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.support import handle_support_task
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import (
     SupportOutcome,
     SupportResult,
@@ -74,7 +74,7 @@ async def test_support_handler_passes_quoted_message_id_without_mutating_task_pa
     ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services=ExecutionServices.from_mapping({"support": worker}),
+        services=OrchestrationServices.from_mapping({"support": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -115,7 +115,7 @@ async def test_support_handler_enqueues_receipt_jobs() -> None:
     ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {"publisher": publisher}},
-        services=ExecutionServices.from_mapping({"support": worker}),
+        services=OrchestrationServices.from_mapping({"support": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -151,7 +151,7 @@ async def test_support_handler_reroutes_replay_modifier_to_transfer() -> None:
     ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services=ExecutionServices.from_mapping({"support": support_worker, "transfer": transfer_worker}),
+        services=OrchestrationServices.from_mapping({"support": support_worker, "transfer": transfer_worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )

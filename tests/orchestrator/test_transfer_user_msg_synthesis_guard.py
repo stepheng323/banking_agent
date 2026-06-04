@@ -8,9 +8,9 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
-    ExecutionServices,
     ExecutionTurnContext,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
@@ -80,7 +80,7 @@ async def _run_transfer_with_message(last_message_text: str | None) -> str | Non
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"transfer": worker}),
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -134,7 +134,7 @@ async def test_transfer_handler_drops_null_source_affinity_mode_before_worker() 
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"transfer": worker}),
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -175,7 +175,7 @@ async def test_transfer_handler_prefers_scoped_confirmation_user_message_overrid
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"transfer": worker}),
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -228,7 +228,7 @@ async def test_transfer_handler_uses_targeted_beneficiary_reload_for_cache_only_
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"transfer": worker}),
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -283,7 +283,7 @@ async def test_transfer_handler_reloads_beneficiaries_before_fresh_direct_extrac
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"transfer": worker}),
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -340,7 +340,7 @@ async def test_transfer_handler_falls_back_to_full_beneficiary_reload_after_targ
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"transfer": worker}),
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )
@@ -405,7 +405,7 @@ async def test_transfer_handler_reloads_targeted_beneficiary_when_cache_preview_
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services=ExecutionServices.from_mapping({"transfer": worker}),
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
         accumulator=ExecutionAccumulator(state.tasks),
     )

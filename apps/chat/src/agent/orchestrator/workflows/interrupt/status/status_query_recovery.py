@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_updat
     _build_planner_switch_updates,
     _switch_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.types.planner import InterruptRouteDecision
 
 
@@ -24,7 +25,7 @@ async def _recover_status_query_without_active_flow(
     task_planner: Any,
     text: str,
     active_type: str,
-    services: dict[str, Any],
+    services: OrchestrationServices,
     redis_client: Any | None,
 ) -> dict[str, Any]:
     from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_flow import _reprompt_updates

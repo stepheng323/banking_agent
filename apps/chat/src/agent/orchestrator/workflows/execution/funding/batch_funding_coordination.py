@@ -10,7 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionServices
+from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
 from shared.utils.logging import get_logger
@@ -22,7 +22,7 @@ async def _maybe_coordinate_batch_funding(
     *,
     state: OrchestratorState,
     current_wave: list[str],
-    services: ExecutionServices,
+    services: OrchestrationServices,
     locale: str,
 ) -> dict[str, Any] | None:
     transfer_task_ids = [task_id for task_id in current_wave if _is_plannable_transfer_task(state.tasks.get(task_id))]
