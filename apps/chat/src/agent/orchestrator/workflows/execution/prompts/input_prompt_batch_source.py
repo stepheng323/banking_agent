@@ -2,6 +2,7 @@
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
 from banking.presentation.formatters.transfer_input_prompts import format_batch_transfer_source_prompt
 from banking.presentation.i18n.renderer import render_message
 
@@ -79,7 +80,7 @@ def build_batch_source_prompt_if_needed(
         locale=locale,
     )
     for tid in transfer_tasks_only_source:
-        state.tasks[tid].payload["recipient_ui_confirmed"] = True
+        set_task_payload_value(state.tasks[tid], "recipient_ui_confirmed", True)
     return prompt_text
 
 

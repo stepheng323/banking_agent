@@ -21,13 +21,19 @@ EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
 )
 EXECUTION_TASK_MUTATION_CONTRACT_MODULES = (
+    EXECUTION_ROOT / "async_grouping.py",
     EXECUTION_ROOT / "executors" / "account_beneficiary.py",
     EXECUTION_ROOT / "executors" / "purchase.py",
     EXECUTION_ROOT / "executors" / "query.py",
     EXECUTION_ROOT / "executors" / "session.py",
     EXECUTION_ROOT / "executors" / "support.py",
     EXECUTION_ROOT / "executors" / "transfer.py",
+    EXECUTION_ROOT / "prompts" / "input_prompt_batch_source.py",
+    EXECUTION_ROOT / "prompts" / "input_prompts_focused.py",
+    EXECUTION_ROOT / "prompts" / "input_prompts_unified.py",
     EXECUTION_ROOT / "result_reducer.py",
+    EXECUTION_ROOT / "source_selection.py",
+    EXECUTION_ROOT / "task_input.py",
     EXECUTION_ROOT / "wave" / "runner_task_guards.py",
     EXECUTION_ROOT / "wave" / "wave_state.py",
 )

@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, TRANSACTION_TASK_TYPES
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import update_task_payload
 from banking.presentation.formatters.confirmation import strip_source_account_info_lines
 from shared.utils.logging import get_logger
 
@@ -112,7 +113,7 @@ def _propagate_batch_source_selection(
         if task.payload.get("source_affinity_mode") == "explicit" and task.payload.get("source_account_id"):
             continue
 
-        task.payload.update(source_patch)
+        update_task_payload(task, source_patch)
         _apply_source_patch_to_confirmation(task.payload, source_patch, locale=locale)
         propagated_task_ids.append(task_id)
         logger.info(

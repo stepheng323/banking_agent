@@ -7,6 +7,7 @@ from typing import Literal
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import update_task_payload
 
 _TERMINAL_TRANSACTION_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 
@@ -64,10 +65,15 @@ def _stamp_async_group_metadata(task: TaskSpec, ctx: ExecutionTurnContext) -> No
         grouped_task = ctx.state.tasks.get(task_id)
         if grouped_task is None or grouped_task.type not in transaction_types:
             continue
-        grouped_task.payload["async_group_id"] = group_id
-        grouped_task.payload["async_group_size"] = group_size
-        grouped_task.payload["async_group_kind"] = group_kind
-        grouped_task.payload["async_group_index"] = index
+        update_task_payload(
+            grouped_task,
+            {
+                "async_group_id": group_id,
+                "async_group_size": group_size,
+                "async_group_kind": group_kind,
+                "async_group_index": index,
+            },
+        )
 
 
 __all__ = ["_stamp_async_group_metadata"]

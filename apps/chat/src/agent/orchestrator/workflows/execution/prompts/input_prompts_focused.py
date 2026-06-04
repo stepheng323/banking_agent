@@ -21,6 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queu
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import (
     _recipient_prompt_label,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
 from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
 from banking.presentation.formatters.transfer_input_prompts import format_single_transfer_recipient_prompt
 
@@ -119,7 +120,7 @@ def _build_focused_missing_field_updates(
             continue
         name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
         if name and (not agg.has_input_request(tid) or tid == just_resolved_tid):
-            task.payload["recipient_ui_confirmed"] = True
+            set_task_payload_value(task, "recipient_ui_confirmed", True)
     options_entry = _build_show_options_entry(
         details=focused_details,
         prompt_text=prompt_text,

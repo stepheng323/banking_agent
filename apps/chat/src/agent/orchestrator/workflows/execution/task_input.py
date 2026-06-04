@@ -6,6 +6,7 @@ from typing import cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import pop_task_payload_value
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,7 +22,7 @@ def _maybe_user_message(task: TaskSpec, state: OrchestratorState) -> str | None:
         # Only tasks that asked for input consume the current user text.
         if state.last_interrupt and task.id not in state.last_interrupt.task_ids:
             return None
-        scoped_user_message = task.payload.pop("pending_user_message", None)
+        scoped_user_message = pop_task_payload_value(task, "pending_user_message")
         if isinstance(scoped_user_message, str) and scoped_user_message.strip():
             return scoped_user_message
         return cast(str | None, state.last_message_text)

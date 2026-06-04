@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import _recipient_prompt_label
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
 from banking.presentation.formatters.missing_detail_prompts import (
     format_missing_details_prompt,
     format_source_repair_prompt,
@@ -69,7 +70,7 @@ def _build_unified_missing_field_prompt(
             continue
         name = _recipient_prompt_label(cast(dict[str, Any], task.payload))
         if name and name in found_names:
-            task.payload["recipient_ui_confirmed"] = True
+            set_task_payload_value(task, "recipient_ui_confirmed", True)
 
     return prompt_text
 

@@ -46,6 +46,10 @@ def remove_task_payload_values(task: TaskSpec, *keys: str) -> None:
         task.payload.pop(key, None)
 
 
+def pop_task_payload_value(task: TaskSpec, key: str) -> Any:
+    return task.payload.pop(key, None)
+
+
 def complete_task(task: TaskSpec, *, receipt: Any = None) -> None:
     task.stage = TaskStage.COMPLETED
     if receipt:
@@ -85,6 +89,7 @@ __all__ = [
     "cancel_task",
     "complete_task",
     "fail_task",
+    "pop_task_payload_value",
     "remove_task_payload_values",
     "replace_task_payload",
     "set_task_confirmation",
