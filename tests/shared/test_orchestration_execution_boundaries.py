@@ -50,6 +50,7 @@ EXECUTION_TASK_ACCESS_CONTRACT_MODULES = (
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_summary.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_personality.py",
+    EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
     EXECUTION_ROOT / "prompts" / "input_prompt_batch_source.py",
     EXECUTION_ROOT / "prompts" / "input_prompts_focused.py",
     EXECUTION_ROOT / "prompts" / "input_prompts_unified.py",

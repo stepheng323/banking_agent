@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
@@ -26,7 +27,10 @@ async def _maybe_coordinate_batch_funding(
     agg: ExecutionAccumulator,
     locale: str,
 ) -> dict[str, Any] | None:
-    transfer_task_ids = [task_id for task_id in current_wave if _is_plannable_transfer_task(state.tasks.get(task_id))]
+    transfer_tasks = [
+        (task_id, task) for task_id, task in existing_tasks(state, current_wave) if _is_plannable_transfer_task(task)
+    ]
+    transfer_task_ids = [task_id for task_id, _task in transfer_tasks]
     if len(transfer_task_ids) < 2:
         return None
 
@@ -39,18 +43,15 @@ async def _maybe_coordinate_batch_funding(
     accounts_raw = (state.loaded_context or {}).get("accounts") or []
     transaction_accounts_raw = (state.loaded_context or {}).get("transaction_accounts") or accounts_raw
     accounts = [account for account in transaction_accounts_raw if isinstance(account, dict)]
-    demands = [
-        _build_transfer_demand(task_id, cast(dict[str, Any], state.tasks[task_id].payload))
-        for task_id in transfer_task_ids
-    ]
+    demands = [_build_transfer_demand(task_id, cast(dict[str, Any], task.payload)) for task_id, task in transfer_tasks]
     coordinator = BatchFundingCoordinator(dd_provider=dd_provider)
     result = await coordinator.coordinate(demands=demands, accounts=accounts, locale=locale)
     if result.is_feasible:
-        for task_id in transfer_task_ids:
+        for task_id, task in transfer_tasks:
             plan = result.plans_by_task.get(task_id)
             if plan is None:
                 continue
-            payload = state.tasks[task_id].payload
+            payload = task.payload
             if not isinstance(payload, dict):
                 continue
             payload["funding_plan"] = _funding_plan_to_payload_dict(plan, payload)
