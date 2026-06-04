@@ -11,9 +11,11 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_conf
 from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_input import (
     _build_compact_transfer_input_reprompt,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
+    state_view = interrupt_state_view(state)
     outbox: list[dict[str, Any]] = []
     if interrupt.kind == "input":
         compact_transfer_reprompt = _build_compact_transfer_input_reprompt(state, interrupt)
@@ -30,7 +32,7 @@ def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any
     updates: dict[str, Any] = {
         "pending_interrupt": interrupt,
         "last_interrupt": interrupt,
-        "tasks": state.tasks,
+        "tasks": state_view.tasks,
     }
     if outbox:
         updates["outbox"] = outbox

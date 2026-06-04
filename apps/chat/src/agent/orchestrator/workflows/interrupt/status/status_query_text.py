@@ -1,6 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_details import (
     _format_task_details_for_status,
 )
@@ -17,8 +18,9 @@ def _build_status_query_response(
     task_types: set[str],
     status_query_type: str | None,
 ) -> str:
+    state_view = interrupt_state_view(state)
     flow_type = next(iter(sorted(task_types))) if task_types else "transaction"
-    first_task = state.tasks.get(interrupt.task_ids[0]) if interrupt.task_ids else None
+    first_task = state_view.task(interrupt.task_ids[0]) if interrupt.task_ids else None
     required_fields = (
         list((interrupt.fields_by_task or {}).get(interrupt.task_ids[0], [])) if interrupt.task_ids else []
     )

@@ -28,6 +28,14 @@ INTERRUPT_LOCALE_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "router" / "router_core.py",
     INTERRUPT_ROOT / "router" / "runner_routing.py",
 )
+INTERRUPT_REPROMPT_STATUS_STATE_VIEW_MODULES = (
+    INTERRUPT_ROOT / "reprompt" / "reprompt_auth.py",
+    INTERRUPT_ROOT / "reprompt" / "reprompt_confirmation.py",
+    INTERRUPT_ROOT / "reprompt" / "reprompt_flow.py",
+    INTERRUPT_ROOT / "reprompt" / "reprompt_input.py",
+    INTERRUPT_ROOT / "status" / "status_query_flow.py",
+    INTERRUPT_ROOT / "status" / "status_query_text.py",
+)
 GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "context.py",
     GATE_ROOT / "direct_tasks.py",
@@ -729,6 +737,28 @@ def test_interrupt_locale_modules_use_typed_state_view() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr != "loaded_context":
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "request", "runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_interrupt_reprompt_status_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {"loaded_context", "tasks"}
+    for path in INTERRUPT_REPROMPT_STATUS_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
                 continue
             target = node.value
             if isinstance(target, ast.Name) and target.id == "state":

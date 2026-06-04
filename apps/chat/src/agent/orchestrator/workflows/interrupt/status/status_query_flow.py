@@ -5,6 +5,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_recovery import (
     _recover_status_query_without_active_flow,
 )
@@ -28,6 +29,7 @@ async def _status_query_updates(
     services: OrchestrationServices,
     redis_client: Any | None,
 ) -> dict[str, Any]:
+    state_view = interrupt_state_view(state)
     if not current_task_types or not current_task_types.issubset(TRANSACTION_INTENTS):
         return await _recover_status_query_without_active_flow(
             state=state,
@@ -56,7 +58,7 @@ async def _status_query_updates(
     return {
         "pending_interrupt": interrupt,
         "last_interrupt": interrupt,
-        "tasks": state.tasks,
+        "tasks": state_view.tasks,
         "outbox": [{"type": "say", "text": response}],
         "semantic_path_shape": semantic_path_shape,
     }

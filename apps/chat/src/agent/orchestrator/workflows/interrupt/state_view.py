@@ -62,8 +62,17 @@ class InterruptStateView:
     def task(self, task_id: str) -> TaskSpec | None:
         return self.tasks.get(task_id)
 
+    def tasks_for(self, task_ids: list[str]) -> list[TaskSpec]:
+        return [task for task_id in task_ids if (task := self.task(task_id)) is not None]
+
     def task_types_for(self, task_ids: list[str]) -> set[str]:
         return {task.type for task_id in task_ids if (task := self.task(task_id)) is not None}
+
+    def task_type_list_for(self, task_ids: list[str]) -> list[str]:
+        return [task.type for task in self.tasks_for(task_ids)]
+
+    def task_action_list_for(self, task_ids: list[str]) -> list[str]:
+        return [str(task.payload.get("action") or "") for task in self.tasks_for(task_ids)]
 
     def has_task_id(self, task_id: str) -> bool:
         return task_id in self.task_ids

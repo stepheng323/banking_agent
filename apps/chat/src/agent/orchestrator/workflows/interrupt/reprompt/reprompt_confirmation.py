@@ -4,7 +4,8 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
-from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _state_locale_for_view
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from banking.presentation.formatters.confirmation import build_confirmation_summary
 from banking.presentation.formatters.transaction_confirmation_copy import build_confirmation_header
 from banking.presentation.i18n.personality import transfer_personality_context_from_payload
@@ -15,16 +16,17 @@ def _build_confirmation_reprompt_outbox(
     interrupt: Any,
     task_ids: list[str],
 ) -> list[dict[str, Any]]:
+    state_view = interrupt_state_view(state)
     if not task_ids:
         return []
-    first_task = state.tasks.get(task_ids[0])
+    first_task = state_view.task(task_ids[0])
     if not first_task:
         return []
 
-    locale = _state_locale(state)
+    locale = _state_locale_for_view(state_view)
     summary = interrupt.prompt
     if not summary:
-        accounts_raw = state.loaded_context.get("accounts") or []
+        accounts_raw = state_view.loaded_context_or_empty.get("accounts") or []
         accounts = [account for account in accounts_raw if isinstance(account, dict)]
         if len(task_ids) == 1:
             summary = build_confirmation_summary(
@@ -35,7 +37,7 @@ def _build_confirmation_reprompt_outbox(
         else:
             parts: list[str] = []
             for task_id in task_ids:
-                task = state.tasks.get(task_id)
+                task = state_view.task(task_id)
                 if not task:
                     continue
                 rendered = build_confirmation_summary(task_payload=task.payload, locale=locale, accounts=accounts)
@@ -58,22 +60,16 @@ def _build_confirmation_reprompt_outbox(
             "type": "request_confirmation",
             "task_ids": task_ids,
             "header": build_confirmation_header(
-                task_types=[state.tasks[task_id].type for task_id in task_ids if task_id in state.tasks],
+                task_types=state_view.task_type_list_for(task_ids),
                 locale=locale,
                 task_count=len(task_ids),
-                task_actions=[
-                    str(state.tasks[task_id].payload.get("action") or "")
-                    for task_id in task_ids
-                    if task_id in state.tasks
-                ],
+                task_actions=state_view.task_action_list_for(task_ids),
                 personality_context=confirmation_personality_context,
             ),
             "summary": summary,
             "snapshot": snapshot,
             "idempotency_key": first_task.payload.get("idempotency_key", "unknown"),
-            "actionable_payload": build_actionable_payload_for_tasks(
-                [state.tasks[task_id] for task_id in task_ids if task_id in state.tasks]
-            ),
+            "actionable_payload": build_actionable_payload_for_tasks(state_view.tasks_for(task_ids)),
         }
     ]
 
