@@ -2,7 +2,6 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_interrupt_shortcut_with_reason,
-    resolve_shortcut_locale,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_repeat import (
@@ -26,6 +25,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_core imp
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch import (
     _is_same_flow_transactional_switch,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 async def _expired_transaction_message_targets_stale_session(
@@ -57,7 +57,7 @@ async def _expired_transaction_message_targets_stale_session(
     if _resolve_deterministic_confirmation_repeat_route(state=state, interrupt=interrupt, text=text) is not None:
         return True
 
-    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_locale = interrupt_state_view(state).shortcut_locale
     shortcut_route, _miss_reason = resolve_interrupt_shortcut_with_reason(
         text=text,
         interrupt_kind=getattr(interrupt, "kind", ""),

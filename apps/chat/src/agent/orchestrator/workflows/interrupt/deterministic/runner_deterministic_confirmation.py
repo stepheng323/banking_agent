@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import resolve_shortcut_locale
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_repeat import (
     _resolve_deterministic_confirmation_repeat_route,
@@ -25,7 +24,7 @@ def _confirmation_repeat_updates(
     if route is None:
         return None
 
-    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_locale = runtime.state_view.shortcut_locale
     logger.info(
         "interrupt_shortcut_hit",
         kind=runtime.interrupt.kind,

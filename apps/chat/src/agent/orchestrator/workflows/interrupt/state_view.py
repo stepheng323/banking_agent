@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import resolve_shortcut_locale
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LocaleCode
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,10 @@ class InterruptStateView:
     @property
     def current_locale(self) -> str:
         return LocaleManager.normalize(self.loaded_context_or_empty.get("language")).value
+
+    @property
+    def shortcut_locale(self) -> LocaleCode | None:
+        return resolve_shortcut_locale(self.loaded_context_or_empty.get("language"))
 
     @property
     def tasks(self) -> dict[str, TaskSpec]:

@@ -3,7 +3,6 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import cancel_router_fallback_reason
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_interrupt_shortcut_with_reason,
-    resolve_shortcut_locale,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
@@ -21,7 +20,7 @@ async def _route_and_apply_interrupt_decision(
     runtime: InterruptRuntime,
 ) -> dict[str, Any]:
     interrupt = runtime.interrupt
-    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_locale = runtime.state_view.shortcut_locale
     shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
         text=runtime.text,
         interrupt_kind=interrupt.kind,

@@ -8,9 +8,10 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import (
     _build_interrupt_context_details,
-    _state_locale,
+    _state_locale_for_view,
     logger,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from shared.types.planner import InterruptRouteDecision
 
 
@@ -46,9 +47,8 @@ def _resolve_deterministic_status_query_route(
     interrupt: Any,
     text: str,
 ) -> InterruptRouteDecision | None:
-    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language")) or resolve_shortcut_locale(
-        _state_locale(state)
-    )
+    state_view = interrupt_state_view(state)
+    shortcut_locale = state_view.shortcut_locale or resolve_shortcut_locale(_state_locale_for_view(state_view))
     shortcut_route, _miss_reason = resolve_interrupt_shortcut_with_reason(
         text=text,
         interrupt_kind=interrupt.kind,

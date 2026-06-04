@@ -10,7 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.expiry.expiry_policy i
 from apps.chat.src.agent.orchestrator.workflows.interrupt.expiry.expiry_stale_session import (
     _expired_transaction_message_targets_stale_session,
 )
-from banking.presentation.i18n.locale import LocaleManager
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from banking.presentation.i18n.renderer import render_message
 
 
@@ -48,7 +48,7 @@ async def _expired_transaction_interrupt_updates(
     if not should_notify:
         return updates
 
-    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    locale = interrupt_state_view(state).current_locale
     response_text = render_message(
         "orchestrator.session.transaction_expired",
         locale,

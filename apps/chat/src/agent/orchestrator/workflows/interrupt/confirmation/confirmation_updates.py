@@ -2,10 +2,10 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     is_explicit_confirmation_approval,
-    resolve_shortcut_locale,
 )
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -59,7 +59,7 @@ def _stash_previous_confirmation_snapshots(state: OrchestratorState, task_ids: l
 
 
 def _is_explicit_confirmation_approval_text(state: OrchestratorState, text: str) -> bool:
-    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_locale = interrupt_state_view(state).shortcut_locale
     return is_explicit_confirmation_approval(text=text, locale=shortcut_locale)
 
 

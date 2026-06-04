@@ -3,7 +3,6 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import cancel_router_fallback_reason
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_interrupt_shortcut_with_reason,
-    resolve_shortcut_locale,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.auth.auth_resolve import _approve_auth_updates
@@ -18,6 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch i
     _handle_switch_intent_route,
     _is_same_flow_transactional_switch,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 
 
@@ -32,7 +32,7 @@ async def _handle_auth_interrupt(
     current_task_types: set[str],
     services: OrchestrationServices,
 ) -> dict[str, Any]:
-    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_locale = interrupt_state_view(state).shortcut_locale
     shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
         text=text,
         interrupt_kind=interrupt.kind,

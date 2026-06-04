@@ -13,7 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     INPUT_INTERRUPT_MAX_ATTEMPTS,
     _input_interrupt_required_fields,
 )
-from banking.presentation.i18n.locale import LocaleManager
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.network_utils import format_network_display_name
 
@@ -23,13 +23,14 @@ def _input_greeting_reprompt_text(
     interrupt: Any,
     current_task_types: set[str] | None = None,
 ) -> str:
-    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    state_view = interrupt_state_view(state)
+    locale = state_view.current_locale
     required_fields = _input_interrupt_required_fields(interrupt)
     task_types = current_task_types or _current_task_types(state, getattr(interrupt, "task_ids", []))
     first_task = None
     task_ids = getattr(interrupt, "task_ids", []) or []
     if isinstance(task_ids, list) and task_ids:
-        first_task = state.tasks.get(str(task_ids[0]))
+        first_task = state_view.task(str(task_ids[0]))
     first_payload = first_task.payload if first_task and isinstance(first_task.payload, dict) else {}
     network = format_network_display_name(first_payload.get("network"))
     if task_types == {"transfer"}:
@@ -85,15 +86,16 @@ async def _reprompt_or_reset_updates(
     if next_attempts < INPUT_INTERRUPT_MAX_ATTEMPTS:
         next_interrupt = interrupt.model_copy(update={"attempts": next_attempts})
         if prompt_override:
+            state_view = interrupt_state_view(state)
             return {
                 "pending_interrupt": next_interrupt,
                 "last_interrupt": next_interrupt,
-                "tasks": state.tasks,
+                "tasks": state_view.tasks,
                 "outbox": [{"type": "say", "text": prompt_override}],
             }
         return _reprompt_updates(state, next_interrupt)
 
-    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    locale = interrupt_state_view(state).current_locale
     reset_updates = await build_cancellation_reset_updates(state, redis_client)
     response_text = render_message("orchestrator.execution.input_attempts_exhausted", locale)
     logger.info(
