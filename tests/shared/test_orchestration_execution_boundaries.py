@@ -83,6 +83,12 @@ FORBIDDEN_ACCUMULATOR_LIST_APPENDS = {
     "needs_confirm_tasks",
     "source_bank_hints",
 }
+FORBIDDEN_ACCUMULATOR_MAPPING_MUTATION_METHODS = {"clear", "pop", "setdefault", "update"}
+FORBIDDEN_ACCUMULATOR_MAPPING_MUTATIONS = {
+    "details_by_task",
+    "missing_fields_by_task",
+    "prompts_by_task",
+}
 FORBIDDEN_RESULT_PATCH_METHODS = {"set_update", "get_update", "has_update"}
 
 
@@ -214,6 +220,42 @@ def test_execution_accumulator_callers_do_not_mutate_reducer_lists_directly() ->
                 continue
             if target.attr in FORBIDDEN_ACCUMULATOR_LIST_APPENDS:
                 violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.append()")
+
+    assert violations == []
+
+
+def test_execution_accumulator_callers_do_not_mutate_prompt_maps_directly() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name == "accumulator.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                target = node.func.value
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr in FORBIDDEN_ACCUMULATOR_MAPPING_MUTATIONS
+                    and node.func.attr in FORBIDDEN_ACCUMULATOR_MAPPING_MUTATION_METHODS
+                ):
+                    violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.{node.func.attr}()")
+            elif isinstance(node, ast.Delete):
+                for target in node.targets:
+                    if (
+                        isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Attribute)
+                        and target.value.attr in FORBIDDEN_ACCUMULATOR_MAPPING_MUTATIONS
+                    ):
+                        violations.append(f"{path.relative_to(ROOT)} deletes {ast.unparse(target)}")
+            elif isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if (
+                        isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Attribute)
+                        and target.value.attr in FORBIDDEN_ACCUMULATOR_MAPPING_MUTATIONS
+                    ):
+                        violations.append(f"{path.relative_to(ROOT)} assigns {ast.unparse(target)}")
 
     assert violations == []
 

@@ -24,10 +24,8 @@ def _focus_beneficiary_ambiguity(
     )
     for tid in list(agg.missing_fields_by_task):
         if tid != focused_beneficiary_tid:
-            agg.missing_fields_by_task.pop(tid, None)
-            agg.prompts_by_task.pop(tid, None)
-            agg.details_by_task.pop(tid, None)
-    agg.missing_fields_by_task[focused_beneficiary_tid] = ["beneficiary_id"]
+            agg.remove_missing_input_request(tid)
+    agg.replace_missing_fields(focused_beneficiary_tid, ["beneficiary_id"])
     logger.info(
         "beneficiary_ambiguity_blocking_mode",
         focused_task_id=focused_beneficiary_tid,
@@ -48,7 +46,7 @@ def _suppress_execution_only_prompts(agg: ExecutionAccumulator) -> None:
         if all(field in EXECUTION_ONLY_FIELDS for field in fields)
     ]
     for tid in suppressed_tasks:
-        del agg.missing_fields_by_task[tid]
+        agg.remove_missing_fields(tid)
         logger.info("suppressed_execution_prompt", task_id=tid, reason="basic_blocker_active")
 
 

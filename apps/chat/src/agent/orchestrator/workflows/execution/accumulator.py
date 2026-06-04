@@ -98,6 +98,17 @@ class ExecutionAccumulator:
     def add_auth_task(self, task_id: str) -> None:
         self.needs_auth_tasks.append(task_id)
 
+    def remove_missing_fields(self, task_id: str) -> None:
+        self.missing_fields_by_task.pop(task_id, None)
+
+    def remove_missing_input_request(self, task_id: str) -> None:
+        self.remove_missing_fields(task_id)
+        self.prompts_by_task.pop(task_id, None)
+        self.details_by_task.pop(task_id, None)
+
+    def replace_missing_fields(self, task_id: str, fields: list[str]) -> None:
+        self.missing_fields_by_task[task_id] = fields
+
     def add_missing_fields(self, task_id: str, fields: list[str] | None) -> None:
         if fields:
             self.missing_fields_by_task[task_id] = fields
