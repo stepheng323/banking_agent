@@ -4,7 +4,6 @@ import time
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_availability import (
     _has_context_for_read_subtype,
@@ -12,13 +11,14 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_ava
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import (
     BENEFICIARY_CONTEXT_READ_PERSIST_SUBTYPES,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 def _build_beneficiary_context_read_updates(
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     subtype: str | None,
 ) -> dict[str, Any]:
@@ -31,10 +31,10 @@ def _build_beneficiary_context_read_updates(
         or getattr(planner_output, "tasks", None)
     ):
         return {}
-    if not _has_context_for_read_subtype(state, subtype):
+    if not _has_context_for_read_subtype(state_view, subtype):
         return {}
 
-    raw_beneficiaries = (state.loaded_context or {}).get("beneficiaries")
+    raw_beneficiaries = state_view.loaded_context_or_empty.get("beneficiaries")
     if not isinstance(raw_beneficiaries, list):
         return {}
 
@@ -64,11 +64,11 @@ def _build_beneficiary_context_read_updates(
         frame_type=ContextFrameType.BENEFICIARY_LIST,
         items=entities,
         created_at_ts=int(time.time()),
-        source_message_id=state.last_message_id,
+        source_message_id=state_view.last_message_id,
     )
-    OrchestratorContextManager().push_frame(state, frame)
+    OrchestratorContextManager().push_frame(state_view.state, frame)
     logger.info("planner_context_read_frame_pushed", subtype=subtype, count=len(entities))
-    return {"context_frames": state.context_frames, "referent_memory": state.referent_memory}
+    return {"context_frames": state_view.context_frames, "referent_memory": state_view.referent_memory}
 
 
 __all__ = ["_build_beneficiary_context_read_updates"]

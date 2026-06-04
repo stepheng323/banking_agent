@@ -3,7 +3,7 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.accounts.mandate_state import READY, effective_mandate_status
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from banking.presentation.i18n.renderer import render_message
@@ -40,13 +40,13 @@ def _extract_requested_bank_label(text: str) -> str | None:
 
 
 def synthesize_account_context_read_response(
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     subtype: str,
     text: str,
     locale: str,
 ) -> str | None:
     """Build deterministic account context-read responses from loaded context when beneficial."""
-    accounts_raw = (state.loaded_context or {}).get("accounts")
+    accounts_raw = state_view.loaded_context_or_empty.get("accounts")
     accounts = accounts_raw if isinstance(accounts_raw, list) else []
     if subtype != "account_linked_bank_existence_check" or not accounts:
         return None

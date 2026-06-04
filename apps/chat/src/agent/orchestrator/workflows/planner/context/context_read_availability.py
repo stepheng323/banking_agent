@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import (
     BENEFICIARY_MATCH_PREVIEW_LIMIT,
     CONTEXT_READ_BENEFICIARY_SUBTYPES,
@@ -10,12 +9,13 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_con
     CONTEXT_READ_LIST_LIMIT,
     TRANSACTION_EXECUTORS,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.accounts.mandate_state import READY, effective_mandate_status
 
 
-def _has_context_for_read_subtype(state: OrchestratorState, subtype: str) -> bool:
+def _has_context_for_read_subtype(state_view: PlannerStateView, subtype: str) -> bool:
     """Check whether current loaded context is sufficient for a context-read answer."""
-    ctx: dict[str, Any] = state.loaded_context or {}
+    ctx: dict[str, Any] = state_view.loaded_context_or_empty
     accounts_raw = ctx.get("accounts")
     beneficiaries_raw = ctx.get("beneficiaries")
     accounts = accounts_raw if isinstance(accounts_raw, list) else []
@@ -33,19 +33,16 @@ def _has_context_for_read_subtype(state: OrchestratorState, subtype: str) -> boo
     if subtype in CONTEXT_READ_BENEFICIARY_SUBTYPES:
         return isinstance(beneficiaries_raw, list)
     if subtype in CONTEXT_READ_FLOW_SUBTYPES:
-        pending_interrupt = state.pending_interrupt
-        if not pending_interrupt or not pending_interrupt.task_ids:
+        if not state_view.pending_interrupt_task_ids:
             return False
-        task_types = {
-            state.tasks[tid].type for tid in pending_interrupt.task_ids if tid in state.tasks and state.tasks[tid]
-        }
+        task_types = state_view.pending_interrupt_task_types
         return bool(task_types) and task_types.issubset(TRANSACTION_EXECUTORS)
     return False
 
 
-def _context_read_total_items(state: OrchestratorState, subtype: str) -> int | None:
+def _context_read_total_items(state_view: PlannerStateView, subtype: str) -> int | None:
     """Return total list size for list-style context-read requests."""
-    ctx = state.loaded_context or {}
+    ctx = state_view.loaded_context_or_empty
     if subtype == "linked_accounts_summary":
         accounts = ctx.get("accounts")
         return len(accounts) if isinstance(accounts, list) else None

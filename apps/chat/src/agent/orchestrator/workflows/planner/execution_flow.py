@@ -77,7 +77,7 @@ async def _execute_planner_with_context(
     logger.info("planner_tasks_generated", output=planner_output)
 
     context_read_subtype = _apply_context_read_planner_shape(
-        state=state,
+        state_view=state_view,
         planner_output=planner_output,
         text=text,
         current_locale=current_locale,
@@ -96,7 +96,7 @@ async def _execute_planner_with_context(
     )
 
     context_read_updates = _build_beneficiary_context_read_updates(
-        state,
+        state_view,
         planner_output,
         context_read_subtype,
     )

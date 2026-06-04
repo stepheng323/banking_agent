@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
+from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from banking.presentation.i18n.locale import LocaleManager
@@ -146,6 +147,10 @@ class PlannerStateView:
     @property
     def context_frames(self) -> list[ContextFrame]:
         return list(self.state.context_frames)
+
+    @property
+    def referent_memory(self) -> ShortTermReferentMemory:
+        return self.state.referent_memory
 
     @property
     def turn_context_summary(self) -> dict[str, Any] | None:

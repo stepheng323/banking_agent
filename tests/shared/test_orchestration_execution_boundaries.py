@@ -70,6 +70,13 @@ PLANNER_CONTEXT_SUMMARY_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "context" / "context_summary_active_flow.py",
     PLANNER_ROOT / "context" / "context_summary_state.py",
 )
+PLANNER_CONTEXT_READ_STATE_VIEW_MODULES = (
+    PLANNER_ROOT / "context" / "context_read_account.py",
+    PLANNER_ROOT / "context" / "context_read_availability.py",
+    PLANNER_ROOT / "context" / "context_read_frames.py",
+    PLANNER_ROOT / "execution_context_read.py",
+    PLANNER_ROOT / "execution_flow.py",
+)
 EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
@@ -795,6 +802,35 @@ def test_planner_context_summary_modules_use_typed_state_view() -> None:
         "waves",
     }
     for path in PLANNER_CONTEXT_SUMMARY_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_planner_context_read_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "context_frames",
+        "last_message_id",
+        "loaded_context",
+        "pending_interrupt",
+        "referent_memory",
+        "tasks",
+    }
+    for path in PLANNER_CONTEXT_READ_STATE_VIEW_MODULES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:

@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_account import (
     synthesize_account_context_read_response,
 )
@@ -22,6 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_fal
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_focus import (
     _planner_context_read_subtype,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,7 +31,7 @@ _ACCOUNT_CONTEXT_READ_NON_OVERRIDE_ACTIONS = {"none", "unknown", "list", "list_a
 
 def _apply_context_read_planner_shape(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     text: str,
     current_locale: str,
@@ -40,7 +40,7 @@ def _apply_context_read_planner_shape(
     if not context_read_subtype:
         return None
 
-    has_context_for_read = _has_context_for_read_subtype(state, context_read_subtype)
+    has_context_for_read = _has_context_for_read_subtype(state_view, context_read_subtype)
     has_no_tasks = not planner_output.tasks
     is_conversational_no_task = planner_output.primary_intent == "conversational" and has_no_tasks
     is_flow_context_read = context_read_subtype in CONTEXT_READ_FLOW_SUBTYPES
@@ -54,7 +54,7 @@ def _apply_context_read_planner_shape(
 
     if is_conversational_no_task and has_context_for_read:
         _apply_context_read_direct_response(
-            state=state,
+            state_view=state_view,
             planner_output=planner_output,
             context_read_subtype=context_read_subtype,
             text=text,
@@ -76,7 +76,7 @@ def _apply_context_read_planner_shape(
 
 def _apply_context_read_direct_response(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: Any,
     context_read_subtype: str,
     text: str,
@@ -84,14 +84,14 @@ def _apply_context_read_direct_response(
 ) -> None:
     logger.info("context_read_hit", subtype=context_read_subtype)
     synthesized_response = synthesize_account_context_read_response(
-        state,
+        state_view,
         context_read_subtype,
         text,
         current_locale,
     )
     if synthesized_response:
         planner_output.response = synthesized_response
-    total_items = _context_read_total_items(state, context_read_subtype)
+    total_items = _context_read_total_items(state_view, context_read_subtype)
     shown_limit = _context_read_shown_limit(context_read_subtype)
     if total_items is not None and total_items > shown_limit:
         logger.info(
