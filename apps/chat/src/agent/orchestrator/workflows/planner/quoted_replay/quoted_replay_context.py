@@ -3,8 +3,6 @@
 import json
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
-
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_active import (
     build_quoted_replay_context_from_summary,
@@ -95,9 +93,11 @@ def _build_quoted_replay_context_with_payload(state: OrchestratorState, quoted_p
     )
 
 
-async def _load_quoted_actionable_payload(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any] | None:
-    repo = config["configurable"].get("actionable_message_repo")
-    if repo is None or not state.quoted_message_id:
+async def _load_quoted_actionable_payload(
+    state: OrchestratorState,
+    actionable_message_repo: Any | None,
+) -> dict[str, Any] | None:
+    if actionable_message_repo is None or not state.quoted_message_id:
         return None
 
     user_id = (state.loaded_context or {}).get("user_id") or state.user_id
@@ -106,7 +106,7 @@ async def _load_quoted_actionable_payload(state: OrchestratorState, config: Runn
         return None
 
     try:
-        row = await repo.get_by_channel_message_id_for_user(state.quoted_message_id, str(user_id))
+        row = await actionable_message_repo.get_by_channel_message_id_for_user(state.quoted_message_id, str(user_id))
     except Exception as exc:
         logger.warning("quoted_replay_actionable_lookup_failed", error=str(exc))
         return None

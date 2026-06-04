@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "execution"
 INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "interrupt"
 GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
+PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
 
 DELETED_EXECUTION_MODULE_PATHS = (
     ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers" / "runtime.py",
@@ -28,6 +29,11 @@ FORBIDDEN_INTERRUPT_TEXT = (
 )
 
 FORBIDDEN_GATE_TEXT = (
+    'config["configurable"]',
+    'config.get("configurable"',
+)
+
+FORBIDDEN_PLANNER_TEXT = (
     'config["configurable"]',
     'config.get("configurable"',
 )
@@ -79,6 +85,19 @@ def test_typed_gate_core_reads_configurable_only_in_runtime_builder() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         for forbidden in FORBIDDEN_GATE_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_typed_planner_core_reads_configurable_only_in_runtime_builder() -> None:
+    violations: list[str] = []
+    for path in sorted(PLANNER_ROOT.rglob("*.py")):
+        if path.name == "runtime.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_PLANNER_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
 

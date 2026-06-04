@@ -19,8 +19,8 @@ from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale imp
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_flow import _should_replan_active_wave
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_flow import _handle_quoted_replay_shortcut
 from apps.chat.src.agent.orchestrator.workflows.planner.response.non_task_response import _build_non_task_response
+from apps.chat.src.agent.orchestrator.workflows.planner.runtime import build_planner_runtime
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import _build_planner_task_updates
-from banking.presentation.i18n.locale import LocaleManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,10 +35,12 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     if state.waves and state.pending_interrupt is None and not _should_replan_active_wave(state):
         return {}
 
-    task_planner = config["configurable"].get("task_planner")
-    text = state.last_message_text or ""
-    current_locale = LocaleManager.normalize(state.loaded_context.get("language")).value
-    redis_client = config["configurable"].get("redis_client")
+    runtime = build_planner_runtime(state, config)
+    dependencies = runtime.dependencies
+    task_planner = dependencies.task_planner
+    text = runtime.text
+    current_locale = runtime.current_locale
+    redis_client = dependencies.redis_client
     if task_planner is None:
         logger.error("task_planner_missing")
         return _planner_unavailable_response(current_locale)
@@ -47,7 +49,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     quoted_replay_updates = await _handle_quoted_replay_shortcut(
         state=state,
-        config=config,
+        actionable_message_repo=dependencies.actionable_message_repo,
         task_planner=task_planner,
         text=text,
         current_locale=current_locale,
@@ -105,7 +107,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         current_locale=current_locale,
         locale_updates=locale_updates,
         context_read_updates=context_read_updates,
-        conversation_responder=config["configurable"].get("conversation_responder"),
+        conversation_responder=dependencies.conversation_responder,
     )
     if handled_response is not None:
         return _non_task_route_response(handled_response=handled_response, planner_output=planner_output)

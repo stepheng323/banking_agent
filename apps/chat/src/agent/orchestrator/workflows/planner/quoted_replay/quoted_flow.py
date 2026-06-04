@@ -2,8 +2,6 @@
 
 from typing import Any, cast
 
-from langchain_core.runnables import RunnableConfig
-
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_replay_context import (
@@ -29,7 +27,7 @@ logger = get_logger(__name__)
 async def _handle_quoted_replay_shortcut(
     *,
     state: OrchestratorState,
-    config: RunnableConfig,
+    actionable_message_repo: Any | None,
     task_planner: TaskPlanner | None,
     text: str,
     current_locale: str,
@@ -39,7 +37,7 @@ async def _handle_quoted_replay_shortcut(
     if not (state.has_quote and state.quoted_message_id):
         return None
 
-    quoted_payload = await _load_quoted_actionable_payload(state, config)
+    quoted_payload = await _load_quoted_actionable_payload(state, actionable_message_repo)
 
     if task_planner is None:
         return None
