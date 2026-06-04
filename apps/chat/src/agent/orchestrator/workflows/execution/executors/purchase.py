@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import 
     _handle_transaction_outcome,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import set_task_payload_value
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -101,7 +102,7 @@ async def _handle_purchase_task(
     _apply_result_patch(task, result)
 
     if worker_name == "data" and str(task.payload.get("action") or "") == "data_plan_query":
-        task.payload["skip_finalize_summary"] = True
+        set_task_payload_value(task, "skip_finalize_summary", True)
         if result.outcome == TransactionOutcome.OK and result.response:
             ctx.accumulator.say(result.response)
 

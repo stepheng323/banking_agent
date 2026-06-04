@@ -9,6 +9,12 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import 
 from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
+    complete_task,
+    fail_task,
+    set_task_payload_value,
+    set_task_stage,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import AccountOutcome, AccountResult, TransactionOutcome, TransactionResult
@@ -62,25 +68,28 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
     _apply_result_patch(task, result)
 
     if result.outcome == AccountOutcome.OK:
-        task.stage = TaskStage.COMPLETED
+        complete_task(task)
         viewed_accounts = result.details.get("viewed_accounts") if isinstance(result.details, dict) else None
         if isinstance(viewed_accounts, list):
             push_account_list_frame(ctx, [item for item in viewed_accounts if isinstance(item, dict)])
         if result.response:
-            task.payload["result"] = result.response
+            set_task_payload_value(task, "result", result.response)
             ctx.accumulator.say(result.response)
         ctx.accumulator.extend_outbox(result.outbox)
 
     elif result.outcome == AccountOutcome.NEEDS_INPUT:
-        task.stage = TaskStage.EXTRACTED
+        set_task_stage(task, TaskStage.EXTRACTED)
         ctx.accumulator.add_missing_fields(task_id, result.required_fields or ["identifier"])
         ctx.accumulator.add_prompt(result.prompt, task_id)
 
     elif result.outcome == AccountOutcome.FAILED:
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message(
-            "orchestrator.error.account_action_failed",
-            _state_locale(ctx.state),
+        fail_task(
+            task,
+            result.error
+            or render_message(
+                "orchestrator.error.account_action_failed",
+                _state_locale(ctx.state),
+            ),
         )
         ctx.accumulator.say(result.response)
 
@@ -109,7 +118,7 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
             return
 
         if not task.payload.get("intent") and action:
-            task.payload["intent"] = action
+            set_task_payload_value(task, "intent", action)
 
         provider = None
         transfer_worker = ctx.services.transfer
@@ -127,32 +136,33 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
         _apply_result_patch(task, result)
 
         if result.outcome == TransactionOutcome.OK:
-            task.stage = TaskStage.COMPLETED
+            complete_task(task)
 
             if result.details and "viewed_beneficiaries" in result.details:
                 viewed = result.details["viewed_beneficiaries"]
                 push_beneficiary_list_frame(ctx, viewed)
 
             if result.response:
-                task.payload["result"] = result.response
+                set_task_payload_value(task, "result", result.response)
                 ctx.accumulator.say(result.response)
         elif result.outcome == TransactionOutcome.FAILED:
-            task.stage = TaskStage.FAILED
             err = result.error or render_message(
                 "orchestrator.error.beneficiary_operation_failed",
                 _state_locale(ctx.state),
             )
-            task.payload["error"] = err
+            fail_task(task, err)
             ctx.accumulator.say(err)
         return
 
     suggestion_service = ctx.dependencies.beneficiary_suggestion_service
     if not suggestion_service:
         logger.error("suggestion_service_missing")
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = render_message(
-            "orchestrator.error.suggestion_service_unavailable",
-            _state_locale(ctx.state),
+        fail_task(
+            task,
+            render_message(
+                "orchestrator.error.suggestion_service_unavailable",
+                _state_locale(ctx.state),
+            ),
         )
         return
 
@@ -163,16 +173,18 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
             alias=alias,
             locale=_state_locale(ctx.state),
         )
-        task.stage = TaskStage.COMPLETED
-        task.payload["result"] = msg
+        complete_task(task)
+        set_task_payload_value(task, "result", msg)
 
         if ctx.current_wave_len == 1:
             ctx.accumulator.say(msg)
 
     except Exception as exc:
         logger.error("save_beneficiary_exec_error", error=str(exc))
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = render_message("orchestrator.error.save_beneficiary_failed", _state_locale(ctx.state))
+        fail_task(
+            task,
+            render_message("orchestrator.error.save_beneficiary_failed", _state_locale(ctx.state)),
+        )
 
 
 __all__ = ["AccountTaskExecutor", "BeneficiaryTaskExecutor"]

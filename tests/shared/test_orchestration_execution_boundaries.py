@@ -21,6 +21,8 @@ EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
 )
 EXECUTION_TASK_MUTATION_CONTRACT_MODULES = (
+    EXECUTION_ROOT / "executors" / "account_beneficiary.py",
+    EXECUTION_ROOT / "executors" / "purchase.py",
     EXECUTION_ROOT / "executors" / "query.py",
     EXECUTION_ROOT / "executors" / "session.py",
     EXECUTION_ROOT / "executors" / "support.py",
