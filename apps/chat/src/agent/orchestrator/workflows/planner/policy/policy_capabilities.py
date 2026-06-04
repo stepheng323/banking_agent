@@ -1,7 +1,5 @@
 """Runtime capability filtering for planner tasks."""
 
-from typing import Any
-
 from banking.policy.service import capability_block_message
 from shared.types.planner import PlannedTask, PlannerOutput
 from shared.utils.logging import get_logger

@@ -129,6 +129,7 @@ The main engineering work is around making LLM-driven financial flows behave pre
 - **Failure-driven hardening**: The test suite is built primarily from observed production failures converted into regression tests — especially around multilingual parsing, query continuation, transfer payload normalization, and recipient resolution.
 
 ### Recent Work
+- Refactored orchestration lifecycle, gate, graph invocation, execution, and planner flows behind typed reducers/runners while preserving LangGraph public node entrypoints
 - Moved account, account onboarding, FAQ, support, beneficiary, airtime, data, transaction query, and shared transaction-flow helper ownership into `banking/` product modules with no app-side compatibility aliases
 - Decomposed the query core into compiler, continuation, grounding, and presentation subsystems
 - Coverage-aware bank transaction mirror for durable local query reads
@@ -509,8 +510,8 @@ Start from public entrypoints and import concrete modules directly. Account, acc
 |------|------------|-------|
 | Orchestrator | `apps/chat/src/agent/orchestrator/agent.py` | Runtime orchestration, media preprocessing, context persistence, graph handler setup |
 | Graph workflows | `apps/chat/src/agent/orchestrator/workflows/` | Organized by phase: lifecycle, gate, interrupt, planner, execution |
-| Gate workflow | `apps/chat/src/agent/orchestrator/workflows/gate/node.py` | Ordered pre-planner fast paths and semantic routing; stage order in `registry.py` is behavior |
-| Task handlers | `apps/chat/src/agent/orchestrator/task_handlers/runtime.py` | Post-planner task-family routing and aggregation |
+| Gate workflow | `apps/chat/src/agent/orchestrator/workflows/gate/node.py` | Ordered pre-planner fast paths and semantic routing; stage order in `stage_specs.py` is behavior |
+| Execution workflow | `apps/chat/src/agent/orchestrator/workflows/execution/node.py` | Typed post-planner task execution, executor registry, aggregation, blocker arbitration, prompts, and result reduction |
 | Domain workers | `banking/accounts/`, `banking/faq/`, `banking/support/`, `banking/transactions/query/`, `banking/transactions/shared/`, `banking/beneficiaries/`, `banking/bills/airtime/`, `banking/bills/data/`, `banking/transfers/` | Product-owned domains and shared transaction-flow helpers live under `banking/`; chat owns orchestration and dispatch |
 | Query worker | `banking/transactions/query/worker.py` | Parser/compiler, continuations, grounding, fetching, answer handlers, presentation |
 | Account worker | `banking/accounts/management/worker.py` | Account list/count/balance, link-account flow start, default-account changes, unlink handling |

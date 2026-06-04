@@ -1,6 +1,6 @@
 """Unsupported-capability notice helpers for planner policy flows."""
 
-from typing import Any, cast
+from typing import cast
 
 from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (

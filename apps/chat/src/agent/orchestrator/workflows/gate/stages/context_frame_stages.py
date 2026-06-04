@@ -99,9 +99,7 @@ def _context_frame_followup_updates(
 
 def _context_frame_followup_eligible(ctx: GateContext) -> bool:
     return (
-        not ctx.live_pending_interrupt
-        and not ctx.state_view.has_gate_blocking_state
-        and ctx.task_planner is not None
+        not ctx.live_pending_interrupt and not ctx.state_view.has_gate_blocking_state and ctx.task_planner is not None
     )
 
 

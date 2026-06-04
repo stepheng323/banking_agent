@@ -38,9 +38,7 @@ def _classify_banking_ambiguity(ctx: GateContext) -> str | None:
 
 def _banking_ambiguity_can_clarify(ctx: GateContext, ambiguous_domain: str | None) -> bool:
     return (
-        ambiguous_domain is not None
-        and not ctx.live_pending_interrupt
-        and not ctx.state_view.has_gate_blocking_state
+        ambiguous_domain is not None and not ctx.live_pending_interrupt and not ctx.state_view.has_gate_blocking_state
     )
 
 

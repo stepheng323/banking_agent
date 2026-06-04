@@ -54,9 +54,7 @@ def task_planner_available(ctx: GateContext) -> GateEligibilityResult:
 def phrase_heavy_fastpath_allowed(ctx: GateContext) -> GateEligibilityResult:
     return _result(
         ctx.phrase_heavy_fastpath_allowed,
-        "phrase_heavy_fastpath_allowed"
-        if ctx.phrase_heavy_fastpath_allowed
-        else "phrase_heavy_fastpath_blocked",
+        "phrase_heavy_fastpath_allowed" if ctx.phrase_heavy_fastpath_allowed else "phrase_heavy_fastpath_blocked",
     )
 
 

@@ -1,7 +1,5 @@
 """Locale updates driven by planner language detection."""
 
-from typing import Any
-
 import redis.asyncio as redis
 
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView

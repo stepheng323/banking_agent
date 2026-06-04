@@ -17,9 +17,7 @@ def main() -> None:
 
     base_dependencies = project["dependencies"]
     optional_dependencies = project["optional-dependencies"]
-    selected_extras = tuple(
-        extra.strip() for extra in args.extras.split(",") if extra.strip()
-    )
+    selected_extras = tuple(extra.strip() for extra in args.extras.split(",") if extra.strip())
     resolved_dependencies: list[str] = []
 
     def add_dependency(spec: str) -> None:
@@ -30,9 +28,7 @@ def main() -> None:
         for spec in optional_dependencies.get(extra_name, []):
             if spec.startswith("banking-agent[") and spec.endswith("]"):
                 nested_extras = spec.removeprefix("banking-agent[").removesuffix("]")
-                for nested_extra in (
-                    part.strip() for part in nested_extras.split(",") if part.strip()
-                ):
+                for nested_extra in (part.strip() for part in nested_extras.split(",") if part.strip()):
                     resolve_extra(nested_extra)
                 continue
             add_dependency(spec)
