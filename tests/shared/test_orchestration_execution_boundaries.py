@@ -961,6 +961,18 @@ def test_typed_gate_core_reads_configurable_only_in_runtime_builder() -> None:
     assert violations == []
 
 
+def test_gate_registry_does_not_retain_legacy_symbols() -> None:
+    violations: list[str] = []
+    forbidden_text = ("GATE_LEGACY_HANDLER_SPECS", "_GATE_STAGES")
+    for path in sorted(GATE_ROOT.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for forbidden in forbidden_text:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
 def test_workflow_configurable_reads_live_only_in_runtime_config_accessor() -> None:
     violations: list[str] = []
     forbidden_text = (

@@ -20,14 +20,13 @@ from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import (
     task_dispatch,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.registry import (
-    _GATE_STAGES,
     GATE_HANDLER_SPECS,
-    GATE_LEGACY_HANDLER_SPECS,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.runtime import build_gate_runtime
+from apps.chat.src.agent.orchestrator.workflows.gate.stage_specs import GATE_STAGE_SPECS
 from apps.chat.src.agent.orchestrator.workflows.gate.trace import summarize_gate_trace
 
-_LEGACY_GATE_STAGE_NAMES = (
+_GATE_STAGE_NAMES = (
     "_stage_language_switch",
     "_stage_cancel",
     "_stage_gibberish_filter",
@@ -109,16 +108,13 @@ def _spec(
     )
 
 
-def test_gate_registry_preserves_legacy_stage_order() -> None:
-    ordered_specs = ordered_gate_handlers(GATE_LEGACY_HANDLER_SPECS)
+def test_gate_registry_preserves_stage_order() -> None:
+    ordered_specs = ordered_gate_handlers(GATE_STAGE_SPECS)
 
     assert ordered_specs[0].id == "stale_interrupt_cleanup"
-    assert [handler.__name__ for handler in _GATE_STAGES] == list(_LEGACY_GATE_STAGE_NAMES)
-    assert [
-        spec.handler.__name__
-        for spec in ordered_specs
-        if spec.layer != GateLayer.PREFLIGHT_CLEANUP
-    ] == list(_LEGACY_GATE_STAGE_NAMES)
+    assert [spec.handler.__name__ for spec in ordered_specs if spec.layer != GateLayer.PREFLIGHT_CLEANUP] == list(
+        _GATE_STAGE_NAMES
+    )
 
 
 def test_gate_registry_uses_layer_family_handlers() -> None:
@@ -132,24 +128,24 @@ def test_gate_registry_uses_layer_family_handlers() -> None:
 
 def test_gate_registry_has_unique_ids_and_stable_order() -> None:
     ordered_specs = ordered_gate_handlers(GATE_HANDLER_SPECS)
-    ordered_legacy_specs = ordered_gate_handlers(GATE_LEGACY_HANDLER_SPECS)
+    ordered_stage_specs = ordered_gate_handlers(GATE_STAGE_SPECS)
     ids = [spec.id for spec in ordered_specs]
-    legacy_ids = [spec.id for spec in ordered_legacy_specs]
+    stage_ids = [spec.id for spec in ordered_stage_specs]
     layer_priority_pairs = [(spec.layer, spec.priority) for spec in ordered_specs]
-    legacy_layer_priority_pairs = [(spec.layer, spec.priority) for spec in ordered_legacy_specs]
+    stage_layer_priority_pairs = [(spec.layer, spec.priority) for spec in ordered_stage_specs]
 
     assert len(ids) == len(set(ids))
-    assert len(legacy_ids) == len(set(legacy_ids))
+    assert len(stage_ids) == len(set(stage_ids))
     assert len(layer_priority_pairs) == len(set(layer_priority_pairs))
-    assert len(legacy_layer_priority_pairs) == len(set(legacy_layer_priority_pairs))
+    assert len(stage_layer_priority_pairs) == len(set(stage_layer_priority_pairs))
     assert tuple(ordered_specs) == GATE_HANDLER_SPECS
-    assert tuple(ordered_legacy_specs) == GATE_LEGACY_HANDLER_SPECS
+    assert tuple(ordered_stage_specs) == GATE_STAGE_SPECS
     assert all(spec.description.strip() for spec in ordered_specs)
-    assert all(spec.description.strip() for spec in ordered_legacy_specs)
+    assert all(spec.description.strip() for spec in ordered_stage_specs)
 
 
 def test_gate_registry_metadata_is_reviewable_and_deliberate() -> None:
-    specs = (*ordered_gate_handlers(GATE_HANDLER_SPECS), *ordered_gate_handlers(GATE_LEGACY_HANDLER_SPECS))
+    specs = (*ordered_gate_handlers(GATE_HANDLER_SPECS), *ordered_gate_handlers(GATE_STAGE_SPECS))
     for spec in specs:
         assert spec.id.strip()
         assert spec.owner.strip()
@@ -164,7 +160,7 @@ def test_gate_registry_metadata_is_reviewable_and_deliberate() -> None:
 
 
 def test_gate_registry_eligibility_metadata_is_non_mutating() -> None:
-    specs = (*ordered_gate_handlers(GATE_HANDLER_SPECS), *ordered_gate_handlers(GATE_LEGACY_HANDLER_SPECS))
+    specs = (*ordered_gate_handlers(GATE_HANDLER_SPECS), *ordered_gate_handlers(GATE_STAGE_SPECS))
     for spec in specs:
         if spec.eligibility is None:
             continue
