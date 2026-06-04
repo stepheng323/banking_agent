@@ -4,7 +4,7 @@ from apps.chat.src.agent.orchestrator.context.referents.store import forget_stas
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import clear_resume_prompt_frames
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 

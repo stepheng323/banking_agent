@@ -3,18 +3,20 @@ from typing import Any, Literal, cast
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import push_schedule_list_frame
-from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
-    _apply_result_patch,
+from apps.chat.src.agent.orchestrator.workflows.execution.async_grouping import _stamp_async_group_metadata
+from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution import (
     _beneficiary_cache_contains_recipient,
-    _get_worker,
-    _handle_transaction_outcome,
-    _maybe_user_message,
     _normalize_beneficiary_rows,
     _recipient_supports_targeted_beneficiary_lookup,
-    _stamp_async_group_metadata,
-    _state_locale,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import (
+    _apply_result_patch,
+    _handle_transaction_outcome,
+)
+from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
+from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger

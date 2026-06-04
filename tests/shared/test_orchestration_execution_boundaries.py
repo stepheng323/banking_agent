@@ -15,11 +15,13 @@ LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "wo
 
 DELETED_EXECUTION_MODULE_PATHS = (
     ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers" / "runtime.py",
+    EXECUTION_ROOT / "runtime.py",
     EXECUTION_ROOT / "wave" / "runner_task_handlers.py",
 )
 
 FORBIDDEN_EXECUTION_TEXT = (
     "apps.chat.src.agent.orchestrator.task_handlers.runtime",
+    "apps.chat.src.agent.orchestrator.workflows.execution.runtime",
     "apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_handlers",
     "ExecutionServices",
     "_HANDLERS",

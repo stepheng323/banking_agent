@@ -6,12 +6,10 @@ from apps.chat.src.agent.orchestrator.task_handlers.context_frames import (
     push_beneficiary_list_frame,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
-    _apply_result_patch,
-    _get_worker,
-    _maybe_user_message,
-    _state_locale,
-)
+from apps.chat.src.agent.orchestrator.workflows.execution.locale import _state_locale
+from apps.chat.src.agent.orchestrator.workflows.execution.result_reducer import _apply_result_patch
+from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
+from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import AccountOutcome, AccountResult, TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
