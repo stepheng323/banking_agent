@@ -1,10 +1,10 @@
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import push_schedule_list_frame
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
-    ExecutionContext,
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionTurnContext,
     _apply_result_patch,
     _beneficiary_cache_contains_recipient,
     _get_worker,
@@ -16,7 +16,7 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _state_locale,
 )
 from banking.presentation.i18n.renderer import render_message
-from banking.runtime.results import TransactionOutcome
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 SessionState = Literal["WAITING_FOR_INPUT", "WAITING_FOR_AUTH", "RUNNING"]
 
 
-async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "transfer",
@@ -67,7 +67,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
 
     recipient_name = task.payload.get("recipient_name")
     has_recipient_hint = isinstance(recipient_name, str) and bool(recipient_name.strip())
-    beneficiary_repo = ctx.config["configurable"].get("beneficiary_repo")
+    recipient_name_text = recipient_name.strip() if isinstance(recipient_name, str) else ""
+    beneficiary_repo = ctx.config_value("beneficiary_repo")
     user_id = ctx.state.loaded_context.get("user_id")
     beneficiary_context_mode = str(ctx.state.loaded_context.get("beneficiary_context_mode") or "full")
     if (
@@ -78,8 +79,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
             or (
                 has_recipient_hint
                 and beneficiary_context_mode == "cache_only"
-                and _recipient_supports_targeted_beneficiary_lookup(recipient_name)
-                and not _beneficiary_cache_contains_recipient(beneficiaries, recipient_name)
+                and _recipient_supports_targeted_beneficiary_lookup(recipient_name_text)
+                and not _beneficiary_cache_contains_recipient(beneficiaries, recipient_name_text)
             )
         )
     ):
@@ -89,12 +90,12 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
             if (
                 has_recipient_hint
                 and beneficiary_context_mode == "cache_only"
-                and _recipient_supports_targeted_beneficiary_lookup(recipient_name)
+                and _recipient_supports_targeted_beneficiary_lookup(recipient_name_text)
                 and hasattr(beneficiary_repo, "search_by_name")
             ):
                 fetched_rows = await beneficiary_repo.search_by_name(
                     str(user_id),
-                    recipient_name.strip(),
+                    recipient_name_text,
                     beneficiary_type="transfer",
                 )
                 reload_mode = "targeted"
@@ -139,18 +140,21 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "required_fields": required_fields,
         "previous_response": previous_response,
         "confirmation_task_count": confirmation_task_count,
-        "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
+        "progress_tracker": ctx.config_value("progress_tracker"),
     }
     _stamp_async_group_metadata(task, ctx)
     if task.payload.get("source_affinity_mode") is None:
         task.payload.pop("source_affinity_mode", None)
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
-    result = await worker.run(
-        payload=task.payload,
-        context=context_data,
-        user_message=user_msg,
-        pin_verified=ctx.state.pin_verified,
+    result = cast(
+        TransactionResult,
+        await worker.run(
+            payload=task.payload,
+            context=context_data,
+            user_message=user_msg,
+            pin_verified=ctx.state.pin_verified,
+        ),
     )
     logger.info(
         "transfer_worker_returned",
@@ -167,7 +171,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         if isinstance(schedule_items, list):
             push_schedule_list_frame(ctx, [item for item in schedule_items if isinstance(item, dict)])
     if result.response:
-        ctx.agg.say(result.response)
+        ctx.accumulator.say(result.response)
 
     if result.outcome == TransactionOutcome.OK and result.receipt:
         logger.info("transfer_worker_ok_branch", has_receipt=bool(result.receipt))
@@ -176,7 +180,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         task,
         task_id,
         result,
-        ctx.agg,
+        ctx.accumulator,
         confirmation_gate="snapshot",
         default_error=None,
     )
@@ -205,15 +209,15 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
                     resume_hint={"task_id": task_id},
                 )
             )
-        ctx.agg.updates["session_stack"] = stack
+        ctx.accumulator.set_update("session_stack", stack)
 
     elif result.outcome in (TransactionOutcome.OK, TransactionOutcome.FAILED) and result.is_terminal:
         if stack and stack[-1].domain == "transfer":
             stack.pop()
-            ctx.agg.updates["session_stack"] = stack
+            ctx.accumulator.set_update("session_stack", stack)
 
 
-async def handle_schedule_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     """Run scheduled transaction management through the transfer scheduler worker.
 
     Schedule management is planner-owned and can be read-only. It must not pass
@@ -243,15 +247,18 @@ async def handle_schedule_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "required_fields": [],
         "previous_response": None,
         "confirmation_task_count": None,
-        "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
+        "progress_tracker": ctx.config_value("progress_tracker"),
     }
     user_msg = _maybe_user_message(task, ctx.state)
     logger.info("schedule_worker_start", payload=task.payload, task_id=task_id)
-    result = await worker.run(
-        payload=task.payload,
-        context=context_data,
-        user_message=user_msg,
-        pin_verified=ctx.state.pin_verified,
+    result = cast(
+        TransactionResult,
+        await worker.run(
+            payload=task.payload,
+            context=context_data,
+            user_message=user_msg,
+            pin_verified=ctx.state.pin_verified,
+        ),
     )
     logger.info("schedule_worker_returned", outcome=result.outcome, task_id=task_id)
 
@@ -261,13 +268,13 @@ async def handle_schedule_task(task: Any, task_id: str, ctx: ExecutionContext) -
         if isinstance(schedule_items, list):
             push_schedule_list_frame(ctx, [item for item in schedule_items if isinstance(item, dict)])
     if result.response:
-        ctx.agg.say(result.response)
+        ctx.accumulator.say(result.response)
 
     _handle_transaction_outcome(
         task,
         task_id,
         result,
-        ctx.agg,
+        ctx.accumulator,
         confirmation_gate="snapshot",
         default_error=None,
     )

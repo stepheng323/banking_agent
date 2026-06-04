@@ -4,8 +4,12 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.task_handlers.support import handle_support_task
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from banking.runtime.results import (
     SupportOutcome,
     SupportResult,
@@ -67,12 +71,12 @@ async def test_support_handler_passes_quoted_message_id_without_mutating_task_pa
         loaded_context={"language": "en", "user_id": "u1", "profile": {"email": "u1@example.com"}},
     )
 
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services={"support": worker},
+        services=ExecutionServices.from_mapping({"support": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_support_task(task, "t1", ctx)
@@ -108,12 +112,12 @@ async def test_support_handler_enqueues_receipt_jobs() -> None:
         loaded_context={"language": "en", "user_id": "u1", "profile": {"email": "u1@example.com"}},
     )
 
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {"publisher": publisher}},
-        services={"support": worker},
+        services=ExecutionServices.from_mapping({"support": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_support_task(task, "t1", ctx)
@@ -121,7 +125,7 @@ async def test_support_handler_enqueues_receipt_jobs() -> None:
     publisher.publish.assert_awaited_once_with(
         "receipt.process", {"transaction_reference": "tx-2", "phone_number": "2348000000001"}
     )
-    assert ctx.agg.updates["outbox"] == [{"type": "say", "text": "sending"}]
+    assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": "sending"}]
 
 
 @pytest.mark.asyncio
@@ -144,12 +148,12 @@ async def test_support_handler_reroutes_replay_modifier_to_transfer() -> None:
         loaded_context={"language": "en", "user_id": "u1", "profile": {"email": "u1@example.com"}},
     )
 
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services={"support": support_worker, "transfer": transfer_worker},
+        services=ExecutionServices.from_mapping({"support": support_worker, "transfer": transfer_worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_support_task(task, "t1", ctx)
@@ -161,4 +165,4 @@ async def test_support_handler_reroutes_replay_modifier_to_transfer() -> None:
         "instruction": "Again, but from gtb",
     }
     assert transfer_worker.last_user_message == "Again, but from gtb"
-    assert ctx.agg.prompts == ["Which transfer should I resend?"]
+    assert ctx.accumulator.prompts == ["Which transfer should I resend?"]

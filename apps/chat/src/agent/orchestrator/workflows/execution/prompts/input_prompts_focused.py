@@ -4,7 +4,6 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
 from apps.chat.src.agent.orchestrator.workflows.execution.common import (
     TERMINAL_STAGES,
     _with_policy_notice,
@@ -22,6 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queu
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import (
     _recipient_prompt_label,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from banking.presentation.formatters.transaction_slot_prompts import format_transaction_slot_prompt
 from banking.presentation.formatters.transfer_input_prompts import format_single_transfer_recipient_prompt
 
@@ -30,7 +30,7 @@ def _build_focused_missing_field_updates(
     *,
     state: OrchestratorState,
     current_wave: list[str],
-    agg: ExecutionAggregation,
+    agg: ExecutionAccumulator,
     locale: str,
     focused_tid: str,
 ) -> dict[str, Any]:

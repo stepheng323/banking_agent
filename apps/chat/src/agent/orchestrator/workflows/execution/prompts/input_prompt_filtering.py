@@ -1,7 +1,7 @@
 """Missing-field filtering for execution input prompts."""
 
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
 from apps.chat.src.agent.orchestrator.workflows.execution.common import EXECUTION_ONLY_FIELDS
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 def _focus_beneficiary_ambiguity(
     *,
     current_wave: list[str],
-    agg: ExecutionAggregation,
+    agg: ExecutionAccumulator,
 ) -> None:
     beneficiary_blockers = [
         tid for tid, fields in agg.missing_fields_by_task.items() if "beneficiary_id" in set(fields)
@@ -35,7 +35,7 @@ def _focus_beneficiary_ambiguity(
     )
 
 
-def _suppress_execution_only_prompts(agg: ExecutionAggregation) -> None:
+def _suppress_execution_only_prompts(agg: ExecutionAccumulator) -> None:
     has_basic_blocker = any(
         any(field not in EXECUTION_ONLY_FIELDS for field in fields) for fields in agg.missing_fields_by_task.values()
     )
@@ -55,13 +55,13 @@ def _suppress_execution_only_prompts(agg: ExecutionAggregation) -> None:
 def apply_missing_field_prompt_filters(
     *,
     current_wave: list[str],
-    agg: ExecutionAggregation,
+    agg: ExecutionAccumulator,
 ) -> None:
     _focus_beneficiary_ambiguity(current_wave=current_wave, agg=agg)
     _suppress_execution_only_prompts(agg)
 
 
-def tasks_needing_basic_fields(agg: ExecutionAggregation) -> list[str]:
+def tasks_needing_basic_fields(agg: ExecutionAccumulator) -> list[str]:
     return [
         tid
         for tid in agg.missing_fields_by_task

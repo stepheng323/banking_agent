@@ -74,16 +74,16 @@ def finalize_execution_wave_updates(
     state: OrchestratorState,
     runtime: ExecutionWaveRuntime,
 ) -> dict[str, Any]:
-    blocker = choose_wave_blocker(state=state, current_wave=runtime.current_wave, agg=runtime.agg)
+    blocker = choose_wave_blocker(state=state, current_wave=runtime.current_wave, agg=runtime.accumulator)
     if blocker.kind == "input":
         return _build_missing_field_interrupt_updates(
             state=state,
             current_wave=runtime.current_wave,
-            agg=runtime.agg,
+            agg=runtime.accumulator,
             locale=runtime.locale,
         )
 
-    updates = runtime.agg.updates
+    updates = runtime.accumulator.updates
     if state.policy_notice:
         existing = updates.get("outbox", [])
         updates["outbox"] = _with_policy_notice(state, existing)
@@ -93,7 +93,7 @@ def finalize_execution_wave_updates(
         return _build_confirmation_gate_updates(
             state=state,
             current_wave=runtime.current_wave,
-            agg=runtime.agg,
+            agg=runtime.accumulator,
             locale=runtime.locale,
             updates=updates,
             task_ids=blocker.task_ids,
@@ -103,7 +103,7 @@ def finalize_execution_wave_updates(
         return _build_auth_gate_updates(
             state=state,
             current_wave=runtime.current_wave,
-            agg=runtime.agg,
+            agg=runtime.accumulator,
             locale=runtime.locale,
             updates=updates,
             task_ids=blocker.task_ids,

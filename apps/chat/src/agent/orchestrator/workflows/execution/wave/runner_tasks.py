@@ -7,6 +7,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import (
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _propagate_batch_source_selection,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.executor_registry import get_task_executor
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_guards import (
     _active_input_task_types,
@@ -15,7 +16,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_guard
     _cancel_deadlocked_wave_tasks,
     _should_defer_during_input_interrupt,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_task_handlers import _HANDLERS
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,12 +35,12 @@ async def execute_current_wave_tasks(
             continue
 
         if task.stage == TaskStage.AWAITING_CONFIRMATION:
-            runtime.agg.needs_confirm_tasks.append(task_id)
+            runtime.accumulator.needs_confirm_tasks.append(task_id)
             progressed = True
             continue
 
         if task.stage == TaskStage.AWAITING_AUTH:
-            runtime.agg.needs_auth_tasks.append(task_id)
+            runtime.accumulator.needs_auth_tasks.append(task_id)
             progressed = True
             continue
 
@@ -64,15 +64,15 @@ async def execute_current_wave_tasks(
         if dependency_progress is None:
             continue
 
-        handler = _HANDLERS.get(task.type)
-        if not handler:
+        executor = get_task_executor(task.type)
+        if not executor:
             continue
 
         if _apply_mandate_gate_failure(state=state, task=task, runtime=runtime):
             progressed = True
             continue
 
-        await handler(task, task_id, runtime.ctx)
+        await executor.execute(task, task_id, runtime.ctx)
         if task.type in TRANSACTION_TASK_TYPES:
             for propagated_task_id in _propagate_batch_source_selection(
                 state=state,
@@ -81,7 +81,7 @@ async def execute_current_wave_tasks(
             ):
                 propagated_task = state.tasks.get(propagated_task_id)
                 if propagated_task and propagated_task.stage == TaskStage.AWAITING_CONFIRMATION:
-                    runtime.agg.needs_confirm_tasks.append(propagated_task_id)
+                    runtime.accumulator.needs_confirm_tasks.append(propagated_task_id)
         progressed = True
 
     if not progressed:

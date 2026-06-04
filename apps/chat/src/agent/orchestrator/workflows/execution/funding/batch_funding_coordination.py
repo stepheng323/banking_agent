@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionServices
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
 from shared.utils.logging import get_logger
@@ -21,14 +22,14 @@ async def _maybe_coordinate_batch_funding(
     *,
     state: OrchestratorState,
     current_wave: list[str],
-    services: dict[str, Any],
+    services: ExecutionServices,
     locale: str,
 ) -> dict[str, Any] | None:
     transfer_task_ids = [task_id for task_id in current_wave if _is_plannable_transfer_task(state.tasks.get(task_id))]
     if len(transfer_task_ids) < 2:
         return None
 
-    transfer_worker = services.get("transfer")
+    transfer_worker = services.transfer
     dd_provider = getattr(transfer_worker, "dd_provider", None) if transfer_worker else None
     if dd_provider is None:
         logger.info("batch_funding_coordinator_skipped", reason="dd_provider_missing", task_ids=transfer_task_ids)

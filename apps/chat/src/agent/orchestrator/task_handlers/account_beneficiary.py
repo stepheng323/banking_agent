@@ -1,25 +1,25 @@
-from typing import Any
+from typing import cast
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import (
     push_account_list_frame,
     push_beneficiary_list_frame,
 )
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
-    ExecutionContext,
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionTurnContext,
     _apply_result_patch,
     _get_worker,
     _maybe_user_message,
     _state_locale,
 )
 from banking.presentation.i18n.renderer import render_message
-from banking.runtime.results import AccountOutcome, TransactionOutcome
+from banking.runtime.results import AccountOutcome, AccountResult, TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "account",
@@ -42,10 +42,13 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         "language": _state_locale(ctx.state),
     }
 
-    result = await worker.run(
-        payload=task.payload,
-        context=context_data,
-        user_message=user_msg,
+    result = cast(
+        AccountResult,
+        await worker.run(
+            payload=task.payload,
+            context=context_data,
+            user_message=user_msg,
+        ),
     )
 
     _apply_result_patch(task, result)
@@ -57,13 +60,13 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
             push_account_list_frame(ctx, [item for item in viewed_accounts if isinstance(item, dict)])
         if result.response:
             task.payload["result"] = result.response
-            ctx.agg.say(result.response)
-        ctx.agg.extend_outbox(result.outbox)
+            ctx.accumulator.say(result.response)
+        ctx.accumulator.extend_outbox(result.outbox)
 
     elif result.outcome == AccountOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
-        ctx.agg.add_missing_fields(task_id, result.required_fields or ["identifier"])
-        ctx.agg.add_prompt(result.prompt, task_id)
+        ctx.accumulator.add_missing_fields(task_id, result.required_fields or ["identifier"])
+        ctx.accumulator.add_prompt(result.prompt, task_id)
 
     elif result.outcome == AccountOutcome.FAILED:
         task.stage = TaskStage.FAILED
@@ -71,10 +74,10 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
             "orchestrator.error.account_action_failed",
             _state_locale(ctx.state),
         )
-        ctx.agg.say(result.response)
+        ctx.accumulator.say(result.response)
 
 
-async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_beneficiary_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     del task_id
     action = task.payload.get("action")
     is_management = (
@@ -101,7 +104,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
             task.payload["intent"] = action
 
         provider = None
-        transfer_worker = ctx.services.get("transfer")
+        transfer_worker = ctx.services.transfer
         if transfer_worker and hasattr(transfer_worker, "resolver_provider"):
             provider = transfer_worker.resolver_provider
 
@@ -112,7 +115,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
             "language": _state_locale(ctx.state),
         }
 
-        result = await worker.run(payload=task.payload, context=context_data)
+        result = cast(TransactionResult, await worker.run(payload=task.payload, context=context_data))
         _apply_result_patch(task, result)
 
         if result.outcome == TransactionOutcome.OK:
@@ -124,7 +127,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
 
             if result.response:
                 task.payload["result"] = result.response
-                ctx.agg.say(result.response)
+                ctx.accumulator.say(result.response)
         elif result.outcome == TransactionOutcome.FAILED:
             task.stage = TaskStage.FAILED
             err = result.error or render_message(
@@ -132,10 +135,10 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
                 _state_locale(ctx.state),
             )
             task.payload["error"] = err
-            ctx.agg.say(err)
+            ctx.accumulator.say(err)
         return
 
-    suggestion_service = ctx.config["configurable"].get("beneficiary_suggestion_service")
+    suggestion_service = ctx.config_value("beneficiary_suggestion_service")
     if not suggestion_service:
         logger.error("suggestion_service_missing")
         task.stage = TaskStage.FAILED
@@ -156,7 +159,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
         task.payload["result"] = msg
 
         if ctx.current_wave_len == 1:
-            ctx.agg.say(msg)
+            ctx.accumulator.say(msg)
 
     except Exception as exc:
         logger.error("save_beneficiary_exec_error", error=str(exc))

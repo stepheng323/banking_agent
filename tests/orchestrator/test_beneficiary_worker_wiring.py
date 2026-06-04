@@ -3,7 +3,11 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.account_beneficiary import handle_beneficiary_task
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
@@ -34,12 +38,12 @@ async def test_beneficiary_management_uses_injected_service() -> None:
         tasks={"beneficiary_1": task},
     )
     worker = _InjectedBeneficiaryWorker()
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services={"beneficiary": worker},
+        services=ExecutionServices.from_mapping({"beneficiary": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_beneficiary_task(task, "beneficiary_1", ctx)
@@ -50,4 +54,4 @@ async def test_beneficiary_management_uses_injected_service() -> None:
     assert worker.calls[0]["context"]["phone_number"] == "2348000000001"
     assert task.stage == TaskStage.COMPLETED
     assert task.payload["result"] == "Saved beneficiaries"
-    assert ctx.agg.updates["outbox"] == [{"type": "say", "text": "Saved beneficiaries"}]
+    assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": "Saved beneficiaries"}]

@@ -5,7 +5,9 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.surface_adapter import build_context_frame_from_surface_view
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionTurnContext
 from banking.transactions.query.contracts import FocusedReferent, SelectionPayload
 from shared.utils.logging import get_logger
 
@@ -22,14 +24,14 @@ def clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame]
     return [frame for frame in frames if not is_resume_prompt_frame(frame)]
 
 
-def _push_frame(ctx: Any, frame: ContextFrame) -> None:
+def _push_frame(ctx: ExecutionTurnContext, frame: ContextFrame) -> None:
     OrchestratorContextManager().push_frame(ctx.state, frame)
-    ctx.agg.updates["context_frames"] = ctx.state.context_frames
-    ctx.agg.updates["referent_memory"] = ctx.state.referent_memory
+    ctx.accumulator.set_update("context_frames", ctx.state.context_frames)
+    ctx.accumulator.set_update("referent_memory", ctx.state.referent_memory)
 
 
 def push_query_followup_referent_frame(
-    ctx: Any,
+    ctx: ExecutionTurnContext,
     referent: FocusedReferent | dict[str, Any],
 ) -> None:
     referent_data = referent.model_dump() if hasattr(referent, "model_dump") else referent
@@ -82,7 +84,7 @@ def push_query_followup_referent_frame(
     _push_frame(ctx, frame)
 
 
-def push_account_list_frame(ctx: Any, accounts: list[dict[str, Any]]) -> None:
+def push_account_list_frame(ctx: ExecutionTurnContext, accounts: list[dict[str, Any]]) -> None:
     if not accounts:
         return
 
@@ -113,7 +115,7 @@ def push_account_list_frame(ctx: Any, accounts: list[dict[str, Any]]) -> None:
     logger.info("context_frame_pushed", type="account_list", count=len(entities))
 
 
-def push_schedule_list_frame(ctx: Any, items: list[dict[str, Any]]) -> None:
+def push_schedule_list_frame(ctx: ExecutionTurnContext, items: list[dict[str, Any]]) -> None:
     if not items:
         return
 
@@ -149,7 +151,7 @@ def push_schedule_list_frame(ctx: Any, items: list[dict[str, Any]]) -> None:
     logger.info("context_frame_pushed", type="schedule_list", count=len(entities))
 
 
-def push_query_surface_frame(ctx: Any, query_result: Any) -> None:
+def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> None:
     if query_result is None:
         return
 
@@ -177,7 +179,7 @@ def push_query_surface_frame(ctx: Any, query_result: Any) -> None:
     logger.info("context_frame_pushed", type=frame.frame_type.value, count=len(frame.items))
 
 
-def query_pagination_actionable_payload(ctx: Any, result: Any) -> dict[str, Any] | None:
+def query_pagination_actionable_payload(ctx: ExecutionTurnContext, result: Any) -> dict[str, Any] | None:
     if ctx.state.channel != "telegram" or not isinstance(result.patch, dict):
         return None
 
@@ -212,7 +214,7 @@ def query_pagination_actionable_payload(ctx: Any, result: Any) -> dict[str, Any]
     }
 
 
-def push_data_plan_frame(ctx: Any, results: Any) -> None:
+def push_data_plan_frame(ctx: ExecutionTurnContext, results: Any) -> None:
     if not isinstance(results, list):
         return
     entities: list[ContextEntity] = []
@@ -257,7 +259,7 @@ def push_data_plan_frame(ctx: Any, results: Any) -> None:
     _push_frame(ctx, frame)
 
 
-def push_data_plan_frames_from_result(task: Any, result: Any, ctx: Any) -> None:
+def push_data_plan_frames_from_result(task: TaskSpec, result: Any, ctx: ExecutionTurnContext) -> None:
     if task.type != "data" or not isinstance(result.patch, dict):
         return
     if str(task.payload.get("action") or "") == "data_plan_query":
@@ -266,7 +268,7 @@ def push_data_plan_frames_from_result(task: Any, result: Any, ctx: Any) -> None:
     push_data_plan_frame(ctx, result.patch.get("data_plan_candidates"))
 
 
-def push_beneficiary_list_frame(ctx: Any, viewed_beneficiaries: Any) -> None:
+def push_beneficiary_list_frame(ctx: ExecutionTurnContext, viewed_beneficiaries: Any) -> None:
     if not viewed_beneficiaries:
         return
 

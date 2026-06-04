@@ -5,7 +5,7 @@ from typing import Literal
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -79,7 +79,7 @@ def choose_wave_blocker(
     *,
     state: OrchestratorState,
     current_wave: list[str],
-    agg: ExecutionAggregation,
+    agg: ExecutionAccumulator,
 ) -> BlockerDecision:
     """Choose the one blocker the orchestrator should surface for this wave."""
     input_task_ids = _dedupe_task_ids(list(agg.missing_fields_by_task.keys()), current_wave)

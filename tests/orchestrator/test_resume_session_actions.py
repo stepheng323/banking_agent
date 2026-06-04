@@ -10,9 +10,13 @@ from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMe
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.task_handlers.session import handle_orchestrator_task
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
@@ -52,14 +56,14 @@ def _keep_frame() -> ContextFrame:
     )
 
 
-def _ctx(state: OrchestratorState) -> ExecutionContext:
+def _ctx(state: OrchestratorState) -> ExecutionTurnContext:
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
-    return ExecutionContext(
+    return ExecutionTurnContext(
         state=state,
         config=config,
-        services={},
+        services=ExecutionServices.empty(),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
 
@@ -156,15 +160,15 @@ async def test_resume_session_restores_stash_without_replaying_outbox() -> None:
     await handle_orchestrator_task(orchestrator_task, "o1", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
-    assert list(ctx.agg.updates["tasks"].keys()) == ["t_stashed"]
-    assert ctx.agg.updates["waves"] == [["t_stashed"]]
-    assert ctx.agg.updates["pending_interrupt"] is None
-    assert ctx.agg.updates["last_interrupt"] == pending_interrupt
-    assert ctx.agg.updates["last_message_text"] is None
-    assert ctx.agg.updates["stashed_sessions"] == []
-    assert len(ctx.agg.updates["context_frames"]) == 1
-    assert ctx.agg.updates["context_frames"][0].frame_id == "keep-frame"
-    assert "outbox" not in ctx.agg.updates
+    assert list(ctx.accumulator.updates["tasks"].keys()) == ["t_stashed"]
+    assert ctx.accumulator.updates["waves"] == [["t_stashed"]]
+    assert ctx.accumulator.updates["pending_interrupt"] is None
+    assert ctx.accumulator.updates["last_interrupt"] == pending_interrupt
+    assert ctx.accumulator.updates["last_message_text"] is None
+    assert ctx.accumulator.updates["stashed_sessions"] == []
+    assert len(ctx.accumulator.updates["context_frames"]) == 1
+    assert ctx.accumulator.updates["context_frames"][0].frame_id == "keep-frame"
+    assert "outbox" not in ctx.accumulator.updates
 
 
 async def test_resume_session_clears_matching_stashed_referents() -> None:
@@ -211,7 +215,7 @@ async def test_resume_session_clears_matching_stashed_referents() -> None:
     ctx = _ctx(state)
     await handle_orchestrator_task(orchestrator_task, "o1", ctx)
 
-    assert [item.label for item in ctx.agg.updates["referent_memory"].items] == ["Emeka"]
+    assert [item.label for item in ctx.accumulator.updates["referent_memory"].items] == ["Emeka"]
 
 
 async def test_dismiss_resume_session_clears_matching_stashed_referents() -> None:
@@ -258,8 +262,8 @@ async def test_dismiss_resume_session_clears_matching_stashed_referents() -> Non
     await handle_orchestrator_task(orchestrator_task, "o1", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
-    assert ctx.agg.updates["stashed_sessions"] == []
-    assert ctx.agg.updates["referent_memory"].items == []
+    assert ctx.accumulator.updates["stashed_sessions"] == []
+    assert ctx.accumulator.updates["referent_memory"].items == []
 
 
 async def test_resume_session_reruns_worker_and_regenerates_confirmation_prompt() -> None:
@@ -540,10 +544,10 @@ async def test_dismiss_resume_session_clears_stash_and_acknowledges() -> None:
     await handle_orchestrator_task(orchestrator_task, "o6", ctx)
 
     assert orchestrator_task.stage == TaskStage.COMPLETED
-    assert ctx.agg.updates["stashed_sessions"] == []
-    assert len(ctx.agg.updates["context_frames"]) == 1
-    assert ctx.agg.updates["context_frames"][0].frame_id == "keep-frame"
-    assert ctx.agg.updates["outbox"][0]["text"] == "Okay, I won't resume that request."
+    assert ctx.accumulator.updates["stashed_sessions"] == []
+    assert len(ctx.accumulator.updates["context_frames"]) == 1
+    assert ctx.accumulator.updates["context_frames"][0].frame_id == "keep-frame"
+    assert ctx.accumulator.updates["outbox"][0]["text"] == "Okay, I won't resume that request."
 
 
 async def test_dismiss_resume_session_without_stash_is_safe() -> None:
@@ -567,7 +571,7 @@ async def test_dismiss_resume_session_without_stash_is_safe() -> None:
 
     assert orchestrator_task.stage == TaskStage.FAILED
     assert orchestrator_task.payload["error"] == "No session to resume."
-    assert ctx.agg.updates["outbox"][0]["text"] == "No session to resume."
+    assert ctx.accumulator.updates["outbox"][0]["text"] == "No session to resume."
 
 
 def test_context_manager_summary_includes_resume_prompt_context() -> None:

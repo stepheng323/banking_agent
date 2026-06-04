@@ -3,9 +3,9 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import _recipient_prompt_label
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from banking.presentation.formatters.missing_detail_prompts import (
     format_missing_details_prompt,
     format_source_repair_prompt,
@@ -17,7 +17,7 @@ def _build_unified_missing_field_prompt(
     *,
     state: OrchestratorState,
     current_wave: list[str],
-    agg: ExecutionAggregation,
+    agg: ExecutionAccumulator,
     locale: str,
 ) -> str:
     found_names = []

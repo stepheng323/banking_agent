@@ -4,7 +4,6 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompt_batch_source import (
     build_batch_source_prompt_if_needed,
@@ -27,13 +26,14 @@ from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_queu
     _append_queued_notice,
     _queued_transaction_tasks_for_focus,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 
 
 def _build_missing_field_interrupt_updates(
     *,
     state: OrchestratorState,
     current_wave: list[str],
-    agg: ExecutionAggregation,
+    agg: ExecutionAccumulator,
     locale: str,
 ) -> dict[str, Any]:
     apply_missing_field_prompt_filters(current_wave=current_wave, agg=agg)

@@ -10,19 +10,19 @@ from apps.chat.src.agent.orchestrator.task_handlers.context_frames import (
     push_query_surface_frame,
     query_pagination_actionable_payload,
 )
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
-    ExecutionContext,
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionTurnContext,
     _apply_result_patch,
     _get_worker,
     _next_query_handoff_transfer_task_id,
     _state_locale,
 )
 from banking.presentation.i18n.renderer import render_message
-from banking.runtime.results import TransactionOutcome
+from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import FocusedReferent
 
 
-async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "query",
@@ -42,17 +42,20 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
         "inbound_message_id": ctx.state.last_message_id,
         "turn_id": ctx.state.last_message_id,
         "stashed_query_session": ctx.state.stashed_query_session,
-        "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
+        "progress_tracker": ctx.config_value("progress_tracker"),
     }
 
-    result = await worker.run(
-        payload=task.payload,
-        context=context_data,
+    result = cast(
+        TransactionResult,
+        await worker.run(
+            payload=task.payload,
+            context=context_data,
+        ),
     )
 
     _apply_result_patch(task, result)
     if ctx.state.stashed_query_session is not None:
-        ctx.agg.updates["stashed_query_session"] = None
+        ctx.accumulator.set_update("stashed_query_session", None)
     handoff_payload = None
     followup_referent: FocusedReferent | dict[str, Any] | None = None
     if result.patch and isinstance(result.patch, dict):
@@ -70,7 +73,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
             task.payload["result"] = result.response
             pagination_payload = query_pagination_actionable_payload(ctx, result)
             if pagination_payload:
-                ctx.agg.add_outbox(
+                ctx.accumulator.add_outbox(
                     {
                         "type": "say",
                         "text": result.response,
@@ -78,7 +81,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
                     }
                 )
             else:
-                ctx.agg.say(result.response)
+                ctx.accumulator.say(result.response)
 
         if result.patch and isinstance(result.patch, dict):
             push_query_surface_frame(ctx, result.patch.get("query_result"))
@@ -93,7 +96,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
             transfer_payload.setdefault("message", ctx.state.last_message_text or "Resend the selected transaction")
             transfer_payload.setdefault("skip_extraction", True)
 
-            tasks = cast(dict[str, Any], ctx.agg.updates.get("tasks", ctx.state.tasks))
+            tasks = cast(dict[str, Any], ctx.accumulator.updates.get("tasks", ctx.state.tasks))
             transfer_task_id = _next_query_handoff_transfer_task_id(tasks)
             tasks[transfer_task_id] = TaskSpec(
                 id=transfer_task_id,
@@ -101,21 +104,21 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
                 stage=TaskStage.DRAFT,
                 payload=transfer_payload,
             )
-            ctx.agg.updates["tasks"] = tasks
+            ctx.accumulator.set_update("tasks", tasks)
 
-            waves = list(cast(list[list[str]], ctx.agg.updates.get("waves", ctx.state.waves)))
+            waves = list(cast(list[list[str]], ctx.accumulator.updates.get("waves", ctx.state.waves)))
             insert_index = min(ctx.state.current_wave_index + 1, len(waves))
             waves.insert(insert_index, [transfer_task_id])
-            ctx.agg.updates["waves"] = waves
+            ctx.accumulator.set_update("waves", waves)
 
             if not result.response:
-                ctx.agg.say("Okay. I will resend that transfer now.")
+                ctx.accumulator.say("Okay. I will resend that transfer now.")
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         if result.response:
-            ctx.agg.add_prompt(result.response, task_id)
-            ctx.agg.add_missing_fields(task_id, ["clarification"])
+            ctx.accumulator.add_prompt(result.response, task_id)
+            ctx.accumulator.add_missing_fields(task_id, ["clarification"])
 
     elif result.outcome == TransactionOutcome.FAILED:
         task.stage = TaskStage.FAILED
@@ -123,7 +126,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
             "orchestrator.error.query_processing_failed",
             _state_locale(ctx.state),
         )
-        ctx.agg.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
+        ctx.accumulator.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
 
     if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT):
         stack = list(ctx.state.session_stack)
@@ -142,4 +145,4 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
                 )
                 stack.append(new_session)
 
-        ctx.agg.updates["session_stack"] = stack
+        ctx.accumulator.set_update("session_stack", stack)

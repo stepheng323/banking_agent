@@ -7,8 +7,12 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.task_handlers.support import handle_faq_task
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from banking.policy.loader import get_cached_policy
 from banking.runtime.results import (
     FAQOutcome,
@@ -51,7 +55,7 @@ class _SupportOKWorker:
         return SupportResult(outcome=SupportOutcome.OK, response="Support handled this.")
 
 
-def _ctx(*, support_worker) -> tuple[TaskSpec, ExecutionContext]:
+def _ctx(*, support_worker) -> tuple[TaskSpec, ExecutionTurnContext]:
     task = TaskSpec(
         id="faq_1",
         type="faq",
@@ -67,13 +71,13 @@ def _ctx(*, support_worker) -> tuple[TaskSpec, ExecutionContext]:
         tasks={task.id: task},
         loaded_context={"language": "en", "user_id": "user-1", "profile": {"email": "u@example.com"}},
     )
-    agg = ExecutionAggregation(state.tasks)
-    return task, ExecutionContext(
+    agg = ExecutionAccumulator(state.tasks)
+    return task, ExecutionTurnContext(
         state=state,
         config={"configurable": {}},
-        services={"faq": _FAQHandoffWorker(), "support": support_worker},
+        services=ExecutionServices.from_mapping({"faq": _FAQHandoffWorker(), "support": support_worker}),
         current_wave_len=1,
-        agg=agg,
+        accumulator=agg,
         current_wave_task_ids=[task.id],
     )
 
@@ -90,7 +94,7 @@ async def test_faq_handoff_runs_support_same_turn_without_duplicate_handoff_text
     assert support_worker.calls
     assert support_worker.calls[0]["user_message"] == "Why did my transfer fail?"
     assert support_worker.calls[0]["payload"]["action"] == "handle_request"
-    assert ctx.agg.updates["outbox"] == [{"type": "say", "text": "Support handled this."}]
+    assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": "Support handled this."}]
 
 
 @pytest.mark.asyncio
@@ -116,6 +120,6 @@ async def test_faq_handoff_respects_disabled_support_policy(tmp_path: Path) -> N
 
         assert task.type == "support"
         assert task.stage == TaskStage.COMPLETED
-        assert ctx.agg.updates["outbox"] == [{"type": "say", "text": SUPPORT_DISABLED_MESSAGE}]
+        assert ctx.accumulator.updates["outbox"] == [{"type": "say", "text": SUPPORT_DISABLED_MESSAGE}]
     finally:
         get_cached_policy(path=CAPABILITY_POLICY_PATH, force_reload=True)

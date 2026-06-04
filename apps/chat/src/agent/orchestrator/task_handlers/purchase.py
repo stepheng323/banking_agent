@@ -1,9 +1,10 @@
-from typing import Any
+from typing import Literal, cast
 
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.task_handlers.context_frames import push_data_plan_frames_from_result
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
-    ExecutionContext,
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionTurnContext,
     _apply_result_patch,
     _get_worker,
     _handle_transaction_outcome,
@@ -12,10 +13,12 @@ from apps.chat.src.agent.orchestrator.task_handlers.runtime import (
     _state_locale,
 )
 from banking.presentation.i18n.renderer import render_message
-from banking.runtime.results import TransactionOutcome
+from banking.runtime.results import TransactionOutcome, TransactionResult
+
+PurchaseWorkerName = Literal["airtime", "data"]
 
 
-async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_airtime_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     locale = _state_locale(ctx.state)
     await _handle_purchase_task(
         task,
@@ -30,11 +33,11 @@ async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
 
 async def _handle_purchase_task(
-    task: Any,
+    task: TaskSpec,
     task_id: str,
-    ctx: ExecutionContext,
+    ctx: ExecutionTurnContext,
     *,
-    worker_name: str,
+    worker_name: PurchaseWorkerName,
     worker_missing_log_key: str,
     worker_missing_error_message: str,
     default_error: str,
@@ -75,11 +78,14 @@ async def _handle_purchase_task(
         context_data["channel_identity"] = ctx.state.channel_identity
     _stamp_async_group_metadata(task, ctx)
 
-    result = await worker.run(
-        payload=task.payload,
-        context=context_data,
-        user_message=user_msg,
-        pin_verified=ctx.state.pin_verified,
+    result = cast(
+        TransactionResult,
+        await worker.run(
+            payload=task.payload,
+            context=context_data,
+            user_message=user_msg,
+            pin_verified=ctx.state.pin_verified,
+        ),
     )
 
     _apply_result_patch(task, result)
@@ -87,7 +93,7 @@ async def _handle_purchase_task(
     if worker_name == "data" and str(task.payload.get("action") or "") == "data_plan_query":
         task.payload["skip_finalize_summary"] = True
         if result.outcome == TransactionOutcome.OK and result.response:
-            ctx.agg.say(result.response)
+            ctx.accumulator.say(result.response)
 
     if worker_name == "data":
         push_data_plan_frames_from_result(task, result, ctx)
@@ -96,13 +102,13 @@ async def _handle_purchase_task(
         task,
         task_id,
         result,
-        ctx.agg,
+        ctx.accumulator,
         confirmation_gate="summary",
         default_error=default_error,
     )
 
 
-async def handle_data_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_data_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     locale = _state_locale(ctx.state)
     await _handle_purchase_task(
         task,

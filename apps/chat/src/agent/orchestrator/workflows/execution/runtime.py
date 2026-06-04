@@ -1,29 +1,123 @@
-"""Shared runtime state and helpers for execution task handlers."""
+"""Typed runtime state and helpers for execution task handlers."""
 
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha1
 from typing import Any, Literal, cast
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from banking.presentation.i18n.locale import LocaleManager
+from banking.runtime.protocols import WorkerProtocol
 from banking.runtime.results import TransactionOutcome
 from shared.utils.logging import get_logger
 from shared.utils.serialization import sqlalchemy_to_dict
 
 logger = get_logger(__name__)
 
+ExecutionResultPatch = dict[str, Any]
+WorkerName = Literal[
+    "transfer",
+    "account",
+    "beneficiary",
+    "airtime",
+    "query",
+    "data",
+    "faq",
+    "support",
+]
+
+_WORKER_NAMES: tuple[WorkerName, ...] = (
+    "transfer",
+    "account",
+    "beneficiary",
+    "airtime",
+    "query",
+    "data",
+    "faq",
+    "support",
+)
 _RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}
 _TERMINAL_TRANSACTION_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 
 
-class ExecutionAggregation:
-    def __init__(self, tasks: dict[str, Any]) -> None:
+@dataclass(frozen=True)
+class ExecutionServices:
+    """Typed worker registry available to one execution wave."""
+
+    transfer: WorkerProtocol | None = None
+    account: WorkerProtocol | None = None
+    beneficiary: WorkerProtocol | None = None
+    airtime: WorkerProtocol | None = None
+    query: WorkerProtocol | None = None
+    data: WorkerProtocol | None = None
+    faq: WorkerProtocol | None = None
+    support: WorkerProtocol | None = None
+
+    @classmethod
+    def empty(cls) -> ExecutionServices:
+        return cls()
+
+    @classmethod
+    def from_mapping(cls, services: Mapping[str, object] | ExecutionServices | None) -> ExecutionServices:
+        if isinstance(services, ExecutionServices):
+            return services
+
+        def _worker(name: WorkerName) -> WorkerProtocol | None:
+            candidate = services.get(name) if services is not None else None
+            if candidate is None:
+                return None
+            if isinstance(candidate, WorkerProtocol):
+                return candidate
+            logger.warning(
+                "execution_service_ignored_invalid_worker",
+                worker=name,
+                worker_type=type(candidate).__name__,
+            )
+            return None
+
+        return cls(
+            transfer=_worker("transfer"),
+            account=_worker("account"),
+            beneficiary=_worker("beneficiary"),
+            airtime=_worker("airtime"),
+            query=_worker("query"),
+            data=_worker("data"),
+            faq=_worker("faq"),
+            support=_worker("support"),
+        )
+
+    def get(self, name: WorkerName | str) -> WorkerProtocol | None:
+        if name not in _WORKER_NAMES:
+            return None
+        return getattr(self, name)
+
+    def require(
+        self,
+        name: WorkerName,
+        task: TaskSpec,
+        *,
+        log_key: str,
+        error_message: str,
+    ) -> WorkerProtocol | None:
+        worker = self.get(name)
+        if worker:
+            return worker
+        logger.error(log_key)
+        task.stage = TaskStage.FAILED
+        task.payload["error"] = error_message
+        return None
+
+
+class ExecutionAccumulator:
+    """Mutable reducer surface for one execution wave."""
+
+    def __init__(self, tasks: dict[str, TaskSpec]) -> None:
         self.updates: dict[str, Any] = {"tasks": tasks}
         self.missing_fields_by_task: dict[str, list[str]] = {}
         self.details_by_task: dict[str, dict[str, Any]] = {}
@@ -33,6 +127,12 @@ class ExecutionAggregation:
         self.prompts_by_task: dict[str, str] = {}
         self.feedback_messages: list[str] = []
         self.source_bank_hints: list[str] = []
+
+    def set_update(self, key: str, value: Any) -> None:
+        self.updates[key] = value
+
+    def get_update(self, key: str, default: Any = None) -> Any:
+        return self.updates.get(key, default)
 
     def add_outbox(self, entry: dict[str, Any]) -> None:
         self.updates.setdefault("outbox", [])
@@ -63,20 +163,40 @@ class ExecutionAggregation:
 
 
 @dataclass
-class ExecutionContext:
+class ExecutionTurnContext:
     state: OrchestratorState
     config: RunnableConfig
-    services: dict[str, Any]
+    services: ExecutionServices
     current_wave_len: int
-    agg: ExecutionAggregation
+    accumulator: ExecutionAccumulator
     current_wave_task_ids: list[str] | None = None
+
+    @property
+    def configurable(self) -> Mapping[str, Any]:
+        configurable = self.config.get("configurable", {})
+        if isinstance(configurable, Mapping):
+            return cast(Mapping[str, Any], configurable)
+        return {}
+
+    def config_value(self, key: str, default: Any = None) -> Any:
+        return self.configurable.get(key, default)
+
+    def require_worker(
+        self,
+        name: WorkerName,
+        task: TaskSpec,
+        *,
+        log_key: str,
+        error_message: str,
+    ) -> WorkerProtocol | None:
+        return self.services.require(name, task, log_key=log_key, error_message=error_message)
 
 
 def _state_locale(state: OrchestratorState) -> str:
     return cast(str, LocaleManager.normalize(state.loaded_context.get("language")).value)
 
 
-def _stamp_async_group_metadata(task: Any, ctx: ExecutionContext) -> None:
+def _stamp_async_group_metadata(task: TaskSpec, ctx: ExecutionTurnContext) -> None:
     if task.type not in {"transfer", "airtime", "data"}:
         return
 
@@ -175,7 +295,7 @@ def _beneficiary_cache_contains_recipient(beneficiaries: list[dict[str, Any]], r
     return False
 
 
-def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
+def _maybe_user_message(task: TaskSpec, state: OrchestratorState) -> str | None:
     logger.info(
         "maybe_user_msg_check",
         task_id=task.id,
@@ -193,25 +313,20 @@ def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
 
 
 def _get_worker(
-    services: dict[str, Any],
-    name: str,
-    task: Any,
+    services: ExecutionServices,
+    name: WorkerName,
+    task: TaskSpec,
     *,
     log_key: str,
     error_message: str,
-) -> Any | None:
-    worker = services.get(name)
-    if not worker:
-        logger.error(log_key)
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = error_message
-        return None
-    return worker
+) -> WorkerProtocol | None:
+    return services.require(name, task, log_key=log_key, error_message=error_message)
 
 
-def _apply_result_patch(task: Any, result: Any) -> None:
-    if result.patch:
-        task.payload.update(result.patch)
+def _apply_result_patch(task: TaskSpec, result: Any) -> None:
+    patch = getattr(result, "patch", None)
+    if patch:
+        task.payload.update(cast(ExecutionResultPatch, patch))
 
 
 def _next_query_handoff_transfer_task_id(tasks: dict[str, Any]) -> str:
@@ -223,7 +338,7 @@ def _next_query_handoff_transfer_task_id(tasks: dict[str, Any]) -> str:
     return candidate
 
 
-def _set_confirmation(task: Any, result: Any, *, gate_on: str) -> None:
+def _set_confirmation(task: TaskSpec, result: Any, *, gate_on: str) -> None:
     if gate_on == "summary" and not getattr(result, "confirmation_summary", None):
         return
     if gate_on == "snapshot" and not getattr(result, "confirmation_snapshot", None):
@@ -242,10 +357,10 @@ def _set_confirmation(task: Any, result: Any, *, gate_on: str) -> None:
 
 
 def _handle_transaction_outcome(
-    task: Any,
+    task: TaskSpec,
     task_id: str,
     result: Any,
-    agg: ExecutionAggregation,
+    accumulator: ExecutionAccumulator,
     *,
     confirmation_gate: str,
     default_error: str | None,
@@ -257,23 +372,23 @@ def _handle_transaction_outcome(
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
-        agg.add_missing_fields(task_id, result.required_fields)
-        agg.add_details(task_id, result.details)
-        agg.add_prompt(result.prompt, task_id)
+        accumulator.add_missing_fields(task_id, result.required_fields)
+        accumulator.add_details(task_id, result.details)
+        accumulator.add_prompt(result.prompt, task_id)
         if result.update_message:
-            agg.feedback_messages.append(result.update_message)
+            accumulator.feedback_messages.append(result.update_message)
 
         if hint := result.patch.get("source_bank_name"):
-            agg.source_bank_hints.append(hint)
+            accumulator.source_bank_hints.append(hint)
 
     elif result.outcome == TransactionOutcome.NEEDS_CONFIRMATION:
         task.stage = TaskStage.AWAITING_CONFIRMATION
-        agg.needs_confirm_tasks.append(task_id)
+        accumulator.needs_confirm_tasks.append(task_id)
         _set_confirmation(task, result, gate_on=confirmation_gate)
 
     elif result.outcome == TransactionOutcome.NEEDS_AUTH:
         task.stage = TaskStage.AWAITING_AUTH
-        agg.needs_auth_tasks.append(task_id)
+        accumulator.needs_auth_tasks.append(task_id)
         _set_confirmation(task, result, gate_on=confirmation_gate)
 
     elif result.outcome == TransactionOutcome.FAILED:

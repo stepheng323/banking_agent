@@ -7,7 +7,11 @@ from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import (
     FocusedReferent,
@@ -115,13 +119,13 @@ async def test_query_handoff_injects_transfer_task_and_wave() -> None:
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
-    agg = ExecutionAggregation(state.tasks)
-    ctx = ExecutionContext(
+    agg = ExecutionAccumulator(state.tasks)
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"query": _DummyQueryWorker()},
+        services=ExecutionServices.from_mapping({"query": _DummyQueryWorker()}),
         current_wave_len=1,
-        agg=agg,
+        accumulator=agg,
     )
 
     await handle_query_task(query_task, "t1", ctx)
@@ -159,13 +163,13 @@ async def test_query_direct_answer_pushes_focused_beneficiary_context_frame() ->
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
-    agg = ExecutionAggregation(state.tasks)
-    ctx = ExecutionContext(
+    agg = ExecutionAccumulator(state.tasks)
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"query": _DummyQueryReferentWorker()},
+        services=ExecutionServices.from_mapping({"query": _DummyQueryReferentWorker()}),
         current_wave_len=1,
-        agg=agg,
+        accumulator=agg,
     )
 
     await handle_query_task(query_task, "t1", ctx)
@@ -203,13 +207,13 @@ async def test_query_result_surface_view_pushes_transaction_context_frame() -> N
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
-    agg = ExecutionAggregation(state.tasks)
-    ctx = ExecutionContext(
+    agg = ExecutionAccumulator(state.tasks)
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"query": _DummyQuerySurfaceWorker()},
+        services=ExecutionServices.from_mapping({"query": _DummyQuerySurfaceWorker()}),
         current_wave_len=1,
-        agg=agg,
+        accumulator=agg,
     )
 
     await handle_query_task(query_task, "t1", ctx)

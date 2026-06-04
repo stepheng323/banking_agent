@@ -1,17 +1,21 @@
-from typing import Any
+from typing import cast
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskStage
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionContext, _get_worker, _state_locale
+from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionTurnContext,
+    _get_worker,
+    _state_locale,
+)
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.presentation.i18n.renderer import render_message
-from banking.runtime.results import FAQOutcome, SupportOutcome
+from banking.runtime.results import FAQOutcome, FAQResult, SupportOutcome, SupportResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_faq_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
         "faq",
@@ -28,10 +32,13 @@ async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> Non
         "language": _state_locale(ctx.state),
     }
 
-    result = await worker.run(
-        payload=task.payload,
-        context=context_data,
-        user_message=user_msg,
+    result = cast(
+        FAQResult,
+        await worker.run(
+            payload=task.payload,
+            context=context_data,
+            user_message=user_msg,
+        ),
     )
 
     if result.outcome == FAQOutcome.OK:
@@ -43,17 +50,17 @@ async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> Non
             return
 
         task.stage = TaskStage.COMPLETED
-        ctx.agg.say(result.response)
+        ctx.accumulator.say(result.response)
     elif result.outcome == FAQOutcome.FAILED:
         task.stage = TaskStage.FAILED
         task.payload["error"] = result.error or render_message(
             "orchestrator.error.faq_failed",
             _state_locale(ctx.state),
         )
-        ctx.agg.say(render_message("faq.info_trouble", _state_locale(ctx.state)))
+        ctx.accumulator.say(render_message("faq.info_trouble", _state_locale(ctx.state)))
 
 
-async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+async def handle_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     user_msg = ctx.state.last_message_text
     if looks_like_transaction_replay_modifier_request(user_msg):
         logger.info("support_task_replay_modifier_rerouted_to_transfer", task_id=task_id)
@@ -90,41 +97,44 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
     support_payload = dict(task.payload)
     support_payload["quoted_message_id"] = ctx.state.quoted_message_id
 
-    result = await worker.run(
-        payload=support_payload,
-        context=context_data,
-        user_message=user_msg,
+    result = cast(
+        SupportResult,
+        await worker.run(
+            payload=support_payload,
+            context=context_data,
+            user_message=user_msg,
+        ),
     )
 
     if result.outcome == SupportOutcome.OK:
         task.stage = TaskStage.COMPLETED
         receipt_jobs = [job for job in result.receipt_jobs if isinstance(job, dict)]
         if receipt_jobs:
-            publisher = ctx.config.get("configurable", {}).get("publisher")
+            publisher = ctx.config_value("publisher")
             if publisher is None:
-                ctx.agg.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
+                ctx.accumulator.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
             else:
                 try:
                     for job in receipt_jobs:
                         await publisher.publish("receipt.process", job)
                 except Exception:
-                    ctx.agg.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
+                    ctx.accumulator.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
                 else:
-                    ctx.agg.say(result.response)
+                    ctx.accumulator.say(result.response)
         else:
-            ctx.agg.say(result.response)
+            ctx.accumulator.say(result.response)
     elif result.outcome == SupportOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         if result.response:
-            ctx.agg.add_prompt(result.response, task_id)
-            ctx.agg.add_missing_fields(task_id, ["clarification"])
+            ctx.accumulator.add_prompt(result.response, task_id)
+            ctx.accumulator.add_missing_fields(task_id, ["clarification"])
     elif result.outcome == SupportOutcome.FAILED:
         task.stage = TaskStage.FAILED
         task.payload["error"] = result.error or render_message(
             "orchestrator.error.support_flow_failed",
             _state_locale(ctx.state),
         )
-        ctx.agg.say(render_message("support.unavailable", _state_locale(ctx.state)))
+        ctx.accumulator.say(render_message("support.unavailable", _state_locale(ctx.state)))
 
     stack = list(ctx.state.session_stack)
     if result.outcome == SupportOutcome.NEEDS_INPUT:
@@ -139,8 +149,8 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
                     resume_hint={"task_id": task_id},
                 )
             )
-        ctx.agg.updates["session_stack"] = stack
+        ctx.accumulator.set_update("session_stack", stack)
     elif result.outcome in (SupportOutcome.OK, SupportOutcome.FAILED):
         if stack and stack[-1].domain == "support":
             stack.pop()
-            ctx.agg.updates["session_stack"] = stack
+            ctx.accumulator.set_update("session_stack", stack)

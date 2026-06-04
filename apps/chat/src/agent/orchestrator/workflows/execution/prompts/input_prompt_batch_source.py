@@ -1,12 +1,12 @@
 """Batch source-account prompt assembly for execution input interrupts."""
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from banking.presentation.formatters.transfer_input_prompts import format_batch_transfer_source_prompt
 from banking.presentation.i18n.renderer import render_message
 
 
-def _transfer_tasks_only_missing_source(state: OrchestratorState, agg: ExecutionAggregation) -> list[str]:
+def _transfer_tasks_only_missing_source(state: OrchestratorState, agg: ExecutionAccumulator) -> list[str]:
     return [
         tid
         for tid in agg.missing_fields_by_task
@@ -19,7 +19,7 @@ def _transfer_tasks_only_missing_source(state: OrchestratorState, agg: Execution
 def build_batch_source_prompt_if_needed(
     *,
     state: OrchestratorState,
-    agg: ExecutionAggregation,
+    agg: ExecutionAccumulator,
     locale: str,
 ) -> str | None:
     transfer_tasks_only_source = _transfer_tasks_only_missing_source(state, agg)

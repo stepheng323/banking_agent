@@ -2,8 +2,12 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import choose_wave_blocker
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_finalize import finalize_execution_wave_updates
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 
@@ -25,8 +29,8 @@ def _state(tasks: dict[str, TaskSpec], *, wave: list[str]) -> OrchestratorState:
     )
 
 
-def _aggregation(state: OrchestratorState) -> ExecutionAggregation:
-    return ExecutionAggregation(state.tasks)
+def _aggregation(state: OrchestratorState) -> ExecutionAccumulator:
+    return ExecutionAccumulator(state.tasks)
 
 
 def test_missing_input_suppresses_confirmation_and_auth() -> None:
@@ -109,18 +113,18 @@ def test_no_blocker_allows_terminal_wave_to_advance() -> None:
     )
     config: RunnableConfig = {"configurable": {}}
     agg = _aggregation(state)
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={},
+        services=ExecutionServices.empty(),
         current_wave_len=1,
-        agg=agg,
+        accumulator=agg,
         current_wave_task_ids=["done"],
     )
     runtime = ExecutionWaveRuntime(
         current_wave=["done"],
-        services={},
-        agg=agg,
+        services=ExecutionServices.empty(),
+        accumulator=agg,
         ctx=ctx,
         locale="en",
         mandate_gate_accounts=[],

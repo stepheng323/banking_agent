@@ -1,10 +1,15 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from banking.accounts.mandate_state import is_mandate_debit_ready
 from shared.utils.logging import get_logger
 
@@ -14,9 +19,9 @@ logger = get_logger(__name__)
 @dataclass(frozen=True)
 class ExecutionWaveRuntime:
     current_wave: list[str]
-    services: dict[str, Any]
-    agg: ExecutionAggregation
-    ctx: ExecutionContext
+    services: ExecutionServices
+    accumulator: ExecutionAccumulator
+    ctx: ExecutionTurnContext
     locale: str
     mandate_gate_accounts: list[dict[str, Any]]
 
@@ -51,20 +56,24 @@ def build_execution_wave_runtime(
     config: RunnableConfig,
     current_wave: list[str],
 ) -> ExecutionWaveRuntime:
-    services = config["configurable"].get("services") or {}
-    agg = ExecutionAggregation(state.tasks)
-    ctx = ExecutionContext(
+    configurable = config.get("configurable", {})
+    if not isinstance(configurable, Mapping):
+        configurable = {}
+    raw_services = cast(Mapping[str, object] | None, configurable.get("services"))
+    services = ExecutionServices.from_mapping(raw_services)
+    accumulator = ExecutionAccumulator(state.tasks)
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
         services=services,
         current_wave_len=len(current_wave),
         current_wave_task_ids=list(current_wave),
-        agg=agg,
+        accumulator=accumulator,
     )
     return ExecutionWaveRuntime(
         current_wave=current_wave,
         services=services,
-        agg=agg,
+        accumulator=accumulator,
         ctx=ctx,
         locale=(state.loaded_context or {}).get("language", "en"),
         mandate_gate_accounts=_prepare_transaction_account_view(state),

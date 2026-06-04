@@ -5,8 +5,12 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.task_handlers.runtime import ExecutionAggregation, ExecutionContext
 from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
+from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
+    ExecutionAccumulator,
+    ExecutionServices,
+    ExecutionTurnContext,
+)
 from banking.runtime.results import TransactionOutcome, TransactionResult
 
 
@@ -73,12 +77,12 @@ async def _run_transfer_with_message(last_message_text: str | None) -> str | Non
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"transfer": worker},
+        services=ExecutionServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
     await handle_transfer_task(task, "t1", ctx)
     return worker.last_user_message
@@ -127,12 +131,12 @@ async def test_transfer_handler_drops_null_source_affinity_mode_before_worker() 
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"transfer": worker},
+        services=ExecutionServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_transfer_task(task, "t1", ctx)
@@ -168,12 +172,12 @@ async def test_transfer_handler_prefers_scoped_confirmation_user_message_overrid
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"transfer": worker},
+        services=ExecutionServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_transfer_task(task, "t1", ctx)
@@ -221,12 +225,12 @@ async def test_transfer_handler_uses_targeted_beneficiary_reload_for_cache_only_
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {"beneficiary_repo": repo}, "recursion_limit": 50}
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"transfer": worker},
+        services=ExecutionServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_transfer_task(task, "t1", ctx)
@@ -276,12 +280,12 @@ async def test_transfer_handler_reloads_beneficiaries_before_fresh_direct_extrac
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {"beneficiary_repo": repo}, "recursion_limit": 50}
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"transfer": worker},
+        services=ExecutionServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_transfer_task(task, "t1", ctx)
@@ -333,12 +337,12 @@ async def test_transfer_handler_falls_back_to_full_beneficiary_reload_after_targ
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {"beneficiary_repo": repo}, "recursion_limit": 50}
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"transfer": worker},
+        services=ExecutionServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_transfer_task(task, "t1", ctx)
@@ -398,12 +402,12 @@ async def test_transfer_handler_reloads_targeted_beneficiary_when_cache_preview_
         current_wave_index=0,
     )
     config: RunnableConfig = {"configurable": {"beneficiary_repo": repo}, "recursion_limit": 50}
-    ctx = ExecutionContext(
+    ctx = ExecutionTurnContext(
         state=state,
         config=config,
-        services={"transfer": worker},
+        services=ExecutionServices.from_mapping({"transfer": worker}),
         current_wave_len=1,
-        agg=ExecutionAggregation(state.tasks),
+        accumulator=ExecutionAccumulator(state.tasks),
     )
 
     await handle_transfer_task(task, "t2", ctx)
