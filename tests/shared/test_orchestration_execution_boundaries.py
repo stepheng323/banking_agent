@@ -20,7 +20,8 @@ EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "prompts" / "input_prompts_focused.py",
     EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
 )
-EXECUTION_WAVE_GUARD_MUTATION_MODULES = (
+EXECUTION_TASK_MUTATION_CONTRACT_MODULES = (
+    EXECUTION_ROOT / "result_reducer.py",
     EXECUTION_ROOT / "wave" / "runner_task_guards.py",
     EXECUTION_ROOT / "wave" / "wave_state.py",
 )
@@ -354,9 +355,9 @@ def test_execution_pending_interrupt_is_constructed_only_by_accumulator() -> Non
     assert violations == []
 
 
-def test_execution_wave_guard_task_mutations_use_typed_helpers() -> None:
+def test_execution_task_mutations_use_typed_helpers() -> None:
     violations: list[str] = []
-    for path in EXECUTION_WAVE_GUARD_MUTATION_MODULES:
+    for path in EXECUTION_TASK_MUTATION_CONTRACT_MODULES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
@@ -372,8 +373,12 @@ def test_execution_wave_guard_task_mutations_use_typed_helpers() -> None:
                         violations.append(f"{path.relative_to(ROOT)} assigns {ast.unparse(target)}")
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 target = node.func.value
-                if isinstance(target, ast.Attribute) and target.attr == "payload" and node.func.attr == "update":
-                    violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.update()")
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr == "payload"
+                    and node.func.attr in {"pop", "setdefault", "update"}
+                ):
+                    violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.{node.func.attr}()")
 
     assert violations == []
 

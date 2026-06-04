@@ -6,6 +6,13 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
+    complete_task,
+    fail_task,
+    set_task_confirmation,
+    set_task_stage,
+    update_task_payload,
+)
 from banking.runtime.results import TransactionOutcome
 
 WorkerResultPatch = dict[str, Any]
@@ -14,7 +21,7 @@ WorkerResultPatch = dict[str, Any]
 def _apply_result_patch(task: TaskSpec, result: Any) -> None:
     patch = getattr(result, "patch", None)
     if patch:
-        task.payload.update(cast(WorkerResultPatch, patch))
+        update_task_payload(task, cast(WorkerResultPatch, patch))
 
 
 def _set_confirmation(task: TaskSpec, result: Any, *, gate_on: str) -> None:
@@ -23,16 +30,12 @@ def _set_confirmation(task: TaskSpec, result: Any, *, gate_on: str) -> None:
     if gate_on == "snapshot" and not getattr(result, "confirmation_snapshot", None):
         return
 
-    confirmation = task.payload.setdefault("confirmation", {})
-    confirmation["summary"] = getattr(result, "confirmation_summary", None)
-    confirmation["snapshot"] = getattr(result, "confirmation_snapshot", None)
-    update_message = getattr(result, "update_message", None)
-    if update_message:
-        confirmation["update_message"] = update_message
-    else:
-        confirmation.pop("update_message", None)
-    task.payload.pop("transition_acknowledgment", None)
-    task.payload.pop("previous_confirmation_snapshot", None)
+    set_task_confirmation(
+        task,
+        summary=getattr(result, "confirmation_summary", None),
+        snapshot=getattr(result, "confirmation_snapshot", None),
+        update_message=getattr(result, "update_message", None),
+    )
 
 
 def _handle_transaction_outcome(
@@ -45,12 +48,10 @@ def _handle_transaction_outcome(
     default_error: str | None,
 ) -> None:
     if result.outcome == TransactionOutcome.OK:
-        task.stage = TaskStage.COMPLETED
-        if result.receipt:
-            task.payload["receipt"] = result.receipt
+        complete_task(task, receipt=result.receipt)
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
-        task.stage = TaskStage.EXTRACTED
+        set_task_stage(task, TaskStage.EXTRACTED)
         accumulator.add_missing_fields(task_id, result.required_fields)
         accumulator.add_details(task_id, result.details)
         accumulator.add_prompt(result.prompt, task_id)
@@ -60,21 +61,20 @@ def _handle_transaction_outcome(
             accumulator.add_source_bank_hint(hint)
 
     elif result.outcome == TransactionOutcome.NEEDS_CONFIRMATION:
-        task.stage = TaskStage.AWAITING_CONFIRMATION
+        set_task_stage(task, TaskStage.AWAITING_CONFIRMATION)
         accumulator.add_confirmation_task(task_id)
         _set_confirmation(task, result, gate_on=confirmation_gate)
 
     elif result.outcome == TransactionOutcome.NEEDS_AUTH:
-        task.stage = TaskStage.AWAITING_AUTH
+        set_task_stage(task, TaskStage.AWAITING_AUTH)
         accumulator.add_auth_task(task_id)
         _set_confirmation(task, result, gate_on=confirmation_gate)
 
     elif result.outcome == TransactionOutcome.FAILED:
-        task.stage = TaskStage.FAILED
         if default_error is None:
-            task.payload["error"] = result.error
+            fail_task(task, result.error)
         else:
-            task.payload["error"] = result.error or default_error
+            fail_task(task, result.error or default_error)
 
 
 __all__ = ["WorkerResultPatch", "_apply_result_patch", "_handle_transaction_outcome"]

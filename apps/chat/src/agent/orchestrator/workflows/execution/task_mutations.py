@@ -7,7 +7,47 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 
 
-def fail_task(task: TaskSpec, error: str, extra_payload: dict[str, Any] | None = None) -> None:
+def set_task_stage(task: TaskSpec, stage: TaskStage) -> None:
+    task.stage = stage
+
+
+def update_task_payload(task: TaskSpec, values: dict[str, Any]) -> None:
+    task.payload.update(values)
+
+
+def set_task_payload_value(task: TaskSpec, key: str, value: Any) -> None:
+    task.payload[key] = value
+
+
+def remove_task_payload_values(task: TaskSpec, *keys: str) -> None:
+    for key in keys:
+        task.payload.pop(key, None)
+
+
+def complete_task(task: TaskSpec, *, receipt: Any = None) -> None:
+    task.stage = TaskStage.COMPLETED
+    if receipt:
+        task.payload["receipt"] = receipt
+
+
+def set_task_confirmation(
+    task: TaskSpec,
+    *,
+    summary: Any,
+    snapshot: Any,
+    update_message: Any,
+) -> None:
+    confirmation = task.payload.setdefault("confirmation", {})
+    confirmation["summary"] = summary
+    confirmation["snapshot"] = snapshot
+    if update_message:
+        confirmation["update_message"] = update_message
+    else:
+        confirmation.pop("update_message", None)
+    remove_task_payload_values(task, "transition_acknowledgment", "previous_confirmation_snapshot")
+
+
+def fail_task(task: TaskSpec, error: str | None, extra_payload: dict[str, Any] | None = None) -> None:
     task.stage = TaskStage.FAILED
     if extra_payload:
         task.payload.update(extra_payload)
@@ -21,5 +61,11 @@ def cancel_task(task: TaskSpec, error: str) -> None:
 
 __all__ = [
     "cancel_task",
+    "complete_task",
     "fail_task",
+    "remove_task_payload_values",
+    "set_task_confirmation",
+    "set_task_payload_value",
+    "set_task_stage",
+    "update_task_payload",
 ]
