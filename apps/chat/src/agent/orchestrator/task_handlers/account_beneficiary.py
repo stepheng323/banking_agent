@@ -138,7 +138,7 @@ async def handle_beneficiary_task(task: TaskSpec, task_id: str, ctx: ExecutionTu
             ctx.accumulator.say(err)
         return
 
-    suggestion_service = ctx.config_value("beneficiary_suggestion_service")
+    suggestion_service = ctx.dependencies.beneficiary_suggestion_service
     if not suggestion_service:
         logger.error("suggestion_service_missing")
         task.stage = TaskStage.FAILED

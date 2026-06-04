@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
     ExecutionAccumulator,
+    ExecutionDependencies,
     ExecutionTurnContext,
 )
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
@@ -61,6 +62,7 @@ def build_execution_wave_runtime(
         configurable = {}
     raw_services = cast(Mapping[str, object] | None, configurable.get("services"))
     services = OrchestrationServices.from_mapping(raw_services)
+    dependencies = ExecutionDependencies.from_configurable(configurable)
     accumulator = ExecutionAccumulator(state.tasks)
     ctx = ExecutionTurnContext(
         state=state,
@@ -69,6 +71,7 @@ def build_execution_wave_runtime(
         current_wave_len=len(current_wave),
         current_wave_task_ids=list(current_wave),
         accumulator=accumulator,
+        execution_dependencies=dependencies,
     )
     return ExecutionWaveRuntime(
         current_wave=current_wave,

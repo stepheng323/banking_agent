@@ -68,7 +68,7 @@ async def handle_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnC
     recipient_name = task.payload.get("recipient_name")
     has_recipient_hint = isinstance(recipient_name, str) and bool(recipient_name.strip())
     recipient_name_text = recipient_name.strip() if isinstance(recipient_name, str) else ""
-    beneficiary_repo = ctx.config_value("beneficiary_repo")
+    beneficiary_repo = ctx.dependencies.beneficiary_repo
     user_id = ctx.state.loaded_context.get("user_id")
     beneficiary_context_mode = str(ctx.state.loaded_context.get("beneficiary_context_mode") or "full")
     if (
@@ -140,7 +140,7 @@ async def handle_transfer_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnC
         "required_fields": required_fields,
         "previous_response": previous_response,
         "confirmation_task_count": confirmation_task_count,
-        "progress_tracker": ctx.config_value("progress_tracker"),
+        "progress_tracker": ctx.dependencies.progress_tracker,
     }
     _stamp_async_group_metadata(task, ctx)
     if task.payload.get("source_affinity_mode") is None:
@@ -247,7 +247,7 @@ async def handle_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnC
         "required_fields": [],
         "previous_response": None,
         "confirmation_task_count": None,
-        "progress_tracker": ctx.config_value("progress_tracker"),
+        "progress_tracker": ctx.dependencies.progress_tracker,
     }
     user_msg = _maybe_user_message(task, ctx.state)
     logger.info("schedule_worker_start", payload=task.payload, task_id=task_id)

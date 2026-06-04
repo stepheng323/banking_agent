@@ -23,6 +23,7 @@ FORBIDDEN_EXECUTION_TEXT = (
     "ExecutionServices",
     "_HANDLERS",
     'config["configurable"].get("services"',
+    "config_value(",
 )
 
 FORBIDDEN_INTERRUPT_TEXT = (

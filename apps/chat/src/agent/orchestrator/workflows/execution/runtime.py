@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha1
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 from langchain_core.runnables import RunnableConfig
 
@@ -74,6 +74,67 @@ class ExecutionAccumulator:
             self.details_by_task[task_id] = details
 
 
+class BeneficiaryLookupRepositoryProtocol(Protocol):
+    async def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[Any]: ...
+
+    async def search_by_name(
+        self,
+        user_id: str,
+        query: str,
+        *,
+        beneficiary_type: str | None = None,
+    ) -> list[Any]: ...
+
+
+class BeneficiarySuggestionSaverProtocol(Protocol):
+    async def save_beneficiary(self, phone_number: str, alias: Any = None, locale: str = "en") -> str: ...
+
+
+class ReceiptPublisherProtocol(Protocol):
+    async def publish(self, topic: str, payload: dict[str, Any]) -> Any: ...
+
+
+@dataclass(frozen=True)
+class ExecutionDependencies:
+    """Runtime dependencies available to execution handlers."""
+
+    beneficiary_repo: BeneficiaryLookupRepositoryProtocol | None
+    beneficiary_suggestion_service: BeneficiarySuggestionSaverProtocol | None
+    publisher: ReceiptPublisherProtocol | None
+    progress_tracker: Any | None
+
+    @classmethod
+    def empty(cls) -> ExecutionDependencies:
+        return cls(
+            beneficiary_repo=None,
+            beneficiary_suggestion_service=None,
+            publisher=None,
+            progress_tracker=None,
+        )
+
+    @classmethod
+    def from_configurable(cls, configurable: Mapping[str, Any]) -> ExecutionDependencies:
+        return cls(
+            beneficiary_repo=cast(
+                BeneficiaryLookupRepositoryProtocol | None,
+                configurable.get("beneficiary_repo"),
+            ),
+            beneficiary_suggestion_service=cast(
+                BeneficiarySuggestionSaverProtocol | None,
+                configurable.get("beneficiary_suggestion_service"),
+            ),
+            publisher=cast(ReceiptPublisherProtocol | None, configurable.get("publisher")),
+            progress_tracker=configurable.get("progress_tracker"),
+        )
+
+    @classmethod
+    def from_config(cls, config: RunnableConfig) -> ExecutionDependencies:
+        configurable = config.get("configurable", {})
+        if isinstance(configurable, Mapping):
+            return cls.from_configurable(cast(Mapping[str, Any], configurable))
+        return cls.empty()
+
+
 @dataclass
 class ExecutionTurnContext:
     state: OrchestratorState
@@ -82,16 +143,13 @@ class ExecutionTurnContext:
     current_wave_len: int
     accumulator: ExecutionAccumulator
     current_wave_task_ids: list[str] | None = None
+    execution_dependencies: ExecutionDependencies | None = None
 
     @property
-    def configurable(self) -> Mapping[str, Any]:
-        configurable = self.config.get("configurable", {})
-        if isinstance(configurable, Mapping):
-            return cast(Mapping[str, Any], configurable)
-        return {}
-
-    def config_value(self, key: str, default: Any = None) -> Any:
-        return self.configurable.get(key, default)
+    def dependencies(self) -> ExecutionDependencies:
+        if self.execution_dependencies is None:
+            self.execution_dependencies = ExecutionDependencies.from_config(self.config)
+        return self.execution_dependencies
 
     def require_worker(
         self,

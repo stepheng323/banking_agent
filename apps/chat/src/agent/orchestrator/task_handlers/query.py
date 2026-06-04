@@ -42,7 +42,7 @@ async def handle_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCont
         "inbound_message_id": ctx.state.last_message_id,
         "turn_id": ctx.state.last_message_id,
         "stashed_query_session": ctx.state.stashed_query_session,
-        "progress_tracker": ctx.config_value("progress_tracker"),
+        "progress_tracker": ctx.dependencies.progress_tracker,
     }
 
     result = cast(

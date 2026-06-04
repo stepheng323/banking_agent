@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.task_handlers.transfer import handle_transfer_task
@@ -110,13 +110,13 @@ async def handle_support_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         task.stage = TaskStage.COMPLETED
         receipt_jobs = [job for job in result.receipt_jobs if isinstance(job, dict)]
         if receipt_jobs:
-            publisher = ctx.config_value("publisher")
+            publisher = ctx.dependencies.publisher
             if publisher is None:
                 ctx.accumulator.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
             else:
                 try:
                     for job in receipt_jobs:
-                        await publisher.publish("receipt.process", job)
+                        await publisher.publish("receipt.process", cast(dict[str, Any], job))
                 except Exception:
                     ctx.accumulator.say(render_message("query.receipt.failed", _state_locale(ctx.state)))
                 else:
