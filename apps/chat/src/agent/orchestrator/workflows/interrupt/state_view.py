@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.context.models import ContextFrame
+from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import resolve_shortcut_locale
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
@@ -29,6 +31,10 @@ class InterruptStateView:
     @property
     def last_message_text(self) -> str | None:
         return self.state.last_message_text
+
+    @property
+    def last_callback(self) -> dict[str, Any] | None:
+        return self.state.last_callback
 
     @property
     def message_text(self) -> str:
@@ -114,6 +120,14 @@ class InterruptStateView:
         return self.state.pin_verified
 
     @property
+    def context_frames(self) -> list[ContextFrame]:
+        return list(self.state.context_frames)
+
+    @property
+    def referent_memory(self) -> ShortTermReferentMemory:
+        return self.state.referent_memory
+
+    @property
     def session_stack(self) -> list[ActiveSession]:
         return list(self.state.session_stack)
 
@@ -125,6 +139,15 @@ class InterruptStateView:
     @property
     def stashed_sessions(self) -> list[dict[str, Any]]:
         return list(self.state.stashed_sessions)
+
+    @property
+    def stashed_query_session(self) -> dict[str, Any] | None:
+        stashed_query_session = self.state.stashed_query_session
+        return stashed_query_session if isinstance(stashed_query_session, dict) else None
+
+    @property
+    def preplanner_expected_transaction_executors(self) -> list[str]:
+        return list(self.state.preplanner_expected_transaction_executors)
 
 
 def interrupt_state_view(state: OrchestratorState) -> InterruptStateView:

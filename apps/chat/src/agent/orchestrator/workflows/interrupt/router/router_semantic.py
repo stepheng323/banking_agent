@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_router import (
     build_router_context_from_summary,
 )
@@ -21,6 +22,7 @@ async def _route_interrupt_semantic_turn(
     if task_planner is None:
         return None
 
+    state_view = interrupt_state_view(state)
     if add_task_instruction_only:
         semantic_context = (
             "Pending confirmation add-task instruction. Classify only this fresh user instruction. "
@@ -28,7 +30,7 @@ async def _route_interrupt_semantic_turn(
             "mentioned in the instruction."
         )
     else:
-        stashed_query_session = state.stashed_query_session if isinstance(state.stashed_query_session, dict) else None
+        stashed_query_session = state_view.stashed_query_session
         summary, _ = get_or_build_turn_context_summary(
             state,
             query_session_snapshot=stashed_query_session,
@@ -37,13 +39,13 @@ async def _route_interrupt_semantic_turn(
         )
         semantic_context = build_router_context_from_summary(
             summary,
-            expected_executors=state.preplanner_expected_transaction_executors,
+            expected_executors=state_view.preplanner_expected_transaction_executors,
         )
     try:
         return cast(
             SemanticRouteDecision,
             await task_planner.route_semantic_turn(
-                state.phone_number,
+                state_view.phone_number,
                 text,
                 context=semantic_context,
                 path_label="interrupt_path",

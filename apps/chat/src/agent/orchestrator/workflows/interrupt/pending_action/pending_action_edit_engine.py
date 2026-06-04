@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
     PENDING_ACTION_EDIT_MIN_CONFIDENCE,
     PendingActionEditResolution,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 class PendingActionEditEngine:
@@ -32,8 +33,9 @@ class PendingActionEditEngine:
             return None
 
         context = build_pending_action_edit_context(state, interrupt)
+        state_view = interrupt_state_view(state)
         decision = await task_planner.interpret_pending_action_edit(
-            state.phone_number,
+            state_view.phone_number,
             text,
             context=context,
             path_label="interrupt_path",

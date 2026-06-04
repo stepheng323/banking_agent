@@ -3,6 +3,7 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _compact_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[str, Any]:
@@ -122,9 +123,10 @@ def _build_active_task_router_state(
     task_ids: list[str],
     compact_mode: bool,
 ) -> dict[str, Any]:
+    state_view = interrupt_state_view(state)
     task_state: dict[str, Any] = {}
     for task_id in task_ids:
-        task = state.tasks.get(task_id)
+        task = state_view.task(task_id)
         if not task:
             continue
         payload = cast(dict[str, Any], task.payload)

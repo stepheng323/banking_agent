@@ -1,8 +1,9 @@
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _callback_flow_type(state: OrchestratorState) -> str | None:
-    callback = state.last_callback or {}
+    callback = interrupt_state_view(state).last_callback or {}
     raw_flow_type = callback.get("flow_type")
     if not isinstance(raw_flow_type, str):
         return None
@@ -11,10 +12,11 @@ def _callback_flow_type(state: OrchestratorState) -> str | None:
 
 
 def _is_verified_pin_callback(state: OrchestratorState) -> bool:
-    callback = state.last_callback
+    state_view = interrupt_state_view(state)
+    callback = state_view.last_callback
     if not isinstance(callback, dict):
         return False
-    return bool(callback.get("pin_verified")) and state.pin_verified
+    return bool(callback.get("pin_verified")) and state_view.pin_verified
 
 
 def _callback_flow_matches_interrupt(

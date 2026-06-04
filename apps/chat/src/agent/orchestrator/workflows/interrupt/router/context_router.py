@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     INTERRUPT_REQUIRED_FIELDS_COMPACT_MAX_CHARS,
     INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_active import (
     build_interrupt_context_from_summary,
 )
@@ -47,10 +48,11 @@ def _build_interrupt_context_details(
         current_task_types=current_task_types,
     )
     compact_mode = prompt_mode == "compact"
+    state_view = interrupt_state_view(state)
     summary, _ = get_or_build_turn_context_summary(
         state,
-        query_session_snapshot=state.stashed_query_session if isinstance(state.stashed_query_session, dict) else None,
-        query_session_source="stashed" if isinstance(state.stashed_query_session, dict) else None,
+        query_session_snapshot=state_view.stashed_query_session,
+        query_session_source="stashed" if state_view.stashed_query_session is not None else None,
         path_label="interrupt_path",
     )
     active_task_state = _build_active_task_router_state(

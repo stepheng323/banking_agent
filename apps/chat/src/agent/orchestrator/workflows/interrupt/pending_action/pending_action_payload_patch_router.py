@@ -29,6 +29,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
     _narration_patch,
     _recipient_patch,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _pending_edit_patch_for_field(
@@ -55,7 +56,7 @@ def _pending_edit_patch_for_field(
     if field == "funding_splits" and task.type == "transfer":
         return _funding_splits_patch(value)
     if field == "phone" and task.type in {"airtime", "data"}:
-        return _phone_patch(task.type, value, payload=task.payload, user_phone=state.phone_number)
+        return _phone_patch(task.type, value, payload=task.payload, user_phone=interrupt_state_view(state).phone_number)
     if field == "network" and task.type in {"airtime", "data"}:
         return _network_patch(task.type, value, payload=task.payload)
     if field in _DATA_PLAN_EDIT_FIELDS and task.type == "data":

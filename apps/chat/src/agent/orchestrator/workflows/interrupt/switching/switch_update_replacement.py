@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _clear_current_domain_sessions, logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_session_stash import _stash_current_session
 from shared.types.planner import PlannerOutput
 
@@ -24,6 +25,7 @@ def _build_stash_switch_updates(
 ) -> dict[str, Any]:
     stashed = _stash_current_session(state, interrupt=interrupt, intent=active_type)
     cleaned_stack, active_domain = _clear_current_domain_sessions(state, current_task_types)
+    state_view = interrupt_state_view(state)
 
     logger.info(
         "interrupt_replan_switched",
@@ -41,7 +43,7 @@ def _build_stash_switch_updates(
         "normalized_instruction": text,
         "task_results": {},
         "stashed_sessions": stashed,
-        "referent_memory": state.referent_memory,
+        "referent_memory": state_view.referent_memory,
         "session_stack": cleaned_stack,
         "active_domain": active_domain,
         "pin_verified": False,
@@ -100,7 +102,7 @@ def _build_transaction_replacement_updates(
     text: str,
     planner_output: PlannerOutput | None,
 ) -> dict[str, Any]:
-    cleaned_stack = [session for session in state.session_stack if session.domain not in TRANSACTION_INTENTS]
+    cleaned_stack = interrupt_state_view(state).session_stack_without_domains(TRANSACTION_INTENTS)
     logger.info(
         "interrupt_transaction_replaced",
         kind=interrupt.kind,

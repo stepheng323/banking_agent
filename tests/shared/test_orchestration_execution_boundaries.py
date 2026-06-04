@@ -62,6 +62,18 @@ INTERRUPT_SWITCHING_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "switching" / "switch_session_stash.py",
     INTERRUPT_ROOT / "switching" / "switch_update_additive.py",
 )
+INTERRUPT_FINAL_STATE_VIEW_MODULES = (
+    INTERRUPT_ROOT / "pending_action" / "pending_action_edit_engine.py",
+    INTERRUPT_ROOT / "pending_action" / "pending_action_payload_patch_router.py",
+    INTERRUPT_ROOT / "router" / "context_router.py",
+    INTERRUPT_ROOT / "router" / "context_router_payloads.py",
+    INTERRUPT_ROOT / "router" / "router_callbacks.py",
+    INTERRUPT_ROOT / "router" / "router_core.py",
+    INTERRUPT_ROOT / "router" / "router_semantic.py",
+    INTERRUPT_ROOT / "schedule_read.py",
+    INTERRUPT_ROOT / "switching" / "switch_update_planner.py",
+    INTERRUPT_ROOT / "switching" / "switch_update_replacement.py",
+)
 GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "context.py",
     GATE_ROOT / "direct_tasks.py",
@@ -865,6 +877,38 @@ def test_interrupt_switching_modules_use_typed_state_view() -> None:
         "waves",
     }
     for path in INTERRUPT_SWITCHING_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "request", "runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_remaining_interrupt_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "context_frames",
+        "last_callback",
+        "phone_number",
+        "pin_verified",
+        "preplanner_expected_transaction_executors",
+        "referent_memory",
+        "session_stack",
+        "stashed_query_session",
+        "tasks",
+    }
+    for path in INTERRUPT_FINAL_STATE_VIEW_MODULES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:

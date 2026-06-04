@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _could_be_schedule_interrupt_read_request,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
@@ -34,9 +35,10 @@ async def _resolve_schedule_read_during_pending_confirmation(
     if not _could_be_schedule_interrupt_read_request(text):
         return None
 
+    state_view = interrupt_state_view(state)
     try:
         route = await task_planner.route_schedule_read_turn(
-            state.phone_number,
+            state_view.phone_number,
             text,
             path_label="interrupt_path",
         )
@@ -58,7 +60,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
         count = len(frame.items)
         noun = "transaction" if count == 1 else "transactions"
         response = f"You have {count} pending scheduled {noun}."
-        context_frames = state.context_frames
+        context_frames = state_view.context_frames
     else:
         frame_response = build_context_frame_followup_response(
             state,
@@ -73,7 +75,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
         if frame_response is None or not frame_response.response:
             return None
         response = frame_response.response
-        context_frames = frame_response.context_frames or state.context_frames
+        context_frames = frame_response.context_frames or state_view.context_frames
 
     logger.info(
         "interrupt_schedule_read_context_answer",

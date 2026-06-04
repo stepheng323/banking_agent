@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.context import (
     logger,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_session_stash import _stash_current_session
 
 
@@ -42,7 +43,7 @@ def _build_planner_switch_updates(
     if current_task_types.issubset(TRANSACTION_INTENTS) and _is_resumable_interrupt(interrupt):
         stashed = _stash_current_session(state, interrupt=interrupt, intent=active_type)
         updates["stashed_sessions"] = stashed
-        updates["referent_memory"] = state.referent_memory
+        updates["referent_memory"] = interrupt_state_view(state).referent_memory
         logger.info(
             "interrupt_switch_to_planner_stashed",
             kind=interrupt.kind,

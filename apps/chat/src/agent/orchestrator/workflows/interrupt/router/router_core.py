@@ -82,6 +82,7 @@ async def _route_interrupt(
         return _route_fallback("router_unavailable")
 
     try:
+        state_view = interrupt_state_view(state)
         route_context, prompt_mode, active_task_state_mode = _build_interrupt_context_details(
             state=state,
             kind=kind,
@@ -98,7 +99,7 @@ async def _route_interrupt(
             interrupt_kind=kind,
         )
         route = await task_planner.route_pending_input(
-            state.phone_number,
+            state_view.phone_number,
             text,
             context=route_context,
             path_label="interrupt_path",
