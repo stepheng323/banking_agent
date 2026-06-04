@@ -113,7 +113,7 @@ async def _handle_semantic_domain_dispatch(
                 **updates,
             }
         if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
-            await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+            await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
             updates.update(
                 _build_query_session_exit_updates(
                     ctx.state,
@@ -193,7 +193,7 @@ async def _handle_semantic_domain_dispatch(
         and isinstance(ctx.query_session_snapshot, dict)
         and ctx.query_session_snapshot.get("session_active")
     ):
-        await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
         updates.update(
             _build_query_session_exit_updates(
                 ctx.state,

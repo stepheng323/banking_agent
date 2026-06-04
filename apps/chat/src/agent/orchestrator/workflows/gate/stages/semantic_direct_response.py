@@ -71,9 +71,9 @@ async def _handle_semantic_direct_response(
         }
     if (
         ctx.ambiguous_banking_domain is not None
-        and not ctx.state.session_stack
-        and not ctx.state.waves
-        and ctx.state.pending_interrupt is None
+        and not ctx.state_view.has_session_stack
+        and not ctx.state_view.has_waves
+        and not ctx.state_view.has_pending_interrupt
         and route.response_key in {"conversational.casual_chat", "conversational.out_of_scope"}
     ):
         logger.info(
@@ -130,7 +130,7 @@ async def _handle_semantic_direct_response(
         isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("pending_clarification")
     )
     if had_active_query_session:
-        await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
         updates.update(
             _build_query_session_exit_updates(
                 ctx.state,

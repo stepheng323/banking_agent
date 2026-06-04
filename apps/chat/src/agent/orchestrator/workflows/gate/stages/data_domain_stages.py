@@ -26,7 +26,7 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
     """Deterministic catalog-question shortcut for data plan prices/availability."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.has_quote
+        or ctx.state_view.has_quote
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_data_plan_query_request(ctx.message_text)
     ):
@@ -78,7 +78,7 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
     """Route "buy it" after a data-plan answer into a normal data purchase."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.has_quote
+        or ctx.state_view.has_quote
         or not _is_data_plan_reference_purchase_request(ctx.message_text)
     ):
         return None
@@ -118,7 +118,7 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
             "skip_extraction": True,
         }
     )
-    _apply_self_data_target(spec.payload, text=ctx.message_text, phone_number=ctx.state.phone_number)
+    _apply_self_data_target(spec.payload, text=ctx.message_text, phone_number=ctx.state_view.phone_number)
     logger.info("gate_data_plan_reference_purchase", task_id=task_id)
     return {
         **ctx.gate_updates,
@@ -145,7 +145,7 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
     """Deterministic data domain shortcut."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.has_quote
+        or ctx.state_view.has_quote
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_obvious_data_request(ctx.message_text)
     ):
@@ -168,7 +168,7 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
             ),
         }
     task_id, spec = _build_direct_domain_task(state=ctx.state, domain="data", mode="new")
-    spec.payload.update(_extract_data_purchase_hints(ctx.message_text, phone_number=ctx.state.phone_number))
+    spec.payload.update(_extract_data_purchase_hints(ctx.message_text, phone_number=ctx.state_view.phone_number))
     logger.info("gate_deterministic_data_domain", task_id=task_id)
     return {
         **ctx.gate_updates,

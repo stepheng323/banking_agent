@@ -101,7 +101,7 @@ async def semantic_locale_switch_updates(
 
     if ctx.redis_client:
         resolved = await LocaleManager.set_locale(
-            ctx.state.phone_number,
+            ctx.state_view.phone_number,
             resolved_locale,
             source="user_command",
         )

@@ -68,7 +68,7 @@ def coerce_boundary(raw: Any) -> CapabilityBoundary | None:
 
 
 def recent_unsupported_boundary(ctx: GateContext) -> CapabilityBoundary | None:
-    loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    loaded_context = ctx.state_view.loaded_context_or_empty
     grounding = loaded_context.get("conversation_grounding")
     if isinstance(grounding, dict):
         last_topic = str(grounding.get("last_topic") or "").strip()

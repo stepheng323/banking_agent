@@ -117,7 +117,7 @@ async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | Non
     """Attach a non-authoritative support hint for common transaction/ticket issue phrases."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.has_quote
+        or ctx.state_view.has_quote
         or ctx.task_planner is None
         or not _looks_like_support_issue_request(ctx.message_text)
     ):

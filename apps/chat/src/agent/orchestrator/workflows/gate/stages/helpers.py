@@ -15,7 +15,7 @@ async def _build_bounded_conversational_reply(
         return await ctx.conversation_responder.generate_reply(
             ctx.message_text,
             {
-                **(ctx.state.loaded_context or {}),
+                **ctx.state_view.loaded_context_or_empty,
                 "language": locale,
                 **(extra_user_ctx or {}),
             },

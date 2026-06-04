@@ -20,18 +20,26 @@ GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "node.py",
     GATE_ROOT / "query_session_exit.py",
     GATE_ROOT / "runtime.py",
+    GATE_ROOT / "unsupported_capability_routing.py",
 )
 GATE_STATE_VIEW_STAGE_MODULES = (
     GATE_ROOT / "stages" / "beneficiary_suggestion_stage.py",
     GATE_ROOT / "stages" / "context_frame_stages.py",
     GATE_ROOT / "stages" / "contextual_followup_stages.py",
     GATE_ROOT / "stages" / "core_stages.py",
+    GATE_ROOT / "stages" / "data_domain_stages.py",
     GATE_ROOT / "stages" / "direct_domain_stages.py",
+    GATE_ROOT / "stages" / "helpers.py",
     GATE_ROOT / "stages" / "meta_stages.py",
     GATE_ROOT / "stages" / "mixed_capability_stages.py",
     GATE_ROOT / "stages" / "resume_stages.py",
     GATE_ROOT / "stages" / "schedule_read_stage.py",
+    GATE_ROOT / "stages" / "semantic_direct_response.py",
+    GATE_ROOT / "stages" / "semantic_domain_dispatch.py",
+    GATE_ROOT / "stages" / "semantic_route_control.py",
+    GATE_ROOT / "stages" / "semantic_router_stage.py",
     GATE_ROOT / "stages" / "semantic_unsupported_capability_stage.py",
+    GATE_ROOT / "stages" / "support_context_stages.py",
     GATE_ROOT / "stages" / "unsupported_boundary_followup_stage.py",
 )
 EXECUTION_INTERRUPT_PATCH_MODULES = (

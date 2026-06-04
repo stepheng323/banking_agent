@@ -1,7 +1,6 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.interrupt_state import _is_numeric_input_interrupt_selection
 from apps.chat.src.agent.orchestrator.workflows.gate.router_context import (
     _build_semantic_router_context,
     _should_invoke_semantic_router,
@@ -35,21 +34,22 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
     await ctx.ensure_turn_summary()
     assert ctx.turn_summary is not None  # noqa: S101 – ensured by ensure_turn_summary
 
-    interrupt_kind = getattr(ctx.state.pending_interrupt, "kind", None)
+    interrupt_kind = ctx.state_view.pending_interrupt_kind
     skip_semantic_router_for_interrupt = ctx.live_pending_interrupt and (
-        interrupt_kind in {"confirmation", "auth"} or _is_numeric_input_interrupt_selection(ctx.state, ctx.message_text)
+        interrupt_kind in {"confirmation", "auth"}
+        or ctx.state_view.is_numeric_input_interrupt_selection(ctx.message_text)
     )
 
     if skip_semantic_router_for_interrupt:
         logger.info(
             "gate_semantic_router_skipped_for_interrupt",
             kind=interrupt_kind,
-            task_ids=getattr(ctx.state.pending_interrupt, "task_ids", None),
+            task_ids=ctx.state_view.pending_interrupt_task_ids,
         )
 
     if (
         not skip_semantic_router_for_interrupt
-        and not ctx.state.has_quote
+        and not ctx.state_view.has_quote
         and ctx.task_planner is not None
         and (ctx.live_pending_interrupt or _should_invoke_semantic_router(ctx.message_text))
     ):
@@ -61,7 +61,7 @@ async def _stage_semantic_router(ctx: GateContext) -> dict[str, Any] | None:
             )
             route_context = append_routing_hints(route_context, ctx.routing_hints)
             route = await ctx.task_planner.route_semantic_turn(
-                ctx.state.phone_number,
+                ctx.state_view.phone_number,
                 ctx.message_text,
                 context=route_context,
                 path_label="direct_path",
