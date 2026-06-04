@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "execution"
 INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "interrupt"
+GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
 
 DELETED_EXECUTION_MODULE_PATHS = (
     ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers" / "runtime.py",
@@ -24,6 +25,11 @@ FORBIDDEN_EXECUTION_TEXT = (
 FORBIDDEN_INTERRUPT_TEXT = (
     "services: dict[str, Any]",
     'config["configurable"].get("services"',
+)
+
+FORBIDDEN_GATE_TEXT = (
+    'config["configurable"]',
+    'config.get("configurable"',
 )
 
 
@@ -60,6 +66,19 @@ def test_typed_interrupt_core_does_not_forward_raw_service_mappings() -> None:
     for path in sorted(INTERRUPT_ROOT.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
         for forbidden in FORBIDDEN_INTERRUPT_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_typed_gate_core_reads_configurable_only_in_runtime_builder() -> None:
+    violations: list[str] = []
+    for path in sorted(GATE_ROOT.rglob("*.py")):
+        if path.name == "runtime.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_GATE_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
 

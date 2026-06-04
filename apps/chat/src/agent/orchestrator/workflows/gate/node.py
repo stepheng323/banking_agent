@@ -5,11 +5,8 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.interrupt_state import _has_live_pending_interrupt
-from apps.chat.src.agent.orchestrator.workflows.gate.language import _allow_phrase_heavy_fastpath
-from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _current_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.runtime import build_gate_runtime
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,20 +32,8 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         "gate_entry", session_domain=session.domain if session else None, interrupt=state.pending_interrupt is not None
     )
 
-    message_text = (state.last_message_text or "").strip()
-    current_locale = _current_locale(state)
-    ctx = GateContext(
-        state=state,
-        config=config,
-        redis_client=config["configurable"].get("redis_client"),
-        task_planner=config["configurable"].get("task_planner"),
-        conversation_responder=config["configurable"].get("conversation_responder"),
-        message_text=message_text,
-        current_locale=current_locale,
-        gate_updates={},
-        live_pending_interrupt=_has_live_pending_interrupt(state),
-        phrase_heavy_fastpath_allowed=_allow_phrase_heavy_fastpath(message_text, current_locale),
-    )
+    runtime = build_gate_runtime(state, config)
+    ctx = runtime.build_context()
 
     _stage_stale_interrupt_cleanup(ctx)
 
