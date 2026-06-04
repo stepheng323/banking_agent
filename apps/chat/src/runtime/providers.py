@@ -1,8 +1,11 @@
 """Provider capability resolution for the chat runtime."""
 
 from dataclasses import dataclass
-from typing import Any
 
+from shared.clients.abstractions.banking import BankDataProvider
+from shared.clients.abstractions.bill import BillPaymentProvider
+from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.clients.abstractions.resolution import AccountResolverProvider
 from shared.clients.factories.providers import ProviderFactory
 from shared.config.settings import settings
 
@@ -11,11 +14,11 @@ from shared.config.settings import settings
 class ChatRuntimeProviders:
     """External providers required by the chat runtime workers."""
 
-    bank_data_provider: Any
-    resolver_provider: Any
-    payout_resolver_provider: Any
-    direct_debit_provider: Any
-    bill_provider: Any
+    bank_data_provider: BankDataProvider
+    resolver_provider: AccountResolverProvider
+    payout_resolver_provider: AccountResolverProvider
+    direct_debit_provider: DirectDebitProvider
+    bill_provider: BillPaymentProvider
 
 
 def build_chat_runtime_providers() -> ChatRuntimeProviders:

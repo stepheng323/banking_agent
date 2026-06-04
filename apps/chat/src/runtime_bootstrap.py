@@ -1,9 +1,11 @@
 """Shared runtime startup bootstrap utilities for core processes."""
 
+import redis.asyncio as redis
+
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.abstractions.resolution import AccountResolverProvider
-from shared.clients.factories.providers import ProviderFactory
+from shared.clients.factories.providers import ProviderFactory, ResolverFlow
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
@@ -15,7 +17,8 @@ async def warm_runtime() -> None:
     resolver_providers: list[AccountResolverProvider] = []
     try:
         logger.info("Initializing resolver provider...")
-        for flow in ("bootstrap", "payout"):
+        resolver_flows: tuple[ResolverFlow, ...] = ("bootstrap", "payout")
+        for flow in resolver_flows:
             resolver_provider = ProviderFactory.get_resolver_for_flow(flow)
             if resolver_provider:
                 provider_name = resolver_provider.provider_name
@@ -32,7 +35,7 @@ async def warm_runtime() -> None:
     except Exception as e:
         logger.warning("Resolver provider initialization warning", error=str(e))
 
-    redis_client = None
+    redis_client: redis.Redis | None = None
     try:
         redis_client = RedisClient.get_client(settings.redis_url)
         logger.info("Redis client initialized")
