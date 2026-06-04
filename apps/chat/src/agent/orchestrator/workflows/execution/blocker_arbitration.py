@@ -6,6 +6,7 @@ from typing import Literal
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks, iter_tasks
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,18 +57,19 @@ def gate_task_ids(
     stage: TaskStage,
 ) -> list[str]:
     """Resolve actionable confirmation/auth task ids for the current wave."""
+    candidate_tasks = existing_tasks(state, candidate_task_ids)
     group_ids = {
-        str(state.tasks[task_id].payload.get("async_group_id"))
-        for task_id in candidate_task_ids
-        if task_id in state.tasks and state.tasks[task_id].payload.get("async_group_id")
+        str(task.payload.get("async_group_id"))
+        for _task_id, task in candidate_tasks
+        if task.payload.get("async_group_id")
     }
     return _dedupe_task_ids(
         [
-            *[task_id for task_id in candidate_task_ids if task_id in state.tasks],
-            *[task_id for task_id in current_wave if task_id in state.tasks and state.tasks[task_id].stage == stage],
+            *[task_id for task_id, _task in candidate_tasks],
+            *[task_id for task_id, task in existing_tasks(state, current_wave) if task.stage == stage],
             *[
                 task_id
-                for task_id, task in state.tasks.items()
+                for task_id, task in iter_tasks(state)
                 if task.stage == stage and group_ids and str(task.payload.get("async_group_id")) in group_ids
             ],
         ],
