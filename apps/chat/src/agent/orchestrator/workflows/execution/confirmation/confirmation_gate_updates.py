@@ -5,6 +5,7 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import gate_task_ids
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_summary import (
     _build_confirmation_gate_summary,
@@ -15,7 +16,6 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_update_message import (
     _compact_confirmation_update_message,
 )
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import (
     _fail_stalled_wave_tasks,
 )

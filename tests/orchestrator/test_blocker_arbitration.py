@@ -2,11 +2,9 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import choose_wave_blocker
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
-    ExecutionAccumulator,
-    ExecutionTurnContext,
-)
+from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_finalize import finalize_execution_wave_updates
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices

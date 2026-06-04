@@ -7,10 +7,8 @@ from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.task_handlers.query import handle_query_task
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import (
-    ExecutionAccumulator,
-    ExecutionTurnContext,
-)
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import (

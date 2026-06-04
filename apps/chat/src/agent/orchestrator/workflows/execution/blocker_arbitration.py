@@ -5,7 +5,7 @@ from typing import Literal
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -3,9 +3,9 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.prompting_recipients import _recipient_prompt_label
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from banking.presentation.formatters.missing_detail_prompts import (
     format_missing_details_prompt,
     format_source_repair_prompt,

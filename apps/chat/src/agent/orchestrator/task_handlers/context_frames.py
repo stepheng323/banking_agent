@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.context.surface_adapter import build_context_frame_from_surface_view
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionTurnContext
+from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from banking.transactions.query.contracts import FocusedReferent, SelectionPayload
 from shared.utils.logging import get_logger
 

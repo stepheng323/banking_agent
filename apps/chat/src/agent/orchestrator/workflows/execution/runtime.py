@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
 from hashlib import sha1
-from typing import Any, Literal, Protocol, cast
-
-from langchain_core.runnables import RunnableConfig
+from typing import Any, Literal, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices, WorkerName
 from banking.presentation.i18n.locale import LocaleManager
 from banking.runtime.protocols import WorkerProtocol
@@ -24,142 +22,6 @@ logger = get_logger(__name__)
 ExecutionResultPatch = dict[str, Any]
 _RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}
 _TERMINAL_TRANSACTION_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
-
-
-class ExecutionAccumulator:
-    """Mutable reducer surface for one execution wave."""
-
-    def __init__(self, tasks: dict[str, TaskSpec]) -> None:
-        self.updates: dict[str, Any] = {"tasks": tasks}
-        self.missing_fields_by_task: dict[str, list[str]] = {}
-        self.details_by_task: dict[str, dict[str, Any]] = {}
-        self.needs_confirm_tasks: list[str] = []
-        self.needs_auth_tasks: list[str] = []
-        self.prompts: list[str] = []
-        self.prompts_by_task: dict[str, str] = {}
-        self.feedback_messages: list[str] = []
-        self.source_bank_hints: list[str] = []
-
-    def set_update(self, key: str, value: Any) -> None:
-        self.updates[key] = value
-
-    def get_update(self, key: str, default: Any = None) -> Any:
-        return self.updates.get(key, default)
-
-    def add_outbox(self, entry: dict[str, Any]) -> None:
-        self.updates.setdefault("outbox", [])
-        self.updates["outbox"].append(entry)
-
-    def extend_outbox(self, entries: list[dict[str, Any]] | None) -> None:
-        if entries:
-            self.updates.setdefault("outbox", [])
-            self.updates["outbox"].extend(entries)
-
-    def say(self, text: str | None) -> None:
-        if text:
-            self.add_outbox({"type": "say", "text": text})
-
-    def add_prompt(self, prompt: str | None, task_id: str | None = None) -> None:
-        if prompt:
-            self.prompts.append(prompt)
-            if task_id:
-                self.prompts_by_task[task_id] = prompt
-
-    def add_missing_fields(self, task_id: str, fields: list[str] | None) -> None:
-        if fields:
-            self.missing_fields_by_task[task_id] = fields
-
-    def add_details(self, task_id: str, details: dict[str, Any] | None) -> None:
-        if details:
-            self.details_by_task[task_id] = details
-
-
-class BeneficiaryLookupRepositoryProtocol(Protocol):
-    async def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[Any]: ...
-
-    async def search_by_name(
-        self,
-        user_id: str,
-        query: str,
-        *,
-        beneficiary_type: str | None = None,
-    ) -> list[Any]: ...
-
-
-class BeneficiarySuggestionSaverProtocol(Protocol):
-    async def save_beneficiary(self, phone_number: str, alias: Any = None, locale: str = "en") -> str: ...
-
-
-class ReceiptPublisherProtocol(Protocol):
-    async def publish(self, topic: str, payload: dict[str, Any]) -> Any: ...
-
-
-@dataclass(frozen=True)
-class ExecutionDependencies:
-    """Runtime dependencies available to execution handlers."""
-
-    beneficiary_repo: BeneficiaryLookupRepositoryProtocol | None
-    beneficiary_suggestion_service: BeneficiarySuggestionSaverProtocol | None
-    publisher: ReceiptPublisherProtocol | None
-    progress_tracker: Any | None
-
-    @classmethod
-    def empty(cls) -> ExecutionDependencies:
-        return cls(
-            beneficiary_repo=None,
-            beneficiary_suggestion_service=None,
-            publisher=None,
-            progress_tracker=None,
-        )
-
-    @classmethod
-    def from_configurable(cls, configurable: Mapping[str, Any]) -> ExecutionDependencies:
-        return cls(
-            beneficiary_repo=cast(
-                BeneficiaryLookupRepositoryProtocol | None,
-                configurable.get("beneficiary_repo"),
-            ),
-            beneficiary_suggestion_service=cast(
-                BeneficiarySuggestionSaverProtocol | None,
-                configurable.get("beneficiary_suggestion_service"),
-            ),
-            publisher=cast(ReceiptPublisherProtocol | None, configurable.get("publisher")),
-            progress_tracker=configurable.get("progress_tracker"),
-        )
-
-    @classmethod
-    def from_config(cls, config: RunnableConfig) -> ExecutionDependencies:
-        configurable = config.get("configurable", {})
-        if isinstance(configurable, Mapping):
-            return cls.from_configurable(cast(Mapping[str, Any], configurable))
-        return cls.empty()
-
-
-@dataclass
-class ExecutionTurnContext:
-    state: OrchestratorState
-    config: RunnableConfig
-    services: OrchestrationServices
-    current_wave_len: int
-    accumulator: ExecutionAccumulator
-    current_wave_task_ids: list[str] | None = None
-    execution_dependencies: ExecutionDependencies | None = None
-
-    @property
-    def dependencies(self) -> ExecutionDependencies:
-        if self.execution_dependencies is None:
-            self.execution_dependencies = ExecutionDependencies.from_config(self.config)
-        return self.execution_dependencies
-
-    def require_worker(
-        self,
-        name: WorkerName,
-        task: TaskSpec,
-        *,
-        log_key: str,
-        error_message: str,
-    ) -> WorkerProtocol | None:
-        return self.services.require(name, task, log_key=log_key, error_message=error_message)
 
 
 def _state_locale(state: OrchestratorState) -> str:

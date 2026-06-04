@@ -1,7 +1,7 @@
 """Missing-field filtering for execution input prompts."""
 
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import EXECUTION_ONLY_FIELDS
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -1,7 +1,7 @@
 """Batch source-account prompt assembly for execution input interrupts."""
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.execution.runtime import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from banking.presentation.formatters.transfer_input_prompts import format_batch_transfer_source_prompt
 from banking.presentation.i18n.renderer import render_message
 
