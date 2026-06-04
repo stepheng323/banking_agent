@@ -1,8 +1,8 @@
 """Wave task bookkeeping helpers for the execution node."""
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import fail_task
 
 
 def _non_terminal_wave_task_ids(state: OrchestratorState, current_wave: list[str]) -> list[str]:
@@ -21,9 +21,7 @@ def _fail_stalled_wave_tasks(
 ) -> list[str]:
     stalled_task_ids = _non_terminal_wave_task_ids(state, current_wave)
     for task_id in stalled_task_ids:
-        task = state.tasks[task_id]
-        task.stage = TaskStage.FAILED
-        task.payload["error"] = reason
+        fail_task(state.tasks[task_id], reason)
     return stalled_task_ids
 
 

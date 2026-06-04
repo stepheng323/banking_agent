@@ -1,6 +1,6 @@
 """Execution wave task guard helpers."""
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import (
     INPUT_MUTABLE_STAGES,
@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.common import (
 from apps.chat.src.agent.orchestrator.workflows.execution.source_selection import (
     _is_same_batch_source_selection_sibling,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import cancel_task, fail_task
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from banking.accounts.mandate_state import is_mandate_debit_ready
 from shared.utils.logging import get_logger
@@ -56,8 +57,7 @@ def _apply_dependency_status(
 ) -> bool | None:
     dep_status, dep_id = _dependency_resolution(task, state.tasks)
     if dep_status == "cancel":
-        task.stage = TaskStage.CANCELLED
-        task.payload["error"] = f"dependency {dep_id} not successful"
+        cancel_task(task, f"dependency {dep_id} not successful")
         logger.info("task_cancelled_by_dependency", task_id=task_id, dependency=dep_id)
         return True
     if dep_status == "wait":
@@ -80,10 +80,14 @@ def _apply_mandate_gate_failure(
     if has_ready:
         return False
 
-    task.stage = TaskStage.FAILED
-    task.payload["is_pending_mandate"] = True
-    task.payload["mandate_accounts"] = runtime.mandate_gate_accounts
-    task.payload["error"] = _build_mandate_gate_error(runtime.mandate_gate_accounts or accounts, runtime.locale)
+    fail_task(
+        task,
+        _build_mandate_gate_error(runtime.mandate_gate_accounts or accounts, runtime.locale),
+        {
+            "is_pending_mandate": True,
+            "mandate_accounts": runtime.mandate_gate_accounts,
+        },
+    )
     return True
 
 
@@ -102,9 +106,7 @@ def _cancel_deadlocked_wave_tasks(
 
     logger.warning("dependency_deadlock_wave_cancelled", wave=current_wave, pending_tasks=pending)
     for task_id in pending:
-        task = state.tasks[task_id]
-        task.stage = TaskStage.CANCELLED
-        task.payload["error"] = "unresolved dependency deadlock"
+        cancel_task(state.tasks[task_id], "unresolved dependency deadlock")
 
 
 __all__ = [

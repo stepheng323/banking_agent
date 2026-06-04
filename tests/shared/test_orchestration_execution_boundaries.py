@@ -20,6 +20,10 @@ EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "prompts" / "input_prompts_focused.py",
     EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
 )
+EXECUTION_WAVE_GUARD_MUTATION_MODULES = (
+    EXECUTION_ROOT / "wave" / "runner_task_guards.py",
+    EXECUTION_ROOT / "wave" / "wave_state.py",
+)
 
 DELETED_EXECUTION_MODULE_PATHS = (
     TASK_HANDLERS_ROOT,
@@ -346,6 +350,30 @@ def test_execution_pending_interrupt_is_constructed_only_by_accumulator() -> Non
                 and node.func.attr in {"set_pending_interrupt", "set_interrupt_outbox"}
             ):
                 violations.append(f"{path.relative_to(ROOT)} calls generic {node.func.attr}()")
+
+    assert violations == []
+
+
+def test_execution_wave_guard_task_mutations_use_typed_helpers() -> None:
+    violations: list[str] = []
+    for path in EXECUTION_WAVE_GUARD_MUTATION_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if isinstance(target, ast.Attribute) and target.attr == "stage":
+                        violations.append(f"{path.relative_to(ROOT)} assigns {ast.unparse(target)}")
+                    if (
+                        isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Attribute)
+                        and target.value.attr == "payload"
+                    ):
+                        violations.append(f"{path.relative_to(ROOT)} assigns {ast.unparse(target)}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                target = node.func.value
+                if isinstance(target, ast.Attribute) and target.attr == "payload" and node.func.attr == "update":
+                    violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.update()")
 
     assert violations == []
 
