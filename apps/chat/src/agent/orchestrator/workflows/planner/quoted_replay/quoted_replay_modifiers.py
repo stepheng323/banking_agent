@@ -3,7 +3,7 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.transactions.shared.account_selection.reference import (
     build_source_account_patch,
     match_source_account_reference,
@@ -57,8 +57,8 @@ def _modifier_narration_candidate(text: str | None, modifier: ContextFrameReplay
     return trusted.narration.strip() or None
 
 
-def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
-    loaded_context = state.loaded_context or {}
+def _loaded_accounts(state_view: PlannerStateView) -> list[dict[str, Any]]:
+    loaded_context = state_view.loaded_context_or_empty
     account_sources = (
         loaded_context.get("transaction_accounts"),
         loaded_context.get("accounts"),
@@ -85,7 +85,7 @@ def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
 
 
 def _quoted_replay_source_override(
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     text: str,
     replay_modifier: ContextFrameReplayModifier | None,
 ) -> tuple[bool, dict[str, Any] | None, str | None]:
@@ -93,7 +93,7 @@ def _quoted_replay_source_override(
     if not candidate:
         return False, None, None
 
-    matched_account = match_source_account_reference(candidate, _loaded_accounts(state))
+    matched_account = match_source_account_reference(candidate, _loaded_accounts(state_view))
     if not matched_account:
         return True, None, candidate
 

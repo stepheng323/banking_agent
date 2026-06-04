@@ -3,13 +3,13 @@
 import json
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_active import (
     build_quoted_replay_context_from_summary,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
     get_or_build_turn_context_summary,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -73,40 +73,41 @@ def _compact_quoted_payload_for_prompt(payload: dict[str, Any]) -> str:
     return serialized[: QUOTED_REPLAY_PAYLOAD_PREVIEW_MAX_CHARS - 3] + "..."
 
 
-def _build_quoted_replay_context(state: OrchestratorState) -> str:
-    summary, _ = get_or_build_turn_context_summary(state, path_label="planner_path")
+def _build_quoted_replay_context(state_view: PlannerStateView) -> str:
+    summary, _ = get_or_build_turn_context_summary(state_view.state, path_label="planner_path")
     return build_quoted_replay_context_from_summary(
         summary,
-        quoted_message_id=state.quoted_message_id,
-        has_quote=state.has_quote,
+        quoted_message_id=state_view.quoted_message_id,
+        has_quote=state_view.has_quote,
     )
 
 
-def _build_quoted_replay_context_with_payload(state: OrchestratorState, quoted_payload: dict[str, Any]) -> str:
+def _build_quoted_replay_context_with_payload(state_view: PlannerStateView, quoted_payload: dict[str, Any]) -> str:
     payload_preview = _compact_quoted_payload_for_prompt(quoted_payload)
-    summary, _ = get_or_build_turn_context_summary(state, path_label="planner_path")
+    summary, _ = get_or_build_turn_context_summary(state_view.state, path_label="planner_path")
     return build_quoted_replay_context_from_summary(
         summary,
-        quoted_message_id=state.quoted_message_id,
-        has_quote=state.has_quote,
+        quoted_message_id=state_view.quoted_message_id,
+        has_quote=state_view.has_quote,
         quoted_payload_preview=payload_preview,
     )
 
 
 async def _load_quoted_actionable_payload(
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     actionable_message_repo: Any | None,
 ) -> dict[str, Any] | None:
-    if actionable_message_repo is None or not state.quoted_message_id:
+    quoted_message_id = state_view.quoted_message_id
+    if actionable_message_repo is None or not quoted_message_id:
         return None
 
-    user_id = (state.loaded_context or {}).get("user_id") or state.user_id
+    user_id = state_view.actionable_lookup_user_id
     if not user_id:
         logger.info("quoted_replay_actionable_lookup_skipped", reason="missing_user_id")
         return None
 
     try:
-        row = await actionable_message_repo.get_by_channel_message_id_for_user(state.quoted_message_id, str(user_id))
+        row = await actionable_message_repo.get_by_channel_message_id_for_user(quoted_message_id, str(user_id))
     except Exception as exc:
         logger.warning("quoted_replay_actionable_lookup_failed", error=str(exc))
         return None

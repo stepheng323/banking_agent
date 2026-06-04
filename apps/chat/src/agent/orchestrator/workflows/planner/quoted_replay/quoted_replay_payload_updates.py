@@ -3,7 +3,6 @@
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_replay_modifiers import (
     _quoted_replay_source_override,
 )
@@ -18,6 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_rep
     _scope_requested,
     _select_seed_tasks,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
@@ -25,9 +25,13 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _next_quoted_replay_task_id(state: OrchestratorState, task_type: str, existing_ids: set[str] | None = None) -> str:
+def _next_quoted_replay_task_id(
+    state_view: PlannerStateView,
+    task_type: str,
+    existing_ids: set[str] | None = None,
+) -> str:
     seen = set(existing_ids or set())
-    seen.update(state.tasks.keys())
+    seen.update(state_view.task_ids)
     idx = 1
     task_id = f"quoted_replay_{task_type}_{idx}"
     while task_id in seen:
@@ -38,7 +42,7 @@ def _next_quoted_replay_task_id(state: OrchestratorState, task_type: str, existi
 
 def _build_quoted_replay_execution_updates(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     text: str,
     interpretation: QuotedReplayInterpretation,
     locale_updates: dict[str, Any],
@@ -50,7 +54,7 @@ def _build_quoted_replay_execution_updates(
     allocated_ids: set[str] = set()
     missing_fields: list[str] = []
     source_override_requested, source_override, source_reference = _quoted_replay_source_override(
-        state,
+        state_view,
         text,
         replay_modifier,
     )
@@ -91,7 +95,7 @@ def _build_quoted_replay_execution_updates(
                     preview_payload["recipient_account"] = recipient_account_number
             missing_fields.extend(_replay_payload_missing_fields(task_type, preview_payload))
             continue
-        task_id = _next_quoted_replay_task_id(state, task_type, allocated_ids)
+        task_id = _next_quoted_replay_task_id(state_view, task_type, allocated_ids)
         allocated_ids.add(task_id)
         new_tasks[task_id] = TaskSpec(
             id=task_id,

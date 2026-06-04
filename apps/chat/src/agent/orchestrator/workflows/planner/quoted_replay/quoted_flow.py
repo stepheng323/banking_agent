@@ -2,7 +2,6 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_replay_context import (
     _build_quoted_replay_context,
@@ -15,6 +14,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_rep
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_replay_payload_updates import (
     _build_quoted_replay_execution_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
 from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameReplayModifier
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 
 async def _handle_quoted_replay_shortcut(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     actionable_message_repo: Any | None,
     task_planner: TaskPlanner | None,
     text: str,
@@ -34,23 +34,23 @@ async def _handle_quoted_replay_shortcut(
     locale_updates: dict[str, Any],
     quoted_replay_min_confidence: float,
 ) -> dict[str, Any] | None:
-    if not (state.has_quote and state.quoted_message_id):
+    if not state_view.has_quoted_message:
         return None
 
-    quoted_payload = await _load_quoted_actionable_payload(state, actionable_message_repo)
+    quoted_payload = await _load_quoted_actionable_payload(state_view, actionable_message_repo)
 
     if task_planner is None:
         return None
 
     quoted_context = (
-        _build_quoted_replay_context_with_payload(state, quoted_payload)
+        _build_quoted_replay_context_with_payload(state_view, quoted_payload)
         if quoted_payload is not None
-        else _build_quoted_replay_context(state)
+        else _build_quoted_replay_context(state_view)
     )
     try:
         interpretation = cast(
             QuotedReplayInterpretation,
-            await task_planner.interpret_quoted_replay(state.phone_number, text, context=quoted_context),
+            await task_planner.interpret_quoted_replay(state_view.phone_number, text, context=quoted_context),
         )
         if interpretation.decision == "clarify":
             logger.info("quoted_replay_shortcut_clarify", reason=interpretation.reason)
@@ -77,7 +77,7 @@ async def _handle_quoted_replay_shortcut(
             if quoted_payload is None:
                 logger.info(
                     "quoted_replay_actionable_payload_missing",
-                    quoted_message_id_hash=log_fingerprint(state.quoted_message_id),
+                    quoted_message_id_hash=log_fingerprint(state_view.quoted_message_id),
                 )
                 return {
                     "final_response": render_message("conversational.clarify", current_locale),
@@ -91,7 +91,7 @@ async def _handle_quoted_replay_shortcut(
                     replay_modifier = cast(
                         ContextFrameReplayModifier | None,
                         await task_planner.extract_context_frame_replay_modifiers(
-                            state.phone_number,
+                            state_view.phone_number,
                             text,
                             context=quoted_context,
                             path_label="planner_path",
@@ -111,7 +111,7 @@ async def _handle_quoted_replay_shortcut(
                             reason=replay_modifier.reason,
                         )
             replay_updates = _build_quoted_replay_execution_updates(
-                state=state,
+                state_view=state_view,
                 text=text,
                 interpretation=interpretation,
                 locale_updates=locale_updates,

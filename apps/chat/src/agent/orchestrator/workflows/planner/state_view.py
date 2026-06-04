@@ -26,6 +26,10 @@ class PlannerStateView:
         return self.state.phone_number
 
     @property
+    def user_id(self) -> str:
+        return self.state.user_id
+
+    @property
     def last_message_text(self) -> str | None:
         return self.state.last_message_text
 
@@ -56,6 +60,10 @@ class PlannerStateView:
     @property
     def tasks(self) -> dict[str, TaskSpec]:
         return self.state.tasks
+
+    @property
+    def task_ids(self) -> set[str]:
+        return set(self.tasks.keys())
 
     @property
     def waves(self) -> list[list[str]]:
@@ -91,6 +99,10 @@ class PlannerStateView:
     def loaded_context_or_empty(self) -> dict[str, Any]:
         loaded_context = self.loaded_context
         return loaded_context if isinstance(loaded_context, dict) else {}
+
+    @property
+    def actionable_lookup_user_id(self) -> str:
+        return str(self.loaded_context_or_empty.get("user_id") or self.user_id)
 
     @property
     def current_locale(self) -> str:

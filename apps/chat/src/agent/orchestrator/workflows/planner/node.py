@@ -51,7 +51,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     locale_updates = _build_locale_update(state, current_locale)
 
     quoted_replay_updates = await _handle_quoted_replay_shortcut(
-        state=state,
+        state_view=state_view,
         actionable_message_repo=dependencies.actionable_message_repo,
         task_planner=task_planner,
         text=text,
