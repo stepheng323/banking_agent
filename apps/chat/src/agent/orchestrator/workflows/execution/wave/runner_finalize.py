@@ -40,11 +40,11 @@ def _advance_or_fail_stalled_wave(
     patch: ExecutionResultPatch,
 ) -> None:
     if _current_wave_is_terminal(state=state, current_wave=current_wave):
-        if not patch.has_update("current_wave_index"):
-            patch.set_update("current_wave_index", state.current_wave_index + 1)
+        if not patch.has_current_wave_index():
+            patch.set_current_wave_index(state.current_wave_index + 1)
         return
 
-    if patch.has_update("pending_interrupt"):
+    if patch.has_pending_interrupt():
         return
 
     stalled = _fail_stalled_wave_tasks(
@@ -67,7 +67,7 @@ def _advance_or_fail_stalled_wave(
             if task_id in state.tasks
         ],
     )
-    patch.set_update("current_wave_index", state.current_wave_index + 1)
+    patch.set_current_wave_index(state.current_wave_index + 1)
 
 
 def finalize_execution_wave_updates(
@@ -86,9 +86,8 @@ def finalize_execution_wave_updates(
 
     patch = runtime.accumulator.result_patch
     if state.policy_notice:
-        existing = patch.get_update("outbox", [])
-        patch.set_update("outbox", _with_policy_notice(state, existing))
-        patch.set_update("policy_notice", None)
+        patch.set_outbox(_with_policy_notice(state, patch.get_outbox()))
+        patch.clear_policy_notice()
 
     if blocker.kind == "confirmation":
         return _build_confirmation_gate_updates(

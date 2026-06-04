@@ -106,12 +106,10 @@ def _build_missing_field_interrupt_updates(
     if fallback_queue_meta is not None:
         fallback_outbox_entries[0]["queue"] = fallback_queue_meta
     patch = ExecutionResultPatch({"tasks": state.tasks})
-    patch.set_update("pending_interrupt", interrupt)
-    patch.set_update("outbox", _with_policy_notice(state, fallback_outbox_entries))
-    patch.set_update("policy_notice", None)
-    for key in ("context_frames", "referent_memory"):
-        if agg.has_update(key):
-            patch.set_update(key, agg.get_update(key))
+    patch.set_pending_interrupt(interrupt)
+    patch.set_outbox(_with_policy_notice(state, fallback_outbox_entries))
+    patch.clear_policy_notice()
+    agg.apply_context_updates_to(patch)
     return patch.to_updates()
 
 

@@ -55,7 +55,7 @@ def _build_confirmation_gate_updates(
             stalled_tasks=stalled,
             candidate_task_ids=agg.needs_confirm_tasks,
         )
-        patch.set_update("current_wave_index", state.current_wave_index + 1)
+        patch.set_current_wave_index(state.current_wave_index + 1)
         return cast(dict[str, Any], patch.to_updates())
 
     accounts_raw = state.loaded_context.get("accounts") or []
@@ -120,8 +120,8 @@ def _build_confirmation_gate_updates(
         }
     )
 
-    patch.set_update("outbox", outbox)
-    patch.set_update("pending_interrupt", interrupt)
+    patch.set_outbox(outbox)
+    patch.set_pending_interrupt(interrupt)
     return cast(dict[str, Any], patch.to_updates())
 
 

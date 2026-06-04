@@ -77,9 +77,9 @@ async def _maybe_coordinate_batch_funding(
         total_available=result.total_available,
     )
     patch = ExecutionResultPatch({"tasks": state.tasks})
-    patch.set_update("pending_interrupt", interrupt)
-    patch.set_update("outbox", _with_policy_notice(state, [{"type": "say", "text": prompt}]))
-    patch.set_update("policy_notice", None)
+    patch.set_pending_interrupt(interrupt)
+    patch.set_outbox(_with_policy_notice(state, [{"type": "say", "text": prompt}]))
+    patch.clear_policy_notice()
     return patch.to_updates()
 
 

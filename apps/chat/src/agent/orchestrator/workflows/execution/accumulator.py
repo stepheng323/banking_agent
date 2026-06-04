@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
+from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 
 
 class ExecutionResultPatch:
@@ -21,6 +21,34 @@ class ExecutionResultPatch:
 
     def has_update(self, key: str) -> bool:
         return key in self._updates
+
+    def set_current_wave_index(self, index: int) -> None:
+        self._updates["current_wave_index"] = index
+
+    def has_current_wave_index(self) -> bool:
+        return "current_wave_index" in self._updates
+
+    def set_pending_interrupt(self, interrupt: PendingInterrupt | None) -> None:
+        self._updates["pending_interrupt"] = interrupt
+
+    def has_pending_interrupt(self) -> bool:
+        return "pending_interrupt" in self._updates
+
+    def set_outbox(self, entries: list[dict[str, Any]]) -> None:
+        self._updates["outbox"] = entries
+
+    def get_outbox(self) -> list[dict[str, Any]]:
+        outbox = self._updates.get("outbox", [])
+        return outbox if isinstance(outbox, list) else []
+
+    def clear_policy_notice(self) -> None:
+        self._updates["policy_notice"] = None
+
+    def set_context_frames(self, context_frames: Any) -> None:
+        self._updates["context_frames"] = context_frames
+
+    def set_referent_memory(self, referent_memory: Any) -> None:
+        self._updates["referent_memory"] = referent_memory
 
     def append_outbox(self, entry: dict[str, Any]) -> None:
         outbox = self._updates.setdefault("outbox", [])
@@ -58,6 +86,12 @@ class ExecutionAccumulator:
 
     def has_update(self, key: str) -> bool:
         return self.result_patch.has_update(key)
+
+    def apply_context_updates_to(self, patch: ExecutionResultPatch) -> None:
+        if self.has_update("context_frames"):
+            patch.set_context_frames(self.get_update("context_frames"))
+        if self.has_update("referent_memory"):
+            patch.set_referent_memory(self.get_update("referent_memory"))
 
     def to_updates(self) -> dict[str, Any]:
         return self.result_patch.to_updates()

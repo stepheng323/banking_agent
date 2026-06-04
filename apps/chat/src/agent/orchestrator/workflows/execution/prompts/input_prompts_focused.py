@@ -141,12 +141,10 @@ def _build_focused_missing_field_updates(
     if queue_meta is not None:
         outbox_entries[0]["queue"] = queue_meta
     patch = ExecutionResultPatch({"tasks": state.tasks})
-    patch.set_update("pending_interrupt", interrupt)
-    patch.set_update("outbox", _with_policy_notice(state, outbox_entries))
-    patch.set_update("policy_notice", None)
-    for key in ("context_frames", "referent_memory"):
-        if agg.has_update(key):
-            patch.set_update(key, agg.get_update(key))
+    patch.set_pending_interrupt(interrupt)
+    patch.set_outbox(_with_policy_notice(state, outbox_entries))
+    patch.clear_policy_notice()
+    agg.apply_context_updates_to(patch)
     return patch.to_updates()
 
 

@@ -75,6 +75,8 @@ MOVED_EXECUTION_RUNTIME_SYMBOLS = {
     "ExecutionTurnContext",
 }
 
+FORBIDDEN_RESULT_PATCH_METHODS = {"set_update", "get_update", "has_update"}
+
 
 def _python_sources() -> list[Path]:
     roots = (ROOT / "apps", ROOT / "tests")
@@ -117,6 +119,26 @@ def test_execution_context_and_accumulator_use_canonical_imports() -> None:
             if moved_symbols:
                 symbol_list = ", ".join(sorted(moved_symbols))
                 violations.append(f"{path.relative_to(ROOT)} imports moved execution symbols: {symbol_list}")
+
+    assert violations == []
+
+
+def test_execution_result_patch_callers_use_typed_methods() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name == "accumulator.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in FORBIDDEN_RESULT_PATCH_METHODS:
+                continue
+            target = node.func.value
+            if isinstance(target, ast.Name) and target.id == "patch":
+                violations.append(f"{path.relative_to(ROOT)} calls patch.{node.func.attr}()")
 
     assert violations == []
 

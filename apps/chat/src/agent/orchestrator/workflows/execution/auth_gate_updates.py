@@ -52,7 +52,7 @@ def _build_auth_gate_updates(
             stalled_tasks=stalled,
             candidate_task_ids=agg.needs_auth_tasks,
         )
-        patch.set_update("current_wave_index", state.current_wave_index + 1)
+        patch.set_current_wave_index(state.current_wave_index + 1)
         return cast(dict[str, Any], patch.to_updates())
 
     first_task = state.tasks[auth_task_ids[0]]
@@ -75,8 +75,7 @@ def _build_auth_gate_updates(
     reason = _auth_header_for_tasks(state, auth_task_ids, locale=locale)
 
     interrupt = PendingInterrupt(kind="auth", task_ids=auth_task_ids, auth_method="pin", prompt=summ)
-    patch.set_update(
-        "outbox",
+    patch.set_outbox(
         [
             {
                 "type": "auth_request",
@@ -91,9 +90,9 @@ def _build_auth_gate_updates(
                     [state.tasks[task_id] for task_id in auth_task_ids if task_id in state.tasks]
                 ),
             }
-        ],
+        ]
     )
-    patch.set_update("pending_interrupt", interrupt)
+    patch.set_pending_interrupt(interrupt)
     return cast(dict[str, Any], patch.to_updates())
 
 
