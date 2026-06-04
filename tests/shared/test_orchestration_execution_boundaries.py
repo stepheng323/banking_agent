@@ -42,27 +42,7 @@ EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
     EXECUTION_ROOT / "executors" / "support.py",
     EXECUTION_ROOT / "executors" / "transfer.py",
 )
-EXECUTION_TASK_ACCESS_CONTRACT_MODULES = (
-    EXECUTION_ROOT / "auth_gate_updates.py",
-    EXECUTION_ROOT / "async_grouping.py",
-    EXECUTION_ROOT / "blocker_arbitration.py",
-    EXECUTION_ROOT / "confirmation" / "confirmation_auth.py",
-    EXECUTION_ROOT / "confirmation" / "confirmation_gate_summary.py",
-    EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
-    EXECUTION_ROOT / "confirmation" / "confirmation_personality.py",
-    EXECUTION_ROOT / "executors" / "query.py",
-    EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
-    EXECUTION_ROOT / "prompts" / "input_prompt_batch_source.py",
-    EXECUTION_ROOT / "prompts" / "input_prompts_focused.py",
-    EXECUTION_ROOT / "prompts" / "input_prompts_unified.py",
-    EXECUTION_ROOT / "prompts" / "prompting_queue.py",
-    EXECUTION_ROOT / "source_selection.py",
-    EXECUTION_ROOT / "wave" / "runner_finalize.py",
-    EXECUTION_ROOT / "wave" / "runner_setup.py",
-    EXECUTION_ROOT / "wave" / "runner_task_guards.py",
-    EXECUTION_ROOT / "wave" / "runner_tasks.py",
-    EXECUTION_ROOT / "wave" / "wave_state.py",
-)
+EXECUTION_TASK_ACCESS_MODULE = EXECUTION_ROOT / "task_access.py"
 
 DELETED_EXECUTION_MODULE_PATHS = (
     TASK_HANDLERS_ROOT,
@@ -446,7 +426,9 @@ def test_execution_session_stack_mutations_use_typed_helpers() -> None:
 
 def test_execution_wave_task_reads_use_typed_helpers() -> None:
     violations: list[str] = []
-    for path in EXECUTION_TASK_ACCESS_CONTRACT_MODULES:
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.resolve() == EXECUTION_TASK_ACCESS_MODULE.resolve():
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "tasks":
