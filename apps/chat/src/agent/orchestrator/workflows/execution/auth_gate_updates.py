@@ -33,7 +33,7 @@ def _build_auth_gate_updates(
     auth_task_ids = task_ids or gate_task_ids(
         state=state,
         current_wave=current_wave,
-        candidate_task_ids=agg.needs_auth_tasks,
+        candidate_task_ids=agg.auth_task_ids(),
         stage=TaskStage.AWAITING_AUTH,
     )
     if not auth_task_ids:
@@ -46,7 +46,7 @@ def _build_auth_gate_updates(
             "advance_wave_auth_gate_stalled",
             wave=current_wave,
             stalled_tasks=stalled,
-            candidate_task_ids=agg.needs_auth_tasks,
+            candidate_task_ids=agg.auth_task_ids(),
         )
         agg.set_current_wave_index(state.current_wave_index + 1)
         return cast(dict[str, Any], agg.to_updates())

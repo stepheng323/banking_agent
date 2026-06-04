@@ -33,13 +33,14 @@ def _build_unified_missing_field_prompt(
             if name and name not in found_names:
                 found_names.append(name)
 
-        if tid in agg.missing_fields_by_task:
-            if p := agg.prompts_by_task.get(tid):
+        if agg.has_input_request(tid):
+            if p := agg.prompt_for_task(tid):
                 missing_prompts.append(p)
 
-    repair_hint = agg.source_bank_hints[0] if agg.source_bank_hints else None
+    repair_hint = agg.first_source_bank_hint()
+    feedback_messages = agg.feedback_messages_for_prompt()
 
-    if repair_hint and agg.feedback_messages:
+    if repair_hint and feedback_messages:
         intents = []
         for tid in current_wave:
             task = state.tasks.get(tid)
@@ -58,7 +59,7 @@ def _build_unified_missing_field_prompt(
         prompt_text = format_missing_details_prompt(
             found_names=found_names,
             missing_prompts=missing_prompts,
-            feedback_messages=agg.feedback_messages,
+            feedback_messages=feedback_messages,
             locale=locale,
         )
 

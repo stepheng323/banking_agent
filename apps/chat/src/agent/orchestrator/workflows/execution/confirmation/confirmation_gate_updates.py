@@ -36,7 +36,7 @@ def _build_confirmation_gate_updates(
     confirm_task_ids = task_ids or gate_task_ids(
         state=state,
         current_wave=current_wave,
-        candidate_task_ids=agg.needs_confirm_tasks,
+        candidate_task_ids=agg.confirmation_task_ids(),
         stage=TaskStage.AWAITING_CONFIRMATION,
     )
     if not confirm_task_ids:
@@ -49,7 +49,7 @@ def _build_confirmation_gate_updates(
             "advance_wave_confirmation_gate_stalled",
             wave=current_wave,
             stalled_tasks=stalled,
-            candidate_task_ids=agg.needs_confirm_tasks,
+            candidate_task_ids=agg.confirmation_task_ids(),
         )
         agg.set_current_wave_index(state.current_wave_index + 1)
         return cast(dict[str, Any], agg.to_updates())

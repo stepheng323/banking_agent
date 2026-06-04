@@ -42,8 +42,8 @@ def test_missing_input_suppresses_confirmation_and_auth() -> None:
     )
     agg = _aggregation(state)
     agg.add_missing_fields("input", ["amount"])
-    agg.needs_confirm_tasks.append("confirm")
-    agg.needs_auth_tasks.append("auth")
+    agg.add_confirmation_task("confirm")
+    agg.add_auth_task("auth")
 
     decision = choose_wave_blocker(state=state, current_wave=state.waves[0], agg=agg)
 
@@ -61,8 +61,8 @@ def test_confirmation_suppresses_auth() -> None:
         wave=["confirm", "auth"],
     )
     agg = _aggregation(state)
-    agg.needs_confirm_tasks.append("confirm")
-    agg.needs_auth_tasks.append("auth")
+    agg.add_confirmation_task("confirm")
+    agg.add_auth_task("auth")
 
     decision = choose_wave_blocker(state=state, current_wave=state.waves[0], agg=agg)
 
@@ -77,7 +77,7 @@ def test_auth_is_selected_when_no_higher_priority_blocker_exists() -> None:
         wave=["auth"],
     )
     agg = _aggregation(state)
-    agg.needs_auth_tasks.append("auth")
+    agg.add_auth_task("auth")
 
     decision = choose_wave_blocker(state=state, current_wave=state.waves[0], agg=agg)
 
@@ -96,7 +96,7 @@ def test_grouped_confirmation_expands_by_async_group_and_preserves_wave_order() 
         wave=["first", "middle", "last"],
     )
     agg = _aggregation(state)
-    agg.needs_confirm_tasks.append("last")
+    agg.add_confirmation_task("last")
 
     decision = choose_wave_blocker(state=state, current_wave=state.waves[0], agg=agg)
 

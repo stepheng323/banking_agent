@@ -66,8 +66,7 @@ def _build_missing_field_interrupt_updates(
 
     fallback_options_entry: dict[str, Any] | None = None
     fallback_queue_meta: dict[str, Any] | None = None
-    if len(agg.missing_fields_by_task) == 1:
-        task_id = next(iter(agg.missing_fields_by_task.keys()))
+    if task_id := agg.single_input_task_id():
         queued_tasks = _queued_transaction_tasks_for_focus(
             state=state,
             current_wave=current_wave,
@@ -78,8 +77,8 @@ def _build_missing_field_interrupt_updates(
             queued_tasks=queued_tasks,
             locale=locale,
         )
-        details = agg.details_by_task.get(task_id)
-        focused_missing_fields = agg.missing_fields_by_task.get(task_id, [])
+        details = agg.details_for_task(task_id)
+        focused_missing_fields = agg.input_fields_for(task_id)
         fallback_options_entry = _build_show_options_entry(
             details=details,
             prompt_text=prompt_text,
@@ -92,8 +91,8 @@ def _build_missing_field_interrupt_updates(
 
     interrupt = PendingInterrupt(
         kind="input",
-        task_ids=list(agg.missing_fields_by_task.keys()),
-        fields_by_task=agg.missing_fields_by_task,
+        task_ids=agg.input_task_ids(),
+        fields_by_task=agg.input_fields_by_task(),
         prompt=prompt_text,
     )
     fallback_outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]

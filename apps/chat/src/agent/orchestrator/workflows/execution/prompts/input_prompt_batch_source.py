@@ -9,10 +9,8 @@ from banking.presentation.i18n.renderer import render_message
 def _transfer_tasks_only_missing_source(state: OrchestratorState, agg: ExecutionAccumulator) -> list[str]:
     return [
         tid
-        for tid in agg.missing_fields_by_task
-        if state.tasks.get(tid)
-        and state.tasks[tid].type == "transfer"
-        and set(agg.missing_fields_by_task[tid]) == {"source_account_id"}
+        for tid, fields in agg.input_request_items()
+        if state.tasks.get(tid) and state.tasks[tid].type == "transfer" and set(fields) == {"source_account_id"}
     ]
 
 
@@ -23,8 +21,8 @@ def build_batch_source_prompt_if_needed(
     locale: str,
 ) -> str | None:
     transfer_tasks_only_source = _transfer_tasks_only_missing_source(state, agg)
-    all_batch_source = len(transfer_tasks_only_source) >= 2 and len(transfer_tasks_only_source) == len(
-        agg.missing_fields_by_task
+    all_batch_source = (
+        len(transfer_tasks_only_source) >= 2 and len(transfer_tasks_only_source) == agg.input_request_count()
     )
     if not all_batch_source:
         return None

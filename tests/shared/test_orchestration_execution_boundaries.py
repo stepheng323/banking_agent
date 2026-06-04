@@ -89,6 +89,15 @@ FORBIDDEN_ACCUMULATOR_MAPPING_MUTATIONS = {
     "missing_fields_by_task",
     "prompts_by_task",
 }
+FORBIDDEN_ACCUMULATOR_PUBLIC_FIELDS = {
+    "details_by_task",
+    "feedback_messages",
+    "missing_fields_by_task",
+    "needs_auth_tasks",
+    "needs_confirm_tasks",
+    "prompts_by_task",
+    "source_bank_hints",
+}
 FORBIDDEN_RESULT_PATCH_METHODS = {"set_update", "get_update", "has_update"}
 
 
@@ -215,6 +224,33 @@ def test_execution_accumulator_result_patch_is_private() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "result_patch":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_execution_accumulator_state_storage_is_private() -> None:
+    violations: list[str] = []
+    accumulator_text = (EXECUTION_ROOT / "accumulator.py").read_text(encoding="utf-8")
+    for field_name in FORBIDDEN_ACCUMULATOR_PUBLIC_FIELDS | {"prompts"}:
+        if f"self.{field_name}" in accumulator_text:
+            violations.append(f"ExecutionAccumulator exposes public {field_name} attribute")
+
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name == "accumulator.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_ACCUMULATOR_PUBLIC_FIELDS:
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == "prompts"
+                and (
+                    (isinstance(node.value, ast.Name) and node.value.id in {"agg", "accumulator"})
+                    or (isinstance(node.value, ast.Attribute) and node.value.attr == "accumulator")
+                )
+            ):
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
     assert violations == []

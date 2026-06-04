@@ -13,14 +13,14 @@ class ExecutionAccumulator:
 
     def __init__(self, tasks: dict[str, TaskSpec]) -> None:
         self._result_patch = ExecutionResultPatch({"tasks": tasks})
-        self.missing_fields_by_task: dict[str, list[str]] = {}
-        self.details_by_task: dict[str, dict[str, Any]] = {}
-        self.needs_confirm_tasks: list[str] = []
-        self.needs_auth_tasks: list[str] = []
-        self.prompts: list[str] = []
-        self.prompts_by_task: dict[str, str] = {}
-        self.feedback_messages: list[str] = []
-        self.source_bank_hints: list[str] = []
+        self._missing_fields_by_task: dict[str, list[str]] = {}
+        self._details_by_task: dict[str, dict[str, Any]] = {}
+        self._needs_confirm_tasks: list[str] = []
+        self._needs_auth_tasks: list[str] = []
+        self._prompts: list[str] = []
+        self._prompts_by_task: dict[str, str] = {}
+        self._feedback_messages: list[str] = []
+        self._source_bank_hints: list[str] = []
 
     def set_context_frames(self, context_frames: Any) -> None:
         self._result_patch.set_context_frames(context_frames)
@@ -97,44 +97,89 @@ class ExecutionAccumulator:
         if text:
             self.add_outbox({"type": "say", "text": text})
 
+    def input_task_ids(self) -> list[str]:
+        return list(self._missing_fields_by_task)
+
+    def input_request_count(self) -> int:
+        return len(self._missing_fields_by_task)
+
+    def has_input_request(self, task_id: str) -> bool:
+        return task_id in self._missing_fields_by_task
+
+    def input_fields_for(self, task_id: str) -> list[str]:
+        return list(self._missing_fields_by_task.get(task_id, []))
+
+    def input_fields_by_task(self) -> dict[str, list[str]]:
+        return {task_id: list(fields) for task_id, fields in self._missing_fields_by_task.items()}
+
+    def input_request_items(self) -> list[tuple[str, list[str]]]:
+        return [(task_id, list(fields)) for task_id, fields in self._missing_fields_by_task.items()]
+
+    def single_input_task_id(self) -> str | None:
+        if len(self._missing_fields_by_task) != 1:
+            return None
+        return next(iter(self._missing_fields_by_task))
+
+    def prompt_for_task(self, task_id: str) -> str | None:
+        return self._prompts_by_task.get(task_id)
+
+    def details_for_task(self, task_id: str) -> dict[str, Any] | None:
+        details = self._details_by_task.get(task_id)
+        return dict(details) if details else None
+
+    def prompt_history(self) -> list[str]:
+        return list(self._prompts)
+
+    def feedback_messages_for_prompt(self) -> list[str]:
+        return list(self._feedback_messages)
+
+    def first_source_bank_hint(self) -> str | None:
+        return self._source_bank_hints[0] if self._source_bank_hints else None
+
+    def confirmation_task_ids(self) -> list[str]:
+        return list(self._needs_confirm_tasks)
+
+    def auth_task_ids(self) -> list[str]:
+        return list(self._needs_auth_tasks)
+
     def add_prompt(self, prompt: str | None, task_id: str | None = None) -> None:
         if prompt:
-            self.prompts.append(prompt)
+            self._prompts.append(prompt)
             if task_id:
-                self.prompts_by_task[task_id] = prompt
+                self._prompts_by_task[task_id] = prompt
 
     def add_feedback_message(self, message: str | None) -> None:
         if message:
-            self.feedback_messages.append(message)
+            self._feedback_messages.append(message)
 
     def add_source_bank_hint(self, hint: Any) -> None:
         if hint:
-            self.source_bank_hints.append(str(hint))
+            self._source_bank_hints.append(str(hint))
 
     def add_confirmation_task(self, task_id: str) -> None:
-        self.needs_confirm_tasks.append(task_id)
+        self._needs_confirm_tasks.append(task_id)
 
     def add_auth_task(self, task_id: str) -> None:
-        self.needs_auth_tasks.append(task_id)
+        self._needs_auth_tasks.append(task_id)
 
     def remove_missing_fields(self, task_id: str) -> None:
-        self.missing_fields_by_task.pop(task_id, None)
+        self._missing_fields_by_task.pop(task_id, None)
 
     def remove_missing_input_request(self, task_id: str) -> None:
         self.remove_missing_fields(task_id)
-        self.prompts_by_task.pop(task_id, None)
-        self.details_by_task.pop(task_id, None)
+        self._prompts_by_task.pop(task_id, None)
+        self._details_by_task.pop(task_id, None)
 
     def replace_missing_fields(self, task_id: str, fields: list[str]) -> None:
-        self.missing_fields_by_task[task_id] = fields
+        self._missing_fields_by_task[task_id] = fields
 
     def add_missing_fields(self, task_id: str, fields: list[str] | None) -> None:
         if fields:
-            self.missing_fields_by_task[task_id] = fields
+            self._missing_fields_by_task[task_id] = fields
 
     def add_details(self, task_id: str, details: dict[str, Any] | None) -> None:
         if details:
-            self.details_by_task[task_id] = details
+            self._details_by_task[task_id] = details
 
 
 __all__ = ["ExecutionAccumulator"]

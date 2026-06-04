@@ -163,4 +163,4 @@ async def test_support_handler_reroutes_replay_modifier_to_transfer() -> None:
         "instruction": "Again, but from gtb",
     }
     assert transfer_worker.last_user_message == "Again, but from gtb"
-    assert ctx.accumulator.prompts == ["Which transfer should I resend?"]
+    assert ctx.accumulator.prompt_history() == ["Which transfer should I resend?"]

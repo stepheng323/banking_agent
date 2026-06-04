@@ -82,17 +82,17 @@ def choose_wave_blocker(
     agg: ExecutionAccumulator,
 ) -> BlockerDecision:
     """Choose the one blocker the orchestrator should surface for this wave."""
-    input_task_ids = _dedupe_task_ids(list(agg.missing_fields_by_task.keys()), current_wave)
+    input_task_ids = _dedupe_task_ids(agg.input_task_ids(), current_wave)
     confirmation_task_ids = gate_task_ids(
         state=state,
         current_wave=current_wave,
-        candidate_task_ids=agg.needs_confirm_tasks,
+        candidate_task_ids=agg.confirmation_task_ids(),
         stage=TaskStage.AWAITING_CONFIRMATION,
     )
     auth_task_ids = gate_task_ids(
         state=state,
         current_wave=current_wave,
-        candidate_task_ids=agg.needs_auth_tasks,
+        candidate_task_ids=agg.auth_task_ids(),
         stage=TaskStage.AWAITING_AUTH,
     )
 

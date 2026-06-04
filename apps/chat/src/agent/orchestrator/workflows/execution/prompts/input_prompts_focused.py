@@ -45,7 +45,7 @@ def _build_focused_missing_field_updates(
     just_resolved_bank = None
     if state.last_interrupt and state.last_interrupt.task_ids:
         for tid in state.last_interrupt.task_ids:
-            if tid not in agg.missing_fields_by_task and state.tasks.get(tid):
+            if not agg.has_input_request(tid) and state.tasks.get(tid):
                 just_resolved_tid = tid
                 rt = state.tasks[just_resolved_tid]
                 just_resolved_name = _recipient_prompt_label(cast(dict[str, Any], rt.payload))
@@ -60,14 +60,14 @@ def _build_focused_missing_field_updates(
                 continue
             if task.type != "transfer":
                 continue
-            if tid not in agg.missing_fields_by_task:
+            if not agg.has_input_request(tid):
                 if name := _recipient_prompt_label(cast(dict[str, Any], task.payload)):
                     if name not in found_names:
                         found_names.append(name)
 
-    focused_missing_fields = agg.missing_fields_by_task[focused_tid]
-    focused_worker_prompt = agg.prompts_by_task.get(focused_tid)
-    focused_details = agg.details_by_task.get(focused_tid)
+    focused_missing_fields = agg.input_fields_for(focused_tid)
+    focused_worker_prompt = agg.prompt_for_task(focused_tid)
+    focused_details = agg.details_for_task(focused_tid)
     has_structured_options = isinstance(focused_details, dict) and isinstance(focused_details.get("options"), list)
     transfer_recipient_fields = {"recipient_account", "recipient_bank_name"}
     is_transfer_recipient_prompt = bool(set(focused_missing_fields) & transfer_recipient_fields)
@@ -98,7 +98,7 @@ def _build_focused_missing_field_updates(
             state=state,
             current_wave=current_wave,
             focused_tid=focused_tid,
-            missing_fields_by_task=agg.missing_fields_by_task,
+            missing_fields_by_task=agg.input_fields_by_task(),
         ),
     )
     queued_tasks = _queued_transaction_tasks_for_focus(
@@ -119,12 +119,12 @@ def _build_focused_missing_field_updates(
         if tid == focused_tid:
             continue
         name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
-        if name and (tid not in agg.missing_fields_by_task or tid == just_resolved_tid):
+        if name and (not agg.has_input_request(tid) or tid == just_resolved_tid):
             task.payload["recipient_ui_confirmed"] = True
     interrupt = PendingInterrupt(
         kind="input",
         task_ids=[focused_tid],
-        fields_by_task={focused_tid: agg.missing_fields_by_task[focused_tid]},
+        fields_by_task={focused_tid: agg.input_fields_for(focused_tid)},
         prompt=prompt_text,
     )
     options_entry = _build_show_options_entry(
