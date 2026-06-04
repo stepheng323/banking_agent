@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
     pop_active_session,
     upsert_active_session,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import task_map
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
     complete_task,
     fail_task,
@@ -109,7 +110,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             transfer_payload.setdefault("message", ctx.state.last_message_text or "Resend the selected transaction")
             transfer_payload.setdefault("skip_extraction", True)
 
-            tasks = ctx.accumulator.get_tasks(ctx.state.tasks)
+            tasks = ctx.accumulator.get_tasks(task_map(ctx.state))
             transfer_task_id = _next_query_handoff_transfer_task_id(tasks)
             tasks[transfer_task_id] = TaskSpec(
                 id=transfer_task_id,

@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.dependencies import ExecutionDependencies
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import task_map
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.executor_registry import (
     DEFAULT_TASK_EXECUTORS,
     TaskExecutorRegistry,
@@ -66,7 +67,7 @@ def build_execution_wave_runtime(
     raw_services = cast(Mapping[str, object] | None, configurable.get("services"))
     services = OrchestrationServices.from_mapping(raw_services)
     dependencies = ExecutionDependencies.from_configurable(configurable)
-    accumulator = ExecutionAccumulator(state.tasks)
+    accumulator = ExecutionAccumulator(task_map(state))
     ctx = ExecutionTurnContext(
         state=state,
         config=config,
