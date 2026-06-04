@@ -2,7 +2,6 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import (
@@ -121,12 +120,6 @@ def _build_focused_missing_field_updates(
         name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
         if name and (not agg.has_input_request(tid) or tid == just_resolved_tid):
             task.payload["recipient_ui_confirmed"] = True
-    interrupt = PendingInterrupt(
-        kind="input",
-        task_ids=[focused_tid],
-        fields_by_task={focused_tid: agg.input_fields_for(focused_tid)},
-        prompt=prompt_text,
-    )
     options_entry = _build_show_options_entry(
         details=focused_details,
         prompt_text=prompt_text,
@@ -137,7 +130,12 @@ def _build_focused_missing_field_updates(
     outbox_entries[0]["prompt_kind"] = "pending_input"
     if queue_meta is not None:
         outbox_entries[0]["queue"] = queue_meta
-    agg.set_interrupt_outbox(interrupt, _with_policy_notice(state, outbox_entries))
+    agg.set_input_interrupt_outbox(
+        task_ids=[focused_tid],
+        fields_by_task={focused_tid: agg.input_fields_for(focused_tid)},
+        prompt=prompt_text,
+        entries=_with_policy_notice(state, outbox_entries),
+    )
     agg.clear_policy_notice()
     return agg.to_updates()
 

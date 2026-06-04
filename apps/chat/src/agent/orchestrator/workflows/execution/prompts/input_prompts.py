@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
@@ -89,19 +88,18 @@ def _build_missing_field_interrupt_updates(
             prompt_text = _compact_prompt_for_options(prompt_text)
             fallback_options_entry["title"] = prompt_text
 
-    interrupt = PendingInterrupt(
-        kind="input",
-        task_ids=agg.input_task_ids(),
-        fields_by_task=agg.input_fields_by_task(),
-        prompt=prompt_text,
-    )
     fallback_outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
     if fallback_options_entry:
         fallback_outbox_entries = [fallback_options_entry]
     fallback_outbox_entries[0]["prompt_kind"] = "pending_input"
     if fallback_queue_meta is not None:
         fallback_outbox_entries[0]["queue"] = fallback_queue_meta
-    agg.set_interrupt_outbox(interrupt, _with_policy_notice(state, fallback_outbox_entries))
+    agg.set_input_interrupt_outbox(
+        task_ids=agg.input_task_ids(),
+        fields_by_task=agg.input_fields_by_task(),
+        prompt=prompt_text,
+        entries=_with_policy_notice(state, fallback_outbox_entries),
+    )
     agg.clear_policy_notice()
     return agg.to_updates()
 

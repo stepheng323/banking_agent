@@ -14,6 +14,8 @@ GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflo
 PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
 LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "lifecycle"
 EXECUTION_INTERRUPT_PATCH_MODULES = (
+    EXECUTION_ROOT / "auth_gate_updates.py",
+    EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
     EXECUTION_ROOT / "prompts" / "input_prompts.py",
     EXECUTION_ROOT / "prompts" / "input_prompts_focused.py",
     EXECUTION_ROOT / "funding" / "batch_funding_coordination.py",
@@ -329,13 +331,32 @@ def test_execution_result_patch_is_constructed_only_by_accumulator() -> None:
     assert violations == []
 
 
+def test_execution_pending_interrupt_is_constructed_only_by_accumulator() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name == "accumulator.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "PendingInterrupt":
+                violations.append(f"{path.relative_to(ROOT)} constructs PendingInterrupt")
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"set_pending_interrupt", "set_interrupt_outbox"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} calls generic {node.func.attr}()")
+
+    assert violations == []
+
+
 def test_execution_interrupt_builders_use_accumulator_contract() -> None:
     violations: list[str] = []
     for path in EXECUTION_INTERRUPT_PATCH_MODULES:
         text = path.read_text(encoding="utf-8")
         if "ExecutionResultPatch" in text:
             violations.append(f"{path.relative_to(ROOT)} imports ExecutionResultPatch")
-        if "set_interrupt_outbox" not in text:
+        if "_interrupt_outbox" not in text:
             violations.append(f"{path.relative_to(ROOT)} does not use accumulator interrupt outbox contract")
         if "updates = {" in text or "updates: dict[str, Any] = {" in text or "\n    return {" in text:
             violations.append(f"{path.relative_to(ROOT)} assembles raw update dict")

@@ -2,7 +2,7 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
@@ -76,12 +76,6 @@ def _build_confirmation_gate_updates(
         tid: state.tasks[tid].payload.get("confirmation", {}).get("snapshot", {}) for tid in confirm_task_ids
     }
 
-    interrupt = PendingInterrupt(
-        kind="confirmation",
-        task_ids=confirm_task_ids,
-        prompt=summ,
-    )
-
     outbox: list[dict[str, Any]] = []
     if update_msg:
         outbox.append({"type": "say", "text": update_msg})
@@ -116,8 +110,7 @@ def _build_confirmation_gate_updates(
         }
     )
 
-    agg.set_outbox(outbox)
-    agg.set_pending_interrupt(interrupt)
+    agg.set_confirmation_interrupt_outbox(task_ids=confirm_task_ids, prompt=summ, entries=outbox)
     return cast(dict[str, Any], agg.to_updates())
 
 

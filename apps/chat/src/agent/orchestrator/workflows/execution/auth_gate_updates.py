@@ -2,7 +2,7 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
@@ -70,9 +70,10 @@ def _build_auth_gate_updates(
     idem_key = first_task.payload.get("idempotency_key", "no-key")
     reason = _auth_header_for_tasks(state, auth_task_ids, locale=locale)
 
-    interrupt = PendingInterrupt(kind="auth", task_ids=auth_task_ids, auth_method="pin", prompt=summ)
-    agg.set_outbox(
-        [
+    agg.set_auth_interrupt_outbox(
+        task_ids=auth_task_ids,
+        prompt=summ,
+        entries=[
             {
                 "type": "auth_request",
                 "method": "pin",
@@ -86,9 +87,8 @@ def _build_auth_gate_updates(
                     [state.tasks[task_id] for task_id in auth_task_ids if task_id in state.tasks]
                 ),
             }
-        ]
+        ],
     )
-    agg.set_pending_interrupt(interrupt)
     return cast(dict[str, Any], agg.to_updates())
 
 

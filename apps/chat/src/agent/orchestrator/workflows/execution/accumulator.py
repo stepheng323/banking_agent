@@ -46,7 +46,7 @@ class ExecutionAccumulator:
     def has_current_wave_index(self) -> bool:
         return self._result_patch.has_current_wave_index()
 
-    def set_pending_interrupt(self, interrupt: PendingInterrupt | None) -> None:
+    def _set_pending_interrupt(self, interrupt: PendingInterrupt | None) -> None:
         self._result_patch.set_pending_interrupt(interrupt)
 
     def has_pending_interrupt(self) -> bool:
@@ -76,9 +76,60 @@ class ExecutionAccumulator:
     def set_outbox(self, entries: list[dict[str, Any]]) -> None:
         self._result_patch.set_outbox(entries)
 
-    def set_interrupt_outbox(self, interrupt: PendingInterrupt, entries: list[dict[str, Any]]) -> None:
-        self.set_pending_interrupt(interrupt)
+    def _set_interrupt_outbox(self, interrupt: PendingInterrupt, entries: list[dict[str, Any]]) -> None:
+        self._set_pending_interrupt(interrupt)
         self.set_outbox(entries)
+
+    def set_input_interrupt_outbox(
+        self,
+        *,
+        task_ids: list[str],
+        fields_by_task: dict[str, list[str]],
+        prompt: str,
+        entries: list[dict[str, Any]],
+    ) -> None:
+        self._set_interrupt_outbox(
+            PendingInterrupt(
+                kind="input",
+                task_ids=task_ids,
+                fields_by_task=fields_by_task,
+                prompt=prompt,
+            ),
+            entries,
+        )
+
+    def set_confirmation_interrupt_outbox(
+        self,
+        *,
+        task_ids: list[str],
+        prompt: str,
+        entries: list[dict[str, Any]],
+    ) -> None:
+        self._set_interrupt_outbox(
+            PendingInterrupt(
+                kind="confirmation",
+                task_ids=task_ids,
+                prompt=prompt,
+            ),
+            entries,
+        )
+
+    def set_auth_interrupt_outbox(
+        self,
+        *,
+        task_ids: list[str],
+        prompt: str,
+        entries: list[dict[str, Any]],
+    ) -> None:
+        self._set_interrupt_outbox(
+            PendingInterrupt(
+                kind="auth",
+                task_ids=task_ids,
+                auth_method="pin",
+                prompt=prompt,
+            ),
+            entries,
+        )
 
     def get_outbox(self) -> list[dict[str, Any]]:
         return self._result_patch.get_outbox()

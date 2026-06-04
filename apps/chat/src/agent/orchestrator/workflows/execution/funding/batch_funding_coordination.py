@@ -1,6 +1,5 @@
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
@@ -64,12 +63,7 @@ async def _maybe_coordinate_batch_funding(
         return None
 
     prompt = result.suggestion or render_message("funding.batch.total_infeasible", locale)
-    interrupt = PendingInterrupt(
-        kind="input",
-        task_ids=transfer_task_ids,
-        fields_by_task={task_id: ["funding_plan"] for task_id in transfer_task_ids},
-        prompt=prompt,
-    )
+    fields_by_task = {task_id: ["funding_plan"] for task_id in transfer_task_ids}
     logger.info(
         "batch_funding_coordinator_blocked",
         task_count=len(transfer_task_ids),
@@ -77,7 +71,12 @@ async def _maybe_coordinate_batch_funding(
         total_demanded=result.total_demanded,
         total_available=result.total_available,
     )
-    agg.set_interrupt_outbox(interrupt, _with_policy_notice(state, [{"type": "say", "text": prompt}]))
+    agg.set_input_interrupt_outbox(
+        task_ids=transfer_task_ids,
+        fields_by_task=fields_by_task,
+        prompt=prompt,
+        entries=_with_policy_notice(state, [{"type": "say", "text": prompt}]),
+    )
     agg.clear_policy_notice()
     return agg.to_updates()
 
