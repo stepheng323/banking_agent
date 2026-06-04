@@ -13,11 +13,12 @@ from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_post
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_query_session import (
     _stash_query_session_for_transaction_switch,
 )
+from shared.types.planner import PlannerOutput
 
 
 async def _build_planner_task_updates(
     *,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     text: str,
     locale: str,
     query_session_source: str | None,

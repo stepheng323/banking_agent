@@ -1,9 +1,9 @@
 """Planner runner recovery helpers for empty or misrouted planner output."""
 
-from typing import Any, Literal
+from typing import Literal
 
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
-from shared.types.planner import PlannedTask, TaskParameters
+from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -12,7 +12,7 @@ _UNEXPECTED_ROUTE_RECOVERY_MIN_CONFIDENCE = 0.5
 _PLANNER_TRANSFER_PREFIXES = ("send", "transfer", "pay", "remit")
 
 
-def _recover_unexpected_question_task(planner_output: Any, text: str) -> PlannedTask | None:
+def _recover_unexpected_question_task(planner_output: PlannerOutput, text: str) -> PlannedTask | None:
     if not planner_output or getattr(planner_output, "tasks", None):
         return None
 
@@ -55,7 +55,7 @@ def _looks_like_amount_only_transfer_start(text: str) -> bool:
     return True
 
 
-def _recover_missing_slot_transfer_task(planner_output: Any, text: str) -> PlannedTask | None:
+def _recover_missing_slot_transfer_task(planner_output: PlannerOutput, text: str) -> PlannedTask | None:
     if not planner_output or getattr(planner_output, "tasks", None):
         return None
     if not _looks_like_amount_only_transfer_start(text):
@@ -75,7 +75,7 @@ def _recover_missing_slot_transfer_task(planner_output: Any, text: str) -> Plann
     )
 
 
-def _recover_replay_modifier_transfer_task(planner_output: Any, text: str) -> PlannedTask | None:
+def _recover_replay_modifier_transfer_task(planner_output: PlannerOutput, text: str) -> PlannedTask | None:
     if not looks_like_transaction_replay_modifier_request(text):
         return None
     if not planner_output:
@@ -100,7 +100,7 @@ def _recover_replay_modifier_transfer_task(planner_output: Any, text: str) -> Pl
     )
 
 
-def _apply_planner_recovery(planner_output: Any, text: str, *, active_session_present: bool) -> bool:
+def _apply_planner_recovery(planner_output: PlannerOutput, text: str, *, active_session_present: bool) -> bool:
     recovered_replay_task = _recover_replay_modifier_transfer_task(planner_output, text)
     if recovered_replay_task is not None:
         planner_output.tasks = [recovered_replay_task]

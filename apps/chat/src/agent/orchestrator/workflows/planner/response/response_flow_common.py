@@ -2,6 +2,9 @@
 
 from typing import Any, cast
 
+import redis.asyncio as redis
+
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_locale_update
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.locale import LocaleManager
@@ -16,7 +19,7 @@ async def _resolved_locale_with_precedence(
     state_view: PlannerStateView,
     current_locale: str,
     detected_locale: str | None,
-    redis_client: Any | None,
+    redis_client: redis.Redis | None,
     locale_updates: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     if detected_locale is None or detected_locale == current_locale:
@@ -37,7 +40,7 @@ async def _build_bounded_conversational_reply(
     state_view: PlannerStateView,
     text: str,
     locale: str,
-    conversation_responder: Any | None,
+    conversation_responder: ConversationResponder | None,
 ) -> str | None:
     if conversation_responder is None:
         return None

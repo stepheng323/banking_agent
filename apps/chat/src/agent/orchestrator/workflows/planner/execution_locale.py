@@ -2,17 +2,20 @@
 
 from typing import Any
 
+import redis.asyncio as redis
+
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LanguageDetectionSignal
+from shared.types.planner import PlannerOutput
 
 
 async def _resolve_planner_detected_locale(
     *,
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     current_locale: str,
-    redis_client: Any | None,
+    redis_client: redis.Redis | None,
 ) -> str:
     detected_language = getattr(planner_output, "detected_language", None)
     if not detected_language:

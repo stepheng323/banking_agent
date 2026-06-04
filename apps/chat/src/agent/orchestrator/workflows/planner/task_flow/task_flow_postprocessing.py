@@ -1,5 +1,3 @@
-from typing import Any
-
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_clause_repair import (
     _validate_and_repair_planner_clauses,
 )
@@ -12,12 +10,13 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_transfer_fanout_reconcile import (
     _reconcile_multi_transfer_recipient_tasks,
 )
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-def _clause_text_by_index(planner_output: Any) -> dict[int, str]:
+def _clause_text_by_index(planner_output: PlannerOutput) -> dict[int, str]:
     return {
         int(clause.clause_index): str(clause.text or "").strip()
         for clause in getattr(planner_output, "clauses", [])
@@ -25,7 +24,7 @@ def _clause_text_by_index(planner_output: Any) -> dict[int, str]:
     }
 
 
-def _transfer_clause_indexes(planner_output: Any) -> list[int]:
+def _transfer_clause_indexes(planner_output: PlannerOutput) -> list[int]:
     return [
         int(clause.clause_index)
         for clause in getattr(planner_output, "clauses", [])
@@ -34,7 +33,7 @@ def _transfer_clause_indexes(planner_output: Any) -> list[int]:
     ]
 
 
-def _attach_single_transfer_clause_index(planner_output: Any) -> Any:
+def _attach_single_transfer_clause_index(planner_output: PlannerOutput) -> PlannerOutput:
     transfer_clause_indexes = _transfer_clause_indexes(planner_output)
     if len(transfer_clause_indexes) != 1:
         return planner_output
@@ -48,7 +47,7 @@ def _attach_single_transfer_clause_index(planner_output: Any) -> Any:
     return planner_output
 
 
-def _postprocess_planner_tasks(planner_output: Any, text: str) -> Any:
+def _postprocess_planner_tasks(planner_output: PlannerOutput, text: str) -> PlannerOutput:
     planner_output = _attach_single_transfer_clause_index(planner_output)
     clause_text_by_index = _clause_text_by_index(planner_output)
     fanout_tasks, fanout_meta = _expand_underproduced_transfer_tasks(

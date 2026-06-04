@@ -2,6 +2,8 @@
 
 from typing import Any
 
+import redis.asyncio as redis
+
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     build_cancellation_reset_updates,
     cancelled_message,
@@ -11,6 +13,7 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_locale_update
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -20,8 +23,8 @@ async def _build_cancellation_response(
     *,
     state: OrchestratorState,
     state_view: PlannerStateView,
-    planner_output: Any,
-    redis_client: Any | None,
+    planner_output: PlannerOutput,
+    redis_client: redis.Redis | None,
     current_locale: str,
     detected_locale: str | None,
     locale_updates: dict[str, Any],

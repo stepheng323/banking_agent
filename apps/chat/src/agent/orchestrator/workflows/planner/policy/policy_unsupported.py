@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale imp
     _supported_executor_label,
 )
 from banking.presentation.i18n.bridge import render_policy_notice
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -52,7 +53,7 @@ def _resolve_unsupported_alternatives(unsupported: list[str], *, locale: str | N
     return format_planner_alternatives(unsupported, locale=locale)
 
 
-def _build_policy_notice(message_text: str, planner_output: Any, locale: str = "en") -> str | None:
+def _build_policy_notice(message_text: str, planner_output: PlannerOutput, locale: str = "en") -> str | None:
     if not planner_output or not planner_output.tasks:
         return None
 

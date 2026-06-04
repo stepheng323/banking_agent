@@ -2,7 +2,10 @@
 
 from typing import Any
 
+import redis.asyncio as redis
+
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_followup import (
     try_context_frame_followup_shortcut,
@@ -14,7 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_sec
     build_planner_context_sections,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_state import build_context_flow_state
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_types import PlannerContextBuildResult
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_types import PlannerContextBundle
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
     PLANNER_CONTEXT_MAX_CHARS,
     PLANNER_CONTEXT_SECTION_SEPARATOR,
@@ -33,10 +36,10 @@ async def _build_planner_context(
     *,
     state: OrchestratorState,
     text: str,
-    redis_client: Any | None,
+    redis_client: redis.Redis | None,
     locale_updates: dict[str, Any],
-    task_planner: Any | None = None,
-) -> PlannerContextBuildResult:
+    task_planner: TaskPlanner | None = None,
+) -> PlannerContextBundle:
     state_view = planner_state_view(state)
     followup_shortcut = await try_context_frame_followup_shortcut(
         state_view=state_view,
@@ -57,7 +60,7 @@ async def _build_planner_context(
         has_transaction_intent_hint=flow_state.has_transaction_intent_hint,
     ):
         logger.info("planner_context_skipped", mode="minimal")
-        return PlannerContextBuildResult(
+        return PlannerContextBundle(
             planner_context="None",
             active_intent=flow_state.active_intent,
             query_session_snapshot=flow_state.query_session_snapshot,
@@ -126,7 +129,7 @@ async def _build_planner_context(
         expected_transaction_executors=flow_state.expected_executors,
     )
 
-    return PlannerContextBuildResult(
+    return PlannerContextBundle(
         planner_context=planner_context,
         active_intent=flow_state.active_intent,
         query_session_snapshot=flow_state.query_session_snapshot,
@@ -136,6 +139,6 @@ async def _build_planner_context(
 
 
 __all__ = [
-    "PlannerContextBuildResult",
+    "PlannerContextBundle",
     "_build_planner_context",
 ]

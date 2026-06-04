@@ -4,7 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_types import PlannerContextBuildResult
+from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_types import PlannerContextBundle
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state_view as build_context_frame_followup_context_for_state_view,
 )
@@ -27,7 +27,7 @@ async def try_context_frame_followup_shortcut(
     text: str,
     locale_updates: dict[str, Any],
     task_planner: TaskPlanner | None,
-) -> PlannerContextBuildResult | None:
+) -> PlannerContextBundle | None:
     frame_state_view = context_frame_state_view(state_view.state)
     frame = frame_state_view.latest_active_frame()
     if not frame or task_planner is None:
@@ -102,7 +102,7 @@ async def try_context_frame_followup_shortcut(
         frame_type=frame.frame_type.value,
         item_count=len(frame.items),
     )
-    return PlannerContextBuildResult(
+    return PlannerContextBundle(
         planner_context="None",
         active_intent=None,
         query_session_snapshot=None,

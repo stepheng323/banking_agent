@@ -1,6 +1,6 @@
 """Subtype and recent-focus helpers for planner context reads."""
 
-from typing import Any, cast
+from typing import cast
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import (
     CONTEXT_READ_ACCOUNT_SUBTYPES,
@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_con
     CONTEXT_READ_SUBTYPES,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 
 
 def _infer_recent_domain_focus(state_view: PlannerStateView) -> str | None:
@@ -35,7 +36,7 @@ def _infer_recent_domain_focus(state_view: PlannerStateView) -> str | None:
     return None
 
 
-def _planner_context_read_subtype(planner_output: Any) -> str | None:
+def _planner_context_read_subtype(planner_output: PlannerOutput) -> str | None:
     """Read planner-provided context-read subtype when it is recognized."""
     subtype = getattr(planner_output, "context_read_subtype", None)
     if isinstance(subtype, str) and subtype in CONTEXT_READ_SUBTYPES:

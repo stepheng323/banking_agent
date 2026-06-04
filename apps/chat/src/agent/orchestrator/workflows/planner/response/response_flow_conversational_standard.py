@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_conversational_casual import (
     _casual_chat_response,
@@ -15,18 +16,19 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
     _out_of_scope_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 
 
 async def _build_standard_conversational_response(
     *,
     state: OrchestratorState,
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     text: str,
     conversational_locale: str,
     conversational_locale_updates: dict[str, Any],
     context_read_updates: dict[str, Any],
-    conversation_responder: Any | None,
+    conversation_responder: ConversationResponder | None,
     route_logger: Any | None,
 ) -> dict[str, Any]:
     response_key = planner_output.response_key

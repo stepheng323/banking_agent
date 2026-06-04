@@ -16,6 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_rep
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameReplayModifier
 from shared.types.quoted_replay import QuotedReplayInterpretation
@@ -27,7 +28,7 @@ logger = get_logger(__name__)
 async def _handle_quoted_replay_shortcut(
     *,
     state_view: PlannerStateView,
-    actionable_message_repo: Any | None,
+    actionable_message_repo: ActionableMessageRepository | None,
     task_planner: TaskPlanner | None,
     text: str,
     current_locale: str,

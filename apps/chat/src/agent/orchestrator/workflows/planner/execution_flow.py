@@ -3,7 +3,10 @@
 from dataclasses import dataclass
 from typing import Any
 
+import redis.asyncio as redis
+
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import PlannerPromptSignals
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_frames import (
     _build_beneficiary_context_read_updates,
@@ -27,6 +30,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.guardrails_mandate impor
     _deescalate_mandate_acknowledgement,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,7 +38,7 @@ logger = get_logger(__name__)
 
 @dataclass(slots=True)
 class PlannerExecutionResult:
-    planner_output: Any
+    planner_output: PlannerOutput
     current_locale: str
     context_read_updates: dict[str, Any]
 
@@ -42,13 +46,13 @@ class PlannerExecutionResult:
 async def _execute_planner_with_context(
     *,
     state: OrchestratorState,
-    task_planner: Any,
+    task_planner: TaskPlanner,
     text: str,
     planner_context: str,
     prompt_signals: PlannerPromptSignals,
     active_intent: str | None,
     current_locale: str,
-    redis_client: Any | None,
+    redis_client: redis.Redis | None,
     state_view: PlannerStateView,
 ) -> PlannerExecutionResult:
     planner_output = await task_planner.plan_tasks(

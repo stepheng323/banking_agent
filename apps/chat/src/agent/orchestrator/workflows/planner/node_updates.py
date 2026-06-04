@@ -2,13 +2,15 @@
 
 from typing import Any
 
+from shared.types.planner import PlannerOutput
+
 _PLANNER_DOMAIN_TARGETS = {"query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule"}
 
 
 def _planner_route_updates(
     *,
     decision: str,
-    planner_output: Any | None = None,
+    planner_output: PlannerOutput | None = None,
     target_domain: str | None = None,
 ) -> dict[str, Any]:
     resolved_target = target_domain

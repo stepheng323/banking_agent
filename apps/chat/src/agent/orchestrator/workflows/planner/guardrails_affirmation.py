@@ -1,19 +1,18 @@
 """Affirmation cleanup guardrails for planner output."""
 
-from typing import Any
-
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 def _filter_spurious_affirmation_tasks(
-    planner_output: Any,
+    planner_output: PlannerOutput,
     *,
     active_intent: str | None,
     pending_interrupt_kind: str | None,
-) -> Any:
+) -> PlannerOutput:
     """Drop accidental support tasks when a bare resume-style affirmation is detected."""
     if not planner_output or not getattr(planner_output, "tasks", None):
         return planner_output

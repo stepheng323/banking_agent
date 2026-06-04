@@ -5,6 +5,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
 from banking.accounts.mandate_state import READY, effective_mandate_status
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,11 +35,11 @@ def _has_pending_mandate_without_ready_accounts(loaded_context: dict[str, Any] |
 
 
 def _deescalate_mandate_acknowledgement(
-    planner_output: Any,
+    planner_output: PlannerOutput,
     *,
     loaded_context: dict[str, Any] | None,
     locale: str,
-) -> Any:
+) -> PlannerOutput:
     """Keep pending-mandate turns conversational with contextual destination details."""
     if not planner_output or not getattr(planner_output, "tasks", None):
         return planner_output

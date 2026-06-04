@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+import redis.asyncio as redis
+
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_hinting import (
     _has_transaction_intent_hint,
 )
@@ -45,7 +47,7 @@ async def build_context_flow_state(
     *,
     state_view: PlannerStateView,
     text: str,
-    redis_client: Any | None,
+    redis_client: redis.Redis | None,
 ) -> PlannerContextFlowState:
     current_flow_type = state_view.current_wave_first_task_type
     is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS

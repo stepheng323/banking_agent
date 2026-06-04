@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary 
     get_or_build_turn_context_summary,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -95,7 +96,7 @@ def _build_quoted_replay_context_with_payload(state_view: PlannerStateView, quot
 
 async def _load_quoted_actionable_payload(
     state_view: PlannerStateView,
-    actionable_message_repo: Any | None,
+    actionable_message_repo: ActionableMessageRepository | None,
 ) -> dict[str, Any] | None:
     quoted_message_id = state_view.quoted_message_id
     if actionable_message_repo is None or not quoted_message_id:

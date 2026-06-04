@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.outcomes import (
     quoted_replay_dispatch,
     unavailable_response,
 )
+from shared.types.planner import PlannerOutput
 
 
 def _planner_unavailable_response(current_locale: str) -> dict[str, Any]:
@@ -30,7 +31,7 @@ def _planner_failed_response() -> dict[str, Any]:
 def _non_task_route_response(
     *,
     handled_response: dict[str, Any],
-    planner_output: Any,
+    planner_output: PlannerOutput,
 ) -> dict[str, Any]:
     return non_task_response(handled_response=handled_response, planner_output=planner_output)
 

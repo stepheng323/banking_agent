@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import is_banking_refusal_reply
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.presentation.conversational_style import format_out_of_scope_reply
@@ -9,18 +10,19 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 
 
 async def _out_of_scope_response(
     *,
     state: OrchestratorState,
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     text: str,
     conversational_locale: str,
     conversational_locale_updates: dict[str, Any],
     context_read_updates: dict[str, Any],
-    conversation_responder: Any | None,
+    conversation_responder: ConversationResponder | None,
     route_logger: Any | None,
 ) -> dict[str, Any]:
     responder_reply = None

@@ -7,7 +7,9 @@ from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import
 
 
 @dataclass(slots=True)
-class PlannerContextBuildResult:
+class PlannerContextBundle:
+    """Typed planner context and shortcut bundle built before planner execution."""
+
     planner_context: str
     active_intent: str | None
     query_session_snapshot: dict[str, Any] | None
@@ -16,4 +18,4 @@ class PlannerContextBuildResult:
     shortcut_updates: dict[str, Any] | None = None
 
 
-__all__ = ["PlannerContextBuildResult"]
+__all__ = ["PlannerContextBundle"]

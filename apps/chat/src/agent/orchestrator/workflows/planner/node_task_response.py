@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.outcomes import (
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_unsupported import _build_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -17,7 +18,7 @@ logger = get_logger(__name__)
 def _resolve_task_policy_notice(
     *,
     text: str,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     current_locale: str,
     task_updates: dict[str, Any],
 ) -> str | None:
@@ -35,7 +36,7 @@ def _resolve_task_policy_notice(
 def _build_planner_task_response(
     *,
     task_updates: dict[str, Any],
-    planner_output: Any,
+    planner_output: PlannerOutput,
     text: str,
     current_locale: str,
     locale_updates: dict[str, Any],

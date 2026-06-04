@@ -2,6 +2,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
 from banking.policy.transaction_limits import MAX_TRANSACTION_BATCH_TASKS
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -17,7 +18,7 @@ def _transaction_batch_limit_message(*, transaction_count: int) -> str:
 
 def _transaction_batch_limit_updates(
     *,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     capability_policy_notice: str | None,
 ) -> dict[str, Any] | None:
     transaction_task_count = sum(

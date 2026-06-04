@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_con
     BENEFICIARY_CONTEXT_READ_PERSIST_SUBTYPES,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,7 +20,7 @@ logger = get_logger(__name__)
 
 def _build_beneficiary_context_read_updates(
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     subtype: str | None,
 ) -> dict[str, Any]:
     """Persist beneficiary context-read entities as context frames for pronoun follow-ups."""

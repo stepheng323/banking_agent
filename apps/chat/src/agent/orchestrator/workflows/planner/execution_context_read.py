@@ -1,7 +1,5 @@
 """Context-read post-processing for planner execution."""
 
-from typing import Any
-
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_account import (
     synthesize_account_context_read_response,
 )
@@ -22,6 +20,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_foc
     _planner_context_read_subtype,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -32,7 +31,7 @@ _ACCOUNT_CONTEXT_READ_NON_OVERRIDE_ACTIONS = {"none", "unknown", "list", "list_a
 def _apply_context_read_planner_shape(
     *,
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     text: str,
     current_locale: str,
 ) -> str | None:
@@ -77,7 +76,7 @@ def _apply_context_read_planner_shape(
 def _apply_context_read_direct_response(
     *,
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     context_read_subtype: str,
     text: str,
     current_locale: str,
@@ -104,7 +103,7 @@ def _apply_context_read_direct_response(
 
 def _apply_context_read_fallback(
     *,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     context_read_subtype: str,
     text: str,
     has_context_for_read: bool,

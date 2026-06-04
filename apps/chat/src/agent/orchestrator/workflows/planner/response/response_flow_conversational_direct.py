@@ -6,6 +6,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
 from banking.presentation.i18n.message_keys import is_message_key
 from banking.presentation.i18n.renderer import render_message
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,7 +15,7 @@ logger = get_logger(__name__)
 def _direct_planner_response(
     *,
     state: OrchestratorState,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     conversational_locale: str,
     conversational_locale_updates: dict[str, Any],
     context_read_updates: dict[str, Any],
@@ -40,7 +41,7 @@ def _direct_planner_response(
 def _response_key_render_response(
     *,
     state: OrchestratorState,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     response_key: str,
     conversational_locale: str,
     conversational_locale_updates: dict[str, Any],

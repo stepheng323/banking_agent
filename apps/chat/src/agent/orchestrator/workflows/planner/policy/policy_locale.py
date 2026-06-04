@@ -5,6 +5,7 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from shared.types.planner import PlannerOutput
 
 SUPPORTED_EXECUTOR_LABELS = {
     "transfer": "money transfer",
@@ -85,7 +86,7 @@ def _build_locale_update(state_view: PlannerStateView, locale: str) -> dict[str,
     return {"loaded_context": loaded_context}
 
 
-def _detected_locale_value(planner_output: Any) -> str | None:
+def _detected_locale_value(planner_output: PlannerOutput) -> str | None:
     """Resolve detected locale value from planner output when present."""
     detected_language = getattr(planner_output, "detected_language", None)
     if not isinstance(detected_language, str) or not detected_language:

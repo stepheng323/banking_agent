@@ -6,21 +6,25 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+import redis.asyncio as redis
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView, planner_state_view
 from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
+from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository
 
 
 @dataclass(frozen=True)
 class PlannerDependencies:
     """Runtime dependencies available to planner workflow helpers."""
 
-    task_planner: Any | None
-    redis_client: Any | None
-    conversation_responder: Any | None
-    actionable_message_repo: Any | None
+    task_planner: TaskPlanner | None
+    redis_client: redis.Redis | None
+    conversation_responder: ConversationResponder | None
+    actionable_message_repo: ActionableMessageRepository | None
 
     @classmethod
     def from_configurable(cls, configurable: Mapping[str, Any]) -> PlannerDependencies:

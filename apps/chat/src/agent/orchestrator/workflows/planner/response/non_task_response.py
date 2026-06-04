@@ -2,6 +2,9 @@
 
 from typing import Any
 
+import redis.asyncio as redis
+
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_flow import _reprompt_updates
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _detected_locale_value
@@ -18,6 +21,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.bridge import render_safe_capability_fallback
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,14 +31,14 @@ async def _build_non_task_response(
     *,
     state: OrchestratorState,
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     text: str,
-    redis_client: Any | None,
+    redis_client: redis.Redis | None,
     active_intent: str | None,
     current_locale: str,
     locale_updates: dict[str, Any],
     context_read_updates: dict[str, Any],
-    conversation_responder: Any | None = None,
+    conversation_responder: ConversationResponder | None = None,
 ) -> dict[str, Any] | None:
     detected_locale = _detected_locale_value(planner_output)
 

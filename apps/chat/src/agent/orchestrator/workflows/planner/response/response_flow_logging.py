@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -12,7 +13,7 @@ logger = get_logger(__name__)
 def _log_unexpected_turn_route(
     *,
     state: OrchestratorState,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     selected_route: str,
     route_reason: str,
     policy_blocked: bool,

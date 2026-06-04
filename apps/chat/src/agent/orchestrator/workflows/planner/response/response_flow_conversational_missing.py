@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_common import (
     _build_bounded_conversational_reply,
@@ -8,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_l
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -17,12 +19,12 @@ async def _missing_conversational_response_fallback(
     *,
     state: OrchestratorState,
     state_view: PlannerStateView,
-    planner_output: Any,
+    planner_output: PlannerOutput,
     text: str,
     conversational_locale: str,
     conversational_locale_updates: dict[str, Any],
     context_read_updates: dict[str, Any],
-    conversation_responder: Any | None,
+    conversation_responder: ConversationResponder | None,
     route_logger: Any | None,
 ) -> dict[str, Any]:
     logger.info(

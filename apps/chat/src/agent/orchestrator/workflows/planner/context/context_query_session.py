@@ -3,6 +3,8 @@
 import json
 from typing import Any, Protocol
 
+import redis.asyncio as redis
+
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
     _build_query_session_context,
 )
@@ -22,7 +24,7 @@ class QuerySessionStateView(Protocol):
 
 async def _load_query_session_snapshot(
     state_view: QuerySessionStateView,
-    redis_client: Any | None,
+    redis_client: redis.Redis | None,
     *,
     snapshot_logger: Any | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:

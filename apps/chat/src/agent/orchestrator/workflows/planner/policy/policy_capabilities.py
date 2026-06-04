@@ -3,6 +3,7 @@
 from typing import Any
 
 from banking.policy.service import capability_block_message
+from shared.types.planner import PlannedTask, PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,7 +42,7 @@ PLANNER_POLICY_DEFAULT_ACTIONS = {
 }
 
 
-def _task_capability_target(task: Any) -> tuple[str, str] | None:
+def _task_capability_target(task: PlannedTask) -> tuple[str, str] | None:
     executor = str(getattr(task, "executor", "") or "").strip()
     action = str(getattr(task, "action", "") or "").strip()
     parameters = getattr(task, "parameters", None)
@@ -64,7 +65,9 @@ def _task_capability_target(task: Any) -> tuple[str, str] | None:
     return executor, default_action
 
 
-def _filter_capability_blocked_tasks(planner_output: Any, locale: str = "en") -> tuple[Any, list[str]]:
+def _filter_capability_blocked_tasks(
+    planner_output: PlannerOutput, locale: str = "en"
+) -> tuple[PlannerOutput, list[str]]:
     """Remove transaction tasks blocked by runtime capability policy."""
     tasks = list(getattr(planner_output, "tasks", []) or [])
     if not tasks:

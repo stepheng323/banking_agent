@@ -3,6 +3,7 @@
 import hashlib
 from typing import Any
 
+from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,7 +17,7 @@ _BENEFICIARY_MANAGEMENT_ACTIONS = {
 
 
 def _routing_contract_context(
-    planner_output: Any,
+    planner_output: PlannerOutput,
     *,
     message_id: str | None,
     user_text: str,
@@ -36,7 +37,7 @@ def _routing_contract_context(
     }
 
 
-def _beneficiary_contract_violations(planner_output: Any) -> list[str]:
+def _beneficiary_contract_violations(planner_output: PlannerOutput) -> list[str]:
     tasks = list(getattr(planner_output, "tasks", None) or [])
     route_hint = str(getattr(planner_output, "beneficiary_route", "none") or "none").strip().lower()
     if route_hint not in _BENEFICIARY_ROUTE_HINTS:
@@ -73,7 +74,7 @@ def _beneficiary_contract_violations(planner_output: Any) -> list[str]:
     return violations
 
 
-def _apply_clarify_fallback(planner_output: Any) -> Any:
+def _apply_clarify_fallback(planner_output: PlannerOutput) -> PlannerOutput:
     planner_output.tasks = []
     planner_output.primary_intent = "conversational"
     planner_output.is_complex = False
@@ -84,12 +85,12 @@ def _apply_clarify_fallback(planner_output: Any) -> Any:
 
 
 def _enforce_beneficiary_routing_contract(
-    planner_output: Any,
+    planner_output: PlannerOutput,
     *,
     message_id: str | None,
     user_text: str,
     has_beneficiary_suggestion: bool,
-) -> Any:
+) -> PlannerOutput:
     """Validate first-pass beneficiary routing; clarify on contract violations."""
     if not planner_output or not getattr(planner_output, "tasks", None):
         return planner_output
