@@ -13,6 +13,10 @@ INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "wo
 GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
 PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
 LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "lifecycle"
+INPUT_PROMPT_MODULES = (
+    EXECUTION_ROOT / "prompts" / "input_prompts.py",
+    EXECUTION_ROOT / "prompts" / "input_prompts_focused.py",
+)
 
 DELETED_EXECUTION_MODULE_PATHS = (
     TASK_HANDLERS_ROOT,
@@ -112,6 +116,18 @@ def test_execution_context_and_accumulator_use_canonical_imports() -> None:
             if moved_symbols:
                 symbol_list = ", ".join(sorted(moved_symbols))
                 violations.append(f"{path.relative_to(ROOT)} imports moved execution symbols: {symbol_list}")
+
+    assert violations == []
+
+
+def test_input_interrupt_builders_use_result_patch_contract() -> None:
+    violations: list[str] = []
+    for path in INPUT_PROMPT_MODULES:
+        text = path.read_text(encoding="utf-8")
+        if "ExecutionResultPatch" not in text:
+            violations.append(f"{path.relative_to(ROOT)} does not use ExecutionResultPatch")
+        if "updates = {" in text or "updates: dict[str, Any] = {" in text:
+            violations.append(f"{path.relative_to(ROOT)} assembles raw update dict")
 
     assert violations == []
 

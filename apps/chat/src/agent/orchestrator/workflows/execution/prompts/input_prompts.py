@@ -4,7 +4,10 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import (
+    ExecutionAccumulator,
+    ExecutionResultPatch,
+)
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompt_batch_source import (
     build_batch_source_prompt_if_needed,
@@ -102,16 +105,14 @@ def _build_missing_field_interrupt_updates(
     fallback_outbox_entries[0]["prompt_kind"] = "pending_input"
     if fallback_queue_meta is not None:
         fallback_outbox_entries[0]["queue"] = fallback_queue_meta
-    updates = {
-        "pending_interrupt": interrupt,
-        "tasks": state.tasks,
-        "outbox": _with_policy_notice(state, fallback_outbox_entries),
-        "policy_notice": None,
-    }
+    patch = ExecutionResultPatch({"tasks": state.tasks})
+    patch.set_update("pending_interrupt", interrupt)
+    patch.set_update("outbox", _with_policy_notice(state, fallback_outbox_entries))
+    patch.set_update("policy_notice", None)
     for key in ("context_frames", "referent_memory"):
         if agg.has_update(key):
-            updates[key] = agg.get_update(key)
-    return updates
+            patch.set_update(key, agg.get_update(key))
+    return patch.to_updates()
 
 
 __all__ = [
