@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, TRANSACTION_TASK_TYPES
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get_task, iter_tasks
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import update_task_payload
 from banking.presentation.formatters.confirmation import strip_source_account_info_lines
 from shared.utils.logging import get_logger
@@ -24,7 +25,7 @@ def _is_same_batch_source_selection_sibling(state: OrchestratorState, task_id: s
     if not interrupt or interrupt.kind != "input":
         return False
 
-    task = state.tasks.get(task_id)
+    task = get_task(state, task_id)
     if not task or task.type not in TRANSACTION_TASK_TYPES:
         return False
 
@@ -36,7 +37,7 @@ def _is_same_batch_source_selection_sibling(state: OrchestratorState, task_id: s
         required_fields = set(interrupt.fields_by_task.get(active_task_id) or [])
         if required_fields != {"source_account_id"}:
             continue
-        active_task = state.tasks.get(active_task_id)
+        active_task = get_task(state, active_task_id)
         if active_task and active_task.payload.get("async_group_id") == group_id:
             return True
     return False
@@ -90,7 +91,7 @@ def _propagate_batch_source_selection(
     if not _is_source_selection_reply(state, selected_task_id):
         return []
 
-    selected_task = state.tasks.get(selected_task_id)
+    selected_task = get_task(state, selected_task_id)
     if not selected_task or selected_task.type not in TRANSACTION_TASK_TYPES:
         return []
 
@@ -103,7 +104,7 @@ def _propagate_batch_source_selection(
         return []
 
     propagated_task_ids: list[str] = []
-    for task_id, task in state.tasks.items():
+    for task_id, task in iter_tasks(state):
         if task_id == selected_task_id:
             continue
         if task.type not in TRANSACTION_TASK_TYPES or task.stage in TERMINAL_STAGES:

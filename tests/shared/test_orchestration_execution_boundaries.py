@@ -44,6 +44,7 @@ EXECUTION_SESSION_STACK_CONTRACT_MODULES = (
 )
 EXECUTION_TASK_ACCESS_CONTRACT_MODULES = (
     EXECUTION_ROOT / "blocker_arbitration.py",
+    EXECUTION_ROOT / "source_selection.py",
     EXECUTION_ROOT / "wave" / "runner_finalize.py",
     EXECUTION_ROOT / "wave" / "runner_task_guards.py",
     EXECUTION_ROOT / "wave" / "runner_tasks.py",
