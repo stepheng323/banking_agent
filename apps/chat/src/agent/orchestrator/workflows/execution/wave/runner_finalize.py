@@ -2,7 +2,6 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.execution.auth_gate_updates import _build_auth_gate_updates
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import choose_wave_blocker
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES, _with_policy_notice
@@ -12,6 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.execution.prompts.input_prompts import (
     _build_missing_field_interrupt_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import ExecutionWaveRuntime
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import _fail_stalled_wave_tasks
 from shared.utils.logging import get_logger

@@ -75,6 +75,7 @@ MOVED_EXECUTION_RUNTIME_SYMBOLS = {
     "ExecutionTurnContext",
 }
 
+ACCUMULATOR_MODULE = "apps.chat.src.agent.orchestrator.workflows.execution.accumulator"
 FORBIDDEN_ACCUMULATOR_METHODS = {"set_update", "get_update", "has_update"}
 FORBIDDEN_RESULT_PATCH_METHODS = {"set_update", "get_update", "has_update"}
 
@@ -120,6 +121,31 @@ def test_execution_context_and_accumulator_use_canonical_imports() -> None:
             if moved_symbols:
                 symbol_list = ", ".join(sorted(moved_symbols))
                 violations.append(f"{path.relative_to(ROOT)} imports moved execution symbols: {symbol_list}")
+
+    assert violations == []
+
+
+def test_execution_result_patch_lives_in_canonical_module() -> None:
+    violations: list[str] = []
+    accumulator_text = (EXECUTION_ROOT / "accumulator.py").read_text(encoding="utf-8")
+    result_patch_text = (EXECUTION_ROOT / "result_patch.py").read_text(encoding="utf-8")
+    if "class ExecutionResultPatch" in accumulator_text:
+        violations.append("accumulator.py defines ExecutionResultPatch")
+    if "class ExecutionResultPatch" not in result_patch_text:
+        violations.append("result_patch.py does not define ExecutionResultPatch")
+    for method_name in FORBIDDEN_RESULT_PATCH_METHODS:
+        if f"def {method_name}(" in result_patch_text:
+            violations.append(f"result_patch.py exposes generic {method_name}()")
+
+    for path in _python_sources():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.module != ACCUMULATOR_MODULE:
+                continue
+            if any(alias.name == "ExecutionResultPatch" for alias in node.names):
+                violations.append(f"{path.relative_to(ROOT)} imports ExecutionResultPatch from accumulator")
 
     assert violations == []
 

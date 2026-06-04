@@ -2,7 +2,6 @@ from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.execution.common import _with_policy_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_demands import (
     _build_transfer_demand,
@@ -11,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_payloads import (
     _funding_plan_to_payload_dict,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import ExecutionResultPatch
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
