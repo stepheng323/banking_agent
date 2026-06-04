@@ -1,13 +1,13 @@
 """Planner context mode selection heuristics."""
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.types.planner import RouterDomainIntent, TransactionExecutor
 
 
 def _should_use_minimal_planner_context(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     active_intent: str | None,
     query_session_active: bool,
     recent_domain_focus: str | None,
@@ -15,11 +15,11 @@ def _should_use_minimal_planner_context(
     has_transaction_intent_hint: bool,
 ) -> bool:
     """Skip full turn-context assembly when no live state needs preservation."""
-    if state.pending_interrupt is not None:
+    if state_view.has_pending_interrupt:
         return False
-    if state.has_quote:
+    if state_view.has_quote:
         return False
-    if state.session_stack:
+    if state_view.has_session_stack:
         return False
     if active_intent is not None:
         return False
@@ -36,67 +36,64 @@ def _should_use_minimal_planner_context(
 
 def _is_narrow_transfer_replan(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     active_intent: str | None,
     expected_executors: tuple[TransactionExecutor, ...],
     query_session_active: bool,
 ) -> bool:
-    if state.has_quote:
+    if state_view.has_quote:
         return False
     if query_session_active:
         return False
-    if state.pending_interrupt is None:
+    if not state_view.has_pending_interrupt:
         return False
     if active_intent != "transfer":
-        task_ids = getattr(state.pending_interrupt, "task_ids", None) or []
-        active_interrupt_types = {
-            state.tasks[task_id].type for task_id in task_ids if isinstance(task_id, str) and task_id in state.tasks
-        }
-        if active_interrupt_types != {"transfer"} and state.routing_target_domain != "transfer":
+        active_interrupt_types = state_view.pending_interrupt_task_types
+        if active_interrupt_types != {"transfer"} and state_view.routing_target_domain != "transfer":
             return False
     return expected_executors in {(), ("transfer",)}
 
 
 def _forced_domain_owner(
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     *,
     active_intent: str | None,
     expected_executors: tuple[TransactionExecutor, ...],
     query_session_active: bool,
 ) -> RouterDomainIntent | None:
     if _is_narrow_transfer_replan(
-        state=state,
+        state_view=state_view,
         active_intent=active_intent,
         expected_executors=expected_executors,
         query_session_active=query_session_active,
     ):
         return "transfer"
-    if state.pending_interrupt is not None:
+    if state_view.has_pending_interrupt:
         return None
-    if state.has_quote:
+    if state_view.has_quote:
         return None
-    if state.direct_path_triggered:
+    if state_view.direct_path_triggered:
         return None
-    if state.routing_owner != "guardrail":
+    if state_view.routing_owner != "guardrail":
         return None
-    if state.routing_target_domain != "transfer":
+    if state_view.routing_target_domain != "transfer":
         return None
-    if tuple(state.preplanner_expected_transaction_executors) != ("transfer",):
+    if not state_view.has_transfer_only_preplanner_expectation:
         return None
-    if state.routing_decision not in {"batch_transfer_command", "account_aware_transfer_command"}:
+    if state_view.routing_decision not in {"batch_transfer_command", "account_aware_transfer_command"}:
         return None
     return "transfer"
 
 
 def _should_use_compact_transaction_context(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     active_intent: str | None,
     forced_domain_owner: RouterDomainIntent | None,
     expected_executors: tuple[TransactionExecutor, ...],
     query_session_active: bool,
 ) -> bool:
-    if state.has_quote:
+    if state_view.has_quote:
         return False
     if query_session_active:
         return False
@@ -108,11 +105,11 @@ def _should_use_compact_transaction_context(
         return True
     if len(expected_executors) >= 2:
         return True
-    if state.pending_interrupt is None:
+    if not state_view.has_pending_interrupt:
         return False
     if active_intent in TRANSACTION_EXECUTORS:
         return True
-    return state.routing_target_domain in TRANSACTION_EXECUTORS
+    return state_view.routing_target_domain in TRANSACTION_EXECUTORS
 
 
 __all__ = [

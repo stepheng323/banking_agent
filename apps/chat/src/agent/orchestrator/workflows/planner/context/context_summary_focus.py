@@ -3,12 +3,12 @@
 import time
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 
 
-def _derive_recent_answer_focus(state: OrchestratorState) -> str | None:
+def _derive_recent_answer_focus(state_view: PlannerStateView) -> str | None:
     now = int(time.time())
-    for frame in reversed(state.context_frames):
+    for frame in reversed(state_view.context_frames):
         if (frame.created_at_ts + frame.ttl_seconds) <= now:
             continue
         if frame.frame_type == ContextFrameType.ACCOUNT_LIST:
@@ -20,7 +20,7 @@ def _derive_recent_answer_focus(state: OrchestratorState) -> str | None:
         if frame.frame_type == ContextFrameType.RECEIPT:
             return "receipt"
 
-    planner_output = state.planner_output
+    planner_output = state_view.planner_output
     if planner_output and getattr(planner_output, "context_read_subtype", None):
         return str(planner_output.context_read_subtype)
 

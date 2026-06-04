@@ -37,6 +37,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_state import (
     summary_to_state_payload,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
@@ -59,7 +60,7 @@ async def test_load_query_session_snapshot_prefers_redis_then_stashed() -> None:
         stashed_query_session={"session_active": True, "query_result": {"summary_text": "stashed"}},
     )
 
-    snapshot, source = await _load_query_session_snapshot(state, _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
 
     assert source == "redis"
     assert snapshot is not None
@@ -101,7 +102,7 @@ async def test_load_query_session_snapshot_marks_stale_redis_session_inactive() 
         stashed_query_session=None,
     )
 
-    snapshot, source = await _load_query_session_snapshot(state, _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
 
     assert source == "redis"
     assert snapshot is not None
@@ -122,7 +123,7 @@ async def test_load_query_session_snapshot_marks_stale_stashed_session_inactive(
         },
     )
 
-    snapshot, source = await _load_query_session_snapshot(state, None)
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), None)
 
     assert source == "stashed"
     assert snapshot is not None
@@ -164,7 +165,7 @@ async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytes
         stashed_query_session=None,
     )
 
-    snapshot, source = await _load_query_session_snapshot(state, _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
 
     assert source == "redis"
     assert snapshot is not None
@@ -217,7 +218,7 @@ async def test_load_query_session_snapshot_logs_typed_surface_shape_without_lega
         stashed_query_session=None,
     )
 
-    snapshot, source = await _load_query_session_snapshot(state, _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
 
     assert source == "redis"
     assert snapshot is not None

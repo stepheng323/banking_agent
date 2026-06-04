@@ -23,6 +23,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_renderin
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
     get_or_build_turn_context_summary,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -45,9 +46,10 @@ async def _build_planner_context(
     if followup_shortcut is not None:
         return followup_shortcut
 
-    flow_state = await build_context_flow_state(state=state, text=text, redis_client=redis_client)
+    state_view = planner_state_view(state)
+    flow_state = await build_context_flow_state(state_view=state_view, text=text, redis_client=redis_client)
     if _should_use_minimal_planner_context(
-        state=state,
+        state_view=state_view,
         active_intent=flow_state.active_intent,
         query_session_active=flow_state.query_session_active,
         recent_domain_focus=flow_state.recent_domain_focus,
@@ -110,14 +112,14 @@ async def _build_planner_context(
     )
     prompt_signals = PlannerPromptSignals(
         active_flow_type=flow_state.active_intent,
-        pending_interrupt_kind=state.pending_interrupt.kind if state.pending_interrupt else None,
+        pending_interrupt_kind=state_view.pending_interrupt_kind,
         query_session_active=flow_state.query_session_active,
         query_session_source=flow_state.query_session_source,
         recent_domain_focus=None if flow_state.compact_transaction_context else section_result.recent_domain_focus,
         has_beneficiary_suggestion=False,
         has_user_state_summary=section_result.has_user_state_summary,
         has_short_term_memory=section_result.has_short_term_memory,
-        has_quote=state.has_quote and bool(state.quoted_message_id),
+        has_quote=state_view.has_quoted_message,
         has_transaction_intent_hint=flow_state.has_transaction_intent_hint,
         compact_context=flow_state.compact_transaction_context,
         forced_domain_owner=flow_state.forced_domain_owner,

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow_hinting import (
     _has_transaction_intent_hint,
 )
@@ -20,6 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_foc
     _infer_recent_domain_focus,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_focus import _derive_recent_answer_focus
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from shared.types.planner import RouterDomainIntent, TransactionExecutor
 from shared.utils.logging import get_logger
 
@@ -41,69 +41,41 @@ class PlannerContextFlowState:
     compact_transaction_context: bool
 
 
-def _current_flow_type(state: OrchestratorState) -> str | None:
-    if not (state.waves and state.current_wave_index < len(state.waves)):
-        return None
-    current_wave = state.waves[state.current_wave_index]
-    if not current_wave:
-        return None
-    wave_task = state.tasks.get(current_wave[0])
-    return wave_task.type if wave_task else None
-
-
-def _active_intent(state: OrchestratorState) -> str | None:
-    if not state.waves:
-        return None
-    try:
-        current_wave = state.waves[state.current_wave_index]
-        if current_wave:
-            task_id = current_wave[0]
-            if task_id in state.tasks:
-                return state.tasks[task_id].type
-    except Exception as exc:
-        logger.warning("active_flow_context_failed", error=str(exc))
-    return None
-
-
 async def build_context_flow_state(
     *,
-    state: OrchestratorState,
+    state_view: PlannerStateView,
     text: str,
     redis_client: Any | None,
 ) -> PlannerContextFlowState:
-    current_flow_type = _current_flow_type(state)
+    current_flow_type = state_view.current_wave_first_task_type
     is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS
 
-    query_session_snapshot, query_session_source = await _load_query_session_snapshot(state, redis_client)
+    query_session_snapshot, query_session_source = await _load_query_session_snapshot(state_view, redis_client)
     query_session_active = False
     if query_session_snapshot and not is_transactional_flow:
         query_session_active = bool(query_session_snapshot.get("session_active"))
     elif query_session_snapshot and is_transactional_flow:
         logger.info("planner_query_context_skipped", reason="active_transaction_flow")
 
-    active_intent = _active_intent(state)
-    recent_domain_focus = _infer_recent_domain_focus(state)
-    recent_answer_focus = _derive_recent_answer_focus(state)
+    active_intent = state_view.current_wave_first_task_type
+    recent_domain_focus = _infer_recent_domain_focus(state_view)
+    recent_answer_focus = _derive_recent_answer_focus(state_view)
     has_transaction_intent_hint = _has_transaction_intent_hint(text)
-    expected_executors = tuple(
-        cast(TransactionExecutor, item)
-        for item in state.preplanner_expected_transaction_executors
-        if item in TRANSACTION_EXECUTORS
-    )
+    expected_executors = state_view.expected_transaction_executors
     forced_domain_owner = _forced_domain_owner(
-        state,
+        state_view,
         active_intent=active_intent,
         expected_executors=expected_executors,
         query_session_active=query_session_active,
     )
     narrow_transfer_replan = _is_narrow_transfer_replan(
-        state=state,
+        state_view=state_view,
         active_intent=active_intent,
         expected_executors=expected_executors,
         query_session_active=query_session_active,
     )
     compact_transaction_context = narrow_transfer_replan or _should_use_compact_transaction_context(
-        state=state,
+        state_view=state_view,
         active_intent=active_intent,
         forced_domain_owner=forced_domain_owner,
         expected_executors=expected_executors,

@@ -2,18 +2,18 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import (
     CONTEXT_READ_ACCOUNT_SUBTYPES,
     CONTEXT_READ_BENEFICIARY_SUBTYPES,
     CONTEXT_READ_FLOW_SUBTYPES,
     CONTEXT_READ_SUBTYPES,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 
 
-def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
+def _infer_recent_domain_focus(state_view: PlannerStateView) -> str | None:
     """Infer the most recent domain focus from prior planner output/state."""
-    prior_output = state.planner_output
+    prior_output = state_view.planner_output
     if prior_output:
         prior_subtype = _planner_context_read_subtype(prior_output)
         if prior_subtype in CONTEXT_READ_ACCOUNT_SUBTYPES:
@@ -28,12 +28,9 @@ def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
         if len(prior_executors) == 1:
             return cast(str, next(iter(prior_executors)))
 
-    if state.waves and state.current_wave_index < len(state.waves):
-        wave = state.waves[state.current_wave_index]
-        if wave:
-            task = state.tasks.get(wave[0])
-            if task and task.type:
-                return task.type
+    current_task_type = state_view.current_wave_first_task_type
+    if current_task_type:
+        return current_task_type
 
     return None
 

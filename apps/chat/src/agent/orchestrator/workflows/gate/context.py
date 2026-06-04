@@ -55,7 +55,7 @@ class GateContext:
             return
         self._query_loaded = True
         self.query_session_snapshot, self.query_session_source = await _load_query_session_snapshot(
-            self.state, self.redis_client
+            self.state_view, self.redis_client
         )
 
     async def ensure_turn_summary(self) -> None:

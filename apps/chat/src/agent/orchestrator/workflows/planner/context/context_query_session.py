@@ -1,9 +1,8 @@
 """Query session snapshot helpers for planner context construction."""
 
 import json
-from typing import Any
+from typing import Any, Protocol
 
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
     _build_query_session_context,
 )
@@ -13,8 +12,16 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+class QuerySessionStateView(Protocol):
+    @property
+    def phone_number(self) -> str: ...
+
+    @property
+    def stashed_query_session(self) -> dict[str, Any] | None: ...
+
+
 async def _load_query_session_snapshot(
-    state: OrchestratorState,
+    state_view: QuerySessionStateView,
     redis_client: Any | None,
     *,
     snapshot_logger: Any | None = None,
@@ -24,7 +31,7 @@ async def _load_query_session_snapshot(
 
     if redis_client:
         try:
-            query_session_key = f"query:session:{state.phone_number}"
+            query_session_key = f"query:session:{state_view.phone_number}"
             query_session_data = await redis_client.get(query_session_key)
             if query_session_data:
                 if isinstance(query_session_data, bytes):
@@ -39,8 +46,8 @@ async def _load_query_session_snapshot(
             query_session_snapshot = None
             query_session_source = None
 
-    if query_session_snapshot is None and isinstance(state.stashed_query_session, dict):
-        query_session_snapshot = dict(state.stashed_query_session)
+    if query_session_snapshot is None and isinstance(state_view.stashed_query_session, dict):
+        query_session_snapshot = dict(state_view.stashed_query_session)
         query_session_source = "stashed"
         if is_query_session_stale(query_session_snapshot):
             query_session_snapshot["session_active"] = False

@@ -81,6 +81,10 @@ class GateStateView:
         return loaded_context if isinstance(loaded_context, dict) else {}
 
     @property
+    def stashed_query_session(self) -> dict[str, Any] | None:
+        return self.state.stashed_query_session
+
+    @property
     def session_stack(self) -> list[ActiveSession]:
         return list(self.state.session_stack)
 

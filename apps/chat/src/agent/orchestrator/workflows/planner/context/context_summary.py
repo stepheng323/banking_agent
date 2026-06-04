@@ -30,6 +30,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_
     summary_to_state_payload,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_types import TurnContextSummary
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -58,6 +59,7 @@ def build_turn_context_summary(
     history_lines = _build_history_lines(history if isinstance(history, list) else [])
     query_session_summary, query_session_active = _query_session_summary_text(query_session_snapshot)
     active_flow = _build_active_flow_details(state)
+    state_view = planner_state_view(state)
 
     from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
     from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_focus import (
@@ -67,8 +69,8 @@ def build_turn_context_summary(
     return TurnContextSummary(
         active_domain=state.active_domain,
         session_domain=state.session_stack[-1].domain if state.session_stack else None,
-        recent_domain_focus=_infer_recent_domain_focus(state),
-        recent_answer_focus=_derive_recent_answer_focus(state),
+        recent_domain_focus=_infer_recent_domain_focus(state_view),
+        recent_answer_focus=_derive_recent_answer_focus(state_view),
         profile_name=profile_name,
         account_lines=account_lines,
         remaining_accounts=remaining_accounts,

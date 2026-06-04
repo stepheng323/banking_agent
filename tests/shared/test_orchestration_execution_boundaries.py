@@ -57,6 +57,14 @@ PLANNER_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "node_task_response.py",
     PLANNER_ROOT / "runtime.py",
 )
+PLANNER_CONTEXT_FLOW_STATE_VIEW_MODULES = (
+    PLANNER_ROOT / "context" / "context_flow.py",
+    PLANNER_ROOT / "context" / "context_flow_mode_decisions.py",
+    PLANNER_ROOT / "context" / "context_flow_state.py",
+    PLANNER_ROOT / "context" / "context_query_session.py",
+    PLANNER_ROOT / "context" / "context_read_focus.py",
+    PLANNER_ROOT / "context" / "context_summary_focus.py",
+)
 EXECUTION_INTERRUPT_PATCH_MODULES = (
     EXECUTION_ROOT / "auth_gate_updates.py",
     EXECUTION_ROOT / "confirmation" / "confirmation_gate_updates.py",
@@ -662,6 +670,7 @@ def test_gate_foundational_modules_use_typed_state_view() -> None:
         "pending_interrupt",
         "phone_number",
         "session_stack",
+        "stashed_query_session",
         "tasks",
         "waves",
     }
@@ -722,6 +731,45 @@ def test_planner_entry_modules_use_typed_state_view() -> None:
                 and target.attr == "state"
                 and isinstance(target.value, ast.Name)
                 and target.value.id in {"runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_planner_context_flow_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {
+        "context_frames",
+        "current_wave_index",
+        "direct_path_triggered",
+        "has_quote",
+        "pending_interrupt",
+        "phone_number",
+        "planner_output",
+        "preplanner_expected_transaction_executors",
+        "quoted_message_id",
+        "routing_decision",
+        "routing_owner",
+        "routing_target_domain",
+        "session_stack",
+        "stashed_query_session",
+        "tasks",
+        "waves",
+    }
+    for path in PLANNER_CONTEXT_FLOW_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "runtime", "self"}
             ):
                 violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
 
