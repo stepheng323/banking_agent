@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from apps.chat.src.runtime import bundles
 from apps.chat.src.runtime import providers as runtime_providers
 from apps.chat.src.runtime.repositories import build_chat_runtime_repositories
 from banking.persistence.session_scoped import (
@@ -131,3 +132,45 @@ def test_repository_bundle_uses_session_scoped_repositories() -> None:
     assert isinstance(repositories.actionable_message, SessionScopedActionableMessageRepository)
     assert isinstance(repositories.bank_transaction, SessionScopedBankTransactionRepository)
     assert isinstance(repositories.transaction, SessionScopedTransactionRepository)
+
+
+def test_runtime_bundle_factory_delegates_to_public_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected_bundle = (object(), object(), object())
+    queue_publisher = object()
+    messaging_clients: dict[str, object] = {}
+    shared_redis = object()
+    llm = object()
+    query_llm = object()
+    semantic_router_llm = object()
+    interrupt_llm = object()
+    extractor_llm = object()
+    captured: dict[str, object] = {}
+
+    def _build_bundle(**kwargs: object) -> tuple[object, object, object]:
+        captured.update(kwargs)
+        return expected_bundle
+
+    monkeypatch.setattr(bundles, "build_orchestrator_runtime_bundle", _build_bundle)
+
+    factory = bundles.build_runtime_bundle_factory(
+        queue_publisher=queue_publisher,  # type: ignore[arg-type]
+        messaging_clients=messaging_clients,  # type: ignore[arg-type]
+        shared_redis=shared_redis,  # type: ignore[arg-type]
+        llm=llm,  # type: ignore[arg-type]
+        query_llm=query_llm,  # type: ignore[arg-type]
+        semantic_router_llm=semantic_router_llm,  # type: ignore[arg-type]
+        interrupt_llm=interrupt_llm,  # type: ignore[arg-type]
+        extractor_llm=extractor_llm,  # type: ignore[arg-type]
+    )
+
+    assert factory() is expected_bundle
+    assert captured == {
+        "queue_publisher": queue_publisher,
+        "messaging_clients": messaging_clients,
+        "shared_redis": shared_redis,
+        "llm": llm,
+        "query_llm": query_llm,
+        "semantic_router_llm": semantic_router_llm,
+        "interrupt_llm": interrupt_llm,
+        "extractor_llm": extractor_llm,
+    }

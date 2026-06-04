@@ -2,7 +2,10 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+
+import redis.asyncio as redis
+from langchain_openai import ChatOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.services.media_service import MediaService
@@ -25,6 +28,8 @@ from banking.transactions.query.runtime import build_query_worker
 from banking.transfers.runtime import build_transfer_worker
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.user_data import UserDataCache
+from shared.clients.abstractions.messaging import MessagingClient
+from shared.queue.adapter import QueuePublisher
 
 
 @dataclass(slots=True)
@@ -51,13 +56,13 @@ def build_chat_domain_services(
     *,
     repositories: ChatRuntimeRepositories,
     providers: ChatRuntimeProviders,
-    queue_publisher: Any,
-    messaging_clients: Any,
-    shared_redis: Any,
-    llm: Any,
-    query_llm: Any,
-    extractor_llm: Any,
-    session_factory: Callable[..., Any],
+    queue_publisher: QueuePublisher,
+    messaging_clients: dict[str, MessagingClient],
+    shared_redis: redis.Redis,
+    llm: ChatOpenAI,
+    query_llm: ChatOpenAI,
+    extractor_llm: ChatOpenAI,
+    session_factory: Callable[[], AsyncSession],
 ) -> ChatDomainServices:
     """Build domain workers and chat orchestration support services."""
     user_data_cache = UserDataCache(redis_client=shared_redis)

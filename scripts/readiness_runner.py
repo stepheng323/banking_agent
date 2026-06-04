@@ -24,7 +24,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
-from apps.chat.src.runtime.chat_worker_dependencies import _build_orchestrator_runtime_bundle
+from apps.chat.src.runtime.bundles import build_orchestrator_runtime_bundle
 from apps.chat.src.runtime.model_roles import resolve_role_model
 from banking.identity.repositories.user_repository import UserRepository
 from banking.policy.guardrails.loader import get_cached_guardrails
@@ -261,7 +261,7 @@ async def build_dry_run_agent() -> tuple[UserRepository, OrchestratorAgent, Noop
         app_env=app_env,
     )
 
-    user_repo, _onboarding_executor, agent = _build_orchestrator_runtime_bundle(
+    user_repo, _onboarding_executor, agent = build_orchestrator_runtime_bundle(
         queue_publisher=publisher,
         messaging_clients={},
         shared_redis=shared_redis,

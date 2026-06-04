@@ -1,10 +1,9 @@
 """Repository construction for the chat runtime."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
 from banking.persistence.session_scoped import (
+    SessionFactory,
     SessionScopedAccountRepository,
     SessionScopedActionableMessageRepository,
     SessionScopedBankTransactionRepository,
@@ -29,7 +28,7 @@ class ChatRuntimeRepositories:
     transaction: SessionScopedTransactionRepository
 
 
-def build_chat_runtime_repositories(session_factory: Callable[..., Any]) -> ChatRuntimeRepositories:
+def build_chat_runtime_repositories(session_factory: SessionFactory) -> ChatRuntimeRepositories:
     """Build chat runtime repositories with short-lived DB access."""
     logger.info("chat_worker_runtime_db_access_mode", mode="session_scoped")
     return ChatRuntimeRepositories(
