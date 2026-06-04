@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending
 from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending_action_targets import (
     _pending_edit_target_task_ids,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _pending_edit_payload_overrides_from_fields(
@@ -24,6 +25,7 @@ def _pending_edit_payload_overrides_from_fields(
     if not fields:
         return {}
 
+    state_view = interrupt_state_view(state)
     overrides: dict[str, dict[str, Any]] = {}
     for field, value in fields.items():
         if value in (None, ""):
@@ -35,7 +37,7 @@ def _pending_edit_payload_overrides_from_fields(
             field=str(field),
         )
         for task_id in target_ids:
-            task = state.tasks.get(task_id)
+            task = state_view.task(task_id)
             if task is None:
                 continue
             patch = _pending_edit_patch_for_field(

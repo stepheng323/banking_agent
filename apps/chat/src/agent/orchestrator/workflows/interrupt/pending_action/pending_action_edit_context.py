@@ -5,6 +5,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending_action_edit_types import (
     PENDING_ACTION_EDIT_TASK_TYPES,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _task_amount(payload: dict[str, Any]) -> Any:
@@ -63,14 +64,15 @@ def _removed_task_from_entry(entry: Any) -> TaskSpec | None:
 
 def build_pending_action_edit_context(state: OrchestratorState, interrupt: Any) -> str:
     """Build compact context for semantic pending-action edit classification."""
-    active_task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
+    state_view = interrupt_state_view(state)
+    active_task_ids = state_view.active_task_ids_for_interrupt(interrupt)
     active_entries = [
         _task_context_entry(task_id, task)
         for task_id in active_task_ids
-        if (task := state.tasks.get(task_id)) is not None and task.type in PENDING_ACTION_EDIT_TASK_TYPES
+        if (task := state_view.task(task_id)) is not None and task.type in PENDING_ACTION_EDIT_TASK_TYPES
     ]
     removed_entries = []
-    for task_id, entry in (state.removed_confirmation_tasks or {}).items():
+    for task_id, entry in (state_view.removed_confirmation_tasks or {}).items():
         task = _removed_task_from_entry(entry)
         if task is None or task.type not in PENDING_ACTION_EDIT_TASK_TYPES:
             continue

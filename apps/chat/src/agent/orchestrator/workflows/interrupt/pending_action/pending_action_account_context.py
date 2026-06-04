@@ -3,10 +3,11 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _loaded_accounts(state: OrchestratorState) -> list[dict[str, Any]]:
-    loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
+    loaded_context = interrupt_state_view(state).loaded_context_or_empty
     account_sources = (
         loaded_context.get("transaction_accounts"),
         loaded_context.get("accounts"),

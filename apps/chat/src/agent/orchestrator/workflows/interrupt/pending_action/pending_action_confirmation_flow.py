@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _cancel
 from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending_action_payload_fields import (
     _pending_edit_has_fields,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 async def _remove_or_cancel_confirmation_tasks(
@@ -22,7 +23,7 @@ async def _remove_or_cancel_confirmation_tasks(
     redis_client: Any | None,
     task_ids_to_remove: list[str],
 ) -> dict[str, Any]:
-    active_task_ids = {str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks}
+    active_task_ids = interrupt_state_view(state).active_task_id_set_for_interrupt(interrupt)
     if active_task_ids and set(task_ids_to_remove) >= active_task_ids:
         return await _cancel_updates(state, interrupt, redis_client)
     return remove_confirmation_tasks_and_reconfirm_updates(
@@ -42,7 +43,7 @@ def _restore_fallback_task_ids_for_misclassified_add(
     """Recover a recently removed task when the semantic model calls it a fresh add."""
     if getattr(interrupt, "kind", None) != "confirmation":
         return []
-    removed = state.removed_confirmation_tasks or {}
+    removed = interrupt_state_view(state).removed_confirmation_tasks or {}
     if len(removed) != 1:
         return []
     if getattr(decision, "operation", None) != "add_tasks":
@@ -75,11 +76,12 @@ def _confirmation_edit_clarification_updates(state: OrchestratorState, interrupt
         _build_confirmation_scope_clarification_outbox,
     )
 
+    state_view = interrupt_state_view(state)
     logger.info("pending_action_edit_scope_unresolved", task_ids=getattr(interrupt, "task_ids", None))
     return {
         "pending_interrupt": interrupt,
         "last_interrupt": interrupt,
-        "tasks": state.tasks,
+        "tasks": state_view.tasks,
         "outbox": _build_confirmation_scope_clarification_outbox(state),
     }
 

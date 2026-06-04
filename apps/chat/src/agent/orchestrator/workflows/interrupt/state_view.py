@@ -55,12 +55,21 @@ class InterruptStateView:
     def tasks(self) -> dict[str, TaskSpec]:
         return self.state.tasks
 
+    def task_map_copy(self) -> dict[str, TaskSpec]:
+        return self.tasks.copy()
+
     @property
     def task_ids(self) -> set[str]:
         return set(self.tasks.keys())
 
     def task(self, task_id: str) -> TaskSpec | None:
         return self.tasks.get(task_id)
+
+    def active_task_ids_for_interrupt(self, interrupt: Any) -> list[str]:
+        return [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if self.has_task_id(str(task_id))]
+
+    def active_task_id_set_for_interrupt(self, interrupt: Any) -> set[str]:
+        return set(self.active_task_ids_for_interrupt(interrupt))
 
     def tasks_for(self, task_ids: list[str]) -> list[TaskSpec]:
         return [task for task_id in task_ids if (task := self.task(task_id)) is not None]
@@ -76,6 +85,10 @@ class InterruptStateView:
 
     def has_task_id(self, task_id: str) -> bool:
         return task_id in self.task_ids
+
+    @property
+    def removed_confirmation_tasks(self) -> dict[str, dict[str, Any]]:
+        return self.state.removed_confirmation_tasks
 
     @property
     def session_stack(self) -> list[ActiveSession]:

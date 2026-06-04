@@ -10,6 +10,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
     _message_targets_confirmation_task,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
 def _pending_edit_target_task_ids(
@@ -19,7 +20,8 @@ def _pending_edit_target_task_ids(
     decision: Any,
     field: str,
 ) -> list[str]:
-    active_task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
+    state_view = interrupt_state_view(state)
+    active_task_ids = state_view.active_task_ids_for_interrupt(interrupt)
     if not active_task_ids:
         return []
 
@@ -35,7 +37,7 @@ def _pending_edit_target_task_ids(
         reference_matches = [
             task_id
             for task_id in active_task_ids
-            if (task := state.tasks.get(task_id)) is not None
+            if (task := state_view.task(task_id)) is not None
             and (
                 _message_targets_confirmation_task(target_text, task)
                 or (task.type == "transfer" and _transfer_task_reference_matches(target_text, task))
@@ -52,13 +54,13 @@ def _pending_edit_target_task_ids(
         type_matches = [
             task_id
             for task_id in active_task_ids
-            if (task := state.tasks.get(task_id)) is not None and task.type in target_types
+            if (task := state_view.task(task_id)) is not None and task.type in target_types
         ]
         if _field_can_apply_collectively(field):
             return [
                 task_id
                 for task_id in type_matches
-                if (task := state.tasks.get(task_id)) is not None and _field_applies_to_task(field, task.type)
+                if (task := state_view.task(task_id)) is not None and _field_applies_to_task(field, task.type)
             ]
         if field in {"source_bank_name", "source_account_index"}:
             return type_matches
@@ -68,7 +70,7 @@ def _pending_edit_target_task_ids(
     compatible_task_ids = [
         task_id
         for task_id in active_task_ids
-        if (task := state.tasks.get(task_id)) is not None and _field_applies_to_task(field, task.type)
+        if (task := state_view.task(task_id)) is not None and _field_applies_to_task(field, task.type)
     ]
     if field in {"source_bank_name", "source_account_index"}:
         return compatible_task_ids

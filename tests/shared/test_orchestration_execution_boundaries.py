@@ -39,6 +39,14 @@ INTERRUPT_REPROMPT_STATUS_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "status" / "status_query_flow.py",
     INTERRUPT_ROOT / "status" / "status_query_text.py",
 )
+INTERRUPT_PENDING_ACTION_STATE_VIEW_MODULES = (
+    INTERRUPT_ROOT / "pending_action" / "pending_action_account_context.py",
+    INTERRUPT_ROOT / "pending_action" / "pending_action_confirmation_flow.py",
+    INTERRUPT_ROOT / "pending_action" / "pending_action_edit_context.py",
+    INTERRUPT_ROOT / "pending_action" / "pending_action_edit_scope.py",
+    INTERRUPT_ROOT / "pending_action" / "pending_action_payload_overrides.py",
+    INTERRUPT_ROOT / "pending_action" / "pending_action_targets.py",
+)
 GATE_STATE_VIEW_CONTRACT_MODULES = (
     GATE_ROOT / "context.py",
     GATE_ROOT / "direct_tasks.py",
@@ -759,6 +767,28 @@ def test_interrupt_reprompt_status_modules_use_typed_state_view() -> None:
     violations: list[str] = []
     guarded_attrs = {"loaded_context", "tasks"}
     for path in INTERRUPT_REPROMPT_STATUS_STATE_VIEW_MODULES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
+                continue
+            target = node.value
+            if isinstance(target, ast.Name) and target.id == "state":
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+            if (
+                isinstance(target, ast.Attribute)
+                and target.attr == "state"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in {"ctx", "request", "runtime", "self"}
+            ):
+                violations.append(f"{path.relative_to(ROOT)} reaches into {ast.unparse(node)}")
+
+    assert violations == []
+
+
+def test_interrupt_pending_action_modules_use_typed_state_view() -> None:
+    violations: list[str] = []
+    guarded_attrs = {"loaded_context", "removed_confirmation_tasks", "tasks"}
+    for path in INTERRUPT_PENDING_ACTION_STATE_VIEW_MODULES:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in guarded_attrs:
