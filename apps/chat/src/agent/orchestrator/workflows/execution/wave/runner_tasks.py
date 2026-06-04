@@ -34,12 +34,12 @@ async def execute_current_wave_tasks(
             continue
 
         if task.stage == TaskStage.AWAITING_CONFIRMATION:
-            runtime.accumulator.needs_confirm_tasks.append(task_id)
+            runtime.accumulator.add_confirmation_task(task_id)
             progressed = True
             continue
 
         if task.stage == TaskStage.AWAITING_AUTH:
-            runtime.accumulator.needs_auth_tasks.append(task_id)
+            runtime.accumulator.add_auth_task(task_id)
             progressed = True
             continue
 
@@ -80,7 +80,7 @@ async def execute_current_wave_tasks(
             ):
                 propagated_task = state.tasks.get(propagated_task_id)
                 if propagated_task and propagated_task.stage == TaskStage.AWAITING_CONFIRMATION:
-                    runtime.accumulator.needs_confirm_tasks.append(propagated_task_id)
+                    runtime.accumulator.add_confirmation_task(propagated_task_id)
         progressed = True
 
     if not progressed:

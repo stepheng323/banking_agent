@@ -77,6 +77,12 @@ MOVED_EXECUTION_RUNTIME_SYMBOLS = {
 
 ACCUMULATOR_MODULE = "apps.chat.src.agent.orchestrator.workflows.execution.accumulator"
 FORBIDDEN_ACCUMULATOR_METHODS = {"set_update", "get_update", "has_update"}
+FORBIDDEN_ACCUMULATOR_LIST_APPENDS = {
+    "feedback_messages",
+    "needs_auth_tasks",
+    "needs_confirm_tasks",
+    "source_bank_hints",
+}
 FORBIDDEN_RESULT_PATCH_METHODS = {"set_update", "get_update", "has_update"}
 
 
@@ -188,6 +194,26 @@ def test_execution_accumulator_callers_use_typed_methods() -> None:
                 violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.{node.func.attr}()")
             elif isinstance(target, ast.Name) and target.id == "accumulator":
                 violations.append(f"{path.relative_to(ROOT)} calls accumulator.{node.func.attr}()")
+
+    assert violations == []
+
+
+def test_execution_accumulator_callers_do_not_mutate_reducer_lists_directly() -> None:
+    violations: list[str] = []
+    for path in sorted(EXECUTION_ROOT.rglob("*.py")):
+        if path.name == "accumulator.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute) or node.func.attr != "append":
+                continue
+            target = node.func.value
+            if not isinstance(target, ast.Attribute):
+                continue
+            if target.attr in FORBIDDEN_ACCUMULATOR_LIST_APPENDS:
+                violations.append(f"{path.relative_to(ROOT)} calls {ast.unparse(target)}.append()")
 
     assert violations == []
 

@@ -84,6 +84,20 @@ class ExecutionAccumulator:
             if task_id:
                 self.prompts_by_task[task_id] = prompt
 
+    def add_feedback_message(self, message: str | None) -> None:
+        if message:
+            self.feedback_messages.append(message)
+
+    def add_source_bank_hint(self, hint: Any) -> None:
+        if hint:
+            self.source_bank_hints.append(str(hint))
+
+    def add_confirmation_task(self, task_id: str) -> None:
+        self.needs_confirm_tasks.append(task_id)
+
+    def add_auth_task(self, task_id: str) -> None:
+        self.needs_auth_tasks.append(task_id)
+
     def add_missing_fields(self, task_id: str, fields: list[str] | None) -> None:
         if fields:
             self.missing_fields_by_task[task_id] = fields

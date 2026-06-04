@@ -54,20 +54,19 @@ def _handle_transaction_outcome(
         accumulator.add_missing_fields(task_id, result.required_fields)
         accumulator.add_details(task_id, result.details)
         accumulator.add_prompt(result.prompt, task_id)
-        if result.update_message:
-            accumulator.feedback_messages.append(result.update_message)
+        accumulator.add_feedback_message(result.update_message)
 
         if hint := result.patch.get("source_bank_name"):
-            accumulator.source_bank_hints.append(hint)
+            accumulator.add_source_bank_hint(hint)
 
     elif result.outcome == TransactionOutcome.NEEDS_CONFIRMATION:
         task.stage = TaskStage.AWAITING_CONFIRMATION
-        accumulator.needs_confirm_tasks.append(task_id)
+        accumulator.add_confirmation_task(task_id)
         _set_confirmation(task, result, gate_on=confirmation_gate)
 
     elif result.outcome == TransactionOutcome.NEEDS_AUTH:
         task.stage = TaskStage.AWAITING_AUTH
-        accumulator.needs_auth_tasks.append(task_id)
+        accumulator.add_auth_task(task_id)
         _set_confirmation(task, result, gate_on=confirmation_gate)
 
     elif result.outcome == TransactionOutcome.FAILED:
