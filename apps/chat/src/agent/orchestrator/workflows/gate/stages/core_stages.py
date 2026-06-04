@@ -10,7 +10,6 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
 )
 from apps.chat.src.agent.orchestrator.guardrails.gibberish import looks_like_gibberish, render_gibberish_prompt
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.interrupt_state import _pending_interrupt_task_types
 from apps.chat.src.agent.orchestrator.workflows.gate.language import _resolve_explicit_language_switch
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _locale_update
 from apps.chat.src.agent.orchestrator.workflows.gate.mandate_state import (
@@ -30,12 +29,12 @@ logger = get_logger(__name__)
 
 def _stage_stale_interrupt_cleanup(ctx: GateContext) -> None:
     """Sync stage: clear dead interrupts that have no live tasks."""
-    if ctx.state.pending_interrupt is not None and not ctx.live_pending_interrupt:
+    if ctx.state_view.has_pending_interrupt and not ctx.live_pending_interrupt:
         logger.info(
             "interrupt_router_skipped_no_live_flow",
-            kind=getattr(ctx.state.pending_interrupt, "kind", None),
-            task_ids=getattr(ctx.state.pending_interrupt, "task_ids", None),
-            current_task_types=sorted(_pending_interrupt_task_types(ctx.state)),
+            kind=ctx.state_view.pending_interrupt_kind,
+            task_ids=ctx.state_view.pending_interrupt_task_ids,
+            current_task_types=sorted(ctx.state_view.pending_interrupt_task_types),
         )
         ctx.gate_updates["pending_interrupt"] = None
 
@@ -47,7 +46,7 @@ async def _stage_language_switch(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if ctx.redis_client:
         resolved = await LocaleManager.set_locale(
-            ctx.state.phone_number,
+            ctx.state_view.phone_number,
             requested_locale,
             source="user_command",
         )
@@ -85,14 +84,14 @@ async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
         and ctx.query_session_snapshot.get("session_active")
         and ctx.query_session_snapshot.get("pending_clarification")
     ):
-        await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
         return {
             **ctx.gate_updates,
             "direct_path_triggered": True,
             "final_response": render_message("query.session.goodbye", ctx.current_locale),
             **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
-    if _has_pending_mandate_without_ready_accounts(ctx.state.loaded_context):
+    if _has_pending_mandate_without_ready_accounts(ctx.state_view.loaded_context):
         logger.info("gate_pending_mandate_notice_dismissed")
         return {
             **ctx.gate_updates,

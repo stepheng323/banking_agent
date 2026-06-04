@@ -36,10 +36,7 @@ async def _stage_banking_ambiguity(ctx: GateContext) -> dict[str, Any] | None:
     if (
         ctx.ambiguous_banking_domain is not None
         and not ctx.live_pending_interrupt
-        and not ctx.state.has_quote
-        and not ctx.state.session_stack
-        and not ctx.state.waves
-        and ctx.state.pending_interrupt is None
+        and not ctx.state_view.has_gate_blocking_state
     ):
         logger.info(
             "gate_banking_coded_ambiguity_clarify",
@@ -60,7 +57,7 @@ async def _stage_banking_ambiguity(ctx: GateContext) -> dict[str, Any] | None:
 
 async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
     """Deterministic meta response (greeting, appreciation, identity, etc.)."""
-    if ctx.live_pending_interrupt or ctx.state.has_quote:
+    if ctx.live_pending_interrupt or ctx.state_view.has_quote:
         return None
     deterministic_meta = classify_deterministic_meta_response(ctx.message_text)
     if not deterministic_meta:
@@ -79,7 +76,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         and isinstance(ctx.query_session_snapshot, dict)
         and ctx.query_session_snapshot.get("session_active")
     ):
-        await clear_query_session(ctx.redis_client, ctx.state.phone_number)
+        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
     if exit_updates:
         logger.info("gate_query_session_exited_on_direct_reply", had_pending_clarification=False)
     capability_boundary_updates: dict[str, Any] = {}
@@ -97,11 +94,11 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
             )
     if (
         response_key == "conversational.greeting"
-        and not ctx.state.pending_interrupt
-        and not ctx.state.session_stack
-        and not ctx.state.waves
+        and not ctx.state_view.has_pending_interrupt
+        and not ctx.state_view.has_session_stack
+        and not ctx.state_view.has_waves
     ):
-        loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else None
+        loaded_context = ctx.state_view.loaded_context_or_empty
         display_name = conversation_display_name(loaded_context)
         if display_name:
             response_key = "conversational.greeting_named"

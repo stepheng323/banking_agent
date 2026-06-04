@@ -23,7 +23,7 @@ def _resume_reply_locale(ctx: GateContext) -> str | None:
     locale = normalize_confirmation_locale(ctx.current_locale)
     if locale is not None:
         return locale.value
-    loaded_context = ctx.state.loaded_context if isinstance(ctx.state.loaded_context, dict) else {}
+    loaded_context = ctx.state_view.loaded_context_or_empty
     loaded_locale = normalize_confirmation_locale(str(loaded_context.get("language") or ""))
     return loaded_locale.value if loaded_locale is not None else None
 
@@ -95,10 +95,7 @@ async def _stage_resume_prompt_action(ctx: GateContext) -> dict[str, Any] | None
     """Resolve terse replies to a live stashed-session resume prompt."""
     if (
         ctx.live_pending_interrupt
-        or ctx.state.pending_interrupt is not None
-        or ctx.state.has_quote
-        or ctx.state.session_stack
-        or ctx.state.waves
+        or ctx.state_view.has_gate_blocking_state
         or not ctx.state.stashed_sessions
         or not _has_live_resume_prompt_frame(ctx)
     ):
