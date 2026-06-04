@@ -6,7 +6,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import task_dispatch
 from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply_sync
 from banking.transactions.shared.confirmation.models import ConfirmationDecision
 from banking.transactions.shared.confirmation.phrases import normalize_confirmation_locale
@@ -71,22 +71,17 @@ def _build_resume_action_updates(ctx: GateContext, *, action: str, semantic_path
         stage=TaskStage.DRAFT,
         payload={"action": action},
     )
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": semantic_path_shape,
-        **_route_observability_updates(
-            owner="guardrail",
-            decision=semantic_path_shape,
-            target_domain="orchestrator",
-            mode="continuation",
-            route_source="resume_prompt_guard",
-        ),
-    }
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision=semantic_path_shape,
+        semantic_path_shape=semantic_path_shape,
+        target_domain="orchestrator",
+        mode="continuation",
+        route_source="resume_prompt_guard",
+    )
 
 
 async def _stage_resume_prompt_action(ctx: GateContext) -> dict[str, Any] | None:

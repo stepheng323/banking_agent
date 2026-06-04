@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.domain_data_plan import (
     _apply_self_data_target,
     _extract_data_purchase_hints,
@@ -33,45 +33,37 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_data_plan_query_policy_blocked")
-        return {
-            **ctx.gate_updates,
-            "final_response": block_message,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "deterministic_data_plan_query_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="capability_blocked",
-                target_domain="data",
-                mode="new",
-                route_source="data_plan_query_guard",
-                heuristic_type="slot_parser",
-                heuristic_name="data_plan_query",
-            ),
-        }
-
-    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
-    spec.payload.clear()
-    spec.payload.update(_extract_data_query_payload(ctx.message_text))
-    logger.info("gate_deterministic_data_plan_query", task_id=task_id)
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "deterministic_data_plan_query",
-        **_route_observability_updates(
+        return direct_response(
+            ctx,
+            response=block_message,
             owner="guardrail",
-            decision="deterministic_data_plan_query",
+            decision="capability_blocked",
+            semantic_path_shape="deterministic_data_plan_query_policy_blocked",
             target_domain="data",
             mode="new",
             route_source="data_plan_query_guard",
             heuristic_type="slot_parser",
             heuristic_name="data_plan_query",
-        ),
-    }
+        )
+
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
+    spec.payload.clear()
+    spec.payload.update(_extract_data_query_payload(ctx.message_text))
+    logger.info("gate_deterministic_data_plan_query", task_id=task_id)
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="deterministic_data_plan_query",
+        semantic_path_shape="deterministic_data_plan_query",
+        extra_updates={"pending_interrupt": None},
+        target_domain="data",
+        mode="new",
+        route_source="data_plan_query_guard",
+        heuristic_type="slot_parser",
+        heuristic_name="data_plan_query",
+    )
 
 
 async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any] | None:
@@ -87,21 +79,18 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_data_plan_reference_purchase_policy_blocked")
-        return {
-            **ctx.gate_updates,
-            "final_response": block_message,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "data_plan_reference_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="capability_blocked",
-                target_domain="data",
-                mode="new",
-                route_source="data_plan_referent",
-                heuristic_type="referent_memory",
-                heuristic_name="data_plan_reference",
-            ),
-        }
+        return direct_response(
+            ctx,
+            response=block_message,
+            owner="guardrail",
+            decision="capability_blocked",
+            semantic_path_shape="data_plan_reference_policy_blocked",
+            target_domain="data",
+            mode="new",
+            route_source="data_plan_referent",
+            heuristic_type="referent_memory",
+            heuristic_name="data_plan_reference",
+        )
 
     task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
     spec.payload.update(
@@ -120,25 +109,20 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
     )
     _apply_self_data_target(spec.payload, text=ctx.message_text, phone_number=ctx.state_view.phone_number)
     logger.info("gate_data_plan_reference_purchase", task_id=task_id)
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "data_plan_reference_purchase",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="data_plan_reference_purchase",
-            target_domain="data",
-            mode="new",
-            route_source="data_plan_referent",
-            heuristic_type="referent_memory",
-            heuristic_name="data_plan_reference",
-        ),
-    }
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="data_plan_reference_purchase",
+        semantic_path_shape="data_plan_reference_purchase",
+        extra_updates={"pending_interrupt": None},
+        target_domain="data",
+        mode="new",
+        route_source="data_plan_referent",
+        heuristic_type="referent_memory",
+        heuristic_name="data_plan_reference",
+    )
 
 
 async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
@@ -152,40 +136,32 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_deterministic_data_domain_policy_blocked")
-        return {
-            **ctx.gate_updates,
-            "final_response": block_message,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "deterministic_data_domain_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="capability_blocked",
-                target_domain="data",
-                mode="new",
-                route_source="data_domain_guard",
-                heuristic_type="slot_parser",
-                heuristic_name="obvious_data_request",
-            ),
-        }
-    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
-    spec.payload.update(_extract_data_purchase_hints(ctx.message_text, phone_number=ctx.state_view.phone_number))
-    logger.info("gate_deterministic_data_domain", task_id=task_id)
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "deterministic_data_domain",
-        **_route_observability_updates(
+        return direct_response(
+            ctx,
+            response=block_message,
             owner="guardrail",
-            decision="deterministic_data_domain",
+            decision="capability_blocked",
+            semantic_path_shape="deterministic_data_domain_policy_blocked",
             target_domain="data",
             mode="new",
             route_source="data_domain_guard",
             heuristic_type="slot_parser",
             heuristic_name="obvious_data_request",
-        ),
-    }
+        )
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="data", mode="new")
+    spec.payload.update(_extract_data_purchase_hints(ctx.message_text, phone_number=ctx.state_view.phone_number))
+    logger.info("gate_deterministic_data_domain", task_id=task_id)
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="deterministic_data_domain",
+        semantic_path_shape="deterministic_data_domain",
+        extra_updates={"pending_interrupt": None},
+        target_domain="data",
+        mode="new",
+        route_source="data_domain_guard",
+        heuristic_type="slot_parser",
+        heuristic_name="obvious_data_request",
+    )

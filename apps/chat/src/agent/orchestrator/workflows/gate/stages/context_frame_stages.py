@@ -97,13 +97,100 @@ def _context_frame_followup_updates(
     }
 
 
+def _context_frame_followup_eligible(ctx: GateContext) -> bool:
+    return (
+        not ctx.live_pending_interrupt
+        and not ctx.state_view.has_gate_blocking_state
+        and ctx.task_planner is not None
+    )
+
+
+def _has_active_query_session(ctx: GateContext) -> bool:
+    return bool(isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"))
+
+
+def _display_shortcut_followup(ctx: GateContext) -> ContextFrameFollowupResponse | None:
+    if not _looks_like_context_frame_display_request(ctx.message_text):
+        return None
+    return build_context_frame_followup_response(
+        ctx.state,
+        ctx.message_text,
+        decision=ContextFrameFollowupDecision(
+            decision="show_details",
+            confidence=0.92,
+            detected_language=ctx.current_locale,
+            reason="short visible-context display request",
+        ),
+    )
+
+
+async def _interpret_context_frame_followup(ctx: GateContext) -> ContextFrameFollowupDecision | None:
+    if ctx.task_planner is None:
+        return None
+    try:
+        return await ctx.task_planner.interpret_context_frame_followup(
+            ctx.state_view.phone_number,
+            ctx.message_text,
+            context=build_context_frame_followup_context_for_state(ctx.state),
+            path_label="direct_path",
+        )
+    except Exception as exc:
+        logger.warning("gate_context_frame_followup_interpreter_failed", error=str(exc))
+        return None
+
+
+async def _extract_context_frame_replay_modifier(
+    ctx: GateContext,
+    decision: ContextFrameFollowupDecision,
+) -> Any | None:
+    if decision.decision not in {"replay_tasks", "replay"} or ctx.task_planner is None:
+        return None
+    try:
+        replay_modifier = await ctx.task_planner.extract_context_frame_replay_modifiers(
+            ctx.state_view.phone_number,
+            ctx.message_text,
+            context=build_context_frame_followup_context_for_state(ctx.state),
+            path_label="direct_path",
+        )
+    except Exception as exc:
+        logger.warning("gate_context_frame_replay_modifier_extractor_failed", error=str(exc))
+        return None
+    if replay_modifier is not None:
+        logger.info(
+            "gate_context_frame_replay_modifier_extracted",
+            confidence=replay_modifier.confidence,
+            detected_language=replay_modifier.detected_language,
+            has_amount=replay_modifier.amount is not None,
+            has_source=bool(replay_modifier.source_account_reference),
+            has_narration=bool(replay_modifier.narration),
+            reason=replay_modifier.reason,
+        )
+    return replay_modifier
+
+
+async def _resolve_context_frame_followup(
+    ctx: GateContext,
+) -> tuple[ContextFrameFollowupDecision, ContextFrameFollowupResponse | None] | None:
+    decision = await _interpret_context_frame_followup(ctx)
+    if decision is None:
+        return None
+    replay_modifier = await _extract_context_frame_replay_modifier(ctx, decision)
+    frame_followup = build_context_frame_followup_response(
+        ctx.state,
+        ctx.message_text,
+        decision=decision,
+        replay_modifier=replay_modifier,
+    )
+    return decision, frame_followup
+
+
 async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | None:
     """Resolve semantic follow-ups against the latest displayed response frame before domain routing."""
-    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or ctx.task_planner is None:
+    if not _context_frame_followup_eligible(ctx):
         return None
 
     await ctx.ensure_query_session()
-    if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
+    if _has_active_query_session(ctx):
         if not _looks_like_context_frame_replay(ctx.message_text):
             logger.info("gate_context_frame_followup_skipped_for_active_query_session")
             return None
@@ -129,66 +216,19 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
         )
         return None
 
-    display_request = _looks_like_context_frame_display_request(ctx.message_text)
-    if display_request:
-        frame_followup = build_context_frame_followup_response(
-            ctx.state,
-            ctx.message_text,
-            decision=ContextFrameFollowupDecision(
-                decision="show_details",
-                confidence=0.92,
-                detected_language=ctx.current_locale,
-                reason="short visible-context display request",
-            ),
+    display_followup = _display_shortcut_followup(ctx)
+    if display_followup:
+        logger.info(
+            "gate_context_frame_display_shortcut_hit",
+            frame_type=frame.frame_type.value,
+            item_count=len(frame.items),
         )
-        if frame_followup:
-            logger.info(
-                "gate_context_frame_display_shortcut_hit",
-                frame_type=frame.frame_type.value,
-                item_count=len(frame.items),
-            )
-            return _context_frame_followup_updates(ctx, frame_followup)
+        return _context_frame_followup_updates(ctx, display_followup)
 
-    try:
-        decision = await ctx.task_planner.interpret_context_frame_followup(
-            ctx.state_view.phone_number,
-            ctx.message_text,
-            context=build_context_frame_followup_context_for_state(ctx.state),
-            path_label="direct_path",
-        )
-    except Exception as exc:
-        logger.warning("gate_context_frame_followup_interpreter_failed", error=str(exc))
+    resolved = await _resolve_context_frame_followup(ctx)
+    if resolved is None:
         return None
-
-    replay_modifier = None
-    if decision.decision in {"replay_tasks", "replay"}:
-        try:
-            replay_modifier = await ctx.task_planner.extract_context_frame_replay_modifiers(
-                ctx.state_view.phone_number,
-                ctx.message_text,
-                context=build_context_frame_followup_context_for_state(ctx.state),
-                path_label="direct_path",
-            )
-        except Exception as exc:
-            logger.warning("gate_context_frame_replay_modifier_extractor_failed", error=str(exc))
-        else:
-            if replay_modifier is not None:
-                logger.info(
-                    "gate_context_frame_replay_modifier_extracted",
-                    confidence=replay_modifier.confidence,
-                    detected_language=replay_modifier.detected_language,
-                    has_amount=replay_modifier.amount is not None,
-                    has_source=bool(replay_modifier.source_account_reference),
-                    has_narration=bool(replay_modifier.narration),
-                    reason=replay_modifier.reason,
-                )
-
-    frame_followup = build_context_frame_followup_response(
-        ctx.state,
-        ctx.message_text,
-        decision=decision,
-        replay_modifier=replay_modifier,
-    )
+    decision, frame_followup = resolved
     logger.info(
         "gate_context_frame_followup_decision",
         decision=decision.decision,

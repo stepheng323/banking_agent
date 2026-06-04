@@ -9,7 +9,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contex
 )
 from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id
 from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
@@ -282,21 +282,20 @@ async def _stage_contextual_worker_followup(ctx: GateContext) -> dict[str, Any] 
         )
 
     logger.info("gate_contextual_worker_followup_hit")
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        "direct_path_triggered": True,
-        "final_response": final_response,
-        "conversation_topic": last_topic or "casual",
-        "semantic_path_shape": responder_intent,
-        **_route_observability_updates(
-            owner="guardrail",
-            decision=responder_intent,
-            route_source=responder_intent,
-            heuristic_type="guardrail_shortcut",
-            heuristic_name="worker_acknowledgement",
-        ),
-    }
+    return direct_response(
+        ctx,
+        response=final_response,
+        owner="guardrail",
+        decision=responder_intent,
+        semantic_path_shape=responder_intent,
+        extra_updates={
+            **(ctx.summary_updates or {}),
+            "conversation_topic": last_topic or "casual",
+        },
+        route_source=responder_intent,
+        heuristic_type="guardrail_shortcut",
+        heuristic_name="worker_acknowledgement",
+    )
 
 
 __all__ = ["_stage_contextual_worker_followup"]

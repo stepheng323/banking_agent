@@ -38,6 +38,7 @@ class GateContext:
     turn_summary: TurnContextSummary | None = None
     summary_updates: dict[str, Any] | None = None
     routing_hints: list[dict[str, str]] = field(default_factory=list)
+    nested_gate_traces: dict[str, tuple[object, ...]] = field(default_factory=dict)
 
     _query_loaded: bool = False
     _summary_loaded: bool = False

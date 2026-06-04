@@ -3,8 +3,8 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _build_direct_domain_task
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
-    _route_observability_updates,
     _semantic_route_decision,
     _semantic_route_mode,
 )
@@ -54,24 +54,19 @@ def _build_direct_schedule_read_updates(
         mode=canonical_mode,
         schedule_response_mode="count" if schedule_response_mode == "count" else "list",
     )
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "semantic_router_schedule_direct",
-        **_route_observability_updates(
-            owner="semantic_router",
-            decision=canonical_decision or "domain_schedule",
-            target_domain="schedule",
-            mode=canonical_mode,
-            route_source=route_source,
-        ),
-        **updates,
-    }
+    semantic_path_shape = updates.get("semantic_path_shape")
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="semantic_router",
+        decision=canonical_decision or "domain_schedule",
+        semantic_path_shape=semantic_path_shape if isinstance(semantic_path_shape, str) else None,
+        extra_updates={**(ctx.summary_updates or {}), **updates},
+        target_domain="schedule",
+        mode=canonical_mode,
+        route_source=route_source,
+    )
 
 
 async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None:

@@ -14,13 +14,11 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _build_direct_domain_task
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, hint_only, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.router_context import (
     _build_direct_context_recap_response,
     _is_direct_context_recap_request,
-)
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
-    _route_observability_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from shared.utils.logging import get_logger
@@ -28,25 +26,26 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str, Any] | None:
-    """Context recap, casual followup, query followup, query domain, and transfer direct."""
-    await ctx.ensure_turn_summary()
-    assert ctx.turn_summary is not None  # noqa: S101 – ensured by ensure_turn_summary
+def _has_active_query_session(ctx: GateContext) -> bool:
+    return bool(isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"))
 
-    has_active_query_session = bool(
-        isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active")
-    )
+
+def _has_query_session_stack(ctx: GateContext) -> bool:
     session = ctx.state_view.active_session
-    has_query_session_stack = bool(session and session.domain == "query")
-    logger.info(
-        "gate_query_routing_breadcrumb",
-        path="query_session_context",
-        has_active_query_session=has_active_query_session or has_query_session_stack,
-        query_session_source=ctx.query_session_source,
-        query_session_stack=has_query_session_stack,
+    return bool(session and session.domain == "query")
+
+
+def _can_consider_query_domain(ctx: GateContext, *, has_active_query_session: bool) -> bool:
+    return (
+        not ctx.live_pending_interrupt
+        and not ctx.state_view.has_quote
+        and not has_active_query_session
+        and ctx.phrase_heavy_fastpath_allowed
     )
 
-    contextual_casual_followup = (
+
+def _can_consider_contextual_casual_followup(ctx: GateContext, *, has_active_query_session: bool) -> bool:
+    return (
         not ctx.live_pending_interrupt
         and not ctx.state_view.has_quote
         and not has_active_query_session
@@ -56,22 +55,31 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
             ctx.state_view.loaded_context_or_empty.get("history"),
         )
     )
-    if contextual_casual_followup:
+
+
+async def _maybe_contextual_casual_followup(
+    ctx: GateContext,
+    *,
+    has_active_query_session: bool,
+) -> dict[str, Any] | None:
+    if _can_consider_contextual_casual_followup(ctx, has_active_query_session=has_active_query_session):
         responder_reply = await _build_bounded_conversational_reply(ctx, ctx.current_locale)
         if responder_reply:
             logger.info("gate_contextual_casual_followup_responder")
-            return {
-                **ctx.gate_updates,
-                **(ctx.summary_updates or {}),
-                "direct_path_triggered": True,
-                "final_response": responder_reply,
-                "semantic_path_shape": "contextual_casual_followup",
-                **_route_observability_updates(
-                    owner="guardrail",
-                    decision="contextual_casual_followup",
-                ),
-            }
+            return direct_response(
+                ctx,
+                response=responder_reply,
+                owner="guardrail",
+                decision="contextual_casual_followup",
+                semantic_path_shape="contextual_casual_followup",
+                extra_updates=ctx.summary_updates,
+            )
+    return None
 
+
+def _maybe_direct_context_recap(ctx: GateContext) -> dict[str, Any] | None:
+    if ctx.turn_summary is None:
+        return None
     if (
         not ctx.live_pending_interrupt
         and not ctx.state_view.has_quote
@@ -84,16 +92,19 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
                 focus=ctx.turn_summary.recent_answer_focus,
                 active_flow=ctx.turn_summary.active_flow_intent,
             )
-            return {
-                **ctx.gate_updates,
-                **(ctx.summary_updates or {}),
-                "direct_path_triggered": True,
-                "final_response": response,
-                "semantic_path_shape": "direct_context_recap",
-                **_route_observability_updates(owner="guardrail", decision="direct_context_recap"),
-            }
+            return direct_response(
+                ctx,
+                response=response,
+                owner="guardrail",
+                decision="direct_context_recap",
+                semantic_path_shape="direct_context_recap",
+                extra_updates=ctx.summary_updates,
+            )
         logger.info("gate_direct_context_recap_miss", reason="no_active_context")
+    return None
 
+
+def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | None:
     if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         bypass_reason, bypass_detail = _query_followup_bypass_reason(
             message_text=ctx.message_text,
@@ -109,57 +120,48 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
                 query_session_source=ctx.query_session_source,
             )
             task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query")
-            return {
-                **ctx.gate_updates,
-                **(ctx.summary_updates or {}),
-                "tasks": {task_id: spec},
-                "waves": [[task_id]],
-                "current_wave_index": 0,
-                "planner_output": None,
-                "direct_path_triggered": True,
-                "semantic_path_shape": "query_followup_bypass",
-                **_route_observability_updates(
-                    owner="query_session",
-                    decision="query_followup_bypass",
-                    target_domain="query",
-                    mode="continuation",
-                ),
-            }
-
-    can_consider_query_domain = (
-        not ctx.live_pending_interrupt
-        and not ctx.state_view.has_quote
-        and not has_active_query_session
-        and ctx.phrase_heavy_fastpath_allowed
-    )
-    if can_consider_query_domain and _is_structural_query_domain_request(ctx.message_text):
-        semantic_router_available = ctx.task_planner is not None
-        task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query", mode="new")
-        logger.info(
-            "gate_deterministic_query_domain",
-            task_id=task_id,
-            structural_query_request=True,
-            semantic_router_available=semantic_router_available,
-        )
-        return {
-            **ctx.gate_updates,
-            **(ctx.summary_updates or {}),
-            "tasks": {task_id: spec},
-            "waves": [[task_id]],
-            "current_wave_index": 0,
-            "planner_output": None,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "deterministic_query_domain",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="deterministic_query_domain",
+            return task_dispatch(
+                ctx,
+                tasks={task_id: spec},
+                waves=[[task_id]],
+                owner="query_session",
+                decision="query_followup_bypass",
+                semantic_path_shape="query_followup_bypass",
+                extra_updates=ctx.summary_updates,
                 target_domain="query",
-                mode="new",
-                route_source="query_domain_guard",
-                heuristic_type="guardrail_shortcut",
-                heuristic_name="structural_query_domain",
-            ),
-        }
+                mode="continuation",
+            )
+    return None
+
+
+def _maybe_structural_query_domain(ctx: GateContext, *, can_consider_query_domain: bool) -> dict[str, Any] | None:
+    if not can_consider_query_domain or not _is_structural_query_domain_request(ctx.message_text):
+        return None
+    semantic_router_available = ctx.task_planner is not None
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query", mode="new")
+    logger.info(
+        "gate_deterministic_query_domain",
+        task_id=task_id,
+        structural_query_request=True,
+        semantic_router_available=semantic_router_available,
+    )
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="deterministic_query_domain",
+        semantic_path_shape="deterministic_query_domain",
+        extra_updates=ctx.summary_updates,
+        target_domain="query",
+        mode="new",
+        route_source="query_domain_guard",
+        heuristic_type="guardrail_shortcut",
+        heuristic_name="structural_query_domain",
+    )
+
+
+def _attach_query_domain_hint_if_needed(ctx: GateContext, *, can_consider_query_domain: bool) -> bool:
     if can_consider_query_domain and ctx.task_planner is not None and _is_query_domain_request(ctx.message_text):
         ctx.add_routing_hint(
             domain="query",
@@ -167,8 +169,21 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
             source="query_domain_phrase",
         )
         logger.info("gate_query_domain_hint_attached")
-        return None
+        return True
+    return False
 
+
+async def _query_session_exit_updates_if_needed(ctx: GateContext) -> dict[str, Any]:
+    if not (isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active")):
+        return {}
+    await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
+    return _build_query_session_exit_updates(
+        ctx.state,
+        query_session_snapshot=ctx.query_session_snapshot,
+    )
+
+
+async def _maybe_transfer_route(ctx: GateContext) -> dict[str, Any] | None:
     if not ctx.live_pending_interrupt and not ctx.state_view.has_quote:
         transfer_request_reason = (
             _classify_obvious_transfer_request(ctx.message_text) if ctx.phrase_heavy_fastpath_allowed else None
@@ -178,15 +193,7 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
             "fresh_transfer_missing_recipient_command",
             "recipient_bank_details_only",
         }:
-            transfer_updates: dict[str, Any] = {}
-            if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
-                await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
-                transfer_updates.update(
-                    _build_query_session_exit_updates(
-                        ctx.state,
-                        query_session_snapshot=ctx.query_session_snapshot,
-                    )
-                )
+            transfer_updates = await _query_session_exit_updates_if_needed(ctx)
             task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="transfer", mode="new")
             if transfer_request_reason == "recipient_bank_details_only":
                 spec.payload["amount_suggestion_disabled"] = True
@@ -197,57 +204,72 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
                 skipped_semantic_router=True,
                 skipped_planner=True,
             )
-            return {
-                **ctx.gate_updates,
-                **(ctx.summary_updates or {}),
-                **transfer_updates,
-                "tasks": {task_id: spec},
-                "waves": [[task_id]],
-                "current_wave_index": 0,
-                "planner_output": None,
-                "direct_path_triggered": True,
-                "semantic_path_shape": "deterministic_transfer_domain",
-                **_route_observability_updates(
-                    owner="guardrail",
-                    decision=transfer_request_reason,
-                    target_domain="transfer",
-                    mode="new",
-                    route_source="transfer_domain_guard",
-                    heuristic_type="slot_parser",
-                    heuristic_name=transfer_request_reason,
-                ),
-            }
+            return task_dispatch(
+                ctx,
+                tasks={task_id: spec},
+                waves=[[task_id]],
+                owner="guardrail",
+                decision=transfer_request_reason,
+                semantic_path_shape="deterministic_transfer_domain",
+                extra_updates={**(ctx.summary_updates or {}), **transfer_updates},
+                target_domain="transfer",
+                mode="new",
+                route_source="transfer_domain_guard",
+                heuristic_type="slot_parser",
+                heuristic_name=transfer_request_reason,
+            )
         if transfer_request_reason in {"batch_transfer_command", "account_aware_transfer_command"}:
             transfer_updates = {
                 "preplanner_expected_transaction_executors": ["transfer"],
             }
-            if isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active"):
-                await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
-                transfer_updates.update(
-                    _build_query_session_exit_updates(
-                        ctx.state,
-                        query_session_snapshot=ctx.query_session_snapshot,
-                    )
-                )
+            transfer_updates.update(await _query_session_exit_updates_if_needed(ctx))
             logger.info(
                 "gate_transfer_planner_handoff",
                 reason=transfer_request_reason,
                 skipped_semantic_router=True,
                 target_domain="transfer",
             )
-            return {
-                **ctx.gate_updates,
-                **(ctx.summary_updates or {}),
-                **transfer_updates,
-                **_route_observability_updates(
-                    owner="guardrail",
-                    decision=transfer_request_reason,
-                    target_domain="transfer",
-                    mode="new",
-                    route_source="transfer_domain_guard",
-                    heuristic_type="slot_parser",
-                    heuristic_name=transfer_request_reason,
-                ),
-            }
+            return hint_only(
+                ctx,
+                owner="guardrail",
+                decision=transfer_request_reason,
+                extra_updates={**(ctx.summary_updates or {}), **transfer_updates},
+                target_domain="transfer",
+                mode="new",
+                route_source="transfer_domain_guard",
+                heuristic_type="slot_parser",
+                heuristic_name=transfer_request_reason,
+            )
 
     return None
+
+
+async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str, Any] | None:
+    """Context recap, casual followup, query followup, query domain, and transfer direct."""
+    await ctx.ensure_turn_summary()
+    assert ctx.turn_summary is not None  # noqa: S101 – ensured by ensure_turn_summary
+
+    has_active_query_session = _has_active_query_session(ctx)
+    has_query_session_stack = _has_query_session_stack(ctx)
+    logger.info(
+        "gate_query_routing_breadcrumb",
+        path="query_session_context",
+        has_active_query_session=has_active_query_session or has_query_session_stack,
+        query_session_source=ctx.query_session_source,
+        query_session_stack=has_query_session_stack,
+    )
+
+    if updates := await _maybe_contextual_casual_followup(ctx, has_active_query_session=has_active_query_session):
+        return updates
+    if updates := _maybe_direct_context_recap(ctx):
+        return updates
+    if updates := _maybe_query_followup_bypass(ctx):
+        return updates
+
+    can_consider_query_domain = _can_consider_query_domain(ctx, has_active_query_session=has_active_query_session)
+    if updates := _maybe_structural_query_domain(ctx, can_consider_query_domain=can_consider_query_domain):
+        return updates
+    if _attach_query_domain_hint_if_needed(ctx, can_consider_query_domain=can_consider_query_domain):
+        return None
+
+    return await _maybe_transfer_route(ctx)

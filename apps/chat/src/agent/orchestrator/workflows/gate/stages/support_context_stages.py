@@ -6,7 +6,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id
 from banking.intent.routing_signals import (
     looks_like_support_problem_statement,
@@ -76,41 +76,33 @@ async def _stage_support_context_followup(ctx: GateContext) -> dict[str, Any] | 
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_support_context_followup_policy_blocked")
-        return {
-            **ctx.gate_updates,
-            "final_response": block_message,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "support_context_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="capability_blocked",
-                target_domain="support",
-                route_source="support_context",
-                heuristic_type="guardrail_shortcut",
-                heuristic_name="active_support_context",
-            ),
-        }
-
-    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
-    logger.info("gate_support_context_followup_handoff", task_id=task_id)
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "support_context_direct",
-        **_route_observability_updates(
+        return direct_response(
+            ctx,
+            response=block_message,
             owner="guardrail",
-            decision="support_context_followup",
+            decision="capability_blocked",
+            semantic_path_shape="support_context_policy_blocked",
             target_domain="support",
             route_source="support_context",
             heuristic_type="guardrail_shortcut",
             heuristic_name="active_support_context",
-        ),
-    }
+        )
+
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
+    logger.info("gate_support_context_followup_handoff", task_id=task_id)
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="support_context_followup",
+        semantic_path_shape="support_context_direct",
+        extra_updates={"pending_interrupt": None},
+        target_domain="support",
+        route_source="support_context",
+        heuristic_type="guardrail_shortcut",
+        heuristic_name="active_support_context",
+    )
 
 
 async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | None:

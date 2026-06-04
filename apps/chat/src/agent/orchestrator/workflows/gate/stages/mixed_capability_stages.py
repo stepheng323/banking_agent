@@ -3,6 +3,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.guardrails.cancellation import clear_query_session
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilities import (
+    MixedCapabilityMatch,
     SupportedClause,
     analyze_mixed_supported_unsupported,
     analyze_mixed_supported_unsupported_semantic,
@@ -15,8 +16,8 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
     _direct_domain_capability_block_message,
     _next_direct_account_task_id,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
@@ -54,76 +55,93 @@ def _build_supported_task(state_view: GateStateView, supported: SupportedClause)
     )
 
 
-async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
-    """Route one supported banking clause while refusing unsupported clauses."""
-    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or not ctx.phrase_heavy_fastpath_allowed:
-        return None
+def _mixed_capability_eligible(ctx: GateContext) -> bool:
+    return (
+        not ctx.live_pending_interrupt
+        and not ctx.state_view.has_gate_blocking_state
+        and ctx.phrase_heavy_fastpath_allowed
+    )
 
+
+async def _classify_mixed_capability(ctx: GateContext) -> MixedCapabilityMatch | None:
     match = analyze_mixed_supported_unsupported(ctx.message_text)
-    if match is None:
-        match = await analyze_mixed_supported_unsupported_semantic(
-            text=ctx.message_text,
-            locale=ctx.current_locale,
-            task_planner=ctx.task_planner,
-        )
-    if match is None:
-        return None
+    if match is not None:
+        return match
+    return await analyze_mixed_supported_unsupported_semantic(
+        text=ctx.message_text,
+        locale=ctx.current_locale,
+        task_planner=ctx.task_planner,
+    )
 
-    notice = mixed_policy_notice(match, locale=ctx.current_locale)
-    if match.is_ambiguous:
-        logger.info(
-            "gate_mixed_capability_ambiguous",
-            supported_count=len(match.supported),
-            unsupported=[item.key for item in match.unsupported],
-        )
-        return {
-            **ctx.gate_updates,
-            "capability_boundary": None,
-            "direct_path_triggered": True,
-            "final_response": render_message(
-                "orchestrator.ambiguity.mixed_supported_unsupported",
-                ctx.current_locale,
-                mixed_clarify_params(match, locale=ctx.current_locale),
-            ),
-            "semantic_path_shape": "mixed_capability_clarify",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="mixed_supported_unsupported_clarify",
-            ),
-        }
 
-    supported = match.supported[0]
-    if block_message := _direct_domain_capability_block_message(ctx.state_view, supported.domain):
-        return {
-            **ctx.gate_updates,
-            "capability_boundary": None,
-            "direct_path_triggered": True,
-            "final_response": f"{notice}\n\n{block_message}",
-            "semantic_path_shape": "mixed_capability_supported_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="mixed_supported_unsupported_policy_blocked",
-                target_domain=supported.domain,
-                mode="new",
-            ),
-        }
+def _mixed_clarify_updates(ctx: GateContext, match: MixedCapabilityMatch) -> dict[str, Any]:
+    logger.info(
+        "gate_mixed_capability_ambiguous",
+        supported_count=len(match.supported),
+        unsupported=[item.key for item in match.unsupported],
+    )
+    return direct_response(
+        ctx,
+        response=render_message(
+            "orchestrator.ambiguity.mixed_supported_unsupported",
+            ctx.current_locale,
+            mixed_clarify_params(match, locale=ctx.current_locale),
+        ),
+        owner="guardrail",
+        decision="mixed_supported_unsupported_clarify",
+        semantic_path_shape="mixed_capability_clarify",
+        extra_updates={"capability_boundary": None},
+    )
 
-    task_id, spec = _build_supported_task(ctx.state_view, supported)
+
+def _mixed_policy_block_updates(
+    ctx: GateContext,
+    *,
+    supported: SupportedClause,
+    notice: str,
+    block_message: str,
+) -> dict[str, Any]:
+    return direct_response(
+        ctx,
+        response=f"{notice}\n\n{block_message}",
+        owner="guardrail",
+        decision="mixed_supported_unsupported_policy_blocked",
+        semantic_path_shape="mixed_capability_supported_policy_blocked",
+        extra_updates={"capability_boundary": None},
+        target_domain=supported.domain,
+        mode="new",
+    )
+
+
+async def _mixed_supported_task_extra_updates(ctx: GateContext, supported: SupportedClause) -> dict[str, Any]:
     task_updates: dict[str, Any] = {}
-    if supported.domain == "transfer":
-        await ctx.ensure_query_session()
-        if (
-            ctx.redis_client
-            and isinstance(ctx.query_session_snapshot, dict)
-            and ctx.query_session_snapshot.get("session_active")
-        ):
-            await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
-            task_updates.update(
-                _build_query_session_exit_updates(
-                    ctx.state,
-                    query_session_snapshot=ctx.query_session_snapshot,
-                )
+    if supported.domain != "transfer":
+        return task_updates
+    await ctx.ensure_query_session()
+    if (
+        ctx.redis_client
+        and isinstance(ctx.query_session_snapshot, dict)
+        and ctx.query_session_snapshot.get("session_active")
+    ):
+        await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
+        task_updates.update(
+            _build_query_session_exit_updates(
+                ctx.state,
+                query_session_snapshot=ctx.query_session_snapshot,
             )
+        )
+    return task_updates
+
+
+async def _mixed_supported_direct_updates(
+    ctx: GateContext,
+    *,
+    match: MixedCapabilityMatch,
+    supported: SupportedClause,
+    notice: str,
+) -> dict[str, Any]:
+    task_id, spec = _build_supported_task(ctx.state_view, supported)
+    task_updates = await _mixed_supported_task_extra_updates(ctx, supported)
     if supported.domain == "transfer" and supported.heuristic_name == "recipient_bank_details_only":
         spec.payload["amount_suggestion_disabled"] = True
 
@@ -132,26 +150,48 @@ async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dic
         supported_domain=supported.domain,
         unsupported=[item.key for item in match.unsupported],
     )
-    return {
-        **ctx.gate_updates,
-        **(ctx.summary_updates or {}),
-        **task_updates,
-        "capability_boundary": None,
-        "policy_notice": notice,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "mixed_capability_supported_direct",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="mixed_supported_unsupported",
-            target_domain=supported.domain,
-            mode="new",
-            route_source="mixed_capability_guard",
-            heuristic_type="clause_splitter",
-            heuristic_name=supported.heuristic_name,
-        ),
-    }
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="mixed_supported_unsupported",
+        semantic_path_shape="mixed_capability_supported_direct",
+        extra_updates={
+            **(ctx.summary_updates or {}),
+            **task_updates,
+            "capability_boundary": None,
+            "policy_notice": notice,
+            "pending_interrupt": None,
+        },
+        target_domain=supported.domain,
+        mode="new",
+        route_source="mixed_capability_guard",
+        heuristic_type="clause_splitter",
+        heuristic_name=supported.heuristic_name,
+    )
+
+
+async def _stage_mixed_supported_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
+    """Route one supported banking clause while refusing unsupported clauses."""
+    if not _mixed_capability_eligible(ctx):
+        return None
+
+    match = await _classify_mixed_capability(ctx)
+    if match is None:
+        return None
+
+    notice = mixed_policy_notice(match, locale=ctx.current_locale)
+    if match.is_ambiguous:
+        return _mixed_clarify_updates(ctx, match)
+
+    supported = match.supported[0]
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, supported.domain):
+        return _mixed_policy_block_updates(
+            ctx,
+            supported=supported,
+            notice=notice,
+            block_message=block_message,
+        )
+
+    return await _mixed_supported_direct_updates(ctx, match=match, supported=supported, notice=notice)

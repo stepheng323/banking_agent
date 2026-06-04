@@ -20,6 +20,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic i
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _locale_update
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response
 from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
     _route_observability_updates,
@@ -30,28 +31,38 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def _stage_banking_ambiguity(ctx: GateContext) -> dict[str, Any] | None:
-    """Deterministic ambiguous banking clarification."""
+def _classify_banking_ambiguity(ctx: GateContext) -> str | None:
     ctx.ambiguous_banking_domain = classify_banking_coded_ambiguity(ctx.message_text)
-    if (
-        ctx.ambiguous_banking_domain is not None
+    return ctx.ambiguous_banking_domain
+
+
+def _banking_ambiguity_can_clarify(ctx: GateContext, ambiguous_domain: str | None) -> bool:
+    return (
+        ambiguous_domain is not None
         and not ctx.live_pending_interrupt
         and not ctx.state_view.has_gate_blocking_state
-    ):
-        logger.info(
-            "gate_banking_coded_ambiguity_clarify",
-            domain=ctx.ambiguous_banking_domain,
-        )
-        return {
-            **ctx.gate_updates,
-            "direct_path_triggered": True,
-            "final_response": render_banking_coded_ambiguity_prompt(ctx.message_text, locale=ctx.current_locale),
-            "semantic_path_shape": "banking_coded_ambiguity_clarify",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision=f"banking_coded_ambiguity_{ctx.ambiguous_banking_domain}",
-            ),
-        }
+    )
+
+
+def _banking_ambiguity_updates(ctx: GateContext, ambiguous_domain: str) -> dict[str, Any]:
+    logger.info(
+        "gate_banking_coded_ambiguity_clarify",
+        domain=ambiguous_domain,
+    )
+    return direct_response(
+        ctx,
+        response=render_banking_coded_ambiguity_prompt(ctx.message_text, locale=ctx.current_locale),
+        owner="guardrail",
+        decision=f"banking_coded_ambiguity_{ambiguous_domain}",
+        semantic_path_shape="banking_coded_ambiguity_clarify",
+    )
+
+
+async def _stage_banking_ambiguity(ctx: GateContext) -> dict[str, Any] | None:
+    """Deterministic ambiguous banking clarification."""
+    ambiguous_domain = _classify_banking_ambiguity(ctx)
+    if ambiguous_domain is not None and _banking_ambiguity_can_clarify(ctx, ambiguous_domain):
+        return _banking_ambiguity_updates(ctx, ambiguous_domain)
     return None
 
 

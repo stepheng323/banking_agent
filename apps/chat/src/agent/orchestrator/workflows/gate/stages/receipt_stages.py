@@ -13,7 +13,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import (
     _recent_batch_identity,
     _support_user_id,
@@ -57,17 +57,14 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_receipt_thread_support_policy_blocked")
-        return {
-            **ctx.gate_updates,
-            "final_response": block_message,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "support_receipt_thread_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="capability_blocked",
-                target_domain="support",
-            ),
-        }
+        return direct_response(
+            ctx,
+            response=block_message,
+            owner="guardrail",
+            decision="capability_blocked",
+            semantic_path_shape="support_receipt_thread_policy_blocked",
+            target_domain="support",
+        )
     task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
     spec.payload["intent"] = "receipt_request"
     spec.payload["recent_batch_followup"] = True
@@ -77,21 +74,16 @@ async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | N
         task_id=task_id,
         async_group_id=receipt_thread_state.async_group_id,
     )
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "support_receipt_thread_direct",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="receipt_thread_support",
-            target_domain="support",
-        ),
-    }
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="receipt_thread_support",
+        semantic_path_shape="support_receipt_thread_direct",
+        extra_updates={"pending_interrupt": None},
+        target_domain="support",
+    )
 
 
 async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
@@ -109,17 +101,14 @@ async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
         logger.info("gate_recent_batch_receipt_support_policy_blocked")
-        return {
-            **ctx.gate_updates,
-            "final_response": block_message,
-            "direct_path_triggered": True,
-            "semantic_path_shape": "support_receipt_policy_blocked",
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="capability_blocked",
-                target_domain="support",
-            ),
-        }
+        return direct_response(
+            ctx,
+            response=block_message,
+            owner="guardrail",
+            decision="capability_blocked",
+            semantic_path_shape="support_receipt_policy_blocked",
+            target_domain="support",
+        )
     task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
     spec.payload["intent"] = "receipt_request"
     spec.payload["recent_batch_followup"] = True
@@ -129,18 +118,13 @@ async def _stage_receipt_request(ctx: GateContext) -> dict[str, Any] | None:
         async_group_id=recent_batch.get("async_group_id"),
         identity=recent_batch_identity,
     )
-    return {
-        **ctx.gate_updates,
-        "tasks": {task_id: spec},
-        "waves": [[task_id]],
-        "current_wave_index": 0,
-        "planner_output": None,
-        "pending_interrupt": None,
-        "direct_path_triggered": True,
-        "semantic_path_shape": "support_receipt_direct",
-        **_route_observability_updates(
-            owner="guardrail",
-            decision="recent_batch_receipt_support",
-            target_domain="support",
-        ),
-    }
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="recent_batch_receipt_support",
+        semantic_path_shape="support_receipt_direct",
+        extra_updates={"pending_interrupt": None},
+        target_domain="support",
+    )

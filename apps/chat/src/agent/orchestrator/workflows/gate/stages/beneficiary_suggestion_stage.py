@@ -6,7 +6,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.beneficiary_sug
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _next_direct_beneficiary_task_id
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import task_dispatch
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -53,24 +53,19 @@ async def _stage_beneficiary_suggestion(ctx: GateContext) -> dict[str, Any] | No
             stage=TaskStage.DRAFT,
             payload=task_payload,
         )
-        return {
-            **ctx.gate_updates,
-            "tasks": {task_id: spec},
-            "waves": [[task_id]],
-            "current_wave_index": 0,
-            "planner_output": None,
-            "pending_interrupt": None,
-            "direct_path_triggered": True,
-            **_route_observability_updates(
-                owner="guardrail",
-                decision="beneficiary_save",
-                target_domain="beneficiary",
-                mode="new",
-                route_source="beneficiary_suggestion",
-                heuristic_type="guardrail_shortcut",
-                heuristic_name="beneficiary_suggestion_reply",
-            ),
-        }
+        return task_dispatch(
+            ctx,
+            tasks={task_id: spec},
+            waves=[[task_id]],
+            owner="guardrail",
+            decision="beneficiary_save",
+            extra_updates={"pending_interrupt": None},
+            target_domain="beneficiary",
+            mode="new",
+            route_source="beneficiary_suggestion",
+            heuristic_type="guardrail_shortcut",
+            heuristic_name="beneficiary_suggestion_reply",
+        )
 
     try:
         await ctx.redis_client.delete(suggestion_key)

@@ -15,6 +15,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _locale
 from apps.chat.src.agent.orchestrator.workflows.gate.mandate_state import (
     _has_pending_mandate_without_ready_accounts,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
 from banking.presentation.i18n.bridge import render_locale_switched
 
@@ -54,13 +55,14 @@ async def _stage_language_switch(ctx: GateContext) -> dict[str, Any] | None:
     else:
         next_locale = requested_locale
     logger.info("gate_explicit_language_switch", locale=next_locale)
-    return {
-        **ctx.gate_updates,
-        "direct_path_triggered": True,
-        "final_response": render_locale_switched(next_locale),
-        **_locale_update(ctx.state_view, next_locale),
-        **_route_observability_updates(owner="guardrail", decision="language_switch"),
-    }
+    return direct_response(
+        ctx,
+        response=render_locale_switched(next_locale),
+        owner="guardrail",
+        decision="language_switch",
+        semantic_path_shape="language_switch_direct",
+        extra_updates=_locale_update(ctx.state_view, next_locale),
+    )
 
 
 async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
@@ -111,13 +113,13 @@ async def _stage_gibberish_filter(ctx: GateContext) -> dict[str, Any] | None:
     """Deterministic fast-path for obvious gibberish/spam before semantic routing."""
     if looks_like_gibberish(ctx.message_text):
         logger.info("gate_gibberish_filtered")
-        return {
-            **ctx.gate_updates,
-            "direct_path_triggered": True,
-            "final_response": render_gibberish_prompt(ctx.current_locale),
-            "semantic_path_shape": "gibberish_direct",
-            **_route_observability_updates(owner="guardrail", decision="gibberish_filtered"),
-        }
+        return direct_response(
+            ctx,
+            response=render_gibberish_prompt(ctx.current_locale),
+            owner="guardrail",
+            decision="gibberish_filtered",
+            semantic_path_shape="gibberish_direct",
+        )
     return None
 
 
@@ -129,18 +131,19 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
     if not _stale_pin_message_targets_missing_session(ctx):
         return None
     logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")
-    return {
-        **ctx.gate_updates,
-        "direct_path_triggered": True,
-        "final_response": render_message(
+    return direct_response(
+        ctx,
+        response=render_message(
             "orchestrator.session.transaction_expired",
             ctx.current_locale,
             fallback_en=(
                 "That transaction session has expired, so I can't continue it. Please start the transaction again."
             ),
         ),
-        **_route_observability_updates(owner="guardrail", decision="expired_pin_session"),
-    }
+        owner="guardrail",
+        decision="expired_pin_session",
+        semantic_path_shape="expired_pin_session",
+    )
 
 
 def _stale_pin_message_targets_missing_session(ctx: GateContext) -> bool:

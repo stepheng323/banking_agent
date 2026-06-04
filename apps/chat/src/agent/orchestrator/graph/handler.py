@@ -42,6 +42,7 @@ from apps.chat.src.agent.orchestrator.graph.runtime import (
     graph_thread_id,
 )
 from apps.chat.src.agent.orchestrator.graph.thread_lock import thread_invocation_lock
+from apps.chat.src.agent.orchestrator.graph.turn_trace import log_orchestrator_turn_trace
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
 from banking.accounts.repositories.account_repository import AccountRepository
@@ -369,6 +370,14 @@ class OrchestratorGraphHandler:
                 self._log_route_metrics(
                     final_state=final_state,
                     phone_number=phone_number,
+                    path_label=path_label,
+                    semantic_path_shape=semantic_path_shape,
+                    total_duration_ms=total_duration,
+                    progress_count=progress_snapshot.progress_count,
+                )
+                log_orchestrator_turn_trace(
+                    logger,
+                    final_state=final_state,
                     path_label=path_label,
                     semantic_path_shape=semantic_path_shape,
                     total_duration_ms=total_duration,
