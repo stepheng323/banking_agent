@@ -30,7 +30,9 @@ async def _status_query_updates(
     redis_client: Any | None,
 ) -> dict[str, Any]:
     state_view = interrupt_state_view(state)
-    if not current_task_types or not current_task_types.issubset(TRANSACTION_INTENTS):
+    if (
+        not current_task_types or not current_task_types.issubset(TRANSACTION_INTENTS)
+    ) and route.status_query_type != "requirements":
         return await _recover_status_query_without_active_flow(
             state=state,
             interrupt=interrupt,

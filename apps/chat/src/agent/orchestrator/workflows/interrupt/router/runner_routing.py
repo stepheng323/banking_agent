@@ -6,6 +6,10 @@ from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
+    classify_deterministic_active_flow_question,
+    should_apply_deterministic_active_flow_question,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.route_decisions import _apply_interrupt_route_decision
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_core import (
     _route_interrupt,
@@ -60,6 +64,25 @@ async def _route_and_apply_interrupt_decision(
             fields_by_task=interrupt.fields_by_task,
             prompt=interrupt.prompt,
         )
+        question_route = classify_deterministic_active_flow_question(
+            text=runtime.text,
+            interrupt=interrupt,
+            current_task_types=runtime.current_task_types,
+        )
+        if question_route is not None and should_apply_deterministic_active_flow_question(
+            route=route,
+            question_route=question_route,
+        ):
+            logger.info(
+                "interrupt_active_flow_question_override",
+                kind=interrupt.kind,
+                original_decision=route.decision,
+                original_confidence=route.confidence,
+                question_type=question_route.question_type,
+                target_field=question_route.target_field,
+                unsafe_reason=question_route.unsafe_reason,
+            )
+            route = question_route
 
     return await _apply_interrupt_route_decision(
         state=state,

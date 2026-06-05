@@ -67,6 +67,9 @@ def test_interrupt_status_query_contract_present() -> None:
         in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
     )
     assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+    assert "active_flow_question" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+    assert "question_type: recap | requirements | why_required" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
+    assert "Do not generate the answer" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
     assert "decision=status_query" in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
     assert '"make it 20k"' in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
     assert '"split 20k 70/30 btw mum and gaines"' in INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL
@@ -92,6 +95,8 @@ def test_interrupt_compact_prompt_is_shorter_but_keeps_core_contract() -> None:
         INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
     )
     assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
+    assert "active_flow_question" in INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
+    assert "question_type: recap | requirements | why_required" in INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
     assert "Balance/account-status asks map to target_intent=account." in INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT
 
 

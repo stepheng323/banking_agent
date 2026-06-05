@@ -73,6 +73,23 @@ def test_interrupt_route_decision_accepts_status_query_value() -> None:
     assert decision.status_query_type == "requirements"
 
 
+def test_interrupt_route_decision_accepts_active_flow_question_value() -> None:
+    decision = InterruptRouteDecision(
+        decision="active_flow_question",
+        confidence=0.91,
+        detected_language="English",
+        target_intent=None,
+        target_mode=None,
+        question_type="why_required",
+        target_field="recipient_bank_name",
+        reason="user asked why bank is required",
+    )
+
+    assert decision.decision == "active_flow_question"
+    assert decision.question_type == "why_required"
+    assert decision.target_field == "recipient_bank_name"
+
+
 def test_interrupt_route_decision_rejects_unknown_value() -> None:
     with pytest.raises(ValidationError):
         InterruptRouteDecision.model_validate(

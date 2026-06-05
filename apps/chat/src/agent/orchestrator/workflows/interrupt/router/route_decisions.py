@@ -9,6 +9,9 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _cancel_updates, logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import _continue_flow_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_reprompt import _reprompt_or_reset_updates
+from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
+    active_flow_question_updates,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch import (
     _handle_switch_intent_route,
     _is_same_flow_transactional_switch,
@@ -35,6 +38,15 @@ async def _apply_interrupt_route_decision(
     services: OrchestrationServices,
     redis_client: Any,
 ) -> dict[str, Any]:
+    if route.decision == "active_flow_question":
+        return active_flow_question_updates(
+            state=state,
+            interrupt=interrupt,
+            route=route,
+            current_task_types=current_task_types,
+            semantic_path_shape="interrupt_router_only",
+        )
+
     if route.decision == "status_query":
         return await _status_query_updates(
             state=state,

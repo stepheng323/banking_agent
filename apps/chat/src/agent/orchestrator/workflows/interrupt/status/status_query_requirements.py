@@ -11,6 +11,17 @@ def _friendly_required_field(field: str) -> str:
         "data_plan_preference": "budget or data size",
         "beneficiary_id": "beneficiary selection",
         "source_account_id": "source account selection",
+        "account_id": "account selection",
+        "account_selection": "account selection",
+        "identifier": "record selection",
+        "authorization": "authorization",
+        "transaction_reference": "transaction reference",
+        "reference": "reference",
+        "date_range": "date range",
+        "time_range": "date range",
+        "schedule_id": "scheduled transaction selection",
+        "schedule_selector": "scheduled transaction selection",
+        "schedule_time": "schedule time",
         "amount": "amount",
         "pin": "PIN authorization",
         "confirmation_summary": "confirmation",
@@ -32,6 +43,18 @@ def _build_requirements_hint(required_fields: list[str], interrupt_kind: str) ->
         hints.append("Reply with the network, like MTN, Airtel, Glo, or 9mobile.")
     if "source_account_id" in required_fields:
         hints.append("Pick the source account by tapping it or replying with the number.")
+    if any(field in required_fields for field in ("account_id", "account_selection", "identifier")):
+        hints.append("Pick the account or record by tapping it or replying with the number.")
+    if any(field in required_fields for field in ("transaction_reference", "reference")):
+        hints.append("Reply with the transaction reference, receipt, or enough details to identify it.")
+    if any(field in required_fields for field in ("date_range", "time_range")):
+        hints.append("Reply with a date range, like today, last week, or March 1 to March 15.")
+    if any(field in required_fields for field in ("schedule_id", "schedule_selector")):
+        hints.append("Pick the scheduled transaction by tapping it or replying with the number.")
+    if "schedule_time" in required_fields:
+        hints.append("Reply with the date and time for the schedule.")
+    if "authorization" in required_fields:
+        hints.append("Complete authorization to continue.")
     if "amount" in required_fields:
         hints.append("Reply with the amount (for example 5000).")
     if interrupt_kind == "confirmation":

@@ -219,6 +219,23 @@ InterruptRoutingDecision: TypeAlias = Literal[
     "approve_flow",
     "reject_flow",
     "status_query",
+    "active_flow_question",
+]
+
+ActiveFlowQuestionType: TypeAlias = Literal[
+    "recap",
+    "requirements",
+    "why_required",
+    "confirmation_effect",
+    "cancellation_effect",
+    "auth_pin_reason",
+    "source_account",
+    "editable_fields",
+    "current_value",
+    "timing_or_status",
+    "fees_or_charges",
+    "unsupported_or_unsafe",
+    "unknown",
 ]
 
 ContextFrameFollowupAction: TypeAlias = Literal[
@@ -516,6 +533,18 @@ class InterruptRouteDecision(BaseModel):
     status_query_type: Literal["recap", "requirements"] | None = Field(
         default=None,
         description="Subtype when decision=status_query",
+    )
+    question_type: ActiveFlowQuestionType | None = Field(
+        default=None,
+        description="Subtype when decision=active_flow_question",
+    )
+    target_field: str | None = Field(
+        default=None,
+        description="Active-flow field the question refers to, if known",
+    )
+    unsafe_reason: str | None = Field(
+        default=None,
+        description="Safety/unsupported reason when question_type=unsupported_or_unsafe",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 

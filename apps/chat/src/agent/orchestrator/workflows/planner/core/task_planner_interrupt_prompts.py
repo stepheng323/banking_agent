@@ -2,13 +2,20 @@
 
 INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT = """Classify a pending banking-flow reply.
 Return ONLY JSON for this schema:
-- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
+- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query |
+  active_flow_question
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
 - target_mode: new | continuation | null
 - status_query_type: recap | requirements | null
+- question_type: recap | requirements | why_required | confirmation_effect | cancellation_effect |
+  auth_pin_reason | source_account | editable_fields | current_value | timing_or_status |
+  fees_or_charges | unsupported_or_unsafe | unknown | null
+- target_field: active-flow field the question asks about, else null
+- unsafe_reason: financial_advice | provider_guarantee | recipient_trust | future_reversal |
+  general_unsupported | null
 - reason: short reason
 
 Rules:
@@ -17,26 +24,35 @@ Rules:
 3) cancel only for explicit cancellation.
 4) For confirmation/auth, approve_flow only for explicit approval and reject_flow only for explicit rejection.
 5) status_query for progress/requirements asks like "where are we", "what next", "what do you need".
-6) If decision != switch_intent, set target_intent=null.
-7) Use target_mode only when target_intent=query:
+6) active_flow_question for questions about the current pending flow that should be answered from supplied state.
+   Examples: "why do you need bank", "what happens if I cancel", "why pin", "who is this going to".
+7) If decision != switch_intent, set target_intent=null.
+8) Use target_mode only when target_intent=query:
    - new for a fresh query
    - continuation for an ongoing query thread
    - otherwise null.
-8) Balance/account-status asks map to target_intent=account.
-9) Spending/history/analytics asks map to target_intent=query.
-10) In confirmation/auth flows, concise corrections stay continue_flow, not switch_intent.
-11) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
+9) Balance/account-status asks map to target_intent=account.
+10) Spending/history/analytics asks map to target_intent=query.
+11) In confirmation/auth flows, concise corrections stay continue_flow, not switch_intent.
+12) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
 """
 
 INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL = """You classify pending-input turns for an active banking flow.
 Return ONLY JSON for this schema:
-- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
+- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query |
+  active_flow_question
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
 - target_mode: new | continuation | null
 - status_query_type: recap | requirements | null
+- question_type: recap | requirements | why_required | confirmation_effect | cancellation_effect |
+  auth_pin_reason | source_account | editable_fields | current_value | timing_or_status |
+  fees_or_charges | unsupported_or_unsafe | unknown | null
+- target_field: active-flow field the question asks about, else null
+- unsafe_reason: financial_advice | provider_guarantee | recipient_trust | future_reversal |
+  general_unsupported | null
 - reason: short reason
 
 Rules:
@@ -70,10 +86,21 @@ Rules:
     - status_query_type=recap for progress/recap asks
     - status_query_type=requirements for asks about missing input/next required action
     - Keep target_intent=null and target_mode=null for status_query.
-14) In confirmation/auth transaction flows, treat concise correction replies as continue_flow
+14) If user asks a question about the current pending flow, return decision=active_flow_question with
+    question_type and target_field/unsafe_reason when known. Do not generate the answer.
+    Examples:
+    - "why do you need the bank" -> question_type=why_required, target_field=recipient_bank_name.
+    - "who am I sending to" -> question_type=current_value, target_field=recipient.
+    - "can I reverse it later" -> question_type=unsupported_or_unsafe, unsafe_reason=future_reversal.
+    - "should I send this money" -> question_type=unsupported_or_unsafe, unsafe_reason=financial_advice.
+    - "is this person legit" -> question_type=unsupported_or_unsafe, unsafe_reason=recipient_trust.
+15) Questions that start separate banking work should still switch:
+    balance/account status -> target_intent=account; spending/history/transactions -> target_intent=query;
+    failed/debited/support issue -> target_intent=support.
+16) In confirmation/auth transaction flows, treat concise correction replies as continue_flow
     (target_intent=null), not switch_intent. Examples: "make it 20k", "change amount to 13k",
     "use opay instead", "it's for feeding".
-15) Fresh replacement transfer batches should still be switch_intent, not cancel.
+17) Fresh replacement transfer batches should still be switch_intent, not cancel.
     Examples: active transfer waiting for input, user says "split 20k 70/30 btw mum and gaines"
     or "send 20k between mum and gaines".
 """
