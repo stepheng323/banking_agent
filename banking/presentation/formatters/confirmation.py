@@ -44,6 +44,18 @@ def _extract_cached_balance(account: dict[str, Any] | None) -> float | None:
     return None
 
 
+def _account_number_or_last4(account: dict[str, Any] | None) -> Any:
+    if not account:
+        return None
+    return (
+        account.get("account_number")
+        or account.get("number")
+        or account.get("source_account_number")
+        or account.get("account_number_last4")
+        or account.get("last4")
+    )
+
+
 def _resolve_source_account(
     accounts: list[dict[str, Any]],
     source_account_id: str | None,
@@ -83,7 +95,7 @@ def build_source_account_info(
     )
     if source_account:
         bank = bank or source_account.get("bank_name") or source_account.get("bank")
-        account_number = account_number or source_account.get("account_number") or source_account.get("number")
+        account_number = account_number or _account_number_or_last4(source_account)
 
     if not bank or not account_number:
         return None

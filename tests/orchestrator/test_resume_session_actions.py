@@ -92,6 +92,27 @@ class _TransferNeedsConfirmationWorker:
         )
 
 
+class _TransferNeedsConfirmationWithoutSourceSnapshotWorker:
+    async def run(
+        self,
+        *,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del payload, context, user_message, pin_verified
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            patch={},
+            confirmation_summary="Confirm Transaction\n*₦5,000 → Fatima Zahra Musa*\nAccess Bank • 8067892221",
+            confirmation_snapshot={
+                "amount": 5000.0,
+                "recipientName": "Fatima Zahra Musa",
+            },
+        )
+
+
 class _TransferNeedsAuthWorker:
     async def run(
         self,
@@ -510,6 +531,52 @@ async def test_confirmation_source_line_without_cached_balance_uses_default_temp
     assert request_confirmation["header"] == "Confirm Transfer"
     assert request_confirmation["actionable_payload"]["idempotency_key"] == "idem-confirm-default-source-line"
     assert request_confirmation["actionable_payload"]["source_bank_name"] == "First Bank"
+    assert "From: First Bank (···7890)" in request_confirmation["summary"]
+    assert "Bal:" not in request_confirmation["summary"]
+
+
+async def test_confirmation_source_line_uses_loaded_account_last4_when_full_number_is_encrypted() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_action_5b",
+        phone_number="2348000000026",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.DRAFT,
+                payload={
+                    "amount": 5000.0,
+                    "source_account_id": "acc-1",
+                    "source_bank_name": "First Bank",
+                    "idempotency_key": "idem-confirm-last4-source-line",
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acc-1",
+                    "bank_name": "First Bank",
+                    "account_number_last4": "7890",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ]
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": _TransferNeedsConfirmationWithoutSourceSnapshotWorker()}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    request_confirmation = updates["outbox"][0]
+    assert request_confirmation["type"] == "request_confirmation"
+    assert request_confirmation["header"] == "Confirm Transfer"
     assert "From: First Bank (···7890)" in request_confirmation["summary"]
     assert "Bal:" not in request_confirmation["summary"]
 

@@ -36,6 +36,23 @@ def test_source_account_info_resolves_number_from_source_account_id() -> None:
     assert line == "From: Access Bank (···0003)"
 
 
+def test_source_account_info_uses_serialized_account_last4_when_number_is_encrypted() -> None:
+    line = build_source_account_info(
+        task_payload={"source_account_id": "acct-access", "source_bank_name": "Access Bank"},
+        snapshot={},
+        accounts=[
+            {
+                "id": "acct-access",
+                "bank_name": "Access Bank",
+                "account_number_last4": "5262",
+            }
+        ],
+        locale="en",
+    )
+
+    assert line == "From: Access Bank (···5262)"
+
+
 def test_transfer_summary_uses_shared_source_line_formatter() -> None:
     summary = format_transfer_summary(
         {
