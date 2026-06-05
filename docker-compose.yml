@@ -25,12 +25,7 @@ services:
     env_file: .env
     environment:
       CHAT_TRANSPORT: redis
-      ASYNC_TRANSPORT: aws
-      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
-      AWS_CONFIG_FILE: /root/.aws/config
     restart: unless-stopped
-    volumes:
-      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
     networks:
       - banking_network
 
@@ -39,12 +34,7 @@ services:
     env_file: .env
     environment:
       CHAT_TRANSPORT: redis
-      ASYNC_TRANSPORT: aws
-      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
-      AWS_CONFIG_FILE: /root/.aws/config
     restart: unless-stopped
-    volumes:
-      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
     networks:
       - banking_network
 
@@ -53,12 +43,7 @@ services:
     env_file: .env
     environment:
       CHAT_TRANSPORT: redis
-      ASYNC_TRANSPORT: aws
-      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
-      AWS_CONFIG_FILE: /root/.aws/config
     restart: unless-stopped
-    volumes:
-      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
     networks:
       - banking_network
 
@@ -67,12 +52,7 @@ services:
     env_file: .env
     environment:
       CHAT_TRANSPORT: redis
-      ASYNC_TRANSPORT: aws
-      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
-      AWS_CONFIG_FILE: /root/.aws/config
     restart: unless-stopped
-    volumes:
-      - ${AWS_HOST_DIR:-/root/.aws}:/root/.aws:ro
     networks:
       - banking_network
 

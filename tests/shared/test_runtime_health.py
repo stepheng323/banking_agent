@@ -29,12 +29,12 @@ async def test_receipt_readiness_reports_worker_flag(monkeypatch: pytest.MonkeyP
         assert require_redis is True
         return {"status": "ready", "checks": {"redis": {"status": "ready"}}}
 
-    monkeypatch.setattr(receipt_main.settings, "async_transport", "redis")
     monkeypatch.setattr(receipt_main, "dependency_readiness", fake_readiness)
     payload = await receipt_main.readiness_check()
     assert payload["service"] == "receipt-worker"
     assert payload["status"] == "ready"
     assert payload["worker_enabled"] is True
+    assert payload["async_transport"] == "redis"
     assert payload["checks"]["redis"]["status"] == "ready"
 
 
@@ -45,7 +45,6 @@ async def test_transaction_worker_readiness_reports_domain_flags(monkeypatch: py
         assert require_redis is True
         return {"status": "ready", "checks": {"db": {"status": "ready"}, "redis": {"status": "ready"}}}
 
-    monkeypatch.setattr(transaction_main.settings, "async_transport", "redis")
     monkeypatch.setattr(transaction_main, "dependency_readiness", fake_readiness)
     transaction_main._loop_health.get("funding_reconciliation").mark_success()
     payload = await transaction_main.readiness_check()
@@ -54,5 +53,6 @@ async def test_transaction_worker_readiness_reports_domain_flags(monkeypatch: py
     assert payload["enabled_domains"]["transaction"] is True
     assert payload["enabled_domains"]["funding"] is True
     assert payload["worker_enabled"] is True
+    assert payload["async_transport"] == "redis"
     assert payload["checks"]["db"]["status"] == "ready"
     assert payload["loop_health"]["funding_reconciliation"]["success_count"] >= 1

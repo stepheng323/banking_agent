@@ -14,5 +14,5 @@ def build_runtime_status(runtime_name: str) -> dict[str, Any]:
         "app_env": settings.runtime.app_env,
         "environment": settings.runtime.infrastructure_environment,
         "chat_transport": settings.chat_transport,
-        "async_transport": settings.async_transport,
+        "async_transport": "redis",
     }

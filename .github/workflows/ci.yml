@@ -8,8 +8,6 @@ on:
       - "banking/**"
       - "shared/**"
       - "tests/**"
-      - "infrastructure/aws/**"
-      - "infrastructure/aws-backend-bootstrap/**"
       - ".github/workflows/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -49,42 +47,6 @@ jobs:
 
       - name: Pytest (tests)
         run: uv run pytest -q
-
-  runtime-boundary-smoke:
-    name: Runtime Boundary Smoke (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - name: receipt-runtime
-            extra: runtime-worker-receipt
-            module: apps.receipt.lambda_handler
-            symbol: handler
-          - name: transaction-runtime
-            extra: runtime-worker-transaction
-            module: apps.transaction.lambda_handler
-            symbol: handler
-          - name: gateway-runtime
-            extra: runtime-gateway
-            module: apps.gateway.lambda_handler
-            symbol: handler
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Validate runtime import boundary
-        run: |
-          set -euo pipefail
-
-          venv=".venv-${{ matrix.name }}"
-          uv venv "$venv"
-          uv pip install --python "$venv/bin/python" ".[${{ matrix.extra }}]"
-          "$venv/bin/python" -c "import importlib; m = importlib.import_module('${{ matrix.module }}'); getattr(m, '${{ matrix.symbol }}')"
-          echo "✓ ${{ matrix.name }} runtime import check passed"
 
   vps-runtime-image-smoke:
     name: VPS Runtime Image Smoke (${{ matrix.name }})
@@ -127,35 +89,3 @@ jobs:
           docker run --rm "banking-agent-${{ matrix.name }}:ci" sh -lc \
             "command -v uvicorn >/dev/null && python -c \"import importlib; m = importlib.import_module('${{ matrix.module }}'); getattr(m, '${{ matrix.symbol }}')\""
           echo "✓ ${{ matrix.name }} runtime image smoke passed"
-
-  terraform-static-validate:
-    name: Terraform Static Validate (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - name: aws
-            dir: infrastructure/aws
-          - name: aws-backend-bootstrap
-            dir: infrastructure/aws-backend-bootstrap
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.13.4"
-
-      - name: Terraform fmt (check)
-        working-directory: ${{ matrix.dir }}
-        run: terraform fmt -check -recursive
-
-      - name: Terraform init (backend disabled)
-        working-directory: ${{ matrix.dir }}
-        run: terraform init -backend=false -input=false
-
-      - name: Terraform validate
-        working-directory: ${{ matrix.dir }}
-        run: terraform validate

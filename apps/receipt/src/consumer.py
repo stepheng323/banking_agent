@@ -273,5 +273,5 @@ class ReceiptJobConsumer:
             await self._signal_completion(signal_key)
 
     async def process_job(self, job: dict[str, Any]) -> None:
-        """Public job entrypoint used by non-loop consumers (Lambda worker dispatch)."""
+        """Public job entrypoint used by worker dispatch."""
         await self._process_job(job)

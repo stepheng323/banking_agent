@@ -8,7 +8,6 @@ from uuid import UUID
 import pytest
 
 from shared.queue.redis_stream_publisher import RedisStreamPublisher
-from shared.queue.sns_publisher import SNSPublisher
 from shared.utils.json import json_dumps_safe, to_json_safe
 
 
@@ -34,31 +33,6 @@ def test_to_json_safe_serializes_decimal_uuid_and_datetime() -> None:
 def test_json_dumps_safe_rejects_non_finite_numbers(value: object) -> None:
     with pytest.raises(ValueError):
         json_dumps_safe({"amount_naira": value})
-
-
-async def test_sns_publisher_serializes_decimal_amount(monkeypatch: pytest.MonkeyPatch) -> None:
-    published: dict = {}
-
-    class FakeSNSClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def publish(self, **kwargs):
-            published.update(kwargs)
-
-    class FakeSession:
-        def client(self, *args, **kwargs):
-            return FakeSNSClient()
-
-    monkeypatch.setattr("shared.queue.sns_publisher.aioboto3.Session", lambda: FakeSession())
-
-    publisher = SNSPublisher(region_name="us-east-1", topic_arn="arn:test")
-    await publisher.publish("payout.process", {"amount_naira": Decimal("2000.00")})
-
-    assert json.loads(published["Message"])["amount_naira"] == "2000.00"
 
 
 async def test_redis_stream_publisher_serializes_decimal_amount(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -146,7 +146,7 @@ The main engineering work is around making LLM-driven financial flows behave pre
 | Orchestration | LangGraph / LangChain |
 | Database | PostgreSQL 16 |
 | Cache/Transport | Redis 7 |
-| Infra | Docker Compose, AWS (S3, SES, RDS) |
+| Infra | Docker Compose, Redis Streams, PostgreSQL, optional AWS S3 storage |
 | Quality | Ruff, MyPy, Pytest (1,000+ tests) |
 
 ## Quality and Verification
@@ -171,7 +171,6 @@ banking_agent/
 ├── tests/               # 1,000+ regression and integration tests
 ├── data/                # FAQ and runtime seed content
 ├── alembic/             # database migrations
-├── infrastructure/      # AWS / deployment configuration
 ├── docker-compose.yml   # canonical runtime stack for VPS and local parity
 ├── deploy-stack.sh      # canonical stack entrypoint for local + VPS runtime shape
 └── pyproject.toml
@@ -184,7 +183,7 @@ bash scripts/setup.sh
 make local-stack-migrate
 ```
 
-Create `.env` from your local secrets/template before starting the stack. For local testing with your existing Postgres and Redis containers, set `DATABASE_URL`, `REDIS_URL`, and `ASYNC_TRANSPORT=redis`, then run `make local-stack-migrate`. Later runs can use `make local-stack`.
+Create `.env` from your local secrets/template before starting the stack. For local testing with your existing Postgres and Redis containers, set `DATABASE_URL` and `REDIS_URL`, then run `make local-stack-migrate`. Later runs can use `make local-stack`.
 
 For the production-shaped stack locally, use the same entrypoint as VPS:
 
@@ -214,7 +213,7 @@ The supported deployment shape is VPS-only. Service presence is the ownership sw
 | Service | Owns |
 |---------|------|
 | `gateway` | Webhook ingress and inbound work publishing |
-| `chat-worker` | Chat-critical queues: `message.received`, `flow_event.process` |
+| `chat-worker` | Chat-critical queues: `message.received`, `flow_event.process`, and scheduled transaction dispatch |
 | `transaction-worker` | Financial queues: `transaction.execute`, `funding.process`, `funding.reconcile`, `payout.process`, `payout.reconcile`, `refund.process`, `refund.reconcile` |
 | `receipt-worker` | Outbound messaging and receipt queues: `notification.send`, `receipt.process` |
 
@@ -234,7 +233,6 @@ Baseline infrastructure:
 - `APP_DOMAIN`
 - `ACME_EMAIL`
 - `CHAT_TRANSPORT`
-- `ASYNC_TRANSPORT`
 - optional DB pool controls: `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`
 
 Gateway integrations:
@@ -377,7 +375,7 @@ Webhook replay or spoofing:
 
 Queue backlog:
 
-1. Check Redis stream or SQS depth and stale-claim operational events.
+1. Check Redis stream depth and stale-claim operational events.
 2. Confirm only the owning runtime is consuming each queue family.
 3. Restart the affected worker only after checking `/ready`; DB rows are the durable workflow source.
 
@@ -409,34 +407,10 @@ Required host setup:
 - `.env` on the VPS
 - DNS for `APP_DOMAIN` pointing at the VPS public IP
 - ports `80` and `443` open for ACME and HTTPS
-- host AWS credentials mounted only when selected transports/providers still require AWS
 
 The GitHub VPS deploy workflow builds and pushes runtime images, invokes `./deploy-stack.sh remote`, and verifies `/health`, `/transaction/health`, and `/receipt/health`. Required secrets are `VPS_SSH_PRIVATE_KEY`, `GHCR_PULL_USERNAME`, and `GHCR_PULL_TOKEN`. Optional variables are `VPS_HOST`, `VPS_SSH_USER`, `VPS_APP_DIR`, and `VPS_SSH_PORT`.
 
 Rollback: stop the affected VPS service, re-enable the same ownership on the old runtime only if still available, then confirm only one side is consuming queues or sending replies.
-
-### AWS Backend Bootstrap
-
-`infrastructure/aws-backend-bootstrap` owns Terraform backend bootstrap resources and GitHub Actions backend access. CI defaults use `us-east-1`; Terraform locking uses S3 native lockfiles.
-
-Fast backend-permission repair:
-
-```bash
-cd infrastructure/aws-backend-bootstrap
-terraform init
-terraform plan \
-  -var='aws_region=us-east-1' \
-  -var='state_bucket_name=banking-agent-tf-state-dev-use1-808537413474' \
-  -var='github_actions_role_name=banking-agent-github-actions-role-dev' \
-  -var='state_key_prefix=dev/*'
-terraform apply \
-  -var='aws_region=us-east-1' \
-  -var='state_bucket_name=banking-agent-tf-state-dev-use1-808537413474' \
-  -var='github_actions_role_name=banking-agent-github-actions-role-dev' \
-  -var='state_key_prefix=dev/*'
-```
-
-If migrating remote state from `eu-west-1`, copy the existing state object into the `us-east-1` bucket, update the backend block, run `terraform init -migrate-state`, and delete old backend resources only after plan/apply succeeds.
 
 ## Runtime Policy And Brand
 

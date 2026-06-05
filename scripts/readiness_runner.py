@@ -22,8 +22,10 @@ from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedBoundaryTurnOutput
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
 from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_runtime import (
+    refresh_runtime_planner_system_prompt,
+)
 from apps.chat.src.runtime.bundles import build_orchestrator_runtime_bundle
 from apps.chat.src.runtime.model_roles import resolve_role_model
 from banking.identity.repositories.user_repository import UserRepository
@@ -47,7 +49,7 @@ from shared.types.planner import SemanticRouteDecision
 
 
 class NoopPublisher:
-    """Capture async jobs without publishing them to Redis/SQS."""
+    """Capture async jobs without publishing them to Redis Streams."""
 
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []

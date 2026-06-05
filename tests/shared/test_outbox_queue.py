@@ -5,7 +5,7 @@ import pytest
 import shared.messaging.outbox as outbox_module
 from shared.messaging.intents import Say, SendTyping
 from shared.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say, enqueue_outbox_typing
-from shared.queue.contracts import get_contract_by_topic, resolve_contract_from_domain
+from shared.queue.contracts import get_contract_by_topic, resolve_contract_from_redis_stream_name
 
 
 class _PublisherStub:
@@ -19,10 +19,8 @@ class _PublisherStub:
 def test_notification_send_contract_routes_to_receipt_worker_transports() -> None:
     contract = get_contract_by_topic("notification.send")
 
-    assert contract.domain == "notification"
-    assert contract.sqs_queue_name == "banking-receipts"
     assert contract.redis_stream_name == "async:notifications"
-    assert resolve_contract_from_domain("notification") == contract
+    assert resolve_contract_from_redis_stream_name("async:notifications") == contract
 
 
 @pytest.mark.asyncio

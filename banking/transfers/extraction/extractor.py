@@ -3,6 +3,7 @@
 import time
 from typing import Any, cast
 
+from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from banking.transactions.shared.models.smart_context import SmartContext
@@ -22,7 +23,7 @@ _FULL_BENEFICIARY_LIMIT = 6
 class TransferEntityExtractor:
     """Transfer entity extractor."""
 
-    def __init__(self, llm: ChatOpenAI | None = None) -> None:
+    def __init__(self, llm: BaseChatModel | None = None) -> None:
         self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"seed": 42})
         self.structured = self.llm.with_structured_output(TransferExtractionResult)
 

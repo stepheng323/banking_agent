@@ -244,7 +244,6 @@ class Settings:
         self.s3_region: str = self.aws_region
         self.s3_receipt_prefix: str = "receipts"
         self.chat_transport: str = os.getenv("CHAT_TRANSPORT", "redis").strip() or "redis"
-        self.async_transport: str = os.getenv("ASYNC_TRANSPORT", "aws").strip() or "aws"
         self.chat_message_max_age_seconds: int = int(os.getenv("CHAT_MESSAGE_MAX_AGE_SECONDS", "120"))
         self.chat_thread_lock_ttl_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_TTL_SECONDS", "120"))
         self.chat_thread_lock_renew_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_RENEW_SECONDS", "30"))
@@ -254,9 +253,6 @@ class Settings:
             os.getenv("CHAT_PENDING_INPUT_PROMPT_DEBOUNCE_SECONDS", "1.5")
         )
         self.chat_latest_inbound_ttl_seconds: int = int(os.getenv("CHAT_LATEST_INBOUND_TTL_SECONDS", "300"))
-        self.sqs_wait_time_seconds: int = int(os.getenv("SQS_WAIT_TIME_SECONDS", "10"))
-        self.sqs_visibility_timeout_seconds: int = int(os.getenv("SQS_VISIBILITY_TIMEOUT_SECONDS", "90"))
-        self.sqs_poll_max_messages: int = int(os.getenv("SQS_POLL_MAX_MESSAGES", "5"))
 
         self.default_channel: str = os.getenv("DEFAULT_CHANNEL", "whatsapp")
 
@@ -289,6 +285,7 @@ class Settings:
         )
         self.enable_transfer_scheduling: bool = os.getenv("ENABLE_TRANSFER_SCHEDULING", "true").lower() == "true"
         self.schedule_dispatcher_batch_size: int = int(os.getenv("SCHEDULE_DISPATCHER_BATCH_SIZE", "25"))
+        self.schedule_dispatcher_interval_seconds: int = int(os.getenv("SCHEDULE_DISPATCHER_INTERVAL_SECONDS", "60"))
         self.schedule_max_due_per_tick: int = int(os.getenv("SCHEDULE_MAX_DUE_PER_TICK", "25"))
         self.schedule_retry_delay_minutes: int = int(os.getenv("SCHEDULE_RETRY_DELAY_MINUTES", "1"))
         self.async_housekeeping_max_concurrency: int = int(os.getenv("ASYNC_HOUSEKEEPING_MAX_CONCURRENCY", "4"))
@@ -414,11 +411,6 @@ class Settings:
             self.bootstrap_resolver_provider_name,
             self.payout_resolver_provider_name,
         }
-
-    @property
-    def uses_aws_async_transport(self) -> bool:
-        """Return whether async queue publishing/consumption should use AWS SNS/SQS."""
-        return self.async_transport.lower() == "aws"
 
 
 settings = Settings()

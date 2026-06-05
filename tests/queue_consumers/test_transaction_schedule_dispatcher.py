@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from apps.chat.src.schedulers.transaction_schedule_dispatcher import TransactionScheduleDispatcher
 from banking.policy.loader import get_cached_policy, load_policy
+from banking.scheduling.services.transaction_schedule_dispatcher import TransactionScheduleDispatcher
 
 CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 SCHEDULE_DISABLED_MESSAGE = (
@@ -137,7 +137,7 @@ async def test_dispatcher_enqueues_due_schedule(monkeypatch: pytest.MonkeyPatch)
     schedule = _schedule_fixture()
     fake_uow = _FakeUow(schedule)
     monkeypatch.setattr(
-        "apps.chat.src.schedulers.transaction_schedule_dispatcher.UnitOfWork",
+        "banking.scheduling.services.transaction_schedule_dispatcher.UnitOfWork",
         lambda: fake_uow,
     )
 
@@ -177,7 +177,7 @@ async def test_dispatcher_enqueues_due_airtime_and_data_schedules(
     schedule = _schedule_fixture(domain)
     fake_uow = _FakeUow(schedule)
     monkeypatch.setattr(
-        "apps.chat.src.schedulers.transaction_schedule_dispatcher.UnitOfWork",
+        "banking.scheduling.services.transaction_schedule_dispatcher.UnitOfWork",
         lambda: fake_uow,
     )
 
@@ -225,7 +225,7 @@ async def test_dispatcher_skips_due_schedule_when_schedule_domain_disabled(
         schedule = _schedule_fixture()
         fake_uow = _FakeUow(schedule)
         monkeypatch.setattr(
-            "apps.chat.src.schedulers.transaction_schedule_dispatcher.UnitOfWork",
+            "banking.scheduling.services.transaction_schedule_dispatcher.UnitOfWork",
             lambda: fake_uow,
         )
 

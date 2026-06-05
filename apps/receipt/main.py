@@ -9,14 +9,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from apps.receipt.dependencies import setup_receipt_worker_consumers
-from apps.receipt.lambda_handler import _handler as receipt_lambda_handler
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.observability.events import emit_operational_event
 from shared.observability.readiness import dependency_readiness
 from shared.queue.contracts import TopicType, get_contract_by_topic
 from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
-from shared.queue.sqs_poller import SQSPoller
 from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
 
@@ -26,12 +24,6 @@ logger = get_logger(__name__)
 _worker_task: asyncio.Task[None] | None = None
 _stop_event: asyncio.Event | None = None
 _RECEIPT_STREAM_TOPICS: tuple[TopicType, ...] = ("receipt.process", "notification.send")
-
-
-async def _run_receipt_worker(stop_event: asyncio.Event) -> None:
-    contract = get_contract_by_topic("receipt.process")
-    poller = SQSPoller(contract=contract, handler=receipt_lambda_handler.process_event)
-    await poller.run(stop_event)
 
 
 async def _process_stream_record(
@@ -101,18 +93,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     RedisClient.get_client()
 
     _stop_event = asyncio.Event()
-    worker_enabled = settings.async_transport.lower() in {"aws", "redis"}
-    if worker_enabled:
-        if settings.async_transport.lower() == "redis":
-            _worker_task = asyncio.create_task(_run_receipt_stream_worker(_stop_event), name="receipt-redis-worker")
-        else:
-            _worker_task = asyncio.create_task(_run_receipt_worker(_stop_event), name="receipt-sqs-worker")
-    else:
-        logger.info(
-            "receipt_worker_inactive",
-            reason=f"async_transport={settings.async_transport}",
-            **build_runtime_status("receipt-worker"),
-        )
+    _worker_task = asyncio.create_task(_run_receipt_stream_worker(_stop_event), name="receipt-redis-worker")
 
     yield
 
@@ -146,8 +127,8 @@ async def readiness_check() -> dict[str, object]:
     return {
         "status": readiness_result["status"],
         "service": "receipt-worker",
-        "worker_enabled": settings.async_transport.lower() in {"aws", "redis"},
-        "async_transport": settings.async_transport,
+        "worker_enabled": True,
+        "async_transport": "redis",
         "checks": readiness_result["checks"],
         "runtime": build_runtime_status("receipt-worker"),
     }

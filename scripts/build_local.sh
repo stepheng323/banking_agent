@@ -73,9 +73,10 @@ run_runtime_smoke() {
   }
 
   echo "Running runtime boundary smoke checks..."
-  run_check "receipt-runtime" "runtime-worker-receipt" "apps.receipt.lambda_handler" "handler"
-  run_check "transaction-runtime" "runtime-worker-transaction" "apps.transaction.lambda_handler" "handler"
-  run_check "gateway-runtime" "runtime-gateway" "apps.gateway.lambda_handler" "handler"
+  run_check "chat-worker-runtime" "runtime-chat-worker" "apps.chat.src.worker_main" "main"
+  run_check "receipt-runtime" "runtime-worker-receipt" "apps.receipt.main" "app"
+  run_check "transaction-runtime" "runtime-worker-transaction" "apps.transaction.main" "app"
+  run_check "gateway-runtime" "runtime-gateway" "apps.gateway.main" "app"
 }
 
 run_vps_image_smoke() {

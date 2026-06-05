@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -86,6 +87,36 @@ async def test_run_worker_starts_and_stops_stream_loop(monkeypatch: pytest.Monke
     assert loop_probe.started is True
     assert loop_probe.cancelled is True
     assert loop_probe.args == (message_consumer, stream_consumer)
+
+
+@pytest.mark.asyncio
+async def test_schedule_dispatcher_tick_runs_under_redis_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    redis = _RedisLockStub()
+    dispatcher = SimpleNamespace(dispatch_due=AsyncMock(return_value={"processed": 1, "skipped": 0}))
+
+    monkeypatch.setattr(worker_main.RedisClient, "get_client", lambda: redis)
+    monkeypatch.setattr(worker_main, "setup_schedule_dispatcher", lambda: dispatcher)
+
+    stats = await worker_main._dispatch_due_schedules_with_lock(lock_ttl_seconds=60)
+
+    assert stats == {"processed": 1, "skipped": 0}
+    dispatcher.dispatch_due.assert_awaited_once()
+    assert redis.values == {}
+
+
+@pytest.mark.asyncio
+async def test_schedule_dispatcher_tick_skips_when_lock_is_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    redis = _RedisLockStub()
+    redis.values[worker_main._schedule_dispatcher_lock_key()] = "other-worker"
+    dispatcher = SimpleNamespace(dispatch_due=AsyncMock())
+
+    monkeypatch.setattr(worker_main.RedisClient, "get_client", lambda: redis)
+    monkeypatch.setattr(worker_main, "setup_schedule_dispatcher", lambda: dispatcher)
+
+    stats = await worker_main._dispatch_due_schedules_with_lock(lock_ttl_seconds=60)
+
+    assert stats is None
+    dispatcher.dispatch_due.assert_not_awaited()
 
 
 @pytest.mark.asyncio

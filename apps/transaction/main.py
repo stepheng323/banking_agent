@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from apps.transaction.dependencies import TransactionWorkerConsumers, setup_transaction_worker_consumers
-from apps.transaction.lambda_handler import _handler as transaction_lambda_handler
 from shared.cache.distributed_lock import RedisDistributedLock, RedisLockTimeoutError
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
@@ -18,7 +17,6 @@ from shared.observability.loop_health import LoopHealthRegistry
 from shared.observability.readiness import dependency_readiness
 from shared.queue.contracts import TopicType, get_contract_by_topic
 from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
-from shared.queue.sqs_poller import SQSPoller
 from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
 
@@ -107,12 +105,6 @@ def _mark_loop_failure(loop_name: str, *, domain: str, exc: Exception) -> None:
         domain=domain,
         details={"error_type": type(exc).__name__},
     )
-
-
-async def _run_transaction_worker(stop_event: asyncio.Event) -> None:
-    contract = get_contract_by_topic("transaction.execute")
-    poller = SQSPoller(contract=contract, handler=transaction_lambda_handler.process_event)
-    await poller.run(stop_event)
 
 
 async def _run_direct_transfer_reconciliation_loop(stop_event: asyncio.Event) -> None:
@@ -662,59 +654,53 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     _stop_event = asyncio.Event()
     domain_flags = _enabled_domain_flags()
-    worker_enabled = settings.async_transport.lower() in {"aws", "redis"}
-    if worker_enabled:
-        if settings.async_transport.lower() == "redis":
-            _worker_task = asyncio.create_task(
-                _run_transaction_stream_worker(_stop_event),
-                name="transaction-redis-worker",
-            )
-        else:
-            _worker_task = asyncio.create_task(_run_transaction_worker(_stop_event), name="transaction-sqs-worker")
-        _funding_reconciliation_task = asyncio.create_task(
-            _run_funding_reconciliation_loop(_stop_event),
-            name="funding-reconciliation-loop",
-        )
-        _direct_transfer_reconciliation_task = asyncio.create_task(
-            _run_direct_transfer_reconciliation_loop(_stop_event),
-            name="direct-transfer-reconciliation-loop",
-        )
-        _transaction_debit_reconciliation_task = asyncio.create_task(
-            _run_transaction_debit_reconciliation_loop(_stop_event),
-            name="transaction-debit-reconciliation-loop",
-        )
-        _bill_reconciliation_task = asyncio.create_task(
-            _run_bill_reconciliation_loop(_stop_event),
-            name="bill-reconciliation-loop",
-        )
-        _transaction_debit_refund_reconciliation_task = asyncio.create_task(
-            _run_transaction_debit_refund_reconciliation_loop(_stop_event),
-            name="transaction-debit-refund-reconciliation-loop",
-        )
-        _payout_reconciliation_task = asyncio.create_task(
-            _run_payout_reconciliation_loop(_stop_event),
-            name="payout-reconciliation-loop",
-        )
-        _refund_reconciliation_task = asyncio.create_task(
-            _run_refund_reconciliation_loop(_stop_event),
-            name="refund-reconciliation-loop",
-        )
-        _ledger_posting_reconciliation_task = asyncio.create_task(
-            _run_ledger_posting_reconciliation_loop(_stop_event),
-            name="ledger-posting-reconciliation-loop",
-        )
-        _ledger_exposure_reconciliation_task = asyncio.create_task(
-            _run_ledger_exposure_reconciliation_loop(_stop_event),
-            name="ledger-exposure-reconciliation-loop",
-        )
-    else:
-        logger.info(
-            "transaction_worker_inactive",
-            reason=f"async_transport={settings.async_transport}",
-            topics=list(TRANSACTION_TOPICS),
-            enabled_domains=domain_flags,
-            **build_runtime_status("transaction-worker"),
-        )
+    _worker_task = asyncio.create_task(
+        _run_transaction_stream_worker(_stop_event),
+        name="transaction-redis-worker",
+    )
+    _funding_reconciliation_task = asyncio.create_task(
+        _run_funding_reconciliation_loop(_stop_event),
+        name="funding-reconciliation-loop",
+    )
+    _direct_transfer_reconciliation_task = asyncio.create_task(
+        _run_direct_transfer_reconciliation_loop(_stop_event),
+        name="direct-transfer-reconciliation-loop",
+    )
+    _transaction_debit_reconciliation_task = asyncio.create_task(
+        _run_transaction_debit_reconciliation_loop(_stop_event),
+        name="transaction-debit-reconciliation-loop",
+    )
+    _bill_reconciliation_task = asyncio.create_task(
+        _run_bill_reconciliation_loop(_stop_event),
+        name="bill-reconciliation-loop",
+    )
+    _transaction_debit_refund_reconciliation_task = asyncio.create_task(
+        _run_transaction_debit_refund_reconciliation_loop(_stop_event),
+        name="transaction-debit-refund-reconciliation-loop",
+    )
+    _payout_reconciliation_task = asyncio.create_task(
+        _run_payout_reconciliation_loop(_stop_event),
+        name="payout-reconciliation-loop",
+    )
+    _refund_reconciliation_task = asyncio.create_task(
+        _run_refund_reconciliation_loop(_stop_event),
+        name="refund-reconciliation-loop",
+    )
+    _ledger_posting_reconciliation_task = asyncio.create_task(
+        _run_ledger_posting_reconciliation_loop(_stop_event),
+        name="ledger-posting-reconciliation-loop",
+    )
+    _ledger_exposure_reconciliation_task = asyncio.create_task(
+        _run_ledger_exposure_reconciliation_loop(_stop_event),
+        name="ledger-exposure-reconciliation-loop",
+    )
+    logger.info(
+        "transaction_worker_active",
+        topics=list(TRANSACTION_TOPICS),
+        enabled_domains=domain_flags,
+        async_transport="redis",
+        **build_runtime_status("transaction-worker"),
+    )
 
     yield
 
@@ -771,9 +757,9 @@ async def readiness_check() -> dict[str, object]:
     return {
         "status": readiness_result["status"],
         "service": "transaction-worker",
-        "worker_enabled": settings.async_transport.lower() in {"aws", "redis"},
+        "worker_enabled": True,
         "enabled_domains": _enabled_domain_flags(),
-        "async_transport": settings.async_transport,
+        "async_transport": "redis",
         "checks": readiness_result["checks"],
         "loop_health": _loop_health.snapshot(),
         "funding_reconciliation_interval_seconds": settings.funding_reconciliation_interval_seconds,

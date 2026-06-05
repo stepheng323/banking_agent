@@ -6,11 +6,15 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 
 from apps.chat.src.runtime.chat_worker_dependencies import setup_chat_consumers
+from apps.chat.src.runtime.scheduler_dispatcher_dependencies import setup_schedule_dispatcher
 from apps.chat.src.runtime_bootstrap import warm_runtime
+from shared.cache.distributed_lock import RedisDistributedLock, RedisLockTimeoutError
+from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
 from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
+from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 
 configure_logger()
 logger = get_logger(__name__)
@@ -156,7 +160,7 @@ def _should_drop_stale(record: RedisStreamRecord) -> bool:
     return True
 
 
-async def _run_stream_loop(consumer, stream_consumer: RedisStreamConsumer) -> None:
+async def _run_stream_loop(consumer: MessageConsumer, stream_consumer: RedisStreamConsumer) -> None:
     max_concurrency = max(1, settings.chat_worker_max_concurrency)
     semaphore = asyncio.Semaphore(max_concurrency)
     logger.info(
@@ -172,6 +176,61 @@ async def _run_stream_loop(consumer, stream_consumer: RedisStreamConsumer) -> No
 
         records = await stream_consumer.consume(count=25, block_ms=5000)
         await _process_stream_records(consumer, stream_consumer, records, semaphore)
+
+
+def _schedule_dispatcher_lock_key() -> str:
+    return f"{settings.project_name}:schedule_dispatcher:{settings.runtime.infrastructure_environment}"
+
+
+async def _dispatch_due_schedules_with_lock(lock_ttl_seconds: int) -> dict[str, int] | None:
+    lock = RedisDistributedLock(
+        RedisClient.get_client(),
+        key=_schedule_dispatcher_lock_key(),
+        ttl_seconds=lock_ttl_seconds,
+    )
+    acquired = False
+    try:
+        await lock.acquire(wait_seconds=0.1)
+        acquired = True
+        dispatcher = setup_schedule_dispatcher()
+        return await dispatcher.dispatch_due()
+    except RedisLockTimeoutError:
+        logger.debug("schedule_dispatcher_tick_skipped_lock_held")
+    except Exception as exc:
+        logger.error("schedule_dispatcher_tick_failed", error=str(exc), exc_info=True)
+    finally:
+        if acquired:
+            try:
+                await lock.release()
+            except Exception as exc:
+                logger.warning("schedule_dispatcher_lock_release_failed", error=str(exc))
+    return None
+
+
+async def _run_schedule_dispatcher_loop(stop_event: asyncio.Event) -> None:
+    """Run scheduled transaction dispatch ticks inside the chat worker runtime."""
+    interval_seconds = int(settings.schedule_dispatcher_interval_seconds or 0)
+    if interval_seconds <= 0:
+        logger.info("schedule_dispatcher_loop_disabled", reason="interval_non_positive")
+        return
+
+    lock_ttl_seconds = max(interval_seconds * 2, 60)
+    logger.info(
+        "schedule_dispatcher_loop_started",
+        interval_seconds=interval_seconds,
+        lock_ttl_seconds=lock_ttl_seconds,
+    )
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            break
+        except TimeoutError:
+            pass
+
+        stats = await _dispatch_due_schedules_with_lock(lock_ttl_seconds)
+        if stats is not None:
+            logger.info("schedule_dispatcher_tick_completed", result=stats)
 
 
 async def _warm_runtime_best_effort() -> None:
@@ -217,13 +276,25 @@ async def run_worker(stop_event: asyncio.Event | None = None) -> None:
         _run_stream_loop(message_consumer, stream_consumer),
         name="chat-worker-stream-loop",
     )
+    scheduler_task: asyncio.Task[None] | None = None
+    if settings.enable_transfer_scheduling:
+        scheduler_task = asyncio.create_task(
+            _run_schedule_dispatcher_loop(worker_stop_event),
+            name="chat-worker-schedule-dispatcher",
+        )
+    else:
+        logger.info("schedule_dispatcher_loop_disabled", reason="transfer_scheduling_disabled")
 
     try:
         await worker_stop_event.wait()
     finally:
         logger.info("stopping_chat_worker")
         stream_task.cancel()
-        await asyncio.gather(stream_task, return_exceptions=True)
+        tasks: list[asyncio.Task[None]] = [stream_task]
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            tasks.append(scheduler_task)
+        await asyncio.gather(*tasks, return_exceptions=True)
         logger.info("chat_worker_stopped")
 
 

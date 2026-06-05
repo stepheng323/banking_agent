@@ -29,6 +29,8 @@ MOVED_WORKER_MODULES = (
     f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.confirmation_guardrails",
     f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.confirmation_models",
     f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.confirmation_phrases",
+    f"{CHAT_AGENT_MODULE}.orchestrator.confirmation.affirmation",
+    ".".join(("apps", "chat", "src", "schedulers")),
     ".".join(("banking", "knowledge")),
 )
 
@@ -50,6 +52,14 @@ DELETED_PACKAGE_PATHS = (
     "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_guardrails.py")),
     "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_models.py")),
     "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_phrases.py")),
+    "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "__init__.py")),
+    "/".join(
+        ("apps", "chat", "src", "agent", "orchestrator", "confirmation", "affirmation", "__init__.py")
+    ),
+    "/".join(
+        ("apps", "chat", "src", "agent", "orchestrator", "confirmation", "affirmation", "service.py")
+    ),
+    "/".join(("apps", "chat", "src", "schedulers")),
     "/".join(("banking", "knowledge")),
 )
 

@@ -19,7 +19,6 @@ Services:
 Required .env values:
   DATABASE_URL
   REDIS_URL
-  ASYNC_TRANSPORT=redis
 
 Optional:
   --migrate   Run alembic upgrade head before starting services.
@@ -46,7 +45,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -f .env ]]; then
-  echo "Missing .env. Add DATABASE_URL, REDIS_URL, and ASYNC_TRANSPORT=redis."
+  echo "Missing .env. Add DATABASE_URL and REDIS_URL."
   exit 1
 fi
 
@@ -82,13 +81,6 @@ require_env_key() {
 
 require_env_key "DATABASE_URL"
 require_env_key "REDIS_URL"
-
-ASYNC_TRANSPORT_VALUE="$(env_value "ASYNC_TRANSPORT")"
-if [[ "${ASYNC_TRANSPORT_VALUE,,}" != "redis" ]]; then
-  echo "Set ASYNC_TRANSPORT=redis in .env for local full-stack testing."
-  echo "Current ASYNC_TRANSPORT=${ASYNC_TRANSPORT_VALUE:-<unset>} would not start local async workers correctly."
-  exit 1
-fi
 
 CHAT_TRANSPORT_VALUE="$(env_value "CHAT_TRANSPORT")"
 if [[ -n "$CHAT_TRANSPORT_VALUE" && "${CHAT_TRANSPORT_VALUE,,}" != "redis" ]]; then
