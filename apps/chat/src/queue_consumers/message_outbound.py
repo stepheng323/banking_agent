@@ -49,13 +49,38 @@ def intent_text(intent: UiIntent | dict[str, Any]) -> str | None:
     return None
 
 
+def _normalized_text_key(text: str) -> str:
+    return " ".join(text.split())
+
+
+def dedupe_repeated_say_intents(intents: list[UiIntent | dict[str, Any]]) -> list[UiIntent | dict[str, Any]]:
+    """Collapse exact duplicate visible say text while preserving first occurrence order."""
+    seen_text: set[str] = set()
+    deduped: list[UiIntent | dict[str, Any]] = []
+    for intent in intents:
+        text = intent_text(intent)
+        if text is not None:
+            key = _normalized_text_key(text)
+            if key in seen_text:
+                continue
+            seen_text.add(key)
+        deduped.append(intent)
+    if len(deduped) != len(intents):
+        logger.warning(
+            "message_consumer_duplicate_say_suppressed",
+            original_count=len(intents),
+            filtered_count=len(deduped),
+        )
+    return deduped
+
+
 def is_default_greeting_text(text: str | None) -> bool:
     if not text:
         return False
-    normalized = " ".join(text.split())
+    normalized = _normalized_text_key(text)
     for locale in LocaleCode:
         greeting = str(render_message("conversational.greeting", locale.value))
-        if normalized == " ".join(greeting.split()):
+        if normalized == _normalized_text_key(greeting):
             return True
     return False
 
@@ -124,7 +149,7 @@ def prepare_orchestrator_outbound(
         )
         if response_text and not has_primary_interaction and not any(isinstance(intent, Say) for intent in intents):
             intents.append(Say(text=response_text))
-        return list(intents), raw_outbox, response_text, delivery_metadata
+        return dedupe_repeated_say_intents(list(intents)), raw_outbox, response_text, delivery_metadata
 
     fallback_outbox: list[UiIntent | dict[str, Any]] = (
         [item for item in raw_outbox if isinstance(item, dict)] if isinstance(raw_outbox, list) else []
@@ -135,7 +160,7 @@ def prepare_orchestrator_outbound(
             outbox_count=len(fallback_outbox),
             message_id=message_id,
         )
-    return fallback_outbox, raw_outbox, response_text, delivery_metadata
+    return dedupe_repeated_say_intents(fallback_outbox), raw_outbox, response_text, delivery_metadata
 
 
 def log_prepared_outbound(

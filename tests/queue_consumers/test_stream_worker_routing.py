@@ -1,3 +1,6 @@
+import asyncio
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,6 +26,107 @@ def _record(topic: str, payload: dict | None = None) -> RedisStreamRecord:
         topic=topic,
         payload=payload or {},
     )
+
+
+@pytest.mark.asyncio
+async def test_transaction_worker_lifespan_starts_with_runtime_status_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def idle_loop(stop_event: asyncio.Event) -> None:
+        await stop_event.wait()
+
+    for loop_name in (
+        "_run_transaction_stream_worker",
+        "_run_funding_reconciliation_loop",
+        "_run_direct_transfer_reconciliation_loop",
+        "_run_transaction_debit_reconciliation_loop",
+        "_run_bill_reconciliation_loop",
+        "_run_transaction_debit_refund_reconciliation_loop",
+        "_run_payout_reconciliation_loop",
+        "_run_refund_reconciliation_loop",
+        "_run_ledger_reconciliation_loop",
+    ):
+        monkeypatch.setattr(transaction_main, loop_name, idle_loop)
+
+    async with transaction_main.lifespan(transaction_main.app):
+        assert transaction_main._worker_task is not None
+
+
+@pytest.mark.asyncio
+async def test_ledger_reconciliation_tick_runs_posting_before_exposure(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[str] = []
+
+    class _Lock:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def acquire(self, *, wait_seconds: float) -> None:
+            del wait_seconds
+
+        async def release(self) -> None:
+            pass
+
+    class _Consumer:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        async def process_job(self, payload: dict[str, object]) -> None:
+            del payload
+            events.append(self.name)
+
+    monkeypatch.setattr(transaction_main.RedisClient, "get_client", lambda: object())
+    monkeypatch.setattr(transaction_main, "RedisDistributedLock", _Lock)
+
+    consumers = cast(
+        TransactionWorkerConsumers,
+        SimpleNamespace(
+            ledger_posting_reconciliation=_Consumer("posting"),
+            ledger_exposure_reconciliation=_Consumer("exposure"),
+        ),
+    )
+
+    await transaction_main._run_ledger_reconciliation_tick(consumers, lock_ttl_seconds=60)
+
+    assert events == ["posting", "exposure"]
+
+
+@pytest.mark.asyncio
+async def test_ledger_reconciliation_tick_skips_exposure_when_posting_does_not_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class _Lock:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def acquire(self, *, wait_seconds: float) -> None:
+            del wait_seconds
+            raise transaction_main.RedisLockTimeoutError("posting already running")
+
+        async def release(self) -> None:
+            pass
+
+    class _Consumer:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        async def process_job(self, payload: dict[str, object]) -> None:
+            del payload
+            events.append(self.name)
+
+    monkeypatch.setattr(transaction_main.RedisClient, "get_client", lambda: object())
+    monkeypatch.setattr(transaction_main, "RedisDistributedLock", _Lock)
+
+    consumers = cast(
+        TransactionWorkerConsumers,
+        SimpleNamespace(
+            ledger_posting_reconciliation=_Consumer("posting"),
+            ledger_exposure_reconciliation=_Consumer("exposure"),
+        ),
+    )
+
+    await transaction_main._run_ledger_reconciliation_tick(consumers, lock_ttl_seconds=60)
+
+    assert events == []
 
 
 @pytest.mark.asyncio

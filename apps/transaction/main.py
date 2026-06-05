@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any, Protocol
 
 from fastapi import FastAPI
 
@@ -51,9 +52,12 @@ _funding_reconciliation_task: asyncio.Task[None] | None = None
 _bill_reconciliation_task: asyncio.Task[None] | None = None
 _payout_reconciliation_task: asyncio.Task[None] | None = None
 _refund_reconciliation_task: asyncio.Task[None] | None = None
-_ledger_posting_reconciliation_task: asyncio.Task[None] | None = None
-_ledger_exposure_reconciliation_task: asyncio.Task[None] | None = None
+_ledger_reconciliation_task: asyncio.Task[None] | None = None
 _stop_event: asyncio.Event | None = None
+
+
+class _ReconciliationConsumer(Protocol):
+    async def process_job(self, payload: dict[str, Any]) -> Any: ...
 
 
 def _enabled_domain_flags() -> dict[str, bool]:
@@ -539,70 +543,93 @@ async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
                 logger.warning("refund_reconciliation_lock_release_failed", error=str(exc))
 
 
-async def _run_ledger_posting_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "ledger_posting_reconciliation"
-    interval_seconds = int(settings.ledger_reconciliation_interval_seconds or 0)
-    if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
-        logger.info("ledger_posting_reconciliation_loop_disabled")
+def _mark_loop_dependency_skipped(loop_name: str, *, domain: str, dependency: str) -> None:
+    emit_operational_event(
+        f"{loop_name}_tick_skipped_dependency_not_completed",
+        severity="warning",
+        domain=domain,
+        details={"dependency": dependency},
+    )
+
+
+async def _run_locked_reconciliation_consumer(
+    loop_name: str,
+    consumer: _ReconciliationConsumer,
+    *,
+    lock_ttl_seconds: int,
+) -> bool:
+    lock = RedisDistributedLock(
+        RedisClient.get_client(),
+        key=f"{settings.project_name}:{loop_name}:{settings.runtime.infrastructure_environment}",
+        ttl_seconds=lock_ttl_seconds,
+    )
+    try:
+        await lock.acquire(wait_seconds=0.1)
+    except RedisLockTimeoutError:
+        _mark_loop_lock_skipped(loop_name, domain="ledger")
+        logger.debug(f"{loop_name}_tick_skipped_lock_held")
+        return False
+    except Exception as exc:
+        _mark_loop_failure(loop_name, domain="ledger", exc=exc)
+        logger.error(f"{loop_name}_lock_failed", error=str(exc), exc_info=True)
+        return False
+
+    try:
+        await consumer.process_job({})
+        _mark_loop_success(loop_name, domain="ledger")
+        logger.info(f"{loop_name}_tick_completed")
+        return True
+    except Exception as exc:
+        _mark_loop_failure(loop_name, domain="ledger", exc=exc)
+        logger.error(f"{loop_name}_tick_failed", error=str(exc), exc_info=True)
+        return False
+    finally:
+        try:
+            await lock.release()
+        except Exception as exc:
+            logger.warning(f"{loop_name}_lock_release_failed", error=str(exc))
+
+
+async def _run_ledger_reconciliation_tick(
+    consumers: TransactionWorkerConsumers,
+    *,
+    lock_ttl_seconds: int,
+) -> None:
+    posting_completed = await _run_locked_reconciliation_consumer(
+        "ledger_posting_reconciliation",
+        consumers.ledger_posting_reconciliation,
+        lock_ttl_seconds=lock_ttl_seconds,
+    )
+    if not posting_completed:
+        _mark_loop_dependency_skipped(
+            "ledger_exposure_reconciliation",
+            domain="ledger",
+            dependency="ledger_posting_reconciliation",
+        )
+        logger.debug("ledger_exposure_reconciliation_tick_skipped_posting_not_completed")
         return
 
-    consumers = setup_transaction_worker_consumers()
-    ledger_consumer = consumers.ledger_posting_reconciliation
-    lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.info("ledger_posting_reconciliation_loop_started", interval_seconds=interval_seconds)
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            break
-        except TimeoutError:
-            pass
-
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:ledger_posting_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="ledger")
-            logger.debug("ledger_posting_reconciliation_tick_skipped_lock_held")
-            continue
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="ledger", exc=exc)
-            logger.error("ledger_posting_reconciliation_lock_failed", error=str(exc), exc_info=True)
-            continue
-
-        try:
-            await ledger_consumer.process_job({})
-            _mark_loop_success(loop_name, domain="ledger")
-            logger.info("ledger_posting_reconciliation_tick_completed")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="ledger", exc=exc)
-            logger.error("ledger_posting_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("ledger_posting_reconciliation_lock_release_failed", error=str(exc))
+    await _run_locked_reconciliation_consumer(
+        "ledger_exposure_reconciliation",
+        consumers.ledger_exposure_reconciliation,
+        lock_ttl_seconds=lock_ttl_seconds,
+    )
 
 
-async def _run_ledger_exposure_reconciliation_loop(stop_event: asyncio.Event) -> None:
-    loop_name = "ledger_exposure_reconciliation"
+async def _run_ledger_reconciliation_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = int(settings.ledger_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
-        _mark_loop_disabled(loop_name)
+        _mark_loop_disabled("ledger_posting_reconciliation")
+        _mark_loop_disabled("ledger_exposure_reconciliation")
+        logger.info("ledger_posting_reconciliation_loop_disabled")
         logger.info("ledger_exposure_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
-    ledger_consumer = consumers.ledger_exposure_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
-    _mark_loop_started(loop_name)
-    logger.info("ledger_exposure_reconciliation_loop_started", interval_seconds=interval_seconds)
+    _mark_loop_started("ledger_posting_reconciliation")
+    _mark_loop_started("ledger_exposure_reconciliation")
+    logger.info("ledger_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -611,34 +638,7 @@ async def _run_ledger_exposure_reconciliation_loop(stop_event: asyncio.Event) ->
         except TimeoutError:
             pass
 
-        lock = RedisDistributedLock(
-            RedisClient.get_client(),
-            key=f"{settings.project_name}:ledger_exposure_reconciliation:{settings.runtime.infrastructure_environment}",
-            ttl_seconds=lock_ttl_seconds,
-        )
-        try:
-            await lock.acquire(wait_seconds=0.1)
-        except RedisLockTimeoutError:
-            _mark_loop_lock_skipped(loop_name, domain="ledger")
-            logger.debug("ledger_exposure_reconciliation_tick_skipped_lock_held")
-            continue
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="ledger", exc=exc)
-            logger.error("ledger_exposure_reconciliation_lock_failed", error=str(exc), exc_info=True)
-            continue
-
-        try:
-            await ledger_consumer.process_job({})
-            _mark_loop_success(loop_name, domain="ledger")
-            logger.info("ledger_exposure_reconciliation_tick_completed")
-        except Exception as exc:
-            _mark_loop_failure(loop_name, domain="ledger", exc=exc)
-            logger.error("ledger_exposure_reconciliation_tick_failed", error=str(exc), exc_info=True)
-        finally:
-            try:
-                await lock.release()
-            except Exception as exc:
-                logger.warning("ledger_exposure_reconciliation_lock_release_failed", error=str(exc))
+        await _run_ledger_reconciliation_tick(consumers, lock_ttl_seconds=lock_ttl_seconds)
 
 
 @asynccontextmanager
@@ -647,8 +647,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     global _worker_task, _direct_transfer_reconciliation_task
     global _transaction_debit_reconciliation_task, _transaction_debit_refund_reconciliation_task
     global _funding_reconciliation_task, _bill_reconciliation_task, _payout_reconciliation_task
-    global _refund_reconciliation_task, _ledger_posting_reconciliation_task
-    global _ledger_exposure_reconciliation_task, _stop_event
+    global _refund_reconciliation_task, _ledger_reconciliation_task, _stop_event
 
     logger.info("transaction_worker_service_starting", **build_runtime_status("transaction-worker"))
 
@@ -686,19 +685,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         _run_refund_reconciliation_loop(_stop_event),
         name="refund-reconciliation-loop",
     )
-    _ledger_posting_reconciliation_task = asyncio.create_task(
-        _run_ledger_posting_reconciliation_loop(_stop_event),
-        name="ledger-posting-reconciliation-loop",
-    )
-    _ledger_exposure_reconciliation_task = asyncio.create_task(
-        _run_ledger_exposure_reconciliation_loop(_stop_event),
-        name="ledger-exposure-reconciliation-loop",
+    _ledger_reconciliation_task = asyncio.create_task(
+        _run_ledger_reconciliation_loop(_stop_event),
+        name="ledger-reconciliation-loop",
     )
     logger.info(
         "transaction_worker_active",
         topics=list(TRANSACTION_TOPICS),
         enabled_domains=domain_flags,
-        async_transport="redis",
         **build_runtime_status("transaction-worker"),
     )
 
@@ -718,8 +712,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         _funding_reconciliation_task,
         _payout_reconciliation_task,
         _refund_reconciliation_task,
-        _ledger_posting_reconciliation_task,
-        _ledger_exposure_reconciliation_task,
+        _ledger_reconciliation_task,
     ):
         if task is not None:
             task.cancel()
@@ -731,8 +724,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _funding_reconciliation_task = None
     _payout_reconciliation_task = None
     _refund_reconciliation_task = None
-    _ledger_posting_reconciliation_task = None
-    _ledger_exposure_reconciliation_task = None
+    _ledger_reconciliation_task = None
     logger.info("transaction_worker_service_shutting_down")
 
 

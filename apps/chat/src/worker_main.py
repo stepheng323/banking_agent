@@ -5,6 +5,7 @@ import signal
 from collections import OrderedDict
 from datetime import UTC, datetime
 
+from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.chat_worker_dependencies import setup_chat_consumers
 from apps.chat.src.runtime.scheduler_dispatcher_dependencies import setup_schedule_dispatcher
 from apps.chat.src.runtime_bootstrap import warm_runtime
@@ -14,7 +15,6 @@ from shared.config.settings import settings
 from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
 from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
-from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 
 configure_logger()
 logger = get_logger(__name__)

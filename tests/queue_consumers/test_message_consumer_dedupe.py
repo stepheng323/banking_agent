@@ -14,6 +14,7 @@ from apps.chat.src.queue_consumers import message_consumer as message_consumer_m
 from apps.chat.src.queue_consumers import message_inbound as message_inbound_module
 from apps.chat.src.queue_consumers import pin_resume as pin_resume_module
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
+from apps.chat.src.queue_consumers.message_outbound import prepare_orchestrator_outbound
 from banking.presentation.i18n.renderer import render_message
 from banking.receipts.choice import (
     RECEIPT_IMAGE_ACTION_ID,
@@ -37,6 +38,25 @@ class _RateLimiterAllow:
     async def check(self, identifier: str) -> RateLimitResult:
         del identifier
         return RateLimitResult(allowed=True, remaining=9, reset_in_seconds=60, total_limit=10)
+
+
+def test_prepare_orchestrator_outbound_dedupes_identical_say_intents() -> None:
+    greeting = render_message("conversational.greeting", "en")
+    intents, raw_outbox, response_text, _metadata = prepare_orchestrator_outbound(
+        {
+            "intents": [
+                Say(text=greeting),
+                Say(text=greeting),
+            ],
+            "text": greeting,
+        }
+    )
+
+    assert raw_outbox is None
+    assert response_text == greeting
+    assert len(intents) == 1
+    assert isinstance(intents[0], Say)
+    assert intents[0].text == greeting
 
 
 class _UserRepoStub:
