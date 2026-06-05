@@ -138,7 +138,7 @@
       "investigating": "We're investigating this debit issue."
     },
     "reversal": {
-      "success_no_reversal": "• This transfer was successful. No reversal is applicable.",
+      "success_no_reversal": "• This transfer was successful. It can't be reversed or refunded from here.",
       "reversed": "• Your ₦{amount} has been reversed to your account.",
       "no_refund_needed": "No money was debited, so no refund is needed.",
       "completed": "• The ₦{amount} refund has been completed.",

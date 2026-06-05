@@ -20,6 +20,7 @@ from banking.support.followups import (
     should_verify_latest_transaction_status,
 )
 from banking.support.handler_dispatch import SupportHandlerDispatcher
+from banking.support.handlers.status_utils import resolve_transaction_status
 from banking.support.micro_resolver import (
     NextStep,
 )
@@ -43,6 +44,19 @@ from banking.support.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _transaction_reference_id(transaction: Any) -> str | None:
+    if not isinstance(transaction, dict):
+        return None
+    for key in ("transaction_id", "id", "reference", "transaction_reference", "local_transaction_id"):
+        value = transaction.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
 
 
 class SupportWorker:
@@ -168,6 +182,10 @@ class SupportWorker:
             if should_verify_latest_transaction_status(intent, message):
                 tx_ref = tx_ref or TransactionReference()
                 tx_ref.use_recent = True
+            if isinstance(transaction, dict):
+                tx_ref = tx_ref or TransactionReference()
+                if not tx_ref.transaction_id:
+                    tx_ref.transaction_id = _transaction_reference_id(transaction)
 
             extraction = SupportExtractionResult(
                 intent=intent,
@@ -224,6 +242,18 @@ class SupportWorker:
                     context=context,
                     locale=locale,
                 )
+            if (
+                isinstance(resolved_tx, dict)
+                and intent == SupportIntent.REVERSAL_REFUND
+                and resolve_transaction_status(resolved_tx) == "successful"
+            ):
+                response = await self._handler_dispatcher.dispatch(intent, resolved_tx, user_id=user_id, locale=locale)
+                support_ctx.pending_reference = None
+                support_ctx.last_transaction_ref = str(
+                    resolved_tx.get("id") or resolved_tx.get("transaction_id") or support_ctx.last_transaction_ref or ""
+                )
+                await self.context_manager.save(user_id, support_ctx)
+                return result_from_support_response(response, intent=intent, locale=locale)
 
             decision = None
             diagnostic_ticket_code = None

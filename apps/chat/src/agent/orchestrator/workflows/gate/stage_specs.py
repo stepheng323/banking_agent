@@ -62,6 +62,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_unsupported
     _stage_semantic_unsupported_capability,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.support_context_stages import (
+    _stage_recent_transaction_support_request,
     _stage_support_context_followup,
     _stage_support_issue_request,
 )
@@ -203,9 +204,20 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
         eligibility=all_of(no_live_pending_interrupt, no_quote, phrase_heavy_fastpath_allowed),
     ),
     GateHandlerSpec(
-        id="context_frame_followup",
+        id="recent_transaction_support_request",
         layer=GateLayer.CONTEXT_FOLLOWUPS,
         priority=10,
+        handler=_stage_recent_transaction_support_request,
+        owner="guardrail",
+        outcome_kind=GateOutcomeKind.TASK_DISPATCH,
+        may_call_llm=False,
+        description="Route reversal/refund follow-ups against a just-displayed transaction.",
+        eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state),
+    ),
+    GateHandlerSpec(
+        id="context_frame_followup",
+        layer=GateLayer.CONTEXT_FOLLOWUPS,
+        priority=20,
         handler=_stage_context_frame_followup,
         owner="semantic_router",
         outcome_kind=GateOutcomeKind.TASK_DISPATCH,
@@ -216,7 +228,7 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
     GateHandlerSpec(
         id="receipt_thread_followup",
         layer=GateLayer.CONTEXT_FOLLOWUPS,
-        priority=20,
+        priority=30,
         handler=_stage_receipt_thread_followup,
         owner="guardrail",
         outcome_kind=GateOutcomeKind.TASK_DISPATCH,
@@ -227,7 +239,7 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
     GateHandlerSpec(
         id="support_context_followup",
         layer=GateLayer.CONTEXT_FOLLOWUPS,
-        priority=30,
+        priority=40,
         handler=_stage_support_context_followup,
         owner="guardrail",
         outcome_kind=GateOutcomeKind.TASK_DISPATCH,
@@ -238,7 +250,7 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
     GateHandlerSpec(
         id="receipt_request",
         layer=GateLayer.CONTEXT_FOLLOWUPS,
-        priority=40,
+        priority=50,
         handler=_stage_receipt_request,
         owner="guardrail",
         outcome_kind=GateOutcomeKind.TASK_DISPATCH,
@@ -249,7 +261,7 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
     GateHandlerSpec(
         id="beneficiary_suggestion",
         layer=GateLayer.CONTEXT_FOLLOWUPS,
-        priority=50,
+        priority=60,
         handler=_stage_beneficiary_suggestion,
         owner="guardrail",
         outcome_kind=GateOutcomeKind.TASK_DISPATCH,
@@ -260,7 +272,7 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
     GateHandlerSpec(
         id="contextual_worker_followup",
         layer=GateLayer.CONTEXT_FOLLOWUPS,
-        priority=60,
+        priority=70,
         handler=_stage_contextual_worker_followup,
         owner="guardrail",
         outcome_kind=GateOutcomeKind.DIRECT_RESPONSE,

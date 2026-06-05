@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -133,6 +134,7 @@ def _worker(
 class _TicketServiceStub:
     def __init__(self, ticket: object | None = None) -> None:
         self.ticket = ticket
+        self.created: list[dict[str, Any]] = []
 
     async def get_ticket(self, ticket_code: str):
         if self.ticket and getattr(self.ticket, "ticket_code", None) == ticket_code:
@@ -146,6 +148,28 @@ class _TicketServiceStub:
     async def get_user_open_tickets(self, user_id: str):
         del user_id
         return [self.ticket] if self.ticket else []
+
+    async def create_ticket(
+        self,
+        *,
+        user_id: str,
+        intent: str,
+        summary: str,
+        transaction_ref: str | None = None,
+        details: dict[str, Any] | None = None,
+        channel: str = "whatsapp",
+    ):
+        self.created.append(
+            {
+                "user_id": user_id,
+                "intent": intent,
+                "summary": summary,
+                "transaction_ref": transaction_ref,
+                "details": details or {},
+                "channel": channel,
+            }
+        )
+        return SimpleNamespace(ticket_code="SUP-20260605-0001")
 
 
 @pytest.mark.asyncio
@@ -195,6 +219,36 @@ async def test_support_worker_enqueues_single_transfer_receipt_for_successful_tr
         "account_name": "Olamide Samuel",
         "account_number": "1234509384",
     }
+
+
+@pytest.mark.asyncio
+async def test_support_worker_successful_transfer_reversal_does_not_offer_refund_request() -> None:
+    ticket_service = _TicketServiceStub()
+    worker = _worker(_RedisStub(), {}, ticket_service=ticket_service)
+
+    result = await worker.run(
+        payload={
+            "intent": "reversal_refund",
+            "transaction": {
+                "id": "tx-20k",
+                "transaction_id": "tx-20k",
+                "transaction_type": "transfer",
+                "status": "successful",
+                "amount": 20000,
+                "recipient_name": "Fatima Zahra Musa",
+                "recipient_bank_name": "Opay",
+            },
+        },
+        context={"user_id": "user-1", "phone_number": "2348162511023", "language": "en"},
+        user_message="Reverse the transaction",
+    )
+
+    assert result.outcome == SupportOutcome.OK
+    assert result.ticket_code is None
+    assert not ticket_service.created
+    assert "can't be reversed or refunded" in (result.response or "")
+    assert "process refund" not in (result.response or "")
+    assert "Which transaction" not in (result.response or "")
 
 
 @pytest.mark.asyncio

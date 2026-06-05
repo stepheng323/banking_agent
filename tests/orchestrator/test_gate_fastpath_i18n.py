@@ -3999,6 +3999,113 @@ async def test_gate_banking_coded_support_ambiguity_clarifies_before_casual_chat
     assert not responder.calls
 
 
+async def test_gate_routes_recent_transaction_reversal_to_support_before_ambiguity() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_recent_reversal_1",
+        phone_number="234899999991175",
+        channel="whatsapp",
+        last_message_text="Reverse the transaction",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="recent_receipt_frame",
+                frame_type=ContextFrameType.RECEIPT,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.TRANSACTION,
+                        entity_id="tx-20k",
+                        label="₦20,000 transfer to Fatima Zahra Musa",
+                        data={
+                            "transaction_id": "tx-20k",
+                            "task_type": "transfer",
+                            "type": "transfer",
+                            "transaction_type": "transfer",
+                            "amount": 20000,
+                            "status": "success",
+                            "recipient_name": "Mum",
+                            "recipient_resolved_name": "Fatima Zahra Musa",
+                            "recipient_bank_name": "Opay",
+                            "recipient_account": "8067892221",
+                            "source_bank_name": "Access Bank",
+                            "source_account_last4": "0003",
+                            "reference": "tx-20k",
+                        },
+                    )
+                ],
+                created_at_ts=int(time.time()),
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "recent_transaction_support_direct"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_decision"] == "recent_transaction_support"
+    assert updates["routing_target_domain"] == "support"
+    task = updates["tasks"]["direct_support"]
+    assert task.type == "support"
+    assert task.payload["intent"] == "reversal_refund"
+    assert task.payload["message"] == "Reverse the transaction"
+    assert task.payload["transaction"]["transaction_id"] == "tx-20k"
+    assert task.payload["transaction"]["amount"] == 20000
+    assert task.payload["transaction"]["recipient_resolved_name"] == "Fatima Zahra Musa"
+
+
+async def test_gate_recent_transaction_reversal_from_list_clarifies_instead_of_guessing() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_recent_reversal_list_1",
+        phone_number="234899999991176",
+        channel="whatsapp",
+        last_message_text="Reverse the transaction",
+        loaded_context={"language": "en"},
+        context_frames=[
+            ContextFrame(
+                frame_id="recent_transaction_list_frame",
+                frame_type=ContextFrameType.TRANSACTION_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.TRANSACTION,
+                        entity_id="tx-20k",
+                        label="₦20,000 transfer to Fatima Zahra Musa",
+                        data={
+                            "transaction_id": "tx-20k",
+                            "transaction_type": "transfer",
+                            "amount": 20000,
+                            "status": "success",
+                            "recipient_name": "Fatima Zahra Musa",
+                        },
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.TRANSACTION,
+                        entity_id="tx-5k",
+                        label="₦5,000 transfer to Ayodele",
+                        data={
+                            "transaction_id": "tx-5k",
+                            "transaction_type": "transfer",
+                            "amount": 5000,
+                            "status": "failed",
+                            "recipient_name": "Ayodele",
+                        },
+                    ),
+                ],
+                created_at_ts=int(time.time()),
+            )
+        ],
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "banking_coded_ambiguity_clarify"
+    assert updates["final_response"] == "Which transaction do you want me to check?"
+    assert updates["routing_decision"] == "banking_coded_ambiguity_support"
+    assert "tasks" not in updates
+
+
 async def test_gate_receipt_request_ambiguity_uses_support_prompt_not_account_query() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
