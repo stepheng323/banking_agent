@@ -13,6 +13,7 @@ from langgraph.graph.state import CompiledStateGraph
 from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.graph import build_orchestrator_graph
+from apps.chat.src.agent.orchestrator.graph.checkpoint_serializer import OrchestratorRedisSerializer
 from apps.chat.src.agent.orchestrator.graph.housekeeping import OrchestratorHousekeeping
 from apps.chat.src.agent.orchestrator.graph.invocation_runner import GraphInvocationRunner
 from apps.chat.src.agent.orchestrator.graph.progress import TurnProgressTracker
@@ -110,6 +111,7 @@ class OrchestratorGraphHandler:
         }
 
         self.checkpointer = AsyncRedisSaver(redis_client=redis_client)
+        self.checkpointer.serde = OrchestratorRedisSerializer()
         self._checkpointer_setup = False
         self._checkpointer_setup_lock = asyncio.Lock()
         self._error_window: deque[int] = deque(maxlen=200)
