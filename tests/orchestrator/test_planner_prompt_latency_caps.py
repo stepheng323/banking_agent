@@ -7,25 +7,27 @@ import pytest
 import tiktoken
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import (
-    PlannerPromptBuildInput,
-    PlannerPromptSignals,
-)
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import build_runtime_planner_system_prompt
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_core import (
     PLANNER_CONTEXT_MAX_CHARS,
     _assemble_planner_context,
     _build_query_session_context,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary import (
     _build_user_state_summary,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary_payload import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary_payload import (
     CONTEXT_ACCOUNT_PREVIEW_LIMIT,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import (
+    PlannerPromptBuildInput,
+    PlannerPromptSignals,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_runtime import (
+    build_runtime_planner_system_prompt,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import PlannerOutput
@@ -590,7 +592,7 @@ def test_context_frame_summary_caps_item_preview() -> None:
         context_frames=[frame],
     )
 
-    summary = OrchestratorContextManager().build_llm_summary(state)
+    summary = ContextFrameManager().build_llm_summary(state)
     assert "... (+4 more)" in summary
     assert "Beneficiary 1" in summary
 

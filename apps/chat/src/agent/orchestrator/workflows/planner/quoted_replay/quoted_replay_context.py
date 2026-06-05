@@ -3,10 +3,10 @@
 import json
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_active import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_active import (
     build_quoted_replay_context_from_summary,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary import (
     get_or_build_turn_context_summary,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView

@@ -1,4 +1,6 @@
-from apps.chat.src.agent.orchestrator.planning.task_planner_normalizer import normalize_planner_transaction_output
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_normalizer import (
+    normalize_planner_transaction_output,
+)
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 

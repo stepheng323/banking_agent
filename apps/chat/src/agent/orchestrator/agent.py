@@ -6,9 +6,9 @@ from apps.chat.src.agent.orchestrator.config.dependencies import OrchestratorDep
 from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
 from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_topic_for_response
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
+from apps.chat.src.agent.orchestrator.media.text import combine_media_text, format_media_caption_text
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
-from apps.chat.src.agent.orchestrator.services.media_text import combine_media_text, format_media_caption_text
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.async_helpers import create_background_task
@@ -26,7 +26,7 @@ class OrchestratorAgent:
             planner_llm=deps.llm,
             semantic_router_llm=deps.semantic_router_llm,
             interrupt_llm=deps.interrupt_llm,
-            task_queue_service=deps.task_queue_service,
+            task_state_service=deps.task_state_service,
         )
 
         self.orchestrator_handler = OrchestratorGraphHandler(

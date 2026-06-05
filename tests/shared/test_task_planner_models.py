@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
 

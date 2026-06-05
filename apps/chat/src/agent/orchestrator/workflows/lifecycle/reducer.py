@@ -6,11 +6,11 @@ import time
 import uuid
 from typing import Any, cast
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.referents.store import forget_stashed_referents
 from apps.chat.src.agent.orchestrator.context.referents.task_memory import remember_referents_from_completed_task
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.accumulator import FinalizeAccumulator
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.completed_transaction_frames import (
     TRANSACTION_TASK_TYPES,
@@ -91,7 +91,7 @@ def _reduce_completed_transaction_frame(runtime: FinalizeRuntime, acc: FinalizeA
     )
     if completed_transaction_frame is None:
         return
-    OrchestratorContextManager().push_frame(runtime.state, completed_transaction_frame)
+    ContextFrameManager().push_frame(runtime.state, completed_transaction_frame)
     acc.set_context_frames(runtime.state_view.context_frames)
     acc.set_referent_memory(runtime.state_view.referent_memory)
 

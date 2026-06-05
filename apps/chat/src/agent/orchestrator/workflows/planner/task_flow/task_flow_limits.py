@@ -1,6 +1,6 @@
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import TRANSACTION_EXECUTORS
 from banking.policy.transaction_limits import MAX_TRANSACTION_BATCH_TASKS
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger

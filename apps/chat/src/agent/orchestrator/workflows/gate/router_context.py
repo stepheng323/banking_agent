@@ -1,9 +1,9 @@
 import re
 
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_router import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_router import (
     build_router_context_from_summary,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_types import TurnContextSummary
+from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_types import TurnContextSummary
 
 _DIRECT_CONTEXT_RECAP_EXACT = {
     "where did we stop",

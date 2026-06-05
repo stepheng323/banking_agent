@@ -8,8 +8,8 @@ from langchain_openai import ChatOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
-from apps.chat.src.agent.orchestrator.services.media_service import MediaService
-from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
+from apps.chat.src.agent.orchestrator.media.service import MediaService
+from apps.chat.src.agent.orchestrator.task_state.service import TaskStateService
 from apps.chat.src.runtime.providers import ChatRuntimeProviders
 from apps.chat.src.runtime.repositories import ChatRuntimeRepositories
 from banking.accounts.onboarding.executor import OnboardingExecutor
@@ -39,7 +39,7 @@ class ChatDomainServices:
     user_data_cache: UserDataCache
     onboarding_executor: OnboardingExecutor
     beneficiary_suggestion_service: BeneficiarySuggestionService
-    task_queue_service: TaskQueueService
+    task_state_service: TaskStateService
     conversation_responder: ConversationResponder
     media_service: MediaService
     account_worker: WorkerProtocol
@@ -100,7 +100,7 @@ def build_chat_domain_services(
         redis_client=shared_redis,
     )
 
-    task_queue_service = TaskQueueService()
+    task_state_service = TaskStateService()
     conversation_responder = ConversationResponder(llm)
     bank_cache_service = BankCacheService(
         redis_client=shared_redis, provider_name=providers.resolver_provider.provider_name
@@ -139,7 +139,7 @@ def build_chat_domain_services(
         user_data_cache=user_data_cache,
         onboarding_executor=onboarding_executor,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
-        task_queue_service=task_queue_service,
+        task_state_service=task_state_service,
         conversation_responder=conversation_responder,
         media_service=media_service,
         account_worker=account_worker,

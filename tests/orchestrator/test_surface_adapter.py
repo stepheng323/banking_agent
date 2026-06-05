@@ -3,7 +3,7 @@ import time
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.surface_adapter import build_context_frame_from_surface_view
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
 from banking.transactions.query.contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode

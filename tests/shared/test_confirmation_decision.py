@@ -2,7 +2,6 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.confirmation.affirmation.service import AffirmationService
 from banking.presentation.i18n.models import LocaleCode
 from banking.transactions.shared.confirmation.classifier import (
     classify_confirmation_reply,
@@ -113,6 +112,6 @@ def test_confirmation_decision_guardrails_block_approval(text: str, expected_act
     assert decision.source == "guardrail"
 
 
-def test_legacy_affirmation_service_no_longer_approves_broad_substrings() -> None:
-    assert AffirmationService.classify_sync("send").is_unclear
-    assert AffirmationService.classify_sync("abeg").is_unclear
+def test_confirmation_classifier_no_longer_approves_broad_substrings() -> None:
+    assert classify_confirmation_reply_sync("send", prompt_kind="amount_suggestion").action == "unclear"
+    assert classify_confirmation_reply_sync("abeg", prompt_kind="amount_suggestion").action == "unclear"

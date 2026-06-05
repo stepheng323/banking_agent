@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from apps.chat.src.agent.orchestrator.planning.task_planner_semantic_router_prompts import SEMANTIC_ROUTER_SYSTEM_PROMPT
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_semantic_router_prompts import (
+    SEMANTIC_ROUTER_SYSTEM_PROMPT,
+)
 
 _CASES_PATH = Path("tests/fixtures/semantic_router_replay_cases.json")
 

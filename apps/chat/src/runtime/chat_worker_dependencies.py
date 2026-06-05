@@ -1,7 +1,9 @@
 """Dependency loader for the ECS core chat runtime."""
 
 from apps.chat.src.agent.assistant_profile.loader import get_cached_assistant_profile
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import refresh_runtime_planner_system_prompt
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_runtime import (
+    refresh_runtime_planner_system_prompt,
+)
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.runtime.bundles import build_runtime_bundle_factory
 from apps.chat.src.runtime.common import build_messaging_clients

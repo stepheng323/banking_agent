@@ -19,7 +19,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_d
 from apps.chat.src.agent.orchestrator.workflows.interrupt.expiry.expiry_updates import (
     _expired_transaction_interrupt_updates,
 )
-from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending_action_semantic import (
+from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.engine.pending_action_semantic import (
     _resolve_semantic_pending_action_edit_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.runner_callbacks import _verified_pin_callback_updates

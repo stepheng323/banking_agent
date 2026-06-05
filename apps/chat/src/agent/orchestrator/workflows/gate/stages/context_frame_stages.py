@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _classify_obvious_transfer_request,
     _is_obvious_airtime_request,
@@ -12,13 +12,13 @@ from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
     _route_observability_updates,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_types import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_types import (
     ContextFrameFollowupResponse,
 )
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
@@ -194,7 +194,7 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
             return None
         logger.info("gate_context_frame_followup_active_query_replay_bypass")
 
-    frame = OrchestratorContextManager().latest_active_frame(ctx.state)
+    frame = ContextFrameManager().latest_active_frame(ctx.state)
     if frame is None or not frame.items:
         return None
     shortcut = resolve_query_shortcut(ctx.message_text, ctx.current_locale)

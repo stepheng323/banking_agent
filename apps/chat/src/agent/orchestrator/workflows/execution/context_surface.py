@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 
 if TYPE_CHECKING:
     from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
@@ -41,7 +41,7 @@ def context_surface(state: OrchestratorState) -> ExecutionContextSurface:
 
 
 def push_context_frame(ctx: ExecutionTurnContext, frame: ContextFrame) -> None:
-    OrchestratorContextManager().push_frame(ctx.state, frame)
+    ContextFrameManager().push_frame(ctx.state, frame)
     surface = context_surface(ctx.state)
     ctx.accumulator.set_context_frames(surface.frames)
     ctx.accumulator.set_referent_memory(surface.referent_memory)

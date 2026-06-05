@@ -5,11 +5,11 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMemoryItem
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.executors.session import OrchestratorTaskExecutor
@@ -580,6 +580,6 @@ def test_context_manager_summary_includes_resume_prompt_context() -> None:
         context_frames=[_resume_frame()],
     )
 
-    summary = OrchestratorContextManager().build_llm_summary(state)
+    summary = ContextFrameManager().build_llm_summary(state)
 
     assert "Asked to resume transfer" in summary

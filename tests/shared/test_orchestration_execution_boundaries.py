@@ -7,12 +7,111 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GRAPH_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "graph"
+ORCHESTRATOR_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator"
 WORKFLOWS_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows"
 EXECUTION_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "execution"
 TASK_HANDLERS_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "task_handlers"
 INTERRUPT_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "interrupt"
 GATE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "gate"
 PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "planner"
+DELETED_PLANNER_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "planning"
+DELETED_CONTEXT_SERVICE_MODULE = ORCHESTRATOR_ROOT / "services" / "context_manager.py"
+DELETED_ORCHESTRATOR_SERVICE_MODULES = (
+    ORCHESTRATOR_ROOT / "services" / "__init__.py",
+    ORCHESTRATOR_ROOT / "services" / "media_service.py",
+    ORCHESTRATOR_ROOT / "services" / "media_text.py",
+    ORCHESTRATOR_ROOT / "services" / "meta_reply.py",
+)
+DELETED_TASK_QUEUE_ROOT = ORCHESTRATOR_ROOT / "task_queue"
+DELETED_PLANNER_CONTEXT_FLAT_MODULES = tuple(
+    PLANNER_ROOT / "context" / filename
+    for filename in (
+        "context_flow.py",
+        "context_flow_followup.py",
+        "context_flow_hinting.py",
+        "context_flow_mode_decisions.py",
+        "context_flow_sections.py",
+        "context_flow_state.py",
+        "context_flow_types.py",
+        "context_frame_account_status.py",
+        "context_frame_data_plans.py",
+        "context_frame_decisions.py",
+        "context_frame_detail_blocks.py",
+        "context_frame_detail_fields.py",
+        "context_frame_detail_responses.py",
+        "context_frame_filtering.py",
+        "context_frame_followup_context_builder.py",
+        "context_frame_followup_focus.py",
+        "context_frame_followup_response_builder.py",
+        "context_frame_followup_selection.py",
+        "context_frame_followup_surface_engine.py",
+        "context_frame_followup_types.py",
+        "context_frame_ranking.py",
+        "context_frame_replay.py",
+        "context_frame_replay_accounts.py",
+        "context_frame_replay_amounts.py",
+        "context_frame_replay_modifier_core.py",
+        "context_frame_replay_modifier_text.py",
+        "context_frame_replay_narration.py",
+        "context_frame_replay_payload_base.py",
+        "context_frame_replay_payload_source.py",
+        "context_frame_replay_payload_transactions.py",
+        "context_frame_replay_payload_values.py",
+        "context_frame_replay_targets.py",
+        "context_frame_replay_tasks.py",
+        "context_frame_response_explain.py",
+        "context_frame_response_selection.py",
+        "context_frame_schedule.py",
+        "context_frame_search.py",
+        "context_frame_semantic_response.py",
+        "context_frame_state_view.py",
+        "context_frame_text.py",
+        "context_query_session.py",
+        "context_read_account.py",
+        "context_read_availability.py",
+        "context_read_constants.py",
+        "context_read_fallback.py",
+        "context_read_focus.py",
+        "context_read_frames.py",
+        "context_rendering_active.py",
+        "context_rendering_core.py",
+        "context_rendering_router.py",
+        "context_rendering_user.py",
+        "context_summary.py",
+        "context_summary_active_flow.py",
+        "context_summary_focus.py",
+        "context_summary_payload.py",
+        "context_summary_state.py",
+        "context_types.py",
+    )
+)
+DELETED_PENDING_ACTION_FLAT_MODULES = tuple(
+    INTERRUPT_ROOT / "pending_action" / filename
+    for filename in (
+        "pending_action_account_context.py",
+        "pending_action_add_operation.py",
+        "pending_action_amount_patches.py",
+        "pending_action_confirmation_flow.py",
+        "pending_action_data_plan_patches.py",
+        "pending_action_edit_context.py",
+        "pending_action_edit_engine.py",
+        "pending_action_edit_scope.py",
+        "pending_action_edit_types.py",
+        "pending_action_field_operation.py",
+        "pending_action_funding_patches.py",
+        "pending_action_mobile_patches.py",
+        "pending_action_payload_account_switch.py",
+        "pending_action_payload_fields.py",
+        "pending_action_payload_overrides.py",
+        "pending_action_payload_patch_router.py",
+        "pending_action_route_operations.py",
+        "pending_action_semantic.py",
+        "pending_action_source_account_patches.py",
+        "pending_action_source_account_resolution.py",
+        "pending_action_targets.py",
+        "pending_action_transfer_patches.py",
+    )
+)
 LIFECYCLE_ROOT = ROOT / "apps" / "chat" / "src" / "agent" / "orchestrator" / "workflows" / "lifecycle"
 WORKFLOW_RUNTIME_CONFIG_MODULE = WORKFLOWS_ROOT / "runtime_config.py"
 INTERRUPT_STATE_VIEW_MODULES = (
@@ -42,12 +141,12 @@ INTERRUPT_REPROMPT_STATUS_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "status" / "status_query_text.py",
 )
 INTERRUPT_PENDING_ACTION_STATE_VIEW_MODULES = (
-    INTERRUPT_ROOT / "pending_action" / "pending_action_account_context.py",
-    INTERRUPT_ROOT / "pending_action" / "pending_action_confirmation_flow.py",
-    INTERRUPT_ROOT / "pending_action" / "pending_action_edit_context.py",
-    INTERRUPT_ROOT / "pending_action" / "pending_action_edit_scope.py",
-    INTERRUPT_ROOT / "pending_action" / "pending_action_payload_overrides.py",
-    INTERRUPT_ROOT / "pending_action" / "pending_action_targets.py",
+    INTERRUPT_ROOT / "pending_action" / "context" / "pending_action_account_context.py",
+    INTERRUPT_ROOT / "pending_action" / "flow" / "pending_action_confirmation_flow.py",
+    INTERRUPT_ROOT / "pending_action" / "engine" / "pending_action_edit_context.py",
+    INTERRUPT_ROOT / "pending_action" / "engine" / "pending_action_edit_scope.py",
+    INTERRUPT_ROOT / "pending_action" / "payloads" / "pending_action_payload_overrides.py",
+    INTERRUPT_ROOT / "pending_action" / "targets" / "pending_action_targets.py",
 )
 INTERRUPT_CONFIRMATION_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "auth" / "auth_resolve.py",
@@ -65,8 +164,8 @@ INTERRUPT_SWITCHING_STATE_VIEW_MODULES = (
     INTERRUPT_ROOT / "switching" / "switch_update_additive.py",
 )
 INTERRUPT_FINAL_STATE_VIEW_MODULES = (
-    INTERRUPT_ROOT / "pending_action" / "pending_action_edit_engine.py",
-    INTERRUPT_ROOT / "pending_action" / "pending_action_payload_patch_router.py",
+    INTERRUPT_ROOT / "pending_action" / "engine" / "pending_action_edit_engine.py",
+    INTERRUPT_ROOT / "pending_action" / "payloads" / "pending_action_payload_patch_router.py",
     INTERRUPT_ROOT / "router" / "context_router.py",
     INTERRUPT_ROOT / "router" / "context_router_payloads.py",
     INTERRUPT_ROOT / "router" / "router_callbacks.py",
@@ -125,39 +224,39 @@ PLANNER_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "runtime.py",
 )
 PLANNER_CONTEXT_FLOW_STATE_VIEW_MODULES = (
-    PLANNER_ROOT / "context" / "context_flow.py",
-    PLANNER_ROOT / "context" / "context_flow_mode_decisions.py",
-    PLANNER_ROOT / "context" / "context_flow_state.py",
-    PLANNER_ROOT / "context" / "context_query_session.py",
-    PLANNER_ROOT / "context" / "context_read_focus.py",
-    PLANNER_ROOT / "context" / "context_summary_focus.py",
+    PLANNER_ROOT / "context" / "flow" / "context_flow.py",
+    PLANNER_ROOT / "context" / "flow" / "context_flow_mode_decisions.py",
+    PLANNER_ROOT / "context" / "flow" / "context_flow_state.py",
+    PLANNER_ROOT / "context" / "query_session" / "context_query_session.py",
+    PLANNER_ROOT / "context" / "read" / "context_read_focus.py",
+    PLANNER_ROOT / "context" / "summary" / "context_summary_focus.py",
 )
 PLANNER_CONTEXT_SUMMARY_STATE_VIEW_MODULES = (
-    PLANNER_ROOT / "context" / "context_summary.py",
-    PLANNER_ROOT / "context" / "context_summary_active_flow.py",
-    PLANNER_ROOT / "context" / "context_summary_state.py",
+    PLANNER_ROOT / "context" / "summary" / "context_summary.py",
+    PLANNER_ROOT / "context" / "summary" / "context_summary_active_flow.py",
+    PLANNER_ROOT / "context" / "summary" / "context_summary_state.py",
 )
 PLANNER_CONTEXT_READ_STATE_VIEW_MODULES = (
-    PLANNER_ROOT / "context" / "context_read_account.py",
-    PLANNER_ROOT / "context" / "context_read_availability.py",
-    PLANNER_ROOT / "context" / "context_read_frames.py",
+    PLANNER_ROOT / "context" / "read" / "context_read_account.py",
+    PLANNER_ROOT / "context" / "read" / "context_read_availability.py",
+    PLANNER_ROOT / "context" / "read" / "context_read_frames.py",
     PLANNER_ROOT / "execution_context_read.py",
     PLANNER_ROOT / "execution_flow.py",
 )
 PLANNER_CONTEXT_FRAME_STATE_VIEW_MODULES = (
-    PLANNER_ROOT / "context" / "context_flow_followup.py",
-    PLANNER_ROOT / "context" / "context_frame_followup_context_builder.py",
-    PLANNER_ROOT / "context" / "context_frame_followup_focus.py",
-    PLANNER_ROOT / "context" / "context_frame_followup_response_builder.py",
-    PLANNER_ROOT / "context" / "context_frame_followup_selection.py",
-    PLANNER_ROOT / "context" / "context_frame_followup_surface_engine.py",
-    PLANNER_ROOT / "context" / "context_frame_followup_types.py",
-    PLANNER_ROOT / "context" / "context_frame_replay.py",
-    PLANNER_ROOT / "context" / "context_frame_replay_accounts.py",
-    PLANNER_ROOT / "context" / "context_frame_replay_payload_source.py",
-    PLANNER_ROOT / "context" / "context_frame_replay_targets.py",
-    PLANNER_ROOT / "context" / "context_frame_replay_tasks.py",
-    PLANNER_ROOT / "context" / "context_frame_schedule.py",
+    PLANNER_ROOT / "context" / "flow" / "context_flow_followup.py",
+    PLANNER_ROOT / "context" / "frames" / "context_frame_followup_context_builder.py",
+    PLANNER_ROOT / "context" / "frames" / "context_frame_followup_focus.py",
+    PLANNER_ROOT / "context" / "frames" / "context_frame_followup_response_builder.py",
+    PLANNER_ROOT / "context" / "frames" / "context_frame_followup_selection.py",
+    PLANNER_ROOT / "context" / "frames" / "context_frame_followup_surface_engine.py",
+    PLANNER_ROOT / "context" / "frames" / "context_frame_followup_types.py",
+    PLANNER_ROOT / "context" / "replay" / "context_frame_replay.py",
+    PLANNER_ROOT / "context" / "replay" / "context_frame_replay_accounts.py",
+    PLANNER_ROOT / "context" / "replay" / "context_frame_replay_payload_source.py",
+    PLANNER_ROOT / "context" / "replay" / "context_frame_replay_targets.py",
+    PLANNER_ROOT / "context" / "replay" / "context_frame_replay_tasks.py",
+    PLANNER_ROOT / "context" / "frames" / "context_frame_schedule.py",
 )
 PLANNER_QUOTED_REPLAY_STATE_VIEW_MODULES = (
     PLANNER_ROOT / "quoted_replay" / "quoted_flow.py",
@@ -255,6 +354,43 @@ FORBIDDEN_PLANNER_TEXT = (
     'config.get("configurable"',
 )
 
+FORBIDDEN_DELETED_PLANNER_TEXT = (
+    "apps.chat.src.agent.orchestrator.planning",
+    "apps/chat/src/agent/orchestrator/planning",
+)
+
+FORBIDDEN_DELETED_CONTEXT_SERVICE_TEXT = (
+    "apps.chat.src.agent.orchestrator.services.context_manager",
+    "apps/chat/src/agent/orchestrator/services/context_manager.py",
+    "OrchestratorContextManager",
+)
+
+FORBIDDEN_DELETED_ORCHESTRATOR_SERVICES_TEXT = (
+    "apps.chat.src.agent.orchestrator.services.media_service",
+    "apps.chat.src.agent.orchestrator.services.media_text",
+    "apps.chat.src.agent.orchestrator.services.meta_reply",
+    "apps/chat/src/agent/orchestrator/services/media_service.py",
+    "apps/chat/src/agent/orchestrator/services/media_text.py",
+    "apps/chat/src/agent/orchestrator/services/meta_reply.py",
+)
+
+FORBIDDEN_DELETED_TASK_QUEUE_TEXT = (
+    "apps.chat.src.agent.orchestrator.task_queue",
+    "apps/chat/src/agent/orchestrator/task_queue",
+    "TaskQueueService",
+    "task_queue_service",
+)
+
+FORBIDDEN_DELETED_PLANNER_CONTEXT_TEXT = tuple(
+    f"apps.chat.src.agent.orchestrator.workflows.planner.context.{path.stem}"
+    for path in DELETED_PLANNER_CONTEXT_FLAT_MODULES
+) + tuple(str(path.relative_to(ROOT)) for path in DELETED_PLANNER_CONTEXT_FLAT_MODULES)
+
+FORBIDDEN_DELETED_PENDING_ACTION_TEXT = tuple(
+    f"apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.{path.stem}"
+    for path in DELETED_PENDING_ACTION_FLAT_MODULES
+)
+
 FORBIDDEN_LIFECYCLE_TEXT = (
     'config["configurable"]',
     'config.get("configurable"',
@@ -299,6 +435,14 @@ FORBIDDEN_RESULT_PATCH_METHODS = {"set_update", "get_update", "has_update"}
 
 def _python_sources() -> list[Path]:
     roots = (ROOT / "apps", ROOT / "tests")
+    files: list[Path] = []
+    for root in roots:
+        files.extend(root.rglob("*.py"))
+    return sorted(files)
+
+
+def _python_and_script_sources() -> list[Path]:
+    roots = (ROOT / "apps", ROOT / "tests", ROOT / "scripts")
     files: list[Path] = []
     for root in roots:
         files.extend(root.rglob("*.py"))
@@ -1063,6 +1207,120 @@ def test_typed_planner_core_reads_configurable_only_in_runtime_builder() -> None
             continue
         text = path.read_text(encoding="utf-8")
         for forbidden in FORBIDDEN_PLANNER_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_top_level_planner_package_was_moved_into_workflow_planner_core() -> None:
+    assert not DELETED_PLANNER_ROOT.exists()
+
+
+def test_old_top_level_planner_package_is_not_referenced() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_and_script_sources():
+        if path.resolve() == this_file:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_DELETED_PLANNER_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_context_frame_manager_lives_under_context_package() -> None:
+    assert not DELETED_CONTEXT_SERVICE_MODULE.exists()
+
+
+def test_old_context_frame_service_module_is_not_referenced() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_and_script_sources():
+        if path.resolve() == this_file:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_DELETED_CONTEXT_SERVICE_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_orchestrator_media_and_meta_services_are_not_in_generic_services_package() -> None:
+    existing = [path.relative_to(ROOT) for path in DELETED_ORCHESTRATOR_SERVICE_MODULES if path.exists()]
+
+    assert existing == []
+
+
+def test_old_orchestrator_media_and_meta_service_paths_are_not_referenced() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_and_script_sources():
+        if path.resolve() == this_file:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_DELETED_ORCHESTRATOR_SERVICES_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_task_state_service_replaces_task_queue_package() -> None:
+    assert not DELETED_TASK_QUEUE_ROOT.exists()
+
+
+def test_old_task_queue_package_is_not_referenced() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_and_script_sources():
+        if path.resolve() == this_file:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_DELETED_TASK_QUEUE_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_planner_context_modules_are_grouped_not_flat() -> None:
+    existing = [path.relative_to(ROOT) for path in DELETED_PLANNER_CONTEXT_FLAT_MODULES if path.exists()]
+
+    assert existing == []
+
+
+def test_old_flat_planner_context_modules_are_not_referenced() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_and_script_sources():
+        if path.resolve() == this_file:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_DELETED_PLANNER_CONTEXT_TEXT:
+            if forbidden in text:
+                violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
+
+    assert violations == []
+
+
+def test_pending_action_modules_are_grouped_not_flat() -> None:
+    existing = [path.relative_to(ROOT) for path in DELETED_PENDING_ACTION_FLAT_MODULES if path.exists()]
+
+    assert existing == []
+
+
+def test_old_flat_pending_action_modules_are_not_referenced() -> None:
+    this_file = Path(__file__).resolve()
+    violations: list[str] = []
+    for path in _python_and_script_sources():
+        if path.resolve() == this_file:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_DELETED_PENDING_ACTION_TEXT:
             if forbidden in text:
                 violations.append(f"{path.relative_to(ROOT)} references {forbidden}")
 

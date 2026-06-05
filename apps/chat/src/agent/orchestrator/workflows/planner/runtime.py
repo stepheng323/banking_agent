@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView, planner_state_view
 from apps.chat.src.agent.orchestrator.workflows.runtime_config import OrchestrationConfig
 from banking.messaging.repositories.actionable_message_repository import ActionableMessageRepository

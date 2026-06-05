@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.context_router import (
     _build_interrupt_context,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_core import (
     INTERRUPT_CONTEXT_MAX_CHARS,
 )
 

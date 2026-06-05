@@ -135,7 +135,7 @@ def test_runtime_voice_uses_assistant_profile_as_single_voice_source() -> None:
 
 
 def test_planner_prompt_refresh_reloads_profile_summary_block(tmp_path: Path) -> None:
-    from apps.chat.src.agent.orchestrator.planning import task_planner_prompt_runtime
+    from apps.chat.src.agent.orchestrator.workflows.planner.core import task_planner_prompt_runtime
 
     raw = load_assistant_profile(ASSISTANT_PROFILE_PATH).model_dump()
     raw["supported_domains"][0] = "Card freeze"

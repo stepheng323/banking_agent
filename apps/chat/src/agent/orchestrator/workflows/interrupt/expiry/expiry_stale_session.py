@@ -14,7 +14,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_selection_
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_slot_route import (
     _resolve_deterministic_input_slot_route,
 )
-from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending_action_edit_engine import (
+from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.engine.pending_action_edit_engine import (
     PendingActionEditEngine,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_callbacks import _is_verified_pin_callback

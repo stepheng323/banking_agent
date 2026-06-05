@@ -9,12 +9,14 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.planning.task_planner import PLANNER_USER_PROMPT_TEMPLATE
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_models import (
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import PLANNER_USER_PROMPT_TEMPLATE
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import (
     PlannerPromptBuildInput,
     PlannerPromptSignals,
 )
-from apps.chat.src.agent.orchestrator.planning.task_planner_prompt_runtime import build_runtime_planner_system_prompt
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_runtime import (
+    build_runtime_planner_system_prompt,
+)
 from shared.types.planner import PlannerOutput
 
 _CASES_PATH = Path("tests/fixtures/planner_replay_cases.json")

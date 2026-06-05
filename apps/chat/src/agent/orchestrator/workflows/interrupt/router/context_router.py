@@ -19,13 +19,13 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_active import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_active import (
     build_interrupt_context_from_summary,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_rendering_core import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_core import (
     INTERRUPT_CONTEXT_MAX_CHARS,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary import (
     get_or_build_turn_context_summary,
 )
 from shared.utils.logging import get_logger

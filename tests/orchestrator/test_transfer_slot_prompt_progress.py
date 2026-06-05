@@ -4,13 +4,13 @@ import time
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
 from banking.runtime.results import TransactionOutcome, TransactionResult
@@ -852,7 +852,7 @@ async def test_transfer_handler_passes_referent_memory_to_worker() -> None:
         created_at_ts=now,
         ttl_seconds=600,
     )
-    OrchestratorContextManager().push_frame(state, frame)
+    ContextFrameManager().push_frame(state, frame)
     config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
 
     await advance_wave(state, config)
@@ -888,7 +888,7 @@ async def test_transfer_handler_resolves_focused_beneficiary_referent_to_worker(
         created_at_ts=now,
         ttl_seconds=600,
     )
-    OrchestratorContextManager().push_frame(state, frame)
+    ContextFrameManager().push_frame(state, frame)
     config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
 
     await advance_wave(state, config)
@@ -993,7 +993,7 @@ async def test_ambiguous_beneficiary_referent_blocks_confirmation() -> None:
         created_at_ts=now,
         ttl_seconds=600,
     )
-    OrchestratorContextManager().push_frame(state, frame)
+    ContextFrameManager().push_frame(state, frame)
     config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
 
     updates = await advance_wave(state, config)

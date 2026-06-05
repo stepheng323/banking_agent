@@ -2,17 +2,17 @@ import re
 import unicodedata
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import build_conversation_grounding
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual import (
     contextual_meta_fallback_reply,
     contextual_worker_fallback_reply,
 )
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )
 from banking.presentation.i18n.locale import LocaleManager
@@ -153,7 +153,7 @@ def _has_state_result_context(ctx: GateContext) -> bool:
         return True
     if ctx.state_view.has_task_results:
         return True
-    if OrchestratorContextManager().latest_active_frame(ctx.state) is not None:
+    if ContextFrameManager().latest_active_frame(ctx.state) is not None:
         return True
     return False
 

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 
 
 def test_previous_reference_uses_focused_item_before_last_item() -> None:
@@ -38,7 +38,7 @@ def test_previous_reference_uses_focused_item_before_last_item() -> None:
         ],
     )
 
-    entity = OrchestratorContextManager().resolve_reference(state, {"selector": "previous"})
+    entity = ContextFrameManager().resolve_reference(state, {"selector": "previous"})
 
     assert entity is not None
     assert entity.label == "Mum"

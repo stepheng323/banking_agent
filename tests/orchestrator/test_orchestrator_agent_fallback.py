@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
-from apps.chat.src.agent.orchestrator.services.media_service import MediaInterpretation
+from apps.chat.src.agent.orchestrator.media.service import MediaInterpretation
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LocaleCode
 from banking.presentation.i18n.renderer import render_message

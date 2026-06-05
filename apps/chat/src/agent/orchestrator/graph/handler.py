@@ -27,7 +27,7 @@ from apps.chat.src.agent.orchestrator.graph.runtime import (
 )
 from apps.chat.src.agent.orchestrator.graph.thread_lock import thread_invocation_lock
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService

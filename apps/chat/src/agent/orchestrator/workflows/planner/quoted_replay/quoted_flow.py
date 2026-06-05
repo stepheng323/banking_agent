@@ -2,7 +2,7 @@
 
 from typing import Any, cast
 
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.quoted_replay.quoted_replay_context import (
     _build_quoted_replay_context,
     _build_quoted_replay_context_with_payload,

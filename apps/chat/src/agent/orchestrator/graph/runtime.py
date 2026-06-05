@@ -11,7 +11,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.graph.progress import TurnProgressTracker
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService

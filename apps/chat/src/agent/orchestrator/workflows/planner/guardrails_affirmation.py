@@ -1,6 +1,6 @@
 """Affirmation cleanup guardrails for planner output."""
 
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import TRANSACTION_EXECUTORS
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 

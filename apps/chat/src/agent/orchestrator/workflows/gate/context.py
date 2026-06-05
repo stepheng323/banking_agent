@@ -6,13 +6,13 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.gate.router_context import _should_invoke_semantic_router
 from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_query_session import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.query_session.context_query_session import (
     _load_query_session_snapshot,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_summary import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary import (
     get_or_build_turn_context_summary,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_types import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_types import (
     TurnContextSummary,
 )
 

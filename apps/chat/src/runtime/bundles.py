@@ -54,7 +54,7 @@ def build_orchestrator_runtime_bundle(
         user_repo=repositories.user,
         beneficiary_repo=repositories.beneficiary,
         actionable_message_repo=repositories.actionable_message,
-        task_queue_service=services.task_queue_service,
+        task_state_service=services.task_state_service,
         conversation_responder=services.conversation_responder,
         transfer_service=services.transfer_worker,
         airtime_service=services.airtime_worker,

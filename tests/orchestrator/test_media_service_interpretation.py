@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from apps.chat.src.agent.orchestrator.services.media_service import MediaService
+from apps.chat.src.agent.orchestrator.media.service import MediaService
 from shared.config.settings import settings
 
 

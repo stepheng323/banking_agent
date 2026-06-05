@@ -6,8 +6,8 @@ import redis.asyncio as redis
 from langchain_openai import ChatOpenAI
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
-from apps.chat.src.agent.orchestrator.services.media_service import MediaService
-from apps.chat.src.agent.orchestrator.task_queue.service import TaskQueueService
+from apps.chat.src.agent.orchestrator.media.service import MediaService
+from apps.chat.src.agent.orchestrator.task_state.service import TaskStateService
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
 from banking.beneficiaries.services.suggestion_service import BeneficiarySuggestionService
@@ -30,7 +30,7 @@ class OrchestratorDependencies:
     account_repo: AccountRepository
     beneficiary_repo: BeneficiaryRepository
     actionable_message_repo: ActionableMessageRepository
-    task_queue_service: TaskQueueService
+    task_state_service: TaskStateService
     conversation_responder: ConversationResponder
     transfer_service: WorkerProtocol
     airtime_service: WorkerProtocol

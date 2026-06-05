@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_flow import _build_planner_context
+from apps.chat.src.agent.orchestrator.workflows.planner.context.flow.context_flow import _build_planner_context
 from apps.chat.src.agent.orchestrator.workflows.planner.execution_flow import _execute_planner_with_context
 from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import QUOTED_REPLAY_MIN_CONFIDENCE
 from apps.chat.src.agent.orchestrator.workflows.planner.node_recovery import _apply_planner_recovery

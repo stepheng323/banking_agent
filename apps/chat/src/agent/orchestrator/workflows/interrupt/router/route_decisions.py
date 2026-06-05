@@ -9,9 +9,6 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmat
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _cancel_updates, logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_continue import _continue_flow_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_reprompt import _reprompt_or_reset_updates
-from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.pending_action_payload_account_switch import (
-    _account_switch_source_overrides,
-)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.router_switch import (
     _handle_switch_intent_route,
     _is_same_flow_transactional_switch,
@@ -22,6 +19,8 @@ from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationSer
 from banking.transactions.shared.confirmation.guardrails import is_safe_guarded_approval_text
 from banking.transactions.shared.confirmation.models import APPROVAL_CONFIDENCE_THRESHOLD
 from shared.types.planner import InterruptRouteDecision
+
+from ..pending_action.payloads.pending_action_payload_account_switch import _account_switch_source_overrides
 
 
 async def _apply_interrupt_route_decision(

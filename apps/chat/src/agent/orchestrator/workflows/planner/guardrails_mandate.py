@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_read_constants import TRANSACTION_EXECUTORS
+from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import TRANSACTION_EXECUTORS
 from banking.accounts.mandate_state import READY, effective_mandate_status
 from banking.accounts.onboarding.mandate_messages import build_pending_mandate_message
 from shared.types.planner import PlannerOutput

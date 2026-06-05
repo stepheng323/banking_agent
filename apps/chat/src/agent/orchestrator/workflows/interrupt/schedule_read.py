@@ -2,18 +2,18 @@
 
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.planning.task_planner import TaskPlanner
-from apps.chat.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _could_be_schedule_interrupt_read_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
-from apps.chat.src.agent.orchestrator.workflows.planner.context.context_frame_followup_surface_engine import (
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from shared.types.planner import ContextFrameFollowupDecision
 
 
@@ -52,7 +52,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
     if decision != "domain_schedule" or schedule_response_mode not in {"list", "count"} or confidence < 0.72:
         return None
 
-    frame = OrchestratorContextManager().latest_active_frame(state)
+    frame = ContextFrameManager().latest_active_frame(state)
     if frame is None or frame.frame_type != ContextFrameType.SCHEDULE_LIST:
         return None
 
