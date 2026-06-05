@@ -33,6 +33,10 @@ def normalize_transfer_amount_field(params: TaskParameters) -> list[str]:
     patched: list[str] = []
     raw_amount = params.amount
     if not isinstance(raw_amount, str):
+        parsed_amount = parse_amount_value(raw_amount)
+        if parsed_amount is not None and parsed_amount <= 0:
+            params.amount = None
+            patched.append("amount")
         return patched
 
     lowered = raw_amount.strip().lower()
@@ -43,7 +47,7 @@ def normalize_transfer_amount_field(params: TaskParameters) -> list[str]:
 
     parsed_amount = parse_amount_value(raw_amount)
     if parsed_amount is not None:
-        params.amount = parsed_amount
+        params.amount = parsed_amount if parsed_amount > 0 else None
         patched.append("amount")
         return patched
 

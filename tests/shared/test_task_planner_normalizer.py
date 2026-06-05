@@ -59,6 +59,26 @@ def test_transfer_normalizer_does_not_overwrite_existing_fields() -> None:
     assert params.bank_name == "Opay"
 
 
+def test_transfer_normalizer_extracts_simple_instruction_amount_when_planner_amount_is_zero() -> None:
+    planner_output = _planner_output(
+        [
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 20k to mum",
+                parameters=TaskParameters(amount=0, recipient_name="mum"),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "Send 20k to mum")
+    params = normalized.tasks[0].parameters
+    assert params.amount == 20000
+    assert params.recipient_name == "mum"
+
+
 def test_transfer_normalizer_skips_ambiguous_account_candidates() -> None:
     planner_output = _planner_output(
         [
