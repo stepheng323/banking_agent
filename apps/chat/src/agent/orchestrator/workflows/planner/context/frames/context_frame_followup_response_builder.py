@@ -88,7 +88,7 @@ def _build_semantic_followup_response(
     frame = select_frame_for_decision_from_view(request.state_view, decision)
     if frame is None or not frame.items:
         return None
-    response = format_semantic_decision_response(frame, decision, text=request.text)
+    response = format_semantic_decision_response(frame, decision, text=request.text, locale=request.locale)
     if not response:
         return None
     return ContextFrameFollowupResponse(
@@ -120,12 +120,14 @@ def build_context_frame_followup_response(
     *,
     decision: ContextFrameFollowupDecision | None = None,
     replay_modifier: ContextFrameReplayModifier | None = None,
+    locale: str = "en",
 ) -> ContextFrameFollowupResponse | None:
     return build_context_frame_followup_response_for_view(
         context_frame_state_view(state),
         text,
         decision=decision,
         replay_modifier=replay_modifier,
+        locale=locale,
     )
 
 
@@ -135,6 +137,7 @@ def build_context_frame_followup_response_for_view(
     *,
     decision: ContextFrameFollowupDecision | None = None,
     replay_modifier: ContextFrameReplayModifier | None = None,
+    locale: str = "en",
 ) -> ContextFrameFollowupResponse | None:
     """Build a grounded follow-up response from current state and decision."""
     return build_context_frame_followup_response_from_request(
@@ -143,6 +146,7 @@ def build_context_frame_followup_response_for_view(
             text=text,
             decision=decision,
             replay_modifier=replay_modifier,
+            locale=locale,
         )
     )
 

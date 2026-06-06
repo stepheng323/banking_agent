@@ -60,12 +60,14 @@ def build_surface_answer_response(
     *,
     decision: ContextFrameFollowupDecision | None = None,
     replay_modifier: ContextFrameReplayModifier | None = None,
+    locale: str = "en",
 ) -> ContextFrameFollowupResponse | None:
     return build_context_frame_followup_response(
         state,
         text,
         decision=decision,
         replay_modifier=replay_modifier,
+        locale=locale,
     )
 
 
@@ -75,12 +77,14 @@ def build_surface_answer_response_for_state_view(
     *,
     decision: ContextFrameFollowupDecision | None = None,
     replay_modifier: ContextFrameReplayModifier | None = None,
+    locale: str = "en",
 ) -> ContextFrameFollowupResponse | None:
     return build_context_frame_followup_response_for_view(
         state_view,
         text,
         decision=decision,
         replay_modifier=replay_modifier,
+        locale=locale,
     )
 
 

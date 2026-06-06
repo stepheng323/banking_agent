@@ -8,6 +8,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.return_to_flow import append_return_to_flow_tail
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_requirements import (
@@ -246,26 +247,36 @@ def _build_active_flow_question_response(
             status_query_type=question_type,
         )
     if question_type == "why_required":
-        return _why_required_response(state=state, interrupt=interrupt, route=route)
-    if question_type == "confirmation_effect":
-        return _confirmation_effect_response(interrupt)
-    if question_type == "cancellation_effect":
-        return _cancellation_effect_response(current_task_types)
-    if question_type == "auth_pin_reason":
-        return _auth_pin_reason_response(current_task_types)
-    if question_type == "source_account":
-        return _source_account_response(state=state, interrupt=interrupt)
-    if question_type == "editable_fields":
-        return _editable_fields_response(current_task_types)
-    if question_type == "current_value":
-        return _current_value_response(state=state, interrupt=interrupt, route=route)
-    if question_type == "timing_or_status":
-        return _timing_or_status_response(state=state, interrupt=interrupt)
-    if question_type == "fees_or_charges":
-        return _fees_or_charges_response(state=state, interrupt=interrupt)
-    if question_type == "unsupported_or_unsafe":
+        response = _why_required_response(state=state, interrupt=interrupt, route=route)
+    elif question_type == "confirmation_effect":
+        response = _confirmation_effect_response(interrupt)
+    elif question_type == "cancellation_effect":
+        response = _cancellation_effect_response(current_task_types)
+    elif question_type == "auth_pin_reason":
+        response = _auth_pin_reason_response(current_task_types)
+    elif question_type == "source_account":
+        response = _source_account_response(state=state, interrupt=interrupt)
+    elif question_type == "editable_fields":
+        response = _editable_fields_response(current_task_types)
+    elif question_type == "current_value":
+        response = _current_value_response(state=state, interrupt=interrupt, route=route)
+    elif question_type == "timing_or_status":
+        response = _timing_or_status_response(state=state, interrupt=interrupt)
+    elif question_type == "fees_or_charges":
+        response = _fees_or_charges_response(state=state, interrupt=interrupt)
+    elif question_type == "unsupported_or_unsafe":
         return _unsupported_or_unsafe_response(route)
-    return _unknown_response(state=state, interrupt=interrupt, current_task_types=current_task_types)
+    else:
+        return _unknown_response(state=state, interrupt=interrupt, current_task_types=current_task_types)
+
+    if response.startswith("I cannot answer that safely"):
+        return response
+    return append_return_to_flow_tail(
+        message=response,
+        state=state,
+        interrupt=interrupt,
+        target_field=route.target_field,
+    )
 
 
 def _why_required_response(

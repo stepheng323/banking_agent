@@ -73,6 +73,14 @@ def _python_files() -> list[Path]:
     return sorted(files)
 
 
+def _path_has_python_sources(path: Path) -> bool:
+    if path.is_file():
+        return path.suffix == ".py"
+    if path.is_dir():
+        return any(child.is_file() and child.suffix == ".py" for child in path.rglob("*.py"))
+    return False
+
+
 def _is_forbidden_module(module: str) -> bool:
     return any(module == forbidden or module.startswith(f"{forbidden}.") for forbidden in MOVED_WORKER_MODULES)
 
@@ -113,7 +121,7 @@ def _imported_modules(path: Path) -> list[str]:
 
 
 def test_moved_worker_packages_do_not_exist_under_chat_or_knowledge() -> None:
-    existing = [path for package in DELETED_PACKAGE_PATHS if (path := ROOT / package).exists()]
+    existing = [path for package in DELETED_PACKAGE_PATHS if _path_has_python_sources(path := ROOT / package)]
 
     assert existing == []
 

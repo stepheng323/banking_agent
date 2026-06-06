@@ -441,6 +441,7 @@ async def test_interrupt_input_stashes_transfer_and_switches_to_beneficiary() ->
     assert updates["pending_interrupt"] is None
     assert len(updates["stashed_sessions"]) == 1
     assert updates["stashed_sessions"][0]["intent"] == "transfer"
+    assert updates["outbox"] == [{"type": "say", "text": "I paused the transfer while I check your beneficiaries."}]
     switched_task_ids = list(updates["tasks"].keys())
     assert len(switched_task_ids) == 1
     assert updates["waves"] == [switched_task_ids]
@@ -507,6 +508,7 @@ async def test_interrupt_input_same_executor_keeps_slot_filling_flow() -> None:
     assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
     assert "idempotency_key" not in updates["tasks"]["t1"].payload
     assert "stashed_sessions" not in updates
+    assert "outbox" not in updates
 
 
 @pytest.mark.asyncio
@@ -2930,7 +2932,11 @@ async def test_confirmation_switch_to_account_uses_user_message_for_balance_exec
     execution_updates = await advance_wave(switched_state, execution_config)
 
     assert account_worker.last_user_message == "what's my balance"
-    assert execution_updates["outbox"][0]["text"].startswith("*Your Balance*")
+    assert execution_updates["outbox"][0] == {
+        "type": "say",
+        "text": "I paused the transfer while I check your account.",
+    }
+    assert execution_updates["outbox"][1]["text"].startswith("*Your Balance*")
 
 
 @pytest.mark.asyncio

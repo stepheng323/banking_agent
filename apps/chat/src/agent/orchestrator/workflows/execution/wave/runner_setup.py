@@ -68,7 +68,7 @@ def build_execution_wave_runtime(
     runtime_config = OrchestrationConfig.from_runnable_config(config)
     services = runtime_config.services()
     dependencies = ExecutionDependencies.from_configurable(runtime_config.configurable)
-    accumulator = ExecutionAccumulator(task_map(state))
+    accumulator = ExecutionAccumulator(task_map(state), initial_outbox=state.outbox)
     ctx = ExecutionTurnContext(
         state=state,
         config=config,

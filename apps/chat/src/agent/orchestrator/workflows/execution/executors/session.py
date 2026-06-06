@@ -2,6 +2,7 @@ from typing import cast
 
 from apps.chat.src.agent.orchestrator.context.referents.store import forget_stashed_referents
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
+from apps.chat.src.agent.orchestrator.workflows.conversation_closure import build_resume_declined_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import clear_resume_prompt_frames
 from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import (
@@ -69,7 +70,7 @@ async def _execute_orchestrator_task(task: TaskSpec, task_id: str, ctx: Executio
         return
 
     logger.info("resume_session_declined", intent=intent)
-    ctx.accumulator.say(render_message("orchestrator.session.resume_declined", locale))
+    ctx.accumulator.say(build_resume_declined_notice(intent=intent, locale=locale))
     complete_task(task)
 
 

@@ -1,5 +1,6 @@
 """Unified core consumer for chat messages and flow events."""
 
+import asyncio
 import time
 from collections.abc import Callable
 from typing import Any, cast
@@ -28,7 +29,7 @@ from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.telegram.client import TelegramClient
 from shared.database.models import UserOnboardingStatusEnum
-from shared.messaging.intents import Say
+from shared.messaging.intents import Say, SendTyping
 from shared.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.messaging.prompt_suppression import pending_input_prompt_metadata
 from shared.models.messages import ChannelMessage
@@ -39,11 +40,76 @@ from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
 _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
+_INITIAL_TYPING_DELAY_SECONDS = 0.25
+_INITIAL_TYPING_POLICY = "delayed_initial"
 
 
 class _NoopPublisher:
     async def publish(self, topic: Any, message: dict[str, Any]) -> None:
         del topic, message
+
+
+def _initial_typing_dedupe_key(*, channel: str, delivery_target: str, message_id: str) -> str:
+    return f"{channel}:{delivery_target}:{message_id}:typing:initial"
+
+
+async def _send_delayed_initial_typing(
+    *,
+    publisher: QueuePublisher,
+    channel: str,
+    delivery_target: str,
+    message_id: str,
+    delay_seconds: float | None = None,
+) -> None:
+    try:
+        resolved_delay_seconds = _INITIAL_TYPING_DELAY_SECONDS if delay_seconds is None else delay_seconds
+        if resolved_delay_seconds > 0:
+            await asyncio.sleep(resolved_delay_seconds)
+        await enqueue_outbox_intents(
+            publisher,
+            delivery_target,
+            channel,
+            [SendTyping()],
+            metadata={
+                "source": "message_consumer",
+                "message_id": message_id,
+                "inbound_message_id": message_id,
+                "dedupe_key": _initial_typing_dedupe_key(
+                    channel=channel,
+                    delivery_target=delivery_target,
+                    message_id=message_id,
+                ),
+                "typing_policy": _INITIAL_TYPING_POLICY,
+            },
+        )
+        logger.info(
+            "message_consumer_initial_typing_enqueued",
+            channel=channel,
+            channel_user_id=delivery_target,
+            message_id_hash=log_fingerprint(message_id),
+            typing_policy=_INITIAL_TYPING_POLICY,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "message_consumer_initial_typing_failed",
+            channel=channel,
+            channel_user_id=delivery_target,
+            message_id_hash=log_fingerprint(message_id),
+            error_type=type(exc).__name__,
+        )
+
+
+async def _cancel_initial_typing_task(task: asyncio.Task[None] | None) -> None:
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        return
 
 
 class MessageConsumer:
@@ -234,6 +300,7 @@ class MessageConsumer:
             return {"status": "duplicate_ignored", "message_id": message.message_id}
 
         response_text: str | None = None
+        initial_typing_task: asyncio.Task[None] | None = None
         try:
             save_start = time.perf_counter()
             await runtime_orchestrator.context_manager.save_message_id(phone_number, str(message.message_id))
@@ -249,6 +316,15 @@ class MessageConsumer:
                 channel=message.channel,
                 delivery_target=channel_user_id,
                 message_id=str(message.message_id),
+            )
+            initial_typing_task = asyncio.create_task(
+                _send_delayed_initial_typing(
+                    publisher=self.publisher,
+                    channel=message.channel,
+                    delivery_target=channel_user_id,
+                    message_id=str(message.message_id),
+                ),
+                name="message_consumer_initial_typing",
             )
 
             receipt_choice_result = await handle_receipt_image_choice(
@@ -266,6 +342,8 @@ class MessageConsumer:
                 telegram_client_factory=self.telegram_client_factory,
             )
             if receipt_choice_result is not None:
+                await _cancel_initial_typing_task(initial_typing_task)
+                initial_typing_task = None
                 return receipt_choice_result
 
             invoke_start = time.perf_counter()
@@ -310,6 +388,8 @@ class MessageConsumer:
                     details={"error_type": type(exc).__name__, "channel": message.channel},
                 )
                 response_text = render_message("orchestrator.fallback.processing_error", "en")
+                await _cancel_initial_typing_task(initial_typing_task)
+                initial_typing_task = None
                 await enqueue_outbox_intents(
                     self.publisher,
                     channel_user_id,
@@ -366,6 +446,8 @@ class MessageConsumer:
                         )
                     )
                 outbox_start = time.perf_counter()
+                await _cancel_initial_typing_task(initial_typing_task)
+                initial_typing_task = None
                 await enqueue_outbox_intents(
                     self.publisher,
                     channel_user_id,
@@ -380,7 +462,10 @@ class MessageConsumer:
                     phone_number=phone_number,
                 )
                 logger.info("message_consumer_enqueued_outbox", count=len(intents_to_send))
+            await _cancel_initial_typing_task(initial_typing_task)
+            initial_typing_task = None
         except Exception:
+            await _cancel_initial_typing_task(initial_typing_task)
             await runtime_orchestrator.context_manager.release_inbound_message_claim(
                 phone_number, str(message.message_id)
             )

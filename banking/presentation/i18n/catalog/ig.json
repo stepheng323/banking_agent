@@ -94,6 +94,42 @@
       "product_identity": "Kpamkpam, Nenya na-enyere gị ịkwaga na ilele ego gị nke ọma."
     }
   },
+  "interrupt": {
+    "return_to_flow": {
+      "input": {
+        "amount": "Zaa na amount ahụ (dịka 5000).",
+        "recipient_account": "Zipu recipient account number ka anyị gaa n'ihu.",
+        "recipient_bank_name": "Zipu aha bank nke recipient ka anyị gaa n'ihu.",
+        "recipient_account_bank": "Zipu account number na aha bank ka anyị gaa n'ihu.",
+        "phone": "Zaa na phone number, ma obu kwuo my line ma o buru nke gi.",
+        "phone_amount": "Zaa na phone number na amount ka anyị gaa n'ihu.",
+        "phone_network": "Zaa na phone number na network ka anyị gaa n'ihu.",
+        "phone_data_preference": "Zaa na phone number na budget ma obu data size ka anyị gaa n'ihu.",
+        "network": "Zaa na network, dika MTN, Airtel, Glo, ma obu 9mobile.",
+        "data_plan_id": "Họrọ data plan site n'ịza option number.",
+        "data_plan_preference": "Zaa na budget ma obu size, dika 2k ma obu 5GB.",
+        "beneficiary_id": "Họrọ beneficiary option site na ịpị ya ma obu ịza number ahụ.",
+        "source_account_id": "Họrọ source account site na ịpị ya ma obu ịza number ahụ.",
+        "account_selection": "Họrọ account ma obu record site na ịpị ya ma obu ịza number ahụ.",
+        "transaction_reference": "Zaa na transaction reference, receipt, ma obu nkọwa zuru oke iji mata ya.",
+        "date_range": "Zaa na date range, dika today, last week, ma obu March 1 ruo March 15.",
+        "schedule_id": "Họrọ scheduled transaction site na ịpị ya ma obu ịza number ahụ.",
+        "schedule_time": "Zaa na date na time maka schedule ahụ.",
+        "authorization": "Mechaa authorization ka anyị gaa n'ihu.",
+        "pin": "Mechaa PIN authorization ka anyị gaa n'ihu.",
+        "named_field": "Zipu {field} ka anyị gaa n'ihu.",
+        "generic": "Zipu nkọwa ndị fọdụrụ ka anyị gaa n'ihu."
+      },
+      "confirmation": {
+        "to_authorization": "Zaa yes ka anyị gaa n'ihu na authorization, ma obu kwuo cancel.",
+        "to_continue": "Zaa yes ka anyị gaa n'ihu, ma obu kwuo cancel."
+      },
+      "auth": {
+        "pin": "Mechaa PIN authorization ka anyị gaa n'ihu, ma obu kwuo cancel.",
+        "generic": "Mechaa authorization ka anyị gaa n'ihu, ma obu kwuo cancel."
+      }
+    }
+  },
   "support": {
     "ask_reference": "Transaction nke ị na-ajụ bụ nkee?",
     "ask_clarification": "Ị nwere ike ịkọwa nke ọma?",
@@ -594,6 +630,38 @@
       "resuming": "Resuming {intent}...",
       "transaction_expired": "That transaction session has expired, so I can't continue it. Please start the transaction again."
     },
+    "closure": {
+      "intent": {
+        "transfer": "transfer",
+        "airtime": "airtime purchase",
+        "data": "data purchase",
+        "transaction": "transaction"
+      },
+      "detour": {
+        "paused_while": "I paused the {paused_intent} while I {target_action}.",
+        "action": {
+          "account": "check your account",
+          "query": "check those transactions",
+          "support": "handle the support request",
+          "faq": "answer that question",
+          "beneficiary": "check your beneficiaries",
+          "transaction": "start the new {intent}",
+          "generic": "handle that"
+        }
+      },
+      "resume": {
+        "declined": "O di mma, agaghi m alaghachi na {intent} ahu."
+      },
+      "edit": {
+        "amount": "Updated the amount to {amount}.",
+        "source_account": "Updated the source account to {bank}.",
+        "recipient": "Updated the recipient to {recipient}.",
+        "phone": "Updated the phone number to {phone}.",
+        "network": "Updated the network to {network}.",
+        "data_plan": "Updated the data plan to {plan}.",
+        "generic": "Updated the transaction details."
+      }
+    },
     "execution": {
       "source_account_info": "Site na: {bank} (···{last4})",
       "source_account_info_with_balance": "Site na: {bank} (···{last4}) • Balans: ₦{balance}",
@@ -649,6 +717,59 @@
       "transaction_completed": "Transaction completed",
       "async_status_message": "• *{status}*: {message}",
       "na": "N/A"
+    }
+  },
+  "context_frame": {
+    "noun": {
+      "saved_beneficiary": "saved beneficiary",
+      "saved_beneficiaries": "saved beneficiaries",
+      "linked_account": "linked account",
+      "linked_accounts": "linked accounts",
+      "scheduled_transaction": "scheduled transaction",
+      "scheduled_transactions": "scheduled transactions",
+      "transaction_or_result": "transaction or result",
+      "transactions_or_results": "transactions or results",
+      "transaction": "transaction",
+      "transactions": "transactions",
+      "receipt": "receipt",
+      "item": "item",
+      "items": "items"
+    },
+    "header": {
+      "data_plan_details": "Data Plan Details",
+      "saved_beneficiary_details": "Saved Beneficiary Details",
+      "beneficiary_details": "Beneficiary Details",
+      "linked_account_details": "Linked Account Details",
+      "account_details": "Account Details",
+      "transaction_details": "Transaction Details",
+      "receipt_details": "Receipt Details",
+      "scheduled_transaction_details": "Scheduled Transaction Details",
+      "details": "Details"
+    },
+    "detail": {
+      "next_run": "Next run: {value}",
+      "from": "From: {value}",
+      "status": "Status: {value}"
+    },
+    "followup": {
+      "showing_items": "Showing {shown_count} of {total_count} {noun}.",
+      "showing_matches": "Showing {shown_count} of {total_count} matches.",
+      "missing_entity": "I don't see {target} in the {noun} I showed.",
+      "found_entity": "Yes. {target} is in the {noun} I showed.",
+      "found_matching": "I found {count} matching {noun}:",
+      "found_matches_in_frame": "I found {count} matches in the {noun} I showed.",
+      "pending_scheduled_count": "You have {count} pending {noun}.",
+      "only_found": "Yes. That's the only {noun} I found.",
+      "count_found": "Yes. Those are the {count} {noun} I found.",
+      "comparison_header": "Comparison",
+      "explain_count": "I showed {count} {noun} from the last result.",
+      "and_more_suffix": ", and {count} more",
+      "explain_labels": "I showed {count} {noun}: {labels}{suffix}.",
+      "clarify_beneficiary": "Are you asking about the saved beneficiaries I just showed?",
+      "clarify_account": "Are you asking about the linked accounts I just showed?",
+      "clarify_query": "Are you asking about the result I just showed?",
+      "clarify_schedule": "Are you asking about the scheduled transactions I just showed?",
+      "clarify_items": "Are you asking about the items I just showed?"
     }
   },
   "referent": {

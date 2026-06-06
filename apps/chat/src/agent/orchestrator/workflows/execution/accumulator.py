@@ -11,8 +11,11 @@ from apps.chat.src.agent.orchestrator.workflows.execution.result_patch import Ex
 class ExecutionAccumulator:
     """Collects state and output mutations while a wave executes."""
 
-    def __init__(self, tasks: dict[str, TaskSpec]) -> None:
-        self._result_patch = ExecutionResultPatch({"tasks": tasks})
+    def __init__(self, tasks: dict[str, TaskSpec], *, initial_outbox: list[dict[str, Any]] | None = None) -> None:
+        initial_updates: dict[str, Any] = {"tasks": tasks}
+        if initial_outbox:
+            initial_updates["outbox"] = list(initial_outbox)
+        self._result_patch = ExecutionResultPatch(initial_updates)
         self._missing_fields_by_task: dict[str, list[str]] = {}
         self._details_by_task: dict[str, dict[str, Any]] = {}
         self._needs_confirm_tasks: list[str] = []

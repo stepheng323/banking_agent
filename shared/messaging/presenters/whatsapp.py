@@ -191,8 +191,16 @@ class WhatsAppPresenter(Presenter):
 
     async def _present_typing(self, intent: SendTyping, context: PresentationContext) -> None:
         del intent
-        msg_id = context.metadata.get("inbound_message_id")
-        await self.client.send_typing_indicator(str(msg_id or ""))
+        raw_msg_id = context.metadata.get("inbound_message_id") or context.metadata.get("message_id")
+        msg_id = str(raw_msg_id or "").strip()
+        if not msg_id:
+            logger.info(
+                "whatsapp_typing_indicator_skipped_missing_message_id",
+                phone_number=context.phone_number,
+                typing_policy=context.metadata.get("typing_policy"),
+            )
+            return
+        await self.client.send_typing_indicator(msg_id)
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
         resp = await self.client.send_text(

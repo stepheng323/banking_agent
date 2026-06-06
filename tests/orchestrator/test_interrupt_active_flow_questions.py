@@ -80,6 +80,7 @@ def _state(
     text: str,
     required_fields: list[str],
     payload: dict[str, Any],
+    pin_verified: bool = False,
 ) -> OrchestratorState:
     task_id = f"{task_type}_1"
     stage = TaskStage.AWAITING_CONFIRMATION
@@ -113,6 +114,7 @@ def _state(
             ActiveSession(domain=task_type, state=session_state, interrupt_policy="BLOCK"),
         ],
         active_domain=task_type,
+        pin_verified=pin_verified,
     )
 
 
@@ -148,6 +150,7 @@ async def test_active_flow_question_explains_transfer_bank_requirement() -> None
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert updates["tasks"] == state.tasks
     assert "verify the account number" in _say_text(updates)
+    assert "Send the recipient bank name to continue." in _say_text(updates)
 
 
 @pytest.mark.asyncio
@@ -164,6 +167,7 @@ async def test_deterministic_question_fallback_handles_router_unavailable() -> N
 
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert "verify the account number" in _say_text(updates)
+    assert "Send the recipient bank name to continue." in _say_text(updates)
 
 
 @pytest.mark.asyncio
@@ -191,6 +195,7 @@ async def test_active_flow_question_blocks_future_reversal_claims() -> None:
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert "cancel now" in response
     assert "cannot be reversed or refunded" in response
+    assert "reply yes" not in response
 
 
 @pytest.mark.asyncio
@@ -209,6 +214,8 @@ async def test_active_flow_question_explains_pin_authorization_in_auth_interrupt
     response = _say_text(updates)
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert "PIN authorizes this transaction" in response
+    assert "Complete PIN authorization to continue, or say cancel." in response
+    assert "Reply yes" not in response
 
 
 @pytest.mark.asyncio
@@ -275,6 +282,67 @@ async def test_active_flow_question_answers_airtime_current_values(target_field:
 
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert expected in _say_text(updates)
+    assert "Reply yes to continue to authorization, or say cancel." in _say_text(updates)
+
+
+@pytest.mark.asyncio
+async def test_active_flow_question_verified_confirmation_tail_skips_authorization() -> None:
+    state = _state(
+        task_type="transfer",
+        kind="confirmation",
+        text="How much?",
+        required_fields=[],
+        payload={
+            "amount": 20_000,
+            "recipient_name": "Mum",
+            "recipient_resolved_name": "FATIMA ZAHRA MUSA",
+            "recipient_bank_name": "Opay",
+            "recipient_account": "8067892221",
+        },
+        pin_verified=True,
+    )
+    planner = _RoutePlanner(_route("current_value", target_field="amount"))
+
+    updates = await handle_pending_interrupt(state, _config(planner))
+
+    response = _say_text(updates)
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert "The amount is" in response
+    assert "Reply yes to continue, or say cancel." in response
+    assert "continue to authorization" not in response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("confirmation", "Reply yes to continue to authorization, or say cancel."),
+        ("auth", "Complete PIN authorization to continue, or say cancel."),
+    ],
+)
+async def test_status_query_return_to_flow_tail_is_pin_aware(
+    kind: Literal["confirmation", "auth"],
+    expected: str,
+) -> None:
+    state = _state(
+        task_type="transfer",
+        kind=kind,
+        text="where are we",
+        required_fields=[],
+        payload={
+            "amount": 20_000,
+            "recipient_name": "Mum",
+            "recipient_resolved_name": "FATIMA ZAHRA MUSA",
+            "recipient_bank_name": "Opay",
+            "recipient_account": "8067892221",
+        },
+    )
+
+    updates = await handle_pending_interrupt(state, _config())
+
+    response = _say_text(updates)
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert expected in response
 
 
 @pytest.mark.asyncio

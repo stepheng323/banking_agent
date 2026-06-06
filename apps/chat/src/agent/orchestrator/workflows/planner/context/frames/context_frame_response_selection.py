@@ -26,34 +26,59 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import (
     CONTEXT_READ_LIST_LIMIT,
 )
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameFollowupDecision, ContextFrameFollowupFilters
 
 
-def format_completeness_response(frame: ContextFrame) -> str | None:
+def format_completeness_response(frame: ContextFrame, *, locale: str = "en") -> str | None:
     count = len(frame.items)
     if count <= 0:
         return None
     if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
-        noun = "transaction" if count == 1 else "transactions"
-        return f"You have {count} pending scheduled {noun}."
+        return render_message(
+            "context_frame.followup.pending_scheduled_count",
+            locale,
+            {
+                "count": count,
+                "noun": frame_noun(frame.frame_type, plural=count != 1, locale=locale),
+            },
+        )
     if count == 1:
-        return f"Yes. That's the only {frame_noun(frame.frame_type, plural=False)} I found."
-    return f"Yes. Those are the {count} {frame_noun(frame.frame_type, plural=True)} I found."
+        return render_message(
+            "context_frame.followup.only_found",
+            locale,
+            {"noun": frame_noun(frame.frame_type, plural=False, locale=locale)},
+        )
+    return render_message(
+        "context_frame.followup.count_found",
+        locale,
+        {"count": count, "noun": frame_noun(frame.frame_type, plural=True, locale=locale)},
+    )
 
 
-def format_selection_response(frame: ContextFrame, decision: ContextFrameFollowupDecision) -> str | None:
+def format_selection_response(
+    frame: ContextFrame,
+    decision: ContextFrameFollowupDecision,
+    *,
+    locale: str = "en",
+) -> str | None:
     if decision.selection_index is not None:
         idx = decision.selection_index - 1
         if 0 <= idx < len(frame.items):
-            field_response = format_field_response(frame, [frame.items[idx]], decision_field_text(decision))
-            return field_response or format_entity_details(frame, [frame.items[idx]])
+            field_response = format_field_response(
+                frame,
+                [frame.items[idx]],
+                decision_field_text(decision),
+                locale=locale,
+            )
+            return field_response or format_entity_details(frame, [frame.items[idx]], locale=locale)
 
     target_text = decision_target_text(decision)
     if target_text:
         ranked = ranked_entity(frame, decision_rank_text(decision))
         if ranked is not None:
-            return format_entity_details(frame, [ranked])
-        return format_lookup_response(frame, target_text, explicit_lookup=True)
+            return format_entity_details(frame, [ranked], locale=locale)
+        return format_lookup_response(frame, target_text, explicit_lookup=True, locale=locale)
     return None
 
 
@@ -63,14 +88,15 @@ def format_filter_response(
     *,
     rank_text: str | None = None,
     filters: ContextFrameFollowupFilters | None = None,
+    locale: str = "en",
 ) -> str | None:
     ranked = ranked_entity(frame, rank_text)
     if ranked is not None:
-        return format_entity_details(frame, [ranked])
+        return format_entity_details(frame, [ranked], locale=locale)
 
     matches = find_filtered_entities(frame, filters)
     if matches:
-        return format_entity_details(frame, matches)
+        return format_entity_details(frame, matches, locale=locale)
 
     matches = find_matching_entities(frame, target_text)
     if not matches:
@@ -89,8 +115,12 @@ def format_filter_response(
             ).title()
         if not query_label:
             return None
-        return f"I don't see {query_label} in the {frame_noun(frame.frame_type, plural=True)} I showed."
-    return format_entity_details(frame, matches)
+        return render_message(
+            "context_frame.followup.missing_entity",
+            locale,
+            {"target": query_label, "noun": frame_noun(frame.frame_type, plural=True, locale=locale)},
+        )
+    return format_entity_details(frame, matches, locale=locale)
 
 
 def format_compare_response(
@@ -99,10 +129,11 @@ def format_compare_response(
     *,
     rank_text: str | None = None,
     filters: ContextFrameFollowupFilters | None = None,
+    locale: str = "en",
 ) -> str | None:
     ranked = ranked_entity(frame, rank_text)
     if ranked is not None:
-        return format_entity_details(frame, [ranked])
+        return format_entity_details(frame, [ranked], locale=locale)
 
     entities = find_filtered_entities(frame, filters)
     if not entities:
@@ -110,7 +141,7 @@ def format_compare_response(
     if len(entities) < 2:
         entities = frame.items
     if len(entities) < 2:
-        return format_entity_details(frame, entities)
+        return format_entity_details(frame, entities, locale=locale)
 
     blocks: list[str] = []
     for idx, entity in enumerate(entities[:CONTEXT_READ_LIST_LIMIT], 1):
@@ -126,8 +157,21 @@ def format_compare_response(
     if not blocks:
         return None
     overflow = len(entities) - len(blocks)
-    suffix = f"\n\nShowing {len(blocks)} of {len(entities)} items." if overflow > 0 else ""
-    return "Comparison\n\n" + "\n\n".join(blocks) + suffix
+    suffix = (
+        "\n\n"
+        + render_message(
+            "context_frame.followup.showing_items",
+            locale,
+            {
+                "shown_count": len(blocks),
+                "total_count": len(entities),
+                "noun": frame_noun(frame.frame_type, plural=True, locale=locale),
+            },
+        )
+        if overflow > 0
+        else ""
+    )
+    return render_message("context_frame.followup.comparison_header", locale) + "\n\n" + "\n\n".join(blocks) + suffix
 
 
 __all__ = [

@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.conversation_closure import build_detour_pause_notice_for_state
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _clear_current_domain_sessions, logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
@@ -49,6 +50,13 @@ def _build_stash_switch_updates(
         "pin_verified": False,
         "last_callback": None,
     }
+    detour_notice = build_detour_pause_notice_for_state(
+        state=state,
+        active_intent=active_type,
+        target_intent=next(iter(sorted(new_task_types)), None),
+    )
+    if detour_notice:
+        updates["outbox"] = [{"type": "say", "text": detour_notice}]
     if planner_output is not None:
         updates["planner_output"] = planner_output
     return updates

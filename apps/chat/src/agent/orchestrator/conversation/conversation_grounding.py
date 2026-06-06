@@ -91,10 +91,8 @@ def conversation_display_name(loaded_context: dict[str, Any] | None) -> str | No
     return None
 
 
-def _clean_topic(raw_topic: Any) -> str | None:
-    if not isinstance(raw_topic, str):
-        return None
-    topic = raw_topic.strip().lower()
+def _clean_topic(raw_topic: str | None) -> str | None:
+    topic = str(raw_topic or "").strip().lower()
     return topic if topic in _VALID_TOPICS else None
 
 

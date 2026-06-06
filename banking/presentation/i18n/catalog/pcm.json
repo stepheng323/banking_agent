@@ -94,6 +94,42 @@
       "product_identity": "Exactly, Nenya dey help you move and check your money clearly."
     }
   },
+  "interrupt": {
+    "return_to_flow": {
+      "input": {
+        "amount": "Reply with the amount (for example 5000).",
+        "recipient_account": "Send the recipient account number make we continue.",
+        "recipient_bank_name": "Send the recipient bank name make we continue.",
+        "recipient_account_bank": "Send the account number and bank name make we continue.",
+        "phone": "Reply with the phone number, or say my line if na for you.",
+        "phone_amount": "Reply with the phone number and amount make we continue.",
+        "phone_network": "Reply with the phone number and network make we continue.",
+        "phone_data_preference": "Reply with the phone number and budget or data size make we continue.",
+        "network": "Reply with the network, like MTN, Airtel, Glo, or 9mobile.",
+        "data_plan_id": "Pick data plan by replying with the option number.",
+        "data_plan_preference": "Reply with budget or size, like 2k or 5GB.",
+        "beneficiary_id": "Pick beneficiary option by tapping am or replying with the number.",
+        "source_account_id": "Pick the source account by tapping am or replying with the number.",
+        "account_selection": "Pick the account or record by tapping am or replying with the number.",
+        "transaction_reference": "Reply with the transaction reference, receipt, or enough details to identify am.",
+        "date_range": "Reply with date range, like today, last week, or March 1 to March 15.",
+        "schedule_id": "Pick the scheduled transaction by tapping am or replying with the number.",
+        "schedule_time": "Reply with the date and time for the schedule.",
+        "authorization": "Complete authorization make we continue.",
+        "pin": "Complete PIN authorization make we continue.",
+        "named_field": "Send the {field} make we continue.",
+        "generic": "Send the missing details make we continue."
+      },
+      "confirmation": {
+        "to_authorization": "Reply yes make we continue to authorization, or say cancel.",
+        "to_continue": "Reply yes make we continue, or say cancel."
+      },
+      "auth": {
+        "pin": "Complete PIN authorization make we continue, or say cancel.",
+        "generic": "Complete authorization make we continue, or say cancel."
+      }
+    }
+  },
   "support": {
     "ask_reference": "Which transaction you dey ask about?",
     "ask_clarification": "Abeg fit give me more details?",
@@ -594,6 +630,38 @@
       "resuming": "Resuming {intent}...",
       "transaction_expired": "That transaction session don expire, so I no fit continue am. Please start the transaction again."
     },
+    "closure": {
+      "intent": {
+        "transfer": "transfer",
+        "airtime": "airtime purchase",
+        "data": "data purchase",
+        "transaction": "transaction"
+      },
+      "detour": {
+        "paused_while": "I pause the {paused_intent} while I {target_action}.",
+        "action": {
+          "account": "check your account",
+          "query": "check those transactions",
+          "support": "handle the support request",
+          "faq": "answer that question",
+          "beneficiary": "check your beneficiaries",
+          "transaction": "start the new {intent}",
+          "generic": "handle that"
+        }
+      },
+      "resume": {
+        "declined": "Okay, I no go resume that {intent}."
+      },
+      "edit": {
+        "amount": "I don update the amount to {amount}.",
+        "source_account": "I don update the source account to {bank}.",
+        "recipient": "I don update the recipient to {recipient}.",
+        "phone": "I don update the phone number to {phone}.",
+        "network": "I don update the network to {network}.",
+        "data_plan": "I don update the data plan to {plan}.",
+        "generic": "I don update the transaction details."
+      }
+    },
     "execution": {
       "source_account_info": "Comot from: {bank} (···{last4})",
       "source_account_info_with_balance": "Comot from: {bank} (···{last4}) • Balance: ₦{balance}",
@@ -649,6 +717,59 @@
       "transaction_completed": "Transaction completed",
       "async_status_message": "• *{status}*: {message}",
       "na": "N/A"
+    }
+  },
+  "context_frame": {
+    "noun": {
+      "saved_beneficiary": "saved beneficiary",
+      "saved_beneficiaries": "saved beneficiaries",
+      "linked_account": "linked account",
+      "linked_accounts": "linked accounts",
+      "scheduled_transaction": "scheduled transaction",
+      "scheduled_transactions": "scheduled transactions",
+      "transaction_or_result": "transaction or result",
+      "transactions_or_results": "transactions or results",
+      "transaction": "transaction",
+      "transactions": "transactions",
+      "receipt": "receipt",
+      "item": "item",
+      "items": "items"
+    },
+    "header": {
+      "data_plan_details": "Data Plan Details",
+      "saved_beneficiary_details": "Saved Beneficiary Details",
+      "beneficiary_details": "Beneficiary Details",
+      "linked_account_details": "Linked Account Details",
+      "account_details": "Account Details",
+      "transaction_details": "Transaction Details",
+      "receipt_details": "Receipt Details",
+      "scheduled_transaction_details": "Scheduled Transaction Details",
+      "details": "Details"
+    },
+    "detail": {
+      "next_run": "Next run: {value}",
+      "from": "From: {value}",
+      "status": "Status: {value}"
+    },
+    "followup": {
+      "showing_items": "Showing {shown_count} of {total_count} {noun}.",
+      "showing_matches": "Showing {shown_count} of {total_count} matches.",
+      "missing_entity": "I no see {target} inside the {noun} wey I show.",
+      "found_entity": "Yes. {target} dey inside the {noun} wey I show.",
+      "found_matching": "I found {count} matching {noun}:",
+      "found_matches_in_frame": "I found {count} matches in the {noun} I showed.",
+      "pending_scheduled_count": "You get {count} pending {noun}.",
+      "only_found": "Yes. Na only that {noun} I find.",
+      "count_found": "Yes. Na those {count} {noun} I find.",
+      "comparison_header": "Comparison",
+      "explain_count": "I showed {count} {noun} from the last result.",
+      "and_more_suffix": ", and {count} more",
+      "explain_labels": "I showed {count} {noun}: {labels}{suffix}.",
+      "clarify_beneficiary": "You dey ask about the saved beneficiaries wey I just show?",
+      "clarify_account": "You dey ask about the linked accounts wey I just show?",
+      "clarify_query": "You dey ask about the result wey I just show?",
+      "clarify_schedule": "You dey ask about the scheduled transactions wey I just show?",
+      "clarify_items": "You dey ask about the items wey I just show?"
     }
   },
   "referent": {

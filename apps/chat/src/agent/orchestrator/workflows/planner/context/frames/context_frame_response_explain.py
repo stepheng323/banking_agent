@@ -30,6 +30,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_constants import (
     CONTEXT_READ_LIST_LIMIT,
 )
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameFollowupDecision
 
 
@@ -38,6 +39,7 @@ def format_explain_result_response(
     decision: ContextFrameFollowupDecision | None = None,
     *,
     text: str = "",
+    locale: str = "en",
 ) -> str | None:
     if decision is not None:
         entities: list[ContextEntity] = []
@@ -61,56 +63,79 @@ def format_explain_result_response(
             if explanation:
                 return explanation
         if entities:
-            field_response = format_field_response(frame, entities, decision_field_text(decision))
-            return field_response or format_entity_details(frame, entities)
+            field_response = format_field_response(frame, entities, decision_field_text(decision), locale=locale)
+            return field_response or format_entity_details(frame, entities, locale=locale)
 
     count = len(frame.items)
     if count <= 0:
         return None
 
-    noun = frame_noun(frame.frame_type, plural=count != 1)
+    noun = frame_noun(frame.frame_type, plural=count != 1, locale=locale)
     labels = [entity.label for entity in frame.items[:CONTEXT_READ_LIST_LIMIT] if entity.label]
     if not labels:
-        return f"I showed {count} {noun} from the last result."
+        return render_message(
+            "context_frame.followup.explain_count",
+            locale,
+            {"count": count, "noun": noun},
+        )
 
     label_text = ", ".join(labels)
     overflow = count - len(labels)
-    suffix = f", and {overflow} more" if overflow > 0 else ""
-    return f"I showed {count} {noun}: {label_text}{suffix}."
+    suffix = (
+        render_message("context_frame.followup.and_more_suffix", locale, {"count": overflow}) if overflow > 0 else ""
+    )
+    return render_message(
+        "context_frame.followup.explain_labels",
+        locale,
+        {"count": count, "noun": noun, "labels": label_text, "suffix": suffix},
+    )
 
 
-def format_frame_clarification_response(frame: ContextFrame) -> str | None:
+def format_frame_clarification_response(frame: ContextFrame, *, locale: str = "en") -> str | None:
     domain = frame_domain(frame.frame_type)
     if domain == "beneficiary":
-        return "Are you asking about the saved beneficiaries I just showed?"
+        return render_message("context_frame.followup.clarify_beneficiary", locale)
     if domain == "account":
-        return "Are you asking about the linked accounts I just showed?"
+        return render_message("context_frame.followup.clarify_account", locale)
     if domain == "query":
-        return "Are you asking about the result I just showed?"
+        return render_message("context_frame.followup.clarify_query", locale)
     if domain == "schedule":
-        return "Are you asking about the scheduled transactions I just showed?"
-    return "Are you asking about the items I just showed?"
+        return render_message("context_frame.followup.clarify_schedule", locale)
+    return render_message("context_frame.followup.clarify_items", locale)
 
 
-def format_unclear_grounded_target_response(frame: ContextFrame, text: str) -> str | None:
+def format_unclear_grounded_target_response(frame: ContextFrame, text: str, *, locale: str = "en") -> str | None:
     amount_refs = amount_reference_values(text)
     matches = find_matching_entities(frame, text)
     if len(matches) == 1:
-        return format_entity_details(frame, matches)
+        return format_entity_details(frame, matches, locale=locale)
     if len(matches) > 1:
-        return format_entity_details(frame, matches)
+        return format_entity_details(frame, matches, locale=locale)
     if amount_refs:
         amounts = ", ".join(format_currency_amount(value) for value in sorted(amount_refs))
-        return f"I don't see {amounts} in the {frame_noun(frame.frame_type, plural=True)} I showed."
+        return render_message(
+            "context_frame.followup.missing_entity",
+            locale,
+            {"target": amounts, "noun": frame_noun(frame.frame_type, plural=True, locale=locale)},
+        )
     return None
 
 
-def format_missing_amount_reference_response(frame: ContextFrame, text: str | None) -> str | None:
+def format_missing_amount_reference_response(
+    frame: ContextFrame,
+    text: str | None,
+    *,
+    locale: str = "en",
+) -> str | None:
     amount_refs = amount_reference_values(text)
     if not amount_refs:
         return None
     amounts = ", ".join(format_currency_amount(value) for value in sorted(amount_refs))
-    return f"I don't see {amounts} in the {frame_noun(frame.frame_type, plural=True)} I showed."
+    return render_message(
+        "context_frame.followup.missing_entity",
+        locale,
+        {"target": amounts, "noun": frame_noun(frame.frame_type, plural=True, locale=locale)},
+    )
 
 
 __all__ = [

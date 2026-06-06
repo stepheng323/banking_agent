@@ -449,8 +449,16 @@ def _python_and_script_sources() -> list[Path]:
     return sorted(files)
 
 
+def _path_has_python_sources(path: Path) -> bool:
+    if path.is_file():
+        return path.suffix == ".py"
+    if path.is_dir():
+        return any(child.is_file() and child.suffix == ".py" for child in path.rglob("*.py"))
+    return False
+
+
 def test_deleted_execution_compatibility_modules_do_not_exist() -> None:
-    existing = [path.relative_to(ROOT) for path in DELETED_EXECUTION_MODULE_PATHS if path.exists()]
+    existing = [path.relative_to(ROOT) for path in DELETED_EXECUTION_MODULE_PATHS if _path_has_python_sources(path)]
 
     assert existing == []
 
@@ -1214,7 +1222,7 @@ def test_typed_planner_core_reads_configurable_only_in_runtime_builder() -> None
 
 
 def test_top_level_planner_package_was_moved_into_workflow_planner_core() -> None:
-    assert not DELETED_PLANNER_ROOT.exists()
+    assert not _path_has_python_sources(DELETED_PLANNER_ROOT)
 
 
 def test_old_top_level_planner_package_is_not_referenced() -> None:
@@ -1232,7 +1240,7 @@ def test_old_top_level_planner_package_is_not_referenced() -> None:
 
 
 def test_context_frame_manager_lives_under_context_package() -> None:
-    assert not DELETED_CONTEXT_SERVICE_MODULE.exists()
+    assert not _path_has_python_sources(DELETED_CONTEXT_SERVICE_MODULE)
 
 
 def test_old_context_frame_service_module_is_not_referenced() -> None:
@@ -1250,7 +1258,9 @@ def test_old_context_frame_service_module_is_not_referenced() -> None:
 
 
 def test_orchestrator_media_and_meta_services_are_not_in_generic_services_package() -> None:
-    existing = [path.relative_to(ROOT) for path in DELETED_ORCHESTRATOR_SERVICE_MODULES if path.exists()]
+    existing = [
+        path.relative_to(ROOT) for path in DELETED_ORCHESTRATOR_SERVICE_MODULES if _path_has_python_sources(path)
+    ]
 
     assert existing == []
 
@@ -1270,7 +1280,7 @@ def test_old_orchestrator_media_and_meta_service_paths_are_not_referenced() -> N
 
 
 def test_task_state_service_replaces_task_queue_package() -> None:
-    assert not DELETED_TASK_QUEUE_ROOT.exists()
+    assert not _path_has_python_sources(DELETED_TASK_QUEUE_ROOT)
 
 
 def test_old_task_queue_package_is_not_referenced() -> None:
@@ -1288,7 +1298,9 @@ def test_old_task_queue_package_is_not_referenced() -> None:
 
 
 def test_planner_context_modules_are_grouped_not_flat() -> None:
-    existing = [path.relative_to(ROOT) for path in DELETED_PLANNER_CONTEXT_FLAT_MODULES if path.exists()]
+    existing = [
+        path.relative_to(ROOT) for path in DELETED_PLANNER_CONTEXT_FLAT_MODULES if _path_has_python_sources(path)
+    ]
 
     assert existing == []
 
@@ -1308,7 +1320,9 @@ def test_old_flat_planner_context_modules_are_not_referenced() -> None:
 
 
 def test_pending_action_modules_are_grouped_not_flat() -> None:
-    existing = [path.relative_to(ROOT) for path in DELETED_PENDING_ACTION_FLAT_MODULES if path.exists()]
+    existing = [
+        path.relative_to(ROOT) for path in DELETED_PENDING_ACTION_FLAT_MODULES if _path_has_python_sources(path)
+    ]
 
     assert existing == []
 

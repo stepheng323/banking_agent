@@ -63,13 +63,19 @@ def set_task_confirmation(
     snapshot: Any,
     update_message: Any,
 ) -> None:
+    previous_snapshot = task.payload.get("previous_confirmation_snapshot")
     confirmation = task.payload.setdefault("confirmation", {})
     confirmation["summary"] = summary
     confirmation["snapshot"] = snapshot
     if update_message:
         confirmation["update_message"] = update_message
+        confirmation.pop("previous_snapshot", None)
     else:
         confirmation.pop("update_message", None)
+        if isinstance(previous_snapshot, dict):
+            confirmation["previous_snapshot"] = dict(previous_snapshot)
+        else:
+            confirmation.pop("previous_snapshot", None)
     remove_task_payload_values(task, "transition_acknowledgment", "previous_confirmation_snapshot")
 
 

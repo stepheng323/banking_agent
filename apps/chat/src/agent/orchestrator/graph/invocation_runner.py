@@ -165,9 +165,8 @@ class GraphInvocationRunner:
                 progress_stage=progress_snapshot.stage_key,
                 progress_count=progress_snapshot.progress_count,
                 visible_progress_sent=progress_snapshot.progress_count > 0,
-                typing_policy=(
-                    "explicit_progress_typing_only" if preflight.enable_initial_typing else "suppressed_for_fastpath"
-                ),
+                typing_policy="consumer_owned_initial_typing",
+                preflight_initial_typing_enabled=preflight.enable_initial_typing,
                 typing_visibility_delay_ms=typing_visibility_delay_ms(context.channel),
             )
             total_duration = (time.perf_counter() - turn_start) * 1000

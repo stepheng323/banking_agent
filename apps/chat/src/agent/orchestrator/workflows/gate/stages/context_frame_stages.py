@@ -119,6 +119,7 @@ def _display_shortcut_followup(ctx: GateContext) -> ContextFrameFollowupResponse
             detected_language=ctx.current_locale,
             reason="short visible-context display request",
         ),
+        locale=ctx.current_locale,
     )
 
 
@@ -178,6 +179,7 @@ async def _resolve_context_frame_followup(
         ctx.message_text,
         decision=decision,
         replay_modifier=replay_modifier,
+        locale=ctx.current_locale,
     )
     return decision, frame_followup
 

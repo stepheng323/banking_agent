@@ -1680,10 +1680,10 @@ async def test_confirmation_correction_turn_reconfirms_without_completion_summar
     assert wave_updates["pending_interrupt"].kind == "confirmation"
     assert set(wave_updates["pending_interrupt"].task_ids) == {"t_transfer", "t_airtime"}
     outbox = wave_updates["outbox"]
-    assert len(outbox) == 1
-    assert outbox[0]["type"] == "request_confirmation"
-    assert "transaction summary" not in outbox[0]["summary"].lower()
-    assert "all transactions completed successfully" not in outbox[0]["summary"].lower()
+    assert [entry["type"] for entry in outbox] == ["say", "request_confirmation"]
+    assert "₦2,000" in outbox[0]["text"]
+    assert "transaction summary" not in outbox[1]["summary"].lower()
+    assert "all transactions completed successfully" not in outbox[1]["summary"].lower()
 
 
 @pytest.mark.asyncio

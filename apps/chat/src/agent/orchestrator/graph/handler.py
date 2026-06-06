@@ -8,11 +8,11 @@ from typing import Any, Literal
 
 import redis.asyncio as redis
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-from langgraph.graph.state import CompiledStateGraph
 
 from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.graph import build_orchestrator_graph
+from apps.chat.src.agent.orchestrator.graph.builder import CompiledOrchestratorGraph
 from apps.chat.src.agent.orchestrator.graph.checkpoint_serializer import OrchestratorRedisSerializer
 from apps.chat.src.agent.orchestrator.graph.housekeeping import OrchestratorHousekeeping
 from apps.chat.src.agent.orchestrator.graph.invocation_runner import GraphInvocationRunner
@@ -116,7 +116,7 @@ class OrchestratorGraphHandler:
         self._checkpointer_setup_lock = asyncio.Lock()
         self._error_window: deque[int] = deque(maxlen=200)
 
-        self.graph: CompiledStateGraph = build_orchestrator_graph(checkpointer=self.checkpointer)
+        self.graph: CompiledOrchestratorGraph = build_orchestrator_graph(checkpointer=self.checkpointer)
         self.housekeeping = OrchestratorHousekeeping(
             redis_client=redis_client,
             checkpointer=self.checkpointer,

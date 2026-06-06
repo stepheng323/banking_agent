@@ -3,7 +3,7 @@ from typing import Any, cast
 import pytest
 
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
-from shared.messaging.intents import RequestAuth, RequestConfirmation
+from shared.messaging.intents import RequestAuth, RequestConfirmation, SendTyping
 from shared.messaging.presenters.base import PresentationContext
 from shared.messaging.presenters.whatsapp import WhatsAppPresenter
 
@@ -12,6 +12,7 @@ class _StubFlowWhatsAppClient:
     def __init__(self) -> None:
         self.flow_calls: list[dict[str, Any]] = []
         self.text_calls: list[dict[str, Any]] = []
+        self.typing_calls: list[str] = []
 
     async def send_flow(self, **kwargs: Any) -> MessageResult:
         self.flow_calls.append(kwargs)
@@ -20,6 +21,10 @@ class _StubFlowWhatsAppClient:
     async def send_text(self, **kwargs: Any) -> dict[str, Any]:
         self.text_calls.append(kwargs)
         return {"messages": [{"id": "wa-text-msg-1"}]}
+
+    async def send_typing_indicator(self, message_id: str) -> dict[str, Any]:
+        self.typing_calls.append(message_id)
+        return {}
 
 
 @pytest.mark.asyncio
@@ -48,6 +53,53 @@ async def test_whatsapp_presenter_confirmation_uses_context_header() -> None:
     assert flow_config["flow_token"] == "transfer-pin-corr-1-123456789"
     assert "flow_action" not in flow_config
     assert flow_config["flow_action_payload"] == {"screen": "Pin"}
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_presenter_send_typing_uses_inbound_message_id() -> None:
+    client = _StubFlowWhatsAppClient()
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+
+    await presenter.present(
+        [SendTyping()],
+        PresentationContext(
+            channel="whatsapp",
+            phone_number="123456789",
+            metadata={"inbound_message_id": "wamid.inbound"},
+        ),
+    )
+
+    assert client.typing_calls == ["wamid.inbound"]
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_presenter_send_typing_falls_back_to_message_id() -> None:
+    client = _StubFlowWhatsAppClient()
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+
+    await presenter.present(
+        [SendTyping()],
+        PresentationContext(
+            channel="whatsapp",
+            phone_number="123456789",
+            metadata={"message_id": "wamid.message"},
+        ),
+    )
+
+    assert client.typing_calls == ["wamid.message"]
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_presenter_send_typing_noops_without_message_id() -> None:
+    client = _StubFlowWhatsAppClient()
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+
+    await presenter.present(
+        [SendTyping()],
+        PresentationContext(channel="whatsapp", phone_number="123456789"),
+    )
+
+    assert client.typing_calls == []
 
 
 @pytest.mark.asyncio

@@ -1104,6 +1104,7 @@ async def test_quality_audit_data_confirmation_source_edit_reconfirms_without_st
     confirmation_updates = await advance_wave(state, config)
 
     assert confirmation_updates["pending_interrupt"].kind == "confirmation"
+    assert confirmation_updates["outbox"][0] == {"type": "say", "text": "Updated the source account to GTBank."}
     confirmation = confirmation_updates["outbox"][-1]
     assert confirmation["type"] == "request_confirmation"
     assert confirmation["header"] == "Review Data Purchase"
@@ -1169,6 +1170,9 @@ async def test_quality_audit_data_confirmation_balance_detour_stashes_and_runs_a
     assert interrupt_updates["pending_interrupt"] is None
     assert len(interrupt_updates["stashed_sessions"]) == 1
     assert interrupt_updates["stashed_sessions"][0]["intent"] == "data"
+    assert interrupt_updates["outbox"] == [
+        {"type": "say", "text": "I paused the data purchase while I check your account."}
+    ]
     account_task = next(iter(interrupt_updates["tasks"].values()))
     assert account_task.type == "account"
     assert account_task.payload["message"] == "Whats my access balance"
@@ -1178,6 +1182,7 @@ async def test_quality_audit_data_confirmation_balance_detour_stashes_and_runs_a
 
     assert account_worker.last_user_message == "Whats my access balance"
     assert account_updates["outbox"] == [
+        {"type": "say", "text": "I paused the data purchase while I check your account."},
         {"type": "say", "text": "Your Access Bank account (···0003) has a balance of ₦30,000.00."}
     ]
     assert switched_state.referent_memory.items

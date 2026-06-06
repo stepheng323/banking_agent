@@ -1,6 +1,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.interrupt.return_to_flow import append_return_to_flow_tail
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_details import (
     _format_task_details_for_status,
@@ -19,6 +20,10 @@ def _build_status_query_response(
     status_query_type: str | None,
 ) -> str:
     state_view = interrupt_state_view(state)
+
+    def _with_return_to_flow_tail(message: str) -> str:
+        return append_return_to_flow_tail(message=message, state=state, interrupt=interrupt)
+
     flow_type = next(iter(sorted(task_types))) if task_types else "transaction"
     first_task = state_view.task(interrupt.task_ids[0]) if interrupt.task_ids else None
     required_fields = (
@@ -38,13 +43,13 @@ def _build_status_query_response(
             needed = ", ".join(_friendly_required_field(field) for field in required_fields)
             hint = _build_requirements_hint(required_fields, interrupt.kind)
             if hint:
-                return f"I still need: {needed}. {hint}".strip()
-            return f"I still need: {needed}."
+                return _with_return_to_flow_tail(f"I still need: {needed}. {hint}".strip())
+            return _with_return_to_flow_tail(f"I still need: {needed}.")
         if interrupt.kind == "confirmation":
-            return "I need your confirmation to continue. Reply yes to proceed or no to cancel."
+            return _with_return_to_flow_tail("I need your confirmation to continue.")
         if interrupt.kind == "auth":
-            return "I need PIN authorization to continue."
-        return "I am waiting for your next input to continue."
+            return _with_return_to_flow_tail("I need authorization to continue.")
+        return _with_return_to_flow_tail("I am waiting for your next input to continue.")
 
     lines = [f"We are in your {flow_type} flow and currently {stage_text}."]
     if first_task:
@@ -62,7 +67,7 @@ def _build_status_query_response(
         lines.append("Next step: confirm to continue.")
     elif interrupt.kind == "auth":
         lines.append("Next step: complete authorization.")
-    return " ".join(lines)
+    return _with_return_to_flow_tail(" ".join(lines))
 
 
 __all__ = ["_build_status_query_response"]

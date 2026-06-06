@@ -46,6 +46,7 @@ def format_semantic_decision_response(
     decision: ContextFrameFollowupDecision,
     *,
     text: str = "",
+    locale: str = "en",
 ) -> str | None:
     if decision.confidence < CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
         return None
@@ -64,7 +65,7 @@ def format_semantic_decision_response(
         return None
 
     if semantic_decision == "answer_completeness":
-        return format_completeness_response(frame)
+        return format_completeness_response(frame, locale=locale)
 
     if semantic_decision == "show_details":
         target_text = decision_target_text(decision)
@@ -73,44 +74,45 @@ def format_semantic_decision_response(
         if decision.selection_index is not None:
             idx = decision.selection_index - 1
             if 0 <= idx < len(frame.items):
-                field_response = format_field_response(frame, [frame.items[idx]], field_text)
-                return field_response or format_entity_details(frame, [frame.items[idx]])
+                field_response = format_field_response(frame, [frame.items[idx]], field_text, locale=locale)
+                return field_response or format_entity_details(frame, [frame.items[idx]], locale=locale)
         if rank_text:
             ranked = ranked_entity(frame, rank_text)
             if ranked is not None:
-                return format_entity_details(frame, [ranked])
+                return format_entity_details(frame, [ranked], locale=locale)
         if target_text:
             matches = find_matching_entities(frame, target_text)
             if matches:
-                field_response = format_field_response(frame, matches, field_text)
-                return field_response or format_entity_details(frame, matches)
-            missing_amount_response = format_missing_amount_reference_response(frame, target_text)
+                field_response = format_field_response(frame, matches, field_text, locale=locale)
+                return field_response or format_entity_details(frame, matches, locale=locale)
+            missing_amount_response = format_missing_amount_reference_response(frame, target_text, locale=locale)
             if missing_amount_response:
                 return missing_amount_response
         matches = find_filtered_entities(frame, decision.filters)
         if matches:
-            field_response = format_field_response(frame, matches, field_text)
-            return field_response or format_entity_details(frame, matches)
-        field_response = format_field_response(frame, frame.items, field_text)
+            field_response = format_field_response(frame, matches, field_text, locale=locale)
+            return field_response or format_entity_details(frame, matches, locale=locale)
+        field_response = format_field_response(frame, frame.items, field_text, locale=locale)
         if field_response:
             return field_response
-        return format_details_response(frame)
+        return format_details_response(frame, locale=locale)
 
     if semantic_decision == "lookup_entity":
         target_text = decision_target_text(decision)
         if not target_text:
-            return format_frame_clarification_response(frame)
-        return format_lookup_response(frame, target_text, explicit_lookup=True)
+            return format_frame_clarification_response(frame, locale=locale)
+        return format_lookup_response(frame, target_text, explicit_lookup=True, locale=locale)
 
     if semantic_decision == "filter_items":
         target_text = decision_target_text(decision)
         if not target_text and not decision.rank and not has_filters(decision.filters):
-            return format_frame_clarification_response(frame)
+            return format_frame_clarification_response(frame, locale=locale)
         return format_filter_response(
             frame,
             target_text,
             rank_text=decision_rank_text(decision),
             filters=decision.filters,
+            locale=locale,
         )
 
     if semantic_decision == "compare_items":
@@ -119,19 +121,20 @@ def format_semantic_decision_response(
             decision_target_text(decision) or None,
             rank_text=decision_rank_text(decision),
             filters=decision.filters,
+            locale=locale,
         )
 
     if semantic_decision == "select_item":
-        return format_selection_response(frame, decision)
+        return format_selection_response(frame, decision, locale=locale)
 
     if semantic_decision == "explain_result":
-        return format_explain_result_response(frame, decision, text=text)
+        return format_explain_result_response(frame, decision, text=text, locale=locale)
 
     if semantic_decision == "unclear" and decision.confidence >= CONTEXT_FRAME_FOLLOWUP_MIN_CONFIDENCE:
-        grounded_target = format_unclear_grounded_target_response(frame, text)
+        grounded_target = format_unclear_grounded_target_response(frame, text, locale=locale)
         if grounded_target:
             return grounded_target
-        return format_frame_clarification_response(frame)
+        return format_frame_clarification_response(frame, locale=locale)
 
     return None
 

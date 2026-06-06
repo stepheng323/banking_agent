@@ -1,8 +1,10 @@
 """Orchestrator Graph Construction (V3)."""
 
-from typing import Any, Literal, cast
+from typing import Literal
 
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Checkpointer
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows import (
@@ -14,10 +16,19 @@ from apps.chat.src.agent.orchestrator.workflows import (
     session_gate_direct_path,
 )
 
+CompiledOrchestratorGraph = CompiledStateGraph[
+    OrchestratorState,
+    None,
+    OrchestratorState,
+    OrchestratorState,
+]
 
-def build_orchestrator_graph(checkpointer: Any = None) -> Any:
+
+def build_orchestrator_graph(checkpointer: Checkpointer = None) -> CompiledOrchestratorGraph:
     """Build the top-level Orchestrator Graph."""
-    builder = StateGraph(OrchestratorState)
+    builder: StateGraph[OrchestratorState, None, OrchestratorState, OrchestratorState] = StateGraph(
+        OrchestratorState
+    )
 
     builder.add_node("ingest", ingest_message)
     builder.add_node("handle_interrupt", handle_pending_interrupt)
@@ -32,9 +43,9 @@ def build_orchestrator_graph(checkpointer: Any = None) -> Any:
 
     def route_interrupt(state: OrchestratorState) -> Literal["advance", "plan"] | str:
         if state.final_response:
-            return cast(str, END)
+            return END
         if state.pending_interrupt:
-            return cast(str, END)
+            return END
         if state.current_wave_index < len(state.waves):
             return "advance"
         return "plan"
@@ -63,14 +74,14 @@ def build_orchestrator_graph(checkpointer: Any = None) -> Any:
             final_response_hash=log_fingerprint(state.final_response),
         )
         if state.final_response:
-            return cast(str, END)
+            return END
         return "advance"
 
     builder.add_conditional_edges("plan", route_plan, {"advance": "advance", END: END})
 
     def route_advance(state: OrchestratorState) -> str:
         if state.pending_interrupt:
-            return cast(str, END)
+            return END
         if state.current_wave_index >= len(state.waves):
             return "finalize"
         return "advance"

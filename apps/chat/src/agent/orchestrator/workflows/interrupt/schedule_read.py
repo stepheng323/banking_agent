@@ -10,10 +10,12 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _could_be_schedule_interrupt_read_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_detail_fields import frame_noun
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameFollowupDecision
 
 
@@ -55,11 +57,19 @@ async def _resolve_schedule_read_during_pending_confirmation(
     frame = ContextFrameManager().latest_active_frame(state)
     if frame is None or frame.frame_type != ContextFrameType.SCHEDULE_LIST:
         return None
+    loaded_context = state.loaded_context if isinstance(state.loaded_context, dict) else {}
+    locale = str(loaded_context.get("language") or "en")
 
     if schedule_response_mode == "count":
         count = len(frame.items)
-        noun = "transaction" if count == 1 else "transactions"
-        response = f"You have {count} pending scheduled {noun}."
+        response = render_message(
+            "context_frame.followup.pending_scheduled_count",
+            locale,
+            {
+                "count": count,
+                "noun": frame_noun(frame.frame_type, plural=count != 1, locale=locale),
+            },
+        )
         context_frames = state_view.context_frames
     else:
         frame_response = build_context_frame_followup_response(
@@ -71,6 +81,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
                 detected_language=getattr(route, "detected_language", None),
                 reason="pending schedule confirmation read-only schedule request",
             ),
+            locale=locale,
         )
         if frame_response is None or not frame_response.response:
             return None

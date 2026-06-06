@@ -612,7 +612,7 @@ async def test_dismiss_resume_session_clears_stash_and_acknowledges() -> None:
     assert ctx.accumulator.to_updates()["stashed_sessions"] == []
     assert len(ctx.accumulator.to_updates()["context_frames"]) == 1
     assert ctx.accumulator.to_updates()["context_frames"][0].frame_id == "keep-frame"
-    assert ctx.accumulator.to_updates()["outbox"][0]["text"] == "Okay, I won't resume that request."
+    assert ctx.accumulator.to_updates()["outbox"][0]["text"] == "Okay, I won't resume that transfer."
 
 
 async def test_dismiss_resume_session_without_stash_is_safe() -> None:

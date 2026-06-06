@@ -24,7 +24,7 @@ from banking.security.authorization import AuthorizationResult
 from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
-from shared.messaging.intents import Say, ShowFlow
+from shared.messaging.intents import Say, SendTyping, ShowFlow
 from shared.messaging.prompt_suppression import (
     PENDING_INPUT_PROMPT_METADATA_KEY,
     PENDING_INPUT_PROMPT_ORIGIN_MESSAGE_ID_KEY,
@@ -200,6 +200,47 @@ class _OrchestratorStub:
         return self.resume_output
 
 
+class _SlowOrchestratorStub(_OrchestratorStub):
+    def __init__(
+        self,
+        context_manager: _ContextManagerStub,
+        *,
+        should_fail: bool = False,
+        output: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(context_manager, should_fail=should_fail, output=output)
+
+    async def invoke(
+        self,
+        phone_number: str,
+        text: str,
+        message_id: str,
+        *,
+        message_type: str = "text",
+        media_id: str | None = None,
+        mime_type: str | None = None,
+        quoted_message_id: str | None = None,
+        channel: str = "whatsapp",
+        channel_identity: str | None = None,
+        channel_metadata: dict[str, Any] | None = None,
+        user: Any | None = None,
+    ) -> dict[str, Any]:
+        await asyncio.sleep(0)
+        return await super().invoke(
+            phone_number,
+            text,
+            message_id,
+            message_type=message_type,
+            media_id=media_id,
+            mime_type=mime_type,
+            quoted_message_id=quoted_message_id,
+            channel=channel,
+            channel_identity=channel_identity,
+            channel_metadata=channel_metadata,
+            user=user,
+        )
+
+
 class _LockTimeoutOrchestratorStub(_OrchestratorStub):
     async def invoke(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         del args, kwargs
@@ -349,6 +390,100 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
     assert second["status"] == "duplicate_ignored"
     assert orchestrator.invoke_calls == 1
     assert len(enqueue_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_slow_message_consumer_turn_enqueues_initial_typing_before_final_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _SlowOrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    enqueue_calls: list[dict[str, Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        enqueue_calls.append({"args": list(args), "kwargs": kwargs})
+
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "_INITIAL_TYPING_DELAY_SECONDS", 0)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    response = await consumer._handle_message(_message("wamid-slow-typing"))
+
+    assert response is not None
+    assert response["status"] == "success"
+    assert len(enqueue_calls) == 2
+    typing_intents = enqueue_calls[0]["args"][3]
+    assert len(typing_intents) == 1
+    assert isinstance(typing_intents[0], SendTyping)
+    assert enqueue_calls[0]["kwargs"] == {
+        "metadata": {
+            "source": "message_consumer",
+            "message_id": "wamid-slow-typing",
+            "inbound_message_id": "wamid-slow-typing",
+            "dedupe_key": "whatsapp:2348162511023:wamid-slow-typing:typing:initial",
+            "typing_policy": "delayed_initial",
+        }
+    }
+    final_intents = enqueue_calls[1]["args"][3]
+    assert len(final_intents) == 1
+    assert isinstance(final_intents[0], Say)
+    assert final_intents[0].text == "ok"
+
+
+@pytest.mark.asyncio
+async def test_fast_message_consumer_turn_cancels_initial_typing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    enqueue_calls: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        enqueue_calls.append(list(args))
+
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    response = await consumer._handle_message(_message("wamid-fast-typing"))
+
+    assert response is not None
+    assert response["status"] == "success"
+    assert len(enqueue_calls) == 1
+    intents = enqueue_calls[0][3]
+    assert len(intents) == 1
+    assert isinstance(intents[0], Say)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_message_id_does_not_enqueue_initial_typing(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=False)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    enqueue_outbox_intents = AsyncMock()
+
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", enqueue_outbox_intents)
+
+    response = await consumer._handle_message(_message("wamid-dup-no-typing"))
+
+    assert response is not None
+    assert response["status"] == "duplicate_ignored"
+    enqueue_outbox_intents.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -694,6 +829,39 @@ async def test_safe_fallback_is_sent_when_orchestrator_invoke_fails(monkeypatch:
 
 
 @pytest.mark.asyncio
+async def test_slow_safe_fallback_keeps_initial_typing_before_fallback_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _SlowOrchestratorStub(context_manager, should_fail=True)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    enqueue_calls: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        enqueue_calls.append(list(args))
+
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "_INITIAL_TYPING_DELAY_SECONDS", 0)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    response = await consumer._handle_message(_message("wamid-slow-fail"))
+
+    assert response is not None
+    assert response["status"] == "safe_fallback"
+    assert len(enqueue_calls) == 2
+    assert isinstance(enqueue_calls[0][3][0], SendTyping)
+    fallback_intents = enqueue_calls[1][3]
+    assert len(fallback_intents) == 1
+    assert isinstance(fallback_intents[0], Say)
+    assert fallback_intents[0].text == "I'm sorry, I'm having trouble processing that right now."
+
+
+@pytest.mark.asyncio
 async def test_message_consumer_does_not_append_say_for_show_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     context_manager = _ContextManagerStub(should_claim=True)
     orchestrator = _OrchestratorStub(
@@ -945,6 +1113,41 @@ async def test_message_consumer_keeps_intermediate_confirmation(
     assert response is not None
     assert response["status"] == "success"
     enqueue_outbox_intents.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_slow_receipt_choice_path_can_emit_initial_typing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    enqueue_calls: list[list[Any]] = []
+
+    async def _handle_receipt_image_choice(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        del args, kwargs
+        await asyncio.sleep(0)
+        return {"status": "receipt_image_accepted"}
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        enqueue_calls.append(list(args))
+
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module, "_INITIAL_TYPING_DELAY_SECONDS", 0)
+    monkeypatch.setattr(message_consumer_module, "handle_receipt_image_choice", _handle_receipt_image_choice)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    response = await consumer._handle_message(_message("wamid-receipt-typing"))
+
+    assert response == {"status": "receipt_image_accepted"}
+    assert orchestrator.invoke_calls == 0
+    assert len(enqueue_calls) == 1
+    assert isinstance(enqueue_calls[0][3][0], SendTyping)
 
 
 @pytest.mark.asyncio

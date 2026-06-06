@@ -7,6 +7,7 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.chat.src.agent.orchestrator.graph.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
+from apps.chat.src.agent.orchestrator.graph.progress_delivery import OrchestratorProgressDelivery
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from banking.messaging.delivery.models import DeliveryAttemptResult
 from shared.config.settings import settings
@@ -99,6 +100,14 @@ class _ProgressTrackerStub:
     async def set_stage(self, stage_key: str, *, stage_metadata: dict | None = None) -> None:
         del stage_key, stage_metadata
         return
+
+
+class _PublisherStub:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def publish(self, topic: str, message: dict[str, object]) -> None:
+        self.calls.append({"topic": topic, "message": message})
 
 
 class _NoopDistributedLock:
@@ -424,7 +433,6 @@ async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_t
 ) -> None:
     graph = _GraphStub()
     context_manager = _ContextManagerStub()
-    typing_mock = AsyncMock()
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
         lambda redis_client: _CheckpointerStub(),
@@ -432,10 +440,6 @@ async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_t
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
         lambda checkpointer: graph,
-    )
-    monkeypatch.setattr(
-        "apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing",
-        typing_mock,
     )
 
     handler = OrchestratorGraphHandler(
@@ -480,7 +484,6 @@ async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_t
             "beneficiary_mode": "cache_only",
         }
     ]
-    typing_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -688,10 +691,31 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
             "progress_stage": "query.fetching_transactions",
             "progress_count": 0,
             "visible_progress_sent": False,
-            "typing_policy": "explicit_progress_typing_only",
+            "typing_policy": "consumer_owned_initial_typing",
+            "preflight_initial_typing_enabled": True,
             "typing_visibility_delay_ms": 650,
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_progress_delivery_does_not_publish_initial_typing_when_flag_is_true() -> None:
+    publisher = _PublisherStub()
+    progress_delivery = OrchestratorProgressDelivery(publisher)
+    tracker = _ProgressTrackerStub(progress_count=MAX_PROGRESS_MESSAGES, last_progress_sent_at=None)
+
+    await progress_delivery.run_updates(
+        tracker=tracker,
+        phone_number="2348000000003",
+        channel="whatsapp",
+        channel_identity="2348000000003",
+        inbound_message_id="wamid.no-typing",
+        thread_id="whatsapp:2348000000003",
+        turn_id="wamid.no-typing",
+        enable_initial_typing=True,
+    )
+
+    assert publisher.calls == []
 
 
 @pytest.mark.asyncio
@@ -725,13 +749,9 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
         delivery_events.append("finished")
         return DeliveryAttemptResult(status="delivered")
 
-    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
-        return DeliveryAttemptResult(status="delivered")
-
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -807,13 +827,9 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
         delivery_events.append("sent")
         return DeliveryAttemptResult(status="delivered")
 
-    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
-        return DeliveryAttemptResult(status="delivered")
-
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -934,13 +950,9 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
         dedupe_keys.append(str(metadata["dedupe_key"]))
         return DeliveryAttemptResult(status="delivered")
 
-    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
-        return DeliveryAttemptResult(status="delivered")
-
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -1058,13 +1070,9 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
         del args, kwargs
         return DeliveryAttemptResult(status="deduped_completed")
 
-    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
-        return DeliveryAttemptResult(status="delivered")
-
     monkeypatch.setattr(
         "apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_say", _enqueue_outbox_say
     )
-    monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.progress_delivery.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),

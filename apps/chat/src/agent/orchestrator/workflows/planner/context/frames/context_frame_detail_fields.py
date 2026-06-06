@@ -3,6 +3,8 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrameType
+from banking.presentation.i18n.message_keys import as_message_key
+from banking.presentation.i18n.renderer import render_message
 
 CONTEXT_READ_LIST_LIMIT = 5
 SENSITIVE_DETAIL_KEYS = {"pin", "otp", "password", "token", "secret"}
@@ -18,20 +20,26 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def frame_noun(frame_type: ContextFrameType, *, plural: bool) -> str:
+def frame_noun(frame_type: ContextFrameType, *, plural: bool, locale: str = "en") -> str:
     if frame_type == ContextFrameType.BENEFICIARY_LIST:
-        return "saved beneficiaries" if plural else "saved beneficiary"
+        key = "saved_beneficiaries" if plural else "saved_beneficiary"
+        return render_message(as_message_key(f"context_frame.noun.{key}"), locale)
     if frame_type == ContextFrameType.ACCOUNT_LIST:
-        return "linked accounts" if plural else "linked account"
+        key = "linked_accounts" if plural else "linked_account"
+        return render_message(as_message_key(f"context_frame.noun.{key}"), locale)
     if frame_type == ContextFrameType.SCHEDULE_LIST:
-        return "scheduled transactions" if plural else "scheduled transaction"
+        key = "scheduled_transactions" if plural else "scheduled_transaction"
+        return render_message(as_message_key(f"context_frame.noun.{key}"), locale)
     if frame_type == ContextFrameType.TRANSACTION_LIST:
-        return "transactions or results" if plural else "transaction or result"
+        key = "transactions_or_results" if plural else "transaction_or_result"
+        return render_message(as_message_key(f"context_frame.noun.{key}"), locale)
     if frame_type == ContextFrameType.TRANSACTION_DETAIL:
-        return "transactions" if plural else "transaction"
+        key = "transactions" if plural else "transaction"
+        return render_message(as_message_key(f"context_frame.noun.{key}"), locale)
     if frame_type == ContextFrameType.RECEIPT:
-        return "receipt"
-    return "items" if plural else "item"
+        return render_message("context_frame.noun.receipt", locale)
+    key = "items" if plural else "item"
+    return render_message(as_message_key(f"context_frame.noun.{key}"), locale)
 
 
 def candidate_detail_fields(entity: ContextEntity) -> list[tuple[str, Any]]:

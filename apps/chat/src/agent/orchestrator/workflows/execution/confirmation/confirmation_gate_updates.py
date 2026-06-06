@@ -5,6 +5,7 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload_for_tasks
+from apps.chat.src.agent.orchestrator.workflows.conversation_closure import build_edit_update_notice
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import gate_task_ids
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_summary import (
@@ -75,6 +76,17 @@ def _build_confirmation_gate_updates(
         candidate = confirmation_payload.get("update_message")
         if isinstance(candidate, str) and candidate.strip():
             update_messages.append(candidate)
+            continue
+        previous_snapshot = confirmation_payload.get("previous_snapshot")
+        current_snapshot = confirmation_payload.get("snapshot")
+        if isinstance(previous_snapshot, dict) and isinstance(current_snapshot, dict):
+            synthesized = build_edit_update_notice(
+                previous_snapshot=previous_snapshot,
+                current_snapshot=current_snapshot,
+                locale=locale,
+            )
+            if synthesized:
+                update_messages.append(synthesized)
     update_msg = _compact_confirmation_update_message(update_messages, locale)
     snapshots_by_task = {
         task_id: task.payload.get("confirmation", {}).get("snapshot", {}) for task_id, task in confirmation_tasks

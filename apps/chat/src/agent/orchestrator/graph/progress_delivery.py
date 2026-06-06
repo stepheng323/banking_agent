@@ -16,7 +16,7 @@ from apps.chat.src.agent.orchestrator.graph.progress import (
     should_emit_progress,
 )
 from banking.messaging.delivery.models import DeliveryAttemptResult
-from shared.messaging.outbox import enqueue_outbox_say, enqueue_outbox_typing
+from shared.messaging.outbox import enqueue_outbox_say
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 
 class OrchestratorProgressDelivery:
-    """Send typing indicators and bounded visible progress messages for one turn."""
+    """Send bounded visible progress messages for one turn."""
 
     def __init__(self, publisher: QueuePublisher) -> None:
         self.publisher = publisher
@@ -82,22 +82,9 @@ class OrchestratorProgressDelivery:
         turn_id: str,
         enable_initial_typing: bool,
     ) -> None:
+        del enable_initial_typing
         deduped_progress_keys: set[str] = set()
         delivery_target = channel_identity if channel != "whatsapp" and channel_identity else phone_number
-
-        if enable_initial_typing:
-            try:
-                await enqueue_outbox_typing(
-                    self.publisher,
-                    delivery_target,
-                    channel,
-                    metadata={
-                        "inbound_message_id": inbound_message_id,
-                        "dedupe_key": f"{thread_id}:{turn_id}:typing:0",
-                    },
-                )
-            except Exception as exc:
-                logger.warning("initial_typing_indicator_failed", error=str(exc))
 
         try:
             while True:
@@ -140,7 +127,6 @@ class OrchestratorProgressDelivery:
                     "progress_count": snapshot.progress_count,
                     "progress_turn_id": turn_id,
                     "inbound_message_id": inbound_message_id,
-                    "force_typing_indicator": True,
                 }
                 delivery_task = asyncio.create_task(
                     self.deliver_update(
