@@ -101,6 +101,8 @@ def log_route_metrics(
         routing_mode=final_state.get("routing_mode"),
         planner_used=bool(final_state.get("planner_used")),
         planner_primary_intent=_planner_primary_intent(final_state),
+        planner_clean=final_state.get("planner_clean"),
+        planner_dirty_reasons=list(final_state.get("planner_dirty_reasons") or []),
         direct_path_triggered=bool(final_state.get("direct_path_triggered")),
         expected_transaction_executors=list(final_state.get("preplanner_expected_transaction_executors") or []),
         task_executors=task_executors,

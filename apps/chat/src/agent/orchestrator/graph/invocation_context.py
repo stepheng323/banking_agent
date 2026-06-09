@@ -85,6 +85,13 @@ def build_invocation_result(
         "locale": resolved_locale,
         "delivery_metadata": {},
         "semantic_path_shape": semantic_path_shape,
+        "routing_owner": final_state.get("routing_owner"),
+        "routing_decision": final_state.get("routing_decision"),
+        "routing_target_domain": final_state.get("routing_target_domain"),
+        "routing_mode": final_state.get("routing_mode"),
+        "route_source": final_state.get("route_source"),
+        "planner_clean": final_state.get("planner_clean"),
+        "planner_dirty_reasons": list(final_state.get("planner_dirty_reasons") or []),
         "conversation_topic": final_state.get("conversation_topic")
         or conversation_topic_for_response(
             response_text,
