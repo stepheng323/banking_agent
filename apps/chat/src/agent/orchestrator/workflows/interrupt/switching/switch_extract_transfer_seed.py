@@ -12,10 +12,10 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extra
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_values import _coerce_money
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from shared.money import MoneyAmount
-from shared.types.planner import RecipientAllocation, TaskParameters
+from shared.types.planner import RecipientAllocation, TransferTaskParameters
 
 
-def _apply_transfer_source_account_entities(parameters: TaskParameters, entities: dict[str, Any]) -> None:
+def _apply_transfer_source_account_entities(parameters: TransferTaskParameters, entities: dict[str, Any]) -> None:
     source_bank_name = str(entities.get("source_bank_name") or "").strip()
     if source_bank_name:
         parameters.source_bank_name = source_bank_name
@@ -34,7 +34,7 @@ def _apply_transfer_source_account_entities(parameters: TaskParameters, entities
         parameters.use_dual_accounts = bool(entities.get("use_dual_accounts"))
 
 
-def _apply_transfer_split_entities(parameters: TaskParameters, entities: dict[str, Any]) -> None:
+def _apply_transfer_split_entities(parameters: TransferTaskParameters, entities: dict[str, Any]) -> None:
     explicit_split = entities.get("explicit_split")
     if isinstance(explicit_split, dict):
         normalized_split: dict[str, MoneyAmount] = {}
@@ -70,8 +70,8 @@ async def _seed_transfer_switch_payload(
     interrupt: Any,
     text: str,
     services: OrchestrationServices,
-) -> tuple[TaskParameters, dict[str, Any], str, bool]:
-    parameters = TaskParameters()
+) -> tuple[TransferTaskParameters, dict[str, Any], str, bool]:
+    parameters = TransferTaskParameters()
     payload_seed: dict[str, Any] = {}
     action = _infer_transfer_switch_action(text, set())
     entities, features, acknowledgment = await _extract_interrupt_switch_entities(

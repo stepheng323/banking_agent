@@ -19,7 +19,13 @@ from banking.policy.service import capability_block_message
 from banking.runtime.results import FAQOutcome, SupportOutcome, TransactionOutcome
 from banking.support.worker import SupportWorker
 from banking.transfers.worker import TransferWorker
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    DataTaskParameters,
+    PlannerOutput,
+    SupportTaskParameters,
+    TransferTaskParameters,
+    make_planned_task,
+)
 
 CAPABILITY_POLICY_PATH = "banking/policy/defaults/capability_policy.json"
 DATA_DISABLED_MESSAGE = (
@@ -95,12 +101,12 @@ async def test_planner_blocks_all_disabled_data_tasks(tmp_path: Path) -> None:
         planner_output = PlannerOutput(
             primary_intent="data",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="data_1",
                     action="buy_data",
                     executor="data",
                     instruction="Buy 1GB data",
-                    parameters=TaskParameters(plan="1GB", phone="08031234567", network="MTN"),
+                    parameters=DataTaskParameters(plan="1GB", phone="08031234567", network="MTN"),
                     risk="MONEY_MOVE",
                 )
             ],
@@ -128,20 +134,20 @@ async def test_planner_continues_supported_tasks_when_data_is_disabled(tmp_path:
         planner_output = PlannerOutput(
             primary_intent="mixed",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="transfer_1",
                     action="send_money",
                     executor="transfer",
                     instruction="Send 5k to Tolu",
-                    parameters=TaskParameters(amount=5000, recipient="Tolu", recipient_name="Tolu"),
+                    parameters=TransferTaskParameters(amount=5000, recipient="Tolu", recipient_name="Tolu"),
                     risk="MONEY_MOVE",
                 ),
-                PlannedTask(
+                make_planned_task(
                     task_id="data_1",
                     action="buy_data",
                     executor="data",
                     instruction="Buy 1GB data",
-                    parameters=TaskParameters(plan="1GB", phone="08031234567", network="MTN"),
+                    parameters=DataTaskParameters(plan="1GB", phone="08031234567", network="MTN"),
                     risk="MONEY_MOVE",
                 ),
             ],
@@ -226,12 +232,12 @@ async def test_planner_blocks_disabled_schedule_transfer_task(tmp_path: Path) ->
         planner_output = PlannerOutput(
             primary_intent="transfer",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="transfer_1",
                     action="schedule_transfer",
                     executor="transfer",
                     instruction="Send 5k to Tolu tomorrow",
-                    parameters=TaskParameters(amount=5000, recipient="Tolu", scheduled="tomorrow"),
+                    parameters=TransferTaskParameters(amount=5000, recipient="Tolu", scheduled="tomorrow"),
                     risk="MONEY_MOVE",
                 )
             ],
@@ -258,12 +264,12 @@ async def test_planner_blocks_disabled_schedule_inferred_from_send_money_task(tm
         planner_output = PlannerOutput(
             primary_intent="transfer",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="transfer_1",
                     action="send_money",
                     executor="transfer",
                     instruction="Send 5k to Tolu tomorrow",
-                    parameters=TaskParameters(amount=5000, recipient="Tolu", scheduled="tomorrow"),
+                    parameters=TransferTaskParameters(amount=5000, recipient="Tolu", scheduled="tomorrow"),
                     risk="MONEY_MOVE",
                 )
             ],
@@ -318,12 +324,12 @@ async def test_planner_blocks_disabled_support_task_alias(tmp_path: Path) -> Non
         planner_output = PlannerOutput(
             primary_intent="support",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="support_1",
                     action="report_issue",
                     executor="support",
                     instruction="My transfer failed",
-                    parameters=TaskParameters(),
+                    parameters=SupportTaskParameters(),
                     risk="READ_ONLY",
                 )
             ],
@@ -350,12 +356,12 @@ async def test_planner_blocks_disabled_faq_task(tmp_path: Path) -> None:
         planner_output = PlannerOutput(
             primary_intent="faq",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="faq_1",
                     action="answer_question",
                     executor="faq",
                     instruction="What are the transfer fees?",
-                    parameters=TaskParameters(),
+                    parameters=SupportTaskParameters(),
                     risk="READ_ONLY",
                 )
             ],

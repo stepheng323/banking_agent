@@ -51,3 +51,4 @@ class ContextFrame(BaseModel):
     source_message_id: str | None = None
     created_at_ts: int
     ttl_seconds: int = 600
+    metadata: dict[str, Any] = Field(default_factory=dict)

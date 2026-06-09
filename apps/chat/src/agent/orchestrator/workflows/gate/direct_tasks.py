@@ -7,6 +7,9 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
     derive_transfer_schedule_fields,
     infer_schedule_action_from_text,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.read_only_response import (
+    classify_read_only_response_shape,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _current_locale
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import DIRECT_DOMAIN_ACTIONS
 from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView
@@ -49,6 +52,23 @@ def _next_direct_beneficiary_task_id(existing_tasks: dict[str, TaskSpec]) -> str
     return task_id
 
 
+def _direct_task_response_shape(
+    *,
+    state_view: GateStateView,
+    message_text: str,
+    schedule_response_mode: Literal["list", "count"] | None,
+) -> str | None:
+    if schedule_response_mode == "count":
+        return "fact_count"
+    if schedule_response_mode == "list":
+        return "surface_list"
+    return classify_read_only_response_shape(
+        message_text,
+        loaded_context=state_view.loaded_context_or_empty,
+        query_session_snapshot=state_view.stashed_query_session,
+    )
+
+
 def _build_direct_domain_task(
     *,
     state_view: GateStateView,
@@ -67,6 +87,13 @@ def _build_direct_domain_task(
         "message": task_message,
         "instruction": task_message,
     }
+    response_shape = _direct_task_response_shape(
+        state_view=state_view,
+        message_text=task_message or "",
+        schedule_response_mode=schedule_response_mode,
+    )
+    if response_shape:
+        payload["response_shape"] = response_shape
     if domain == "query":
         if mode == "new":
             payload["force_new_query"] = True
@@ -94,6 +121,10 @@ def _build_direct_domain_task(
         payload["action"] = "list_beneficiaries"
         payload["intent"] = "list_beneficiaries"
         payload["list_intent"] = True
+        if response_shape == "fact_count":
+            payload["count_intent"] = True
+        elif response_shape == "fact_bool":
+            payload["existence_intent"] = True
     elif domain == "schedule":
         payload["action"] = "list_scheduled_transactions"
         if schedule_response_mode in {"list", "count"}:

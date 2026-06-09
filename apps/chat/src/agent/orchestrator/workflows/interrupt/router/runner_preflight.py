@@ -2,11 +2,20 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.auth.auth_flow import _handle_auth_interrupt
+from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_additive import (
+    _deterministic_additive_transaction_updates,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_cancel import (
     _deterministic_cancel_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_confirmation import (
     _confirmation_repeat_updates,
+)
+from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_confirmation_edit import (
+    _confirmation_narration_edit_updates,
+)
+from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_fresh_command import (
+    _fresh_command_switch_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_input import (
     _input_greeting_updates,
@@ -21,6 +30,10 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.expiry.expiry_updates 
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.pending_action.engine.pending_action_semantic import (
     _resolve_semantic_pending_action_edit_updates,
+)
+from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
+    active_flow_question_updates,
+    classify_deterministic_active_flow_question,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.router.runner_callbacks import _verified_pin_callback_updates
 from apps.chat.src.agent.orchestrator.workflows.interrupt.runtime import InterruptRuntime
@@ -78,6 +91,32 @@ async def _resolve_pre_router_interrupt_updates(
     )
     if schedule_read_updates is not None:
         return schedule_read_updates
+
+    question_route = classify_deterministic_active_flow_question(
+        text=runtime.text,
+        interrupt=runtime.interrupt,
+        current_task_types=runtime.current_task_types,
+    )
+    if question_route is not None and question_route.question_type not in {None, "unknown"}:
+        return active_flow_question_updates(
+            state=state,
+            interrupt=runtime.interrupt,
+            route=question_route,
+            current_task_types=runtime.current_task_types,
+            semantic_path_shape="deterministic_active_flow_question",
+        )
+
+    fresh_command_updates = await _fresh_command_switch_updates(state=state, runtime=runtime)
+    if fresh_command_updates is not None:
+        return fresh_command_updates
+
+    additive_updates = _deterministic_additive_transaction_updates(state=state, runtime=runtime)
+    if additive_updates is not None:
+        return additive_updates
+
+    narration_edit_updates = _confirmation_narration_edit_updates(state=state, runtime=runtime)
+    if narration_edit_updates is not None:
+        return narration_edit_updates
 
     semantic_edit_updates = await _resolve_semantic_pending_action_edit_updates(
         state=state,

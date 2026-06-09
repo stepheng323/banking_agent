@@ -41,8 +41,25 @@ BANKING_REFUSAL_PATTERN_RE = re.compile(
     re.IGNORECASE,
 )
 JOKE_PATTERN_RE = re.compile(r"\b(?:joke|funny|laugh|another one)\b", re.IGNORECASE)
-JOKE_FOLLOWUP_PATTERN_RE = re.compile(
-    r"\b(?:another one|one more|again|another joke|small joke|small one|more)\b",
+CASUAL_FACT_PATTERN_RE = re.compile(
+    r"\b(?:"
+    r"fun\s+facts?|interesting\s+facts?|weird\s+(?:facts?|but\s+true)|"
+    r"(?:strange|surprising)\s+(?:facts?|but\s+true)|"
+    r"tell\s+me\s+(?:a\s+)?fun\s+fact|"
+    r"tell\s+me\s+something\s+(?:so\s+)?(?:weird|strange|interesting|surprising)(?:\s+but\s+true)?"
+    r")\b",
+    re.IGNORECASE,
+)
+CASUAL_FOLLOWUP_PATTERN_RE = re.compile(
+    r"\b(?:tell\s+me\s+more|another one|one more|again|continue|another joke|small joke|small one|more)\b",
+    re.IGNORECASE,
+)
+JOKE_FOLLOWUP_PATTERN_RE = CASUAL_FOLLOWUP_PATTERN_RE
+CONTEXT_FRAME_DISPLAY_FOLLOWUP_RE = re.compile(
+    r"\b(?:"
+    r"show|view|see|display|open|list|details?|transaction|transactions|transfer|"
+    r"airtime|data|receipt|receipts|account|accounts|balance|balances|history|statement"
+    r")\b",
     re.IGNORECASE,
 )
 BANKING_RESULT_CONTEXT_RE = re.compile(
@@ -170,12 +187,14 @@ def sanitize_preface(raw_text: str | None, *, locale: str) -> str | None:
 def is_contextual_casual_followup_turn(text: str | None, history: list[Any] | None) -> bool:
     if not text:
         return False
-    if not JOKE_FOLLOWUP_PATTERN_RE.search(text):
+    if CONTEXT_FRAME_DISPLAY_FOLLOWUP_RE.search(text):
+        return False
+    if not CASUAL_FOLLOWUP_PATTERN_RE.search(text):
         return False
     history_text = recent_history_text(history or [])
     if not history_text:
         return False
-    return bool(JOKE_PATTERN_RE.search(history_text))
+    return bool(JOKE_PATTERN_RE.search(history_text) or CASUAL_FACT_PATTERN_RE.search(history_text))
 
 
 def is_banking_result_reaction(text: str | None, history: list[Any] | None) -> bool:
@@ -201,7 +220,9 @@ def is_banking_result_reaction(text: str | None, history: list[Any] | None) -> b
 def is_joke_turn(text: str, history: list[Any]) -> bool:
     if JOKE_PATTERN_RE.search(text):
         return True
-    if not JOKE_FOLLOWUP_PATTERN_RE.search(text):
+    if CONTEXT_FRAME_DISPLAY_FOLLOWUP_RE.search(text):
+        return False
+    if not CASUAL_FOLLOWUP_PATTERN_RE.search(text):
         return False
     history_text = recent_history_text(history)
     return bool(JOKE_PATTERN_RE.search(history_text))
@@ -214,6 +235,8 @@ def deterministic_joke_fallback(*, casual_streak: int) -> str:
 
 __all__ = [
     "BLOCKED_PATTERN_RE",
+    "CASUAL_FACT_PATTERN_RE",
+    "CASUAL_FOLLOWUP_PATTERN_RE",
     "JOKE_PATTERN_RE",
     "MAX_CASUAL_REPLY_STREAK",
     "MAX_REPLY_CHARS",

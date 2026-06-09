@@ -78,7 +78,7 @@ _SEPARATE_BANKING_TASK_PATTERNS = (
     r"\b(show|list|view|check)\b.*\b(transaction|transactions|history|spend|spent|expenses?)\b",
     r"\b(spend|spent|expenses?|transaction history|transactions?)\b",
     r"\b(scheduled transactions?|schedule list|show schedule|show scheduled)\b",
-    r"\b(failed|debited|refund|complain|complaint|support|ticket)\b",
+    r"\b(fail(?:ed|ure)?|debited|refund|complain|complaint|support|ticket)\b",
 )
 
 _FRESH_TASK_PATTERNS = (
@@ -579,6 +579,7 @@ def _payload_current_summary(payload: dict[str, Any], task_type: str) -> str | N
             _field_value(payload, "amount", task_type),
             _field_value(payload, "phone", task_type),
             _field_value(payload, "network", task_type),
+            _field_value(payload, "source_account_id", task_type),
         ]
         if task_type == "data":
             parts.append(_field_value(payload, "data_plan_id", task_type))

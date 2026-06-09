@@ -5,6 +5,10 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
     unsupported_capability_params,
 )
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import _is_query_domain_request
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.query_followups import (
+    _query_followup_bypass_reason,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.unsupported_capability_routing import (
@@ -17,11 +21,28 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+async def _query_can_own_unsupported_turn(ctx: GateContext) -> bool:
+    if _is_query_domain_request(ctx.message_text):
+        return True
+
+    await ctx.ensure_query_session()
+    bypass_reason, _ = _query_followup_bypass_reason(
+        message_text=ctx.message_text,
+        locale=ctx.current_locale,
+        query_session_snapshot=ctx.query_session_snapshot if isinstance(ctx.query_session_snapshot, dict) else None,
+        has_context_frames=ctx.state_view.has_context_frames,
+    )
+    return bypass_reason is not None
+
+
 async def _stage_semantic_unsupported_capability(ctx: GateContext) -> dict[str, Any] | None:
     """Semantic fallback for unsupported capability boundaries not caught by registry phrases."""
     if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or not ctx.phrase_heavy_fastpath_allowed:
         return None
     if detect_unsupported_capability(ctx.message_text) is not None:
+        return None
+    if await _query_can_own_unsupported_turn(ctx):
+        logger.info("gate_semantic_unsupported_capability_skipped_for_query_turn")
         return None
     if is_supported_banking_request(ctx.message_text):
         return None

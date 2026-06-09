@@ -5,9 +5,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_airtime_request,
     _is_obvious_data_request,
 )
-from banking.transactions.query.services.parsing.parser import QueryParser
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut_with_reason
-from banking.transactions.query.utils.timezone import lagos_today
 
 
 def _query_followup_bypass_reason(
@@ -29,11 +27,8 @@ def _query_followup_bypass_reason(
         return "query_shortcut", shortcut.action
 
     if query_session_snapshot.get("pending_clarification"):
-        parsed_time_range = QueryParser.parse_clarification_time_range(message_text, today=lagos_today())
-        if parsed_time_range is not None:
-            return "pending_clarification", parsed_time_range.period or "days_back"
-        return None, miss_reason
+        return "pending_clarification", miss_reason or "query_session_active"
 
-    if has_context_frames:
+    if query_session_snapshot.get("query_contract") or has_context_frames:
         return "active_query_session", miss_reason or "query_session_active"
     return None, miss_reason

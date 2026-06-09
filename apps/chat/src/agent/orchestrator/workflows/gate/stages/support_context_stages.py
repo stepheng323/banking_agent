@@ -15,6 +15,7 @@ from banking.intent.routing_signals import (
     looks_like_transaction_replay_modifier_request,
 )
 from banking.presentation.i18n.renderer import render_message
+from banking.support.classifier import classify_support_intent_deterministic
 from banking.support.context_manager import SupportContextManager
 from shared.utils.logging import get_logger
 
@@ -178,6 +179,9 @@ async def _stage_recent_transaction_support_request(ctx: GateContext) -> dict[st
         return None
     if not _looks_like_recent_transaction_reversal_request(ctx.message_text):
         return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="recent_transaction_support_guard"):
+        logger.info("gate_recent_transaction_support_deferred_to_semantic_router_for_active_query")
+        return None
     entity = _latest_single_transaction_entity(ctx)
     if entity is None:
         if _latest_transaction_context_needs_clarification(ctx):
@@ -227,18 +231,46 @@ async def _stage_recent_transaction_support_request(ctx: GateContext) -> dict[st
 
 
 async def _stage_support_issue_request(ctx: GateContext) -> dict[str, Any] | None:
-    """Attach a non-authoritative support hint for common transaction/ticket issue phrases."""
+    """Route common transaction/ticket issue phrases directly to support."""
     if (
         ctx.live_pending_interrupt
         or ctx.state_view.has_quote
-        or ctx.task_planner is None
         or not _looks_like_support_issue_request(ctx.message_text)
     ):
         return None
-    ctx.add_routing_hint(
-        domain="support",
-        reason="transaction_or_ticket_issue_phrase",
-        source="support_issue_phrase",
+    if await ctx.defer_active_query_session_to_semantic_router(source="support_issue_guard"):
+        logger.info("gate_support_issue_deferred_to_semantic_router_for_active_query")
+        return None
+
+    if block_message := _direct_domain_capability_block_message(ctx.state_view, "support"):
+        logger.info("gate_support_issue_policy_blocked")
+        return direct_response(
+            ctx,
+            response=block_message,
+            owner="guardrail",
+            decision="capability_blocked",
+            semantic_path_shape="support_issue_policy_blocked",
+            target_domain="support",
+            route_source="support_issue_guard",
+            heuristic_type="guardrail_shortcut",
+            heuristic_name="support_issue_phrase",
+        )
+
+    task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="support")
+    deterministic = classify_support_intent_deterministic(ctx.message_text)
+    if deterministic is not None and deterministic.intent is not None and deterministic.confidence >= 0.85:
+        spec.payload["intent"] = deterministic.intent.value
+    logger.info("gate_support_issue_direct", task_id=task_id)
+    return task_dispatch(
+        ctx,
+        tasks={task_id: spec},
+        waves=[[task_id]],
+        owner="guardrail",
+        decision="support_issue_direct",
+        semantic_path_shape="support_issue_direct",
+        extra_updates={"pending_interrupt": None},
+        target_domain="support",
+        route_source="support_issue_guard",
+        heuristic_type="guardrail_shortcut",
+        heuristic_name="support_issue_phrase",
     )
-    logger.info("gate_support_issue_hint_attached")
-    return None

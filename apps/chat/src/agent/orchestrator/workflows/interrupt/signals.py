@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
-NON_TRANSACTION_SWITCH_INTENTS = {"query", "account", "faq", "support", "beneficiary"}
+NON_TRANSACTION_SWITCH_INTENTS = {"query", "account", "faq", "support", "beneficiary", "schedule"}
 KNOWN_SWITCH_INTENTS = TRANSACTION_INTENTS | NON_TRANSACTION_SWITCH_INTENTS
 INTERRUPT_REQUIRED_FIELDS_MAX_CHARS = 700
 INTERRUPT_PROMPT_MAX_CHARS = 300
@@ -25,6 +25,10 @@ _SCHEDULE_INTERRUPT_READ_CANDIDATE_RE = re.compile(
     r"\b(?:haziri|ugwo|mbufe|azumahia)\b.*\b(?:emechaa|na-abia|oge)\b"
     r")"
 )
+_SCHEDULE_INTERRUPT_MUTATION_RE = re.compile(
+    r"\b(?:cancel|stop|delete|remove|change|edit|update|move|shift|reschedule)\b",
+    re.IGNORECASE,
+)
 _ACCOUNT_BALANCE_INTERRUPT_RE = re.compile(
     r"\b(?:balance|account\s+balance|check\s+my\s+balance|"
     r"what(?:'s| is)?\s+my\s+.+?\bbalance\b|"
@@ -44,6 +48,8 @@ _INPUT_INTERRUPT_GREETING_RE = re.compile(
 def _could_be_schedule_interrupt_read_request(text: str) -> bool:
     normalized = " ".join((text or "").split())
     if not normalized or len(normalized) > 180:
+        return False
+    if _SCHEDULE_INTERRUPT_MUTATION_RE.search(normalized):
         return False
     return bool(_SCHEDULE_INTERRUPT_READ_CANDIDATE_RE.search(normalized))
 

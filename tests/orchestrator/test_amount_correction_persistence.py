@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import PlannerOutput, TransferTaskParameters, make_planned_task
 
 
 class _MockPlanner:
@@ -56,12 +56,12 @@ async def test_plan_tasks_updates_amount_on_same_intent() -> None:
         primary_intent="transfer",
         confidence=0.98,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 15000 to Mum",
-                parameters=TaskParameters(amount=15000),
+                parameters=TransferTaskParameters(amount=15000),
             )
         ],
     )

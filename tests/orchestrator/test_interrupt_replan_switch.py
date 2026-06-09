@@ -22,14 +22,17 @@ from banking.runtime.results import (
     TransactionResult,
 )
 from shared.types.planner import (
+    AirtimeTaskParameters,
+    BeneficiaryTaskParameters,
+    DataTaskParameters,
     InterruptRouteDecision,
     PendingActionEditDecision,
     PendingActionFieldUpdates,
     PendingActionTargetedUpdate,
-    PlannedTask,
     PlannerOutput,
     SemanticRouteDecision,
-    TaskParameters,
+    TransferTaskParameters,
+    make_planned_task,
 )
 
 
@@ -261,6 +264,19 @@ class _PendingEditOnlyPlanner(_FailIfRouterCalledPlanner):
         return self._decision
 
 
+class _FailIfPendingEditCalledPlanner(_FailIfRouterCalledPlanner):
+    async def interpret_pending_action_edit(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> PendingActionEditDecision:
+        del phone_number, text, context, path_label
+        raise AssertionError("interpret_pending_action_edit should not be called for active-flow questions")
+
+
 class _AccountBalanceWorker:
     def __init__(self) -> None:
         self.last_user_message: str | None = None
@@ -385,6 +401,82 @@ async def test_pending_schedule_confirmation_allows_read_only_schedule_view() ->
 
 
 @pytest.mark.asyncio
+async def test_pending_transaction_input_schedule_read_switches_without_pending_edit_llm() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_stale_data_schedule",
+        phone_number="2348011111200",
+        channel="whatsapp",
+        last_message_text="Show my scheduled transactions",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_data"],
+            fields_by_task={"t_data": ["plan"]},
+            prompt="Which MTN data plan make I use?",
+        ),
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.RESOLVED,
+                payload={"network": "MTN", "target_phone": "08162511023"},
+            )
+        },
+        waves=[["t_data"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert len(updates["stashed_sessions"]) == 1
+    task_ids = list(updates["tasks"].keys())
+    assert len(task_ids) == 1
+    task = updates["tasks"][task_ids[0]]
+    assert task.type == "schedule"
+    assert task.payload["action"] == "list_scheduled_transactions"
+    assert task.payload["message"] == "Show my scheduled transactions"
+
+
+@pytest.mark.asyncio
+async def test_pending_transaction_input_support_issue_switches_without_pending_edit_llm() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_stale_data_support",
+        phone_number="2348011111201",
+        channel="whatsapp",
+        last_message_text="Why did my transfer fail?",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t_data"],
+            fields_by_task={"t_data": ["plan"]},
+            prompt="Which MTN data plan make I use?",
+        ),
+        tasks={
+            "t_data": TaskSpec(
+                id="t_data",
+                type="data",
+                stage=TaskStage.RESOLVED,
+                payload={"network": "MTN", "target_phone": "08162511023"},
+            )
+        },
+        waves=[["t_data"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert len(updates["stashed_sessions"]) == 1
+    task_ids = list(updates["tasks"].keys())
+    assert len(task_ids) == 1
+    task = updates["tasks"][task_ids[0]]
+    assert task.type == "support"
+    assert task.payload["message"] == "Why did my transfer fail?"
+    assert task.payload["intent"] == "failed_transfer"
+
+
+@pytest.mark.asyncio
 async def test_interrupt_input_stashes_transfer_and_switches_to_beneficiary() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_1",
@@ -410,12 +502,12 @@ async def test_interrupt_input_stashes_transfer_and_switches_to_beneficiary() ->
         detected_language="Yoruba",
         normalized_instruction="show beneficiaries",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="list_beneficiaries",
                 executor="beneficiary",
                 instruction="List saved beneficiaries",
-                parameters=TaskParameters(),
+                parameters=BeneficiaryTaskParameters(),
                 risk="READ_ONLY",
             )
         ],
@@ -476,12 +568,12 @@ async def test_interrupt_input_same_executor_keeps_slot_filling_flow() -> None:
         detected_language="English",
         normalized_instruction="use gtbank",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Update transfer bank details",
-                parameters=TaskParameters(bank_name="GTBank"),
+                parameters=TransferTaskParameters(bank_name="GTBank"),
                 risk="MONEY_MOVE",
             )
         ],
@@ -797,12 +889,12 @@ async def test_interrupt_input_stashes_transfer_and_routes_new_single_transfer_d
         detected_language="English",
         normalized_instruction="send 8k to tolu",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t_new",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 8000 to Tolu",
-                parameters=TaskParameters(amount=8000, recipient="Tolu"),
+                parameters=TransferTaskParameters(amount=8000, recipient="Tolu"),
                 risk="MONEY_MOVE",
             )
         ],
@@ -867,12 +959,12 @@ async def test_interrupt_confirmation_stashes_transfer_and_routes_new_airtime_di
         detected_language="English",
         normalized_instruction="buy 2k airtime",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t_airtime",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Buy airtime",
-                parameters=TaskParameters(amount=2000),
+                parameters=AirtimeTaskParameters(amount=2000),
                 risk="MONEY_MOVE",
             )
         ],
@@ -933,12 +1025,12 @@ async def test_interrupt_auth_stashes_transfer_and_routes_new_data_directly() ->
         detected_language="English",
         normalized_instruction="buy 1gb data",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t_data",
                 action="buy_data",
                 executor="data",
                 instruction="Buy 1GB data",
-                parameters=TaskParameters(plan="1GB"),
+                parameters=DataTaskParameters(plan="1GB"),
                 risk="MONEY_MOVE",
             )
         ],
@@ -1094,6 +1186,134 @@ async def test_confirmation_continue_flow_resets_task_to_extracted() -> None:
         "sourceAccount": "1234567890",
     }
     assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
+async def test_confirmation_purpose_update_preserves_resolved_transfer_recipient() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_transfer_purpose_edit",
+        phone_number="2348066666676",
+        channel="whatsapp",
+        last_message_text="The purpose is for launch",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 5000,
+                    "recipient_name": "Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "recipient_resolution_provider": "saved_beneficiary",
+                    "beneficiary_id": "bene-adebayo",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "6000000003",
+                    "confirmation": {
+                        "summary": "Confirm transfer to Adebayo",
+                        "snapshot": {
+                            "amount": 5000,
+                            "recipient_name": "Adebayo",
+                            "recipient_resolved_name": "Tolu Adebayo",
+                            "recipient_account": "2010000001",
+                            "recipient_bank_name": "Access Bank",
+                        },
+                    },
+                    "idempotency_key": "idem-adebayo",
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t1"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert payload["narration"] == "for launch"
+    assert payload["authored_narration"] == "for launch"
+    assert payload["user_note"] == "for launch"
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["skip_extraction"] is True
+    assert payload["recipient_name"] == "Adebayo"
+    assert payload["recipient_resolved_name"] == "Tolu Adebayo"
+    assert payload["recipient_account"] == "2010000001"
+    assert payload["recipient_bank_name"] == "Access Bank"
+    assert payload["beneficiary_id"] == "bene-adebayo"
+    assert "idempotency_key" not in payload
+
+
+@pytest.mark.asyncio
+async def test_confirmation_purpose_update_handles_reset_transfer_stage() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_transfer_purpose_edit_reset_stage",
+        phone_number="2348066666676",
+        channel="whatsapp",
+        last_message_text="The purpose is for launch",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 5000,
+                    "recipient_name": "Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_bank_code": "044",
+                    "recipient_resolution_provider": "saved_beneficiary",
+                    "beneficiary_id": "bene-adebayo",
+                    "source_account_id": "acct-access",
+                    "source_bank_name": "Access Bank",
+                    "source_account_number": "6000000003",
+                    "confirmation": {
+                        "summary": "Confirm transfer to Adebayo",
+                        "snapshot": {
+                            "amount": 5000,
+                            "recipient_name": "Adebayo",
+                            "recipient_resolved_name": "Tolu Adebayo",
+                            "recipient_account": "2010000001",
+                            "recipient_bank_name": "Access Bank",
+                        },
+                    },
+                    "idempotency_key": "idem-adebayo",
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfRouterCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+    payload = updates["tasks"]["t1"].payload
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert payload["narration"] == "for launch"
+    assert payload["authored_narration"] == "for launch"
+    assert payload["user_note"] == "for launch"
+    assert payload["confirmation"] == {"confirmed": False}
+    assert payload["skip_extraction"] is True
+    assert payload["recipient_name"] == "Adebayo"
+    assert payload["recipient_resolved_name"] == "Tolu Adebayo"
+    assert payload["recipient_account"] == "2010000001"
+    assert payload["recipient_bank_name"] == "Access Bank"
+    assert payload["beneficiary_id"] == "bene-adebayo"
+    assert "idempotency_key" not in payload
 
 
 @pytest.mark.asyncio
@@ -2973,6 +3193,135 @@ async def test_confirmation_balance_query_switches_to_account_without_router() -
 
 
 @pytest.mark.asyncio
+async def test_confirmation_pin_reason_answers_without_pending_edit_or_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_pin_reason",
+        phone_number="2348077777782",
+        channel="whatsapp",
+        last_message_text="Why do you need my PIN?",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 2000,
+                    "recipient_name": "Tolu Access",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfPendingEditCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["semantic_path_shape"] == "deterministic_active_flow_question"
+    response = updates["outbox"][0]["text"].lower()
+    assert "pin" in response
+    assert "authorizes" in response
+
+
+@pytest.mark.asyncio
+async def test_confirmation_additive_self_airtime_bypasses_pending_edit_and_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_add_airtime_fast",
+        phone_number="2348077777783",
+        channel="whatsapp",
+        last_message_text="Buy me 1k airtime",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 2000,
+                    "recipient_name": "Tolu Access",
+                    "source_account_id": "acct_access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfPendingEditCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    added = [task for task_id, task in updates["tasks"].items() if task_id != "t_transfer"]
+    assert len(added) == 1
+    task = added[0]
+    assert task.type == "airtime"
+    assert task.payload["action"] == "buy_airtime"
+    assert task.payload["amount"] == 1000.0
+    assert task.payload["is_self"] is True
+    assert task.payload["skip_extraction"] is True
+    assert task.payload["source_account_id"] == "acct_access"
+    assert updates["waves"] == [["t_transfer", task.id]]
+
+
+@pytest.mark.asyncio
+async def test_confirmation_additive_self_data_bypasses_pending_edit_and_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_add_data_fast",
+        phone_number="2348077777784",
+        channel="whatsapp",
+        last_message_text="Buy 1GB MTN data for me",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 2000,
+                    "recipient_name": "Tolu Access",
+                    "source_account_id": "acct_access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _FailIfPendingEditCalledPlanner()},
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    added = [task for task_id, task in updates["tasks"].items() if task_id != "t_transfer"]
+    assert len(added) == 1
+    task = added[0]
+    assert task.type == "data"
+    assert task.payload["action"] == "buy_data"
+    assert task.payload["plan_name"] == "1GB"
+    assert task.payload["network"] == "MTN"
+    assert task.payload["is_self"] is True
+    assert task.payload["skip_extraction"] is True
+    assert task.payload["source_account_id"] == "acct_access"
+    assert updates["waves"] == [["t_transfer", task.id]]
+
+
+@pytest.mark.asyncio
 async def test_auth_balance_query_switches_to_account_without_router() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_7d_balance",
@@ -3236,6 +3585,47 @@ async def test_confirmation_guarded_router_approval_blocks_modification_text() -
 
 
 @pytest.mark.asyncio
+async def test_confirmation_guarded_router_approval_blocks_pidgin_narration_text() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_guarded_approve_block_pcm",
+        phone_number="2348088888901",
+        channel="telegram",
+        last_message_text="Na for transport",
+        loaded_context={"language": "pcm"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 2000,
+                    "recipient_name": "Tolu",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.95,
+            detected_language="Pidgin",
+            target_intent=None,
+            target_mode=None,
+            reason="unsafe pidgin narration approval",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload.get("confirmation", {}).get("confirmed") is not True
+
+
+@pytest.mark.asyncio
 async def test_auth_approve_flow_advances_non_pin_auth_to_executing() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_9",
@@ -3331,6 +3721,42 @@ async def test_callback_pin_verified_auto_approves_confirmation_without_router_c
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
     assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_callback_batch_pin_verified_auto_approves_transaction_batch_without_router_call() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_batch_pin",
+        phone_number="2348010101018",
+        channel="whatsapp",
+        last_message_text=None,
+        last_callback={"pin_verified": True, "flow_type": "batch"},
+        pin_verified=True,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"confirmation": {"summary": "Confirm transfer", "confirmed": False}},
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"confirmation": {"summary": "Confirm airtime", "confirmed": False}},
+            ),
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_transfer"].stage == TaskStage.EXECUTING
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.EXECUTING
+    assert updates["tasks"]["t_transfer"].payload["confirmation"]["confirmed"] is True
+    assert updates["tasks"]["t_airtime"].payload["confirmation"]["confirmed"] is True
 
 
 @pytest.mark.asyncio

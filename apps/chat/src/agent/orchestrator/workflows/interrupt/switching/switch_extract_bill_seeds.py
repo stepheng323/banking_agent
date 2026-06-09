@@ -12,7 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extra
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_values import _coerce_money
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
-from shared.types.planner import TaskParameters
+from shared.types.planner import AirtimeTaskParameters, DataTaskParameters
 
 
 async def _seed_airtime_switch_payload(
@@ -21,8 +21,8 @@ async def _seed_airtime_switch_payload(
     interrupt: Any,
     text: str,
     services: OrchestrationServices,
-) -> tuple[TaskParameters, dict[str, Any], str, bool]:
-    parameters = TaskParameters()
+) -> tuple[AirtimeTaskParameters, dict[str, Any], str, bool]:
+    parameters = AirtimeTaskParameters()
     payload_seed: dict[str, Any] = {}
     entities, features, _acknowledgment = await _extract_interrupt_switch_entities(
         state=state,
@@ -79,8 +79,8 @@ async def _seed_data_switch_payload(
     interrupt: Any,
     text: str,
     services: OrchestrationServices,
-) -> tuple[TaskParameters, dict[str, Any], str, bool]:
-    parameters = TaskParameters()
+) -> tuple[DataTaskParameters, dict[str, Any], str, bool]:
+    parameters = DataTaskParameters()
     payload_seed: dict[str, Any] = {}
     entities, features, _acknowledgment = await _extract_interrupt_switch_entities(
         state=state,

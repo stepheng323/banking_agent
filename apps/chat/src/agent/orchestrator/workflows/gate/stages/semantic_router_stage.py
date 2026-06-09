@@ -1,6 +1,8 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.guardrails.cancellation import clear_query_session
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
 from apps.chat.src.agent.orchestrator.workflows.gate.router_context import (
     _build_semantic_router_context,
     _should_invoke_semantic_router,
@@ -24,6 +26,11 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_route_contr
     semantic_schedule_target_updates,
     support_hint_veto_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
+    classify_deterministic_active_flow_question,
+)
+from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import _could_be_schedule_interrupt_read_request
+from banking.intent.routing_signals import looks_like_support_problem_statement
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,10 +38,26 @@ logger = get_logger(__name__)
 
 def _skip_semantic_router_for_interrupt(ctx: GateContext) -> bool:
     interrupt_kind = ctx.state_view.pending_interrupt_kind
-    return ctx.live_pending_interrupt and (
-        interrupt_kind in {"confirmation", "auth"}
-        or ctx.state_view.is_numeric_input_interrupt_selection(ctx.message_text)
+    if not ctx.live_pending_interrupt:
+        return False
+    if interrupt_kind in {"confirmation", "auth"}:
+        return True
+    if ctx.state_view.is_numeric_input_interrupt_selection(ctx.message_text):
+        return True
+    if interrupt_kind == "input" and (
+        _could_be_schedule_interrupt_read_request(ctx.message_text)
+        or looks_like_support_problem_statement(ctx.message_text)
+    ):
+        return True
+    interrupt = ctx.state_view.pending_interrupt
+    if interrupt is None:
+        return False
+    question_route = classify_deterministic_active_flow_question(
+        text=ctx.message_text,
+        interrupt=interrupt,
+        current_task_types=ctx.state_view.pending_interrupt_task_types,
     )
+    return question_route is not None and question_route.question_type not in {None, "unknown"}
 
 
 def _semantic_router_can_run(ctx: GateContext, *, skip_for_interrupt: bool) -> bool:
@@ -138,6 +161,14 @@ async def _handle_semantic_route(ctx: GateContext, route: Any) -> dict[str, Any]
 
     if updates:
         logger.info("gate_semantic_router_expected_executors", executors=expected_executors)
+        if await ctx.has_active_query_session():
+            await clear_query_session(ctx.redis_client, ctx.state_view.phone_number)
+            updates.update(
+                _build_query_session_exit_updates(
+                    ctx.state,
+                    query_session_snapshot=ctx.query_session_snapshot,
+                )
+            )
         return semantic_executor_handoff_updates(
             ctx,
             updates=updates,

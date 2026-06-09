@@ -9,6 +9,10 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
     conversation_display_name,
     conversation_topic_for_response,
 )
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import (
+    deterministic_joke_fallback,
+    redirect_text,
+)
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
     classify_banking_coded_ambiguity,
     render_banking_coded_ambiguity_prompt,
@@ -112,7 +116,10 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
         if display_name:
             response_key = "conversational.greeting_named"
             render_params = {**(render_params or {}), "display_name": display_name}
-    final_response = render_message(response_key, locale, render_params)
+    if isinstance(render_params, dict) and render_params.get("casual_kind") == "joke":
+        final_response = f"{deterministic_joke_fallback(casual_streak=0)}\n{redirect_text(locale, casual_streak=0)}"
+    else:
+        final_response = render_message(response_key, locale, render_params)
     return {
         **ctx.gate_updates,
         **exit_updates,

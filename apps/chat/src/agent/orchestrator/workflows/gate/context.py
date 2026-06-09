@@ -45,10 +45,26 @@ class GateContext:
 
     def add_routing_hint(self, *, domain: str, reason: str, source: str) -> None:
         """Record a non-authoritative routing hint for later semantic/planner stages."""
-        self.routing_hints.append({"domain": domain, "reason": reason, "source": source})
+        hint = {"domain": domain, "reason": reason, "source": source}
+        if hint not in self.routing_hints:
+            self.routing_hints.append(hint)
 
     def has_routing_hint(self, domain: str) -> bool:
         return any(hint.get("domain") == domain for hint in self.routing_hints)
+
+    async def has_active_query_session(self) -> bool:
+        await self.ensure_query_session()
+        return bool(
+            (isinstance(self.query_session_snapshot, dict) and self.query_session_snapshot.get("session_active"))
+            or self.state_view.has_session_for_domain("query")
+            or self.state_view.active_domain == "query"
+        )
+
+    async def defer_active_query_session_to_semantic_router(self, *, source: str) -> bool:
+        if self.task_planner is None or not await self.has_active_query_session():
+            return False
+        self.add_routing_hint(domain="query", reason="active_query_session", source=source)
+        return True
 
     async def ensure_query_session(self) -> None:
         """Lazily load the query session snapshot from Redis/state."""

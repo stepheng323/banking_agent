@@ -23,6 +23,13 @@ _SCHEDULE_READ_CANDIDATE_RE = re.compile(
     r"\b(?:haziri|ugwo|mbufe|azumahia)\b.*\b(?:emechaa|na-abia|oge)\b"
     r")"
 )
+_SCHEDULE_READ_COUNT_RE = re.compile(
+    r"(?iu)\b(?:how\s+many|count|number\s+of|do\s+i\s+have\s+any|any)\b"
+)
+_SCHEDULE_READ_LIST_RE = re.compile(
+    r"(?iu)^\s*(?:show|list|view|get|display|see|find)\b.*"
+    r"\b(?:schedul\w*|recurr\w*|pending\b.*\b(?:transaction|payment|transfer|airtime|data)\w*)\b"
+)
 
 
 def _could_be_schedule_read_request(text: str) -> bool:
@@ -39,6 +46,17 @@ def _semantic_schedule_response_mode(route: Any) -> str | None:
     return None
 
 
+def _deterministic_schedule_response_mode(text: str) -> str | None:
+    normalized = " ".join((text or "").split())
+    if not _could_be_schedule_read_request(normalized):
+        return None
+    if _SCHEDULE_READ_COUNT_RE.search(normalized):
+        return "count"
+    if _SCHEDULE_READ_LIST_RE.search(normalized):
+        return "list"
+    return None
+
+
 def _build_direct_schedule_read_updates(
     ctx: GateContext,
     *,
@@ -47,6 +65,7 @@ def _build_direct_schedule_read_updates(
     canonical_decision: str | None,
     canonical_mode: str | None,
     route_source: str,
+    owner: str = "semantic_router",
 ) -> dict[str, Any]:
     task_id, spec = _build_direct_domain_task(
         state_view=ctx.state_view,
@@ -59,7 +78,7 @@ def _build_direct_schedule_read_updates(
         ctx,
         tasks={task_id: spec},
         waves=[[task_id]],
-        owner="semantic_router",
+        owner=owner,
         decision=canonical_decision or "domain_schedule",
         semantic_path_shape=semantic_path_shape if isinstance(semantic_path_shape, str) else None,
         extra_updates={**(ctx.summary_updates or {}), **updates},
@@ -71,9 +90,28 @@ def _build_direct_schedule_read_updates(
 
 async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None:
     """Use a small semantic classifier for simple scheduled-transaction read turns."""
-    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state or ctx.task_planner is None:
+    if ctx.live_pending_interrupt or ctx.state_view.has_gate_blocking_state:
         return None
     if not _could_be_schedule_read_request(ctx.message_text):
+        return None
+
+    deterministic_mode = _deterministic_schedule_response_mode(ctx.message_text)
+    if deterministic_mode is not None:
+        logger.info(
+            "gate_deterministic_schedule_read_direct",
+            schedule_response_mode=deterministic_mode,
+        )
+        return _build_direct_schedule_read_updates(
+            ctx,
+            updates={"semantic_path_shape": "deterministic_schedule_read"},
+            schedule_response_mode=deterministic_mode,
+            canonical_decision="deterministic_schedule_read",
+            canonical_mode="new",
+            route_source="schedule_read_guard",
+            owner="guardrail",
+        )
+
+    if ctx.task_planner is None:
         return None
 
     try:

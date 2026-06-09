@@ -31,6 +31,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     get_or_build_turn_context_summary,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_summary_payload import (
+    _build_history_lines,
     _compact_payload_for_prompt,
     _compact_prompt_value,
 )
@@ -341,6 +342,20 @@ def test_router_and_user_state_render_from_shared_summary() -> None:
     assert "User State:" in user_state_summary
     assert "mandate:" in user_state_summary
     assert "Beneficiaries:" in user_state_summary
+
+
+def test_history_prompt_preview_is_limited_to_three_recent_turns() -> None:
+    lines = _build_history_lines(
+        [
+            {"role": "user", "content": "turn one"},
+            {"role": "assistant", "content": "turn two"},
+            {"role": "user", "content": "turn three"},
+            {"role": "assistant", "content": "turn four"},
+            {"role": "user", "content": "turn five"},
+        ]
+    )
+
+    assert lines == ["user: turn three", "agent: turn four", "user: turn five"]
 
 
 def test_router_context_includes_pending_query_clarification_hint() -> None:

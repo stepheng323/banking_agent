@@ -39,6 +39,7 @@ _GATE_STAGE_NAMES = (
     "_stage_data_plan_reference_purchase",
     "_stage_data_plan_query",
     "_stage_recent_transaction_support_request",
+    "_stage_support_issue_request",
     "_stage_context_frame_followup",
     "_stage_receipt_thread_followup",
     "_stage_support_context_followup",
@@ -46,7 +47,6 @@ _GATE_STAGE_NAMES = (
     "_stage_beneficiary_suggestion",
     "_stage_contextual_worker_followup",
     "_stage_banking_ambiguity",
-    "_stage_support_issue_request",
     "_stage_balance_direct",
     "_stage_account_domain",
     "_stage_beneficiary_domain",
@@ -294,26 +294,16 @@ async def test_gate_family_router_records_nested_subhandler_trace() -> None:
         {
             "handler_id": "unit_family",
             "layer": "domain_fastpaths",
-            "entries": [
-                {
-                    "handler_id": "first",
-                    "layer": "domain_fastpaths",
-                    "matched": False,
-                    "executed": True,
-                    "skip_reason": None,
-                    "routing_owner": None,
-                    "routing_decision": None,
-                },
+            "entry_count": 2,
+            "matched_entries": [
                 {
                     "handler_id": "second",
                     "layer": "domain_fastpaths",
-                    "matched": True,
-                    "executed": True,
-                    "skip_reason": None,
                     "routing_owner": "unit",
                     "routing_decision": "family_matched",
                 },
             ],
+            "skipped_count": 0,
         }
     ]
 
@@ -376,6 +366,7 @@ async def test_gate_trace_summary_captures_match_execution_and_skips() -> None:
     assert summary["routing_owner"] == "unit"
     assert summary["routing_decision"] == "matched"
     assert summary["executed_handler_ids"] == ["matched"]
+    assert summary["skipped_handler_count"] == 1
     assert summary["skipped_handlers"] == [
         {
             "handler_id": "skipped",

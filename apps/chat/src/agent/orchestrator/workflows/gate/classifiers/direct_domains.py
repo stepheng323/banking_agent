@@ -27,14 +27,23 @@ BENEFICIARY_DOMAIN_PATTERNS = (
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?beneficiar(?:y|ies)\b",
     r"^who\s+do\s+i\s+have\s+saved\b",
     r"^(?:show|list|view|get)\s+(?:my\s+)?saved\s+(?:recipients?|beneficiar(?:y|ies))\b",
+    r"^how\s+many\s+beneficiar(?:y|ies)\s+do\s+i\s+have\b",
+    r"^do\s+i\s+have\s+any\s+beneficiar(?:y|ies)\b",
 )
 BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS = (r"\b(send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",)
 BALANCE_DIRECT_CANCEL_PREFIX_RE = re.compile(
     r"^(?:cancel|abort|stop|nevermind|never\s+mind)(?:\s+(?:and|then))?\s+",
     re.IGNORECASE,
 )
+GENERIC_ACCOUNT_BALANCE_REQUEST_PATTERNS = (
+    r"^(?:please\s+)?(?:check|show|view|get|display)\s+(?:my\s+)?(?:account\s+)?balance$",
+    r"^(?:please\s+)?(?:tell\s+me\s+)?what(?:'s| is)\s+my\s+(?:account\s+)?balance$",
+    r"^(?:my\s+)?(?:account\s+)?balance$",
+    r"^how\s+much\s+do\s+i\s+have$",
+    r"^how\s+much\s+is\s+in\s+my\s+account$",
+)
 _QUERY_DOMAIN_PATTERNS = (
-    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)",
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)",
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?",
     r"^how\s+much\s+(?:(?:total|in\s+total)\s+)?(?:did|have)\s+i\s+(?:spend|spent|send|sent|pay|paid|receive|received)",
     r"^(?:what(?:'s| is|'s)|how\s+much\s+is)\s+my\s+(?:spending|expenses?|income|inflow)",
@@ -42,7 +51,7 @@ _QUERY_DOMAIN_PATTERNS = (
     r"^(?:top|my)\s+(?:recipients?|beneficiar)",
 )
 _STRUCTURAL_QUERY_DIRECT_PATTERNS = (
-    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?\b",
 )
 
@@ -55,6 +64,14 @@ def _is_account_balance_request(message_text: str) -> bool:
     if any(re.search(pattern, candidate) for pattern in BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS):
         return False
     return any(re.search(pattern, candidate) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
+
+
+def _is_generic_account_balance_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return False
+    candidate = BALANCE_DIRECT_CANCEL_PREFIX_RE.sub("", normalized)
+    return any(re.search(pattern, candidate) for pattern in GENERIC_ACCOUNT_BALANCE_REQUEST_PATTERNS)
 
 
 def _is_query_domain_request(message_text: str) -> bool:
@@ -95,6 +112,7 @@ __all__ = [
     "_is_account_balance_request",
     "_is_account_domain_request",
     "_is_beneficiary_domain_request",
+    "_is_generic_account_balance_request",
     "_is_query_domain_request",
     "_is_structural_query_domain_request",
 ]

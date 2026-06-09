@@ -2,6 +2,7 @@
 
 import time
 import uuid
+from decimal import Decimal
 
 import pytest
 from langchain_core.runnables import RunnableConfig
@@ -10,7 +11,14 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.context.referents.models import ReferentMemoryItem
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.completed_transaction_frames import (
+    build_completed_transaction_frame,
+)
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
+from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_detail_responses import (
+    format_details_response,
+)
+from banking.presentation.i18n.renderer import render_message
 
 
 def _config() -> RunnableConfig:
@@ -48,6 +56,33 @@ def _stashed(intent: str = "transfer", payload: dict | None = None, *, stash_id:
             "stashed_at_ts": now_ts,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("frame_type", "message_key"),
+    [
+        (ContextFrameType.ACCOUNT_LIST, "account.list.empty"),
+        (ContextFrameType.BENEFICIARY_LIST, "beneficiary.list.empty"),
+        (ContextFrameType.SCHEDULE_LIST, "schedule.list.empty"),
+        (ContextFrameType.TRANSACTION_LIST, "query.format.no_matching_transactions"),
+    ],
+)
+def test_format_details_response_empty_frames_use_natural_empty_copy(
+    frame_type: ContextFrameType,
+    message_key: str,
+) -> None:
+    frame = ContextFrame(
+        frame_id="empty-frame",
+        frame_type=frame_type,
+        items=[],
+        created_at_ts=int(time.time()),
+    )
+
+    response = format_details_response(frame, locale="en")
+
+    assert response == render_message(message_key, "en")
+    assert response is not None
+    assert "Showing 0" not in response
 
 
 @pytest.mark.asyncio
@@ -426,6 +461,54 @@ async def test_finalize_completed_transaction_summary_carries_quote_replay_paylo
     assert {item["task_type"] for item in actionable_payload["tasks"]} == {"transfer", "airtime"}
     airtime_payload = next(item for item in actionable_payload["tasks"] if item["task_type"] == "airtime")
     assert airtime_payload["recipient_phone"] == "08162511023"
+
+
+def test_completed_transaction_frame_preserves_decimal_amounts_for_details() -> None:
+    frame = build_completed_transaction_frame(
+        visible_tasks=[
+            TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "action": "send_money",
+                    "transaction_id": "tx-transfer-1",
+                    "amount": Decimal("10000.00"),
+                    "recipient_name": "Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_account": "2010000001",
+                    "receipt": {"status": "processing"},
+                },
+            ),
+            TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "action": "buy_airtime",
+                    "transaction_id": "tx-airtime-1",
+                    "amount": Decimal("2000.00"),
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "receipt": {"status": "processing"},
+                },
+            ),
+        ],
+        source_message_id="msg-1",
+    )
+
+    assert frame is not None
+    assert [item.data["amount"] for item in frame.items] == ["10000.00", "2000.00"]
+    assert frame.items[0].label == "₦10,000 transfer to Tolu Adebayo"
+    assert frame.items[1].label == "₦2,000 airtime for 08162511023"
+
+    details = format_details_response(frame)
+
+    assert details is not None
+    assert "₦0" not in details
+    assert "₦10,000 transfer to Tolu Adebayo" in details
+    assert "₦2,000 airtime for 08162511023" in details
 
 
 @pytest.mark.asyncio

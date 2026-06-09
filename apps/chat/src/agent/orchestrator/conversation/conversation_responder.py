@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,8 +19,18 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
 )
 from banking.presentation.i18n.locale import LocaleManager
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import estimated_tokens_from_chars, record_llm_call
+from shared.observability.llm_http import (
+    start_llm_http_recording,
+    stop_llm_http_recording,
+    summarize_llm_http_records,
+)
+from shared.observability.llm_provider_metadata import extract_provider_llm_metadata
+from shared.utils.logging import get_logger
 
 __all__ = ["ConversationResponder"]
+
+logger = get_logger(__name__)
 
 
 class ConversationResponder:
@@ -92,10 +103,9 @@ class ConversationResponder:
             is_unsupported_capability_followup=is_unsupported_capability_followup,
         )
 
-        reply = await ainvoke_with_config(
-            self.llm,
-            responder_prompts.build_conversation_responder_messages(prompt_input),
-            config=build_llm_runnable_config(
+        messages = responder_prompts.build_conversation_responder_messages(prompt_input)
+        config = (
+            build_llm_runnable_config(
                 role="conversation_responder",
                 phone_number=str(user_ctx.get("phone_number") or ""),
                 locale=locale,
@@ -107,8 +117,43 @@ class ConversationResponder:
                     "unsupported_capability_followup": is_unsupported_capability_followup,
                 },
             )
-            or None,
+            or None
         )
+        system_chars, user_chars = _message_char_counts(messages)
+        start = time.perf_counter()
+        http_recording_token = start_llm_http_recording()
+        try:
+            reply = await ainvoke_with_config(
+                self.llm,
+                messages,
+                config=config,
+            )
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - start) * 1000
+            http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
+            record_llm_call(
+                event_name="conversation_responder_llm_call",
+                duration_ms=duration_ms,
+                model=_model_name(self.llm),
+                response_type="ConversationResponderReply",
+                system_chars=system_chars,
+                user_chars=user_chars,
+                latency_span="conversation_responder_llm",
+                output_json_chars=0,
+                output_token_estimate=0,
+                extra_fields={
+                    **http_metrics,
+                    "intent": intent,
+                    "locale": locale,
+                    "casual_streak": casual_streak,
+                    "contextual_worker_followup": is_contextual_worker_followup,
+                    "contextual_meta_followup": is_contextual_meta_followup,
+                    "unsupported_capability_followup": is_unsupported_capability_followup,
+                },
+                error_type=type(exc).__name__,
+            )
+            raise
+        http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
 
         raw_content: str | None
         if isinstance(reply, str):
@@ -116,6 +161,41 @@ class ConversationResponder:
         else:
             response_content: Any = getattr(reply, "content", None)
             raw_content = response_content if isinstance(response_content, str) else None
+        output_chars = len(raw_content or "")
+        provider_fields = {**http_metrics, **extract_provider_llm_metadata(reply)}
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "conversation_responder_llm_call",
+            duration_ms=round(duration_ms, 2),
+            model=_model_name(self.llm),
+            system_chars=system_chars,
+            user_chars=user_chars,
+            output_json_chars=output_chars,
+            output_token_estimate=estimated_tokens_from_chars(output_chars),
+            intent=intent,
+            locale=locale,
+            **provider_fields,
+        )
+        record_llm_call(
+            event_name="conversation_responder_llm_call",
+            duration_ms=duration_ms,
+            model=_model_name(self.llm),
+            response_type="ConversationResponderReply",
+            system_chars=system_chars,
+            user_chars=user_chars,
+            latency_span="conversation_responder_llm",
+            output_json_chars=output_chars,
+            output_token_estimate=estimated_tokens_from_chars(output_chars),
+            extra_fields={
+                **provider_fields,
+                "intent": intent,
+                "locale": locale,
+                "casual_streak": casual_streak,
+                "contextual_worker_followup": is_contextual_worker_followup,
+                "contextual_meta_followup": is_contextual_meta_followup,
+                "unsupported_capability_followup": is_unsupported_capability_followup,
+            },
+        )
 
         preface = responder_text.sanitize_preface(raw_content, locale=locale)
         if not preface:
@@ -152,3 +232,19 @@ class ConversationResponder:
         if preface == redirect_text:
             return redirect_text
         return f"{preface}\n{redirect_text}"
+
+
+def _model_name(llm: Any) -> str | None:
+    return getattr(llm, "model_name", None) or getattr(llm, "model", None)
+
+
+def _message_char_counts(messages: list[dict[str, str]]) -> tuple[int, int]:
+    system_chars = 0
+    user_chars = 0
+    for message in messages:
+        content = str(message.get("content") or "")
+        if message.get("role") == "system":
+            system_chars += len(content)
+        else:
+            user_chars += len(content)
+    return system_chars, user_chars

@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains 
     _is_account_balance_request,
     _is_account_domain_request,
     _is_beneficiary_domain_request,
+    _is_generic_account_balance_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _is_obvious_airtime_request,
@@ -31,19 +32,25 @@ async def _stage_balance_direct(ctx: GateContext) -> dict[str, Any] | None:
         return None
     if not _is_account_balance_request(ctx.message_text):
         return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="balance_direct_guard"):
+        logger.info("gate_balance_direct_deferred_to_semantic_router_for_active_query")
+        return None
     cleanup_updates: dict[str, Any] = {}
     if has_explicit_cancel(ctx.message_text):
         cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
     task_id = _next_direct_account_task_id(ctx.state_view.tasks)
+    payload: dict[str, Any] = {
+        "action": "check_balance",
+        "message": ctx.state_view.last_message_text,
+        "instruction": ctx.state_view.last_message_text,
+    }
+    if _is_generic_account_balance_request(ctx.message_text):
+        payload["skip_parse"] = True
     spec = TaskSpec(
         id=task_id,
         type="account",
         stage=TaskStage.DRAFT,
-        payload={
-            "action": "check_balance",
-            "message": ctx.state_view.last_message_text,
-            "instruction": ctx.state_view.last_message_text,
-        },
+        payload=payload,
     )
     logger.info("gate_direct_account_balance", task_id=task_id, with_cleanup=bool(cleanup_updates))
     return task_dispatch(
@@ -70,6 +77,9 @@ async def _stage_account_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_account_domain_request(ctx.message_text)
     ):
+        return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="account_domain_guard"):
+        logger.info("gate_account_domain_deferred_to_semantic_router_for_active_query")
         return None
     cleanup_updates: dict[str, Any] = {}
     if has_explicit_cancel(ctx.message_text):
@@ -101,6 +111,9 @@ async def _stage_beneficiary_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_beneficiary_domain_request(ctx.message_text)
     ):
         return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="beneficiary_domain_guard"):
+        logger.info("gate_beneficiary_domain_deferred_to_semantic_router_for_active_query")
+        return None
     task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="beneficiary", mode="new")
     logger.info("gate_deterministic_beneficiary_domain", task_id=task_id)
     return task_dispatch(
@@ -127,6 +140,9 @@ async def _stage_airtime_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_obvious_airtime_request(ctx.message_text)
     ):
+        return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="airtime_domain_guard"):
+        logger.info("gate_airtime_domain_deferred_to_semantic_router_for_active_query")
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "airtime"):
         logger.info("gate_deterministic_airtime_domain_policy_blocked")

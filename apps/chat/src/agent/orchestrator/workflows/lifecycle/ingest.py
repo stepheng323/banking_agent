@@ -46,6 +46,8 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
         "routing_target_domain": None,
         "routing_mode": None,
         "planner_used": False,
+        "planner_clean": None,
+        "planner_dirty_reasons": [],
     }
 
     if state_view.last_activity_date and state_view.last_activity_date != today:

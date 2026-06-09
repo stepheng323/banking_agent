@@ -5,7 +5,9 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.task_payload import build_task_specs_and_waves_from_plan_items
+from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _build_direct_domain_task
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _next_interrupt_task_id, logger
+from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_bill_seeds import (
     _seed_airtime_switch_payload,
     _seed_data_switch_payload,
@@ -20,7 +22,46 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
     _reconcile_multi_transfer_recipient_tasks,
 )
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
-from shared.types.planner import InterruptRouteDecision, PlannedTask
+from banking.support.classifier import classify_support_intent_deterministic
+from shared.types.planner import (
+    InterruptRouteDecision,
+    PlannerTaskParameters,
+    ScheduleTaskParameters,
+    dump_task_parameters,
+    make_planned_task,
+)
+
+_SCHEDULE_ACTION_ALIASES = {
+    "cancel_scheduled_transfer": "cancel_scheduled_transaction",
+    "list_scheduled_transfers": "list_scheduled_transactions",
+}
+_CANONICAL_SCHEDULE_ACTIONS = {
+    "list_scheduled_transactions",
+    "find_scheduled_transaction",
+    "cancel_scheduled_transaction",
+    "edit_scheduled_transaction",
+}
+
+
+def _canonicalize_switch_planner_task(
+    *,
+    action: str,
+    target_intent: str,
+    parameters: PlannerTaskParameters,
+) -> tuple[str, str, PlannerTaskParameters]:
+    planner_action = _SCHEDULE_ACTION_ALIASES.get(action, action)
+    if target_intent != "transfer" or planner_action not in _CANONICAL_SCHEDULE_ACTIONS:
+        return planner_action, target_intent, parameters
+
+    dumped_parameters = dump_task_parameters(parameters)
+    schedule_parameters = ScheduleTaskParameters(
+        **{
+            field_name: dumped_parameters[field_name]
+            for field_name in ScheduleTaskParameters.model_fields
+            if field_name in dumped_parameters
+        }
+    )
+    return planner_action, "schedule", schedule_parameters
 
 
 async def _build_enriched_transaction_switch_tasks(
@@ -31,6 +72,10 @@ async def _build_enriched_transaction_switch_tasks(
     interrupt: Any,
     services: OrchestrationServices,
 ) -> tuple[dict[str, TaskSpec], list[list[str]], set[str]]:
+    parameters: PlannerTaskParameters
+    payload_seed: dict[str, Any]
+    action: str
+    preseeded: bool
     if target_intent == "transfer":
         parameters, payload_seed, action, preseeded = await _seed_transfer_switch_payload(
             state=state,
@@ -54,13 +99,18 @@ async def _build_enriched_transaction_switch_tasks(
         )
 
     base_task_id = _next_interrupt_task_id(state=state, target_intent=target_intent)
+    planner_action, planner_executor, planner_parameters = _canonicalize_switch_planner_task(
+        action=action,
+        target_intent=target_intent,
+        parameters=parameters,
+    )
     planned_tasks = [
-        PlannedTask(
+        make_planned_task(
             task_id=base_task_id,
-            action=action,
-            executor=cast(Any, target_intent),
+            action=planner_action,
+            executor=cast(Any, planner_executor),
             instruction=text,
-            parameters=parameters,
+            parameters=planner_parameters,
             risk="MONEY_MOVE",
         )
     ]
@@ -79,6 +129,8 @@ async def _build_enriched_transaction_switch_tasks(
     payload_overrides_by_task_id: dict[str, dict[str, Any]] = {
         task.task_id: {"message": text} for task in planned_tasks
     }
+    if action != planner_action:
+        payload_overrides_by_task_id[planned_tasks[0].task_id]["action"] = action
     if len(planned_tasks) == 1 and payload_seed:
         payload_overrides_by_task_id[planned_tasks[0].task_id].update(payload_seed)
     new_tasks, waves = build_task_specs_and_waves_from_plan_items(
@@ -119,6 +171,16 @@ def _build_direct_non_transaction_switch_tasks(
     target_intent: str,
     route: InterruptRouteDecision,
 ) -> tuple[dict[str, TaskSpec], list[list[str]], set[str]]:
+    if target_intent == "schedule":
+        task_id, task = _build_direct_domain_task(
+            state_view=cast(Any, interrupt_state_view(state)),
+            domain="schedule",
+            mode=route.target_mode,
+            schedule_response_mode="list",
+            message_text=text,
+        )
+        return {task_id: task}, [[task_id]], {target_intent}
+
     task_id = _next_interrupt_task_id(state=state, target_intent=target_intent)
 
     payload: dict[str, Any] = {
@@ -128,6 +190,10 @@ def _build_direct_non_transaction_switch_tasks(
     if target_intent == "query":
         payload["message"] = text
         payload["force_new_query"] = route.target_mode != "continuation"
+    elif target_intent == "support":
+        deterministic = classify_support_intent_deterministic(text)
+        if deterministic is not None and deterministic.intent is not None and deterministic.confidence >= 0.85:
+            payload["intent"] = deterministic.intent.value
 
     task = TaskSpec(
         id=task_id,

@@ -134,3 +134,34 @@ async def test_telegram_presenter_options_uses_explicit_button_titles() -> None:
     assert client.interactive_calls[0]["options"] == [
         {"id": "rcpt:send", "title": "Send receipt"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_options_uses_compact_beneficiary_button_titles() -> None:
+    client = _StubTelegramClient(interactive_success=True)
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = ShowOptions(
+        title="I found multiple matches for Tolu. Which one?",
+        options=[
+            {
+                "id": "bene:111",
+                "title": "Tolu Adebayo • Access Bank • ****1234",
+                "button_title": "1. Tolu Adebayo • Access • ****1234",
+            },
+            {
+                "id": "bene:222",
+                "title": "Tolu Adekunle • GTBank • ****5678",
+                "button_title": "2. Tolu Adekunle • GTBank • ****5678",
+            },
+        ],
+        task_ids=["t1"],
+    )
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    message_id = await presenter._present_options(intent, context)
+
+    assert message_id == "tg-interactive-1"
+    assert client.interactive_calls[0]["options"] == [
+        {"id": "bene:111", "title": "1. Tolu Adebayo • Access • ****1234"},
+        {"id": "bene:222", "title": "2. Tolu Adekunle • GTBank • ****5678"},
+    ]

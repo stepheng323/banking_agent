@@ -4,6 +4,9 @@ from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import (
     resolve_interrupt_shortcut_with_reason,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
+    classify_deterministic_meta_response,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_repeat import (
     _resolve_deterministic_confirmation_repeat_route,
 )
@@ -37,6 +40,9 @@ async def _expired_transaction_message_targets_stale_session(
     text: str,
 ) -> bool:
     """Return True when the post-expiry turn is trying to continue the expired flow."""
+    if classify_deterministic_meta_response(text) is not None:
+        return False
+
     if _is_verified_pin_callback(state) and getattr(interrupt, "kind", None) in {"confirmation", "auth"}:
         return True
 

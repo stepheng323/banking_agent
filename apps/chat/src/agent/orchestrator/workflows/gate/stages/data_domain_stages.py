@@ -31,6 +31,9 @@ async def _stage_data_plan_query(ctx: GateContext) -> dict[str, Any] | None:
         or not _is_data_plan_query_request(ctx.message_text)
     ):
         return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="data_plan_query_guard"):
+        logger.info("gate_data_plan_query_deferred_to_semantic_router_for_active_query")
+        return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_data_plan_query_policy_blocked")
         return direct_response(
@@ -73,6 +76,9 @@ async def _stage_data_plan_reference_purchase(ctx: GateContext) -> dict[str, Any
         or ctx.state_view.has_quote
         or not _is_data_plan_reference_purchase_request(ctx.message_text)
     ):
+        return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="data_plan_referent"):
+        logger.info("gate_data_plan_reference_deferred_to_semantic_router_for_active_query")
         return None
     data = _resolved_data_plan_payload(ctx)
     if not data:
@@ -133,6 +139,9 @@ async def _stage_data_domain(ctx: GateContext) -> dict[str, Any] | None:
         or not ctx.phrase_heavy_fastpath_allowed
         or not _is_obvious_data_request(ctx.message_text)
     ):
+        return None
+    if await ctx.defer_active_query_session_to_semantic_router(source="data_domain_guard"):
+        logger.info("gate_data_domain_deferred_to_semantic_router_for_active_query")
         return None
     if block_message := _direct_domain_capability_block_message(ctx.state_view, "data"):
         logger.info("gate_deterministic_data_domain_policy_blocked")

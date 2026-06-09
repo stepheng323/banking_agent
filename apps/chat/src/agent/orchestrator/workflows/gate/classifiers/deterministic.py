@@ -118,6 +118,15 @@ DETERMINISTIC_CAPABILITY_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+DETERMINISTIC_JOKE_REQUEST_RE = re.compile(
+    r"\b(?:joke|funny|laugh)\b",
+    re.IGNORECASE,
+)
+DETERMINISTIC_LIGHT_BANTER_RE = re.compile(
+    r"^(?:you\s+)?(?:wicked|bad|mean|crazy)(?:\s+\w{1,8})?$"
+    r"|^(?:you\s+(?:too\s+)?(?:wicked|bad|mean|crazy))(?:\s+\w{1,8})?$",
+    re.IGNORECASE,
+)
 DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[MessageKey, str]] = {
     # Pidgin
     "wetin you fit do": ("conversational.capability_question", "pcm"),
@@ -247,6 +256,10 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
         return _meta_response("conversational.appreciation")
     if normalized in DETERMINISTIC_CHECKIN_EXACT:
         return _meta_response("conversational.checkin")
+    if DETERMINISTIC_JOKE_REQUEST_RE.search(normalized):
+        return _meta_response("conversational.out_of_scope", params={"casual_kind": "joke"})
+    if DETERMINISTIC_LIGHT_BANTER_RE.search(normalized):
+        return _meta_response("conversational.out_of_scope")
     addressed_greeting = _classify_addressed_greeting(normalized)
     if addressed_greeting:
         return addressed_greeting

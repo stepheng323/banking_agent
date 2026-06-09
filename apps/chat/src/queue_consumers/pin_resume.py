@@ -14,6 +14,28 @@ from shared.utils.logging import get_logger, log_fingerprint
 logger = get_logger(__name__)
 
 TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data", "schedule"}
+BATCH_PIN_FLOWS = {"batch", "transaction_batch", "transfer_batch", "multi_transfer", "mixed_batch"}
+SUPPORTED_PIN_FLOWS = TRANSACTION_PIN_FLOWS | BATCH_PIN_FLOWS
+
+
+def _normalize_flow_type(flow_type: str) -> str:
+    return flow_type.strip().lower()
+
+
+def _pin_flow_types_match(*, event_flow_type: str, recorded_flow_type: str) -> bool:
+    if event_flow_type == recorded_flow_type:
+        return True
+    if event_flow_type in BATCH_PIN_FLOWS and recorded_flow_type in SUPPORTED_PIN_FLOWS:
+        return True
+    if recorded_flow_type in BATCH_PIN_FLOWS and event_flow_type in SUPPORTED_PIN_FLOWS:
+        return True
+    return False
+
+
+def _resume_flow_type(*, event_flow_type: str, recorded_flow_type: str) -> str:
+    if event_flow_type in BATCH_PIN_FLOWS and recorded_flow_type in TRANSACTION_PIN_FLOWS:
+        return recorded_flow_type
+    return event_flow_type
 
 
 async def handle_pin_verified(
@@ -37,8 +59,8 @@ async def handle_pin_verified(
         )
         return
 
-    normalized_flow_type = flow_type.strip().lower()
-    if normalized_flow_type not in TRANSACTION_PIN_FLOWS:
+    normalized_flow_type = _normalize_flow_type(flow_type)
+    if normalized_flow_type not in SUPPORTED_PIN_FLOWS:
         logger.info(
             "pin_verified_non_transaction_flow_ignored",
             phone_hash=log_fingerprint(phone_number),
@@ -82,8 +104,8 @@ async def handle_pin_verified(
         )
         return
 
-    recorded_flow_type = str(auth_result.transaction_type or "").strip().lower()
-    if recorded_flow_type != normalized_flow_type:
+    recorded_flow_type = _normalize_flow_type(str(auth_result.transaction_type or ""))
+    if not _pin_flow_types_match(event_flow_type=normalized_flow_type, recorded_flow_type=recorded_flow_type):
         logger.warning(
             "pin_verified_resume_flow_mismatch",
             phone_hash=log_fingerprint(phone_number),
@@ -117,7 +139,7 @@ async def handle_pin_verified(
     )
     response = await orchestrator.resume_transaction(
         phone_number=phone_number,
-        flow_type=normalized_flow_type,
+        flow_type=_resume_flow_type(event_flow_type=normalized_flow_type, recorded_flow_type=recorded_flow_type),
         pin_verified=True,
         channel=channel,
     )

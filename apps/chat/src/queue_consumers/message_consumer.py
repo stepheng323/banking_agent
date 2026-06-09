@@ -3,6 +3,7 @@
 import asyncio
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator import OrchestratorAgent
@@ -40,7 +41,7 @@ from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
 _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
-_INITIAL_TYPING_DELAY_SECONDS = 0.25
+_INITIAL_TYPING_DELAY_SECONDS = 0.0
 _INITIAL_TYPING_POLICY = "delayed_initial"
 
 
@@ -61,6 +62,7 @@ async def _send_delayed_initial_typing(
     message_id: str,
     delay_seconds: float | None = None,
 ) -> None:
+    start_time = time.perf_counter()
     try:
         resolved_delay_seconds = _INITIAL_TYPING_DELAY_SECONDS if delay_seconds is None else delay_seconds
         if resolved_delay_seconds > 0:
@@ -89,6 +91,12 @@ async def _send_delayed_initial_typing(
             message_id_hash=log_fingerprint(message_id),
             typing_policy=_INITIAL_TYPING_POLICY,
         )
+        logger.info(
+            "perf_timer_latency",
+            gate="message_consumer_initial_typing_enqueue",
+            duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+            channel_user_id=delivery_target,
+        )
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -99,6 +107,16 @@ async def _send_delayed_initial_typing(
             message_id_hash=log_fingerprint(message_id),
             error_type=type(exc).__name__,
         )
+
+
+def _message_queue_age_ms(message: ChannelMessage) -> float | None:
+    timestamp = message.timestamp
+    if not isinstance(timestamp, datetime):
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    age_ms = (datetime.now(UTC) - timestamp.astimezone(UTC)).total_seconds() * 1000
+    return max(0.0, age_ms)
 
 
 async def _cancel_initial_typing_task(task: asyncio.Task[None] | None) -> None:
@@ -213,6 +231,13 @@ class MessageConsumer:
         """Handle one channel message event."""
         start_time = time.perf_counter()
         channel_user_id = message.channel_user_id
+        queue_age_ms = _message_queue_age_ms(message)
+        if queue_age_ms is not None:
+            self._log_latency_span(
+                span="message_consumer_queue_age",
+                duration_ms=queue_age_ms,
+                channel_user_id=channel_user_id,
+            )
         runtime_user_repository = user_repository or self.user_repository
         runtime_onboarding_executor = onboarding_executor or self.onboarding_executor
         runtime_orchestrator = orchestrator or self.orchestrator

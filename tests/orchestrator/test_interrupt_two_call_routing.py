@@ -12,10 +12,10 @@ from banking.transfers.models.extraction import TransferExtractionResult
 from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
-    PlannedTask,
     PlannerOutput,
     RecipientAllocation,
-    TaskParameters,
+    TransferTaskParameters,
+    make_planned_task,
 )
 
 
@@ -159,12 +159,12 @@ async def test_transaction_switch_target_skips_planner_call() -> None:
         output=PlannerOutput(
             primary_intent="transfer",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="t2",
                     action="send_money",
                     executor="transfer",
                     instruction="Send 8000 to Tolu",
-                    parameters=TaskParameters(amount=8000, recipient="Tolu"),
+                    parameters=TransferTaskParameters(amount=8000, recipient="Tolu"),
                     risk="MONEY_MOVE",
                 )
             ],
@@ -610,12 +610,12 @@ async def test_transaction_switch_uses_interrupt_extractor_seed() -> None:
         output=PlannerOutput(
             primary_intent="transfer",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="t2",
                     action="send_money",
                     executor="transfer",
                     instruction="Send 5000 to Mum",
-                    parameters=TaskParameters(
+                    parameters=TransferTaskParameters(
                         amount=5000,
                         recipient="Mum",
                         recipient_account="8162511023",

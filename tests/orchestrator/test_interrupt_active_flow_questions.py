@@ -146,7 +146,7 @@ async def test_active_flow_question_explains_transfer_bank_requirement() -> None
 
     updates = await handle_pending_interrupt(state, _config(planner))
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["pending_interrupt"] == state.pending_interrupt
     assert updates["tasks"] == state.tasks
     assert "verify the account number" in _say_text(updates)

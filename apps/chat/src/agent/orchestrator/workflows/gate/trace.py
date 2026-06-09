@@ -9,9 +9,6 @@ def _summarize_nested_entry(entry: GateTraceEntry) -> dict[str, object]:
     return {
         "handler_id": entry.handler_id,
         "layer": entry.layer.value,
-        "matched": entry.matched,
-        "executed": entry.executed,
-        "skip_reason": entry.skip_reason,
         "routing_owner": entry.routing_owner,
         "routing_decision": entry.routing_decision,
     }
@@ -33,7 +30,11 @@ def summarize_gate_trace(result: GateEngineResult) -> dict[str, object]:
         {
             "handler_id": entry.handler_id,
             "layer": entry.layer.value,
-            "entries": [_summarize_nested_entry(nested_entry) for nested_entry in entry.nested_trace],
+            "entry_count": len(entry.nested_trace),
+            "matched_entries": [
+                _summarize_nested_entry(nested_entry) for nested_entry in entry.nested_trace if nested_entry.matched
+            ],
+            "skipped_count": sum(1 for nested_entry in entry.nested_trace if not nested_entry.executed),
         }
         for entry in result.trace
         if entry.nested_trace
@@ -44,7 +45,8 @@ def summarize_gate_trace(result: GateEngineResult) -> dict[str, object]:
         "routing_owner": result.updates.get("routing_owner"),
         "routing_decision": result.updates.get("routing_decision"),
         "executed_handler_ids": executed_handler_ids,
-        "skipped_handlers": skipped_handlers,
+        "skipped_handler_count": len(skipped_handlers),
+        "skipped_handlers": skipped_handlers[:5],
         "family_traces": family_traces,
     }
 

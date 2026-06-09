@@ -6,7 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from banking.policy.transaction_limits import MAX_POOLED_SOURCE_ACCOUNTS, MAX_TRANSACTION_BATCH_TASKS
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import PlannedTask, PlannerOutput, TransferTaskParameters, make_planned_task
 
 
 class _PlannerStub:
@@ -27,12 +27,12 @@ class _PlannerStub:
 
 
 def _transfer_task(index: int) -> PlannedTask:
-    return PlannedTask(
+    return make_planned_task(
         task_id=f"transfer_{index}",
         action="send_money",
         executor="transfer",
         instruction=f"Send money to recipient {index}",
-        parameters=TaskParameters(amount=1000, recipient_name=f"Recipient {index}"),
+        parameters=TransferTaskParameters(amount=1000, recipient_name=f"Recipient {index}"),
         risk="MONEY_MOVE",
     )
 

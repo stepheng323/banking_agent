@@ -5,8 +5,13 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
+    classify_deterministic_meta_response,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import _could_be_schedule_interrupt_read_request
+from banking.intent.routing_signals import looks_like_support_problem_statement
 from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply_sync
 from banking.transactions.shared.confirmation.models import ConfirmationDecision
 from banking.transactions.shared.confirmation.phrases import normalize_confirmation_locale
@@ -95,6 +100,13 @@ async def _stage_resume_prompt_action(ctx: GateContext) -> dict[str, Any] | None
         return None
 
     normalized = _normalize_resume_reply(ctx.message_text)
+    if (
+        _could_be_schedule_interrupt_read_request(ctx.message_text)
+        or looks_like_support_problem_statement(ctx.message_text)
+        or classify_deterministic_meta_response(ctx.message_text) is not None
+    ):
+        return None
+
     decision = await _classify_resume_prompt_reply(ctx)
     if decision.action == "approve":
         logger.info("gate_resume_prompt_accept", phrase=normalized, source=decision.source)

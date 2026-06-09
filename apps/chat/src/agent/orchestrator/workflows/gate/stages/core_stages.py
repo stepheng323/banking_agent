@@ -9,6 +9,9 @@ from apps.chat.src.agent.orchestrator.guardrails.cancellation import (
     is_explicit_cancel_message,
 )
 from apps.chat.src.agent.orchestrator.guardrails.gibberish import looks_like_gibberish, render_gibberish_prompt
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
+    classify_deterministic_meta_response,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.language import _resolve_explicit_language_switch
 from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _locale_update
@@ -147,6 +150,9 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
 
 
 def _stale_pin_message_targets_missing_session(ctx: GateContext) -> bool:
+    if classify_deterministic_meta_response(ctx.message_text) is not None:
+        return False
+
     callback = ctx.state_view.last_callback if isinstance(ctx.state_view.last_callback, dict) else {}
     if callback.get("pin_verified"):
         return True

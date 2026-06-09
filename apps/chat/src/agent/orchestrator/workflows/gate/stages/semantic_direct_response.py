@@ -42,9 +42,7 @@ async def _handle_semantic_direct_response(
         detected_language=getattr(route, "detected_language", None),
     )
     updates.update(detected_locale_updates)
-    had_active_query_session = bool(
-        isinstance(ctx.query_session_snapshot, dict) and ctx.query_session_snapshot.get("session_active")
-    )
+    had_active_query_session = await ctx.has_active_query_session()
     if had_active_query_session and canonical_decision == "direct_reply" and route.response_key != "planner.cancelled":
         task_id, spec = _build_direct_domain_task(state_view=ctx.state_view, domain="query")
         logger.info(

@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from banking.presentation.formatters.transaction_copy_context import format_amount_compact
 from banking.transactions.query.contracts import SelectionPayload
+from shared.money import naira_to_json
 
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 ASYNC_RECEIPT_STATUSES = {"queued", "processing", "pending"}
@@ -74,6 +75,11 @@ def _safe_completed_transaction_data(values: dict[str, Any]) -> dict[str, Any]:
             continue
         if isinstance(value, (str, int, float, bool)):
             safe[key_text] = value
+            continue
+        if key_text in {"amount", "amount_naira"}:
+            amount = naira_to_json(value)
+            if amount is not None:
+                safe[key_text] = amount
     return safe
 
 

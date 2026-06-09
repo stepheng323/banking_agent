@@ -1378,7 +1378,7 @@ async def test_quality_audit_unsupported_followup_does_not_reuse_stale_transacti
         )
     )
 
-    assert planner.boundary_calls == 1
+    assert planner.boundary_calls == 0
     assert planner.route_calls == 0
     assert result.final_state.capability_boundary is not None
     assert result.final_state.capability_boundary.key == "lending"
