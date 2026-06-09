@@ -283,6 +283,56 @@ async def test_telegram_pin_submit_does_not_publish_plaintext_pin(monkeypatch: p
 
 
 @pytest.mark.asyncio
+async def test_telegram_batch_pin_submit_uses_transfer_token_phone_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    publisher = _PublisherStub()
+
+    class _AuthorizationServiceStub:
+        def __init__(self, redis_client: Any) -> None:
+            self.redis_client = redis_client
+
+        async def verify_pin(
+            self,
+            phone_number: str,
+            pin: str,
+            idempotency_key: str,
+            transaction_type: str | None = None,
+        ) -> AuthorizationResult:
+            assert phone_number == "2348162511023"
+            assert pin == "123456"
+            assert idempotency_key == "idem-1"
+            assert transaction_type == "batch"
+            return AuthorizationResult(
+                verified=True,
+                user_id="user-1",
+                transaction_type="batch",
+            )
+
+        async def store_pin_verification_result(
+            self,
+            idempotency_key: str,
+            result: AuthorizationResult,
+        ) -> None:
+            assert idempotency_key == "idem-1"
+            assert result.verified is True
+
+    monkeypatch.setattr("shared.cache.redis_client.RedisClient.get_client", lambda: _RedisStub())
+    monkeypatch.setattr("banking.security.authorization.AuthorizationService", _AuthorizationServiceStub)
+    monkeypatch.setattr(router_module.QueuePublisherFactory, "get_publisher", lambda: publisher)
+
+    result = await router_module.telegram_pin_submit(
+        PinSubmitInput(flow_token="batch-pin-idem-1-927331985", pin="123456", chat_id="927331985"),
+        user_data={"user": '{"id": 927331985}'},
+        db=_DbStub(),  # type: ignore[arg-type]
+    )
+
+    assert result == {"success": True}
+    topic, message = publisher.published[0]
+    assert topic == "flow_event.process"
+    assert message["flow_type"] == "batch"
+    assert message["idempotency_key"] == "idem-1"
+
+
+@pytest.mark.asyncio
 async def test_telegram_bootstrap_returns_server_side_token_for_matching_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

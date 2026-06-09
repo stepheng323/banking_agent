@@ -31,7 +31,9 @@ from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
 _INVALID_SESSION_MESSAGE = "Invalid transaction session. Please start a new transaction."
-_PIN_FLOW_PREFIXES = frozenset({"transfer", "airtime", "data", "schedule"})
+_BATCH_PIN_FLOW_PREFIXES = frozenset({"batch", "transaction_batch", "transfer_batch", "multi_transfer", "mixed_batch"})
+_PIN_FLOW_PREFIXES = frozenset({"transfer", "airtime", "data", "schedule"}) | _BATCH_PIN_FLOW_PREFIXES
+_TOKEN_PHONE_LOOKUP_PREFIXES = ("transfer", "airtime", "data", "schedule")
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,21 @@ def parse_transaction_pin_flow_token(flow_token: str | None) -> ParsedTransactio
         idempotency_key=idempotency_key,
         phone_hint=phone_hint,
     )
+
+
+async def _lookup_pin_token_phone(redis_client: Any, transaction_type: str | None, idempotency_key: str) -> str | None:
+    if not transaction_type:
+        return None
+
+    lookup_prefixes = [transaction_type]
+    if transaction_type in _BATCH_PIN_FLOW_PREFIXES:
+        lookup_prefixes.extend(prefix for prefix in _TOKEN_PHONE_LOOKUP_PREFIXES if prefix not in lookup_prefixes)
+
+    for prefix in lookup_prefixes:
+        phone_number = await redis_client.get(f"{prefix}:token:{idempotency_key}:phone")
+        if phone_number:
+            return phone_number
+    return None
 
 
 async def handle_transaction_pin(
@@ -132,7 +149,7 @@ async def handle_transaction_pin(
 
     redis_client = RedisClient.get_client()
 
-    phone_number = await redis_client.get(f"{transaction_type}:token:{idem_key}:phone")
+    phone_number = await _lookup_pin_token_phone(redis_client, transaction_type, idem_key)
 
     expected_phone = phone_number or parsed_token.phone_hint
     if (

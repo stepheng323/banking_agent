@@ -32,7 +32,9 @@ router.include_router(onboarding_router)
 logger = get_logger(__name__)
 
 _service_instance: TelegramWebhookService | None = None
-_TRANSACTION_PIN_FLOW_PREFIXES = frozenset({"transfer", "airtime", "data", "schedule"})
+_BATCH_PIN_FLOW_PREFIXES = frozenset({"batch", "transaction_batch", "transfer_batch", "multi_transfer", "mixed_batch"})
+_TRANSACTION_PIN_FLOW_PREFIXES = frozenset({"transfer", "airtime", "data", "schedule"}) | _BATCH_PIN_FLOW_PREFIXES
+_TOKEN_PHONE_LOOKUP_PREFIXES = ("transfer", "airtime", "data", "schedule")
 
 
 def _parse_typed_pin_flow_token(flow_token: str | None) -> tuple[str, str, str] | None:
@@ -46,6 +48,18 @@ def _parse_typed_pin_flow_token(flow_token: str | None) -> tuple[str, str, str] 
     if not separator or not idem_key or not token_channel_id:
         return None
     return flow_type, idem_key, token_channel_id
+
+
+async def _lookup_pin_token_phone(redis_client: Any, flow_type: str, idempotency_key: str) -> str | None:
+    lookup_prefixes = [flow_type]
+    if flow_type in _BATCH_PIN_FLOW_PREFIXES:
+        lookup_prefixes.extend(prefix for prefix in _TOKEN_PHONE_LOOKUP_PREFIXES if prefix not in lookup_prefixes)
+
+    for prefix in lookup_prefixes:
+        phone_number = await redis_client.get(f"{prefix}:token:{idempotency_key}:phone")
+        if phone_number:
+            return phone_number
+    return None
 
 
 def _telegram_webhook_secret_is_valid(provided_token: str | None) -> bool:
@@ -229,7 +243,7 @@ async def telegram_pin_submit(
 
     # Resolve real phone number from transaction token stored during flow creation
     phone_number: str | None = None
-    phone_number = await redis_client.get(f"{flow_type}:token:{idem_key}:phone")
+    phone_number = await _lookup_pin_token_phone(redis_client, flow_type, idem_key)
 
     if not phone_number:
         return {"success": False, "error": "Session expired. Please start a new transaction."}

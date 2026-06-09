@@ -76,6 +76,15 @@ def test_parse_transaction_pin_flow_token_accepts_schedule_prefix() -> None:
     assert parsed.phone_hint == "2348162511023"
 
 
+def test_parse_transaction_pin_flow_token_accepts_batch_prefix() -> None:
+    parsed = parse_transaction_pin_flow_token("batch-pin-idem-1-2348162511023")
+
+    assert parsed is not None
+    assert parsed.transaction_type == "batch"
+    assert parsed.idempotency_key == "idem-1"
+    assert parsed.phone_hint == "2348162511023"
+
+
 @pytest.mark.asyncio
 async def test_whatsapp_transaction_pin_rejects_missing_flow_token() -> None:
     response = await handle_transaction_pin(
@@ -149,6 +158,33 @@ async def test_whatsapp_transaction_pin_success_does_not_echo_pin(monkeypatch: p
     assert auth_service.verify_calls == [("2348162511023", "123456", "idem-1", "transfer")]
     assert auth_service.stored == [("idem-1", auth_service.result)]
     assert publisher.published[0]["message"]["event_type"] == "pin_verified"
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_batch_pin_uses_transfer_token_phone_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    redis = _RedisStub({"transfer:token:idem-1:phone": "2348162511023"})
+    auth_service = _AuthorizationServiceStub(
+        AuthorizationResult(verified=True, user_id="user-1", transaction_type="batch")
+    )
+    publisher = _PublisherStub()
+
+    monkeypatch.setattr(handler_module.RedisClient, "get_client", staticmethod(lambda: redis))
+    monkeypatch.setattr(handler_module, "AuthorizationService", lambda redis_client=None: auth_service)
+
+    response = await handle_transaction_pin(
+        {"pin": "123456"},
+        "batch-pin-idem-1-2348162511023",
+        False,
+        b"",
+        b"",
+        _WhatsAppClientStub(),  # type: ignore[arg-type]
+        publisher=publisher,
+    )
+
+    body = json.loads(response.body)
+    assert body["screen"] == "SUCCESS"
+    assert auth_service.verify_calls == [("2348162511023", "123456", "idem-1", "batch")]
+    assert publisher.published[0]["message"]["flow_type"] == "batch"
 
 
 @pytest.mark.asyncio
