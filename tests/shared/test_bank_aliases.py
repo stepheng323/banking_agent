@@ -1,6 +1,7 @@
 """Unit tests for centralized bank aliases module."""
 
 from shared.utils.bank_aliases import (
+    display_bank_name,
     find_matching_bank_name,
     get_bank_search_terms,
     normalize_bank_name,
@@ -74,6 +75,21 @@ class TestGetBankSearchTerms:
         """Unknown bank should return the normalized name in a list."""
         terms = get_bank_search_terms("Random Bank")
         assert "random bank" in terms
+
+
+class TestDisplayBankName:
+    """Tests for user-facing bank labels."""
+
+    def test_display_known_short_aliases(self):
+        assert display_bank_name("Access") == "Access Bank"
+        assert display_bank_name("access bank") == "Access Bank"
+        assert display_bank_name("GTB") == "GTBank"
+        assert display_bank_name("UBA") == "UBA"
+        assert display_bank_name("opay") == "Opay"
+
+    def test_display_unknown_preserves_input(self):
+        assert display_bank_name("Access Bank Nigeria") == "Access Bank Nigeria"
+        assert display_bank_name("") is None
 
 
 class TestFindMatchingBankName:

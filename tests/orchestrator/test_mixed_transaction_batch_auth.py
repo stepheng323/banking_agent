@@ -18,12 +18,13 @@ from banking.presentation.i18n.bridge import render_cancelled_prompt
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.types.planner import (
+    AirtimeTaskParameters,
     InterruptRouteDecision,
     PendingActionEditDecision,
-    PlannedTask,
     PlannerOutput,
     SemanticRouteDecision,
-    TaskParameters,
+    TransferTaskParameters,
+    make_planned_task,
 )
 
 SHARED_SOURCE_LINE = format_source_account_info_from_account_number(
@@ -361,6 +362,42 @@ class _TransferExecutesWhenPinVerifiedWorker:
                 "sourceBank": "Zenith Bank",
                 "sourceAccount": "0000009384",
             },
+        )
+
+
+class _TransferRequiresRehydratedRecipientOnPinWorker:
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, Any]] = []
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message
+        self.payloads.append(dict(payload))
+        if (
+            pin_verified
+            and payload.get("amount") == 6000
+            and payload.get("recipient_account") == "2010000001"
+            and payload.get("recipient_bank_name") == "Access Bank"
+            and payload.get("source_account_id") == "acct-access"
+            and payload.get("source_account_number") == "0000000003"
+        ):
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                receipt={
+                    "status": "processing",
+                    "amount": payload.get("amount"),
+                    "recipient_name": payload.get("recipient_resolved_name") or payload.get("recipient_name"),
+                },
+            )
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_account"],
+            prompt="Wetin be adebayo's account number?",
         )
 
 
@@ -798,15 +835,17 @@ async def test_expired_transaction_confirmation_interrupt_resets_session_and_rep
             },
         }
     )
-    planner = _MockPlanner(
-        PlannerOutput(
-            primary_intent="conversational",
-            response="",
-            response_key="conversational.greeting",
-            confidence=0.9,
-            detected_language="English",
-            tasks=[],
-        )
+    planner = _SequentialPlanner(
+        [
+            PlannerOutput(
+                primary_intent="conversational",
+                response="",
+                response_key="conversational.greeting",
+                confidence=0.9,
+                detected_language="English",
+                tasks=[],
+            )
+        ]
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
@@ -2755,6 +2794,180 @@ async def test_added_airtime_batch_overwrites_stale_single_transfer_async_group_
 
 
 @pytest.mark.asyncio
+async def test_transfer_pin_resume_rehydrates_missing_payload_from_auth_snapshot() -> None:
+    transfer_worker = _TransferRequiresRehydratedRecipientOnPinWorker()
+    state = OrchestratorState(
+        user_id="u_transfer_pin_resume_rehydrates_snapshot",
+        phone_number="2348000000936",
+        channel="whatsapp",
+        waves=[["t_adebayo"]],
+        current_wave_index=0,
+        last_callback={"pin_verified": True, "flow_type": "transfer"},
+        pending_interrupt=PendingInterrupt(
+            kind="auth",
+            task_ids=["t_adebayo"],
+            auth_method="pin",
+            prompt="Confirm Transfer\n\n₦6,000 → Adebayo (Tolu Adebayo)\nAccess Bank • 2010000001",
+        ),
+        loaded_context={
+            "language": "pcm",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_adebayo": TaskSpec(
+                id="t_adebayo",
+                type="transfer",
+                stage=TaskStage.AWAITING_AUTH,
+                payload={
+                    "recipient_name": "Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "confirmation": {
+                        "summary": "₦6,000 → Adebayo (Tolu Adebayo)\nAccess Bank • 2010000001",
+                        "snapshot": {
+                            "amount": 6000,
+                            "recipient_name": "Adebayo (Tolu Adebayo)",
+                            "recipient_bank": "Access Bank",
+                            "recipient_account": "2010000001",
+                            "sourceBank": "Access Bank",
+                            "sourceAccount": "0000000003",
+                        },
+                    },
+                    "idempotency_key": "idem-adebayo",
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "services": {"transfer": transfer_worker},
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    approved_updates = await handle_pending_interrupt(state, config)
+
+    assert approved_updates["pending_interrupt"] is None
+    assert approved_updates["tasks"]["t_adebayo"].stage == TaskStage.EXECUTING
+
+    state = _apply(state, approved_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert transfer_worker.payloads
+    worker_payload = transfer_worker.payloads[-1]
+    assert worker_payload["amount"] == 6000
+    assert worker_payload["recipient_account"] == "2010000001"
+    assert worker_payload["recipient_bank_name"] == "Access Bank"
+    assert worker_payload["source_account_id"] == "acct-access"
+    assert worker_payload["source_account_number"] == "0000000003"
+    assert wave_updates["tasks"]["t_adebayo"].stage == TaskStage.COMPLETED
+    assert wave_updates["tasks"]["t_adebayo"].payload["receipt"]["status"] == "processing"
+
+    output_text = "\n".join(entry.get("text", "") for entry in wave_updates.get("outbox", []))
+    assert "account number" not in output_text.lower()
+    assert "Wetin be adebayo" not in output_text
+
+    state = _apply(state, wave_updates)
+    final_updates = await finalize(state, config)
+
+    final_text = "\n".join(entry.get("text", "") for entry in final_updates["outbox"])
+    assert "account number" not in final_text.lower()
+    assert "Wetin be adebayo" not in final_text
+
+
+@pytest.mark.asyncio
+async def test_multi_transfer_batch_pin_callback_executes_all_tasks_and_emits_processing() -> None:
+    state = OrchestratorState(
+        user_id="u_multi_transfer_pin_callback",
+        phone_number="2348000000935",
+        channel="whatsapp",
+        waves=[["t_adebayo", "t_mum"]],
+        current_wave_index=0,
+        last_callback={"pin_verified": True, "flow_type": "transfer"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_adebayo", "t_mum"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-access",
+                    "bank_name": "Access Bank",
+                    "account_number": "0000000003",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_adebayo": TaskSpec(
+                id="t_adebayo",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Adebayo",
+                    "recipient_resolved_name": "Tolu Adebayo",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "confirmation": {"summary": "Confirm Adebayo", "snapshot": {"amount": 10000}},
+                    "idempotency_key": "idem-adebayo",
+                },
+            ),
+            "t_mum": TaskSpec(
+                id="t_mum",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Mum",
+                    "recipient_resolved_name": "Tolu Adedayo",
+                    "recipient_account": "0760505261",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-access",
+                    "confirmation": {"summary": "Confirm Mum", "snapshot": {"amount": 10000}},
+                    "idempotency_key": "idem-mum",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "services": {"transfer": _TransferExecutesWhenPinVerifiedWorker()},
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    approved_updates = await handle_pending_interrupt(state, config)
+
+    assert approved_updates["pending_interrupt"] is None
+    assert approved_updates["tasks"]["t_adebayo"].stage == TaskStage.EXECUTING
+    assert approved_updates["tasks"]["t_mum"].stage == TaskStage.EXECUTING
+
+    state = _apply(state, approved_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert wave_updates["tasks"]["t_adebayo"].stage == TaskStage.COMPLETED
+    assert wave_updates["tasks"]["t_mum"].stage == TaskStage.COMPLETED
+    assert wave_updates["tasks"]["t_adebayo"].payload["async_group_kind"] == "multi_transfer"
+    assert wave_updates["tasks"]["t_mum"].payload["async_group_kind"] == "multi_transfer"
+
+    state = _apply(state, wave_updates)
+    final_updates = await finalize(state, config)
+
+    final_text = "\n".join(entry.get("text", "") for entry in final_updates["outbox"])
+    assert "Your transactions are being processed." in final_text
+
+
+@pytest.mark.asyncio
 async def test_semantic_pending_action_edit_adds_airtime_to_single_transfer_confirmation() -> None:
     state = OrchestratorState(
         user_id="u_single_confirm_add_airtime",
@@ -4281,20 +4494,20 @@ async def test_cancelled_mixed_flow_then_fresh_self_airtime_reuses_context_phone
         detected_language="English",
         normalized_instruction="send 10k to mum and buy me 5k airtime",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t_transfer",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t_airtime",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Buy 5k airtime",
-                parameters=TaskParameters(amount=5000),
+                parameters=AirtimeTaskParameters(amount=5000),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -4305,12 +4518,12 @@ async def test_cancelled_mixed_flow_then_fresh_self_airtime_reuses_context_phone
         detected_language="English",
         normalized_instruction="buy me 5k airtime",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t_airtime_restart",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Buy 5k airtime",
-                parameters=TaskParameters(amount=5000),
+                parameters=AirtimeTaskParameters(amount=5000),
                 risk="MONEY_MOVE",
             )
         ],

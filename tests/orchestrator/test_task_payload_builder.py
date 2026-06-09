@@ -4,16 +4,23 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import (
     derive_recipients_from_user_text,
 )
 from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import derive_transfer_schedule_fields
-from shared.types.planner import PlannedTask, TaskParameters
+from shared.types.planner import (
+    AirtimeTaskParameters,
+    DataTaskParameters,
+    QueryTaskParameters,
+    ScheduleTaskParameters,
+    TransferTaskParameters,
+    make_planned_task,
+)
 
 
 def test_transfer_recipient_not_in_user_text_is_dropped() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 5k to tolu",
-        parameters=TaskParameters(amount=5000, recipient="Tolu Adebayo"),
+        parameters=TransferTaskParameters(amount=5000, recipient="Tolu Adebayo"),
         risk="MONEY_MOVE",
     )
 
@@ -32,12 +39,12 @@ def test_transfer_recipient_not_in_user_text_is_dropped() -> None:
 
 
 def test_transfer_recipient_in_user_text_is_preserved() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 5k to Tolu Adebayo",
-        parameters=TaskParameters(amount=5000, recipient="Tolu Adebayo"),
+        parameters=TransferTaskParameters(amount=5000, recipient="Tolu Adebayo"),
         risk="MONEY_MOVE",
     )
 
@@ -55,12 +62,12 @@ def test_transfer_recipient_in_user_text_is_preserved() -> None:
 
 
 def test_airtime_still_uses_skip_extraction() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="a1",
         action="buy_airtime",
         executor="airtime",
         instruction="Buy airtime",
-        parameters=TaskParameters(amount=1000, recipient_phone="08030000000"),
+        parameters=AirtimeTaskParameters(amount=1000, recipient_phone="08030000000"),
         risk="MONEY_MOVE",
     )
 
@@ -78,12 +85,12 @@ def test_airtime_still_uses_skip_extraction() -> None:
 
 
 def test_airtime_maps_phone_to_recipient_phone_when_only_phone_is_present() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="a1",
         action="buy_airtime",
         executor="airtime",
         instruction="Buy airtime for 08130000000",
-        parameters=TaskParameters(amount=1000, phone="08130000000"),
+        parameters=AirtimeTaskParameters(amount=1000, phone="08130000000"),
         risk="MONEY_MOVE",
     )
 
@@ -102,12 +109,12 @@ def test_airtime_maps_phone_to_recipient_phone_when_only_phone_is_present() -> N
 
 
 def test_data_maps_phone_and_plan_into_runtime_fields() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="d1",
         action="buy_data",
         executor="data",
         instruction="Buy 1gb for 08130000000 mtn",
-        parameters=TaskParameters(phone="08130000000", plan="1GB", network="MTN"),
+        parameters=DataTaskParameters(phone="08130000000", plan="1GB", network="MTN"),
         risk="MONEY_MOVE",
     )
 
@@ -127,12 +134,12 @@ def test_data_maps_phone_and_plan_into_runtime_fields() -> None:
 
 
 def test_data_maps_budget_to_amount_when_amount_missing() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="d1",
         action="buy_data",
         executor="data",
         instruction="Buy data 2k for my line",
-        parameters=TaskParameters(budget="2k"),
+        parameters=DataTaskParameters(budget="2k"),
         risk="MONEY_MOVE",
     )
 
@@ -149,13 +156,38 @@ def test_data_maps_budget_to_amount_when_amount_missing() -> None:
     assert spec.payload.get("amount") == 2000
 
 
+def test_data_payload_repairs_planner_amount_data_size_to_plan() -> None:
+    plan_item = make_planned_task(
+        task_id="d1",
+        action="buy_data",
+        executor="data",
+        instruction="Buy 1GB MTN data for me",
+        parameters=DataTaskParameters(amount="1GB", network="MTN"),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Buy 1GB MTN data for me",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.type == "data"
+    assert "amount" not in spec.payload
+    assert spec.payload.get("plan_name") == "1GB"
+    assert spec.payload.get("network") == "MTN"
+
+
 def test_transfer_maps_planner_bank_name_and_normalizes_recipient_account() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Please send 5k to 816 251 1023 Access.",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount=5000,
             recipient="816 251 1023 Access",
             recipient_account="816 251 1023",
@@ -180,12 +212,12 @@ def test_transfer_maps_planner_bank_name_and_normalizes_recipient_account() -> N
 
 
 def test_transfer_drops_ungrounded_planner_destination_account_and_bank() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 5k to Mum",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount=5000,
             recipient="Mum",
             recipient_account="8162511023",
@@ -209,12 +241,12 @@ def test_transfer_drops_ungrounded_planner_destination_account_and_bank() -> Non
 
 
 def test_transfer_keeps_grounded_bank_and_drops_ungrounded_account() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 5k to Mum via Zenith Bank",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount=5000,
             recipient="Mum",
             recipient_account="8162511023",
@@ -238,12 +270,12 @@ def test_transfer_keeps_grounded_bank_and_drops_ungrounded_account() -> None:
 
 
 def test_transfer_keeps_10_digit_account_starting_with_zero() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 5k to 0760505261 Access.",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount=5000,
             recipient="0760505261 Access",
             recipient_account="0760505261",
@@ -265,12 +297,12 @@ def test_transfer_keeps_10_digit_account_starting_with_zero() -> None:
 
 
 def test_transfer_trims_leading_zero_for_11_digit_account() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 5k to 08162511023 Access.",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount=5000,
             recipient="08162511023 Access",
             recipient_account="08162511023",
@@ -292,12 +324,12 @@ def test_transfer_trims_leading_zero_for_11_digit_account() -> None:
 
 
 def test_transfer_keeps_11_digit_account_without_leading_zero() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 5k to 18162511023 Access.",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount=5000,
             recipient="18162511023 Access",
             recipient_account="18162511023",
@@ -319,12 +351,12 @@ def test_transfer_keeps_11_digit_account_without_leading_zero() -> None:
 
 
 def test_transfer_command_verb_is_not_used_as_recipient_name() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="I want to send 8k",
-        parameters=TaskParameters(amount=8000, recipient="send"),
+        parameters=TransferTaskParameters(amount=8000, recipient="send"),
         risk="MONEY_MOVE",
     )
 
@@ -341,12 +373,12 @@ def test_transfer_command_verb_is_not_used_as_recipient_name() -> None:
 
 
 def test_transfer_recipient_derivation_prefers_preposition_target() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="send 5k to tolu",
-        parameters=TaskParameters(amount=5000, recipient="send to tolu"),
+        parameters=TransferTaskParameters(amount=5000, recipient="send to tolu"),
         risk="MONEY_MOVE",
     )
 
@@ -393,12 +425,12 @@ def test_transfer_single_recipient_derivation_does_not_guess_first_candidate_in_
 
 
 def test_transfer_reference_is_mapped_to_recipient_reference() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 10k to her",
-        parameters=TaskParameters(amount=10000, recipient="her", reference={"selector": "previous"}),
+        parameters=TransferTaskParameters(amount=10000, recipient="her", reference={"selector": "previous"}),
         risk="MONEY_MOVE",
     )
 
@@ -415,12 +447,12 @@ def test_transfer_reference_is_mapped_to_recipient_reference() -> None:
 
 
 def test_transfer_payload_builder_preserves_authoritative_fanout_recipient_binding() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1_r2",
         action="send_money",
         executor="transfer",
         instruction="Split 10k btw mum and tolu",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount=5000,
             recipient="Tolu Adebayo",
             recipient_name="Tolu Adebayo",
@@ -444,12 +476,12 @@ def test_transfer_payload_builder_preserves_authoritative_fanout_recipient_bindi
 
 
 def test_transfer_payload_builder_keeps_percentage_and_transfer_all_fields() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send half my zenith balance to Mum",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             recipient="Mum",
             source_bank_name="Zenith Bank",
             transfer_percentage=50,
@@ -473,12 +505,12 @@ def test_transfer_payload_builder_keeps_percentage_and_transfer_all_fields() -> 
 
 
 def test_transfer_payload_builder_coerces_symbolic_all_amount_to_transfer_all() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send everything in my First Bank to Mum",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount="all",
             recipient="Mum",
             source_bank_name="First Bank",
@@ -500,12 +532,12 @@ def test_transfer_payload_builder_coerces_symbolic_all_amount_to_transfer_all() 
 
 
 def test_transfer_payload_builder_coerces_symbolic_half_amount_to_percentage() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send half my Zenith balance to Mum",
-        parameters=TaskParameters(
+        parameters=TransferTaskParameters(
             amount="half",
             recipient="Mum",
             source_bank_name="Zenith Bank",
@@ -527,12 +559,12 @@ def test_transfer_payload_builder_coerces_symbolic_half_amount_to_percentage() -
 
 
 def test_transfer_possessive_command_verb_is_not_used_as_recipient_name() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="I want to send money",
-        parameters=TaskParameters(amount=8000, recipient="send's"),
+        parameters=TransferTaskParameters(amount=8000, recipient="send's"),
         risk="MONEY_MOVE",
     )
 
@@ -586,12 +618,12 @@ def test_schedule_fields_parse_common_tomorrow_typo() -> None:
 
 
 def test_transfer_send_money_infers_schedule_action_from_text() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 10k to mum tomorrow 9am",
-        parameters=TaskParameters(amount=10000, recipient="mum"),
+        parameters=TransferTaskParameters(amount=10000, recipient="mum"),
         risk="MONEY_MOVE",
     )
 
@@ -610,12 +642,12 @@ def test_transfer_send_money_infers_schedule_action_from_text() -> None:
 
 
 def test_transfer_send_money_infers_schedule_action_and_cleans_recipient_typo() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="t1",
         action="send_money",
         executor="transfer",
         instruction="Send 20k to mum by tommorow",
-        parameters=TaskParameters(amount=20000, recipient="Mum By Tommorow"),
+        parameters=TransferTaskParameters(amount=20000, recipient="Mum By Tommorow"),
         risk="MONEY_MOVE",
     )
 
@@ -636,12 +668,12 @@ def test_transfer_send_money_infers_schedule_action_and_cleans_recipient_typo() 
 
 
 def test_airtime_buy_infers_schedule_action_from_text_without_default_time() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="a1",
         action="buy_airtime",
         executor="airtime",
         instruction="Buy 2k airtime tomorrow",
-        parameters=TaskParameters(amount=2000),
+        parameters=AirtimeTaskParameters(amount=2000),
         risk="MONEY_MOVE",
     )
 
@@ -661,12 +693,12 @@ def test_airtime_buy_infers_schedule_action_from_text_without_default_time() -> 
 
 
 def test_airtime_buy_infers_monthly_schedule_with_weekday_and_time() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="a1",
         action="buy_airtime",
         executor="airtime",
         instruction="Buy 2k airtime every month sunday 3pm",
-        parameters=TaskParameters(amount=2000),
+        parameters=AirtimeTaskParameters(amount=2000),
         risk="MONEY_MOVE",
     )
 
@@ -686,12 +718,12 @@ def test_airtime_buy_infers_monthly_schedule_with_weekday_and_time() -> None:
 
 
 def test_data_buy_infers_recurring_schedule_action_from_text() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="d1",
         action="buy_data",
         executor="data",
         instruction="Buy 1GB data every Friday 8am",
-        parameters=TaskParameters(plan="1GB"),
+        parameters=DataTaskParameters(plan="1GB"),
         risk="MONEY_MOVE",
     )
 
@@ -710,12 +742,12 @@ def test_data_buy_infers_recurring_schedule_action_from_text() -> None:
 
 
 def test_data_buy_infers_monthly_schedule_with_weekday_and_time() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="d1",
         action="buy_data",
         executor="data",
         instruction="Buy 1GB data every month sunday 3pm",
-        parameters=TaskParameters(plan="1GB"),
+        parameters=DataTaskParameters(plan="1GB"),
         risk="MONEY_MOVE",
     )
 
@@ -734,13 +766,13 @@ def test_data_buy_infers_monthly_schedule_with_weekday_and_time() -> None:
     assert spec.payload.get("schedule_time_local") == "15:00"
 
 
-def test_schedule_management_action_uses_schedule_executor_even_when_planner_returns_transfer() -> None:
-    plan_item = PlannedTask(
+def test_schedule_management_action_uses_schedule_executor() -> None:
+    plan_item = make_planned_task(
         task_id="s1",
         action="list_scheduled_transactions",
-        executor="transfer",
+        executor="schedule",
         instruction="How many scheduled transaction is pending",
-        parameters=TaskParameters(schedule_response_mode="count"),
+        parameters=ScheduleTaskParameters(schedule_response_mode="count"),
         risk="READ_ONLY",
     )
 
@@ -756,16 +788,17 @@ def test_schedule_management_action_uses_schedule_executor_even_when_planner_ret
     assert spec.type == "schedule"
     assert spec.payload.get("action") == "list_scheduled_transactions"
     assert spec.payload.get("schedule_response_mode") == "count"
+    assert spec.payload.get("response_shape") == "fact_count"
     assert "skip_extraction" not in spec.payload
 
 
 def test_query_payload_prefers_user_message_over_planner_instruction() -> None:
-    plan_item = PlannedTask(
+    plan_item = make_planned_task(
         task_id="q1",
         action="transaction_search",
         executor="query",
         instruction="Check today's spending",
-        parameters=TaskParameters(),
+        parameters=QueryTaskParameters(),
         risk="READ_ONLY",
     )
 
@@ -779,3 +812,47 @@ def test_query_payload_prefers_user_message_over_planner_instruction() -> None:
     )
 
     assert spec.payload.get("message") == "How much did I spend today"
+
+
+def test_payload_builder_infers_query_count_response_shape_from_user_message() -> None:
+    plan_item = make_planned_task(
+        task_id="q1",
+        action="transaction_search",
+        executor="query",
+        instruction="Count last week's transactions",
+        parameters=QueryTaskParameters(),
+        risk="READ_ONLY",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "How many transactions did I do last week?",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("response_shape") == "fact_count"
+
+
+def test_payload_builder_preserves_explicit_response_shape() -> None:
+    plan_item = make_planned_task(
+        task_id="q1",
+        action="transaction_search",
+        executor="query",
+        instruction="Show transaction history",
+        parameters=QueryTaskParameters(response_shape="surface_paginated"),
+        risk="READ_ONLY",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Show my transactions",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("response_shape") == "surface_paginated"

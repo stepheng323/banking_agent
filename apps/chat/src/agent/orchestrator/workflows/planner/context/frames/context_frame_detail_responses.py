@@ -1,6 +1,6 @@
 """Full detail and lookup response formatting for context-frame answers."""
 
-from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame
+from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_data_plans import (
     is_data_plan_entity,
     is_data_plan_frame,
@@ -24,6 +24,18 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
     lookup_tokens,
 )
 from banking.presentation.i18n.renderer import render_message
+
+
+def _empty_frame_response(frame: ContextFrame, *, locale: str) -> str | None:
+    if frame.frame_type == ContextFrameType.ACCOUNT_LIST:
+        return render_message("account.list.empty", locale)
+    if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
+        return render_message("beneficiary.list.empty", locale)
+    if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
+        return render_message("schedule.list.empty", locale)
+    if frame.frame_type in {ContextFrameType.TRANSACTION_LIST, ContextFrameType.TRANSACTION_DETAIL}:
+        return render_message("query.format.no_matching_transactions", locale)
+    return None
 
 
 def format_field_response(
@@ -57,6 +69,8 @@ def format_field_response(
 
 def format_details_response(frame: ContextFrame, *, locale: str = "en") -> str | None:
     items = unique_data_plan_entities(frame.items) if is_data_plan_frame(frame) else frame.items
+    if not items:
+        return _empty_frame_response(frame, locale=locale)
     if len(items) > 1:
         blocks: list[str] = []
         for idx, entity in enumerate(items[:CONTEXT_READ_LIST_LIMIT], 1):

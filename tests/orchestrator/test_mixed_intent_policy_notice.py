@@ -14,7 +14,13 @@ from apps.chat.src.agent.orchestrator.workflows.planner.node_constants import SA
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from shared.config.settings import settings
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    AccountTaskParameters,
+    PlannerOutput,
+    SupportTaskParameters,
+    TransferTaskParameters,
+    make_planned_task,
+)
 
 
 class _MockPlanner:
@@ -167,12 +173,12 @@ async def test_mixed_intent_outbox_contains_notice_then_transfer_prompt() -> Non
         detected_language="English",
         normalized_instruction="send 10k to tolu and invest 10k",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to tolu",
-                parameters=TaskParameters(amount="10000", recipient="tolu"),
+                parameters=TransferTaskParameters(amount="10000", recipient="tolu"),
                 risk="MONEY_MOVE",
             )
         ],
@@ -1185,12 +1191,12 @@ async def test_planner_replay_modifier_support_task_recovers_to_transfer_task() 
         detected_language="English",
         normalized_instruction="Again, but from gtb",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="support_retry",
                 action="handle_request",
                 executor="support",
                 instruction="Again, but from gtb",
-                parameters=TaskParameters(),
+                parameters=SupportTaskParameters(),
                 risk="READ_ONLY",
             )
         ],
@@ -1329,28 +1335,28 @@ async def test_mixed_request_runs_in_order_without_resume_prompt() -> None:
         detected_language="English",
         normalized_instruction="send 10k to mum and dad then show my balance",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount="10000", recipient="Mum"),
+                parameters=TransferTaskParameters(amount="10000", recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Dad",
-                parameters=TaskParameters(amount="10000", recipient="Dad"),
+                parameters=TransferTaskParameters(amount="10000", recipient="Dad"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t3",
                 action="check_balance",
                 executor="account",
                 instruction="Show my balance",
-                parameters=TaskParameters(),
+                parameters=AccountTaskParameters(),
                 depends_on=["t1", "t2"],
                 risk="READ_ONLY",
             ),

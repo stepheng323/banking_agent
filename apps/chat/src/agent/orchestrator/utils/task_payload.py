@@ -16,12 +16,17 @@ from apps.chat.src.agent.orchestrator.utils.task_payload_schedule import (
     infer_schedule_action_from_text,
 )
 from apps.chat.src.agent.orchestrator.utils.waves import build_dependency_waves
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.read_only_response import (
+    classify_read_only_response_shape,
+)
+from shared.types.planner import BaseTaskParameters, dump_task_parameters
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
 
 _AMOUNT_VALUE_PATTERN = re.compile(r"^\s*(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKmMhH]?)\s*$")
 _BALANCE_SHARE_PERCENT_PATTERN = re.compile(r"\b(\d{1,3})\s*%\b", re.IGNORECASE)
+_DATA_PLAN_VALUE_PATTERN = re.compile(r"(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(gb|mb)(?!\w)", re.IGNORECASE)
 
 logger = get_logger(__name__)
 
@@ -29,6 +34,8 @@ logger = get_logger(__name__)
 def _dump_plan_parameters(parameters: Any) -> dict[str, Any]:
     if not parameters:
         return {}
+    if isinstance(parameters, BaseTaskParameters):
+        return dump_task_parameters(parameters)
 
     model_dump = getattr(parameters, "model_dump", None)
     if callable(model_dump):
@@ -68,6 +75,9 @@ def _apply_transfer_payload_fields(
         return
 
     action_name = str(payload.get("action") or "")
+    if action_name in SCHEDULE_MANAGEMENT_ACTIONS:
+        return
+
     authoritative_fanout_binding = payload.get("recipient_binding_source") == "fanout"
 
     if plan_item.parameters and plan_item.parameters.reference:
@@ -304,9 +314,40 @@ def _parse_amount_value(value: Any) -> float | None:
     return amount
 
 
+def _data_plan_value(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    match = _DATA_PLAN_VALUE_PATTERN.search(value)
+    if not match:
+        return None
+    return f"{match.group(1)}{match.group(2).upper()}"
+
+
 def _apply_data_payload_fields(payload: dict[str, Any], plan_item: Any, fallback_message: str) -> None:
     if plan_item.executor != "data":
         return
+
+    raw_amount = payload.get("amount")
+    if isinstance(raw_amount, str):
+        plan_from_amount = _data_plan_value(raw_amount)
+        if plan_from_amount:
+            payload.setdefault("plan", plan_from_amount)
+            payload.pop("amount", None)
+            logger.info("data_amount_repaired_to_plan")
+        else:
+            parsed_amount = _parse_amount_value(raw_amount)
+            if parsed_amount is not None:
+                payload["amount"] = parsed_amount
+            else:
+                payload.pop("amount", None)
+                logger.info("data_invalid_amount_dropped")
+
+    raw_budget = payload.get("budget")
+    if not payload.get("plan") and isinstance(raw_budget, str):
+        plan_from_budget = _data_plan_value(raw_budget)
+        if plan_from_budget:
+            payload["plan"] = plan_from_budget
+            logger.info("data_budget_repaired_to_plan")
 
     target_phone = payload.get("target_phone")
     recipient_phone = payload.get("recipient_phone")
@@ -358,6 +399,10 @@ def build_task_spec_from_plan_item(
     format_narration_requires_recipient_field: bool,
 ) -> TaskSpec:
     payload = _dump_plan_parameters(plan_item.parameters)
+    if not payload.get("response_shape"):
+        response_shape = classify_read_only_response_shape(fallback_message or plan_item.instruction or "")
+        if response_shape:
+            payload["response_shape"] = response_shape
 
     if plan_item.action:
         if preserve_existing_action_instruction:

@@ -87,6 +87,9 @@ def test_pending_action_edit_contract_present() -> None:
     assert "deterministic code will re-render confirmation and require PIN" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
     assert "which account/bank to pay from" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
     assert "default-account update while a confirmation is pending" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    assert '"The purpose is for launch" -> operation=update_fields' in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    assert 'narration="for launch"' in PENDING_ACTION_EDIT_SYSTEM_PROMPT
+    assert "Do not treat these as recipient/account input" in PENDING_ACTION_EDIT_SYSTEM_PROMPT
 
 
 def test_interrupt_compact_prompt_is_shorter_but_keeps_core_contract() -> None:
@@ -154,7 +157,7 @@ def test_transfer_pronoun_reference_continuity_rules_present() -> None:
     )
     assert "R14_REFERENCE_BINDING" in runtime_prompt
     assert '{"selector":"previous"}' in runtime_prompt
-    assert '{"selector":"index","index":N}' in runtime_prompt
+    assert "Selector refs: previous or index." in runtime_prompt
 
 
 def test_transfer_scheduling_rules_present() -> None:
@@ -167,8 +170,9 @@ def test_transfer_scheduling_rules_present() -> None:
     assert "R21_TRANSFER_SCHEDULING" in runtime_prompt
     assert "schedule_transfer" in runtime_prompt
     assert "recurring_transfer" in runtime_prompt
-    assert "list_scheduled_transfers" in runtime_prompt
-    assert "cancel_scheduled_transfer" in runtime_prompt
+    assert "schedule actions" in runtime_prompt
+    assert "list_scheduled_transactions" in runtime_prompt
+    assert "cancel_scheduled_transaction" in runtime_prompt
     assert "count/existence->schedule_response_mode=count" in runtime_prompt
     assert "schedule_response_mode=count" in runtime_prompt
 
@@ -207,6 +211,7 @@ def test_transfer_only_prompt_bundle_selected_for_guardrail_transfer_handoff() -
     assert "money_move" not in bundles
     assert "executor_coverage_guard" not in bundles
     assert "TARGETED EXAMPLES (TRANSFER_ONLY)" in runtime_prompt
+    assert "CLEAN_TX_OUTPUT" in runtime_prompt
     assert "TARGETED EXAMPLES (MONEY_MOVE)" not in runtime_prompt
     assert "EXECUTOR COVERAGE GUARD" not in runtime_prompt
     assert "ex_transfer_only" in profile
@@ -229,9 +234,50 @@ def test_mixed_money_move_coverage_rules_present() -> None:
     assert "EXECUTOR COVERAGE GUARD" in runtime_prompt
     assert "clauses[]" in runtime_prompt
     assert "source_clause_index" in runtime_prompt
-    assert "Never use text from one clause to fill another clause's slots." in runtime_prompt
-    assert "Never drop a later read-only clause" in runtime_prompt
-    assert "Apply clause decomposition semantically across supported languages." in runtime_prompt
+    assert "Don't copy slots across clauses" in runtime_prompt
+    assert "don't drop read-only" in runtime_prompt
+    assert "clauses[] in user order" in runtime_prompt
+
+
+def test_transaction_prompt_quality_contract_preserves_aliases_and_clean_slots() -> None:
+    transfer_prompt, _, transfer_bundles = _build_prompt(
+        "Send 2k each to Tolu Access and Tolu GTB",
+        "None",
+        PlannerPromptSignals(
+            forced_domain_owner="transfer",
+            expected_transaction_executors=("transfer",),
+        ),
+    )
+    mixed_prompt, _, mixed_bundles = _build_prompt(
+        "Buy 1GB MTN data for me and send 2k to Mum",
+        "None",
+        PlannerPromptSignals(expected_transaction_executors=("data", "transfer")),
+    )
+
+    assert "transfer_only" in transfer_bundles
+    assert "mixed_tx" in mixed_bundles
+    assert "Alias exact" in transfer_prompt
+    assert "Tolu Access" in transfer_prompt
+    assert "Tolu GTB" in transfer_prompt
+    assert "recipient_allocations=Tolu Access:2000,Tolu GTB:2000" in transfer_prompt
+    assert "Alias bank words stay alias" in transfer_prompt
+    assert "Tolu Access=>recipient_name=Tolu Access" in transfer_prompt
+    assert "Use/from/with <bank> to send -> source_bank_name only" in transfer_prompt
+    assert "omit bank_name unless destination account+bank" in transfer_prompt
+    assert "2k=2000" in transfer_prompt
+    assert "source_bank_name=GTBank" in transfer_prompt
+    assert "recipient_name=Tolu Access,narration=Lunch; omit bank_name" in transfer_prompt
+    assert "1GB/500MB->plan not amount" in transfer_prompt
+    assert "Buy 1GB MTN data for me and send 2k to Mum" in mixed_prompt
+    assert "2k=2000" in mixed_prompt
+    assert "buy_data plan=1GB" in mixed_prompt
+    assert "recipient_name=Tolu Access" in mixed_prompt
+    assert "Transfer+airtime/data text must emit transfer task plus purchase task" in mixed_prompt
+    assert "Trailing/global source" in mixed_prompt
+    assert "applies to every transaction task" in mixed_prompt
+    assert "Send 10k to adebayo and buy me 2k airtime from my gtb" in mixed_prompt
+    assert "action=send_money amount=10000" in mixed_prompt
+    assert "recipient_name=adebayo,source_bank_name=GTBank + action=buy_airtime" in mixed_prompt
 
 
 def test_transfer_only_prompt_bundle_excludes_executor_coverage_guard() -> None:

@@ -3,7 +3,7 @@
 import re
 
 from shared.money import MoneyAmount
-from shared.types.planner import PlannedTask
+from shared.types.planner import PlannedTask, TransferTaskParameters
 
 
 def _normalize_recipient_text(value: str | None) -> str:
@@ -26,12 +26,17 @@ def _apply_transfer_fanout_target(
     amount: MoneyAmount | None,
     clear_source_recipient_allocations: bool,
     binding_index: int,
+    clear_destination_bank: bool = False,
 ) -> None:
+    if not isinstance(task.parameters, TransferTaskParameters):
+        return
     task.parameters.recipient = recipient_name
     task.parameters.recipient_name = recipient_name
     task.parameters.recipient_allocations = None
     task.parameters.recipient_binding_source = "fanout"
     task.parameters.recipient_binding_index = binding_index
+    if clear_destination_bank:
+        task.parameters.bank_name = None
     if amount is not None:
         task.parameters.amount = amount
     if clear_source_recipient_allocations:

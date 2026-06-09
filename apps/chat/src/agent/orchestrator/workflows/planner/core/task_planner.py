@@ -1,6 +1,8 @@
 """Task planner for breaking down user requests into executable tasks."""
 
+import re
 import time
+from decimal import Decimal
 
 from langchain_openai import ChatOpenAI
 
@@ -9,8 +11,8 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models
     UnsupportedCapabilitySemanticOutput,
 )
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
-    classify_unsupported_boundary_turn_semantic,
-    classify_unsupported_capability_semantic,
+    unsupported_boundary_turn_messages,
+    unsupported_capability_semantic_messages,
 )
 from apps.chat.src.agent.orchestrator.task_state.service import TaskStateService
 from apps.chat.src.agent.orchestrator.workflows.planner.core import (
@@ -30,9 +32,15 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core import (
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_model_wiring import (
     build_task_planner_structured_outputs,
+    with_structured_output,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_normalizer import (
-    normalize_planner_transaction_output,
+    normalize_planner_transaction_output_with_quality,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_normalizer_parsing import (
+    extract_bank_candidates,
+    parse_amount_value,
+    single_unambiguous,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_observability import (
     invoke_structured_prompt,
@@ -43,12 +51,14 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt
     PLANNER_PROMPT_BASELINE_RESULT,
     build_runtime_planner_system_prompt,
 )
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerPlanResult
 from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply
 from banking.transactions.shared.confirmation.models import (
     ConfirmationDecision,
     ConfirmationPromptKind,
 )
 from shared.observability.llm import build_llm_runnable_config
+from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
 from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameReplayModifier,
@@ -56,6 +66,7 @@ from shared.types.planner import (
     PendingActionEditDecision,
     PlannerOutput,
     SemanticRouteDecision,
+    planner_output_model_for_transaction_executors,
 )
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
@@ -67,6 +78,221 @@ PLANNER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
 Context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
+
+_BATCH_CUE_RE = re.compile(r"\b(?:each|split|between|btw)\b", re.IGNORECASE)
+_AMOUNT_TOKEN_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:k|m)?\b", re.IGNORECASE)
+_RECIPIENT_SEGMENT_BOUNDARY_RE = re.compile(r"\b(?:then|from|using|with|via|through|while)\b", re.IGNORECASE)
+_SOURCE_FIRST_TRANSFER_RE = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:use|using|from|with)\s+(?:my\s+)?(?P<source>.+?)\s+"
+    r"(?:to\s+)?(?:send|transfer|pay|remit)\b(?P<tail>.+)$",
+    re.IGNORECASE,
+)
+_TRANSFER_RECIPIENT_AFTER_AMOUNT_RE = re.compile(
+    r"^\s*(?:to|si|ga|zuwa)\s+(?P<recipient>.+)$",
+    re.IGNORECASE,
+)
+_NARRATION_TAIL_RE = re.compile(r"\s+\bfor\b\s+(?P<narration>.+)$", re.IGNORECASE)
+_TRANSACTION_EXECUTOR_VALUES = {"transfer", "airtime", "data"}
+
+
+def _format_hint_amount(amount: Decimal) -> str:
+    formatted = format(amount, "f")
+    return formatted.rstrip("0").rstrip(".") if "." in formatted else formatted
+
+
+def _extract_batch_recipients_exact(text: str) -> list[str]:
+    if not _BATCH_CUE_RE.search(text):
+        return []
+
+    match = re.search(r"\b(?:between|btw)\b\s+(.+)", text, re.IGNORECASE)
+    if match is None:
+        match = re.search(r"\b(?:to|for|si|ga|zuwa)\b\s+(.+)", text, re.IGNORECASE)
+    if match is None:
+        return []
+
+    segment = _RECIPIENT_SEGMENT_BOUNDARY_RE.split(match.group(1), maxsplit=1)[0].strip()
+    segment = re.sub(r"\band\s+to\b", " and ", segment, flags=re.IGNORECASE)
+    recipients: list[str] = []
+    seen: set[str] = set()
+    for raw_part in re.split(r"\s*,\s*|\s+\band\b\s+", segment, flags=re.IGNORECASE):
+        part = re.sub(r"^(?:to|for|si|ga|zuwa)\s+", "", raw_part, flags=re.IGNORECASE).strip(" \t\r\n,.;:!?")
+        if not part or _AMOUNT_TOKEN_RE.search(part):
+            continue
+        key = re.sub(r"[^a-z0-9]+", " ", part.lower()).strip()
+        if key and key not in seen:
+            seen.add(key)
+            recipients.append(part)
+    return recipients
+
+
+def _build_clean_transfer_context_hint(text: str, prompt_signals: prompt_models.PlannerPromptSignals) -> str | None:
+    transfer_expected = (
+        "transfer" in prompt_signals.expected_transaction_executors
+        or prompt_signals.forced_domain_owner == "transfer"
+        or prompt_signals.active_flow_type == "transfer"
+    )
+    if not transfer_expected:
+        return None
+
+    recipients = _extract_batch_recipients_exact(text)
+    if len(recipients) < 2:
+        return None
+
+    amount_match = _AMOUNT_TOKEN_RE.search(text)
+    if amount_match is None:
+        return None
+    parsed_amount = parse_amount_value(amount_match.group(0))
+    if parsed_amount is None or parsed_amount <= 0:
+        return None
+
+    if re.search(r"\beach\b", text, re.IGNORECASE):
+        per_recipient_amount = parsed_amount
+    else:
+        per_recipient_amount = parsed_amount / Decimal(len(recipients))
+
+    allocations = ",".join(
+        f'{{recipient_name:"{recipient}",amount:{_format_hint_amount(per_recipient_amount)}}}'
+        for recipient in recipients
+    )
+    return (
+        "CLEAN_EXTRACTION_HINT: output exactly one transfer send_money task with "
+        f"amount={_format_hint_amount(per_recipient_amount)}, recipient_allocations=[{allocations}]. "
+        "Omit recipient_name and bank_name at task parameters level. "
+        "Preserve aliases exactly; do not turn alias words into bank_name."
+    )
+
+
+def _transfer_expected(prompt_signals: prompt_models.PlannerPromptSignals) -> bool:
+    return (
+        "transfer" in prompt_signals.expected_transaction_executors
+        or prompt_signals.forced_domain_owner == "transfer"
+        or prompt_signals.active_flow_type == "transfer"
+    )
+
+
+def _clean_hint_text(value: str) -> str:
+    return value.strip(" \t\r\n,.;:!?")
+
+
+def _format_hint_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _format_hint_narration(value: str) -> str:
+    cleaned = _clean_hint_text(value)
+    if not cleaned:
+        return ""
+    return cleaned[:1].upper() + cleaned[1:]
+
+
+def _build_clean_source_transfer_context_hint(
+    text: str,
+    prompt_signals: prompt_models.PlannerPromptSignals,
+) -> str | None:
+    if not _transfer_expected(prompt_signals):
+        return None
+
+    match = _SOURCE_FIRST_TRANSFER_RE.match(text)
+    if match is None:
+        return None
+
+    source_bank, source_bank_ambiguous = single_unambiguous(extract_bank_candidates(match.group("source")))
+    if source_bank_ambiguous or not isinstance(source_bank, str):
+        return None
+
+    tail = match.group("tail")
+    amount_match = _AMOUNT_TOKEN_RE.search(tail)
+    if amount_match is None:
+        return None
+    amount = parse_amount_value(amount_match.group(0))
+    if amount is None or amount <= 0:
+        return None
+
+    recipient_match = _TRANSFER_RECIPIENT_AFTER_AMOUNT_RE.match(tail[amount_match.end() :])
+    if recipient_match is None:
+        return None
+
+    recipient_text = recipient_match.group("recipient")
+    narration: str | None = None
+    narration_match = _NARRATION_TAIL_RE.search(recipient_text)
+    if narration_match is not None:
+        narration = _format_hint_narration(narration_match.group("narration"))
+        recipient_text = recipient_text[: narration_match.start()]
+
+    recipient_name = _clean_hint_text(recipient_text)
+    if not recipient_name:
+        return None
+
+    fields = [
+        f'"amount":{_format_hint_amount(amount)}',
+        f'"source_bank_name":"{_format_hint_text(source_bank)}"',
+        f'"recipient_name":"{_format_hint_text(recipient_name)}"',
+    ]
+    if narration:
+        fields.append(f'"narration":"{_format_hint_text(narration)}"')
+
+    return (
+        "CLEAN_SOURCE_TRANSFER_HINT_JSON: output exactly one transfer send_money task with "
+        f'parameters={{{",".join(fields)}}}. Copy these slots exactly; omit recipient_bank_name and bank_name. '
+        f'Treat every word in "{_format_hint_text(recipient_name)}" as recipient alias text, not bank_name. '
+        'Wrong: {"bank_name":"Access Bank"}.'
+    )
+
+
+def _augment_context_with_clean_transfer_hint(
+    context: str,
+    text: str,
+    prompt_signals: prompt_models.PlannerPromptSignals,
+) -> str:
+    hints = [
+        hint
+        for hint in (
+            _build_clean_transfer_context_hint(text, prompt_signals),
+            _build_clean_source_transfer_context_hint(text, prompt_signals),
+        )
+        if hint is not None
+    ]
+    if not hints:
+        return context
+    hint_text = "\n".join(hints)
+    if not context or context == "None":
+        return hint_text
+    return f"{context}\n{hint_text}"
+
+
+def _planner_response_model_for_prompt(
+    prompt_signals: prompt_models.PlannerPromptSignals,
+    prompt_result: prompt_models.PlannerPromptBuildResult,
+) -> type[PlannerOutput]:
+    bundles = set(prompt_result.selected_bundle_ids)
+    if "transfer_only" in bundles:
+        return planner_output_model_for_transaction_executors(("transfer",))
+    if "mixed_tx" in bundles:
+        return planner_output_model_for_transaction_executors(prompt_signals.expected_transaction_executors)
+    if "money_move" in bundles:
+        if prompt_signals.expected_transaction_executors:
+            return planner_output_model_for_transaction_executors(prompt_signals.expected_transaction_executors)
+        if prompt_signals.active_flow_type in _TRANSACTION_EXECUTOR_VALUES:
+            return planner_output_model_for_transaction_executors((prompt_signals.active_flow_type,))
+        if prompt_signals.forced_domain_owner == "transfer":
+            return planner_output_model_for_transaction_executors(("transfer",))
+        return planner_output_model_for_transaction_executors(_TRANSACTION_EXECUTOR_VALUES)
+    return PlannerOutput
+
+
+def _planner_prompt_cache_key(response_type: type[PlannerOutput]) -> str:
+    response_type_name = response_type.__name__
+    suffix_by_response_type = {
+        "PlannerOutputTransferOnly": "transfer_only",
+        "PlannerOutputAirtimeOnly": "airtime_only",
+        "PlannerOutputDataOnly": "data_only",
+        "PlannerOutputTransferAirtime": "transfer_airtime",
+        "PlannerOutputTransferData": "transfer_data",
+        "PlannerOutputAirtimeData": "airtime_data",
+        "PlannerOutputTransactionsOnly": "transactions_only",
+    }
+    return f"planner:{suffix_by_response_type.get(response_type_name, 'full')}"
 
 
 class TaskPlanner:
@@ -92,6 +318,9 @@ class TaskPlanner:
             interrupt_llm=self.interrupt_llm,
         )
         self.structured_planner = structured_outputs.planner
+        self._structured_planner_by_response_type: dict[type[PlannerOutput], object] = {
+            PlannerOutput: self.structured_planner
+        }
         self.structured_semantic_router = structured_outputs.semantic_router
         self.structured_schedule_read_router = structured_outputs.schedule_read_router
         self.structured_interrupt_router = structured_outputs.interrupt_router
@@ -108,7 +337,18 @@ class TaskPlanner:
         if not self.uses_dedicated_semantic_router_model:
             logger.warning("semantic_router_model_not_dedicated", mode="interrupt_or_planner_fallback")
 
-    async def plan_tasks(
+    def _structured_planner_for_response_type(self, response_type: type[PlannerOutput]) -> object:
+        structured_planner = self._structured_planner_by_response_type.get(response_type)
+        if structured_planner is None:
+            structured_planner = with_structured_output(
+                self.planner_llm,
+                response_type,
+                method="function_calling",
+            )
+            self._structured_planner_by_response_type[response_type] = structured_planner
+        return structured_planner
+
+    async def plan_tasks_with_quality(
         self,
         phone_number: str,
         text: str,
@@ -116,25 +356,25 @@ class TaskPlanner:
         context: str = "None",
         prompt_signals: prompt_models.PlannerPromptSignals,
         path_label: str = "planner_path",
-    ) -> PlannerOutput:
-        """
-        Use planner to break down request into tasks.
-
-        Args:
-            phone_number: User's phone number
-            text: User's message
-            context: Current flow state/context summary
-
-        Returns:
-            PlannerOutput with planned tasks
-        """
-        user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(phone_number=phone_number, user_message=text, context=context)
-        prompt_input = prompt_models.PlannerPromptBuildInput(text=text, context=context, signals=prompt_signals)
+    ) -> PlannerPlanResult:
+        """Plan tasks and return raw output diagnostics."""
+        effective_context = _augment_context_with_clean_transfer_hint(context, text, prompt_signals)
+        user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+            context=effective_context,
+        )
+        prompt_input = prompt_models.PlannerPromptBuildInput(
+            text=text,
+            context=effective_context,
+            signals=prompt_signals,
+        )
         prompt_result = build_runtime_planner_system_prompt(prompt_input)
         system_prompt = prompt_result.system_prompt
-        result = await invoke_structured_prompt(
-            self.structured_planner,
-            PlannerOutput,
+        response_type = _planner_response_model_for_prompt(prompt_signals, prompt_result)
+        raw_model_output = await invoke_structured_prompt(
+            self._structured_planner_for_response_type(response_type),
+            response_type,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             logger=logger,
@@ -143,13 +383,14 @@ class TaskPlanner:
             path_label=path_label,
             latency_span="planner_llm",
             log_fields={
-                "context_chars": len(context),
+                "context_chars": len(effective_context),
                 "context_mode": "compact" if prompt_signals.compact_context else "full",
                 "prompt_profile": prompt_result.profile,
                 "prompt_bundles": list(prompt_result.selected_bundle_ids),
                 "prompt_rule_count": len(prompt_result.selected_rule_ids),
                 "baseline_runtime_system_chars": PLANNER_PROMPT_BASELINE_RESULT.char_count,
                 "baseline_runtime_profile": PLANNER_PROMPT_BASELINE_RESULT.profile,
+                "planner_response_model": response_type.__name__,
             },
             config=build_llm_runnable_config(
                 role="planner",
@@ -158,8 +399,18 @@ class TaskPlanner:
                 task_domain="orchestrator",
                 extra_metadata={"context_mode": "compact" if prompt_signals.compact_context else "full"},
             ),
+            prompt_cache_key=_planner_prompt_cache_key(response_type),
         )
-        return normalize_planner_transaction_output(result, text)
+        raw_output = PlannerOutput.model_validate(raw_model_output.model_dump())
+        normalized_output, quality_report = normalize_planner_transaction_output_with_quality(
+            raw_output.model_copy(deep=True),
+            text,
+        )
+        return PlannerPlanResult(
+            raw_output=raw_output,
+            planner_output=normalized_output,
+            quality_report=quality_report,
+        )
 
     async def route_semantic_turn(
         self,
@@ -311,6 +562,25 @@ class TaskPlanner:
             prompt_kind=prompt_kind,
             context_chars=len(context),
         )
+        output_metrics = structured_output_metrics(result)
+        record_llm_call(
+            event_name="confirmation_decision_llm_call",
+            duration_ms=duration_ms,
+            model=model_name(self.interrupt_llm),
+            response_type=type(result).__name__,
+            system_chars=len(context),
+            user_chars=len(text),
+            output_json_chars=output_metrics.get("output_json_chars"),
+            output_token_estimate=output_metrics.get("output_token_estimate"),
+            extra_fields={
+                **output_metrics,
+                "prompt_kind": prompt_kind,
+                "context_chars": len(context),
+                "source": result.source,
+                "action": result.action,
+                "confidence": result.confidence,
+            },
+        )
         log_latency_span(logger, span="confirmation_decision_llm", duration_ms=duration_ms, path_label=path_label)
         return result
 
@@ -323,38 +593,37 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> UnsupportedCapabilitySemanticOutput:
         """Bounded semantic classifier for unsupported capability boundaries."""
-        start = time.perf_counter()
-        structured_llm = self.structured_unsupported_capability.with_config(
-            build_llm_runnable_config(
-                role="semantic_router",
+        messages = unsupported_capability_semantic_messages(text=text, locale=locale, context=context)
+        try:
+            return await invoke_structured_prompt(
+                self.structured_unsupported_capability,
+                UnsupportedCapabilitySemanticOutput,
+                system_prompt=messages[0]["content"],
+                user_prompt=messages[1]["content"],
+                logger=logger,
+                event_name="unsupported_capability_semantic_llm_call",
+                model_llm=self.semantic_router_llm,
                 path_label=path_label,
-                task_domain="unsupported_capability",
-                locale=locale,
+                latency_span="unsupported_capability_semantic_llm",
+                log_fields={
+                    "context_chars": len(context),
+                    "context_mode": "compact" if context == "None" else "full",
+                },
+                config=build_llm_runnable_config(
+                    role="semantic_router",
+                    path_label=path_label,
+                    task_domain="unsupported_capability",
+                    locale=locale,
+                ),
+                prompt_cache_key="unsupported_capability:semantic",
             )
-        )
-        result = await classify_unsupported_capability_semantic(
-            text,
-            locale=locale,
-            context=context,
-            structured_llm=structured_llm,
-        )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "unsupported_capability_semantic_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=model_name(self.semantic_router_llm),
-            action=result.action,
-            capability_key=result.capability_key,
-            confidence=result.confidence,
-            context_chars=len(context),
-        )
-        log_latency_span(
-            logger,
-            span="unsupported_capability_semantic_llm",
-            duration_ms=duration_ms,
-            path_label=path_label,
-        )
-        return result
+        except Exception:
+            return UnsupportedCapabilitySemanticOutput(
+                action="unclear",
+                capability_key=None,
+                confidence=0.0,
+                reason="semantic_classifier_failed",
+            )
 
     async def classify_unsupported_boundary_turn(
         self,
@@ -368,43 +637,46 @@ class TaskPlanner:
         path_label: str = "direct_path",
     ) -> UnsupportedBoundaryTurnOutput:
         """Bounded semantic classifier for turns after an unsupported capability refusal."""
-        start = time.perf_counter()
-        structured_llm = self.structured_unsupported_boundary_turn.with_config(
-            build_llm_runnable_config(
-                role="semantic_router",
-                path_label=path_label,
-                task_domain="unsupported_capability",
-                locale=locale,
-                extra_metadata={"boundary_key": boundary_key},
-            )
-        )
-        result = await classify_unsupported_boundary_turn_semantic(
-            text,
+        messages = unsupported_boundary_turn_messages(
+            text=text,
             boundary_key=boundary_key,
             boundary_label=boundary_label,
             followup_count=followup_count,
             locale=locale,
             context=context,
-            structured_llm=structured_llm,
         )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "unsupported_boundary_turn_llm_call",
-            duration_ms=round(duration_ms, 2),
-            model=model_name(self.semantic_router_llm),
-            action=result.action,
-            capability_key=result.capability_key,
-            confidence=result.confidence,
-            boundary_key=boundary_key,
-            context_chars=len(context),
-        )
-        log_latency_span(
-            logger,
-            span="unsupported_boundary_turn_llm",
-            duration_ms=duration_ms,
-            path_label=path_label,
-        )
-        return result
+        try:
+            return await invoke_structured_prompt(
+                self.structured_unsupported_boundary_turn,
+                UnsupportedBoundaryTurnOutput,
+                system_prompt=messages[0]["content"],
+                user_prompt=messages[1]["content"],
+                logger=logger,
+                event_name="unsupported_boundary_turn_llm_call",
+                model_llm=self.semantic_router_llm,
+                path_label=path_label,
+                latency_span="unsupported_boundary_turn_llm",
+                log_fields={
+                    "boundary_key": boundary_key,
+                    "context_chars": len(context),
+                    "context_mode": "compact" if context == "None" else "full",
+                },
+                config=build_llm_runnable_config(
+                    role="semantic_router",
+                    path_label=path_label,
+                    task_domain="unsupported_capability",
+                    locale=locale,
+                    extra_metadata={"boundary_key": boundary_key},
+                ),
+                prompt_cache_key=f"unsupported_boundary:{boundary_key}",
+            )
+        except Exception:
+            return UnsupportedBoundaryTurnOutput(
+                action="unclear",
+                capability_key=None,
+                confidence=0.0,
+                reason="boundary_turn_classifier_failed",
+            )
 
     async def interpret_context_frame_followup(
         self,

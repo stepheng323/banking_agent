@@ -3,7 +3,12 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    BeneficiaryTaskParameters,
+    PlannerOutput,
+    QueryTaskParameters,
+    make_planned_task,
+)
 
 
 class _MockPlanner:
@@ -51,12 +56,12 @@ async def test_show_saved_beneficiaries_routes_to_list_beneficiaries_on_first_pa
         beneficiary_route="beneficiary_list",
         normalized_instruction="show saved beneficiaries",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="list_beneficiaries",
                 executor="beneficiary",
                 instruction="show saved beneficiaries",
-                parameters=TaskParameters(),
+                parameters=BeneficiaryTaskParameters(),
                 risk="READ_ONLY",
             )
         ],
@@ -99,12 +104,12 @@ async def test_top_recipients_query_keeps_query_beneficiary_summary_task() -> No
         beneficiary_route="recipient_ranking",
         normalized_instruction="who did i send money to the most this month",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="beneficiary_summary",
                 executor="query",
                 instruction="who did i send money to the most this month",
-                parameters=TaskParameters(),
+                parameters=QueryTaskParameters(),
                 risk="READ_ONLY",
             )
         ],
@@ -147,12 +152,12 @@ async def test_invalid_beneficiary_route_contract_returns_clarify_instead_of_rew
         beneficiary_route="beneficiary_list",
         normalized_instruction="show saved beneficiaries",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="beneficiary_summary",
                 executor="query",
                 instruction="show saved beneficiaries",
-                parameters=TaskParameters(),
+                parameters=QueryTaskParameters(),
                 risk="READ_ONLY",
             )
         ],
@@ -194,12 +199,12 @@ async def test_save_beneficiary_without_suggestion_context_returns_clarify() -> 
         beneficiary_route="none",
         normalized_instruction="save as mum",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="save_beneficiary",
                 executor="beneficiary",
                 instruction="save as mum",
-                parameters=TaskParameters(),
+                parameters=BeneficiaryTaskParameters(),
                 risk="READ_ONLY",
             )
         ],
@@ -241,12 +246,12 @@ async def test_planner_originated_save_beneficiary_is_rejected_even_with_pending
         beneficiary_route="none",
         normalized_instruction="save as mum",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="save_beneficiary",
                 executor="beneficiary",
                 instruction="save as mum",
-                parameters=TaskParameters(alias="mum"),
+                parameters=BeneficiaryTaskParameters(alias="mum"),
                 risk="READ_ONLY",
             )
         ],

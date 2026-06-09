@@ -95,12 +95,14 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         return _planner_failed_response()
 
     planner_output = execution_result.planner_output
+    planner_quality_report = execution_result.planner_quality_report
     current_locale = execution_result.current_locale
     context_read_updates = execution_result.context_read_updates
 
     locale_updates = _build_locale_update(state_view, current_locale)
 
-    _apply_planner_recovery(planner_output, text, active_session_present=state_view.has_session_stack)
+    if _apply_planner_recovery(planner_output, text, active_session_present=state_view.has_session_stack):
+        planner_quality_report = planner_quality_report.with_reason("recovery.planner_task_injected")
 
     handled_response = await _build_non_task_response(
         state=state,
@@ -115,20 +117,23 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         conversation_responder=dependencies.conversation_responder,
     )
     if handled_response is not None:
-        return _non_task_route_response(handled_response=handled_response, planner_output=planner_output)
+        updates = _non_task_route_response(handled_response=handled_response, planner_output=planner_output)
+        updates.update(planner_quality_report.to_state_updates())
+        return updates
 
     if state_view.has_waves and active_intent:
         logger.info("planner_intent_switch_or_update", old=active_intent, new=planner_output.primary_intent)
 
     task_updates = await _build_planner_task_updates(
         planner_output=planner_output,
+        planner_quality_report=planner_quality_report,
         text=text,
         locale=current_locale,
         query_session_source=query_session_source,
         query_session_snapshot=query_session_snapshot,
     )
     planner_output = task_updates["planner_output"]
-    return _build_planner_task_response(
+    response_updates = _build_planner_task_response(
         task_updates=task_updates,
         planner_output=planner_output,
         text=text,
@@ -136,6 +141,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         locale_updates=locale_updates,
         state_view=state_view,
     )
+    response_updates.update(task_updates["planner_quality_report"].to_state_updates())
+    return response_updates
 
 
 __all__ = ["plan_tasks"]

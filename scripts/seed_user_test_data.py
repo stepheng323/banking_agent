@@ -13,14 +13,18 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from shared.cache.redis_client import RedisClient
+from shared.cache.user_data import UserDataCache
 from shared.database.connection import get_session_local
 from shared.database.enums import BeneficiaryTypeEnum
 from shared.database.models import Account, Beneficiary, User
+from shared.security.field_encryption import blind_index
 
 
 def _seed_account_specs(user_suffix: str) -> list[dict[str, str]]:
@@ -79,6 +83,45 @@ def _seed_beneficiary_specs() -> list[dict[str, str]]:
     ]
 
 
+def _beneficiary_account_lookup(account_number: str) -> str:
+    lookup = blind_index(
+        "beneficiaries.account_number",
+        account_number,
+        normalizer="account_number",
+    )
+    if not lookup:
+        raise ValueError(f"Could not build beneficiary account lookup for {account_number!r}")
+    return lookup
+
+
+async def _seed_transfer_beneficiary_matches(
+    db: AsyncSession,
+    *,
+    user_id: object,
+    spec: dict[str, str],
+) -> list[Beneficiary]:
+    result = await db.execute(
+        select(Beneficiary)
+        .where(
+            Beneficiary.user_id == user_id,
+            Beneficiary.beneficiary_type == BeneficiaryTypeEnum.TRANSFER.value,
+            Beneficiary.account_number_blind_index == _beneficiary_account_lookup(spec["account_number"]),
+            Beneficiary.bank_code == spec["bank_code"],
+        )
+        .order_by(Beneficiary.created_at.asc(), Beneficiary.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def _invalidate_seeded_user_cache(phone_number: str) -> bool:
+    try:
+        await UserDataCache(RedisClient.get_client()).invalidate_all_user_data(phone_number)
+        return True
+    except Exception as exc:
+        print(f"[seed] skipped user-data cache invalidation: {exc}")
+        return False
+
+
 async def _resolve_target_user(phone: str | None) -> User:
     session_local = get_session_local()
     async with session_local() as db:
@@ -105,6 +148,7 @@ async def _seed_for_user(user: User) -> None:
     updated_accounts = 0
     created_beneficiaries = 0
     updated_beneficiaries = 0
+    deleted_duplicate_beneficiaries = 0
 
     async with session_local() as db:
         user_suffix = str(user.id).split("-")[0]
@@ -153,15 +197,11 @@ async def _seed_for_user(user: User) -> None:
 
         # Seed similar-name beneficiaries for disambiguation tests.
         for spec in _seed_beneficiary_specs():
-            result = await db.execute(
-                select(Beneficiary).where(
-                    Beneficiary.user_id == user.id,
-                    Beneficiary.beneficiary_type == BeneficiaryTypeEnum.TRANSFER.value,
-                    Beneficiary.account_number == spec["account_number"],
-                    Beneficiary.bank_code == spec["bank_code"],
-                )
-            )
-            beneficiary = result.scalars().first()
+            matches = await _seed_transfer_beneficiary_matches(db, user_id=user.id, spec=spec)
+            beneficiary = matches[0] if matches else None
+            for duplicate in matches[1:]:
+                await db.delete(duplicate)
+                deleted_duplicate_beneficiaries += 1
             if not beneficiary:
                 beneficiary = Beneficiary(
                     user_id=user.id,
@@ -177,6 +217,8 @@ async def _seed_for_user(user: User) -> None:
             else:
                 beneficiary.account_name = spec["account_name"]
                 beneficiary.alias = spec["alias"]
+                beneficiary.account_number = spec["account_number"]
+                beneficiary.bank_code = spec["bank_code"]
                 beneficiary.bank_name = spec["bank_name"]
                 updated_beneficiaries += 1
 
@@ -200,6 +242,8 @@ async def _seed_for_user(user: User) -> None:
             .all()
         )
 
+    cache_invalidated = await _invalidate_seeded_user_cache(user.phone_number)
+
     print("\nSeed complete")
     print(f"User: {user.phone_number} ({user.id})")
     print(f"Accounts: {len(account_rows)} total (created={created_accounts}, updated={updated_accounts})")
@@ -209,11 +253,13 @@ async def _seed_for_user(user: User) -> None:
     print(
         "Transfer beneficiaries: "
         f"{len(beneficiary_rows)} total "
-        f"(created={created_beneficiaries}, updated={updated_beneficiaries})"
+        f"(created={created_beneficiaries}, updated={updated_beneficiaries}, "
+        f"deleted_duplicates={deleted_duplicate_beneficiaries})"
     )
     for idx, bene in enumerate(beneficiary_rows, start=1):
         alias_part = f" alias={bene.alias}" if bene.alias else ""
         print(f"  {idx}. {bene.account_name}{alias_part} -> {bene.bank_name} {bene.account_number}")
+    print(f"User-data cache invalidated: {cache_invalidated}")
 
 
 async def _async_main(phone: str | None) -> None:

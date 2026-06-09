@@ -1,6 +1,7 @@
 """Transfer slot-filling prompt progression tests."""
 
 import time
+from decimal import Decimal
 
 from langchain_core.runnables import RunnableConfig
 
@@ -750,6 +751,7 @@ async def test_beneficiary_ambiguity_prompt_is_preserved() -> None:
     updates = await advance_wave(state, config)
     options_intent = updates["outbox"][0]
 
+    assert len(updates["outbox"]) == 1
     assert options_intent["type"] == "show_options"
     assert "I found multiple matches for 'Tolu'. Which one did you mean?" in options_intent["title"]
     assert "Reply with the number or rephrase." in options_intent["title"]
@@ -758,6 +760,8 @@ async def test_beneficiary_ambiguity_prompt_is_preserved() -> None:
     assert options_intent["task_ids"] == ["t1"]
     assert [opt["id"] for opt in options_intent["options"]] == ["bene-1", "bene-2"]
     assert options_intent["options"][0]["title"] == "Tolu A • Access Bank • ****1234"
+    assert options_intent["options"][0]["button_title"] == "1. Tolu A • Access Bank • ****1234"
+    assert options_intent["options"][1]["button_title"] == "2. Tolu B • GTBank • ****5678"
 
 
 async def test_amount_suggestion_prompt_emits_options_when_flag_enabled(monkeypatch) -> None:
@@ -1234,6 +1238,10 @@ async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:
                 stage=TaskStage.AWAITING_CONFIRMATION,
                 payload={
                     "recipient_name": "Tolu",
+                    "recipient_resolved_name": "Tolu Adedayo",
+                    "amount": Decimal("10000"),
+                    "recipient_bank_name": "Access",
+                    "recipient_account": "0760505261",
                     "name_mismatch_warning": warning,
                     "confirmation": {
                         "summary": f"{warning}\n\n₦10,000 → Tolu (Tolu Adedayo)\nAccess • 0760505261",
@@ -1248,6 +1256,10 @@ async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:
                 stage=TaskStage.AWAITING_CONFIRMATION,
                 payload={
                     "recipient_name": "Mum",
+                    "recipient_resolved_name": "Mercy Johnson",
+                    "amount": Decimal("10000"),
+                    "recipient_bank_name": "Opay",
+                    "recipient_account": "8162511023",
                     "confirmation": {
                         "summary": "₦10,000 → Mum (Mercy Johnson)\nOpay • 8162511023",
                         "snapshot": {"amount": 10000, "recipient_name": "Mum"},
@@ -1279,9 +1291,13 @@ async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:
     summary = confirmation_entry["summary"]
 
     assert "Confirm Transfers (2)" in summary
+    assert "Total out: ₦20,000" in summary
     assert warning not in summary
-    assert "Tolu (Tolu Adedayo)" in summary
-    assert "Mum (Mercy Johnson)" in summary
+    assert "*₦10,000 → Tolu (Tolu Adedayo)*" in summary
+    assert "Access Bank • 0760505261" in summary
+    assert "*₦10,000 → Mum (Mercy Johnson)*" in summary
+    assert "Opay • 8162511023" in summary
+    assert "E ready:" not in summary
 
 
 async def test_finalize_multi_transfer_summary_uses_alias_resolved_with_title_case() -> None:

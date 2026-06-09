@@ -1,6 +1,7 @@
 """Models for task planning and normalization."""
 
-from typing import Any, Literal, TypeAlias
+from collections.abc import Iterable
+from typing import Annotated, Any, ClassVar, Literal, TypeAlias, cast, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,8 +32,40 @@ class FundingSplitUpdate(BaseModel):
     amount: MoneyAmount = Field(..., gt=0, description="Amount to fund from this source account")
 
 
-class TaskParameters(BaseModel):
-    """Common parameters for tasks."""
+ResponseShape: TypeAlias = Literal[
+    "fact_bool",
+    "fact_count",
+    "fact_status",
+    "fact_recap",
+    "surface_list",
+    "surface_detail",
+    "surface_paginated",
+    "surface_actionable",
+]
+
+
+class BaseTaskParameters(BaseModel):
+    """Base class for executor-specific planner task parameter contracts."""
+
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "description": "Sparse executor-specific parameters. Use only fields valid for the task executor.",
+            "additionalProperties": True,
+        },
+    )
+
+
+class EmptyTaskParameters(BaseTaskParameters):
+    """No-slot task parameters for conversational/orchestrator tasks."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TransferTaskParameters(BaseTaskParameters):
+    """Transfer task parameters."""
+
+    model_config = ConfigDict(extra="forbid")
 
     amount: str | MoneyAmount | None = None
     transfer_all: bool = False
@@ -41,26 +74,13 @@ class TaskParameters(BaseModel):
     recipient_name: str | None = None
     narration: str | None = None
     recipient_phone: str | None = None
-    network: str | None = None
     recipient_account: str | None = None
     bank_name: str | None = None
-    phone: str | None = None
-    target_phone: str | None = None
-    budget: str | None = None
-    plan: str | None = None
-    plan_name: str | None = None
-    size_preference: str | None = None
-    validity_preference: str | None = None
-    selection_preference: str | None = None
-    usage_intent: str | None = None
-    is_self: bool = False
-
     schedule: str | None = None
     scheduled: str | None = None
     recurring: bool | None = None
     schedule_id: str | None = None
     schedule_selector: str | None = None
-    schedule_response_mode: Literal["list", "count"] | None = None
     international: bool | None = None
     alias: str | None = None
     reference: ContextReference | None = None
@@ -74,33 +94,735 @@ class TaskParameters(BaseModel):
     recipient_binding_index: int | None = None
 
 
-class PlannedTask(BaseModel):
-    """Structured representation of a single planned task."""
+class AirtimeTaskParameters(BaseTaskParameters):
+    """Airtime task parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: str | MoneyAmount | None = None
+    recipient_name: str | None = None
+    narration: str | None = None
+    recipient_phone: str | None = None
+    phone: str | None = None
+    target_phone: str | None = None
+    network: str | None = None
+    is_self: bool = False
+    schedule: str | None = None
+    scheduled: str | None = None
+    recurring: bool | None = None
+    schedule_id: str | None = None
+    schedule_selector: str | None = None
+    source_bank_name: str | None = None
+    source_account_index: int | None = None
+
+
+class DataTaskParameters(BaseTaskParameters):
+    """Data purchase task parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: str | MoneyAmount | None = None
+    recipient_name: str | None = None
+    recipient_phone: str | None = None
+    phone: str | None = None
+    target_phone: str | None = None
+    network: str | None = None
+    budget: str | None = None
+    plan: str | None = None
+    plan_name: str | None = None
+    size_preference: str | None = None
+    validity_preference: str | None = None
+    selection_preference: str | None = None
+    usage_intent: str | None = None
+    is_self: bool = False
+    schedule: str | None = None
+    scheduled: str | None = None
+    recurring: bool | None = None
+    schedule_id: str | None = None
+    schedule_selector: str | None = None
+    source_bank_name: str | None = None
+    source_account_index: int | None = None
+
+
+class AccountTaskParameters(BaseTaskParameters):
+    """Account-management and account-read parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_shape: ResponseShape | None = None
+    bank_name: str | None = None
+    source_bank_name: str | None = None
+    source_account_index: int | None = None
+    alias: str | None = None
+
+
+class BeneficiaryTaskParameters(BaseTaskParameters):
+    """Beneficiary task parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_shape: ResponseShape | None = None
+    recipient: str | None = None
+    recipient_name: str | None = None
+    recipient_account: str | None = None
+    bank_name: str | None = None
+    phone: str | None = None
+    target_phone: str | None = None
+    alias: str | None = None
+
+
+class ScheduleTaskParameters(BaseTaskParameters):
+    """Scheduled-transaction management parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_shape: ResponseShape | None = None
+    amount: str | MoneyAmount | None = None
+    recipient_name: str | None = None
+    recipient_phone: str | None = None
+    phone: str | None = None
+    network: str | None = None
+    plan: str | None = None
+    plan_name: str | None = None
+    schedule: str | None = None
+    scheduled: str | None = None
+    recurring: bool | None = None
+    schedule_id: str | None = None
+    schedule_selector: str | None = None
+    schedule_response_mode: Literal["list", "count"] | None = None
+    source_bank_name: str | None = None
+    source_account_index: int | None = None
+
+
+class QueryTaskParameters(BaseTaskParameters):
+    """Read-only query task parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_shape: ResponseShape | None = None
+    schedule_response_mode: Literal["list", "count"] | None = None
+
+
+class SupportTaskParameters(BaseTaskParameters):
+    """Support/FAQ task parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    response_shape: ResponseShape | None = None
+
+
+PlannerTaskParameters: TypeAlias = (
+    TransferTaskParameters
+    | AirtimeTaskParameters
+    | DataTaskParameters
+    | AccountTaskParameters
+    | BeneficiaryTaskParameters
+    | ScheduleTaskParameters
+    | QueryTaskParameters
+    | SupportTaskParameters
+    | EmptyTaskParameters
+)
+
+
+TaskRisk: TypeAlias = Literal["READ_ONLY", "MUTATION", "MONEY_MOVE"]
+PlannerExecutor: TypeAlias = Literal[
+    "transfer",
+    "query",
+    "airtime",
+    "data",
+    "account",
+    "support",
+    "faq",
+    "beneficiary",
+    "schedule",
+    "orchestrator",
+]
+
+
+class BasePlannedTask(BaseModel):
+    """Shared fields for action-specific planner task contracts."""
+
+    model_config = ConfigDict(extra="forbid")
 
     task_id: str = Field(..., description="Stable ID referenced by depends_on")
-    action: str
-    executor: Literal[
-        "transfer",
-        "query",
-        "airtime",
-        "data",
-        "account",
-        "support",
-        "faq",
-        "beneficiary",
-        "schedule",
-        "orchestrator",
-    ]
     instruction: str
     description: str | None = None
-    parameters: TaskParameters = Field(default_factory=TaskParameters)
     depends_on: list[str] = Field(default_factory=list)
     condition: str | None = None
-    risk: Literal["READ_ONLY", "MUTATION", "MONEY_MOVE"] = "READ_ONLY"
+    risk: TaskRisk = "READ_ONLY"
     idempotency_key: str | None = None  # Set by engine
     source_clause_index: int | None = Field(
         default=None,
         description="1-based clause index in planner decomposition that produced this task",
+    )
+
+
+class SendMoneyTask(BasePlannedTask):
+    action: Literal["send_money"]
+    executor: ClassVar[Literal["transfer"]] = "transfer"
+    parameters: TransferTaskParameters = Field(default_factory=TransferTaskParameters)
+
+
+class ScheduleTransferTask(BasePlannedTask):
+    action: Literal["schedule_transfer"]
+    executor: ClassVar[Literal["transfer"]] = "transfer"
+    parameters: TransferTaskParameters = Field(default_factory=TransferTaskParameters)
+
+
+class RecurringTransferTask(BasePlannedTask):
+    action: Literal["recurring_transfer"]
+    executor: ClassVar[Literal["transfer"]] = "transfer"
+    parameters: TransferTaskParameters = Field(default_factory=TransferTaskParameters)
+
+
+class BuyAirtimeTask(BasePlannedTask):
+    action: Literal["buy_airtime"]
+    executor: ClassVar[Literal["airtime"]] = "airtime"
+    parameters: AirtimeTaskParameters = Field(default_factory=AirtimeTaskParameters)
+
+
+class ScheduleAirtimeTask(BasePlannedTask):
+    action: Literal["schedule_airtime"]
+    executor: ClassVar[Literal["airtime"]] = "airtime"
+    parameters: AirtimeTaskParameters = Field(default_factory=AirtimeTaskParameters)
+
+
+class RecurringAirtimeTask(BasePlannedTask):
+    action: Literal["recurring_airtime"]
+    executor: ClassVar[Literal["airtime"]] = "airtime"
+    parameters: AirtimeTaskParameters = Field(default_factory=AirtimeTaskParameters)
+
+
+class BuyDataTask(BasePlannedTask):
+    action: Literal["buy_data"]
+    executor: ClassVar[Literal["data"]] = "data"
+    parameters: DataTaskParameters = Field(default_factory=DataTaskParameters)
+
+
+class ScheduleDataTask(BasePlannedTask):
+    action: Literal["schedule_data"]
+    executor: ClassVar[Literal["data"]] = "data"
+    parameters: DataTaskParameters = Field(default_factory=DataTaskParameters)
+
+
+class RecurringDataTask(BasePlannedTask):
+    action: Literal["recurring_data"]
+    executor: ClassVar[Literal["data"]] = "data"
+    parameters: DataTaskParameters = Field(default_factory=DataTaskParameters)
+
+
+class ListScheduledTransactionsTask(BasePlannedTask):
+    action: Literal["list_scheduled_transactions"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class FindScheduledTransactionTask(BasePlannedTask):
+    action: Literal["find_scheduled_transaction"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class CancelScheduledTransactionTask(BasePlannedTask):
+    action: Literal["cancel_scheduled_transaction"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class EditScheduledTransactionTask(BasePlannedTask):
+    action: Literal["edit_scheduled_transaction"]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class CheckBalanceTask(BasePlannedTask):
+    action: Literal["check_balance"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class ListAccountsTask(BasePlannedTask):
+    action: Literal["list_accounts"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class CountAccountsTask(BasePlannedTask):
+    action: Literal["count"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class LinkAccountTask(BasePlannedTask):
+    action: Literal["link"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class UnlinkAccountTask(BasePlannedTask):
+    action: Literal["unlink"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class SetDefaultAccountTask(BasePlannedTask):
+    action: Literal["set_default"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class OverallBalanceTask(BasePlannedTask):
+    action: Literal["overall_balance"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class ListBeneficiariesTask(BasePlannedTask):
+    action: Literal["list_beneficiaries"]
+    executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
+    parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
+
+
+class AddBeneficiaryTask(BasePlannedTask):
+    action: Literal["add_beneficiary"]
+    executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
+    parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
+
+
+class DeleteBeneficiaryTask(BasePlannedTask):
+    action: Literal["delete_beneficiary"]
+    executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
+    parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
+
+
+class UpdateBeneficiaryTask(BasePlannedTask):
+    action: Literal["update_beneficiary"]
+    executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
+    parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
+
+
+class SaveBeneficiaryTask(BasePlannedTask):
+    action: Literal["save_beneficiary"]
+    executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
+    parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
+
+
+class TransactionSearchTask(BasePlannedTask):
+    action: Literal["transaction_search"]
+    executor: ClassVar[Literal["query"]] = "query"
+    parameters: QueryTaskParameters = Field(default_factory=QueryTaskParameters)
+
+
+class TransactionListTask(BasePlannedTask):
+    action: Literal["transaction_list"]
+    executor: ClassVar[Literal["query"]] = "query"
+    parameters: QueryTaskParameters = Field(default_factory=QueryTaskParameters)
+
+
+class BeneficiarySummaryTask(BasePlannedTask):
+    action: Literal["beneficiary_summary"]
+    executor: ClassVar[Literal["query"]] = "query"
+    parameters: QueryTaskParameters = Field(default_factory=QueryTaskParameters)
+
+
+class SupportHandleRequestTask(BasePlannedTask):
+    action: Literal["handle_request"]
+    executor: ClassVar[Literal["support"]] = "support"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class SupportReportIssueTask(BasePlannedTask):
+    action: Literal["report_issue"]
+    executor: ClassVar[Literal["support"]] = "support"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class FaqAnswerQuestionTask(BasePlannedTask):
+    action: Literal["answer_question"]
+    executor: ClassVar[Literal["faq"]] = "faq"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class ResumeSessionTask(BasePlannedTask):
+    action: Literal["resume_session"]
+    executor: ClassVar[Literal["orchestrator"]] = "orchestrator"
+    parameters: EmptyTaskParameters = Field(default_factory=EmptyTaskParameters)
+
+
+class DismissResumeSessionTask(BasePlannedTask):
+    action: Literal["dismiss_resume_session"]
+    executor: ClassVar[Literal["orchestrator"]] = "orchestrator"
+    parameters: EmptyTaskParameters = Field(default_factory=EmptyTaskParameters)
+
+
+class TransferPlannedTask(BasePlannedTask):
+    action: Literal["send_money", "schedule_transfer", "recurring_transfer"]
+    executor: ClassVar[Literal["transfer"]] = "transfer"
+    parameters: TransferTaskParameters = Field(default_factory=TransferTaskParameters)
+
+
+class AirtimePlannedTask(BasePlannedTask):
+    action: Literal["buy_airtime", "schedule_airtime", "recurring_airtime"]
+    executor: ClassVar[Literal["airtime"]] = "airtime"
+    parameters: AirtimeTaskParameters = Field(default_factory=AirtimeTaskParameters)
+
+
+class DataPlannedTask(BasePlannedTask):
+    action: Literal["buy_data", "schedule_data", "recurring_data"]
+    executor: ClassVar[Literal["data"]] = "data"
+    parameters: DataTaskParameters = Field(default_factory=DataTaskParameters)
+
+
+class SchedulePlannedTask(BasePlannedTask):
+    action: Literal[
+        "list_scheduled_transactions",
+        "find_scheduled_transaction",
+        "cancel_scheduled_transaction",
+        "edit_scheduled_transaction",
+    ]
+    executor: ClassVar[Literal["schedule"]] = "schedule"
+    parameters: ScheduleTaskParameters = Field(default_factory=ScheduleTaskParameters)
+
+
+class AccountPlannedTask(BasePlannedTask):
+    action: Literal["check_balance", "list_accounts", "count", "link", "unlink", "set_default", "overall_balance"]
+    executor: ClassVar[Literal["account"]] = "account"
+    parameters: AccountTaskParameters = Field(default_factory=AccountTaskParameters)
+
+
+class BeneficiaryPlannedTask(BasePlannedTask):
+    action: Literal[
+        "list_beneficiaries",
+        "add_beneficiary",
+        "delete_beneficiary",
+        "update_beneficiary",
+        "save_beneficiary",
+    ]
+    executor: ClassVar[Literal["beneficiary"]] = "beneficiary"
+    parameters: BeneficiaryTaskParameters = Field(default_factory=BeneficiaryTaskParameters)
+
+
+class QueryPlannedTask(BasePlannedTask):
+    action: Literal["transaction_search", "transaction_list", "beneficiary_summary"]
+    executor: ClassVar[Literal["query"]] = "query"
+    parameters: QueryTaskParameters = Field(default_factory=QueryTaskParameters)
+
+
+class SupportPlannedTask(BasePlannedTask):
+    action: Literal["handle_request", "report_issue"]
+    executor: ClassVar[Literal["support"]] = "support"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class FaqPlannedTask(BasePlannedTask):
+    action: Literal["answer_question"]
+    executor: ClassVar[Literal["faq"]] = "faq"
+    parameters: SupportTaskParameters = Field(default_factory=SupportTaskParameters)
+
+
+class OrchestratorPlannedTask(BasePlannedTask):
+    action: Literal["resume_session", "dismiss_resume_session"]
+    executor: ClassVar[Literal["orchestrator"]] = "orchestrator"
+    parameters: EmptyTaskParameters = Field(default_factory=EmptyTaskParameters)
+
+
+PlannerTaskModel: TypeAlias = type[BasePlannedTask]
+PlannerTask: TypeAlias = Annotated[
+    TransferPlannedTask
+    | AirtimePlannedTask
+    | DataPlannedTask
+    | SchedulePlannedTask
+    | AccountPlannedTask
+    | BeneficiaryPlannedTask
+    | QueryPlannedTask
+    | SupportPlannedTask
+    | FaqPlannedTask
+    | OrchestratorPlannedTask,
+    Field(discriminator="action"),
+]
+PlannedTask: TypeAlias = PlannerTask
+
+TransferAirtimePlannerTask: TypeAlias = Annotated[
+    TransferPlannedTask | AirtimePlannedTask,
+    Field(discriminator="action"),
+]
+TransferDataPlannerTask: TypeAlias = Annotated[
+    TransferPlannedTask | DataPlannedTask,
+    Field(discriminator="action"),
+]
+AirtimeDataPlannerTask: TypeAlias = Annotated[
+    AirtimePlannedTask | DataPlannedTask,
+    Field(discriminator="action"),
+]
+TransactionalPlannerTask: TypeAlias = Annotated[
+    TransferPlannedTask | AirtimePlannedTask | DataPlannedTask,
+    Field(discriminator="action"),
+]
+TransferActionPlannerTask: TypeAlias = Annotated[
+    SendMoneyTask | ScheduleTransferTask | RecurringTransferTask,
+    Field(discriminator="action"),
+]
+AirtimeActionPlannerTask: TypeAlias = Annotated[
+    BuyAirtimeTask | ScheduleAirtimeTask | RecurringAirtimeTask,
+    Field(discriminator="action"),
+]
+DataActionPlannerTask: TypeAlias = Annotated[
+    BuyDataTask | ScheduleDataTask | RecurringDataTask,
+    Field(discriminator="action"),
+]
+TransferAirtimeActionPlannerTask: TypeAlias = Annotated[
+    SendMoneyTask
+    | ScheduleTransferTask
+    | RecurringTransferTask
+    | BuyAirtimeTask
+    | ScheduleAirtimeTask
+    | RecurringAirtimeTask,
+    Field(discriminator="action"),
+]
+TransferDataActionPlannerTask: TypeAlias = Annotated[
+    SendMoneyTask
+    | ScheduleTransferTask
+    | RecurringTransferTask
+    | BuyDataTask
+    | ScheduleDataTask
+    | RecurringDataTask,
+    Field(discriminator="action"),
+]
+AirtimeDataActionPlannerTask: TypeAlias = Annotated[
+    BuyAirtimeTask
+    | ScheduleAirtimeTask
+    | RecurringAirtimeTask
+    | BuyDataTask
+    | ScheduleDataTask
+    | RecurringDataTask,
+    Field(discriminator="action"),
+]
+TransactionalActionPlannerTask: TypeAlias = Annotated[
+    SendMoneyTask
+    | ScheduleTransferTask
+    | RecurringTransferTask
+    | BuyAirtimeTask
+    | ScheduleAirtimeTask
+    | RecurringAirtimeTask
+    | BuyDataTask
+    | ScheduleDataTask
+    | RecurringDataTask,
+    Field(discriminator="action"),
+]
+
+_ACTION_TASK_MODELS: dict[str, PlannerTaskModel] = {
+    "send_money": TransferPlannedTask,
+    "schedule_transfer": TransferPlannedTask,
+    "recurring_transfer": TransferPlannedTask,
+    "buy_airtime": AirtimePlannedTask,
+    "schedule_airtime": AirtimePlannedTask,
+    "recurring_airtime": AirtimePlannedTask,
+    "buy_data": DataPlannedTask,
+    "schedule_data": DataPlannedTask,
+    "recurring_data": DataPlannedTask,
+    "list_scheduled_transactions": SchedulePlannedTask,
+    "find_scheduled_transaction": SchedulePlannedTask,
+    "cancel_scheduled_transaction": SchedulePlannedTask,
+    "edit_scheduled_transaction": SchedulePlannedTask,
+    "check_balance": AccountPlannedTask,
+    "list_accounts": AccountPlannedTask,
+    "count": AccountPlannedTask,
+    "link": AccountPlannedTask,
+    "unlink": AccountPlannedTask,
+    "set_default": AccountPlannedTask,
+    "overall_balance": AccountPlannedTask,
+    "list_beneficiaries": BeneficiaryPlannedTask,
+    "add_beneficiary": BeneficiaryPlannedTask,
+    "delete_beneficiary": BeneficiaryPlannedTask,
+    "update_beneficiary": BeneficiaryPlannedTask,
+    "save_beneficiary": BeneficiaryPlannedTask,
+    "transaction_search": QueryPlannedTask,
+    "transaction_list": QueryPlannedTask,
+    "beneficiary_summary": QueryPlannedTask,
+    "handle_request": SupportPlannedTask,
+    "report_issue": SupportPlannedTask,
+    "answer_question": FaqPlannedTask,
+    "resume_session": OrchestratorPlannedTask,
+    "dismiss_resume_session": OrchestratorPlannedTask,
+}
+
+_ACTION_PARAMETER_MODELS: dict[str, type[BaseTaskParameters]] = {
+    "send_money": TransferTaskParameters,
+    "schedule_transfer": TransferTaskParameters,
+    "recurring_transfer": TransferTaskParameters,
+    "buy_airtime": AirtimeTaskParameters,
+    "schedule_airtime": AirtimeTaskParameters,
+    "recurring_airtime": AirtimeTaskParameters,
+    "buy_data": DataTaskParameters,
+    "schedule_data": DataTaskParameters,
+    "recurring_data": DataTaskParameters,
+    "list_scheduled_transactions": ScheduleTaskParameters,
+    "find_scheduled_transaction": ScheduleTaskParameters,
+    "cancel_scheduled_transaction": ScheduleTaskParameters,
+    "edit_scheduled_transaction": ScheduleTaskParameters,
+    "check_balance": AccountTaskParameters,
+    "list_accounts": AccountTaskParameters,
+    "count": AccountTaskParameters,
+    "link": AccountTaskParameters,
+    "unlink": AccountTaskParameters,
+    "set_default": AccountTaskParameters,
+    "overall_balance": AccountTaskParameters,
+    "list_beneficiaries": BeneficiaryTaskParameters,
+    "add_beneficiary": BeneficiaryTaskParameters,
+    "delete_beneficiary": BeneficiaryTaskParameters,
+    "update_beneficiary": BeneficiaryTaskParameters,
+    "save_beneficiary": BeneficiaryTaskParameters,
+    "transaction_search": QueryTaskParameters,
+    "transaction_list": QueryTaskParameters,
+    "beneficiary_summary": QueryTaskParameters,
+    "handle_request": SupportTaskParameters,
+    "report_issue": SupportTaskParameters,
+    "answer_question": SupportTaskParameters,
+    "resume_session": EmptyTaskParameters,
+    "dismiss_resume_session": EmptyTaskParameters,
+}
+
+_EXECUTOR_DEFAULT_ACTIONS: dict[str, str] = {
+    "transfer": "send_money",
+    "airtime": "buy_airtime",
+    "data": "buy_data",
+    "schedule": "list_scheduled_transactions",
+    "account": "check_balance",
+    "beneficiary": "list_beneficiaries",
+    "query": "transaction_search",
+    "support": "handle_request",
+    "faq": "answer_question",
+    "orchestrator": "resume_session",
+}
+
+
+def _normalized_action(action: str | None) -> str:
+    return str(action or "").strip().lower()
+
+
+def _literal_value(model: PlannerTaskModel, field_name: str) -> str:
+    class_value = getattr(model, field_name, None)
+    if isinstance(class_value, str):
+        return class_value
+    args = get_args(model.model_fields[field_name].annotation)
+    if len(args) != 1 or not isinstance(args[0], str):
+        raise ValueError(f"Planner task model {model.__name__} has invalid {field_name} literal")
+    return args[0]
+
+
+def task_model_for_action(action: str | None) -> PlannerTaskModel:
+    """Return the concrete planner task model for a canonical action."""
+    normalized = _normalized_action(action)
+    if normalized not in _ACTION_TASK_MODELS:
+        raise ValueError(f"Unsupported planner task action: {action!r}")
+    return _ACTION_TASK_MODELS[normalized]
+
+
+def task_parameter_model_for_action(action: str | None) -> type[BaseTaskParameters]:
+    """Return the canonical parameter model for a planner action."""
+    normalized = _normalized_action(action)
+    if not normalized:
+        return EmptyTaskParameters
+    if normalized not in _ACTION_PARAMETER_MODELS:
+        raise ValueError(f"Unsupported planner task action: {action!r}")
+    return _ACTION_PARAMETER_MODELS[normalized]
+
+
+def task_parameter_model_for_executor(executor: str | None, action: str | None = None) -> type[BaseTaskParameters]:
+    """Return the canonical parameter model for a planner task executor/action pair."""
+    normalized_executor = str(executor or "").strip().lower()
+    normalized_action = _normalized_action(action)
+    if normalized_action:
+        return task_parameter_model_for_action(normalized_action)
+    default_action = _EXECUTOR_DEFAULT_ACTIONS.get(normalized_executor)
+    return task_parameter_model_for_action(default_action)
+
+
+def coerce_task_parameters(
+    executor: str | None,
+    action: str | None,
+    value: Any,
+) -> PlannerTaskParameters:
+    """Coerce arbitrary planner parameter input into the executor-specific contract."""
+    model = task_parameter_model_for_executor(executor, action)
+    if value is None:
+        return cast(PlannerTaskParameters, model())
+    if isinstance(value, model):
+        return cast(PlannerTaskParameters, value)
+    if isinstance(value, BaseTaskParameters):
+        return cast(PlannerTaskParameters, model.model_validate(value.model_dump(exclude_none=True)))
+    return cast(PlannerTaskParameters, model.model_validate(value))
+
+
+def dump_task_parameters(parameters: BaseTaskParameters | None) -> dict[str, Any]:
+    """Dump task parameters into the runtime payload shape."""
+    if parameters is None:
+        return {}
+    return parameters.model_dump(exclude_none=True)
+
+
+def copy_task_parameters(
+    parameters: BaseTaskParameters | None,
+    *,
+    executor: str | None = None,
+    action: str | None = None,
+) -> BaseTaskParameters:
+    """Deep-copy typed task parameters, creating the executor default when absent."""
+    if parameters is None:
+        return coerce_task_parameters(executor, action, None)
+    return parameters.model_copy(deep=True)
+
+
+def coerce_planner_task(value: Any) -> PlannerTask:
+    """Coerce raw planner task input into its concrete action-specific model."""
+    if isinstance(value, BasePlannedTask):
+        return cast(PlannerTask, value)
+    if not isinstance(value, dict):
+        raise TypeError(f"Planner task must be a mapping, got {type(value).__name__}")
+    model = task_model_for_action(cast(str | None, value.get("action")))
+    return cast(PlannerTask, model.model_validate(value))
+
+
+def make_planned_task(
+    *,
+    task_id: str,
+    action: str,
+    executor: str | None = None,
+    instruction: str,
+    parameters: Any = None,
+    description: str | None = None,
+    depends_on: list[str] | None = None,
+    condition: str | None = None,
+    risk: TaskRisk = "READ_ONLY",
+    idempotency_key: str | None = None,
+    source_clause_index: int | None = None,
+) -> PlannerTask:
+    """Create a concrete planner task while enforcing action/executor compatibility."""
+    model = task_model_for_action(action)
+    expected_action = _normalized_action(action)
+    expected_executor = _literal_value(model, "executor")
+    normalized_executor = str(executor or expected_executor).strip().lower()
+    if normalized_executor != expected_executor:
+        raise ValueError(
+            f"Planner action {expected_action!r} requires executor {expected_executor!r}, got {executor!r}"
+        )
+    coerced_parameters = coerce_task_parameters(expected_executor, expected_action, parameters)
+    return cast(
+        PlannerTask,
+        model.model_validate(
+            {
+                "task_id": task_id,
+                "action": expected_action,
+                "instruction": instruction,
+                "description": description,
+                "parameters": coerced_parameters,
+                "depends_on": list(depends_on or []),
+                "condition": condition,
+                "risk": risk,
+                "idempotency_key": idempotency_key,
+                "source_clause_index": source_clause_index,
+            }
+        ),
     )
 
 
@@ -586,11 +1308,30 @@ class SemanticRouteDecision(BaseModel):
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
 
+def _strip_llm_schema_annotations(schema: dict[str, Any]) -> None:
+    """Remove non-validation annotations from the planner LLM schema."""
+
+    def strip(value: Any) -> None:
+        if isinstance(value, dict):
+            value.pop("title", None)
+            value.pop("description", None)
+            value.pop("default", None)
+            for child in value.values():
+                strip(child)
+        elif isinstance(value, list):
+            for child in value:
+                strip(child)
+
+    strip(schema)
+
+
 class PlannerOutput(BaseModel):
     """Structured output returned by the planner LLM.
 
     Combines classification and planning into single model.
     """
+
+    model_config = ConfigDict(json_schema_extra=_strip_llm_schema_annotations)
 
     # Classification fields
     primary_intent: str = Field(
@@ -644,3 +1385,75 @@ class PlannerOutput(BaseModel):
     tasks: list[PlannedTask] = Field(default_factory=list)
     notes: str | None = None
     created_at: float = Field(default_factory=lambda: __import__("time").time())
+
+    @classmethod
+    def model_json_schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        schema = super().model_json_schema(*args, **kwargs)
+        _strip_llm_schema_annotations(schema)
+        schema["title"] = cls.__name__
+        return schema
+
+
+class PlannerOutputTransferOnly(PlannerOutput):
+    """LLM-facing planner output for transfer-only turns."""
+
+    tasks: list[TransferActionPlannerTask] = Field(default_factory=list)  # type: ignore[assignment]
+
+
+class PlannerOutputAirtimeOnly(PlannerOutput):
+    """LLM-facing planner output for airtime-only turns."""
+
+    tasks: list[AirtimeActionPlannerTask] = Field(default_factory=list)  # type: ignore[assignment]
+
+
+class PlannerOutputDataOnly(PlannerOutput):
+    """LLM-facing planner output for data-only turns."""
+
+    tasks: list[DataActionPlannerTask] = Field(default_factory=list)  # type: ignore[assignment]
+
+
+class PlannerOutputTransferAirtime(PlannerOutput):
+    """LLM-facing planner output for transfer+airtime turns."""
+
+    tasks: list[TransferAirtimeActionPlannerTask] = Field(default_factory=list)  # type: ignore[assignment]
+
+
+class PlannerOutputTransferData(PlannerOutput):
+    """LLM-facing planner output for transfer+data turns."""
+
+    tasks: list[TransferDataActionPlannerTask] = Field(default_factory=list)  # type: ignore[assignment]
+
+
+class PlannerOutputAirtimeData(PlannerOutput):
+    """LLM-facing planner output for airtime+data turns."""
+
+    tasks: list[AirtimeDataActionPlannerTask] = Field(default_factory=list)  # type: ignore[assignment]
+
+
+class PlannerOutputTransactionsOnly(PlannerOutput):
+    """LLM-facing planner output for transaction-only turns when executor scope is broad."""
+
+    tasks: list[TransactionalActionPlannerTask] = Field(default_factory=list)  # type: ignore[assignment]
+
+
+_TRANSACTION_OUTPUT_MODELS_BY_EXECUTORS: dict[frozenset[str], type[PlannerOutput]] = {
+    frozenset({"transfer"}): PlannerOutputTransferOnly,
+    frozenset({"airtime"}): PlannerOutputAirtimeOnly,
+    frozenset({"data"}): PlannerOutputDataOnly,
+    frozenset({"transfer", "airtime"}): PlannerOutputTransferAirtime,
+    frozenset({"transfer", "data"}): PlannerOutputTransferData,
+    frozenset({"airtime", "data"}): PlannerOutputAirtimeData,
+    frozenset({"transfer", "airtime", "data"}): PlannerOutputTransactionsOnly,
+}
+
+
+def planner_output_model_for_transaction_executors(executors: Iterable[str]) -> type[PlannerOutput]:
+    """Return the narrow LLM-facing output model for a transaction executor scope."""
+    normalized = frozenset(
+        executor
+        for executor in (str(item).strip().lower() for item in executors)
+        if executor in {"transfer", "airtime", "data"}
+    )
+    if not normalized:
+        return PlannerOutputTransactionsOnly
+    return _TRANSACTION_OUTPUT_MODELS_BY_EXECUTORS.get(normalized, PlannerOutputTransactionsOnly)

@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
     _normalize_recipient_text,
     _recipient_overlap_score,
 )
-from shared.types.planner import PlannedTask
+from shared.types.planner import PlannedTask, TransferTaskParameters
 
 
 def _reconcile_multi_transfer_recipient_tasks(
@@ -30,10 +30,16 @@ def _reconcile_multi_transfer_recipient_tasks(
     if len(transfer_indices) < 2 or len(transfer_indices) != len(recipients):
         return planned_tasks, None
 
-    transfer_tasks = [planned_tasks[idx] for idx in transfer_indices]
-    if any(task.parameters.recipient_allocations for task in transfer_tasks):
+    transfer_task_pairs: list[tuple[int, PlannedTask, TransferTaskParameters]] = []
+    for idx in transfer_indices:
+        task = planned_tasks[idx]
+        if not isinstance(task.parameters, TransferTaskParameters):
+            return planned_tasks, None
+        transfer_task_pairs.append((idx, task, task.parameters))
+
+    if any(parameters.recipient_allocations for _, _, parameters in transfer_task_pairs):
         return planned_tasks, None
-    if any(task.parameters.recipient_account or task.parameters.bank_name for task in transfer_tasks):
+    if any(parameters.recipient_account or parameters.bank_name for _, _, parameters in transfer_task_pairs):
         return planned_tasks, None
 
     recipient_lookup = {_normalize_recipient_text(recipient): recipient for recipient in recipients}
@@ -43,20 +49,18 @@ def _reconcile_multi_transfer_recipient_tasks(
     assignments: dict[int, str] = {}
     used_recipient_keys: set[str] = set()
 
-    for idx in transfer_indices:
-        task = planned_tasks[idx]
-        current_name = str(task.parameters.recipient_name or task.parameters.recipient or "").strip()
+    for idx, _, parameters in transfer_task_pairs:
+        current_name = str(parameters.recipient_name or parameters.recipient or "").strip()
         current_key = _normalize_recipient_text(current_name)
         if current_key and current_key in recipient_lookup and current_key not in used_recipient_keys:
             assignments[idx] = current_name
             used_recipient_keys.add(current_key)
 
-    for idx in transfer_indices:
+    for idx, _, parameters in transfer_task_pairs:
         if idx in assignments:
             continue
 
-        task = planned_tasks[idx]
-        current_name = str(task.parameters.recipient_name or task.parameters.recipient or "").strip()
+        current_name = str(parameters.recipient_name or parameters.recipient or "").strip()
         available = [
             (recipient_key, recipient_lookup[recipient_key])
             for recipient_key in recipient_lookup
@@ -83,6 +87,8 @@ def _reconcile_multi_transfer_recipient_tasks(
     normalized_tasks = [task.model_copy(deep=True) for task in planned_tasks]
     for idx in transfer_indices:
         task = normalized_tasks[idx]
+        if not isinstance(task.parameters, TransferTaskParameters):
+            return planned_tasks, None
         previous_name = str(task.parameters.recipient_name or task.parameters.recipient or "").strip()
         next_name = assignments.get(idx)
         if not next_name or previous_name == next_name:

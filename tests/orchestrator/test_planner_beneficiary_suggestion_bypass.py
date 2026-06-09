@@ -5,7 +5,12 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    BeneficiaryTaskParameters,
+    PlannerOutput,
+    TransferTaskParameters,
+    make_planned_task,
+)
 
 
 class _SuggestionAwarePlanner:
@@ -36,12 +41,12 @@ class _SuggestionAwarePlanner:
                 context_read_subtype=None,
                 normalized_instruction="save beneficiary",
                 tasks=[
-                    PlannedTask(
+                    make_planned_task(
                         task_id="t_save",
                         action="save_beneficiary",
                         executor="beneficiary",
                         instruction="save beneficiary",
-                        parameters=TaskParameters(alias="mom"),
+                        parameters=BeneficiaryTaskParameters(alias="mom"),
                         risk="READ_ONLY",
                     )
                 ],
@@ -59,12 +64,12 @@ class _SuggestionAwarePlanner:
             context_read_subtype=None,
             normalized_instruction="send 10k to mom",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="t_transfer",
                     action="send_money",
                     executor="transfer",
                     instruction="send 10k to mom",
-                    parameters=TaskParameters(amount=10000, recipient="mom"),
+                    parameters=TransferTaskParameters(amount=10000, recipient="mom"),
                     risk="MONEY_MOVE",
                 )
             ],

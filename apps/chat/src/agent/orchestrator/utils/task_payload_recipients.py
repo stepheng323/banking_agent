@@ -10,7 +10,7 @@ from shared.utils.sanitize import normalize_bank_account_number
 
 _TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
 _RECIPIENT_NOISE_TOKENS = _TRANSFER_VERB_TOKENS | {"to", "for", "money", "cash", "funds", "s"}
-_RECIPIENT_SEGMENT_BOUNDARY = re.compile(r"\b(?:then|from|using|with|via|through|while)\b")
+_RECIPIENT_SEGMENT_BOUNDARY = re.compile(r"\b(?:but|then|from|using|with|via|through|while)\b")
 _RECIPIENT_SCHEDULE_SUFFIX_RE = re.compile(rf"\s+(?:by\s+)?{SCHEDULE_DATE_PATTERN}\b.*$", re.IGNORECASE)
 
 

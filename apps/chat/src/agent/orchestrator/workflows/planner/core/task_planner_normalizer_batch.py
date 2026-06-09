@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_normalizer_parsing import parse_amount_value
 from shared.money import MoneyAmount
-from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
+from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TransferTaskParameters
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +15,7 @@ def _has_batch_transfer_cue(user_text: str) -> bool:
     return any(cue in lowered for cue in (" each ", " split ", " between ", " btw "))
 
 
-def _single_recipient_allocation(params: TaskParameters) -> RecipientAllocation | None:
+def _single_recipient_allocation(params: TransferTaskParameters) -> RecipientAllocation | None:
     allocations = params.recipient_allocations or []
     if len(allocations) != 1:
         return None
@@ -27,7 +27,7 @@ def _single_recipient_allocation(params: TaskParameters) -> RecipientAllocation 
     return RecipientAllocation(recipient_name=recipient_name, amount=amount)
 
 
-def _collapse_transfer_target(params: TaskParameters) -> tuple[str, MoneyAmount] | None:
+def _collapse_transfer_target(params: TransferTaskParameters) -> tuple[str, MoneyAmount] | None:
     allocation = _single_recipient_allocation(params)
     if allocation is not None:
         return allocation.recipient_name, allocation.amount
@@ -43,7 +43,9 @@ def _can_collapse_transfer_task(task: PlannedTask) -> bool:
     if task.executor != "transfer" or task.action != "send_money" or task.depends_on:
         return False
 
-    params = task.parameters or TaskParameters()
+    if not isinstance(task.parameters, TransferTaskParameters):
+        return False
+    params = task.parameters
     if params.transfer_all or params.transfer_percentage is not None:
         return False
     if params.reference is not None:
@@ -54,18 +56,11 @@ def _can_collapse_transfer_task(task: PlannedTask) -> bool:
         or (params.recipient_allocations and len(params.recipient_allocations) != 1)
     ):
         return False
-    if params.recipient_account or params.bank_name or params.recipient_phone or params.phone:
+    if params.recipient_account or params.bank_name or params.recipient_phone:
         return False
-    if (
-        params.network
-        or params.plan
-        or params.schedule
-        or params.scheduled
-        or params.schedule_id
-        or params.schedule_selector
-    ):
+    if params.schedule or params.scheduled or params.schedule_id or params.schedule_selector:
         return False
-    if params.recurring or params.international or params.alias or params.is_self:
+    if params.recurring or params.international or params.alias:
         return False
     if params.source_bank_name or params.source_account_index is not None or params.use_dual_accounts is not None:
         return False
@@ -73,13 +68,16 @@ def _can_collapse_transfer_task(task: PlannedTask) -> bool:
     return _collapse_transfer_target(params) is not None
 
 
-def collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str) -> PlannerOutput:
+def collapse_transfer_batch_tasks_with_meta(
+    planner_output: PlannerOutput,
+    user_text: str,
+) -> tuple[PlannerOutput, bool]:
     if not _has_batch_transfer_cue(user_text):
-        return planner_output
+        return planner_output, False
 
     tasks = planner_output.tasks
     if len(tasks) < 2:
-        return planner_output
+        return planner_output, False
 
     collapsed_tasks: list[PlannedTask] = []
     id_rewrites: dict[str, str] = {}
@@ -107,7 +105,10 @@ def collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str)
         allocations: list[RecipientAllocation] = []
         total_amount = Decimal("0.00")
         for child in run:
-            params = child.parameters or TaskParameters()
+            if not isinstance(child.parameters, TransferTaskParameters):
+                allocations = []
+                break
+            params = child.parameters
             target = _collapse_transfer_target(params)
             if target is None:
                 allocations = []
@@ -121,7 +122,11 @@ def collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str)
             idx = run_end
             continue
 
-        base_params = base_task.parameters.model_copy(deep=True) if base_task.parameters else TaskParameters()
+        if not isinstance(base_task.parameters, TransferTaskParameters):
+            collapsed_tasks.extend(run)
+            idx = run_end
+            continue
+        base_params = base_task.parameters.model_copy(deep=True)
         base_params.recipient = None
         base_params.recipient_name = None
         base_params.amount = total_amount
@@ -136,7 +141,7 @@ def collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str)
         idx = run_end
 
     if not applied_count:
-        return planner_output
+        return planner_output, False
 
     rewritten_tasks: list[PlannedTask] = []
     for task in collapsed_tasks:
@@ -159,7 +164,12 @@ def collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str)
         collapsed_task_count=len(id_rewrites) + applied_count,
         locale=planner_output.detected_language or "unknown",
     )
-    return planner_output.model_copy(update={"tasks": rewritten_tasks})
+    return planner_output.model_copy(update={"tasks": rewritten_tasks}), True
+
+
+def collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str) -> PlannerOutput:
+    normalized_output, _applied = collapse_transfer_batch_tasks_with_meta(planner_output, user_text)
+    return normalized_output
 
 
 def normalize_transfer_only_primary_intent(planner_output: PlannerOutput) -> PlannerOutput:

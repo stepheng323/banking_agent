@@ -3,7 +3,13 @@
 from typing import Literal
 
 from banking.intent.routing_signals import looks_like_transaction_replay_modifier_request
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    EmptyTaskParameters,
+    PlannedTask,
+    PlannerOutput,
+    TransferTaskParameters,
+    make_planned_task,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,12 +36,12 @@ def _recover_unexpected_question_task(planner_output: PlannerOutput, text: str) 
 
     executor: Literal["faq", "support"] = "faq" if primary_intent == "faq" else "support"
     action = "answer_question" if executor == "faq" else "handle_request"
-    return PlannedTask(
+    return make_planned_task(
         task_id=f"{executor}_unexpected_question",
         action=action,
         executor=executor,
         instruction=instruction,
-        parameters=TaskParameters(),
+        parameters=EmptyTaskParameters(),
         risk="READ_ONLY",
     )
 
@@ -65,12 +71,12 @@ def _recover_missing_slot_transfer_task(planner_output: PlannerOutput, text: str
     if primary_intent not in {"conversational", "transfer"}:
         return None
 
-    return PlannedTask(
+    return make_planned_task(
         task_id="transfer_missing_slots_recovery",
         action="send_money",
         executor="transfer",
         instruction=text,
-        parameters=TaskParameters(),
+        parameters=TransferTaskParameters(),
         risk="MONEY_MOVE",
     )
 
@@ -90,12 +96,12 @@ def _recover_replay_modifier_transfer_task(planner_output: PlannerOutput, text: 
     elif primary_intent not in {"support", "conversational"}:
         return None
 
-    return PlannedTask(
+    return make_planned_task(
         task_id="transfer_replay_modifier_recovery",
         action="send_money",
         executor="transfer",
         instruction=text,
-        parameters=TaskParameters(),
+        parameters=TransferTaskParameters(),
         risk="MONEY_MOVE",
     )
 

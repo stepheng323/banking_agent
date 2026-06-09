@@ -42,9 +42,26 @@ def with_structured_output(
     *,
     method: Literal["function_calling", "json_mode", "json_schema"] | None = None,
 ) -> Any:
+    kwargs: dict[str, Any] = {"include_raw": True}
     if method is None:
-        return llm.with_structured_output(schema)
-    return llm.with_structured_output(schema, method=method)
+        try:
+            return llm.with_structured_output(schema, **kwargs)
+        except TypeError as exc:
+            if not _is_unsupported_include_raw_error(str(exc)):
+                raise
+            return llm.with_structured_output(schema)
+    try:
+        return llm.with_structured_output(schema, method=method, **kwargs)
+    except TypeError as exc:
+        if not _is_unsupported_include_raw_error(str(exc)):
+            raise
+        return llm.with_structured_output(schema, method=method)
+
+
+def _is_unsupported_include_raw_error(message: str) -> bool:
+    return "include_raw" in message and (
+        "unexpected keyword" in message or "got an unexpected keyword argument" in message
+    )
 
 
 def build_task_planner_structured_outputs(

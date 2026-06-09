@@ -118,7 +118,10 @@ async def test_fastpath_uses_direct_response_when_context_is_sufficient() -> Non
     }
 
     updates = await plan_tasks(state, config)
-    assert updates.get("final_response") == "You have 3 linked accounts."
+    assert (
+        updates.get("final_response")
+        == "You have 3 linked accounts.\n\nExamples:\n• First Bank • …0001\n• GTBank • …0002\n• Access Bank • …0003"
+    )
     assert "tasks" not in updates
 
 
@@ -157,7 +160,80 @@ async def test_fastpath_falls_back_to_worker_when_context_missing() -> None:
     task = updates["tasks"]["t1"]
     assert task.type == "beneficiary"
     assert task.payload.get("action") == "list_beneficiaries"
+    assert task.payload.get("response_shape") == "fact_count"
     assert "final_response" not in updates
+
+
+@pytest.mark.asyncio
+async def test_fastpath_beneficiary_count_uses_count_shape_from_context() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="You have 4 beneficiaries.",
+        response_key=None,
+        confidence=0.91,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        context_read_subtype="beneficiary_count",
+        normalized_instruction="how many beneficiaries do i have",
+        tasks=[],
+    )
+    state = OrchestratorState(
+        user_id="u_2a",
+        phone_number="2348111111112",
+        channel="whatsapp",
+        last_message_text="How many beneficiaries do I have?",
+        loaded_context={
+            "beneficiaries": [
+                {
+                    "alias": "Mum",
+                    "account_name": "Mama Nkechi",
+                    "bank_name": "Opay",
+                    "account_number": "8162511023",
+                },
+                {
+                    "alias": "Tolu Access",
+                    "account_name": "Tolu Adebayo",
+                    "bank_name": "Access Bank",
+                    "account_number": "2010000001",
+                },
+                {
+                    "alias": "Tolu GTB",
+                    "account_name": "Tolu Adeyemi",
+                    "bank_name": "GTBank",
+                    "account_number": "2010000002",
+                },
+                {
+                    "alias": "Tolu First",
+                    "account_name": "Tolulope Johnson",
+                    "bank_name": "First Bank",
+                    "account_number": "2010000003",
+                },
+            ]
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert (
+        updates.get("final_response")
+        == "You have 4 saved beneficiaries.\n\n"
+        "Examples:\n"
+        "• Mum (Mama Nkechi) - Opay • …1023\n"
+        "• Tolu Access (Tolu Adebayo) - Access Bank • …0001\n"
+        "• Tolu GTB (Tolu Adeyemi) - GTBank • …0002"
+    )
+    assert "Tolu First" not in updates.get("final_response", "")
+    assert "tasks" not in updates
 
 
 @pytest.mark.asyncio
@@ -241,7 +317,10 @@ async def test_fastpath_is_language_agnostic_when_planner_sets_subtype() -> None
     }
 
     updates = await plan_tasks(state, config)
-    assert updates.get("final_response") == "O ni account meta."
+    assert (
+        updates.get("final_response")
+        == "O ni linked accounts 3.\n\nAwon apere:\n• First Bank • …0001\n• GTBank • …0002\n• Access Bank • …0003"
+    )
     assert "tasks" not in updates
 
 
@@ -314,6 +393,7 @@ async def test_fastpath_v2_account_linked_bank_existence_check_falls_back_when_a
     task = updates["tasks"]["t1"]
     assert task.type == "account"
     assert task.payload.get("action") == "list_accounts"
+    assert task.payload.get("response_shape") == "fact_bool"
     assert "final_response" not in updates
 
 
@@ -491,7 +571,9 @@ async def test_fastpath_v2_beneficiary_name_match_preview_uses_direct_response()
     }
 
     updates = await plan_tasks(state, config)
-    assert updates.get("final_response", "").startswith("You have these Tolu beneficiaries:")
+    assert updates.get("final_response", "").startswith("*Saved Beneficiaries*")
+    assert "Tolu Access (Tolu Adebayo)" in updates.get("final_response", "")
+    assert "Tolu GTB (Tolu Adeyemi)" in updates.get("final_response", "")
     assert "tasks" not in updates
 
 
@@ -581,7 +663,7 @@ async def test_recent_domain_focus_is_injected_for_follow_up_binding() -> None:
     }
 
     updates = await plan_tasks(state, config)
-    assert updates.get("final_response") == "Here are your linked accounts."
+    assert updates.get("final_response") == "*Your Bank Accounts*\n• First Bank • …0001\n• GTBank • …0002"
     assert planner.last_context and "Recent Domain Focus: account" in planner.last_context
 
 
@@ -668,7 +750,7 @@ async def test_fastpath_beneficiary_list_persists_context_frame() -> None:
 
     updates = await plan_tasks(state, config)
 
-    assert updates.get("final_response") == "You have 1 saved beneficiary: Mum (Opay ...1023)."
+    assert updates.get("final_response") == "*Saved Beneficiaries*\n• Mum (Mama Nkechi) - Opay • …1023"
     assert updates.get("context_frames")
     assert state.context_frames
     assert state.context_frames[-1].frame_type == ContextFrameType.BENEFICIARY_LIST
@@ -716,7 +798,7 @@ async def test_fastpath_beneficiary_name_preview_persists_context_frame() -> Non
 
     updates = await plan_tasks(state, config)
 
-    assert updates.get("final_response") == "You have these Tolu beneficiaries: Tolu Adebayo (...0001)."
+    assert updates.get("final_response") == "*Saved Beneficiaries*\n• Tolu (Tolu Adebayo) - Access Bank • …0001"
     assert updates.get("context_frames")
     assert state.context_frames
     assert state.context_frames[-1].frame_type == ContextFrameType.BENEFICIARY_LIST
@@ -837,6 +919,76 @@ async def test_beneficiary_completeness_followup_answers_from_recent_frame() -> 
     updates = await plan_tasks(state, config)
 
     assert updates.get("final_response") == "Yes. Those are the 3 saved beneficiaries I found."
+    assert updates.get("semantic_path_shape") == "context_frame_followup"
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_count_preview_followup_explains_truncated_examples() -> None:
+    now = int(time.time())
+    state = OrchestratorState(
+        user_id="u_bene_count_preview_1",
+        phone_number="2348111000006",
+        channel="telegram",
+        last_message_text="You only showed 3",
+        loaded_context={"language": "pcm"},
+        context_frames=[
+            ContextFrame(
+                frame_id="beneficiaries_count_preview",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-1",
+                        label="Tolu Access",
+                        data={"alias": "Tolu Access", "account_name": "Tolu Adebayo"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-2",
+                        label="Tolu GTB",
+                        data={"alias": "Tolu GTB", "account_name": "Tolu Adeyemi"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-3",
+                        label="Tolu First",
+                        data={"alias": "Tolu First", "account_name": "Tolulope Johnson"},
+                    ),
+                    ContextEntity(
+                        entity_type=EntityType.BENEFICIARY,
+                        entity_id="bene-4",
+                        label="Hi",
+                        data={"alias": "Hi", "account_name": "FATIMA ZAHRA MUSA"},
+                    ),
+                ],
+                created_at_ts=now,
+                ttl_seconds=600,
+                metadata={
+                    "display_shape": "count_preview",
+                    "response_shape": "fact_count",
+                    "shown_count": 3,
+                    "total_count": 4,
+                },
+            )
+        ],
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FrameFollowupPlanner(
+                ContextFrameFollowupDecision(decision="completeness_check", confidence=0.94)
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates.get("final_response") == (
+        "I showed 3 examples to keep it short. You have 4 saved beneficiaries in total."
+    )
     assert updates.get("semantic_path_shape") == "context_frame_followup"
     assert "tasks" not in updates
 

@@ -10,16 +10,57 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_normal
     parse_amount_value,
     single_unambiguous,
 )
-from shared.types.planner import TaskParameters
+from shared.types.planner import AirtimeTaskParameters, DataTaskParameters
 from shared.utils.network_utils import normalize_nigerian_phone, resolve_network_from_phone
 
 _SELF_AIRTIME_PATTERNS = (
     re.compile(r"\b(my line|my number|myself|for me|na me|for myself|pour moi)\b", re.IGNORECASE),
     re.compile(r"\bbuy me\b[\w\s]{0,80}\bairtime\b", re.IGNORECASE),
 )
+_DATA_PLAN_TOKEN_RE = re.compile(r"(?<!\d)\d{1,3}(?:\.\d+)?\s*(?:gb|mb)(?!\w)", re.IGNORECASE)
 
 
-def normalize_airtime_params(params: TaskParameters, text: str) -> tuple[list[str], list[str]]:
+def _strip_data_plan_tokens(text: str) -> str:
+    return _DATA_PLAN_TOKEN_RE.sub(" ", text or "")
+
+
+def _data_plan_from_value(value: object) -> str | None:
+    if value is None or not isinstance(value, str):
+        return None
+    plan, ambiguous = single_unambiguous(extract_data_plan_candidates(value))
+    if ambiguous or not isinstance(plan, str):
+        return None
+    return plan
+
+
+def _normalize_data_amount_field(params: DataTaskParameters) -> list[str]:
+    if params.amount is None:
+        return []
+    if not isinstance(params.amount, str):
+        return []
+
+    patched: list[str] = []
+    plan_from_amount = _data_plan_from_value(params.amount)
+    if plan_from_amount:
+        if not params.plan:
+            params.plan = plan_from_amount
+            patched.append("plan")
+        params.amount = None
+        patched.append("amount")
+        return patched
+
+    parsed_amount = parse_amount_value(params.amount)
+    if parsed_amount is not None:
+        params.amount = parsed_amount
+        patched.append("amount")
+        return patched
+
+    params.amount = None
+    patched.append("amount")
+    return patched
+
+
+def normalize_airtime_params(params: AirtimeTaskParameters, text: str) -> tuple[list[str], list[str]]:
     patched: list[str] = []
     ambiguous: list[str] = []
     parsed_phone: str | None = None
@@ -66,18 +107,25 @@ def normalize_airtime_params(params: TaskParameters, text: str) -> tuple[list[st
     return patched, ambiguous
 
 
-def normalize_data_params(params: TaskParameters, text: str) -> tuple[list[str], list[str]]:
+def normalize_data_params(params: DataTaskParameters, text: str) -> tuple[list[str], list[str]]:
     patched: list[str] = []
     ambiguous: list[str] = []
     parsed_phone: str | None = None
 
+    patched.extend(_normalize_data_amount_field(params))
+
     if params.amount is None:
-        budget_amount = parse_amount_value(params.budget)
+        budget_plan = _data_plan_from_value(params.budget)
+        if budget_plan and not params.plan:
+            params.plan = budget_plan
+            patched.append("plan")
+        budget_amount = None if budget_plan else parse_amount_value(params.budget)
         if budget_amount is not None:
             params.amount = budget_amount
             patched.append("amount")
         else:
-            amount, amount_ambiguous = single_unambiguous(extract_amount_candidates(text))
+            amount_text = _strip_data_plan_tokens(text)
+            amount, amount_ambiguous = single_unambiguous(extract_amount_candidates(amount_text))
             if amount_ambiguous:
                 ambiguous.append("amount")
             elif amount is not None:

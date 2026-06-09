@@ -18,6 +18,20 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _beneficiary_context_read_frame_metadata(subtype: str, count: int) -> dict[str, Any]:
+    if subtype != "beneficiary_count":
+        return {}
+    shown_count = min(3, count)
+    if count <= shown_count:
+        return {}
+    return {
+        "display_shape": "count_preview",
+        "response_shape": "fact_count",
+        "shown_count": shown_count,
+        "total_count": count,
+    }
+
+
 def _build_beneficiary_context_read_updates(
     state_view: PlannerStateView,
     planner_output: PlannerOutput,
@@ -66,6 +80,7 @@ def _build_beneficiary_context_read_updates(
         items=entities,
         created_at_ts=int(time.time()),
         source_message_id=state_view.last_message_id,
+        metadata=_beneficiary_context_read_frame_metadata(subtype, len(entities)),
     )
     ContextFrameManager().push_frame(state_view.state, frame)
     logger.info("planner_context_read_frame_pushed", subtype=subtype, count=len(entities))

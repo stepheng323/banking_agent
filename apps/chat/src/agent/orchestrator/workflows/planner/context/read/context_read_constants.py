@@ -22,7 +22,11 @@ CONTEXT_READ_FLOW_SUBTYPES = {
 CONTEXT_READ_SUBTYPES = CONTEXT_READ_ACCOUNT_SUBTYPES | CONTEXT_READ_BENEFICIARY_SUBTYPES | CONTEXT_READ_FLOW_SUBTYPES
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
-BENEFICIARY_CONTEXT_READ_PERSIST_SUBTYPES = {"beneficiary_list", "beneficiary_name_match_preview"}
+BENEFICIARY_CONTEXT_READ_PERSIST_SUBTYPES = {
+    "beneficiary_count",
+    "beneficiary_list",
+    "beneficiary_name_match_preview",
+}
 NO_ACTIVE_FLOW_CONTEXT_READ_MESSAGE = (
     "There is no active transfer flow right now. Start a transfer and I will guide you."
 )

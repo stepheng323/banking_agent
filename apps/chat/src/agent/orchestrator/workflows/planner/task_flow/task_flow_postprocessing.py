@@ -1,8 +1,15 @@
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import (
+    PlannerPostprocessResult,
+    PlannerQualityReport,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_clause_repair import (
     _validate_and_repair_planner_clauses,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_flow import (
     _strip_transactional_depends_on_edges,
+)
+from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_mixed_source import (
+    propagate_mixed_transaction_source_bank,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_transfer_fanout_expand import (
     _expand_underproduced_transfer_tasks,
@@ -47,7 +54,13 @@ def _attach_single_transfer_clause_index(planner_output: PlannerOutput) -> Plann
     return planner_output
 
 
-def _postprocess_planner_tasks(planner_output: PlannerOutput, text: str) -> PlannerOutput:
+def _postprocess_planner_tasks_with_quality(
+    planner_output: PlannerOutput,
+    text: str,
+    *,
+    quality_report: PlannerQualityReport | None = None,
+) -> PlannerPostprocessResult:
+    quality_report = quality_report or PlannerQualityReport()
     planner_output = _attach_single_transfer_clause_index(planner_output)
     clause_text_by_index = _clause_text_by_index(planner_output)
     fanout_tasks, fanout_meta = _expand_underproduced_transfer_tasks(
@@ -58,6 +71,8 @@ def _postprocess_planner_tasks(planner_output: PlannerOutput, text: str) -> Plan
     if fanout_meta:
         planner_output.tasks = fanout_tasks
         planner_output.is_complex = True
+        if fanout_meta.get("fanout_mode") == "multi_recipient":
+            quality_report = quality_report.with_reason("postprocess.transfer.text_derived_fanout")
         logger.info(
             "planner_transfer_multi_recipient_fanout_applied",
             source_task_id=fanout_meta["source_task_id"],
@@ -68,6 +83,7 @@ def _postprocess_planner_tasks(planner_output: PlannerOutput, text: str) -> Plan
     reconciled_tasks, reconcile_meta = _reconcile_multi_transfer_recipient_tasks(planner_output.tasks, text)
     if reconcile_meta:
         planner_output.tasks = reconciled_tasks
+        quality_report = quality_report.with_reason("postprocess.transfer.recipient_reconcile")
         logger.info(
             "planner_transfer_multi_recipient_reconcile_applied",
             recipient_count=reconcile_meta["recipient_count"],
@@ -89,13 +105,29 @@ def _postprocess_planner_tasks(planner_output: PlannerOutput, text: str) -> Plan
     repaired_output, repair_meta = _validate_and_repair_planner_clauses(planner_output)
     if repair_meta:
         planner_output = repaired_output
+        quality_report = quality_report.with_reason("postprocess.clause_repair")
         logger.info(
             "planner_clause_validation_repair_applied",
             repaired_balance_clause_indexes=repair_meta["repaired_balance_clause_indexes"],
+            repaired_transfer_clause_indexes=repair_meta["repaired_transfer_clause_indexes"],
             changed_transfer_task_ids=repair_meta["changed_transfer_task_ids"],
         )
 
-    return planner_output
+    sourced_tasks, source_meta = propagate_mixed_transaction_source_bank(planner_output.tasks, text)
+    if source_meta:
+        planner_output = planner_output.model_copy(update={"tasks": sourced_tasks})
+        quality_report = quality_report.with_reason("postprocess.mixed_source_bank_propagation")
+        logger.info(
+            "planner_mixed_source_bank_propagated",
+            source_bank_name=source_meta["source_bank_name"],
+            changed_task_ids=source_meta["changed_task_ids"],
+        )
+
+    return PlannerPostprocessResult(planner_output=planner_output, quality_report=quality_report)
 
 
-__all__ = ["_postprocess_planner_tasks"]
+def _postprocess_planner_tasks(planner_output: PlannerOutput, text: str) -> PlannerOutput:
+    return _postprocess_planner_tasks_with_quality(planner_output, text).planner_output
+
+
+__all__ = ["_postprocess_planner_tasks", "_postprocess_planner_tasks_with_quality"]

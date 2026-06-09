@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_atoms import (
     PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT,
+    PLANNER_MIXED_OUTPUT_QUALITY_PROMPT,
     PLANNER_MIXED_TX_PRECISION_PROMPT,
+    PLANNER_OUTPUT_QUALITY_PROMPT,
     PLANNER_RULE_ATOMS,
     PLANNER_RULE_SEMANTIC_GUARD_IDS,
     PLANNER_RUNTIME_COMMON_EXAMPLES,
@@ -58,6 +60,10 @@ def compile_planner_system_prompt(
         PLANNER_RUNTIME_COMMON_EXAMPLES,
     ]
     profile_parts = ["schema", f"rules_{len(rule_ids)}", "ex_common"]
+    if any(bundle in bundles for bundle in ("transfer_only", "mixed_tx", "money_move")):
+        quality_prompt = PLANNER_MIXED_OUTPUT_QUALITY_PROMPT if "mixed_tx" in bundles else PLANNER_OUTPUT_QUALITY_PROMPT
+        sections.append(quality_prompt)
+        profile_parts.append("clean_tx")
 
     if "transfer_only" in bundles:
         sections.append(PLANNER_TRANSFER_ONLY_PRECISION_PROMPT)

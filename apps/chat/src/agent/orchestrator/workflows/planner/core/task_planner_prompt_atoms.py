@@ -4,40 +4,48 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - PlannerOutput JSON only.
 - greet|thanks|checkin -> conversational,tasks=[]; banking/missing -> task+.
 - mixed asks: clauses[] before tasks[]; tasks may set source_clause_index.
+- task requires action; never output executor.
 - transfer: send_money|schedule_transfer|recurring_transfer.
-- schedule executor: list/find/cancel/edit_scheduled_transaction(s); count/existence->schedule_response_mode=count.
-- aliases: list_scheduled_transfers|cancel_scheduled_transfer.
+- schedule actions: list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|
+  edit_scheduled_transaction; count/existence->schedule_response_mode=count.
+- response_shape: count/bool/status/recap; list/detail/page/action.
 - airtime: buy_airtime|schedule_airtime|recurring_airtime; data: buy_data|schedule_data|recurring_data.
 - beneficiary: list/add/delete/update/save; query: list/search/analytics/time/beneficiary/affordability.
-- beneficiary_route: beneficiary_list|recipient_ranking|none; people batch->recipient_allocations[].
+- beneficiary_route: beneficiary_list|recipient_ranking|none; people batch->recipient_allocations.
 - funding split->explicit_split; mixed->depends_on."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
-- Keep recipient exactly as typed.
-- Selector refs: {"selector":"previous"} or {"selector":"index","index":N}.
-- Preserve transactional corrections and follow-up slot updates.
-- Preserve scheduling semantics for future/repeating transfer, airtime, and data requests.
-- Keep explicit_split only for source-account funding splits, never recipient names.
-- Precision-first: never guess ambiguous fields."""
+- Keep recipient exact.
+- Selector refs: previous or index.
+- explicit_split=source funding.
+- Don't guess."""
 
 PLANNER_TRANSFER_ONLY_PRECISION_PROMPT = """## TRANSFER_ONLY PRECISION
-- Keep recipient text exact.
-- Extract explicit amount/account/bank/source-bank in one turn.
-- People split -> recipient_allocations.
-- Balance-share transfer -> transfer_percentage or transfer_all.
-- Never guess ambiguous fields."""
+- 2k=2000; Tolu Access/Tolu GTB are aliases.
+- Use/from/with <bank> to send -> source_bank_name only; omit bank_name unless destination account+bank.
+- Each/split->recipient_allocations."""
 
 PLANNER_MIXED_TX_PRECISION_PROMPT = """## MIXED_TX PRECISION
-- Decompose mixed turns into ordered semantic clauses before tasks.
-- Apply clause decomposition semantically across supported languages.
-- Emit every explicit transaction executor in user order.
-- Keep read-only balance/query clauses separate from transaction clauses.
-- Keep transfer recipient text exact.
-- Extract explicit transfer/account/bank and airtime/data phone/network fields in one turn.
-- Preserve recipient_allocations for people splits.
-- Never use text from one clause to fill another clause's slots.
-- Never drop a later read-only clause.
-- Never guess ambiguous fields."""
+- clauses[] in user order; emit every explicit tx.
+- Transfer+airtime/data text must emit transfer task plus purchase task; never collapse.
+- Keep read-only query/balance separate; exact transfer recipient; 2k=2000,10k=10000.
+- Extract phone/network. Trailing/global source "from my <bank>" applies to every transaction task.
+- source phrase -> source_bank_name, not bank_name.
+- Don't copy slots across clauses; don't drop read-only; don't guess."""
+
+PLANNER_OUTPUT_QUALITY_PROMPT = (
+    "## CLEAN_TX_OUTPUT\n"
+    "- Task: include action, omit executor.\n"
+    "- Alias exact; each/split -> recipient_allocations=Tolu Access:2000,Tolu GTB:2000; omit bank_name.\n"
+    "- Alias bank words stay alias, not bank_name: Tolu Access=>recipient_name=Tolu Access.\n"
+    "- Use/from/with bank->source_bank_name; omit bank_name; 1GB/500MB->plan not amount."
+)
+
+PLANNER_MIXED_OUTPUT_QUALITY_PROMPT = (
+    "## CLEAN_TX_OUTPUT\n"
+    "- Task: include action, omit executor.\n"
+    "- Alias exact; source bank->source_bank_name; 1GB/500MB->plan not amount."
+)
 
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
     "## EXECUTOR COVERAGE GUARD\n"
@@ -55,7 +63,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R07_OUT_OF_SCOPE": (
         "harmless_non_banking->conversational.casual_chat; unsupported_non_banking->conversational.out_of_scope"
     ),
-    "R08_ACTION_EXECUTOR": "action==executor_family",
+    "R08_ACTION_EXECUTOR": "canonical action determines fixed runtime executor; never invent executor-like actions",
     "R09_CONTEXT_OVERRIDE": "active_flow_reply->slot_update unless switch/cancel",
     "R10_LANGUAGE_ALIGNMENT": "response_lang=detected_lang",
     "R11_RESPONSE_KEYS": "conversational_no_task->allowed response_key; cancel->planner.cancelled",
@@ -68,7 +76,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "future|repeat transfer->schedule_transfer|recurring_transfer;"
         "future|repeat airtime->schedule_airtime|recurring_airtime;"
         "future|repeat data->schedule_data|recurring_data;"
-        "list|count|find|cancel|delete|edit scheduled->"
+        "list|count|find|cancel|delete|edit scheduled->schedule action "
         "list_scheduled_transactions|find_scheduled_transaction|cancel_scheduled_transaction|edit_scheduled_transaction;"
         "count|existence scheduled->schedule_response_mode=count"
     ),
@@ -82,6 +90,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R25_ACCOUNT_ACTION_HINT": "mixed account asks may set account_action_hint when helpful",
     "R26_ONE_SHOT_COMPLETENESS": "one_shot_tx->extract all explicit fields without correction dependence",
     "R27_RECIPIENT_SPLIT": "split_people->recipient_allocations; split_my_accounts->explicit_split",
+    "R28_RESPONSE_SHAPE": "how_many=count; any=bool; show/list=list; last/latest=detail",
 }
 
 PLANNER_RULE_ATOM_ORDER = [
@@ -108,6 +117,7 @@ PLANNER_RULE_ATOM_ORDER = [
     "R25_ACCOUNT_ACTION_HINT",
     "R26_ONE_SHOT_COMPLETENESS",
     "R27_RECIPIENT_SPLIT",
+    "R28_RESPONSE_SHAPE",
 ]
 
 PLANNER_RULE_SEMANTIC_GUARD_IDS = {
@@ -164,43 +174,40 @@ PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
     "## TARGETED EXAMPLES (MONEY_MOVE)\n"
-    '- Active transfer flow + "send it to her" -> send_money with selector={"selector":"previous"}.\n'
-    '- Active transfer flow + "make it 20k" -> send_money amount=20000.\n'
-    "- Send 10k to Mum tomorrow 9am -> schedule_transfer amount=10000, recipient_name=Mum.\n"
-    '- Send it to her every Friday -> recurring_transfer with selector={"selector":"previous"}.\n'
-    "- Buy 2k airtime tomorrow 8am -> schedule_airtime amount=2000.\n"
-    "- Buy 1GB data every Friday 8am -> recurring_data.\n"
-    "- Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.\n"
-    "- Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN."
+    '- Active transfer flow + "send it to her" -> {"selector":"previous"}.\n'
+    '- Active transfer flow + "make it 20k" -> amount=20000.\n'
+    "- Send 10k to Mum tomorrow 9am -> schedule_transfer.\n"
+    "- Send it to her every Friday -> recurring_transfer.\n"
+    "- Split 20k between Adebayo and Mum -> action=send_money,"
+    "recipient_allocations=Adebayo:10000,Mum:10000.\n"
+    "- Split 20k from Access and GTB -> explicit_split={Access:10000,GTB:10000}.\n"
+    "- Biko buy 3k airtime for my line mtn -> buy_airtime."
 )
 
 PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
     "## TARGETED EXAMPLES (TRANSFER_ONLY)\n"
-    "- Send 20k to 0760505261 First Bank -> amount=20000, recipient_account=0760505261, bank_name=First Bank.\n"
-    "- Send 10k each to Mum, Tolu and Doyin -> recipient_allocations="
-    "[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000},"
-    "{recipient_name:Doyin,amount:10000}].\n"
-    "- Split 20k 70/30 btw Mum and Gaines -> recipient_allocations="
-    "[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].\n"
-    "- Send half my Zenith to Mum -> recipient_name=Mum, source_bank_name=Zenith Bank, transfer_percentage=50.\n"
-    "- Send everything in my First Bank to Mum -> recipient_name=Mum, source_bank_name=First Bank, transfer_all=true."
+    "- Use GTBank to send 5k to Tolu Access for lunch -> action=send_money,source_bank_name=GTBank,"
+    "recipient_name=Tolu Access,narration=Lunch; omit bank_name.\n"
+    "- 2k each -> action=send_money,"
+    "recipient_allocations=[{recipient_name:Tolu Access,amount:2000},{recipient_name:Tolu GTB,amount:2000}],"
+    "omit bank_name."
 )
 
 PLANNER_RUNTIME_MIXED_TX_EXAMPLES = (
     "## TARGETED EXAMPLES (MIXED_TX)\n"
-    "- Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.\n"
-    "- Send 4k to Gaines, but 2k airtime for 08162511024 and show my final balance ->\n"
-    "  clauses=[transfer, airtime, account_query] + send_money + buy_airtime + check_balance.\n"
-    "- Send 10k each to Mum and Tolu, then buy 2k airtime for me ->\n"
-    "  send_money recipient_allocations=[{recipient_name:Mum,amount:10000},"
-    "{recipient_name:Tolu,amount:10000}] + buy_airtime.\n"
-    "- Buy 1GB for 08031234567 mtn and send 5k to Mum -> buy_data + send_money."
+    "- Send 10k to Tolu Access + buy 1k airtime for me -> send_money recipient_name=Tolu Access "
+    "+ buy_airtime amount=1000,is_self=true.\n"
+    "- Send 10k to adebayo and buy me 2k airtime from my gtb -> action=send_money amount=10000,"
+    "recipient_name=adebayo,source_bank_name=GTBank + action=buy_airtime amount=2000,is_self=true,"
+    "source_bank_name=GTBank.\n"
+    "- Buy 1GB MTN data for me and send 2k to Mum -> buy_data plan=1GB,network=MTN,is_self=true "
+    "+ send_money recipient_name=Mum,amount=2000."
 )
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Save-beneficiary prompt + "Hi" -> conversational.
 - Recent surface + short follow-up -> ground against RECENT_CONTEXT before new task.
-- Recent list + "is that all/any more/show details/the first one" -> answer/select from list.
+- Recent list + "more/details/first one" -> answer/select from list.
 - Active transfer flow + "send it to her" -> send_money with selector reference.
 - Resume prompt + "continue" -> stay on current transactional flow."""
 

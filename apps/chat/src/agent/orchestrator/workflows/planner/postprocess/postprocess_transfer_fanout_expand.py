@@ -8,10 +8,12 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
     _next_transfer_fanout_task_id,
 )
 from shared.money import MoneyAmount
-from shared.types.planner import PlannedTask
+from shared.types.planner import PlannedTask, TransferTaskParameters
 
 
 def _planned_recipient_allocations(source_task: PlannedTask) -> list[tuple[str, MoneyAmount]] | None:
+    if not isinstance(source_task.parameters, TransferTaskParameters):
+        return None
     allocations = source_task.parameters.recipient_allocations
     if not allocations or len(allocations) < 2:
         return None
@@ -38,21 +40,38 @@ def _expand_underproduced_transfer_tasks(
 
     source_index = transfer_indices[0]
     source_task = planned_tasks[source_index]
+    if not isinstance(source_task.parameters, TransferTaskParameters):
+        return planned_tasks, None
     source_parameters = source_task.parameters
 
+    recipient_allocations = _planned_recipient_allocations(source_task)
+    recipients = derive_recipients_from_user_text(user_text)
+    if clause_text_by_index:
+        clause_text = clause_text_by_index.get(source_task.source_clause_index or 0, "")
+        if clause_text:
+            clause_recipients = derive_recipients_from_user_text(clause_text)
+            recipients = clause_recipients
+            if recipient_allocations is None and len(clause_recipients) < 2:
+                for fallback_recipients in (
+                    derive_recipients_from_user_text(source_task.instruction or ""),
+                    derive_recipients_from_user_text(user_text),
+                ):
+                    if len(fallback_recipients) >= 2:
+                        recipients = fallback_recipients
+                        break
+
     # Keep parser repair narrow: avoid fanout when task is account+bank explicit or purely reference-based.
-    if source_parameters.recipient_account or source_parameters.bank_name:
+    if source_parameters.recipient_account:
+        return planned_tasks, None
+    if source_parameters.bank_name and not (recipient_allocations is None and len(recipients) >= 2):
         return planned_tasks, None
     if source_parameters.reference and not (source_parameters.recipient or source_parameters.recipient_name):
         return planned_tasks, None
 
-    recipient_allocations = _planned_recipient_allocations(source_task)
-    source_text = (
-        clause_text_by_index.get(source_task.source_clause_index or 0, user_text) if clause_text_by_index else user_text
-    )
-    recipients = derive_recipients_from_user_text(source_text)
     if recipient_allocations is None and len(recipients) < 2:
         return planned_tasks, None
+
+    clear_destination_bank = bool(source_parameters.bank_name and recipient_allocations is None)
 
     existing_ids = {task.task_id for task in planned_tasks}
     expanded_task_ids: list[str] = [source_task.task_id]
@@ -74,6 +93,7 @@ def _expand_underproduced_transfer_tasks(
             amount=None,
             clear_source_recipient_allocations=False,
             binding_index=1,
+            clear_destination_bank=clear_destination_bank,
         )
     expanded_source_tasks.append(first_task)
 
@@ -93,6 +113,7 @@ def _expand_underproduced_transfer_tasks(
             amount=allocated_amount,
             clear_source_recipient_allocations=allocated_amount is not None,
             binding_index=idx,
+            clear_destination_bank=clear_destination_bank,
         )
         expanded_source_tasks.append(clone)
         expanded_task_ids.append(clone.task_id)

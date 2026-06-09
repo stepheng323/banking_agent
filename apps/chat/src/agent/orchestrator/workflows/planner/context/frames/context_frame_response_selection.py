@@ -1,5 +1,7 @@
 """Selection, filter, and comparison responses for context frames."""
 
+from typing import Any
+
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_decisions import (
     decision_field_text,
@@ -30,10 +32,41 @@ from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameFollowupDecision, ContextFrameFollowupFilters
 
 
+def _positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _count_preview_metadata(frame: ContextFrame) -> tuple[int, int] | None:
+    metadata = frame.metadata if isinstance(frame.metadata, dict) else {}
+    if metadata.get("display_shape") != "count_preview":
+        return None
+    shown_count = _positive_int(metadata.get("shown_count"))
+    total_count = _positive_int(metadata.get("total_count"))
+    if shown_count is None or total_count is None or total_count <= shown_count:
+        return None
+    return shown_count, total_count
+
+
 def format_completeness_response(frame: ContextFrame, *, locale: str = "en") -> str | None:
     count = len(frame.items)
     if count <= 0:
         return None
+    preview_counts = _count_preview_metadata(frame)
+    if preview_counts is not None:
+        shown_count, total_count = preview_counts
+        return render_message(
+            "context_frame.followup.count_preview_clarification",
+            locale,
+            {
+                "shown_count": shown_count,
+                "total_count": total_count,
+                "noun": frame_noun(frame.frame_type, plural=total_count != 1, locale=locale),
+            },
+        )
     if frame.frame_type == ContextFrameType.SCHEDULE_LIST:
         return render_message(
             "context_frame.followup.pending_scheduled_count",

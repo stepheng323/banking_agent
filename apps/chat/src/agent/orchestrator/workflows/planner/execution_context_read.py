@@ -1,7 +1,7 @@
 """Context-read post-processing for planner execution."""
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_account import (
-    synthesize_account_context_read_response,
+    synthesize_context_read_response,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_read_availability import (
     _context_read_shown_limit,
@@ -82,7 +82,7 @@ def _apply_context_read_direct_response(
     current_locale: str,
 ) -> None:
     logger.info("context_read_hit", subtype=context_read_subtype)
-    synthesized_response = synthesize_account_context_read_response(
+    synthesized_response = synthesize_context_read_response(
         state_view,
         context_read_subtype,
         text,

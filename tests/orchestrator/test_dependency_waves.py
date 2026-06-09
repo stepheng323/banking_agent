@@ -8,7 +8,15 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from banking.runtime.results import AccountOutcome, AccountResult
-from shared.types.planner import PlannedTask, PlannerClause, PlannerOutput, RecipientAllocation, TaskParameters
+from shared.types.planner import (
+    AccountTaskParameters,
+    AirtimeTaskParameters,
+    PlannerClause,
+    PlannerOutput,
+    RecipientAllocation,
+    TransferTaskParameters,
+    make_planned_task,
+)
 
 
 class _MockPlanner:
@@ -98,28 +106,28 @@ async def test_planner_builds_dependency_aware_waves_for_mixed_request() -> None
         primary_intent="mixed",
         is_complex=True,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10000 to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10000 to Dad",
-                parameters=TaskParameters(amount=10000, recipient="Dad"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Dad"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t3",
                 action="check_balance",
                 executor="account",
                 instruction="Show my balance",
-                parameters=TaskParameters(),
+                parameters=AccountTaskParameters(),
                 depends_on=["t1", "t2"],
                 risk="READ_ONLY",
             ),
@@ -147,12 +155,12 @@ async def test_planner_does_not_call_legacy_review_or_repair_paths() -> None:
         primary_intent="transfer",
         is_complex=False,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -183,20 +191,20 @@ async def test_planner_uses_expected_executor_signals_in_single_call() -> None:
         primary_intent="mixed",
         is_complex=True,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Buy 5k airtime",
-                parameters=TaskParameters(amount=5000, is_self=True),
+                parameters=AirtimeTaskParameters(amount=5000, is_self=True),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -229,20 +237,20 @@ async def test_planner_strips_transaction_depends_on_for_batch_auth_collection()
         primary_intent="mixed",
         is_complex=True,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Buy me 5k airtime",
-                parameters=TaskParameters(amount=5000, is_self=True),
+                parameters=AirtimeTaskParameters(amount=5000, is_self=True),
                 depends_on=["t1"],
                 risk="MONEY_MOVE",
             ),
@@ -271,29 +279,29 @@ async def test_planner_keeps_non_transaction_dependencies_when_stripping_transac
         primary_intent="mixed",
         is_complex=True,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Buy me 5k airtime",
-                parameters=TaskParameters(amount=5000, is_self=True),
+                parameters=AirtimeTaskParameters(amount=5000, is_self=True),
                 depends_on=["t1"],
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t3",
                 action="check_balance",
                 executor="account",
                 instruction="Show my balance",
-                parameters=TaskParameters(),
+                parameters=AccountTaskParameters(),
                 depends_on=["t1", "t2"],
                 risk="READ_ONLY",
             ),
@@ -323,12 +331,12 @@ async def test_planner_fans_out_single_transfer_when_text_has_multiple_recipient
         primary_intent="transfer",
         is_complex=False,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -381,21 +389,21 @@ async def test_planner_repairs_missing_balance_task_from_clause_decomposition() 
             ),
         ],
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 4k to gaines",
-                parameters=TaskParameters(amount=4000, recipient="gaines"),
+                parameters=TransferTaskParameters(amount=4000, recipient="gaines"),
                 risk="MONEY_MOVE",
                 source_clause_index=1,
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="2k airtime for 0816 251 1024",
-                parameters=TaskParameters(amount=2000, recipient_phone="08162511024"),
+                parameters=AirtimeTaskParameters(amount=2000, recipient_phone="08162511024"),
                 risk="MONEY_MOVE",
                 source_clause_index=2,
             ),
@@ -441,12 +449,12 @@ async def test_planner_repairs_transfer_recipient_from_transfer_clause_when_read
             ),
         ],
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 4k to gaines, but show my final balance",
-                parameters=TaskParameters(amount=4000, recipient_name="show my final balance"),
+                parameters=TransferTaskParameters(amount=4000, recipient_name="show my final balance"),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -493,12 +501,12 @@ async def test_planner_repairs_transfer_recipient_from_non_english_read_only_cla
             ),
         ],
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Aika 4k zuwa gaines kuma nuna min final balance dina",
-                parameters=TaskParameters(amount=4000, recipient_name="nuna min final balance dina"),
+                parameters=TransferTaskParameters(amount=4000, recipient_name="nuna min final balance dina"),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -531,12 +539,12 @@ async def test_planner_fans_out_recipient_split_between_recipients() -> None:
         primary_intent="transfer",
         is_complex=False,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Split 20k 70/30 between Mum and Gaines",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=20000,
                     recipient_allocations=[
                         RecipientAllocation(recipient_name="Mum", amount=14000.0),
@@ -578,12 +586,12 @@ async def test_planner_fans_out_three_way_recipient_allocations_batch() -> None:
         primary_intent="transfer",
         is_complex=False,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k each to Mum, Tolu and Doyin",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=30000,
                     recipient_allocations=[
                         RecipientAllocation(recipient_name="Mum", amount=10000.0),
@@ -624,12 +632,12 @@ async def test_planner_does_not_fanout_source_account_explicit_split_as_recipien
         primary_intent="transfer",
         is_complex=False,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Split 20k from Access and GTB to Mum",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=20000,
                     recipient="Mum",
                     explicit_split={"Access": 10000.0, "GTB": 10000.0},
@@ -662,20 +670,20 @@ async def test_planner_fanout_rewrites_downstream_dependencies() -> None:
         primary_intent="mixed",
         is_complex=True,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="check_balance",
                 executor="account",
                 instruction="Show my balance",
-                parameters=TaskParameters(),
+                parameters=AccountTaskParameters(),
                 depends_on=["t1"],
                 risk="READ_ONLY",
             ),
@@ -705,20 +713,20 @@ async def test_planner_does_not_fanout_when_planner_already_emits_multiple_trans
         primary_intent="transfer",
         is_complex=True,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Tolu",
-                parameters=TaskParameters(amount=10000, recipient="Tolu"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Tolu"),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -748,28 +756,28 @@ async def test_planner_reconciles_obvious_multi_transfer_recipient_drift() -> No
         primary_intent="transfer",
         is_complex=True,
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k each to mum, tolu and doyin",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k each to mum, tolu and doyin",
-                parameters=TaskParameters(amount=10000, recipient="Mum Tolu"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Mum Tolu"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t3",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k each to mum, tolu and doyin",
-                parameters=TaskParameters(amount=10000, recipient="Doyin"),
+                parameters=TransferTaskParameters(amount=10000, recipient="Doyin"),
                 risk="MONEY_MOVE",
             ),
         ],

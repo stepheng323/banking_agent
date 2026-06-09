@@ -6,7 +6,14 @@ import pytest
 
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import PlannerPromptSignals
-from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
+from shared.types.planner import (
+    AirtimeTaskParameters,
+    DataTaskParameters,
+    PlannerOutput,
+    RecipientAllocation,
+    TransferTaskParameters,
+    make_planned_task,
+)
 
 
 class _StructuredResponder:
@@ -28,10 +35,31 @@ class _FakeLLM:
         method: str | None = None,
     ) -> _StructuredResponder:
         del method
-        schema_name = getattr(schema, "__name__", "")
-        if schema_name == "PlannerOutput":
-            return _StructuredResponder(self._planner_output)
+        if isinstance(schema, type) and issubclass(schema, PlannerOutput):
+            return _StructuredResponder(self._planner_output.model_dump(mode="python"))
         return _StructuredResponder({})
+
+
+async def _plan(
+    planner: TaskPlanner,
+    phone_number: str,
+    text: str,
+    *,
+    context: str = "None",
+    prompt_signals: PlannerPromptSignals,
+) -> PlannerOutput:
+    result = await planner.plan_tasks_with_quality(
+        phone_number,
+        text,
+        context=context,
+        prompt_signals=prompt_signals,
+    )
+    return result.planner_output
+
+
+def test_task_planner_exposes_quality_only_planning_api() -> None:
+    assert hasattr(TaskPlanner, "plan_tasks_with_quality")
+    assert not hasattr(TaskPlanner, "plan_tasks")
 
 
 @pytest.mark.asyncio
@@ -40,19 +68,20 @@ async def test_task_planner_one_shot_transfer_is_normalized_before_return() -> N
         primary_intent="transfer",
         detected_language="English",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 20k to 0760505261 First Bank",
-                parameters=TaskParameters(recipient_name="Mum"),
+                parameters=TransferTaskParameters(recipient_name="Mum"),
                 risk="MONEY_MOVE",
             )
         ],
     )
     planner = TaskPlanner(planner_llm=_FakeLLM(planner_output))
 
-    result = await planner.plan_tasks(
+    result = await _plan(
+        planner,
         "2348000001000",
         "Send 20k to 0760505261 First Bank",
         context="None",
@@ -71,19 +100,20 @@ async def test_task_planner_one_shot_airtime_is_normalized_before_return() -> No
         primary_intent="airtime",
         detected_language="Pidgin",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="a1",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Abeg buy 2k airtime for 08031234567 mtn",
-                parameters=TaskParameters(),
+                parameters=AirtimeTaskParameters(),
                 risk="MONEY_MOVE",
             )
         ],
     )
     planner = TaskPlanner(planner_llm=_FakeLLM(planner_output))
 
-    result = await planner.plan_tasks(
+    result = await _plan(
+        planner,
         "2348000001001",
         "Abeg buy 2k airtime for 08031234567 mtn",
         context="None",
@@ -102,19 +132,20 @@ async def test_task_planner_one_shot_data_is_normalized_before_return() -> None:
         primary_intent="data",
         detected_language="Yoruba",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="d1",
                 action="buy_data",
                 executor="data",
                 instruction="Jowo ra data 1gb fun 08031234567 mtn",
-                parameters=TaskParameters(),
+                parameters=DataTaskParameters(),
                 risk="MONEY_MOVE",
             )
         ],
     )
     planner = TaskPlanner(planner_llm=_FakeLLM(planner_output))
 
-    result = await planner.plan_tasks(
+    result = await _plan(
+        planner,
         "2348000001002",
         "Jowo ra data 1gb fun 08031234567 mtn",
         context="None",
@@ -133,12 +164,12 @@ async def test_task_planner_preserves_three_way_recipient_allocations() -> None:
         primary_intent="transfer",
         detected_language="English",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k each to Mum, Tolu and Doyin",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=30000,
                     recipient_allocations=[
                         RecipientAllocation(recipient_name="Mum", amount=10000),
@@ -152,7 +183,8 @@ async def test_task_planner_preserves_three_way_recipient_allocations() -> None:
     )
     planner = TaskPlanner(planner_llm=_FakeLLM(planner_output))
 
-    result = await planner.plan_tasks(
+    result = await _plan(
+        planner,
         "2348000001003",
         "Send 10k each to Mum, Tolu and Doyin",
         context="None",
@@ -171,35 +203,36 @@ async def test_task_planner_collapses_bulk_transfer_siblings_to_recipient_alloca
         primary_intent="mixed",
         detected_language="English",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient_name="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient_name="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Tolu",
-                parameters=TaskParameters(amount=10000, recipient_name="Tolu"),
+                parameters=TransferTaskParameters(amount=10000, recipient_name="Tolu"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t3",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Doyin",
-                parameters=TaskParameters(amount=10000, recipient_name="Doyin"),
+                parameters=TransferTaskParameters(amount=10000, recipient_name="Doyin"),
                 risk="MONEY_MOVE",
             ),
         ],
     )
     planner = TaskPlanner(planner_llm=_FakeLLM(planner_output))
 
-    result = await planner.plan_tasks(
+    result = await _plan(
+        planner,
         "2348000001004",
         "Send 10k each to Mum, Tolu and Doyin",
         context="None",
@@ -220,36 +253,36 @@ async def test_task_planner_collapses_bulk_transfer_siblings_with_singleton_allo
         primary_intent="mixed",
         detected_language="English",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=10000,
                     recipient_name="Mum",
                     recipient_allocations=[RecipientAllocation(recipient_name="Mum", amount=10000)],
                 ),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Tolu Adedayo",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=10000,
                     recipient_name="Tolu Adedayo",
                     recipient_allocations=[RecipientAllocation(recipient_name="Tolu Adedayo", amount=10000)],
                 ),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t3",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Doyin",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=10000,
                     recipient_name="Doyin",
                     recipient_allocations=[RecipientAllocation(recipient_name="Doyin", amount=10000)],
@@ -260,7 +293,8 @@ async def test_task_planner_collapses_bulk_transfer_siblings_with_singleton_allo
     )
     planner = TaskPlanner(planner_llm=_FakeLLM(planner_output))
 
-    result = await planner.plan_tasks(
+    result = await _plan(
+        planner,
         "2348000001005",
         "okay send 10k each to mum, tolu and doyin",
         context="None",

@@ -103,6 +103,23 @@ Rules:
    - "Do i have any pending scheduled transsction" -> domain_schedule, schedule_response_mode=count
    - "Wetin be my scheduled payments" -> domain_schedule, schedule_response_mode=list
    - "Montre mes paiements programmés" -> domain_schedule, schedule_response_mode=list
+4a) Active query sessions are semantic context, not a forced route.
+   If context/hints show an active query session:
+   - Query follow-ups route to domain_query with mode=continuation.
+   - Fresh money-move or bill-payment requests route to their true domain or planner_mixed.
+   - Do not rely on English keywords only; classify the user's intent semantically across supported languages.
+   Examples:
+   - active query + "what about yesterday" -> domain_query, mode=continuation
+   - active query + "yesterday nko" -> domain_query, mode=continuation
+   - active query + "what of last week" -> domain_query, mode=continuation
+   - active query + "show me" after a query summary -> domain_query, mode=continuation
+   - active query + "ti ana nko" -> domain_query, mode=continuation
+   - active query + "na jiya fa" -> domain_query, mode=continuation
+   - active query + "hier alors" -> domain_query, mode=continuation
+   - active query + "Send 5k to Adebayo" -> domain_transfer, mode=new
+   - active query + "Buy me 2k airtime" -> domain_airtime, mode=new
+   - active query + "Send 10k to Adebayo and buy me 2k airtime" -> planner_mixed, mode=new,
+     expected_transaction_executors=["transfer","airtime"]
 5) Balance/account-status asks are domain_account, not domain_query.
    Examples:
    - "check my balance" -> domain_account

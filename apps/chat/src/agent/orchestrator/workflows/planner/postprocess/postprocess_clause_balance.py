@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_transfer_fanout_common import (
     _normalize_recipient_text,
 )
-from shared.types.planner import PlannedTask, PlannerClause, TaskParameters
+from shared.types.planner import AccountTaskParameters, PlannedTask, PlannerClause, make_planned_task
 
 
 def _balance_like_clause(clause: PlannerClause) -> bool:
@@ -33,12 +33,12 @@ def _build_balance_task_from_clause(
     existing_ids: set[str],
     depends_on: list[str],
 ) -> PlannedTask:
-    return PlannedTask(
+    return make_planned_task(
         task_id=_next_clause_repair_task_id("account", existing_ids, clause.clause_index),
         action="check_balance",
         executor="account",
         instruction=clause.text or "Show my balance",
-        parameters=TaskParameters(),
+        parameters=AccountTaskParameters(),
         depends_on=depends_on,
         risk="READ_ONLY",
         source_clause_index=clause.clause_index,

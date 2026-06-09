@@ -50,6 +50,28 @@ BANK_ALIASES: dict[str, str] = {
     "rand merchant": "rand merchant",
 }
 
+BANK_DISPLAY_NAMES: dict[str, str] = {
+    "access": "Access Bank",
+    "access bank": "Access Bank",
+    "gtbank": "GTBank",
+    "uba": "UBA",
+    "firstbank": "First Bank",
+    "fcmb": "FCMB",
+    "stanbic": "Stanbic",
+    "ecobank": "Ecobank",
+    "fidelity": "Fidelity",
+    "wema": "Wema",
+    "polaris": "Polaris",
+    "keystone": "Keystone",
+    "union": "Union",
+    "sterling": "Sterling",
+    "providus": "Providus",
+    "opay": "Opay",
+    "palmpay": "PalmPay",
+    "kuda": "Kuda",
+    "moniepoint": "Moniepoint",
+}
+
 
 def normalize_bank_name(name: str) -> str:
     """
@@ -66,6 +88,19 @@ def normalize_bank_name(name: str) -> str:
 
     normalized = name.lower().strip()
     return BANK_ALIASES.get(normalized, normalized)
+
+
+def display_bank_name(name: str | None) -> str | None:
+    """Return a stable user-facing bank label for known aliases."""
+    raw = (name or "").strip()
+    if not raw:
+        return None
+
+    normalized = normalize_bank_name(raw)
+    if normalized in BANK_DISPLAY_NAMES:
+        return BANK_DISPLAY_NAMES[normalized]
+
+    return BANK_DISPLAY_NAMES.get(raw.casefold(), raw)
 
 
 def get_bank_search_terms(name: str) -> list[str]:

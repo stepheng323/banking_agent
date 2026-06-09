@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
-from shared.types.planner import PlannedTask, PlannerOutput
+from shared.types.planner import PlannerOutput, make_planned_task
 
 
 class _StaticPlanner:
@@ -82,7 +82,7 @@ async def test_planner_stashes_live_query_session_when_switching_to_transfer() -
             context_read_subtype=None,
             normalized_instruction="send 5k to Ada",
             tasks=[
-                PlannedTask(
+                make_planned_task(
                     task_id="task_1",
                     action="send_money",
                     executor="transfer",

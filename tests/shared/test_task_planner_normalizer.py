@@ -1,7 +1,14 @@
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_normalizer import (
     normalize_planner_transaction_output,
 )
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    AirtimeTaskParameters,
+    DataTaskParameters,
+    PlannedTask,
+    PlannerOutput,
+    TransferTaskParameters,
+    make_planned_task,
+)
 
 
 def _planner_output(tasks: list[PlannedTask]) -> PlannerOutput:
@@ -16,12 +23,12 @@ def _planner_output(tasks: list[PlannedTask]) -> PlannerOutput:
 def test_transfer_one_shot_normalizer_patches_missing_account_bank_and_amount() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 20k to 0760505261 First Bank",
-                parameters=TaskParameters(recipient_name="Mum"),
+                parameters=TransferTaskParameters(recipient_name="Mum"),
                 risk="MONEY_MOVE",
             )
         ]
@@ -37,12 +44,12 @@ def test_transfer_one_shot_normalizer_patches_missing_account_bank_and_amount() 
 def test_transfer_normalizer_does_not_overwrite_existing_fields() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 20k to 0760505261 First Bank",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=18000,
                     recipient_account="8162511023",
                     bank_name="Opay",
@@ -62,12 +69,12 @@ def test_transfer_normalizer_does_not_overwrite_existing_fields() -> None:
 def test_transfer_normalizer_extracts_simple_instruction_amount_when_planner_amount_is_zero() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 20k to mum",
-                parameters=TaskParameters(amount=0, recipient_name="mum"),
+                parameters=TransferTaskParameters(amount=0, recipient_name="mum"),
                 risk="MONEY_MOVE",
             )
         ]
@@ -82,12 +89,12 @@ def test_transfer_normalizer_extracts_simple_instruction_amount_when_planner_amo
 def test_transfer_normalizer_skips_ambiguous_account_candidates() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="send to 0760505261 first bank and 08130000000 gtbank",
-                parameters=TaskParameters(),
+                parameters=TransferTaskParameters(),
                 risk="MONEY_MOVE",
             )
         ]
@@ -105,12 +112,12 @@ def test_transfer_normalizer_skips_ambiguous_account_candidates() -> None:
 def test_transfer_normalizer_repairs_missing_percentage_for_account_aware_balance_share() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send half of the Zenith Bank balance to Mum",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     recipient_name="Mum",
                     source_bank_name="Zenith Bank",
                     source_account_index=0,
@@ -132,12 +139,12 @@ def test_transfer_normalizer_repairs_missing_percentage_for_account_aware_balanc
 def test_transfer_normalizer_repairs_missing_transfer_all_for_account_aware_balance_share() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send everything in my First Bank to Mum",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     recipient_name="Mum",
                     source_bank_name="First Bank",
                 ),
@@ -158,12 +165,12 @@ def test_transfer_normalizer_repairs_missing_transfer_all_for_account_aware_bala
 def test_transfer_normalizer_coerces_symbolic_all_amount_to_transfer_all() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send everything in my First Bank to Mum",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount="all",
                     recipient_name="Mum",
                     source_bank_name="First Bank",
@@ -185,12 +192,12 @@ def test_transfer_normalizer_coerces_symbolic_all_amount_to_transfer_all() -> No
 def test_transfer_normalizer_coerces_symbolic_balance_share_amount_to_percentage() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send half of the Zenith Bank balance to Mum",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount="half",
                     recipient_name="Mum",
                     source_bank_name="Zenith Bank",
@@ -212,12 +219,12 @@ def test_transfer_normalizer_coerces_symbolic_balance_share_amount_to_percentage
 def test_transfer_normalizer_drops_malformed_explicit_split_when_recipient_allocations_exist() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Split 20k 70/30 between Mum and Gaines",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=20000,
                     recipient_allocations=[
                         {"recipient_name": "Mum", "amount": 14000},
@@ -245,12 +252,12 @@ def test_transfer_normalizer_drops_malformed_explicit_split_when_recipient_alloc
 def test_transfer_normalizer_keeps_valid_source_explicit_split_with_recipient_allocations() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Split 20k between Mum and Gaines from Access and GTB",
-                parameters=TaskParameters(
+                parameters=TransferTaskParameters(
                     amount=20000,
                     recipient_allocations=[
                         {"recipient_name": "Mum", "amount": 14000},
@@ -275,20 +282,20 @@ def test_transfer_normalizer_rewrites_mixed_primary_intent_for_transfer_only_bat
     planner_output = PlannerOutput(
         primary_intent="mixed",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient_name="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient_name="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="t2",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Tolu",
-                parameters=TaskParameters(amount=10000, recipient_name="Tolu"),
+                parameters=TransferTaskParameters(amount=10000, recipient_name="Tolu"),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -305,20 +312,20 @@ def test_transfer_normalizer_keeps_mixed_primary_intent_when_non_transfer_task_r
     planner_output = PlannerOutput(
         primary_intent="mixed",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient_name="Mum"),
+                parameters=TransferTaskParameters(amount=10000, recipient_name="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="a1",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Buy 2k airtime",
-                parameters=TaskParameters(amount=2000, is_self=True),
+                parameters=AirtimeTaskParameters(amount=2000, is_self=True),
                 risk="MONEY_MOVE",
             ),
         ],
@@ -334,12 +341,12 @@ def test_transfer_normalizer_keeps_mixed_primary_intent_when_non_transfer_task_r
 def test_airtime_one_shot_normalizer_patches_amount_phone_and_network() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="a1",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="Abeg buy 2k airtime for 08031234567 mtn",
-                parameters=TaskParameters(),
+                parameters=AirtimeTaskParameters(),
                 risk="MONEY_MOVE",
             )
         ]
@@ -356,12 +363,12 @@ def test_airtime_one_shot_normalizer_patches_amount_phone_and_network() -> None:
 def test_data_one_shot_normalizer_patches_phone_network_plan_and_amount_from_budget() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="d1",
                 action="buy_data",
                 executor="data",
                 instruction="Jowo ra data 1gb fun 08031234567 mtn",
-                parameters=TaskParameters(budget="2k"),
+                parameters=DataTaskParameters(budget="2k"),
                 risk="MONEY_MOVE",
             )
         ]
@@ -376,23 +383,65 @@ def test_data_one_shot_normalizer_patches_phone_network_plan_and_amount_from_bud
     assert params.plan == "1GB"
 
 
+def test_data_normalizer_repairs_planner_amount_data_size_to_plan() -> None:
+    planner_output = _planner_output(
+        [
+            make_planned_task(
+                task_id="d1",
+                action="buy_data",
+                executor="data",
+                instruction="Buy 1GB MTN data for me",
+                parameters=DataTaskParameters(amount="1GB", network="MTN"),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "Buy 1GB MTN data for me")
+    params = normalized.tasks[0].parameters
+    assert params.amount is None
+    assert params.plan == "1GB"
+    assert params.network == "MTN"
+
+
+def test_data_normalizer_does_not_extract_data_size_as_amount() -> None:
+    planner_output = _planner_output(
+        [
+            make_planned_task(
+                task_id="d1",
+                action="buy_data",
+                executor="data",
+                instruction="Buy 1GB MTN data for me",
+                parameters=DataTaskParameters(),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "Buy 1GB MTN data for me")
+    params = normalized.tasks[0].parameters
+    assert params.amount is None
+    assert params.plan == "1GB"
+    assert params.network == "MTN"
+
+
 def test_mixed_turn_normalizer_patches_each_transaction_task_using_task_instruction() -> None:
     planner_output = _planner_output(
         [
-            PlannedTask(
+            make_planned_task(
                 task_id="t1",
                 action="send_money",
                 executor="transfer",
                 instruction="Send 10k to 0760505261 First Bank",
-                parameters=TaskParameters(recipient_name="Mum"),
+                parameters=TransferTaskParameters(recipient_name="Mum"),
                 risk="MONEY_MOVE",
             ),
-            PlannedTask(
+            make_planned_task(
                 task_id="a1",
                 action="buy_airtime",
                 executor="airtime",
                 instruction="buy 2k airtime for 08031234567 mtn",
-                parameters=TaskParameters(),
+                parameters=AirtimeTaskParameters(),
                 risk="MONEY_MOVE",
             ),
         ]

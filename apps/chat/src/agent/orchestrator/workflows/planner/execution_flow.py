@@ -1,7 +1,8 @@
 """Planner execution flow helpers."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import redis.asyncio as redis
 
@@ -11,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.read.context_rea
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import PlannerPromptSignals
+from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_quality import PlannerQualityReport
 from apps.chat.src.agent.orchestrator.workflows.planner.execution_cleanup import (
     _clear_stale_beneficiary_suggestion,
 )
@@ -35,12 +37,48 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+_LegacyPlanTasks = Callable[..., Awaitable[PlannerOutput]]
+
 
 @dataclass(slots=True)
 class PlannerExecutionResult:
     planner_output: PlannerOutput
+    planner_quality_report: PlannerQualityReport
     current_locale: str
     context_read_updates: dict[str, Any]
+
+
+def _summarize_planner_output(planner_output: PlannerOutput) -> dict[str, Any]:
+    planner_tasks = getattr(planner_output, "tasks", []) or []
+    tasks = [
+        {
+            "task_id": getattr(task, "task_id", None),
+            "executor": getattr(task, "executor", None),
+            "action": getattr(task, "action", None),
+            "risk": getattr(task, "risk", None),
+            "depends_on_count": len(getattr(task, "depends_on", []) or []),
+            "source_clause_index": getattr(task, "source_clause_index", None),
+        }
+        for task in planner_tasks
+    ]
+    clauses = getattr(planner_output, "clauses", []) or []
+    return {
+        "primary_intent": getattr(planner_output, "primary_intent", None),
+        "confidence": getattr(planner_output, "confidence", None),
+        "is_complex": getattr(planner_output, "is_complex", None),
+        "is_cancellation": getattr(planner_output, "is_cancellation", None),
+        "is_confirmation": getattr(planner_output, "is_confirmation", None),
+        "detected_language": getattr(planner_output, "detected_language", None),
+        "context_read_subtype": getattr(planner_output, "context_read_subtype", None),
+        "beneficiary_route": getattr(planner_output, "beneficiary_route", None),
+        "account_action_hint": getattr(planner_output, "account_action_hint", None),
+        "response_key": getattr(planner_output, "response_key", None),
+        "response_present": bool(getattr(planner_output, "response", "")),
+        "task_count": len(planner_tasks),
+        "clause_count": len(clauses),
+        "tasks": tasks,
+        "notes_present": bool(getattr(planner_output, "notes", "")),
+    }
 
 
 async def _execute_planner_with_context(
@@ -55,13 +93,30 @@ async def _execute_planner_with_context(
     redis_client: redis.Redis | None,
     state_view: PlannerStateView,
 ) -> PlannerExecutionResult:
-    planner_output = await task_planner.plan_tasks(
-        state_view.phone_number,
-        text,
-        context=planner_context,
-        prompt_signals=prompt_signals,
-        path_label="planner_path",
-    )
+    if hasattr(task_planner, "plan_tasks_with_quality"):
+        plan_result = await task_planner.plan_tasks_with_quality(
+            state_view.phone_number,
+            text,
+            context=planner_context,
+            prompt_signals=prompt_signals,
+            path_label="planner_path",
+        )
+        planner_output = plan_result.planner_output
+        planner_quality_report = plan_result.quality_report
+    else:
+        logger.warning("legacy_planner_quality_path_used", planner_type=type(task_planner).__name__)
+        legacy_plan_tasks = cast(_LegacyPlanTasks | None, getattr(task_planner, "plan_tasks", None))
+        if legacy_plan_tasks is None:
+            msg = f"{type(task_planner).__name__} must implement plan_tasks_with_quality"
+            raise TypeError(msg)
+        planner_output = await legacy_plan_tasks(
+            state_view.phone_number,
+            text,
+            context=planner_context,
+            prompt_signals=prompt_signals,
+            path_label="planner_path",
+        )
+        planner_quality_report = PlannerQualityReport().with_reason("compat.legacy_plan_tasks")
     planner_output = _filter_spurious_affirmation_tasks(
         planner_output,
         active_intent=active_intent,
@@ -78,19 +133,24 @@ async def _execute_planner_with_context(
         user_text=text,
         has_beneficiary_suggestion=prompt_signals.has_beneficiary_suggestion,
     )
-    logger.info("planner_tasks_generated", output=planner_output)
-
-    context_read_subtype = _apply_context_read_planner_shape(
-        state_view=state_view,
-        planner_output=planner_output,
-        text=text,
-        current_locale=current_locale,
+    logger.info("planner_tasks_generated", **_summarize_planner_output(planner_output))
+    logger.info(
+        "planner_quality_evaluated",
+        clean=planner_quality_report.clean,
+        dirty_reasons=list(planner_quality_report.dirty_reasons),
     )
+
     current_locale = await _resolve_planner_detected_locale(
         state_view=state_view,
         planner_output=planner_output,
         current_locale=current_locale,
         redis_client=redis_client,
+    )
+    context_read_subtype = _apply_context_read_planner_shape(
+        state_view=state_view,
+        planner_output=planner_output,
+        text=text,
+        current_locale=current_locale,
     )
     await _clear_stale_beneficiary_suggestion(
         state_view=state_view,
@@ -106,6 +166,7 @@ async def _execute_planner_with_context(
     )
     return PlannerExecutionResult(
         planner_output=planner_output,
+        planner_quality_report=planner_quality_report,
         current_locale=current_locale,
         context_read_updates=context_read_updates,
     )

@@ -1,5 +1,7 @@
 """Transfer-recipient repairs for clause-based planner postprocessing."""
 
+from decimal import Decimal
+
 from apps.chat.src.agent.orchestrator.utils.task_payload_recipients import derive_recipients_from_user_text
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_clause_utils import (
     _coerce_clause_field_text,
@@ -7,7 +9,9 @@ from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_
 from apps.chat.src.agent.orchestrator.workflows.planner.postprocess.postprocess_transfer_fanout_common import (
     _normalize_recipient_text,
 )
-from shared.types.planner import PlannedTask, PlannerClause, TaskParameters
+from banking.transfers.extraction.parsers import parse_amount_input
+from shared.money import MoneyAmount, to_naira
+from shared.types.planner import PlannedTask, PlannerClause, TransferTaskParameters, make_planned_task
 
 
 def _looks_like_cross_clause_recipient_leak(
@@ -33,7 +37,9 @@ def _repair_transfer_task_from_clause(
     clause: PlannerClause,
     non_transfer_clauses: list[PlannerClause],
 ) -> tuple[PlannedTask, bool]:
-    params = task.parameters.model_copy(deep=True) if task.parameters else TaskParameters()
+    if not isinstance(task.parameters, TransferTaskParameters):
+        return task, False
+    params = task.parameters.model_copy(deep=True)
     current_recipient = str(params.recipient_name or params.recipient or "").strip()
     if not _looks_like_cross_clause_recipient_leak(current_recipient, non_transfer_clauses=non_transfer_clauses):
         if task.source_clause_index == clause.clause_index:
@@ -62,4 +68,62 @@ def _repair_transfer_task_from_clause(
     )
 
 
-__all__ = ["_repair_transfer_task_from_clause"]
+def _amount_from_clause(clause: PlannerClause) -> MoneyAmount | None:
+    for key in ("amount", "transfer_amount"):
+        value = clause.extracted_fields.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return to_naira(value)
+        if isinstance(value, str) and value.strip():
+            parsed = parse_amount_input(value)
+            if parsed is not None:
+                return to_naira(Decimal(str(parsed)))
+
+    parsed = parse_amount_input(clause.text)
+    return to_naira(Decimal(str(parsed))) if parsed is not None else None
+
+
+def _transfer_params_from_clause(clause: PlannerClause) -> TransferTaskParameters:
+    recipient_name = _coerce_clause_field_text(clause, "recipient_name", "recipient")
+    if not recipient_name:
+        derived = derive_recipients_from_user_text(clause.text)
+        recipient_name = derived[0] if len(derived) == 1 else None
+
+    narration = _coerce_clause_field_text(clause, "narration", "user_note", "description", "reason")
+    source_bank_name = _coerce_clause_field_text(clause, "source_bank_name", "source_bank")
+    bank_name = _coerce_clause_field_text(clause, "bank_name", "recipient_bank_name", "recipient_bank")
+    recipient_account = _coerce_clause_field_text(clause, "recipient_account", "account_number")
+
+    return TransferTaskParameters(
+        amount=_amount_from_clause(clause),
+        recipient=recipient_name,
+        recipient_name=recipient_name,
+        narration=narration,
+        source_bank_name=source_bank_name,
+        bank_name=bank_name,
+        recipient_account=recipient_account,
+    )
+
+
+def _build_transfer_task_from_clause(clause: PlannerClause, *, existing_ids: set[str]) -> PlannedTask:
+    task_id = clause.task_ids[0] if clause.task_ids and clause.task_ids[0] not in existing_ids else None
+    if task_id is None:
+        base = f"transfer_clause_{clause.clause_index}"
+        task_id = base
+        suffix = 2
+        while task_id in existing_ids:
+            task_id = f"{base}_{suffix}"
+            suffix += 1
+    existing_ids.add(task_id)
+
+    return make_planned_task(
+        task_id=task_id,
+        action="send_money",
+        executor="transfer",
+        instruction=clause.text,
+        parameters=_transfer_params_from_clause(clause),
+        risk="MONEY_MOVE",
+        source_clause_index=clause.clause_index,
+    )
+
+
+__all__ = ["_build_transfer_task_from_clause", "_repair_transfer_task_from_clause"]

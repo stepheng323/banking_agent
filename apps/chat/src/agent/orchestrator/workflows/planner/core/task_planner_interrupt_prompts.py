@@ -184,6 +184,13 @@ Semantic operations:
    and fill amount/validity_preference/selection_preference/usage_intent when the wording gives those constraints.
 10) unclear: not enough signal.
 
+Narration edit examples for pending transfer confirmations:
+- "The purpose is for launch" -> operation=update_fields, target_types=["transfer"], narration="for launch".
+- "It is for lunch" -> operation=update_fields, target_types=["transfer"], narration="lunch".
+- "for transport" -> operation=update_fields, target_types=["transfer"], narration="transport".
+Do not treat these as recipient/account input, and do not ask for account details unless the user explicitly
+changes the recipient, account number, or destination bank.
+
 Rules:
 - Be semantic and language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, French, and mixed input.
 - Use only the supplied pending/removed task context. Do not invent accounts, beneficiaries, balances, or records.
