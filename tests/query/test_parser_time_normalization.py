@@ -1,6 +1,6 @@
 from datetime import date
 
-from banking.transactions.query.models.domain import QueryIntent
+from banking.transactions.query.models.domain import QueryIntent, QueryOperation
 from banking.transactions.query.models.extraction import (
     ExtractionIntent,
     QueryAggregation,
@@ -93,6 +93,47 @@ def test_targeted_spend_total_cue_forces_analytics_summary_on_list_misclassifica
     assert contract.aggregation.type == "sum"
     assert contract.time_start == today
     assert contract.time_end == today
+
+
+def test_transaction_count_cue_forces_analytics_summary_on_list_misclassification() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+        raw_query="How many transactions have I carried out today",
+    )
+
+    contract = parser.build_execution_contract_from_ir(
+        parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    )
+
+    assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert contract.query_operation == QueryOperation.COUNT_TRANSACTIONS
+    assert contract.aggregation is not None
+    assert contract.aggregation.type == "count"
+    assert contract.time_start == today
+    assert contract.time_end == today
+
+
+def test_transaction_count_cue_overrides_wrong_list_operation() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        query_operation=QueryOperation.LIST_TRANSACTIONS,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+        raw_query="How many transactions have I carried out today",
+    )
+
+    contract = parser.build_execution_contract_from_ir(
+        parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    )
+
+    assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert contract.query_operation == QueryOperation.COUNT_TRANSACTIONS
+    assert contract.aggregation is not None
+    assert contract.aggregation.type == "count"
 
 
 def test_non_aggregate_spend_phrase_stays_transaction_list() -> None:

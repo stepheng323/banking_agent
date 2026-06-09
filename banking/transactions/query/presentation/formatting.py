@@ -36,6 +36,14 @@ def parse_summary_parts(summary_text: str | None) -> dict[str, str]:
     return parts
 
 
+def is_zero_structural_list_summary(summary_text: str | None) -> bool:
+    """Return true for internal list summaries that describe an empty result set."""
+    parts = parse_summary_parts(summary_text)
+    if not parts:
+        return False
+    return parts.get("showing") is not None and str(parts.get("total", "")).strip() == "0"
+
+
 def format_query_date(value: date | str, *, locale: str) -> str:
     if isinstance(value, str):
         raw_date = value

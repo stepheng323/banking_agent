@@ -95,6 +95,12 @@ def _contract_without_time(
     )
 
 
+def _assert_not_structural_user_copy(response: str) -> None:
+    assert "accounts:" not in response
+    assert "showing:" not in response
+    assert "total:" not in response
+
+
 def test_formatter_returns_summary_for_summary_surface() -> None:
     result = QueryResult(
         summary_text="Akopọ inawo rẹ",
@@ -891,8 +897,39 @@ def test_formatter_no_results_does_not_leak_structural_account_summary_for_trans
 
     response = QueryFormatter.format(result, locale="en")
 
-    assert "accounts:2|showing:1-0|total:0" not in response
+    _assert_not_structural_user_copy(response)
     assert response == "You had no transactions today."
+
+
+def test_formatter_no_results_accepts_zero_zero_structural_summary_for_transaction_list() -> None:
+    today = lagos_today()
+    result = QueryResult(
+        summary_text="accounts:2|showing:0-0|total:0",
+        items=[],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=today, end=today),
+            )
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    _assert_not_structural_user_copy(response)
+    assert response == "You had no transactions today."
+
+
+def test_formatter_no_results_without_contract_does_not_leak_structural_summary() -> None:
+    result = QueryResult(
+        summary_text="accounts:2|showing:1-0|total:0",
+        items=[],
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    _assert_not_structural_user_copy(response)
+    assert response == "No matching transactions found for your search."
 
 
 def test_formatter_account_breakdown_preserves_account_labels_and_generic_total() -> None:

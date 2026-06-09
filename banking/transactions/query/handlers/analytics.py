@@ -46,6 +46,7 @@ async def handle_analytics(
         return QueryResult(summary_text=render_message("query.analytics.no_aggregation", language))
 
     agg_type = contract.aggregation.type
+    transactions = _settled_transactions_for_analytics(transactions)
 
     if agg_type == "sum":
         total = sum(abs(t.get("amount", 0)) for t in transactions)
@@ -148,12 +149,19 @@ async def handle_analytics(
     elif agg_type == "count":
         count = len(transactions)
         timeframe = _build_timeframe_suffix(contract, language)
+        message_key: MessageKey = (
+            "query.analytics.summary_count_zero" if count == 0 else "query.analytics.summary_count"
+        )
 
         return QueryResult(
             summary_text=render_message(
-                "query.analytics.summary_count",
+                message_key,
                 language,
-                {"count": count, "timeframe": timeframe},
+                {
+                    "count": count,
+                    "timeframe": timeframe,
+                    "transaction_label": _transaction_label(count, language),
+                },
             ),
         )
 
@@ -340,6 +348,30 @@ def _transaction_label(count: int, locale: str) -> str:
     if count == 1:
         return render_message("query.analytics.transaction_singular", locale)
     return render_message("query.analytics.transaction_plural", locale)
+
+
+def _settled_transactions_for_analytics(transactions: list[dict]) -> list[dict]:
+    """Exclude failed/reversed/in-flight app transactions from spend analytics."""
+    return [transaction for transaction in transactions if _is_settled_analytics_transaction(transaction)]
+
+
+def _is_settled_analytics_transaction(transaction: dict) -> bool:
+    status = _normalized_status(
+        transaction.get("display_status")
+        or transaction.get("status")
+        or transaction.get("local_status")
+        or transaction.get("provider_status")
+    )
+    if status is None:
+        return True
+    return status in {"posted", "success", "successful", "completed", "complete"}
+
+
+def _normalized_status(value: object) -> str | None:
+    status = str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+    if not status:
+        return None
+    return " ".join(status.split())
 
 
 async def _aggregate_breakdown(

@@ -84,6 +84,7 @@ def format_transaction_list_item(
     tx_type = _string(data.get("type")).lower()
     transaction_type = _string(data.get("transaction_type")).lower()
     amount = _format_amount_plain(_field(transaction, "amount"))
+    status_label = _transaction_list_status_label(transaction, data)
 
     if transaction_type in {"airtime", "data"}:
         recipient = counterparty or _extract_phone_recipient(description)
@@ -108,7 +109,10 @@ def format_transaction_list_item(
     else:
         narration = description or render_message("query.format.narration.transaction", locale)
 
-    label = (
+    if status_label is not None and isinstance(counterparty, str) and counterparty.strip():
+        narration = counterparty.strip()
+
+    label = status_label or (
         render_message("query.format.label_received", locale)
         if tx_type == "credit"
         else render_message("query.format.label_sent", locale)
@@ -125,6 +129,32 @@ def format_transaction_list_item(
         locale,
         {"amount": amount, "label": label, "narration": narration},
     )
+
+
+def _transaction_list_status_label(transaction: Any, metadata: dict[str, Any]) -> str | None:
+    status = _normalize_status_for_copy(
+        metadata.get("display_status")
+        or metadata.get("status")
+        or metadata.get("local_status")
+        or metadata.get("provider_status")
+        or _field(transaction, "display_status")
+        or _field(transaction, "status")
+    )
+    if status in {"success", "successful", "completed", "complete", "confirmed", "posted"}:
+        return None
+
+    transaction_type = _string(metadata.get("transaction_type")).lower()
+    description = _string(_field(transaction, "description")).lower()
+    is_transfer = transaction_type == "transfer" or "transfer" in description
+    noun = "transfer" if is_transfer else "transaction"
+
+    if status in {"failed", "failure", "declined", "rejected"}:
+        return f"Failed {noun}"
+    if status in {"reversed", "refunded"}:
+        return f"Reversed {noun}"
+    if status in {"pending", "processing", "queued", "in progress"}:
+        return f"Processing {noun}"
+    return None
 
 
 def format_transaction_evidence_line(

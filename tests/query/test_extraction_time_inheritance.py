@@ -760,6 +760,177 @@ async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitl
 
 
 @pytest.mark.asyncio
+async def test_recheck_follow_up_reruns_existing_analytics_summary_without_reparse() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 9)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=today, end=today),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            confidence=0.91,
+            reason="bad_reasoner_reparsed_repeat_as_fresh_query",
+            extraction=QueryExtractionResult(raw_query="check againo"),
+        )
+
+    async def _fail_parse_new_query(state: dict[str, Any]) -> dict[str, Any]:
+        del state
+        raise AssertionError("repeat follow-up must not reparse as a new query")
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step._parse_new_query = _fail_parse_new_query  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Check againo", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"summary_text": "You spent ₦20,000 today, across 2 transactions.", "items": []},
+            "current_page": 2,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "sum"
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.time_start == today
+    assert query_contract.time_end == today
+    assert updates["flow_state"] == "executing"
+    assert updates["session_active"] is True
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+    assert updates["continuation_type"] == "repeat_query"
+
+
+@pytest.mark.asyncio
+async def test_recheck_follow_up_preserves_count_query_shape() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 9)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        query_operation=QueryOperation.COUNT_TRANSACTIONS,
+        time_range=TimeRange(start=today, end=today),
+        aggregation=Aggregation(type="count"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="refine_existing",
+            confidence=0.92,
+            reason="llm_repeat_existing_query",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Check again", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"summary_text": "You didn't make any transactions today.", "items": []},
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.query_operation == QueryOperation.COUNT_TRANSACTIONS
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "count"
+    assert query_contract.time_start == today
+    assert query_contract.time_end == today
+    assert updates["flow_state"] == "executing"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "session_query",
+    [
+        _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 6, 9), end=date(2026, 6, 9)),
+        ),
+        _query_ir(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            time_range=TimeRange(start=date(2026, 6, 9), end=date(2026, 6, 9)),
+            filters=Filters(counterparty=["Tolu Adebayo"]),
+        ),
+        _query_ir(
+            intent=QueryIntent.BENEFICIARY_SUMMARY,
+            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 9)),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="sum", sort_by="amount"),
+        ),
+        _query_ir(
+            intent=QueryIntent.TIME_COMPARISON,
+            time_range=TimeRange(start=date(2026, 6, 9), end=date(2026, 6, 9)),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="sum"),
+        ),
+    ],
+)
+async def test_recheck_follow_up_reruns_any_active_query_contract_without_reparse(session_query: QueryIR) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 9)
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            confidence=0.9,
+            reason="bad_reasoner_reparsed_repeat_as_fresh_query",
+            extraction=QueryExtractionResult(raw_query="check again"),
+        )
+
+    async def _fail_parse_new_query(state: dict[str, Any]) -> dict[str, Any]:
+        del state
+        raise AssertionError("repeat follow-up must not reparse as a new query")
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step._parse_new_query = _fail_parse_new_query  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Check again", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"summary_text": "Previous answer", "items": []},
+            "current_page": 2,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == session_contract.intent
+    assert query_contract.time_start == session_contract.time_start
+    assert query_contract.time_end == session_contract.time_end
+    assert updates["flow_state"] == "executing"
+    assert updates["session_active"] is True
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+    assert updates["continuation_type"] == "repeat_query"
+
+
+@pytest.mark.asyncio
 async def test_show_evidence_follow_up_converts_aggregate_summary_to_scoped_transactions_and_clears_fact_anchor() -> (
     None
 ):
@@ -1099,6 +1270,49 @@ async def test_show_me_follow_up_does_not_convert_summary_on_pagination_intent()
 
 
 @pytest.mark.asyncio
+async def test_show_them_after_count_summary_recovers_from_fresh_query_label() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    yesterday = date(2026, 3, 18)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=yesterday, end=yesterday, granularity="day"),
+        aggregation=Aggregation(type="count"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            continuation_type="unclear",
+            confidence=0.42,
+            reason="llm_mislabeled_show_existing_transactions_as_fresh_query",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Show them", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 3,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.aggregation is None
+    assert query_contract.time_start == yesterday
+    assert query_contract.time_end == yesterday
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_weekly_summary_show_them_then_only_this_weeks_replaces_scope_and_resets_pagination() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)
@@ -1337,6 +1551,58 @@ async def test_low_confidence_unclear_last_week_recovers_via_time_rescope_recove
             "skip_reason": None,
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_assertive_yesterday_correction_rescopes_active_count_from_reasoner_decision() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        query_operation=QueryOperation.COUNT_TRANSACTIONS,
+        time_range=TimeRange(start=today, end=today),
+        aggregation=Aggregation(type="count"),
+    )
+    session_contract = _contract(session_query)
+
+    reasoner_calls = 0
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        nonlocal reasoner_calls
+        reasoner_calls += 1
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
+            ),
+            confidence=0.96,
+            reason="llm_assertive_yesterday_time_rescope",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "I said yesterday", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"summary_text": "You made 4 transaction(s) today.", "items": []},
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.query_operation == QueryOperation.COUNT_TRANSACTIONS
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "count"
+    assert query_contract.time_start == date(2026, 3, 18)
+    assert query_contract.time_end == date(2026, 3, 18)
+    assert reasoner_calls == 1
 
 
 @pytest.mark.asyncio
@@ -2308,6 +2574,189 @@ async def test_summary_contrastive_yesterday_without_reasoner_time_payload_repar
     assert query_contract.filters.merchant == ["mum"]
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_direct_time_rescope_followup_uses_reasoner_and_preserves_count_shape() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=today, end=today),
+        aggregation=Aggregation(type="count"),
+    )
+    session_contract = _contract(session_query)
+
+    reasoner_calls = 0
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        nonlocal reasoner_calls
+        reasoner_calls += 1
+        return QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.93,
+            reason="llm_replace_scope_yesterday",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 18), end=date(2026, 3, 18), granularity="day"),
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about yesterday?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "count"
+    assert query_contract.time_start == date(2026, 3, 18)
+    assert query_contract.time_end == date(2026, 3, 18)
+    assert updates["continuation_type"] == "time_delta"
+    assert updates["continuation_delta_type"] == "time"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+    assert reasoner_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_direct_time_rescope_followup_overrides_wrong_reasoner_time_range() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=today, end=today),
+        aggregation=Aggregation(type="count"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.93,
+            reason="llm_wrongly_kept_today_range",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            delta_type="time",
+            time_range=TimeRange(start=today, end=today, granularity="day"),
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about yesterday", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "count"
+    assert query_contract.time_start == date(2026, 3, 18)
+    assert query_contract.time_end == date(2026, 3, 18)
+    assert updates["continuation_type"] == "time_delta"
+    assert updates["continuation_delta_type"] == "time"
+
+
+@pytest.mark.asyncio
+async def test_direct_time_rescope_followup_recovers_from_non_time_continuation_label() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=today, end=today),
+        aggregation=Aggregation(type="count"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.93,
+            reason="llm_mislabeled_yesterday_as_filter_delta",
+            continuation_type="filter_delta",
+            followup_intent="refine_existing",
+            delta_type="filter",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about yesterday", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "count"
+    assert query_contract.time_start == date(2026, 3, 18)
+    assert query_contract.time_end == date(2026, 3, 18)
+    assert updates["continuation_type"] == "time_delta"
+    assert updates["continuation_delta_type"] == "time"
+
+
+@pytest.mark.asyncio
+async def test_direct_time_rescope_correction_recovers_from_fresh_query_label() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=today, end=today),
+        aggregation=Aggregation(type="count"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            confidence=0.48,
+            reason="llm_mislabeled_correction_as_fresh_query",
+            continuation_type="unclear",
+            followup_intent="none",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "I meant yesterday", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "count"
+    assert query_contract.time_start == date(2026, 3, 18)
+    assert query_contract.time_end == date(2026, 3, 18)
+    assert updates["continuation_type"] == "time_delta"
+    assert updates["continuation_delta_type"] == "time"
 
 
 @pytest.mark.asyncio

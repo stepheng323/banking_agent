@@ -84,6 +84,16 @@ def _transaction_list_surface_view(**context: object) -> SurfaceView:
     return SurfaceView(mode=SurfaceViewMode.TRANSACTION_LIST, context=context)
 
 
+def _transaction_surface_item(index: int = 1) -> SurfaceItemView:
+    return SurfaceItemView(
+        id=f"txn-{index}",
+        label=f"Payment {index}",
+        amount=1000.0 * index,
+        payload=SelectionPayload(selection_kind="transaction", entity_type="transaction", entity_id=f"txn-{index}", label=f"Payment {index}"),
+        metadata={"bank_name": "Access Bank", "status": "failed"},
+    )
+
+
 def _grouped_summary_surface_view(**context: object) -> SurfaceView:
     return SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context=context)
 
@@ -118,6 +128,70 @@ async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
     assert decision.decision == "continuation"
     assert decision.continuation_type == "drill_down"
     assert decision.drill_down_action == "get_receipt"
+
+
+@pytest.mark.asyncio
+async def test_reasoner_uses_deterministic_first_item_detail_without_llm() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.TRANSACTION_LIST,
+        items=[_transaction_surface_item(1), _transaction_surface_item(2)],
+        context={"type": "transaction_list"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="Show the first one",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                )
+            ),
+            surface_view=surface_view,
+        )
+    )
+
+    assert decision.decision == "continuation"
+    assert decision.continuation_type == "drill_down"
+    assert decision.drill_down_action == "view_details"
+    assert decision.drill_down_index == 0
+    assert decision.semantic_llm_used is False
+
+
+@pytest.mark.asyncio
+async def test_reasoner_uses_deterministic_visible_bank_fact_without_llm() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.DIRECT_ANSWER,
+        items=[_transaction_surface_item(1)],
+        context={"type": "single_transaction"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="What bank was that?",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                )
+            ),
+            surface_view=surface_view,
+        )
+    )
+
+    assert decision.decision == "continuation"
+    assert decision.continuation_type == "drill_down"
+    assert decision.drill_down_action == "answer_fact"
+    assert decision.fact_field == "bank"
+    assert decision.requested_field == "bank"
+    assert decision.drill_down_index == 0
+    assert decision.semantic_llm_used is False
 
 
 @pytest.mark.asyncio

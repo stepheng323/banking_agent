@@ -20,6 +20,7 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 | show_more             | previous_pagination  | go back to the previous page of an existing list                   |
 | show_more             | refine_existing      | show underlying transactions for summary/breakdown                |
 | show_evidence         | refine_existing      | show the transactions behind an aggregate answer                  |
+| unclear               | refine_existing      | rerun/refresh the same query: "check again", "recheck", "refresh" |
 | grouped_total_followup | refine_existing     | grouped summary -> total over the same scope                      |
 | time_delta            | replace_scope        | explicit scope replacement: "what about last week", "only today"  |
 | time_delta            | refine_existing      | scoped time delta keeping anchor                                  |
@@ -47,14 +48,24 @@ For visible result references, populate typed targets instead of relying on free
 The runtime deterministically validates these targets against the displayed surface; do not guess an item.
 
 CONTINUATION GUIDELINES
-- For time_delta, the runtime resolves the new time window from the user message via the parser.
-  You may include `time_range`/`time_period`/`extraction` but runtime must not depend on them.
+- For time_delta, you are responsible for recognizing the user's new time scope semantically.
+  Use `continuation_type=time_delta`, `followup_intent=replace_scope`, and `delta_type=time`.
+  Include `time_range`, `time_period`, or `extraction.time_range` when the scope is clear; runtime may validate it.
+- Time-delta recognition must work in English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
+  Examples: "what about yesterday", "yesterday nko", "what of last week", "for today only",
+  "ti ana nko", "na jiya fa", "hier alors".
 - For aggregate continuations, preserve the current result scope unless user explicitly changes it.
   Include `extraction` for the derived analytical query when possible.
+- Recheck/refresh follow-ups like "check again", "check againo", "recheck", "run it again",
+  "try again", and "refresh" must be `decision=continuation`, `continuation_type=unclear`,
+  `followup_intent=refine_existing`; do not emit `fresh_query`/`new_query` and do not change the query shape.
+- Distinguish recheck from evidence: "show me/show them/list them" means show underlying rows;
+  "check again/recheck/refresh" means rerun the same answer.
 - When user refers to prior result frames ("both", "the first one", "that week"),
   populate `referenced_frame_ids`, `grounded_operation`, and `answer_mode` (memory_answer|grounded_query|ask_clarify).
 - Explicit fresh restatements introducing a new query shape → new_query, not time_delta.
 - Do not guess continuation behavior from short keyword patterns alone.
+- Do not repeat the previous time window when the user asks for a different time scope.
 
 CONTINUATION EXAMPLES
 Active list/summary context:
@@ -64,6 +75,7 @@ Active list/summary context:
 - "back"/"previous page" → show_more, previous_pagination
 - "show them"/"show me" after summary → show_more, refine_existing
 - "show me" after aggregate total/summary answer → show_evidence, refine_existing
+- "check again"/"check againo"/"recheck"/"refresh" after any query answer → unclear, refine_existing
 - "so what the total?" after grouped recipient summary → grouped_total_followup, refine_existing
 - "how much total"/"sum it up" → aggregate, refine_existing
 - "total for mum" → aggregate, refine_existing (narrow recipient filter, keep time scope)

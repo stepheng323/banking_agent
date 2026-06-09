@@ -47,10 +47,11 @@ async def resolve_result_continuation_updates(
     locale: str,
 ) -> dict[str, Any]:
     """Resolve continuation branches that navigate or refine an existing query result."""
+    continuation_delta_type = decision.delta_type or ("time" if cont_type == "time_delta" else None)
     updates: dict[str, Any] = {
         "flow_state": "executing",
         "continuation_type": cont_type,
-        "continuation_delta_type": decision.delta_type,
+        "continuation_delta_type": continuation_delta_type,
         "resolver_message": None,
         **step._semantic_trace_updates(decision),
     }
@@ -75,7 +76,7 @@ async def resolve_result_continuation_updates(
                 result_reference=None,
                 answer_fact_field=None,
                 continuation_type=cont_type,
-                continuation_delta_type=decision.delta_type,
+                continuation_delta_type=continuation_delta_type,
             )
             updates["current_page"] = 0
             updates["show_expanded"] = False
@@ -93,7 +94,7 @@ async def resolve_result_continuation_updates(
             result_reference=None,
             answer_fact_field=None,
             continuation_type=cont_type,
-            continuation_delta_type=decision.delta_type,
+            continuation_delta_type=continuation_delta_type,
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False
@@ -109,7 +110,7 @@ async def resolve_result_continuation_updates(
             result_reference=None,
             answer_fact_field=None,
             continuation_type=cont_type,
-            continuation_delta_type=decision.delta_type,
+            continuation_delta_type=continuation_delta_type,
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False
@@ -203,7 +204,7 @@ async def resolve_result_continuation_updates(
             if decision.result_reference is not None
             else session_query_contract.result_reference,
             continuation_type=cont_type,
-            continuation_delta_type=decision.delta_type,
+            continuation_delta_type=continuation_delta_type,
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False
@@ -233,7 +234,7 @@ async def resolve_result_continuation_updates(
             if decision.result_reference is not None and allow_reference
             else session_query_contract.result_reference,
             continuation_type=cont_type,
-            continuation_delta_type=decision.delta_type,
+            continuation_delta_type=continuation_delta_type,
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False

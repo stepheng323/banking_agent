@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from time import perf_counter
 from typing import Any, Literal, cast
 
@@ -24,6 +25,7 @@ from banking.transactions.query.prompts.main import (
 from banking.transactions.query.services.reasoning import models as reasoner_models
 from banking.transactions.query.services.reasoning.shortcuts import resolve_query_shortcut
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,12 +33,39 @@ _MAX_PROMPT_ITEMS = 5
 _MAX_PROMPT_QUERY_FRAMES = 3
 _SURFACE_CONTEXT_KEYS = ("type", "view", "count", "total_results", "has_more", "group_by")
 _ITEM_METADATA_KEYS = ("status", "bank_name", "recipient_name", "recipient_bank_name", "type", "transaction_type")
+_ORDINAL_WORDS: dict[str, int] = {
+    "first": 0,
+    "1st": 0,
+    "second": 1,
+    "2nd": 1,
+    "third": 2,
+    "3rd": 2,
+    "fourth": 3,
+    "4th": 3,
+    "fifth": 4,
+    "5th": 4,
+}
+_FACT_FIELD_PATTERNS: tuple[tuple[reasoner_models.FactFieldType, tuple[str, ...]], ...] = (
+    ("bank", ("bank", "which bank", "what bank")),
+    ("account", ("account", "which account", "what account")),
+    ("status", ("status", "state", "successful", "failed", "pending")),
+    ("amount", ("amount", "how much", "how many naira")),
+    ("date", ("date", "when", "time")),
+    ("reference", ("reference", "ref")),
+    ("category", ("category", "type of transaction")),
+    ("direction", ("direction", "debit", "credit", "incoming", "outgoing")),
+    ("description", ("description", "narration", "what was it for", "what is it for")),
+    ("recipient", ("recipient", "who did", "who was", "sent to", "send to")),
+    ("counterparty", ("counterparty", "merchant", "person")),
+)
+_REFERENTIAL_MARKERS = ("that", "this", "it", "one", "transaction", "payment", "transfer")
 
 
 class QuerySemanticReasoner:
     """Single semantic reasoner for fresh query, clarification, and continuation."""
 
     def __init__(self, llm: Runnable):
+        self._base_llm = llm
         typed_llm = cast(Any, llm)
         self._active_structured_llm = typed_llm.with_structured_output(reasoner_models.ActiveContinuationDecision)
         self._pending_structured_llm = typed_llm.with_structured_output(reasoner_models.PendingClarificationDecision)
@@ -118,6 +147,40 @@ class QuerySemanticReasoner:
             prompt_frame_count=prompt_frame_count,
             prompt_surface_type=prompt_surface_type,
             context_bytes=context_bytes,
+        )
+
+    def _record_llm_call(
+        self,
+        *,
+        duration_ms: float,
+        reasoner_schema: reasoner_models.ReasonerSchemaType,
+        prompt_item_count: int,
+        prompt_frame_count: int,
+        prompt_surface_type: str | None,
+        dynamic_context: str,
+        output: Any | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        output_metrics = structured_output_metrics(output) if output is not None else {}
+        model = getattr(self._base_llm, "model_name", None) or getattr(self._base_llm, "model", None)
+        record_llm_call(
+            event_name="query_reasoner_llm_call",
+            duration_ms=duration_ms,
+            model=model,
+            response_type=type(output).__name__ if output is not None else None,
+            system_chars=len(QUERY_SEMANTIC_REASONER_SYSTEM),
+            user_chars=len(dynamic_context),
+            output_json_chars=output_metrics.get("output_json_chars"),
+            output_token_estimate=output_metrics.get("output_token_estimate"),
+            error_type=error_type,
+            extra_fields={
+                **output_metrics,
+                "reasoner_schema": reasoner_schema,
+                "prompt_item_count": prompt_item_count,
+                "prompt_frame_count": prompt_frame_count,
+                "prompt_surface_type": prompt_surface_type,
+                "context_bytes": len(dynamic_context.encode("utf-8")),
+            },
         )
 
     @staticmethod
@@ -256,6 +319,71 @@ class QuerySemanticReasoner:
         ]
         return QuerySemanticReasoner._serialize(payload), len(bounded_frames)
 
+    @staticmethod
+    def _deterministic_ordinal_index(normalized: str) -> int | None:
+        for token, index in _ORDINAL_WORDS.items():
+            if re.search(rf"\b{re.escape(token)}\b", normalized):
+                return index
+        match = re.search(r"\b(?:item|number|no\.?|#)\s*([1-5])\b", normalized)
+        if match:
+            return int(match.group(1)) - 1
+        return None
+
+    @staticmethod
+    def _deterministic_fact_field(normalized: str) -> reasoner_models.FactFieldType | None:
+        for field, patterns in _FACT_FIELD_PATTERNS:
+            if any(pattern in normalized for pattern in patterns):
+                return field
+        return None
+
+    @staticmethod
+    def _has_visible_items(surface_view: SurfaceView | None) -> bool:
+        return surface_view is not None and bool(surface_view.items)
+
+    @classmethod
+    def _deterministic_visible_followup(
+        cls,
+        *,
+        message: str,
+        surface_view: SurfaceView | None,
+    ) -> reasoner_models.QuerySemanticDecision | None:
+        surface_mode = cls._continuation_classifier_surface_type(surface_view=surface_view)
+        if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
+            return None
+        if not cls._has_visible_items(surface_view):
+            return None
+
+        normalized = cls._normalize(message)
+        ordinal_index = cls._deterministic_ordinal_index(normalized)
+        fact_field = cls._deterministic_fact_field(normalized)
+        item_count = len(surface_view.items) if surface_view is not None else 0
+        has_referential_marker = any(marker in normalized for marker in _REFERENTIAL_MARKERS)
+
+        if fact_field is not None and (ordinal_index is not None or item_count == 1 and has_referential_marker):
+            return reasoner_models.QuerySemanticDecision(
+                decision="continuation",
+                confidence=1.0,
+                reason=f"deterministic_fact_{fact_field}",
+                continuation_type="drill_down",
+                drill_down_index=ordinal_index if ordinal_index is not None else 0,
+                drill_down_action="answer_fact",
+                fact_field=fact_field,
+                requested_field=fact_field,
+            )
+
+        if ordinal_index is None:
+            return None
+        if not re.search(r"\b(?:show|open|view|see|details?|transaction|payment|transfer|one)\b", normalized):
+            return None
+        return reasoner_models.QuerySemanticDecision(
+            decision="continuation",
+            confidence=1.0,
+            reason="deterministic_visible_item_detail",
+            continuation_type="drill_down",
+            drill_down_index=ordinal_index,
+            drill_down_action="view_details",
+        )
+
     @classmethod
     def _deterministic_surface_action(
         cls,
@@ -267,6 +395,9 @@ class QuerySemanticReasoner:
         surface_mode = cls._continuation_classifier_surface_type(surface_view=surface_view)
         if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
             return None
+        visible_followup = cls._deterministic_visible_followup(message=message, surface_view=surface_view)
+        if visible_followup is not None:
+            return visible_followup
         shortcut = resolve_query_shortcut(message, language)
         if shortcut is None or shortcut.kind not in {"actionable", "pagination"}:
             return None
@@ -382,6 +513,15 @@ class QuerySemanticReasoner:
                 prompt_surface_type=prompt_surface_type,
                 context_bytes=prompt_context_bytes,
             )
+            self._record_llm_call(
+                duration_ms=duration_ms,
+                reasoner_schema=reasoner_schema,
+                prompt_item_count=prompt_item_count,
+                prompt_frame_count=prompt_frame_count,
+                prompt_surface_type=prompt_surface_type,
+                dynamic_context=dynamic_context,
+                error_type="invoke_error",
+            )
             self._log_query_trace(
                 context=context,
                 phase="semantic_reasoner",
@@ -406,6 +546,15 @@ class QuerySemanticReasoner:
             prompt_frame_count=prompt_frame_count,
             prompt_surface_type=prompt_surface_type,
             context_bytes=prompt_context_bytes,
+        )
+        self._record_llm_call(
+            duration_ms=duration_ms,
+            reasoner_schema=reasoner_schema,
+            prompt_item_count=prompt_item_count,
+            prompt_frame_count=prompt_frame_count,
+            prompt_surface_type=prompt_surface_type,
+            dynamic_context=dynamic_context,
+            output=raw_decision,
         )
         decision = raw_decision.to_public_decision() if hasattr(raw_decision, "to_public_decision") else raw_decision
         self._log_query_trace(

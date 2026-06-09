@@ -71,6 +71,69 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_analytics_sum_excludes_failed_and_reversed_transactions(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        del args, kwargs
+        return [
+            {
+                "id": "tx_success_1",
+                "amount": 10000,
+                "narration": "Transfer to Tolu",
+                "date": "2026-06-09",
+                "type": "debit",
+                "status": "successful",
+            },
+            {
+                "id": "tx_success_2",
+                "amount": 10000,
+                "narration": "Transfer to Yusuf",
+                "date": "2026-06-09",
+                "type": "debit",
+                "display_status": "successful",
+            },
+            {
+                "id": "tx_failed",
+                "amount": 50000,
+                "narration": "Failed transfer to Tolu",
+                "date": "2026-06-09",
+                "type": "debit",
+                "display_status": "failed",
+            },
+            {
+                "id": "tx_reversed",
+                "amount": 3000,
+                "narration": "Reversed airtime",
+                "date": "2026-06-09",
+                "type": "debit",
+                "status": "reversed",
+            },
+        ]
+
+    monkeypatch.setattr(
+        "banking.transactions.query.handlers.analytics.fetch_and_filter",
+        _fake_fetch_and_filter,
+    )
+    monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 6, 9))
+
+    result = await handle_analytics(
+        _Provider(),  # type: ignore[arg-type]
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="sum"),
+                filters=Filters(transaction_type="debit"),
+                time_range=TimeRange(start=date(2026, 6, 9), end=date(2026, 6, 9)),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        language="en",
+    )
+
+    assert result.summary_text == "You spent *₦20,000* today, across 2 transactions."
+
+
+@pytest.mark.asyncio
 async def test_analytics_sum_response_names_retained_account_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         del args, kwargs

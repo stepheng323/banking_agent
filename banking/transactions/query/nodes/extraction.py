@@ -11,6 +11,7 @@ import banking.transactions.query.continuations.pending_clarification as pending
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.query.continuations.time_rescope import is_direct_time_rescope_message
 from banking.transactions.query.contracts import SurfaceView, SurfaceViewMode
 from banking.transactions.query.grounding.frames import (
     restore_query_frames,
@@ -344,18 +345,7 @@ class ExtractionStep(QueryStep):
 
     @staticmethod
     def _is_direct_time_rescope_message(message: str, *, today: date) -> bool:
-        normalized = " ".join(message.strip().split()).lower().rstrip("?.!,")
-        if not normalized:
-            return False
-        if QueryParser.parse_clarification_time_range(normalized, today=today) is not None:
-            return True
-        for prefix in ("what about ", "how about ", "for ", "only ", "just ", "and "):
-            if not normalized.startswith(prefix):
-                continue
-            candidate = normalized[len(prefix) :].strip()
-            if QueryParser.parse_clarification_time_range(candidate, today=today) is not None:
-                return True
-        return False
+        return is_direct_time_rescope_message(message, today=today)
 
     @staticmethod
     def _should_ignore_grounded_query_for_aggregate(

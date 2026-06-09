@@ -197,9 +197,10 @@ async def handle_transaction_list(
 
     total = len(transactions)
     showing_end = offset + len(paginated)
+    showing_start = 0 if total == 0 else offset + 1
     account_count = len(account_ids) if account_ids else 1
 
-    result_summary = f"accounts:{account_count}|showing:{offset + 1}-{showing_end}|total:{total}"
+    result_summary = f"accounts:{account_count}|showing:{showing_start}-{showing_end}|total:{total}"
     has_more = showing_end < total
 
     _log_query_trace(

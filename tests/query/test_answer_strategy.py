@@ -65,6 +65,24 @@ def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> No
     assert selected.followup_referent.recipient_account == "8162511023"
 
 
+def test_select_answer_strategy_does_not_direct_answer_structural_empty_list_summary() -> None:
+    result = QueryResult(
+        summary_text="accounts:4|showing:1-0|total:0",
+        items=[],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=date(2026, 3, 28), end=date(2026, 3, 28)),
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_context is None
+    assert selected.answer_strategy == QueryAnswerStrategy.TRANSACTION_LIST
+
+
 def test_select_answer_strategy_uses_localized_reply_for_single_fact_match() -> None:
     result = QueryResult(
         summary_text="accounts:1|showing:1-1|total:1",

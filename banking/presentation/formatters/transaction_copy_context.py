@@ -10,7 +10,7 @@ from banking.presentation.formatters.recipient_display import format_summary_rec
 from banking.presentation.formatters.transaction_copy_common import _mapping, _string
 
 
-def format_amount_compact(amount: float | int | str | None) -> str:
+def format_amount_compact(amount: Any) -> str:
     """Format Naira values without forced trailing decimals."""
     return format_naira_compact(amount)
 

@@ -8,6 +8,7 @@ from banking.transactions.query.models.domain import (
     QueryIntent,
     QueryResult,
 )
+from banking.transactions.query.presentation.formatting import parse_summary_parts
 from banking.transactions.query.presentation.surface_builder import build_focus_referent
 from banking.transactions.query.services.answers.existence import build_existence_answer
 from banking.transactions.query.services.answers.fact_answer import build_direct_fact_answer
@@ -46,7 +47,7 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
         result.answer_strategy = QueryAnswerStrategy.SUMMARY_LIST
         return result
 
-    if result.summary_text and not result.items:
+    if result.summary_text and not result.items and not parse_summary_parts(result.summary_text):
         result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
         result.answer_context = QueryAnswerContext(primary_text=result.summary_text)
         return result

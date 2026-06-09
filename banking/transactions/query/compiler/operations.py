@@ -93,6 +93,13 @@ def intent_from_query_operation(query_operation: QueryOperation) -> QueryIntent:
 
 
 def infer_query_operation(extraction: QueryExtractionResult, *, effective_intent: ExtractionIntent) -> QueryOperation:
+    raw_lower = (extraction.raw_query or "").strip().lower()
+    if (
+        extraction.query_operation == QueryOperation.LIST_TRANSACTIONS
+        and effective_intent == ExtractionIntent.TRANSACTION_LIST
+        and is_aggregate_count_query(raw_lower)
+    ):
+        return QueryOperation.COUNT_TRANSACTIONS
     if extraction.query_operation is not None:
         return extraction.query_operation
     if extraction.request_shape == QueryRequestShape.EXISTENCE:
@@ -132,6 +139,8 @@ def infer_query_operation(extraction: QueryExtractionResult, *, effective_intent
         return QueryOperation.COMPARE_PERIODS
     if effective_intent == ExtractionIntent.AFFORDABILITY:
         return QueryOperation.CHECK_AFFORDABILITY
+    if effective_intent == ExtractionIntent.TRANSACTION_LIST and is_aggregate_count_query(raw_lower):
+        return QueryOperation.COUNT_TRANSACTIONS
     return QueryOperation.LIST_TRANSACTIONS
 
 
@@ -160,6 +169,23 @@ def is_aggregate_total_query(raw_query: str) -> bool:
             "credited",
             "income",
             "inflow",
+        )
+    )
+
+
+def is_aggregate_count_query(raw_query: str) -> bool:
+    if not raw_query:
+        return False
+    return any(
+        cue in raw_query
+        for cue in (
+            "how many transaction",
+            "how many transactions",
+            "number of transaction",
+            "number of transactions",
+            "count transaction",
+            "count transactions",
+            "transaction count",
         )
     )
 

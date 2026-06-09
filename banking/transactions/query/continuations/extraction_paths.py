@@ -17,9 +17,11 @@ from banking.transactions.query.continuations.supported_recovery import (
     maybe_recover_supported_followup_query,
 )
 from banking.transactions.query.continuations.time_rescope import (
+    is_direct_time_rescope_message,
     maybe_recover_time_rescope_continuation,
 )
 from banking.transactions.query.models.domain import (
+    QueryIntent,
     QueryResult,
     QueryResultItem,
 )
@@ -28,6 +30,72 @@ from banking.transactions.query.utils.timezone import lagos_today
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_SHOW_EXISTING_TRANSACTIONS_MESSAGES = {
+    "show them",
+    "show me",
+    "show transactions",
+    "show the transactions",
+    "show details",
+    "show the details",
+    "list them",
+    "list transactions",
+}
+
+_REPEAT_EXISTING_QUERY_MESSAGES = {
+    "check again",
+    "check againo",
+    "check it again",
+    "recheck",
+    "refresh",
+    "run it again",
+    "try again",
+}
+
+
+def _normalize_show_existing_message(message: str) -> str:
+    return " ".join(message.strip().split()).lower().rstrip("?.!,")
+
+
+def _is_show_existing_transactions_followup(message: str, session_query_contract: Any | None) -> bool:
+    if session_query_contract is None or session_query_contract.intent != QueryIntent.ANALYTICS_SUMMARY:
+        return False
+    if session_query_contract.aggregation is None:
+        return False
+    return _normalize_show_existing_message(message) in _SHOW_EXISTING_TRANSACTIONS_MESSAGES
+
+
+def _is_repeat_existing_query_followup(message: str, session_query_contract: Any | None) -> bool:
+    if session_query_contract is None:
+        return False
+    return _normalize_show_existing_message(message) in _REPEAT_EXISTING_QUERY_MESSAGES
+
+
+def _repeat_existing_query_updates(
+    step: Any,
+    *,
+    decision: Any,
+    session_query_contract: Any,
+) -> dict[str, Any]:
+    logger.info(
+        "query_continuation_resolution",
+        path="repeat_existing_query",
+        semantic_decision=decision.decision,
+        continuation_type=decision.continuation_type,
+        followup_intent=decision.followup_intent,
+    )
+    return {
+        "query_contract": session_query_contract,
+        "resolver_message": None,
+        "flow_state": "executing",
+        "current_page": 0,
+        "session_active": True,
+        "pending_clarification": None,
+        "show_expanded": False,
+        "continuation_type": "repeat_query",
+        "continuation_delta_type": None,
+        **step._semantic_trace_updates(decision),
+    }
 
 
 async def handle_continuation(step: Any, state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
@@ -119,6 +187,77 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 **step._semantic_trace_updates(decision),
             },
             "end_query_session",
+        )
+
+    defer_to_low_confidence_recovery = (
+        decision.decision == "continuation"
+        and cont_type == "unclear"
+        and decision.confidence is not None
+        and decision.confidence < step._LOW_CONFIDENCE_THRESHOLD
+    )
+    if is_direct_time_rescope_message(message, today=today) and not defer_to_low_confidence_recovery:
+        recovered_updates = await maybe_recover_time_rescope_continuation(
+            step,
+            trigger_reason="semantic_direct_time_rescope",
+            decision=decision,
+            state=state,
+            session=session,
+            session_query_contract=session_query_contract,
+            message=message,
+            today=today,
+            language=locale,
+        )
+        if recovered_updates is not None:
+            step._log_single_item_followup(
+                surface_view=surface_view,
+                continuation_type="time_delta",
+                followup_outcome="time_rescope_query",
+                decision=decision.decision,
+            )
+            recovered_updates.update(step._semantic_trace_updates(decision))
+            return recovered_updates
+
+    if _is_repeat_existing_query_followup(message, session_query_contract):
+        step._log_single_item_followup(
+            surface_view=surface_view,
+            continuation_type="repeat_query",
+            followup_outcome="repeat_existing_query",
+            decision=decision.decision,
+        )
+        return _repeat_existing_query_updates(
+            step,
+            decision=decision,
+            session_query_contract=session_query_contract,
+        )
+
+    if _is_show_existing_transactions_followup(message, session_query_contract):
+        logger.info(
+            "query_continuation_resolution",
+            path="semantic_show_existing_transactions_recovery",
+            semantic_decision=decision.decision,
+            continuation_type=cont_type,
+            followup_intent=decision.followup_intent,
+        )
+        step._log_single_item_followup(
+            surface_view=surface_view,
+            continuation_type="show_evidence",
+            followup_outcome="show_existing_transactions",
+            decision=decision.decision,
+        )
+        return await resolve_result_continuation_updates(
+            step,
+            decision=decision,
+            cont_type="show_evidence",
+            followup_intent="refine_existing",
+            state=state,
+            session=session,
+            session_query_contract=session_query_contract,
+            restored_query_result=restored_query_result,
+            surface_view=surface_view,
+            items=items,
+            message=message,
+            today=today,
+            locale=locale,
         )
 
     if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:

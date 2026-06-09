@@ -350,6 +350,25 @@ async def test_multi_account_fetch_runs_concurrently() -> None:
 
 
 @pytest.mark.asyncio
+async def test_empty_transaction_list_summary_uses_zero_zero_range() -> None:
+    provider = _Provider(transactions=[])
+    query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 4), end=date(2026, 3, 4)),
+    )
+
+    result = await handle_transaction_list(
+        provider,  # type: ignore[arg-type]
+        _contract(query),
+        "acc_1",
+        ["acc_1", "acc_2"],
+    )
+
+    assert result.summary_text == "accounts:2|showing:0-0|total:0"
+    assert result.items == []
+
+
+@pytest.mark.asyncio
 async def test_oldest_result_reference_reorders_transaction_list_before_limiting() -> None:
     provider = _Provider(
         transactions=[

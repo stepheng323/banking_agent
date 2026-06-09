@@ -25,6 +25,7 @@ from banking.transactions.query.presentation.formatting import (
     format_query_amount,
     format_query_date,
     format_query_percentage,
+    is_zero_structural_list_summary,
     parse_summary_parts,
 )
 from banking.transactions.query.presentation.scope import build_breakdown_heading
@@ -113,14 +114,7 @@ def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) 
 
 def _build_no_results_presentation_plan(result: QueryResult, *, locale: str) -> PresentationPlan | None:
     summary_parts = parse_summary_parts(result.summary_text)
-    query_contract = result_query_contract(result)
-    if (
-        summary_parts
-        and summary_parts.get("showing") is not None
-        and str(summary_parts.get("total", "")).strip() == "0"
-        and query_contract is not None
-        and query_contract.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}
-    ):
+    if is_zero_structural_list_summary(result.summary_text):
         no_results_text = _build_no_results_text(result, locale=locale)
         if no_results_text is not None:
             return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=no_results_text)

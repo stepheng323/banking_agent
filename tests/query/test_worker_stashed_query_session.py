@@ -1244,6 +1244,172 @@ async def test_worker_restores_persisted_analytics_followup_for_time_delta(
 
 
 @pytest.mark.asyncio
+async def test_worker_count_time_delta_followup_renders_yesterday(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
+
+    redis = _RedisStoreStub()
+    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    provider = _WindowedProvider(
+        {
+            "acc_1": [
+                {"id": "today-1", "narration": "Card purchase", "amount": 5000, "date": "2026-03-19", "type": "debit"},
+                {"id": "yday-1", "narration": "Fuel", "amount": 7000, "date": "2026-03-18", "type": "debit"},
+                {"id": "yday-2", "narration": "Groceries", "amount": 2000, "date": "2026-03-18", "type": "debit"},
+            ]
+        }
+    )
+    initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+    initial_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 19), end=date(2026, 3, 19), granularity="day"),
+            aggregation=Aggregation(type="count"),
+        )
+    )
+
+    async def _initial_extract(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "flow_state": "executing",
+                "query_contract": initial_contract,
+            },
+        )
+
+    initial_worker.extractor.run = _initial_extract  # type: ignore[method-assign]
+
+    first_result = await initial_worker.run(
+        payload={"message": "How many transactions have I carried out today"},
+        context={
+            "phone_number": "2348000000316",
+            "user_id": "u-worker-count-yesterday",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert first_result.outcome == TransactionOutcome.OK
+    assert first_result.response == "You made *1* transaction today."
+
+    followup_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+
+    async def _followup_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            delta_type="time",
+            confidence=0.99,
+            reason="llm_yesterday_followup_without_concrete_range",
+        )
+
+    followup_worker.extractor.reasoner.reason = _followup_reason  # type: ignore[method-assign]
+
+    second_result = await followup_worker.run(
+        payload={"message": "What about yesterday"},
+        context={
+            "phone_number": "2348000000316",
+            "user_id": "u-worker-count-yesterday",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert second_result.outcome == TransactionOutcome.OK
+    assert second_result.response == "You made *2* transactions yesterday."
+    assert second_result.patch is not None
+    query_contract = second_result.patch["query_contract"]
+    assert isinstance(query_contract, QueryExecutionContract)
+    assert query_contract.time_start == date(2026, 3, 18)
+    assert query_contract.time_end == date(2026, 3, 18)
+
+    show_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+
+    async def _show_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            continuation_type="unclear",
+            confidence=0.42,
+            reason="llm_mislabeled_show_existing_transactions_as_fresh_query",
+        )
+
+    show_worker.extractor.reasoner.reason = _show_reason  # type: ignore[method-assign]
+
+    third_result = await show_worker.run(
+        payload={"message": "Show them"},
+        context={
+            "phone_number": "2348000000316",
+            "user_id": "u-worker-count-yesterday",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert third_result.outcome == TransactionOutcome.OK
+    assert third_result.patch is not None
+    query_contract = third_result.patch["query_contract"]
+    assert isinstance(query_contract, QueryExecutionContract)
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.time_start == date(2026, 3, 18)
+    assert query_contract.time_end == date(2026, 3, 18)
+    query_result = third_result.patch["query_result"]
+    assert isinstance(query_result, QueryResult)
+    assert {item.description for item in query_result.items or []} == {"Fuel", "Groceries"}
+    assert "today" not in (third_result.response or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_worker_count_zero_summary_uses_natural_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
+
+    redis = _RedisStoreStub()
+    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    provider = _WindowedProvider({"acc_1": []})
+    worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+    initial_contract = _contract(
+        _query_ir(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 19), end=date(2026, 3, 19), granularity="day"),
+            aggregation=Aggregation(type="count"),
+        )
+    )
+
+    async def _extract(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "flow_state": "executing",
+                "query_contract": initial_contract,
+            },
+        )
+
+    worker.extractor.run = _extract  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "How many transactions have I carried out today"},
+        context={
+            "phone_number": "2348000000317",
+            "user_id": "u-worker-count-zero",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response == "You didn't make any transactions today."
+
+
+@pytest.mark.asyncio
 async def test_worker_restores_persisted_time_comparison_followup_for_time_delta() -> None:
     redis = _RedisStoreStub()
     session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]

@@ -73,6 +73,38 @@ def test_format_transaction_list_item_uses_query_row_copy() -> None:
     assert format_transaction_list_item(item, locale="en") == "₦10,000 • Sent — Transfer to Tolu Adebayo _(GTBank)_"
 
 
+def test_format_transaction_list_item_marks_failed_transfer_without_sent_label() -> None:
+    item = SimpleNamespace(
+        amount=50000,
+        description="Transfer to Tolu",
+        metadata={
+            "type": "debit",
+            "transaction_type": "transfer",
+            "counterparty": "Tolu Adebayo",
+            "bank_name": "GTBank",
+            "display_status": "failed",
+        },
+    )
+
+    assert format_transaction_list_item(item, locale="en") == "₦50,000 • Failed transfer — Tolu Adebayo _(GTBank)_"
+
+
+def test_format_transaction_list_item_marks_reversed_transfer_without_sent_label() -> None:
+    item = SimpleNamespace(
+        amount=3000,
+        description="Transfer to Tolu",
+        metadata={
+            "type": "debit",
+            "transaction_type": "transfer",
+            "counterparty": "Tolu Adebayo",
+            "bank_name": "GTBank",
+            "status": "reversed",
+        },
+    )
+
+    assert format_transaction_list_item(item, locale="en") == "₦3,000 • Reversed transfer — Tolu Adebayo _(GTBank)_"
+
+
 def test_build_transaction_detail_lines_uses_query_field_copy() -> None:
     item = SimpleNamespace(
         id="tx-ref-1",
