@@ -11,6 +11,8 @@ from apps.chat.src.agent.orchestrator.models.message_context import MessageConte
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
+from shared.database.models import User
+from shared.messaging.channels import ChannelInput, MessagingChannel, normalize_messaging_channel
 from shared.utils.async_helpers import create_background_task
 
 
@@ -52,11 +54,20 @@ class OrchestratorAgent:
         )
 
     async def resume_transaction(
-        self, phone_number: str, flow_type: str, pin_verified: bool, channel: str = "whatsapp"
+        self,
+        phone_number: str,
+        flow_type: str,
+        pin_verified: bool,
+        channel: ChannelInput = MessagingChannel.WHATSAPP,
     ) -> dict[str, Any]:
         """Resume a transaction after an external event (like PIN verification)."""
+        normalized_channel = normalize_messaging_channel(channel)
         payload = {"pin_verified": pin_verified, "flow_type": flow_type}
-        return await self.orchestrator_handler.resume_flow(phone_number=phone_number, payload=payload, channel=channel)
+        return await self.orchestrator_handler.resume_flow(
+            phone_number=phone_number,
+            payload=payload,
+            channel=normalized_channel,
+        )
 
     async def invoke(
         self,
@@ -67,17 +78,22 @@ class OrchestratorAgent:
         media_id: str | None = None,
         mime_type: str | None = None,
         quoted_message_id: str | None = None,
-        channel: str = "whatsapp",
+        channel: ChannelInput = MessagingChannel.WHATSAPP,
         channel_identity: str | None = None,
         channel_metadata: dict[str, Any] | None = None,
-        user: Any | None = None,
+        user: User | None = None,
     ) -> dict[str, Any]:
         """Invoke the orchestrator with a user message."""
         self.message_type = message_type
+        normalized_channel = normalize_messaging_channel(channel)
         fallback_locale = (await LocaleManager.get_effective_locale(phone_number)).value
 
         if self.message_type == "audio" and media_id:
-            raw_text = await self.deps.media_service.process_audio(media_id, channel=channel, locale=fallback_locale)
+            raw_text = await self.deps.media_service.process_audio(
+                media_id,
+                channel=normalized_channel,
+                locale=fallback_locale,
+            )
             if raw_text:
                 audio_fallback = render_message("orchestrator.error.audio_unprocessable", fallback_locale)
                 if raw_text == audio_fallback and text.strip():
@@ -91,7 +107,7 @@ class OrchestratorAgent:
         if self.message_type == "image" and media_id:
             image_interpretation = await self.deps.media_service.interpret_image(
                 media_id,
-                channel=channel,
+                channel=normalized_channel,
                 mime_type=mime_type,
                 locale=fallback_locale,
             )
@@ -116,7 +132,7 @@ class OrchestratorAgent:
             image_data=None,
             is_media_input=message_type in {"audio", "image"},
             quoted_message_id=quoted_message_id,
-            channel=channel,
+            channel=normalized_channel,
             channel_identity=channel_identity,
             channel_metadata=dict(channel_metadata or {}),
             resolved_user=user,

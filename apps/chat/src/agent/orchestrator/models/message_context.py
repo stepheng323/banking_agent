@@ -4,6 +4,8 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.classification import ClassificationResult
+from shared.database.models import User
+from shared.messaging.channels import MessagingChannel, normalize_messaging_channel
 from shared.types.planner import PlannerOutput
 
 
@@ -22,10 +24,10 @@ class MessageContext:
     is_media_input: bool = False
     quoted_message_id: str | None = None
     quoted_message_data: dict[str, Any] | None = None
-    channel: str = "whatsapp"
+    channel: MessagingChannel = MessagingChannel.WHATSAPP
     channel_identity: str | None = None
     channel_metadata: dict[str, Any] = field(default_factory=dict)
-    resolved_user: Any | None = None
+    resolved_user: User | None = None
 
     user_context: dict[str, Any] = field(default_factory=dict)
     conversation_state: dict[str, Any] | None = None
@@ -42,6 +44,9 @@ class MessageContext:
     response: str | None = None
     handled: bool = False
     is_flow_resume: bool = False
+
+    def __post_init__(self) -> None:
+        self.channel = normalize_messaging_channel(self.channel)
 
     @property
     def intent(self) -> str | None:
