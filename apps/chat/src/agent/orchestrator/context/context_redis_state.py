@@ -124,7 +124,7 @@ async def get_message_id(phone_number: str) -> str | None:
         return None
 
 
-async def get_conversation_history(phone_number: str, limit: int = 10) -> list[dict[str, Any]]:
+async def get_conversation_history(phone_number: str, limit: int = 3) -> list[dict[str, Any]]:
     try:
         redis_client = RedisClient.get_client()
         items = await cast(

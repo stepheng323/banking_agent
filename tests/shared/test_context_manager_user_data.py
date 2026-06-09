@@ -310,6 +310,7 @@ async def test_load_context_parallel_reuses_prefetched_cache_snapshot() -> None:
     assert user_ctx["beneficiaries"] == [{"id": "bene-cached"}]
     assert user_ctx["history"] == [{"role": "assistant", "content": "Hi"}]
     assert user_ctx["language"] == "en"
+    assert ("lrange", ("user:2348000000100:chat_history", -3, -1)) in redis_stub.pipeline_stub.calls
 
 
 async def test_load_context_parallel_backfills_from_session_snapshot() -> None:

@@ -46,7 +46,7 @@ async def load_context_parallel(
         for key in keys[0:4]:
             pipe.get(key)
 
-        pipe.lrange(keys[4], -10, -1)
+        pipe.lrange(keys[4], -3, -1)
         for key in keys[5:9]:
             pipe.get(key)
 

@@ -187,7 +187,7 @@ class ContextManager:
         """Get current message_id from Redis for typing indicator."""
         return await context_redis_state.get_message_id(phone_number)
 
-    async def get_conversation_history(self, phone_number: str, limit: int = 10) -> list[dict[str, Any]]:
+    async def get_conversation_history(self, phone_number: str, limit: int = 3) -> list[dict[str, Any]]:
         """Get recent conversation history."""
         return await context_redis_state.get_conversation_history(phone_number, limit)
 

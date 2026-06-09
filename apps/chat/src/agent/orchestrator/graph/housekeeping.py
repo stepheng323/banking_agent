@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import random
 import time
 from collections.abc import Callable
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.referents.store import referent_memory_ttl_seconds
+from apps.chat.src.agent.orchestrator.workflows.lifecycle.resume_prompt import STASH_RESUME_TTL_SECONDS
 from shared.config.settings import settings
 from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
@@ -71,7 +73,7 @@ class OrchestratorHousekeeping:
                 )
 
                 ttl_start = time.perf_counter()
-                ttl_ok = await self.maybe_apply_session_ttl(thread_id)
+                ttl_ok = await self.maybe_apply_session_ttl(thread_id, state)
                 ttl_duration = (time.perf_counter() - ttl_start) * 1000
                 self._log_latency_span(
                     span="ttl_apply",
@@ -94,15 +96,25 @@ class OrchestratorHousekeeping:
             backoff = (settings.async_housekeeping_retry_base_ms * attempt) / 1000.0
             await asyncio.sleep(backoff + random.uniform(0.01, 0.09))
 
-    async def maybe_apply_session_ttl(self, thread_id: str) -> bool:
+    async def maybe_apply_session_ttl(self, thread_id: str, state: dict[str, Any] | None = None) -> bool:
         chat_ok = await self.apply_chat_history_ttl(thread_id)
-        logger.info(
-            "checkpoint_ttl_maintenance_skipped",
-            thread_id=thread_id,
-            reason="request_path_disabled",
-            configured_interval_seconds=max(0, settings.checkpoint_ttl_maintenance_interval_seconds),
-        )
-        return chat_ok
+        ttl = self.checkpoint_ttl_seconds(state or {})
+        if ttl <= 0:
+            logger.info(
+                "checkpoint_ttl_maintenance_skipped",
+                thread_id=thread_id,
+                reason="no_retained_state",
+                configured_interval_seconds=max(0, settings.checkpoint_ttl_maintenance_interval_seconds),
+            )
+            return chat_ok
+
+        force_refresh = self.has_active_checkpoint_state(state or {})
+        refresh_claimed = True if force_refresh else await self._claim_checkpoint_ttl_refresh(thread_id)
+        if not refresh_claimed:
+            return chat_ok
+
+        ttl_ok = await self.apply_session_ttl(thread_id, ttl=ttl)
+        return chat_ok and ttl_ok
 
     async def expire_keys_with_ttl(self, keys: list[str], ttl: int) -> tuple[int, str]:
         if not keys:
@@ -192,6 +204,89 @@ class OrchestratorHousekeeping:
             logger.warning("apply_chat_history_ttl_error", thread_id=thread_id, error=str(e))
             return False
 
+    async def _claim_checkpoint_ttl_refresh(self, thread_id: str) -> bool:
+        interval_seconds = max(0, settings.checkpoint_ttl_maintenance_interval_seconds)
+        if interval_seconds <= 0:
+            return True
+
+        key = f"checkpoint_ttl_refresh:{thread_id}"
+        set_fn = getattr(self.redis_client, "set", None)
+        if not callable(set_fn):
+            return True
+
+        try:
+            claimed = await set_fn(key, "1", ex=interval_seconds, nx=True)
+        except Exception as exc:
+            logger.warning(
+                "checkpoint_ttl_refresh_claim_failed",
+                thread_id=thread_id,
+                error=str(exc),
+            )
+            return True
+
+        if not claimed:
+            logger.info(
+                "checkpoint_ttl_refresh_skipped",
+                thread_id=thread_id,
+                reason="recently_refreshed",
+                configured_interval_seconds=interval_seconds,
+            )
+        return bool(claimed)
+
+    @staticmethod
+    def _state_value(value: Any, key: str) -> Any:
+        if isinstance(value, dict):
+            return value.get(key)
+        return getattr(value, key, None)
+
+    @staticmethod
+    def _remaining_until(expires_at_ts: Any, *, now: float | None = None) -> int:
+        if not isinstance(expires_at_ts, int | float):
+            return 0
+        current_time = time.time() if now is None else now
+        return max(0, math.ceil(float(expires_at_ts) - current_time))
+
+    @classmethod
+    def _pending_interrupt_ttl_seconds(cls, pending_interrupt: Any, *, now: float | None = None) -> int:
+        if not pending_interrupt:
+            return 0
+        remaining = cls._remaining_until(cls._state_value(pending_interrupt, "expires_at_ts"), now=now)
+        if remaining > 0:
+            return remaining
+        if cls._state_value(pending_interrupt, "expires_at_ts") is not None:
+            return 1
+        return max(1, int(settings.pending_transaction_ttl))
+
+    @classmethod
+    def _session_stack_ttl_seconds(cls, session_stack: Any, *, now: float | None = None) -> int:
+        if not isinstance(session_stack, list):
+            return 0
+        return max(
+            [
+                0,
+                *[
+                    cls._remaining_until(cls._state_value(session, "ttl_expires_at"), now=now)
+                    for session in session_stack
+                ],
+            ]
+        )
+
+    @classmethod
+    def _stashed_sessions_ttl_seconds(cls, stashed_sessions: Any, *, now: float | None = None) -> int:
+        if not isinstance(stashed_sessions, list) or not stashed_sessions:
+            return 0
+        current_time = time.time() if now is None else now
+        remaining_seconds: list[int] = []
+        for session in stashed_sessions:
+            stashed_at_ts = cls._state_value(session, "stashed_at_ts")
+            if isinstance(stashed_at_ts, int | float):
+                remaining_seconds.append(
+                    max(0, math.ceil((float(stashed_at_ts) + STASH_RESUME_TTL_SECONDS) - current_time))
+                )
+            else:
+                remaining_seconds.append(max(1, int(settings.checkpoint_active_ttl_seconds)))
+        return max([0, *remaining_seconds])
+
     @staticmethod
     def context_frame_ttl_seconds(state: dict[str, Any]) -> int:
         """Return remaining TTL for fresh structured result frames in an idle thread."""
@@ -229,12 +324,49 @@ class OrchestratorHousekeeping:
 
         return max(0, int((float(last_updated) + ttl_seconds) - time.time()))
 
+    @staticmethod
+    def has_active_checkpoint_state(state: dict[str, Any]) -> bool:
+        return bool(
+            state.get("tasks")
+            or state.get("waves")
+            or state.get("pending_interrupt")
+            or state.get("stashed_sessions")
+            or state.get("session_stack")
+        )
+
+    @classmethod
+    def checkpoint_ttl_seconds(cls, state: dict[str, Any]) -> int:
+        """Return the checkpoint TTL needed to retain the current graph state."""
+        pending_interrupt = state.get("pending_interrupt")
+        pending_ttl = cls._pending_interrupt_ttl_seconds(pending_interrupt)
+        if pending_ttl > 0:
+            return pending_ttl
+
+        tasks = state.get("tasks", {})
+        waves = state.get("waves", [])
+        stashed_sessions = state.get("stashed_sessions", [])
+        session_stack = state.get("session_stack", [])
+        active_default_ttl = max(1, int(settings.checkpoint_active_ttl_seconds))
+
+        active_ttls = [
+            cls._session_stack_ttl_seconds(session_stack),
+            cls._stashed_sessions_ttl_seconds(stashed_sessions),
+            cls.context_frame_ttl_seconds(state),
+            referent_memory_ttl_seconds(state),
+            cls.capability_boundary_ttl_seconds(state),
+        ]
+        if tasks or waves or stashed_sessions or session_stack:
+            active_ttls.append(active_default_ttl)
+
+        return max([0, *active_ttls])
+
     async def cleanup_if_idle(self, thread_id: str, state: dict[str, Any]) -> bool:
         """Explicitly delete thread if no active tasks, waves, or interruptions remain."""
         tasks = state.get("tasks", {})
         waves = state.get("waves", [])
         pending_interrupt = state.get("pending_interrupt")
         stashed_sessions = state.get("stashed_sessions", [])
+        session_stack = state.get("session_stack", [])
         capability_boundary = state.get("capability_boundary")
 
         logger.info(
@@ -244,24 +376,29 @@ class OrchestratorHousekeeping:
             has_waves=bool(waves),
             has_interrupt=bool(pending_interrupt),
             has_stashed=bool(stashed_sessions),
+            has_session_stack=bool(session_stack),
             has_capability_boundary=bool(capability_boundary),
             task_count=len(tasks) if tasks else 0,
             wave_count=len(waves) if waves else 0,
         )
 
-        if not tasks and not waves and not pending_interrupt and not stashed_sessions:
+        if not tasks and not waves and not pending_interrupt and not stashed_sessions and not session_stack:
             context_frame_ttl = max(
                 self.context_frame_ttl_seconds(state),
                 referent_memory_ttl_seconds(state),
                 self.capability_boundary_ttl_seconds(state),
             )
             if context_frame_ttl > 0:
-                ttl_ok = await self.apply_session_ttl(thread_id, ttl=context_frame_ttl)
+                refresh_claimed = await self._claim_checkpoint_ttl_refresh(thread_id)
+                ttl_ok = True
+                if refresh_claimed:
+                    ttl_ok = await self.apply_session_ttl(thread_id, ttl=context_frame_ttl)
                 logger.info(
                     "orchestrator_thread_retained_for_context_followup",
                     thread_id=thread_id,
                     context_frame_ttl_seconds=context_frame_ttl,
                     ttl_applied=ttl_ok,
+                    ttl_refresh_claimed=refresh_claimed,
                 )
                 return ttl_ok
             try:

@@ -91,6 +91,21 @@ async def test_context_redis_state_round_trips_conversation_and_message_state(mo
     assert redis_stub.expirations[f"user:{phone_number}:chat_history"] == 86400
 
 
+async def test_context_redis_state_reads_three_history_turns_but_retains_fifty(monkeypatch) -> None:
+    redis_stub = _install_redis(monkeypatch)
+    phone_number = "2348000000100"
+
+    for index in range(55):
+        await context_redis_state.add_conversation_turn(phone_number, "user", f"turn {index}")
+
+    key = f"user:{phone_number}:chat_history"
+    assert len(redis_stub.lists[key]) == 50
+
+    history = await context_redis_state.get_conversation_history(phone_number)
+
+    assert [item["content"] for item in history] == ["turn 52", "turn 53", "turn 54"]
+
+
 async def test_context_redis_state_claims_and_releases_inbound_message(monkeypatch) -> None:
     redis_stub = _install_redis(monkeypatch)
     phone_number = "2348000000100"

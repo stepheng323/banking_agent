@@ -183,6 +183,7 @@ indent-style = "space"
 # MyPy configuration
 [tool.mypy]
 python_version = "3.12"
+incremental = false
 warn_return_any = false
 warn_unused_configs = true
 warn_unused_ignores = false

@@ -7,7 +7,9 @@ from uuid import uuid4
 import pytest
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType
+from apps.chat.src.agent.orchestrator.graph import housekeeping as housekeeping_module
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
+from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 
@@ -194,18 +196,83 @@ async def test_apply_session_ttl_batches_expire_calls_with_pipeline(monkeypatch:
 
 
 @pytest.mark.asyncio
-async def test_maybe_apply_session_ttl_only_refreshes_chat_history_inline(
+async def test_maybe_apply_session_ttl_skips_checkpoints_without_retained_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     handler = _build_handler(monkeypatch, _RedisStub())
     handler.housekeeping.apply_chat_history_ttl = AsyncMock(return_value=True)
     handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
 
-    ok = await handler.housekeeping.maybe_apply_session_ttl("telegram:2348000000001")
+    ok = await handler.housekeeping.maybe_apply_session_ttl("telegram:2348000000001", {})
 
     assert ok is True
     handler.housekeeping.apply_chat_history_ttl.assert_awaited_once()
     handler.housekeeping.apply_session_ttl.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maybe_apply_session_ttl_uses_pending_transaction_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(housekeeping_module.settings, "pending_transaction_ttl", 300)
+    handler = _build_handler(monkeypatch, _RedisStub())
+    handler.housekeeping.apply_chat_history_ttl = AsyncMock(return_value=True)
+    handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
+    state = {
+        "tasks": {"t1": TaskSpec(id="t1", type="transfer")},
+        "waves": [["t1"]],
+        "pending_interrupt": PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        "stashed_sessions": [],
+    }
+
+    ok = await handler.housekeeping.maybe_apply_session_ttl("telegram:2348000000001", state)
+
+    assert ok is True
+    handler.housekeeping.apply_session_ttl.assert_awaited_once_with("telegram:2348000000001", ttl=300)
+
+
+@pytest.mark.asyncio
+async def test_maybe_apply_session_ttl_uses_active_checkpoint_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(housekeeping_module.settings, "checkpoint_active_ttl_seconds", 1800)
+    handler = _build_handler(monkeypatch, _RedisStub())
+    handler.housekeeping.apply_chat_history_ttl = AsyncMock(return_value=True)
+    handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
+    state = {
+        "tasks": {"t1": TaskSpec(id="t1", type="query")},
+        "waves": [["t1"]],
+        "pending_interrupt": None,
+        "stashed_sessions": [],
+    }
+
+    ok = await handler.housekeeping.maybe_apply_session_ttl("telegram:2348000000001", state)
+
+    assert ok is True
+    handler.housekeeping.apply_session_ttl.assert_awaited_once_with("telegram:2348000000001", ttl=1800)
+
+
+@pytest.mark.asyncio
+async def test_active_checkpoint_ttl_refresh_ignores_recent_refresh_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis_client = _RedisStub()
+    thread_id = "telegram:2348000000001"
+    redis_client.values[f"checkpoint_ttl_refresh:{thread_id}"] = "1"
+    handler = _build_handler(monkeypatch, redis_client)
+    handler.housekeeping.apply_chat_history_ttl = AsyncMock(return_value=True)
+    handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
+    state = {
+        "tasks": {"t1": TaskSpec(id="t1", type="query")},
+        "waves": [["t1"]],
+        "pending_interrupt": None,
+        "stashed_sessions": [],
+    }
+
+    ok = await handler.housekeeping.maybe_apply_session_ttl(thread_id, state)
+
+    assert ok is True
+    handler.housekeeping.apply_session_ttl.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -258,6 +325,38 @@ async def test_cleanup_retains_idle_thread_with_capability_boundary(monkeypatch:
     handler.housekeeping.apply_session_ttl.assert_awaited_once()
     ttl = handler.housekeeping.apply_session_ttl.await_args.kwargs["ttl"]
     assert 1 <= ttl <= 600
+    handler.checkpointer.adelete_thread.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_context_retention_skips_recent_checkpoint_ttl_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    redis_client = _RedisStub()
+    handler = _build_handler(monkeypatch, redis_client)
+    handler.housekeeping.apply_session_ttl = AsyncMock(return_value=True)
+    handler.checkpointer.adelete_thread = AsyncMock()
+    now = int(time.time())
+    state = {
+        "tasks": {},
+        "waves": [],
+        "pending_interrupt": None,
+        "stashed_sessions": [],
+        "context_frames": [
+            ContextFrame(
+                frame_id="beneficiaries_recent",
+                frame_type=ContextFrameType.BENEFICIARY_LIST,
+                items=[],
+                created_at_ts=now,
+                ttl_seconds=600,
+            )
+        ],
+    }
+
+    first_ok = await handler.housekeeping.cleanup_if_idle("telegram:2348000000001", state)
+    second_ok = await handler.housekeeping.cleanup_if_idle("telegram:2348000000001", state)
+
+    assert first_ok is True
+    assert second_ok is True
+    handler.housekeeping.apply_session_ttl.assert_awaited_once()
     handler.checkpointer.adelete_thread.assert_not_awaited()
 
 

@@ -10,12 +10,15 @@ and return structured results. Never let workers maintain competing state.
 from time import time
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
 from shared.types.planner import PlannerOutput
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class CapabilityBoundary(BaseModel):
@@ -54,6 +57,20 @@ class OrchestratorState(BaseModel):
     normalized_instruction: str | None = None
     planner_output: PlannerOutput | None = None
 
+    @field_validator("planner_output", mode="before")
+    @classmethod
+    def drop_legacy_invalid_planner_output(cls, value: Any) -> Any:
+        if value is None or isinstance(value, PlannerOutput):
+            return value
+        if isinstance(value, dict) and "primary_intent" not in value:
+            logger.warning(
+                "legacy_planner_output_dropped",
+                reason="missing_primary_intent",
+                keys=sorted(str(key) for key in value)[:12],
+            )
+            return None
+        return value
+
     tasks: dict[str, TaskSpec] = Field(default_factory=dict)
     waves: list[list[str]] = Field(default_factory=list)
     current_wave_index: int = 0
@@ -90,6 +107,8 @@ class OrchestratorState(BaseModel):
     routing_heuristic_type: str | None = None
     routing_heuristic_name: str | None = None
     planner_used: bool = False
+    planner_clean: bool | None = None
+    planner_dirty_reasons: list[str] = Field(default_factory=list)
     suppress_empty_fallback: bool = False
 
     # Stashed Sessions (Upstream)

@@ -83,7 +83,7 @@ class Settings:
             account_linking_flow_id=os.getenv("ACCOUNT_LINKING_FLOW_ID", ""),
             pin_confirmation_flow_id=os.getenv("PIN_CONFIRMATION_FLOW_ID", ""),
             allowed_numbers={n.strip() for n in raw_whatsapp_allowed_numbers.split(",") if n.strip()},
-            typing_indicator_delay_ms=int(os.getenv("WHATSAPP_TYPING_INDICATOR_DELAY_MS", "650")),
+            typing_indicator_delay_ms=int(os.getenv("WHATSAPP_TYPING_INDICATOR_DELAY_MS", "0")),
         )
 
         self.project_name: str = os.getenv("PROJECT_NAME", "banking-agent")
@@ -141,6 +141,13 @@ class Settings:
         self.llm_slow_call_threshold_ms: int = int(os.getenv("LLM_SLOW_CALL_THRESHOLD_MS", "10000"))
         self.llm_high_prompt_size_chars: int = int(os.getenv("LLM_HIGH_PROMPT_SIZE_CHARS", "24000"))
         self.llm_max_calls_per_turn_warning: int = int(os.getenv("LLM_MAX_CALLS_PER_TURN_WARNING", "8"))
+        self.llm_response_cache_enabled: bool = (
+            os.getenv("LLM_RESPONSE_CACHE_ENABLED", "false").strip().lower() == "true"
+        )
+        self.llm_response_cache_ttl_seconds: int = int(os.getenv("LLM_RESPONSE_CACHE_TTL_SECONDS", "300"))
+        self.llm_response_cache_types: tuple[str, ...] = self._parse_csv(
+            os.getenv("LLM_RESPONSE_CACHE_TYPES", "SemanticRouteDecision")
+        )
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
@@ -249,6 +256,9 @@ class Settings:
         self.chat_thread_lock_renew_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_RENEW_SECONDS", "30"))
         self.chat_thread_lock_wait_seconds: int = int(os.getenv("CHAT_THREAD_LOCK_WAIT_SECONDS", "60"))
         self.chat_worker_max_concurrency: int = int(os.getenv("CHAT_WORKER_MAX_CONCURRENCY", "8"))
+        self.chat_worker_stream_block_ms: int = int(os.getenv("CHAT_WORKER_STREAM_BLOCK_MS", "5000"))
+        self.transaction_worker_stream_block_ms: int = int(os.getenv("TRANSACTION_WORKER_STREAM_BLOCK_MS", "5000"))
+        self.receipt_worker_stream_block_ms: int = int(os.getenv("RECEIPT_WORKER_STREAM_BLOCK_MS", "5000"))
         self.chat_pending_input_prompt_debounce_seconds: float = float(
             os.getenv("CHAT_PENDING_INPUT_PROMPT_DEBOUNCE_SECONDS", "1.5")
         )
@@ -261,7 +271,7 @@ class Settings:
         self.telegram_webhook_secret_token: str = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "")
         self.telegram_init_data_max_age_seconds: int = int(os.getenv("TELEGRAM_INIT_DATA_MAX_AGE_SECONDS", "600"))
         self.telegram_enable_message_draft: bool = os.getenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", "true").lower() == "true"
-        self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "650"))
+        self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "0"))
         self.receipt_verification_base_url: str = os.getenv("RECEIPT_VERIFICATION_BASE_URL", "").strip()
 
         self.assistant_profile_path: str = os.getenv(
@@ -291,6 +301,7 @@ class Settings:
         self.async_housekeeping_max_concurrency: int = int(os.getenv("ASYNC_HOUSEKEEPING_MAX_CONCURRENCY", "4"))
         self.async_housekeeping_max_retries: int = int(os.getenv("ASYNC_HOUSEKEEPING_MAX_RETRIES", "0"))
         self.async_housekeeping_retry_base_ms: int = int(os.getenv("ASYNC_HOUSEKEEPING_RETRY_BASE_MS", "120"))
+        self.checkpoint_active_ttl_seconds: int = int(os.getenv("CHECKPOINT_ACTIVE_TTL_SECONDS", "1800"))
         self.checkpoint_ttl_maintenance_interval_seconds: int = int(
             os.getenv("CHECKPOINT_TTL_MAINTENANCE_INTERVAL_SECONDS", "300")
         )
