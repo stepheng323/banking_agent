@@ -125,6 +125,7 @@ def build_context_frame_from_surface_view(
         created_at_ts=int(time.time()),
         source_message_id=source_message_id,
         ttl_seconds=ttl_seconds,
+        metadata={"source": source, "surface_mode": surface_view.mode.value},
     )
 
 

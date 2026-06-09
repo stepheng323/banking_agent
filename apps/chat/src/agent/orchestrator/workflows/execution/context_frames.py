@@ -83,7 +83,12 @@ def push_query_followup_referent_frame(
     _push_frame(ctx, frame)
 
 
-def push_account_list_frame(ctx: ExecutionTurnContext, accounts: list[dict[str, Any]]) -> None:
+def push_account_list_frame(
+    ctx: ExecutionTurnContext,
+    accounts: list[dict[str, Any]],
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> None:
     if not accounts:
         return
 
@@ -91,7 +96,9 @@ def push_account_list_frame(ctx: ExecutionTurnContext, accounts: list[dict[str, 
     for idx, account in enumerate(accounts, 1):
         bank_name = str(account.get("bank_name") or "Account").strip()
         account_number = str(account.get("account_number") or "").strip()
-        last4 = account_number[-4:] if account_number else str(idx)
+        last4 = str(account.get("account_number_last4") or account.get("last4") or "").strip()
+        if not last4:
+            last4 = account_number[-4:] if account_number else "????"
         label = f"{bank_name} (...{last4})"
         entities.append(
             ContextEntity(
@@ -109,6 +116,7 @@ def push_account_list_frame(ctx: ExecutionTurnContext, accounts: list[dict[str, 
         focus_index=0,
         created_at_ts=int(time.time()),
         source_message_id=turn_metadata(ctx.state).last_message_id,
+        metadata=metadata or {},
     )
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type="account_list", count=len(entities))
@@ -267,7 +275,12 @@ def push_data_plan_frames_from_result(task: TaskSpec, result: Any, ctx: Executio
     push_data_plan_frame(ctx, result.patch.get("data_plan_candidates"))
 
 
-def push_beneficiary_list_frame(ctx: ExecutionTurnContext, viewed_beneficiaries: Any) -> None:
+def push_beneficiary_list_frame(
+    ctx: ExecutionTurnContext,
+    viewed_beneficiaries: Any,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> None:
     if not viewed_beneficiaries:
         return
 
@@ -288,6 +301,7 @@ def push_beneficiary_list_frame(ctx: ExecutionTurnContext, viewed_beneficiaries:
         items=entities,
         created_at_ts=int(time.time()),
         source_message_id=turn_metadata(ctx.state).last_message_id,
+        metadata=metadata or {},
     )
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type="beneficiary_list", count=len(entities))

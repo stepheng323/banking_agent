@@ -15,9 +15,9 @@ from shared.types.planner import (
     ContextFrameFollowupDecision,
     ContextFrameFollowupFilters,
     ContextFrameReplayModifier,
-    PlannedTask,
     PlannerOutput,
-    TaskParameters,
+    TransferTaskParameters,
+    make_planned_task,
 )
 
 
@@ -85,6 +85,31 @@ def _config(planner: _SurfaceFollowupPlanner) -> RunnableConfig:
         },
         "recursion_limit": 50,
     }
+
+
+async def _run_context_frame_gate_stage(
+    state: OrchestratorState,
+    planner: _SurfaceFollowupPlanner,
+    *,
+    query_session_snapshot: dict[str, object] | None = None,
+) -> dict[str, object] | None:
+    return await _stage_context_frame_followup(
+        GateContext(
+            state=state,
+            config=_config(planner),
+            redis_client=None,
+            task_planner=planner,
+            conversation_responder=None,
+            state_view=gate_state_view(state),
+            message_text=state.last_message_text,
+            current_locale="en",
+            gate_updates={},
+            live_pending_interrupt=False,
+            phrase_heavy_fastpath_allowed=True,
+            query_session_snapshot=query_session_snapshot,
+            _query_loaded=query_session_snapshot is not None,
+        )
+    )
 
 
 def _transaction_list_frame() -> ContextFrame:
@@ -1002,6 +1027,350 @@ async def test_account_surface_followup_rescues_status_question_misclassified_as
     assert updates.get("semantic_path_shape") == "context_frame_followup"
     assert "Zenith Bank (...9384) is still pending" in updates["final_response"]
     assert "Which transaction" not in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_account_surface_fetch_again_refetches_account_list_without_semantic_interpreter() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_refetch",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-first",
+                label="First Bank (...0001)",
+                data={"bank_name": "First Bank", "account_number": "6000000001", "mandate_status": "ready"},
+            ),
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-gtb",
+                label="GTBank (...0002)",
+                data={"bank_name": "GTBank", "account_number": "7000000002", "mandate_status": "ready"},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(
+            decision="unclear",
+            confidence=0.0,
+            detected_language="English",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_refetch",
+        phone_number="2348000000030",
+        channel="whatsapp",
+        last_message_text="fetch it again",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert planner.plan_calls == 0
+    assert planner.last_frame_context is None
+    assert updates is not None
+    assert updates.get("semantic_path_shape") == "read_only_refresh_followup"
+    assert updates["routing_decision"] == "read_only_refresh_followup"
+    assert updates["route_source"] == "context_frame_followup"
+    task = updates["tasks"]["direct_account"]
+    assert task.type == "account"
+    assert task.payload["action"] == "list_accounts"
+    assert task.payload["response_shape"] == "surface_list"
+
+
+@pytest.mark.asyncio
+async def test_account_surface_fresh_balance_request_does_not_refetch_account_list() -> None:
+    frame = ContextFrame(
+        frame_id="accounts_recent_balance_request",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-first",
+                label="First Bank (...0001)",
+                data={"bank_name": "First Bank", "account_number": "6000000001", "mandate_status": "ready"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_account_balance_request",
+        phone_number="2348000000038",
+        channel="whatsapp",
+        last_message_text="Show my first bank balance",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert planner.plan_calls == 0
+    assert updates is None
+
+
+@pytest.mark.asyncio
+async def test_account_balance_fetch_again_reruns_balance_not_account_list() -> None:
+    frame = ContextFrame(
+        frame_id="account_balance_recent",
+        frame_type=ContextFrameType.ACCOUNT_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.ACCOUNT,
+                entity_id="acct-access",
+                label="Access Bank (...0003)",
+                data={
+                    "bank_name": "Access Bank",
+                    "account_number": "6000000003",
+                    "available_balance": 45000,
+                },
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={"source_domain": "account", "source_action": "check_balance"},
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_balance_refetch",
+        phone_number="2348000000031",
+        channel="whatsapp",
+        last_message_text="fetch it again",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    task = updates["tasks"]["direct_account"]
+    assert task.type == "account"
+    assert task.payload["action"] == "check_balance"
+    assert "response_shape" not in task.payload
+
+
+@pytest.mark.asyncio
+async def test_account_balance_fetch_again_falls_back_to_latest_completed_account_task() -> None:
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_balance_task_refetch",
+        phone_number="2348000000032",
+        channel="whatsapp",
+        last_message_text="refresh it",
+        tasks={
+            "direct_account_balance": TaskSpec(
+                id="direct_account_balance",
+                type="account",
+                stage=TaskStage.COMPLETED,
+                payload={"action": "check_balance", "result": "Here are your account balances"},
+            )
+        },
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    task = updates["tasks"]["direct_account"]
+    assert task.type == "account"
+    assert task.payload["action"] == "check_balance"
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_surface_refresh_refetches_beneficiary_list() -> None:
+    frame = ContextFrame(
+        frame_id="beneficiaries_recent_refetch",
+        frame_type=ContextFrameType.BENEFICIARY_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.BENEFICIARY,
+                entity_id="ben-tolu",
+                label="Tolu Adebayo",
+                data={"bank_name": "Access Bank", "account_number": "2010000001"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_beneficiary_refetch",
+        phone_number="2348000000033",
+        channel="whatsapp",
+        last_message_text="refresh it",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    task = updates["tasks"]["direct_beneficiary"]
+    assert task.type == "beneficiary"
+    assert task.payload["action"] == "list_beneficiaries"
+    assert task.payload["intent"] == "list_beneficiaries"
+    assert task.payload["response_shape"] == "surface_list"
+
+
+@pytest.mark.asyncio
+async def test_schedule_surface_check_again_refetches_schedule_list() -> None:
+    frame = ContextFrame(
+        frame_id="schedule_recent_refetch",
+        frame_type=ContextFrameType.SCHEDULE_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="sched-1",
+                label="Weekly transfer to Mum",
+                data={"schedule_id": "sched-1", "target": "Mum"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_schedule_refetch",
+        phone_number="2348000000034",
+        channel="whatsapp",
+        last_message_text="check again",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    task = updates["tasks"]["direct_schedule"]
+    assert task.type == "schedule"
+    assert task.payload["action"] == "list_scheduled_transactions"
+    assert task.payload["schedule_response_mode"] == "list"
+    assert task.payload["response_shape"] == "surface_list"
+
+
+@pytest.mark.asyncio
+async def test_query_surface_check_again_reruns_active_query_contract() -> None:
+    frame = ContextFrame(
+        frame_id="query_surface_1780841843",
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-1",
+                label="Transfer to Tolu",
+                data={"amount": 5000, "transaction_type": "debit"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+        metadata={"source": "query", "surface_mode": "transaction_list"},
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_query_refetch",
+        phone_number="2348000000035",
+        channel="whatsapp",
+        last_message_text="check again",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(
+        state,
+        planner,
+        query_session_snapshot={"session_active": True, "query_contract": {"intent": "transaction_list"}},
+    )
+
+    assert updates is not None
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "check again"
+    assert "force_new_query" not in task.payload
+
+
+@pytest.mark.asyncio
+async def test_data_plan_show_again_redisplays_options_without_new_data_task() -> None:
+    frame = ContextFrame(
+        frame_id="data_plan_recent",
+        frame_type=ContextFrameType.DATA_PLAN_LIST,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="mtn-1gb",
+                label="MTN 1.5 GB",
+                data={"plan_name": "MTN 1.5 GB", "amount": 1000, "validity_days": 30},
+            ),
+            ContextEntity(
+                entity_type=EntityType.DATA_PLAN,
+                entity_id="mtn-3gb",
+                label="MTN 3.5 GB",
+                data={"plan_name": "MTN 3.5 GB", "amount": 2000, "validity_days": 30},
+            ),
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="unclear", confidence=0.0, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_data_plan_redisplay",
+        phone_number="2348000000036",
+        channel="whatsapp",
+        last_message_text="show it again",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert updates is not None
+    assert updates["semantic_path_shape"] == "context_frame_followup"
+    assert "tasks" not in updates
+    assert "MTN 1.5 GB" in updates["final_response"]
+    assert "MTN 3.5 GB" in updates["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_completed_transaction_do_again_still_uses_replay_interpreter_not_read_only_refresh() -> None:
+    frame = ContextFrame(
+        frame_id="completed_transaction_1780841843",
+        frame_type=ContextFrameType.RECEIPT,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="tx-completed",
+                label="Transfer to Tolu",
+                data={"amount": 5000, "task_type": "transfer", "recipient_name": "Tolu"},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        ttl_seconds=600,
+    )
+    planner = _SurfaceFollowupPlanner(
+        ContextFrameFollowupDecision(decision="replay_tasks", confidence=0.96, detected_language="English")
+    )
+    state = OrchestratorState(
+        user_id="u_surface_completed_replay_not_refresh",
+        phone_number="2348000000037",
+        channel="whatsapp",
+        last_message_text="do it again",
+        context_frames=[frame],
+    )
+
+    updates = await _run_context_frame_gate_stage(state, planner)
+
+    assert planner.last_frame_context is not None
+    assert updates is not None
+    assert updates.get("semantic_path_shape") != "read_only_refresh_followup"
 
 
 @pytest.mark.asyncio
@@ -2088,12 +2457,12 @@ async def test_fresh_request_after_surface_frame_routes_to_normal_planner() -> N
         detected_language="English",
         normalized_instruction="send 5000 to tolu",
         tasks=[
-            PlannedTask(
+            make_planned_task(
                 task_id="t_transfer",
                 action="send_money",
                 executor="transfer",
                 instruction="send 5000 to tolu",
-                parameters=TaskParameters(amount=5000, recipient="tolu"),
+                parameters=TransferTaskParameters(amount=5000, recipient="tolu"),
                 risk="MONEY_MOVE",
             )
         ],

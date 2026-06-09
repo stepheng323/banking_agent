@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
@@ -23,6 +23,24 @@ from banking.runtime.results import AccountOutcome, AccountResult, TransactionOu
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_COUNT_PREVIEW_SHAPES = {"fact_count", "fact_bool"}
+
+
+def _beneficiary_frame_metadata(task: TaskSpec, viewed: Any) -> dict[str, Any]:
+    response_shape = str(task.payload.get("response_shape") or "").strip().lower()
+    if response_shape not in _COUNT_PREVIEW_SHAPES or not isinstance(viewed, list):
+        return {}
+    total_count = len(viewed)
+    shown_count = min(3, total_count)
+    if total_count <= shown_count:
+        return {}
+    return {
+        "display_shape": "count_preview",
+        "response_shape": response_shape,
+        "shown_count": shown_count,
+        "total_count": total_count,
+    }
 
 
 class AccountTaskExecutor:
@@ -75,7 +93,15 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
         complete_task(task)
         viewed_accounts = result.details.get("viewed_accounts") if isinstance(result.details, dict) else None
         if isinstance(viewed_accounts, list):
-            push_account_list_frame(ctx, [item for item in viewed_accounts if isinstance(item, dict)])
+            push_account_list_frame(
+                ctx,
+                [item for item in viewed_accounts if isinstance(item, dict)],
+                metadata={
+                    "source_domain": "account",
+                    "source_action": str(task.payload.get("action") or ""),
+                    "response_shape": str(task.payload.get("response_shape") or ""),
+                },
+            )
         if result.response:
             set_task_payload_value(task, "result", result.response)
             ctx.accumulator.say(result.response)
@@ -146,7 +172,7 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
 
             if result.details and "viewed_beneficiaries" in result.details:
                 viewed = result.details["viewed_beneficiaries"]
-                push_beneficiary_list_frame(ctx, viewed)
+                push_beneficiary_list_frame(ctx, viewed, metadata=_beneficiary_frame_metadata(task, viewed))
 
             if result.response:
                 set_task_payload_value(task, "result", result.response)
