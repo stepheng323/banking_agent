@@ -19,7 +19,8 @@ from scripts.readiness_rendering import (
     duplicate_visible_blocks,
     render_orchestrator_result,
 )
-from scripts.readiness_report import write_json_report
+from scripts.readiness_report import write_json_report, write_text_report
+from scripts.readiness_scenarios import resolve_scenarios
 from scripts.readiness_sequence import (
     run_readiness_sequence,
 )
@@ -91,6 +92,45 @@ def test_assert_readiness_turn_checks_substrings_route_tasks_jobs_and_duplicates
     assert any("duplicate visible response block" in error for error in duplicate_errors)
 
 
+def test_assert_readiness_turn_checks_planner_quality_and_llm_counts() -> None:
+    turn = ReadinessTurn(
+        "send 5k to Ada",
+        ReadinessExpectation(
+            expect_planner_clean=True,
+            expect_llm_call_count=1,
+            expect_llm_event_counts=(
+                ("planner_llm_call", 1),
+                ("semantic_router_llm_call", 0),
+            ),
+        ),
+    )
+
+    passed, errors = assert_readiness_turn(
+        turn,
+        "Confirm Ada",
+        route_metadata={"planner_clean": True, "planner_dirty_reasons": []},
+        llm_calls=({"event_name": "planner_llm_call", "duration_ms": 100.0},),
+    )
+
+    assert passed
+    assert errors == ()
+
+    failed, metric_errors = assert_readiness_turn(
+        turn,
+        "Confirm Ada",
+        route_metadata={"planner_clean": False, "planner_dirty_reasons": ["normalizer.transfer.bank_name"]},
+        llm_calls=(
+            {"event_name": "semantic_router_llm_call", "duration_ms": 50.0},
+            {"event_name": "planner_llm_call", "duration_ms": 100.0},
+        ),
+    )
+
+    assert not failed
+    assert "expected planner_clean=True; got False" in metric_errors[0]
+    assert "expected 1 LLM calls; got 2" in metric_errors
+    assert "expected 0 semantic_router_llm_call calls; got 1" in metric_errors
+
+
 def test_duplicate_visible_blocks_returns_repeated_blocks() -> None:
     assert duplicate_visible_blocks("One\n\nTwo\n\nOne") == ("One",)
     assert duplicate_visible_blocks("One\n\nTwo") == ()
@@ -154,7 +194,32 @@ async def test_run_readiness_sequence_calls_before_each_scenario() -> None:
         index: int,
     ) -> ReadinessInvocation:
         del scenario_arg, turn, index
-        return ReadinessInvocation(response={"text": "Hi"})
+        return ReadinessInvocation(
+            response={"text": "Hi"},
+            route_metadata={
+                "planner_clean": False,
+                "planner_dirty_reasons": ["normalizer.transfer.amount"],
+            },
+            llm_calls=(
+                {
+                    "event_name": "planner_llm_call",
+                    "duration_ms": 12.5,
+                    "prompt_token_estimate": 100,
+                    "output_token_estimate": 20,
+                    "output_compact_token_estimate": 8,
+                    "output_default_overhead_chars": 48,
+                    "output_null_field_count": 3,
+                    "provider_input_tokens": 1200,
+                    "provider_output_tokens": 100,
+                    "provider_total_tokens": 1300,
+                    "provider_cached_tokens": 800,
+                    "provider_reasoning_tokens": 5,
+                    "client_http_request_count": 1,
+                    "client_http_response_headers_ms": 30.5,
+                    "client_http_total_ms": 40.5,
+                },
+            ),
+        )
 
     result = await run_readiness_sequence(
         mode="deterministic",
@@ -168,6 +233,52 @@ async def test_run_readiness_sequence_calls_before_each_scenario() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_readiness_sequence_fails_on_metric_expectation_regression() -> None:
+    scenario = ReadinessScenario(
+        id="unit",
+        turns=(
+            ReadinessTurn(
+                "hi",
+                ReadinessExpectation(
+                    expect_planner_clean=True,
+                    expect_llm_call_count=1,
+                    expect_llm_event_counts=(("planner_llm_call", 1),),
+                ),
+            ),
+        ),
+    )
+
+    async def invoke_turn(
+        scenario_arg: ReadinessScenario,
+        turn: ReadinessTurn,
+        index: int,
+    ) -> ReadinessInvocation:
+        del scenario_arg, turn, index
+        return ReadinessInvocation(
+            response={"text": "Hi"},
+            route_metadata={
+                "planner_clean": False,
+                "planner_dirty_reasons": ["normalizer.transfer.amount"],
+            },
+            llm_calls=(
+                {"event_name": "semantic_router_llm_call", "duration_ms": 10.0},
+                {"event_name": "planner_llm_call", "duration_ms": 12.5},
+            ),
+        )
+
+    result = await run_readiness_sequence(
+        mode="deterministic",
+        scenarios=(scenario,),
+        invoke_turn=invoke_turn,
+    )
+
+    assert not result.passed
+    assert result.turns[0].response_text == "Hi"
+    assert any("expected planner_clean=True" in error for error in result.turns[0].errors)
+    assert "expected 1 LLM calls; got 2" in result.turns[0].errors
+
+
+@pytest.mark.asyncio
 async def test_write_json_report_writes_serializable_result(tmp_path) -> None:
     scenario = ReadinessScenario(id="unit", turns=(ReadinessTurn("hi"),))
 
@@ -177,7 +288,32 @@ async def test_write_json_report_writes_serializable_result(tmp_path) -> None:
         index: int,
     ) -> ReadinessInvocation:
         del scenario_arg, turn, index
-        return ReadinessInvocation(response={"text": "Hi"})
+        return ReadinessInvocation(
+            response={"text": "Hi"},
+            route_metadata={
+                "planner_clean": False,
+                "planner_dirty_reasons": ["normalizer.transfer.amount"],
+            },
+            llm_calls=(
+                {
+                    "event_name": "planner_llm_call",
+                    "duration_ms": 12.5,
+                    "prompt_token_estimate": 100,
+                    "output_token_estimate": 20,
+                    "output_compact_token_estimate": 8,
+                    "output_default_overhead_chars": 48,
+                    "output_null_field_count": 3,
+                    "provider_input_tokens": 1200,
+                    "provider_output_tokens": 100,
+                    "provider_total_tokens": 1300,
+                    "provider_cached_tokens": 800,
+                    "provider_reasoning_tokens": 5,
+                    "client_http_request_count": 1,
+                    "client_http_response_headers_ms": 30.5,
+                    "client_http_total_ms": 40.5,
+                },
+            ),
+        )
 
     result = await run_readiness_sequence(
         mode="deterministic",
@@ -192,6 +328,123 @@ async def test_write_json_report_writes_serializable_result(tmp_path) -> None:
     assert payload["mode"] == "deterministic"
     assert payload["scenario_ids"] == ["unit"]
     assert payload["turn_count"] == 1
+    assert payload["latency_summary"]["max_ms"] is not None
+    assert payload["planner_clean_rate"] == 0.0
+    assert payload["planner_quality_summary"]["turn_count"] == 1
+    assert payload["turns"][0]["planner_clean"] is False
+    assert payload["turns"][0]["planner_dirty_reasons"] == ["normalizer.transfer.amount"]
+    assert payload["turns"][0]["llm_total_ms"] == 12.5
+    assert payload["turns"][0]["llm_calls"][0]["event_name"] == "planner_llm_call"
+    assert payload["llm_call_summary"]["call_count"] == 1
+    assert payload["llm_call_summary"]["total_duration_ms"] == 12.5
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["prompt_token_estimate"] == 100
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["output_compact_token_estimate"] == 8
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["output_default_overhead_chars"] == 48
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["output_null_field_count"] == 3
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["provider_input_tokens"] == 1200
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["provider_cached_tokens"] == 800
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["provider_cache_hit_rate"] == 0.6667
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["provider_reasoning_tokens"] == 5
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["client_http_request_count"] == 1
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["client_http_response_headers_ms"] == 30.5
+    assert payload["llm_call_summary"]["by_event"]["planner_llm_call"]["client_http_total_ms"] == 40.5
+    assert payload["slowest_llm_calls"][0]["scenario_id"] == "unit"
+    assert payload["slowest_turns"][0]["user_text"] == "hi"
+
+
+@pytest.mark.asyncio
+async def test_write_text_report_writes_transcript_and_latency_summary(tmp_path) -> None:
+    scenario = ReadinessScenario(id="unit", turns=(ReadinessTurn("hi"),))
+
+    async def invoke_turn(
+        scenario_arg: ReadinessScenario,
+        turn: ReadinessTurn,
+        index: int,
+    ) -> ReadinessInvocation:
+        del scenario_arg, turn, index
+        return ReadinessInvocation(
+            response={"text": "Hi"},
+            route_metadata={"planner_clean": True, "planner_dirty_reasons": []},
+            llm_calls=(
+                {
+                    "event_name": "semantic_router_llm_call",
+                    "duration_ms": 10.0,
+                    "prompt_token_estimate": 90,
+                    "output_token_estimate": 10,
+                },
+            ),
+        )
+
+    result = await run_readiness_sequence(
+        mode="deterministic",
+        scenarios=(scenario,),
+        invoke_turn=invoke_turn,
+    )
+    report_path = tmp_path / "readiness" / "latest.txt"
+
+    write_text_report(result, report_path)
+
+    payload = report_path.read_text(encoding="utf-8")
+    assert "=== Readiness Transcript ===" in payload
+    assert "[unit #1] USER: hi" in payload
+    assert "Planner clean: yes" in payload
+    assert "LLM calls: 1 total_ms=10 slowest=semantic_router_llm_call slowest_ms=10" in payload
+    assert "llm_calls=1 llm_total_ms=10.0 llm_max_ms=10.0" in payload
+    assert "planner_clean_rate=1.0" in payload
+    assert "latency_p95_ms=" in payload
+
+
+def test_latency_scenario_is_dry_run_live_probe() -> None:
+    scenario = resolve_scenarios("latency")[0]
+
+    assert scenario.id == "latency"
+    assert all("dry-run" in turn.modes for turn in scenario.turns)
+    assert any("You wicked oo" == turn.text for turn in scenario.turns)
+    assert any("Can you borrow me money?" == turn.text for turn in scenario.turns)
+    assert any("Show my recent transactions" == turn.text for turn in scenario.turns)
+    assert any("Buy me 1k airtime" == turn.text for turn in scenario.turns)
+
+
+def test_planner_scenario_is_dry_run_planner_probe_set() -> None:
+    scenarios = resolve_scenarios("planner")
+    scenario_ids = {scenario.id for scenario in scenarios}
+    all_turns = [turn for scenario in scenarios for turn in scenario.turns]
+
+    assert "planner-batch-transfer" in scenario_ids
+    assert "planner-mixed-transfer-airtime" in scenario_ids
+    assert "planner-mixed-transfer-data" in scenario_ids
+    assert "planner-source-aware-transfer" in scenario_ids
+    assert "planner-multi-recipient-aliases" in scenario_ids
+    assert all("dry-run" in turn.modes for turn in all_turns)
+    assert any("Split 20k" in turn.text for turn in all_turns)
+    assert any("airtime" in turn.text for turn in all_turns)
+    assert any("1GB MTN data" in turn.text for turn in all_turns)
+    planner_turns = [turn for turn in all_turns if turn.expectation.expect_planner_clean is True]
+    direct_turns = [turn for turn in all_turns if turn.expectation.expect_routing_decision == "source_aware_transfer_command"]
+    assert len(planner_turns) == 4
+    assert len(direct_turns) == 1
+    assert all(turn.expectation.expect_llm_call_count == 1 for turn in planner_turns)
+    assert all(turn.expectation.expect_llm_call_count == 0 for turn in direct_turns)
+    assert all(
+        dict(turn.expectation.expect_llm_event_counts)
+        == {
+            "planner_llm_call": 1,
+            "semantic_router_llm_call": 0,
+            "transfer_extractor_llm_call": 0,
+            "airtime_extractor_llm_call": 0,
+        }
+        for turn in planner_turns
+    )
+    assert all(
+        dict(turn.expectation.expect_llm_event_counts)
+        == {
+            "planner_llm_call": 0,
+            "semantic_router_llm_call": 0,
+            "transfer_extractor_llm_call": 0,
+            "airtime_extractor_llm_call": 0,
+        }
+        for turn in direct_turns
+    )
 
 
 def test_readiness_cli_parses_expected_flags() -> None:
@@ -209,6 +462,8 @@ def test_readiness_cli_parses_expected_flags() -> None:
             "--reset-session",
             "--json-output",
             ".readiness/latest.json",
+            "--transcript-output",
+            ".readiness/latest.txt",
         ]
     )
 
@@ -219,3 +474,10 @@ def test_readiness_cli_parses_expected_flags() -> None:
     assert args.seed is True
     assert args.reset_session is True
     assert args.json_output == ".readiness/latest.json"
+    assert args.transcript_output == ".readiness/latest.txt"
+
+
+def test_readiness_cli_accepts_planner_scenario() -> None:
+    args = readiness.parse_args(["--mode", "dry-run", "--scenario", "planner", "--phone", "2348162511023"])
+
+    assert args.scenario == "planner"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from scripts.readiness_models import ReadinessTurn
@@ -15,6 +16,7 @@ def assert_readiness_turn(
     route_metadata: dict[str, Any] | None = None,
     task_types: tuple[str, ...] = (),
     async_jobs: tuple[dict[str, Any], ...] = (),
+    llm_calls: tuple[dict[str, Any], ...] = (),
     enforce_route_expectations: bool = True,
 ) -> tuple[bool, tuple[str, ...]]:
     expectation = turn.expectation
@@ -57,6 +59,33 @@ def assert_readiness_turn(
         topics = tuple(str(job.get("topic") or "") for job in async_jobs)
         if topics != expectation.expect_async_job_topics:
             errors.append(f"expected async job topics {expectation.expect_async_job_topics}; got {topics}")
+
+    if expectation.expect_planner_clean is not None:
+        planner_clean = route_metadata.get("planner_clean")
+        if planner_clean != expectation.expect_planner_clean:
+            dirty_reasons = route_metadata.get("planner_dirty_reasons") or ()
+            dirty_reasons_display = (
+                list(dirty_reasons) if isinstance(dirty_reasons, (list, tuple)) else dirty_reasons
+            )
+            errors.append(
+                " ".join(
+                    (
+                        f"expected planner_clean={expectation.expect_planner_clean!r};",
+                        f"got {planner_clean!r};",
+                        f"dirty_reasons={dirty_reasons_display!r}",
+                    )
+                )
+            )
+
+    if expectation.expect_llm_call_count is not None and len(llm_calls) != expectation.expect_llm_call_count:
+        errors.append(f"expected {expectation.expect_llm_call_count} LLM calls; got {len(llm_calls)}")
+
+    if expectation.expect_llm_event_counts:
+        event_counts = Counter(str(call.get("event_name") or "unknown") for call in llm_calls)
+        for event_name, expected_count in expectation.expect_llm_event_counts:
+            actual_count = event_counts[event_name]
+            if actual_count != expected_count:
+                errors.append(f"expected {expected_count} {event_name} calls; got {actual_count}")
 
     return not errors, tuple(errors)
 

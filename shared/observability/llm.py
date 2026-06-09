@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from typing import Any
 
 from shared.config.settings import settings
@@ -87,14 +88,34 @@ def with_llm_config(runnable: Any, **kwargs: Any) -> Any:
     return runnable.with_config(config)
 
 
-async def ainvoke_with_config(runnable: Any, input_value: Any, *, config: dict[str, Any] | None = None) -> Any:
+async def ainvoke_with_config(
+    runnable: Any,
+    input_value: Any,
+    *,
+    config: dict[str, Any] | None = None,
+    invocation_kwargs: Mapping[str, Any] | None = None,
+) -> Any:
     """Invoke a runnable with LangChain config, falling back for simple test doubles."""
-    if not config:
+    kwargs = dict(invocation_kwargs or {})
+    if not config and not kwargs:
         return await runnable.ainvoke(input_value)
     try:
-        return await runnable.ainvoke(input_value, config=config)
+        if config:
+            return await runnable.ainvoke(input_value, config=config, **kwargs)
+        return await runnable.ainvoke(input_value, **kwargs)
     except TypeError as exc:
         message = str(exc)
-        if "config" not in message or "unexpected keyword" not in message:
+        if not _is_unexpected_keyword_error(message):
             raise
+        if config:
+            try:
+                return await runnable.ainvoke(input_value, config=config)
+            except TypeError as config_exc:
+                config_message = str(config_exc)
+                if not _is_unexpected_keyword_error(config_message):
+                    raise
         return await runnable.ainvoke(input_value)
+
+
+def _is_unexpected_keyword_error(message: str) -> bool:
+    return "unexpected keyword" in message or "got an unexpected keyword argument" in message

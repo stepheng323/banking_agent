@@ -17,6 +17,18 @@ from scripts.readiness_models import (
 from scripts.readiness_rendering import render_orchestrator_result
 
 
+def _planner_clean_from_metadata(route_metadata: dict[str, object]) -> bool | None:
+    value = route_metadata.get("planner_clean")
+    return value if isinstance(value, bool) else None
+
+
+def _planner_dirty_reasons_from_metadata(route_metadata: dict[str, object]) -> tuple[str, ...]:
+    raw_reasons = route_metadata.get("planner_dirty_reasons") or ()
+    if not isinstance(raw_reasons, (list, tuple)):
+        return ()
+    return tuple(str(reason) for reason in raw_reasons if str(reason).strip())
+
+
 async def run_readiness_sequence(
     *,
     mode: ReadinessMode,
@@ -44,6 +56,7 @@ async def run_readiness_sequence(
                 route_metadata=invocation.route_metadata,
                 task_types=invocation.task_types,
                 async_jobs=invocation.async_jobs,
+                llm_calls=invocation.llm_calls,
                 enforce_route_expectations=enforce_route_expectations,
             )
             result = ReadinessTurnResult(
@@ -57,6 +70,9 @@ async def run_readiness_sequence(
                 route_metadata=invocation.route_metadata,
                 task_types=invocation.task_types,
                 async_jobs=invocation.async_jobs,
+                llm_calls=invocation.llm_calls,
+                planner_clean=_planner_clean_from_metadata(invocation.route_metadata),
+                planner_dirty_reasons=_planner_dirty_reasons_from_metadata(invocation.route_metadata),
             )
             results.append(result)
             if stop_on_fail and not passed:

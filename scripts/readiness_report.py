@@ -15,21 +15,47 @@ def write_json_report(result: ReadinessRunResult, path: str | Path) -> None:
     report_path.write_text(json.dumps(result.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
 
 
-def print_readiness_report(result: ReadinessRunResult) -> None:
-    print("\n=== Readiness Transcript ===")
+def write_text_report(result: ReadinessRunResult, path: str | Path) -> None:
+    report_path = Path(path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(format_readiness_report(result), encoding="utf-8")
+
+
+def format_readiness_report(result: ReadinessRunResult) -> str:
+    lines: list[str] = ["", "=== Readiness Transcript ==="]
     for turn in result.turns:
         status = "PASS" if turn.passed else "FAIL"
-        print(f"[{turn.scenario_id} #{turn.turn_index}] USER: {turn.user_text}")
-        print(f"{settings.app_name_short.upper()} ({turn.latency_ms:.0f}ms):")
-        print(turn.response_text or "[no visible response]")
+        lines.append(f"[{turn.scenario_id} #{turn.turn_index}] USER: {turn.user_text}")
+        lines.append(f"{settings.app_name_short.upper()} ({turn.latency_ms:.0f}ms):")
+        lines.append(turn.response_text or "[no visible response]")
+        if turn.planner_clean is not None:
+            clean_label = "yes" if turn.planner_clean else "no"
+            if turn.planner_dirty_reasons:
+                lines.append(f"Planner clean: {clean_label} ({', '.join(turn.planner_dirty_reasons)})")
+            else:
+                lines.append(f"Planner clean: {clean_label}")
+        if turn.llm_calls:
+            llm_total = sum(float(call.get("duration_ms") or 0.0) for call in turn.llm_calls)
+            slowest = max(turn.llm_calls, key=lambda call: float(call.get("duration_ms") or 0.0))
+            lines.append(
+                " ".join(
+                    (
+                        f"LLM calls: {len(turn.llm_calls)}",
+                        f"total_ms={llm_total:.0f}",
+                        f"slowest={slowest.get('event_name', 'unknown')}",
+                        f"slowest_ms={float(slowest.get('duration_ms') or 0.0):.0f}",
+                    )
+                )
+            )
         if turn.errors:
-            print("Errors:")
+            lines.append("Errors:")
             for error in turn.errors:
-                print(f"- {error}")
-        print(f"[{status}]\n")
+                lines.append(f"- {error}")
+        lines.append(f"[{status}]")
+        lines.append("")
 
-    print("=== Readiness Summary ===")
-    print(
+    lines.append("=== Readiness Summary ===")
+    lines.append(
         " ".join(
             (
                 f"mode={result.mode}",
@@ -41,6 +67,63 @@ def print_readiness_report(result: ReadinessRunResult) -> None:
             )
         )
     )
+    latency = result.latency_summary
+    planner_quality = result.planner_quality_summary
+    llm_summary = result.llm_call_summary
+    lines.append(
+        " ".join(
+            (
+                f"latency_min_ms={latency['min_ms']}",
+                f"latency_avg_ms={latency['avg_ms']}",
+                f"latency_p50_ms={latency['p50_ms']}",
+                f"latency_p95_ms={latency['p95_ms']}",
+                f"latency_p99_ms={latency['p99_ms']}",
+                f"latency_max_ms={latency['max_ms']}",
+            )
+        )
+    )
+    lines.append(
+        " ".join(
+            (
+                f"planner_quality_turns={planner_quality['turn_count']}",
+                f"planner_clean={planner_quality['clean_count']}",
+                f"planner_dirty={planner_quality['dirty_count']}",
+                f"planner_clean_rate={planner_quality['clean_rate']}",
+            )
+        )
+    )
+    if llm_summary["call_count"]:
+        lines.append(
+            " ".join(
+                (
+                    f"llm_calls={llm_summary['call_count']}",
+                    f"llm_total_ms={llm_summary['total_duration_ms']}",
+                    f"llm_max_ms={llm_summary['max_duration_ms']}",
+                )
+            )
+        )
+        for call in result.slowest_llm_calls[:3]:
+            call_parts = [
+                f"- slow_llm={call.get('event_name', 'unknown')}",
+                f"scenario={call.get('scenario_id', 'unknown')}",
+                f"duration_ms={call.get('duration_ms')}",
+                f"prompt_tokens={call.get('prompt_token_estimate')}",
+                f"output_tokens={call.get('output_token_estimate')}",
+            ]
+            if "output_compact_token_estimate" in call and call.get("output_compact_token_estimate") != call.get(
+                "output_token_estimate"
+            ):
+                call_parts.append(f"compact_output_tokens={call.get('output_compact_token_estimate')}")
+            if "output_expanded_token_estimate" in call:
+                call_parts.append(f"expanded_output_tokens={call.get('output_expanded_token_estimate')}")
+            if "output_default_overhead_chars" in call:
+                call_parts.append(f"default_overhead_chars={call.get('output_default_overhead_chars')}")
+            lines.append(" ".join(call_parts))
     if result.failed_turns:
         for turn in result.failed_turns:
-            print(f"- {turn.scenario_id} #{turn.turn_index} {turn.user_text!r}: {'; '.join(turn.errors)}")
+            lines.append(f"- {turn.scenario_id} #{turn.turn_index} {turn.user_text!r}: {'; '.join(turn.errors)}")
+    return "\n".join(lines) + "\n"
+
+
+def print_readiness_report(result: ReadinessRunResult) -> None:
+    print(format_readiness_report(result), end="")

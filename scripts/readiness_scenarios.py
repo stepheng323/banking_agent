@@ -10,6 +10,37 @@ from scripts.readiness_models import (
 )
 from shared.config.settings import settings
 
+_PLANNER_SINGLE_CALL_EVENT_COUNTS: tuple[tuple[str, int], ...] = (
+    ("planner_llm_call", 1),
+    ("semantic_router_llm_call", 0),
+    ("transfer_extractor_llm_call", 0),
+    ("airtime_extractor_llm_call", 0),
+)
+
+
+def _planner_clean_single_call_expectation() -> ReadinessExpectation:
+    return ReadinessExpectation(
+        expect_planner_clean=True,
+        expect_llm_call_count=1,
+        expect_llm_event_counts=_PLANNER_SINGLE_CALL_EVENT_COUNTS,
+    )
+
+
+def _source_aware_direct_transfer_expectation() -> ReadinessExpectation:
+    return ReadinessExpectation(
+        expect_path_shape="deterministic_transfer_domain",
+        expect_routing_owner="guardrail",
+        expect_routing_decision="source_aware_transfer_command",
+        expect_task_types=("transfer",),
+        expect_llm_call_count=0,
+        expect_llm_event_counts=(
+            ("planner_llm_call", 0),
+            ("semantic_router_llm_call", 0),
+            ("transfer_extractor_llm_call", 0),
+            ("airtime_extractor_llm_call", 0),
+        ),
+    )
+
 
 def readiness_scenarios() -> dict[str, ReadinessScenario]:
     app_name_hint = settings.app_name_short.lower()
@@ -241,6 +272,110 @@ def readiness_scenarios() -> dict[str, ReadinessScenario]:
                 ),
             ),
         ),
+        "latency": ReadinessScenario(
+            id="latency",
+            description=(
+                "Live latency probe across meta, locale, stale-context, unsupported, "
+                "semantic, planner, and worker paths."
+            ),
+            turns=(
+                ReadinessTurn(
+                    "Hi",
+                    ReadinessExpectation(expect_any=("what would you like", "help", app_name_hint)),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "You fit speak pidgin?",
+                    ReadinessExpectation(expect_any=("language", "Pidgin", "change")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "How many beneficiaries do I have?",
+                    ReadinessExpectation(expect_any=("beneficiar", "saved", "get")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "You only showed 3",
+                    ReadinessExpectation(expect_any=("beneficiar", "saved", "show")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "You wicked oo",
+                    ReadinessExpectation(),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "You go sha fit tell me one joke",
+                    ReadinessExpectation(),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Can you borrow me money?",
+                    ReadinessExpectation(expect_any=("loan", "lending", "borrow")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "I go give you back abeg",
+                    ReadinessExpectation(expect_any=("loan", "lending", "borrow")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Show my recent transactions",
+                    ReadinessExpectation(expect_any=("transaction", "showing", "sent", "received")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Show the first one",
+                    ReadinessExpectation(expect_any=("transaction", "amount", "bank")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "What bank was that?",
+                    ReadinessExpectation(expect_any=("bank", "account", "transaction")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "What's my balance?",
+                    ReadinessExpectation(expect_any=("balance", "account", "bank")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Send 2k to Tolu Access",
+                    ReadinessExpectation(expect_any=("transfer", "tolu", "confirm", "review")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Why do you need my PIN?",
+                    ReadinessExpectation(expect_any=("pin", "authorize", "confirm", "transfer")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Buy me 1k airtime",
+                    ReadinessExpectation(expect_any=("airtime", "1,000", "confirm", "review")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Buy 1GB MTN data for me",
+                    ReadinessExpectation(expect_any=("data", "MTN", "1GB", "confirm", "plan")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Show my scheduled transactions",
+                    ReadinessExpectation(expect_any=("scheduled", "schedule", "transaction")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "Why did my transfer fail?",
+                    ReadinessExpectation(expect_any=("support", "transaction", "reference", "failed")),
+                    modes=("dry-run",),
+                ),
+                ReadinessTurn(
+                    "What are transfer fees?",
+                    ReadinessExpectation(expect_any=("fee", "charge", "transfer")),
+                    modes=("dry-run",),
+                ),
+            ),
+        ),
     }
 
 
@@ -293,6 +428,137 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                     ReadinessTurn(
                         "Why are Zenith transactions missing?",
                         ReadinessExpectation(expect_any=("zenith", "coverage", "authorization", "sync")),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+        )
+    if name == "planner":
+        return (
+            ReadinessScenario(
+                id="planner-batch-transfer",
+                description="Planner-heavy batch transfer probe.",
+                turns=(
+                    ReadinessTurn(
+                        "Split 20k between Adebayo and Mum",
+                        _planner_clean_single_call_expectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="planner-mixed-transfer-airtime",
+                description="Planner-heavy mixed transfer and airtime probe.",
+                turns=(
+                    ReadinessTurn(
+                        "Send 10k to Tolu Access and buy 1k airtime for me",
+                        _planner_clean_single_call_expectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="planner-mixed-transfer-data",
+                description="Planner-heavy mixed transfer and data probe.",
+                turns=(
+                    ReadinessTurn(
+                        "Buy 1GB MTN data for me and send 2k to Mum",
+                        _planner_clean_single_call_expectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="planner-source-aware-transfer",
+                description="Deterministic source-aware transfer probe.",
+                turns=(
+                    ReadinessTurn(
+                        "Use GTBank to send 5k to Tolu Access for lunch",
+                        _source_aware_direct_transfer_expectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="planner-multi-recipient-aliases",
+                description="Planner-heavy multi-recipient alias probe.",
+                turns=(
+                    ReadinessTurn(
+                        "Send 2k each to Tolu Access and Tolu GTB",
+                        _planner_clean_single_call_expectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+        )
+    if name == "llm-latency":
+        return (
+            ReadinessScenario(
+                id="llm-conversation-responder",
+                description="Intentional casual turn that should exercise semantic/conversation LLM paths.",
+                turns=(
+                    ReadinessTurn(
+                        "Tell me one short saying about money and patience",
+                        ReadinessExpectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="llm-query-reasoner",
+                description="Query session with analytical follow-up to measure query reasoner latency.",
+                turns=(
+                    ReadinessTurn(
+                        "Show my recent transactions",
+                        ReadinessExpectation(expect_any=("transaction", "showing", "sent", "received")),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Which account did I spend from most this month?",
+                        ReadinessExpectation(expect_any=("account", "bank", "spent", "transaction", "category")),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="llm-planner",
+                description="Planner-heavy mixed transaction probe.",
+                turns=(
+                    ReadinessTurn(
+                        "Send 10k to Tolu Access and buy 1k airtime for me",
+                        _planner_clean_single_call_expectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="llm-pending-edit",
+                description="Pending transfer edit probe for interrupt/edit LLM paths.",
+                turns=(
+                    ReadinessTurn(
+                        "Send 2k to Tolu Access",
+                        ReadinessExpectation(expect_any=("transfer", "tolu", "confirm", "review")),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Actually use First Bank and make it tomorrow morning",
+                        ReadinessExpectation(),
+                        modes=("dry-run",),
+                    ),
+                ),
+            ),
+            ReadinessScenario(
+                id="llm-unsupported-boundary",
+                description="Unsupported boundary continuation probe.",
+                turns=(
+                    ReadinessTurn(
+                        "Can you help me invest in crypto?",
+                        ReadinessExpectation(expect_any=("crypto", "investment", "invest", "unsupported")),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "What if it is just a tiny amount for learning?",
+                        ReadinessExpectation(),
                         modes=("dry-run",),
                     ),
                 ),

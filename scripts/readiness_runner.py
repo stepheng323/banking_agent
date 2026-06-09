@@ -45,6 +45,7 @@ from scripts.readiness_scenarios import resolve_scenarios
 from scripts.seed_user_test_data import _resolve_target_user, _seed_for_user
 from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
+from shared.observability.llm_call_metrics import start_llm_call_recording, stop_llm_call_recording
 from shared.types.planner import SemanticRouteDecision
 
 
@@ -114,6 +115,8 @@ def _route_metadata_from_state(state: OrchestratorState) -> dict[str, Any]:
         "routing_target_domain": state.routing_target_domain,
         "routing_mode": state.routing_mode,
         "route_source": state.route_source,
+        "planner_clean": state.planner_clean,
+        "planner_dirty_reasons": list(state.planner_dirty_reasons),
     }
 
 
@@ -207,6 +210,7 @@ async def reset_redis_session(*, redis_client: Any, phone: str, channel: str) ->
         f"checkpoint:{channel}:{phone}:*",
         f"checkpoint_write:{channel}:{phone}:*",
         f"write_keys_zset:{channel}:{phone}:*",
+        f"checkpoint_latest:{channel}:{phone}:*",
         f"user:{phone}:chat_history",
         f"query:session:{phone}",
         f"context_frames:{phone}",
@@ -219,11 +223,18 @@ async def reset_redis_session(*, redis_client: Any, phone: str, channel: str) ->
     return deleted
 
 
-def _build_chat_model(*, role: str, model: str, timeout: float) -> Any:
+def _build_chat_model(*, role: str, model: str, timeout: float, http_async_client: Any) -> Any:
     from langchain_openai import ChatOpenAI
 
     print(f"[setup] {role} model: {model}")
-    return ChatOpenAI(model=model, temperature=0, timeout=timeout, max_retries=1)
+    return ChatOpenAI(
+        model=model,
+        temperature=0,
+        timeout=timeout,
+        max_retries=1,
+        http_async_client=http_async_client,
+        include_response_headers=True,
+    )
 
 
 async def build_dry_run_agent() -> tuple[UserRepository, OrchestratorAgent, NoopPublisher, Any]:
@@ -236,7 +247,15 @@ async def build_dry_run_agent() -> tuple[UserRepository, OrchestratorAgent, Noop
 
     shared_redis = RedisClient.get_client()
     publisher = NoopPublisher()
-    planner_llm = _build_chat_model(role="planner", model=settings.planner_model, timeout=30.0)
+    from shared.observability.llm_http import build_llm_http_async_client
+
+    http_async_client = build_llm_http_async_client()
+    planner_llm = _build_chat_model(
+        role="planner",
+        model=settings.planner_model,
+        timeout=30.0,
+        http_async_client=http_async_client,
+    )
     app_env = settings.runtime.app_env
     query_model = resolve_role_model(
         role="query",
@@ -268,10 +287,30 @@ async def build_dry_run_agent() -> tuple[UserRepository, OrchestratorAgent, Noop
         messaging_clients={},
         shared_redis=shared_redis,
         llm=planner_llm,
-        query_llm=_build_chat_model(role="query", model=query_model, timeout=30.0),
-        semantic_router_llm=_build_chat_model(role="semantic_router", model=semantic_router_model, timeout=15.0),
-        interrupt_llm=_build_chat_model(role="interrupt_router", model=interrupt_model, timeout=15.0),
-        extractor_llm=_build_chat_model(role="extractor", model=extractor_model, timeout=20.0),
+        query_llm=_build_chat_model(
+            role="query",
+            model=query_model,
+            timeout=30.0,
+            http_async_client=http_async_client,
+        ),
+        semantic_router_llm=_build_chat_model(
+            role="semantic_router",
+            model=semantic_router_model,
+            timeout=15.0,
+            http_async_client=http_async_client,
+        ),
+        interrupt_llm=_build_chat_model(
+            role="interrupt_router",
+            model=interrupt_model,
+            timeout=15.0,
+            http_async_client=http_async_client,
+        ),
+        extractor_llm=_build_chat_model(
+            role="extractor",
+            model=extractor_model,
+            timeout=20.0,
+            http_async_client=http_async_client,
+        ),
     )
 
     async def _noop_progress_updates(**_: Any) -> None:
@@ -314,34 +353,38 @@ async def run_dry_run_readiness(
     async def invoke_turn(scenario: ReadinessScenario, turn: ReadinessTurn, index: int) -> ReadinessInvocation:
         before_jobs = len(publisher.messages)
         message_id = f"readiness-{run_id}-{scenario.id}-{index}-{int(time.time() * 1000)}"
-        response = await agent.invoke(
-            phone_number=target_user.phone_number,
-            text=turn.text,
-            message_id=message_id,
-            channel=channel,
-            channel_identity=channel_user_id,
-            user=user,
-        )
-        if turn.pin_after:
-            pin_response = await agent.resume_transaction(
+        llm_recording_token = start_llm_call_recording()
+        try:
+            response = await agent.invoke(
                 phone_number=target_user.phone_number,
-                flow_type=turn.pin_flow_type,
-                pin_verified=True,
+                text=turn.text,
+                message_id=message_id,
                 channel=channel,
+                channel_identity=channel_user_id,
+                user=user,
             )
-            response = {
-                **response,
-                "outbox": [*(response.get("outbox") or []), *(pin_response.get("outbox") or [])],
-                "intents": [*(response.get("intents") or []), *(pin_response.get("intents") or [])],
-                "text": "\n\n".join(
-                    part
-                    for part in (
-                        readiness_rendering.stringify_payload(response.get("text")),
-                        readiness_rendering.stringify_payload(pin_response.get("text")),
-                    )
-                    if part
-                ),
-            }
+            if turn.pin_after:
+                pin_response = await agent.resume_transaction(
+                    phone_number=target_user.phone_number,
+                    flow_type=turn.pin_flow_type,
+                    pin_verified=True,
+                    channel=channel,
+                )
+                response = {
+                    **response,
+                    "outbox": [*(response.get("outbox") or []), *(pin_response.get("outbox") or [])],
+                    "intents": [*(response.get("intents") or []), *(pin_response.get("intents") or [])],
+                    "text": "\n\n".join(
+                        part
+                        for part in (
+                            readiness_rendering.stringify_payload(response.get("text")),
+                            readiness_rendering.stringify_payload(pin_response.get("text")),
+                        )
+                        if part
+                    ),
+                }
+        finally:
+            llm_calls = stop_llm_call_recording(llm_recording_token)
         async_jobs = tuple(publisher.messages[before_jobs:])
         route_metadata = {
             key: response.get(key)
@@ -352,6 +395,8 @@ async def run_dry_run_readiness(
                 "routing_target_domain",
                 "routing_mode",
                 "route_source",
+                "planner_clean",
+                "planner_dirty_reasons",
             )
             if key in response
         }
@@ -360,6 +405,7 @@ async def run_dry_run_readiness(
             route_metadata=route_metadata,
             task_types=readiness_assertions.task_types_from_response(response),
             async_jobs=async_jobs,
+            llm_calls=llm_calls,
         )
 
     return await readiness_sequence.run_readiness_sequence(
@@ -409,6 +455,7 @@ def run_readiness_sync(
     reset_session: bool = False,
     stop_on_fail: bool = False,
     json_output: str | None = None,
+    transcript_output: str | None = None,
 ) -> int:
     result = asyncio.run(
         run_readiness(
@@ -426,4 +473,7 @@ def run_readiness_sync(
     if json_output:
         readiness_report.write_json_report(result, json_output)
         print(f"[report] wrote {json_output}")
+    if transcript_output:
+        readiness_report.write_text_report(result, transcript_output)
+        print(f"[report] wrote {transcript_output}")
     return 0 if result.passed else 1

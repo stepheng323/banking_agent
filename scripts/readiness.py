@@ -27,6 +27,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "mvp",
             "query",
             "query-deep",
+            "latency",
+            "llm-latency",
+            "planner",
         ),
     )
     parser.add_argument("--phone", help="Existing test user's phone number. Required for --mode dry-run.")
@@ -40,6 +43,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--stop-on-fail", action="store_true", help="Stop after the first failed turn.")
     parser.add_argument("--json-output", help="Optional path to write a JSON readiness report.")
+    parser.add_argument("--transcript-output", help="Optional path to write the rendered transcript report.")
     return parser.parse_args(argv)
 
 
@@ -56,6 +60,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             reset_session=args.reset_session,
             stop_on_fail=args.stop_on_fail,
             json_output=args.json_output,
+            transcript_output=args.transcript_output,
         )
     )
 
