@@ -3,6 +3,32 @@ import pytest
 from apps.gateway import main as gateway_main
 from apps.receipt import main as receipt_main
 from apps.transaction import main as transaction_main
+from shared.config.settings import Settings
+
+
+def test_latency_related_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for env_name in (
+        "WHATSAPP_TYPING_INDICATOR_DELAY_MS",
+        "TELEGRAM_TYPING_INDICATOR_DELAY_MS",
+        "CHAT_WORKER_STREAM_BLOCK_MS",
+        "TRANSACTION_WORKER_STREAM_BLOCK_MS",
+        "RECEIPT_WORKER_STREAM_BLOCK_MS",
+        "LLM_RESPONSE_CACHE_ENABLED",
+        "LLM_RESPONSE_CACHE_TTL_SECONDS",
+        "LLM_RESPONSE_CACHE_TYPES",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+    cfg = Settings()
+
+    assert cfg.whatsapp.typing_indicator_delay_ms == 0
+    assert cfg.telegram_typing_indicator_delay_ms == 0
+    assert cfg.chat_worker_stream_block_ms == 5000
+    assert cfg.transaction_worker_stream_block_ms == 5000
+    assert cfg.receipt_worker_stream_block_ms == 5000
+    assert cfg.llm_response_cache_enabled is False
+    assert cfg.llm_response_cache_ttl_seconds == 300
+    assert cfg.llm_response_cache_types == ("SemanticRouteDecision",)
 
 
 @pytest.mark.asyncio

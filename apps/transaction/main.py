@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Protocol
@@ -54,6 +55,7 @@ _payout_reconciliation_task: asyncio.Task[None] | None = None
 _refund_reconciliation_task: asyncio.Task[None] | None = None
 _ledger_reconciliation_task: asyncio.Task[None] | None = None
 _stop_event: asyncio.Event | None = None
+_STALE_CLAIM_INTERVAL_SECONDS = 30.0
 
 
 class _ReconciliationConsumer(Protocol):
@@ -94,11 +96,11 @@ def _mark_loop_started(loop_name: str) -> None:
 
 def _mark_loop_success(loop_name: str, *, domain: str) -> None:
     _loop_health.get(loop_name).mark_success()
-    emit_operational_event(f"{loop_name}_tick_completed", severity="info", domain=domain)
+    logger.debug(f"{loop_name}_tick_completed", domain=domain)
 
 
 def _mark_loop_lock_skipped(loop_name: str, *, domain: str) -> None:
-    emit_operational_event(f"{loop_name}_tick_skipped_lock_held", severity="warning", domain=domain)
+    logger.debug(f"{loop_name}_tick_skipped_lock_held", domain=domain)
 
 
 def _mark_loop_failure(loop_name: str, *, domain: str, exc: Exception) -> None:
@@ -108,6 +110,7 @@ def _mark_loop_failure(loop_name: str, *, domain: str, exc: Exception) -> None:
         severity="high",
         domain=domain,
         details={"error_type": type(exc).__name__},
+        logger=logger,
     )
 
 
@@ -140,29 +143,11 @@ async def _run_direct_transfer_reconciliation_loop(stop_event: asyncio.Event) ->
         try:
             await lock.acquire(wait_seconds=0.1)
             await consumer.process_job({})
-            loop_health.mark_success()
-            emit_operational_event(
-                "direct_transfer_reconciliation_tick_completed",
-                severity="info",
-                domain="direct_transfer",
-                details={"interval_seconds": interval_seconds},
-            )
-            logger.info("direct_transfer_reconciliation_tick_completed")
+            _mark_loop_success("direct_transfer_reconciliation", domain="direct_transfer")
         except RedisLockTimeoutError:
-            emit_operational_event(
-                "direct_transfer_reconciliation_tick_skipped_lock_held",
-                severity="warning",
-                domain="direct_transfer",
-            )
-            logger.debug("direct_transfer_reconciliation_tick_skipped_lock_held")
+            _mark_loop_lock_skipped("direct_transfer_reconciliation", domain="direct_transfer")
         except Exception as exc:
-            loop_health.mark_failure(exc)
-            emit_operational_event(
-                "direct_transfer_reconciliation_tick_failed",
-                severity="high",
-                domain="direct_transfer",
-                details={"error_type": type(exc).__name__},
-            )
+            _mark_loop_failure("direct_transfer_reconciliation", domain="direct_transfer", exc=exc)
             logger.error("direct_transfer_reconciliation_tick_failed", error=str(exc), exc_info=True)
         finally:
             try:
@@ -228,6 +213,7 @@ async def _process_stream_record(
             domain="queue",
             identifiers={"topic": record.topic, "stream": record.stream_name, "record_id": record.record_id},
             details={"error_type": type(exc).__name__},
+            logger=logger,
         )
         logger.error(
             "transaction_worker_stream_record_failed",
@@ -247,13 +233,17 @@ async def _run_transaction_stream_worker(stop_event: asyncio.Event) -> None:
     )
     logger.info("transaction_stream_worker_started", streams=stream_consumer.stream_names)
     await stream_consumer.ensure_groups()
+    last_stale_claim = -_STALE_CLAIM_INTERVAL_SECONDS
 
     while not stop_event.is_set():
-        claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
-        for record in claimed:
-            await _process_stream_record(consumers, stream_consumer, record)
+        now = time.monotonic()
+        if now - last_stale_claim >= _STALE_CLAIM_INTERVAL_SECONDS:
+            claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
+            for record in claimed:
+                await _process_stream_record(consumers, stream_consumer, record)
+            last_stale_claim = now
 
-        records = await stream_consumer.consume(count=25, block_ms=5000)
+        records = await stream_consumer.consume(count=25, block_ms=settings.transaction_worker_stream_block_ms)
         for record in records:
             await _process_stream_record(consumers, stream_consumer, record)
 
@@ -288,10 +278,8 @@ async def _run_transaction_debit_reconciliation_loop(stop_event: asyncio.Event) 
             await lock.acquire(wait_seconds=0.1)
             await consumer.process_job({})
             _mark_loop_success(loop_name, domain="bill")
-            logger.info("transaction_debit_reconciliation_tick_completed")
         except RedisLockTimeoutError:
             _mark_loop_lock_skipped(loop_name, domain="bill")
-            logger.debug("transaction_debit_reconciliation_tick_skipped_lock_held")
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="bill", exc=exc)
             logger.error("transaction_debit_reconciliation_tick_failed", error=str(exc), exc_info=True)
@@ -332,10 +320,8 @@ async def _run_bill_reconciliation_loop(stop_event: asyncio.Event) -> None:
             await lock.acquire(wait_seconds=0.1)
             await consumer.process_job({})
             _mark_loop_success(loop_name, domain="bill")
-            logger.info("bill_reconciliation_tick_completed")
         except RedisLockTimeoutError:
             _mark_loop_lock_skipped(loop_name, domain="bill")
-            logger.debug("bill_reconciliation_tick_skipped_lock_held")
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="bill", exc=exc)
             logger.error("bill_reconciliation_tick_failed", error=str(exc), exc_info=True)
@@ -376,10 +362,8 @@ async def _run_transaction_debit_refund_reconciliation_loop(stop_event: asyncio.
             await lock.acquire(wait_seconds=0.1)
             await consumer.process_job({})
             _mark_loop_success(loop_name, domain="refund")
-            logger.info("transaction_debit_refund_reconciliation_tick_completed")
         except RedisLockTimeoutError:
             _mark_loop_lock_skipped(loop_name, domain="refund")
-            logger.debug("transaction_debit_refund_reconciliation_tick_skipped_lock_held")
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="refund", exc=exc)
             logger.error("transaction_debit_refund_reconciliation_tick_failed", error=str(exc), exc_info=True)
@@ -420,7 +404,6 @@ async def _run_payout_reconciliation_loop(stop_event: asyncio.Event) -> None:
             await lock.acquire(wait_seconds=0.1)
         except RedisLockTimeoutError:
             _mark_loop_lock_skipped(loop_name, domain="payout")
-            logger.debug("payout_reconciliation_tick_skipped_lock_held")
             continue
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="payout", exc=exc)
@@ -430,7 +413,6 @@ async def _run_payout_reconciliation_loop(stop_event: asyncio.Event) -> None:
         try:
             await payout_reconciliation_consumer.process_job({})
             _mark_loop_success(loop_name, domain="payout")
-            logger.info("payout_reconciliation_tick_completed")
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="payout", exc=exc)
             logger.error("payout_reconciliation_tick_failed", error=str(exc), exc_info=True)
@@ -471,7 +453,6 @@ async def _run_funding_reconciliation_loop(stop_event: asyncio.Event) -> None:
             await lock.acquire(wait_seconds=0.1)
         except RedisLockTimeoutError:
             _mark_loop_lock_skipped(loop_name, domain="funding")
-            logger.debug("funding_reconciliation_tick_skipped_lock_held")
             continue
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="funding", exc=exc)
@@ -481,7 +462,6 @@ async def _run_funding_reconciliation_loop(stop_event: asyncio.Event) -> None:
         try:
             await funding_reconciliation_consumer.process_job({})
             _mark_loop_success(loop_name, domain="funding")
-            logger.info("funding_reconciliation_tick_completed")
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="funding", exc=exc)
             logger.error("funding_reconciliation_tick_failed", error=str(exc), exc_info=True)
@@ -522,7 +502,6 @@ async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
             await lock.acquire(wait_seconds=0.1)
         except RedisLockTimeoutError:
             _mark_loop_lock_skipped(loop_name, domain="refund")
-            logger.debug("refund_reconciliation_tick_skipped_lock_held")
             continue
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="refund", exc=exc)
@@ -532,7 +511,6 @@ async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
         try:
             await refund_reconciliation_consumer.process_job({})
             _mark_loop_success(loop_name, domain="refund")
-            logger.info("refund_reconciliation_tick_completed")
         except Exception as exc:
             _mark_loop_failure(loop_name, domain="refund", exc=exc)
             logger.error("refund_reconciliation_tick_failed", error=str(exc), exc_info=True)
@@ -549,6 +527,7 @@ def _mark_loop_dependency_skipped(loop_name: str, *, domain: str, dependency: st
         severity="warning",
         domain=domain,
         details={"dependency": dependency},
+        logger=logger,
     )
 
 
@@ -567,7 +546,6 @@ async def _run_locked_reconciliation_consumer(
         await lock.acquire(wait_seconds=0.1)
     except RedisLockTimeoutError:
         _mark_loop_lock_skipped(loop_name, domain="ledger")
-        logger.debug(f"{loop_name}_tick_skipped_lock_held")
         return False
     except Exception as exc:
         _mark_loop_failure(loop_name, domain="ledger", exc=exc)
@@ -577,7 +555,6 @@ async def _run_locked_reconciliation_consumer(
     try:
         await consumer.process_job({})
         _mark_loop_success(loop_name, domain="ledger")
-        logger.info(f"{loop_name}_tick_completed")
         return True
     except Exception as exc:
         _mark_loop_failure(loop_name, domain="ledger", exc=exc)

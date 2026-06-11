@@ -90,6 +90,45 @@ async def test_run_worker_starts_and_stops_stream_loop(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_loop_claims_stale_on_timer_and_uses_configured_block_ms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Stream:
+        stream_names = ["chat:messages"]
+
+        def __init__(self) -> None:
+            self.claim_calls = 0
+            self.block_values: list[int] = []
+
+        async def ensure_groups(self) -> None:
+            pass
+
+        async def claim_stale(self, *, min_idle_ms: int, count: int) -> list[worker_main.RedisStreamRecord]:
+            assert min_idle_ms == 60_000
+            assert count == 25
+            self.claim_calls += 1
+            return []
+
+        async def consume(self, *, count: int, block_ms: int) -> list[worker_main.RedisStreamRecord]:
+            assert count == 25
+            self.block_values.append(block_ms)
+            if len(self.block_values) >= 3:
+                raise asyncio.CancelledError
+            return []
+
+    stream = _Stream()
+    times = iter([0.0, 10.0, 20.0])
+    monkeypatch.setattr(worker_main, "time", SimpleNamespace(monotonic=lambda: next(times)))
+    monkeypatch.setattr(worker_main.settings, "chat_worker_stream_block_ms", 1234)
+
+    with pytest.raises(asyncio.CancelledError):
+        await worker_main._run_stream_loop(object(), stream)  # type: ignore[arg-type]
+
+    assert stream.claim_calls == 1
+    assert stream.block_values == [1234, 1234, 1234]
+
+
+@pytest.mark.asyncio
 async def test_schedule_dispatcher_tick_runs_under_redis_lock(monkeypatch: pytest.MonkeyPatch) -> None:
     redis = _RedisLockStub()
     dispatcher = SimpleNamespace(dispatch_due=AsyncMock(return_value={"processed": 1, "skipped": 0}))

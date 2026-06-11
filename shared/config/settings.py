@@ -266,6 +266,13 @@ class Settings:
         self.chat_worker_stream_block_ms: int = int(os.getenv("CHAT_WORKER_STREAM_BLOCK_MS", "5000"))
         self.transaction_worker_stream_block_ms: int = int(os.getenv("TRANSACTION_WORKER_STREAM_BLOCK_MS", "5000"))
         self.receipt_worker_stream_block_ms: int = int(os.getenv("RECEIPT_WORKER_STREAM_BLOCK_MS", "5000"))
+        self.chat_typing_heartbeat_enabled: bool = bool(
+            self._parse_optional_bool(os.getenv("CHAT_TYPING_HEARTBEAT_ENABLED")) is not False
+        )
+        self.chat_typing_heartbeat_interval_seconds: float = float(
+            os.getenv("CHAT_TYPING_HEARTBEAT_INTERVAL_SECONDS", "4.0")
+        )
+        self.chat_typing_heartbeat_max_seconds: float = float(os.getenv("CHAT_TYPING_HEARTBEAT_MAX_SECONDS", "60.0"))
         self.chat_pending_input_prompt_debounce_seconds: float = float(
             os.getenv("CHAT_PENDING_INPUT_PROMPT_DEBOUNCE_SECONDS", "1.5")
         )

@@ -371,7 +371,12 @@ class TelegramPresenter(Presenter):
         explicit_title = str(option.get("button_title") or "").strip()
         if explicit_title:
             return explicit_title[:64]
-        return str(index)
+        title = str(option.get("title") or "").strip()
+        if not title:
+            return str(index)
+        if not title.startswith(f"{index}."):
+            title = f"{index}. {title}"
+        return title[:64]
 
     @staticmethod
     def _telegram_options_body(title: str) -> str:

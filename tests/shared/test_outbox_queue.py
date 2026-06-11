@@ -73,6 +73,20 @@ async def test_enqueue_outbox_helpers_publish_say_and_typing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_enqueue_outbox_prefers_explicit_dedupe_key_over_message_id() -> None:
+    publisher = _PublisherStub()
+
+    await enqueue_outbox_typing(
+        publisher,
+        "chat-1",
+        "telegram",
+        metadata={"message_id": "msg-1", "dedupe_key": "typing-heartbeat-2"},
+    )
+
+    assert publisher.calls[0][1]["dedupe_key"] == "typing-heartbeat-2"
+
+
+@pytest.mark.asyncio
 async def test_enqueue_outbox_requires_publisher_for_nonempty_intents() -> None:
     with pytest.raises(RuntimeError, match="outbox_publisher_required"):
         await enqueue_outbox_intents(None, "2348162511023", "whatsapp", [SendTyping()])

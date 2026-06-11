@@ -11,6 +11,7 @@ import pytest
 import shared.cache.llm_response_cache as llm_response_cache_module
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_observability import invoke_structured_prompt
 from shared.config.settings import settings
+from shared.observability.events import emit_operational_event
 from shared.observability.llm import build_llm_runnable_config
 from shared.observability.llm_call_metrics import (
     start_llm_call_recording,
@@ -94,9 +95,27 @@ class _FakeRedis:
 class _Logger:
     def __init__(self) -> None:
         self.infos: list[tuple[str, dict[str, Any]]] = []
+        self.warnings: list[tuple[str, dict[str, Any]]] = []
+        self.errors: list[tuple[str, dict[str, Any]]] = []
 
     def info(self, event: str, **kwargs: Any) -> None:
         self.infos.append((event, kwargs))
+
+    def warning(self, event: str, **kwargs: Any) -> None:
+        self.warnings.append((event, kwargs))
+
+    def error(self, event: str, **kwargs: Any) -> None:
+        self.errors.append((event, kwargs))
+
+    def debug(self, event: str, **kwargs: Any) -> None:
+        del event, kwargs
+
+
+def _last_info_fields(logger: _Logger, event_name: str) -> dict[str, Any]:
+    for event, fields in reversed(logger.infos):
+        if event == event_name:
+            return fields
+    raise AssertionError(f"info event not found: {event_name}")
 
 
 def test_redaction_masks_sensitive_values() -> None:
@@ -117,6 +136,39 @@ def test_redaction_masks_sensitive_values() -> None:
     assert "1234" not in rendered
     assert "mono_ref_123456789" not in rendered
     assert "AAAA1111BBBB2222" not in rendered
+
+
+def test_operational_event_uses_supplied_logger_and_redacts_payload() -> None:
+    logger = _Logger()
+
+    emit_operational_event(
+        "example_event",
+        severity="info",
+        domain="test",
+        identifiers={"account_number": "1234567890"},
+        details={"message": "pin 1234"},
+        logger=logger,
+    )
+
+    assert len(logger.infos) == 1
+    event, fields = logger.infos[0]
+    assert event == "operational_event"
+    assert fields["event_name"] == "example_event"
+    assert fields["identifiers"]["account_number"] == "****7890"
+    assert "1234" not in str(fields["details"])
+    assert logger.warnings == []
+    assert logger.errors == []
+
+
+def test_operational_event_maps_warning_and_high_severity_to_supplied_logger() -> None:
+    logger = _Logger()
+
+    emit_operational_event("warning_event", severity="warning", domain="test", logger=logger)
+    emit_operational_event("high_event", severity="high", domain="test", logger=logger)
+
+    assert logger.warnings[0][1]["event_name"] == "warning_event"
+    assert logger.errors[0][1]["event_name"] == "high_event"
+    assert logger.infos == []
 
 
 def test_json_safe_serialization_supports_operational_values() -> None:
@@ -194,9 +246,8 @@ async def test_invoke_structured_prompt_logs_output_json_metrics() -> None:
         model_llm=_FakeModelLLM(),
     )
 
-    event, fields = logger.infos[-1]
+    fields = _last_info_fields(logger, "semantic_router_llm_call")
     compact_json = decision.model_dump_json(exclude_none=True, exclude_defaults=True, exclude_unset=True)
-    assert event == "semantic_router_llm_call"
     assert fields["output_json_chars"] == len(compact_json)
     assert fields["output_expanded_json_chars"] == len(decision.model_dump_json())
     assert fields["output_token_estimate"] > 0
@@ -311,7 +362,8 @@ def test_extract_provider_llm_metadata_omits_missing_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invoke_structured_prompt_records_turn_llm_metrics() -> None:
+async def test_invoke_structured_prompt_records_turn_llm_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "llm_response_cache_enabled", False)
     logger = _Logger()
     llm = _FakeStructuredLLM({"decision": "domain_query", "confidence": 0.9, "target_intent": "query"})
     token = start_llm_call_recording()
@@ -353,7 +405,8 @@ async def test_invoke_structured_prompt_records_turn_llm_metrics() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invoke_structured_prompt_unwraps_raw_provider_metadata() -> None:
+async def test_invoke_structured_prompt_unwraps_raw_provider_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "llm_response_cache_enabled", False)
     logger = _Logger()
     raw = _FakeRawMessage(
         usage_metadata={
@@ -389,8 +442,7 @@ async def test_invoke_structured_prompt_unwraps_raw_provider_metadata() -> None:
 
     assert decision.decision == "domain_query"
     assert llm.last_kwargs == {"prompt_cache_key": "planner:transfer_only"}
-    event, fields = logger.infos[-1]
-    assert event == "semantic_router_llm_call"
+    fields = _last_info_fields(logger, "semantic_router_llm_call")
     assert fields["provider_prompt_cache_key"] == "planner:transfer_only"
     assert fields["provider_input_tokens"] == 900
     assert fields["provider_output_tokens"] == 50
@@ -468,11 +520,12 @@ async def test_structured_llm_cache_reuses_semantic_router_decision(monkeypatch:
     assert first_llm.calls == 1
     assert second_llm.calls == 0
     assert redis.setex_calls[0][1] == 300
-    assert logger.infos[-1][1]["cache_status"] == "hit"
-    assert logger.infos[-1][1]["output_json_chars"] == len(
+    hit_fields = _last_info_fields(logger, "semantic_router_llm_call")
+    assert hit_fields["cache_status"] == "hit"
+    assert hit_fields["output_json_chars"] == len(
         second.model_dump_json(exclude_none=True, exclude_defaults=True, exclude_unset=True)
     )
-    assert logger.infos[-1][1]["output_expanded_json_chars"] == len(second.model_dump_json())
+    assert hit_fields["output_expanded_json_chars"] == len(second.model_dump_json())
 
 
 @pytest.mark.asyncio

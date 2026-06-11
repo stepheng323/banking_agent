@@ -29,6 +29,7 @@ from banking.presentation.i18n.renderer import render_message
 from shared.cache.distributed_lock import RedisLockTimeoutError
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.telegram.client import TelegramClient
+from shared.config.settings import settings
 from shared.database.models import UserOnboardingStatusEnum
 from shared.messaging.intents import Say, SendTyping
 from shared.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
@@ -43,6 +44,8 @@ logger = get_logger(__name__)
 _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
 _INITIAL_TYPING_DELAY_SECONDS = 0.0
 _INITIAL_TYPING_POLICY = "delayed_initial"
+_HEARTBEAT_TYPING_POLICY = "heartbeat"
+_FINAL_PREFACE_TYPING_POLICY = "final_preface"
 
 
 class _NoopPublisher:
@@ -52,6 +55,58 @@ class _NoopPublisher:
 
 def _initial_typing_dedupe_key(*, channel: str, delivery_target: str, message_id: str) -> str:
     return f"{channel}:{delivery_target}:{message_id}:typing:initial"
+
+
+def _heartbeat_typing_dedupe_key(*, channel: str, delivery_target: str, message_id: str, sequence: int) -> str:
+    return f"{channel}:{delivery_target}:{message_id}:typing:heartbeat:{sequence}"
+
+
+def _final_preface_typing_dedupe_key(*, channel: str, delivery_target: str, message_id: str) -> str:
+    return f"{channel}:{delivery_target}:{message_id}:typing:final_preface"
+
+
+def _is_typing_intent(intent: Any) -> bool:
+    if isinstance(intent, SendTyping):
+        return True
+    if isinstance(intent, dict):
+        return intent.get("type") == "typing"
+    return False
+
+
+def _has_visible_intent(intents: list[Any]) -> bool:
+    return any(not _is_typing_intent(intent) for intent in intents)
+
+
+def _metadata_suppresses_typing(metadata: dict[str, Any]) -> bool:
+    value = metadata.get("suppress_typing_indicator")
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _with_final_typing_preface(
+    intents: list[Any],
+    *,
+    channel: str,
+    delivery_target: str,
+    message_id: str,
+    metadata: dict[str, Any],
+) -> tuple[list[Any], dict[str, Any]]:
+    if not intents or not _has_visible_intent(intents) or _metadata_suppresses_typing(metadata):
+        return intents, metadata
+
+    preface_metadata = {
+        **metadata,
+        "inbound_message_id": metadata.get("inbound_message_id") or message_id,
+        "typing_policy": _FINAL_PREFACE_TYPING_POLICY,
+        "typing_dedupe_key": _final_preface_typing_dedupe_key(
+            channel=channel,
+            delivery_target=delivery_target,
+            message_id=message_id,
+        ),
+    }
+    prefaced_intents = intents if any(_is_typing_intent(intent) for intent in intents) else [SendTyping(), *intents]
+    return prefaced_intents, preface_metadata
 
 
 async def _send_delayed_initial_typing(
@@ -106,6 +161,126 @@ async def _send_delayed_initial_typing(
             channel_user_id=delivery_target,
             message_id_hash=log_fingerprint(message_id),
             error_type=type(exc).__name__,
+        )
+
+
+class TypingHeartbeatController:
+    """Bounded per-turn typing refresh loop for channels with expiring indicators."""
+
+    def __init__(
+        self,
+        *,
+        publisher: QueuePublisher,
+        channel: str,
+        delivery_target: str,
+        message_id: str,
+        enabled: bool | None = None,
+        interval_seconds: float | None = None,
+        max_seconds: float | None = None,
+    ) -> None:
+        self.publisher = publisher
+        self.channel = channel
+        self.delivery_target = delivery_target
+        self.message_id = message_id
+        self.enabled = settings.chat_typing_heartbeat_enabled if enabled is None else enabled
+        self.interval_seconds = max(
+            0.1,
+            settings.chat_typing_heartbeat_interval_seconds
+            if interval_seconds is None
+            else float(interval_seconds),
+        )
+        self.max_seconds = max(
+            0.0,
+            settings.chat_typing_heartbeat_max_seconds if max_seconds is None else float(max_seconds),
+        )
+        self._task: asyncio.Task[None] | None = None
+        self._started_at: float | None = None
+        self._sent_count = 0
+        self._stop_reason = "not_started"
+        self._summary_logged = False
+
+    def start(self) -> None:
+        if not self.enabled or self.max_seconds <= 0 or self._task is not None:
+            return
+        self._started_at = time.perf_counter()
+        self._stop_reason = "running"
+        self._task = asyncio.create_task(self._run(), name="message_consumer_typing_heartbeat")
+
+    async def stop(self, reason: str) -> None:
+        if self._task is None:
+            return
+        if not self._task.done():
+            self._stop_reason = reason
+            self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+        self._log_summary(reason if self._stop_reason == "running" else self._stop_reason)
+        self._task = None
+
+    async def _run(self) -> None:
+        assert self._started_at is not None
+        sequence = 0
+        try:
+            while (time.perf_counter() - self._started_at) < self.max_seconds:
+                await self._send_tick(sequence)
+                sequence += 1
+                remaining_seconds = self.max_seconds - (time.perf_counter() - self._started_at)
+                if remaining_seconds <= 0:
+                    break
+                await asyncio.sleep(min(self.interval_seconds, remaining_seconds))
+            if self._stop_reason == "running":
+                self._stop_reason = "max_duration"
+        except asyncio.CancelledError:
+            raise
+
+    async def _send_tick(self, sequence: int) -> None:
+        try:
+            await enqueue_outbox_intents(
+                self.publisher,
+                self.delivery_target,
+                self.channel,
+                [SendTyping()],
+                metadata={
+                    "source": "message_consumer",
+                    "message_id": self.message_id,
+                    "inbound_message_id": self.message_id,
+                    "dedupe_key": _heartbeat_typing_dedupe_key(
+                        channel=self.channel,
+                        delivery_target=self.delivery_target,
+                        message_id=self.message_id,
+                        sequence=sequence,
+                    ),
+                    "typing_policy": _HEARTBEAT_TYPING_POLICY,
+                    "typing_sequence": sequence,
+                },
+            )
+            self._sent_count += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "typing_heartbeat_tick_failed",
+                channel=self.channel,
+                channel_user_id=self.delivery_target,
+                message_id_hash=log_fingerprint(self.message_id),
+                sequence=sequence,
+                error_type=type(exc).__name__,
+            )
+
+    def _log_summary(self, stopped_reason: str) -> None:
+        if self._summary_logged or self._started_at is None:
+            return
+        self._summary_logged = True
+        logger.info(
+            "typing_heartbeat_summary",
+            channel=self.channel,
+            channel_user_id=self.delivery_target,
+            message_id_hash=log_fingerprint(self.message_id),
+            sent_count=self._sent_count,
+            duration_ms=round((time.perf_counter() - self._started_at) * 1000, 2),
+            stopped_reason=stopped_reason,
         )
 
 
@@ -325,7 +500,7 @@ class MessageConsumer:
             return {"status": "duplicate_ignored", "message_id": message.message_id}
 
         response_text: str | None = None
-        initial_typing_task: asyncio.Task[None] | None = None
+        typing_heartbeat: TypingHeartbeatController | None = None
         try:
             save_start = time.perf_counter()
             await runtime_orchestrator.context_manager.save_message_id(phone_number, str(message.message_id))
@@ -342,15 +517,13 @@ class MessageConsumer:
                 delivery_target=channel_user_id,
                 message_id=str(message.message_id),
             )
-            initial_typing_task = asyncio.create_task(
-                _send_delayed_initial_typing(
-                    publisher=self.publisher,
-                    channel=message.channel,
-                    delivery_target=channel_user_id,
-                    message_id=str(message.message_id),
-                ),
-                name="message_consumer_initial_typing",
+            typing_heartbeat = TypingHeartbeatController(
+                publisher=self.publisher,
+                channel=message.channel,
+                delivery_target=channel_user_id,
+                message_id=str(message.message_id),
             )
+            typing_heartbeat.start()
 
             receipt_choice_result = await handle_receipt_image_choice(
                 message=message,
@@ -367,8 +540,8 @@ class MessageConsumer:
                 telegram_client_factory=self.telegram_client_factory,
             )
             if receipt_choice_result is not None:
-                await _cancel_initial_typing_task(initial_typing_task)
-                initial_typing_task = None
+                await typing_heartbeat.stop("receipt_choice")
+                typing_heartbeat = None
                 return receipt_choice_result
 
             invoke_start = time.perf_counter()
@@ -413,14 +586,26 @@ class MessageConsumer:
                     details={"error_type": type(exc).__name__, "channel": message.channel},
                 )
                 response_text = render_message("orchestrator.fallback.processing_error", "en")
-                await _cancel_initial_typing_task(initial_typing_task)
-                initial_typing_task = None
+                await typing_heartbeat.stop("safe_fallback")
+                typing_heartbeat = None
+                fallback_metadata = {
+                    "source": "message_consumer",
+                    "message_id": message.message_id,
+                    "safe_fallback": True,
+                }
+                fallback_intents, fallback_metadata = _with_final_typing_preface(
+                    [Say(text=response_text)],
+                    channel=message.channel,
+                    delivery_target=channel_user_id,
+                    message_id=str(message.message_id),
+                    metadata=fallback_metadata,
+                )
                 await enqueue_outbox_intents(
                     self.publisher,
                     channel_user_id,
                     message.channel,
-                    [Say(text=response_text)],
-                    metadata={"source": "message_consumer", "message_id": message.message_id, "safe_fallback": True},
+                    fallback_intents,
+                    metadata=fallback_metadata,
                 )
                 return {"status": "safe_fallback", "response": response_text}
             self._log_latency_span(
@@ -470,9 +655,16 @@ class MessageConsumer:
                             origin_message_id=str(message.message_id),
                         )
                     )
+                intents_to_send, outbound_metadata = _with_final_typing_preface(
+                    intents_to_send,
+                    channel=message.channel,
+                    delivery_target=channel_user_id,
+                    message_id=str(message.message_id),
+                    metadata=outbound_metadata,
+                )
                 outbox_start = time.perf_counter()
-                await _cancel_initial_typing_task(initial_typing_task)
-                initial_typing_task = None
+                await typing_heartbeat.stop("final_outbox_enqueue")
+                typing_heartbeat = None
                 await enqueue_outbox_intents(
                     self.publisher,
                     channel_user_id,
@@ -487,10 +679,12 @@ class MessageConsumer:
                     phone_number=phone_number,
                 )
                 logger.info("message_consumer_enqueued_outbox", count=len(intents_to_send))
-            await _cancel_initial_typing_task(initial_typing_task)
-            initial_typing_task = None
+            if typing_heartbeat is not None:
+                await typing_heartbeat.stop("no_visible_outbox")
+                typing_heartbeat = None
         except Exception:
-            await _cancel_initial_typing_task(initial_typing_task)
+            if typing_heartbeat is not None:
+                await typing_heartbeat.stop("exception")
             await runtime_orchestrator.context_manager.release_inbound_message_claim(
                 phone_number, str(message.message_id)
             )

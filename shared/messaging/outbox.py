@@ -46,9 +46,9 @@ async def enqueue_outbox_intents(
 
     delivery_metadata = dict(metadata or {})
     dedupe_key_raw = (
-        delivery_metadata.get("message_id")
+        delivery_metadata.get("dedupe_key")
+        or delivery_metadata.get("message_id")
         or delivery_metadata.get("idempotency_key")
-        or delivery_metadata.get("dedupe_key")
     )
     strict_actionable = _parse_bool(delivery_metadata.get("strict_actionable"))
 

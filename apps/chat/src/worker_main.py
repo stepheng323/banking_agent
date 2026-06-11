@@ -2,6 +2,7 @@
 
 import asyncio
 import signal
+import time
 from collections import OrderedDict
 from datetime import UTC, datetime
 
@@ -20,6 +21,7 @@ configure_logger()
 logger = get_logger(__name__)
 _RUNTIME_WARMUP_TIMEOUT_SECONDS = 8.0
 _SUPPRESS_INTERMEDIATE_INPUT_PROMPT_METADATA_KEY = "_suppress_intermediate_input_prompt"
+_STALE_CLAIM_INTERVAL_SECONDS = 30.0
 
 
 async def _process_stream_record(
@@ -169,12 +171,16 @@ async def _run_stream_loop(consumer: MessageConsumer, stream_consumer: RedisStre
         max_concurrency=max_concurrency,
     )
     await stream_consumer.ensure_groups()
+    last_stale_claim = -_STALE_CLAIM_INTERVAL_SECONDS
 
     while True:
-        claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
-        await _process_stream_records(consumer, stream_consumer, claimed, semaphore)
+        now = time.monotonic()
+        if now - last_stale_claim >= _STALE_CLAIM_INTERVAL_SECONDS:
+            claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
+            await _process_stream_records(consumer, stream_consumer, claimed, semaphore)
+            last_stale_claim = now
 
-        records = await stream_consumer.consume(count=25, block_ms=5000)
+        records = await stream_consumer.consume(count=25, block_ms=settings.chat_worker_stream_block_ms)
         await _process_stream_records(consumer, stream_consumer, records, semaphore)
 
 

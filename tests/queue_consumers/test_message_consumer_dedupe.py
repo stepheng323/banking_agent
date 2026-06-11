@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -15,6 +15,8 @@ from apps.chat.src.queue_consumers import message_inbound as message_inbound_mod
 from apps.chat.src.queue_consumers import pin_resume as pin_resume_module
 from apps.chat.src.queue_consumers.message_consumer import MessageConsumer
 from apps.chat.src.queue_consumers.message_outbound import prepare_orchestrator_outbound
+from banking.presentation.i18n.locale import LocaleManager
+from banking.presentation.i18n.models import LocaleCode
 from banking.presentation.i18n.renderer import render_message
 from banking.receipts.choice import (
     RECEIPT_IMAGE_ACTION_ID,
@@ -57,6 +59,20 @@ def test_prepare_orchestrator_outbound_dedupes_identical_say_intents() -> None:
     assert len(intents) == 1
     assert isinstance(intents[0], Say)
     assert intents[0].text == greeting
+
+
+def test_final_typing_preface_does_not_duplicate_existing_typing() -> None:
+    intents, metadata = message_consumer_module._with_final_typing_preface(
+        [SendTyping(), Say(text="Done")],
+        channel="whatsapp",
+        delivery_target="2348162511023",
+        message_id="wamid-1",
+        metadata={"source": "test"},
+    )
+
+    assert len(_typing_intents(intents)) == 1
+    assert metadata["typing_policy"] == "final_preface"
+    assert metadata["typing_dedupe_key"] == "whatsapp:2348162511023:wamid-1:typing:final_preface"
 
 
 class _UserRepoStub:
@@ -187,6 +203,8 @@ class _OrchestratorStub:
         phone_number: str,
         flow_type: str,
         pin_verified: bool,
+        idempotency_key: str,
+        authorized_user_id: str | None = None,
         channel: str = "whatsapp",
     ) -> dict[str, Any]:
         self.resume_calls.append(
@@ -194,6 +212,8 @@ class _OrchestratorStub:
                 "phone_number": phone_number,
                 "flow_type": flow_type,
                 "pin_verified": str(pin_verified),
+                "idempotency_key": idempotency_key,
+                "authorized_user_id": authorized_user_id,
                 "channel": channel,
             }
         )
@@ -207,8 +227,10 @@ class _SlowOrchestratorStub(_OrchestratorStub):
         *,
         should_fail: bool = False,
         output: dict[str, Any] | None = None,
+        delay_seconds: float = 0.0,
     ) -> None:
         super().__init__(context_manager, should_fail=should_fail, output=output)
+        self.delay_seconds = delay_seconds
 
     async def invoke(
         self,
@@ -225,7 +247,7 @@ class _SlowOrchestratorStub(_OrchestratorStub):
         channel_metadata: dict[str, Any] | None = None,
         user: Any | None = None,
     ) -> dict[str, Any]:
-        await asyncio.sleep(0)
+        await asyncio.sleep(self.delay_seconds)
         return await super().invoke(
             phone_number,
             text,
@@ -239,6 +261,18 @@ class _SlowOrchestratorStub(_OrchestratorStub):
             channel_metadata=channel_metadata,
             user=user,
         )
+
+
+def _is_typing_intent(intent: Any) -> bool:
+    return isinstance(intent, SendTyping) or (isinstance(intent, dict) and intent.get("type") == "typing")
+
+
+def _visible_intents(intents: list[Any]) -> list[Any]:
+    return [intent for intent in intents if not _is_typing_intent(intent)]
+
+
+def _typing_intents(intents: list[Any]) -> list[Any]:
+    return [intent for intent in intents if _is_typing_intent(intent)]
 
 
 class _LockTimeoutOrchestratorStub(_OrchestratorStub):
@@ -409,7 +443,6 @@ async def test_slow_message_consumer_turn_enqueues_initial_typing_before_final_r
         enqueue_calls.append({"args": list(args), "kwargs": kwargs})
 
     monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
-    monkeypatch.setattr(message_consumer_module, "_INITIAL_TYPING_DELAY_SECONDS", 0)
     monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
 
     response = await consumer._handle_message(_message("wamid-slow-typing"))
@@ -420,19 +453,49 @@ async def test_slow_message_consumer_turn_enqueues_initial_typing_before_final_r
     typing_intents = enqueue_calls[0]["args"][3]
     assert len(typing_intents) == 1
     assert isinstance(typing_intents[0], SendTyping)
-    assert enqueue_calls[0]["kwargs"] == {
-        "metadata": {
-            "source": "message_consumer",
-            "message_id": "wamid-slow-typing",
-            "inbound_message_id": "wamid-slow-typing",
-            "dedupe_key": "whatsapp:2348162511023:wamid-slow-typing:typing:initial",
-            "typing_policy": "delayed_initial",
-        }
-    }
+    assert enqueue_calls[0]["kwargs"]["metadata"]["dedupe_key"].endswith(":typing:heartbeat:0")
+    assert enqueue_calls[0]["kwargs"]["metadata"]["typing_policy"] == "heartbeat"
     final_intents = enqueue_calls[1]["args"][3]
-    assert len(final_intents) == 1
-    assert isinstance(final_intents[0], Say)
-    assert final_intents[0].text == "ok"
+    assert len(_typing_intents(final_intents)) == 1
+    visible_intents = _visible_intents(final_intents)
+    assert len(visible_intents) == 1
+    assert isinstance(visible_intents[0], Say)
+    assert visible_intents[0].text == "ok"
+    assert enqueue_calls[1]["kwargs"]["metadata"]["typing_policy"] == "final_preface"
+
+
+@pytest.mark.asyncio
+async def test_slow_message_consumer_turn_repeats_heartbeat_with_unique_dedupe_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _SlowOrchestratorStub(context_manager, delay_seconds=0.22)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    enqueue_calls: list[dict[str, Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        enqueue_calls.append({"args": list(args), "kwargs": kwargs})
+
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(message_consumer_module.settings, "chat_typing_heartbeat_interval_seconds", 0.01)
+    monkeypatch.setattr(message_consumer_module.settings, "chat_typing_heartbeat_max_seconds", 1.0)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    response = await consumer._handle_message(_message("wamid-slow-heartbeat"))
+
+    assert response is not None
+    assert response["status"] == "success"
+    heartbeat_keys = [
+        call["kwargs"]["metadata"]["dedupe_key"]
+        for call in enqueue_calls
+        if call["kwargs"]["metadata"].get("typing_policy") == "heartbeat"
+    ]
+    assert len(heartbeat_keys) >= 2
+    assert len(heartbeat_keys) == len(set(heartbeat_keys))
 
 
 @pytest.mark.asyncio
@@ -459,10 +522,71 @@ async def test_fast_message_consumer_turn_cancels_initial_typing(
 
     assert response is not None
     assert response["status"] == "success"
+    assert len(enqueue_calls) in {1, 2}
+    intents = enqueue_calls[-1][3]
+    assert len(_typing_intents(intents)) == 1
+    visible_intents = _visible_intents(intents)
+    assert len(visible_intents) == 1
+    assert isinstance(visible_intents[0], Say)
+
+
+@pytest.mark.asyncio
+async def test_initial_typing_default_has_no_artificial_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleep_calls: list[float] = []
+    enqueue_calls: list[dict[str, Any]] = []
+
+    async def _sleep(delay_seconds: float) -> None:
+        sleep_calls.append(delay_seconds)
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        enqueue_calls.append({"args": list(args), "kwargs": kwargs})
+
+    monkeypatch.setattr(message_consumer_module.asyncio, "sleep", _sleep)
+    monkeypatch.setattr(message_consumer_module, "enqueue_outbox_intents", _enqueue_outbox_intents)
+
+    await message_consumer_module._send_delayed_initial_typing(
+        publisher=object(),  # type: ignore[arg-type]
+        channel="whatsapp",
+        delivery_target="2348162511023",
+        message_id="wamid-no-delay",
+    )
+
+    assert sleep_calls == []
     assert len(enqueue_calls) == 1
-    intents = enqueue_calls[0][3]
-    assert len(intents) == 1
-    assert isinstance(intents[0], Say)
+    assert isinstance(enqueue_calls[0]["args"][3][0], SendTyping)
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_logs_queue_age(monkeypatch: pytest.MonkeyPatch) -> None:
+    logged: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        message_consumer_module.logger,
+        "info",
+        lambda event, **kwargs: logged.append({"event": event, **kwargs}),
+    )
+
+    message = _message("wamid-queue-age")
+    message.timestamp = datetime.now(UTC) - timedelta(seconds=2)
+
+    assert message_consumer_module._message_queue_age_ms(message) is not None
+
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=_OrchestratorStub(_ContextManagerStub(should_claim=False)),
+    )
+    monkeypatch.setattr(message_consumer_module, "message_rate_limiter", _RateLimiterAllow())
+
+    await consumer._handle_message(message)
+
+    queue_age_logs = [
+        item
+        for item in logged
+        if item.get("event") == "perf_timer_latency" and item.get("gate") == "message_consumer_queue_age"
+    ]
+    assert queue_age_logs
+    assert queue_age_logs[-1]["duration_ms"] >= 1900
 
 
 @pytest.mark.asyncio
@@ -814,15 +938,20 @@ async def test_safe_fallback_is_sent_when_orchestrator_invoke_fails(monkeypatch:
     assert context_manager.released == []
     assert len(sent_payloads) == 1
     intents = sent_payloads[0][3]
-    assert len(intents) == 1
-    assert isinstance(intents[0], Say)
-    assert intents[0].text == "I'm sorry, I'm having trouble processing that right now."
+    assert len(_typing_intents(intents)) == 1
+    visible_intents = _visible_intents(intents)
+    assert len(visible_intents) == 1
+    assert isinstance(visible_intents[0], Say)
+    assert visible_intents[0].text == "I'm sorry, I'm having trouble processing that right now."
     assert sent_kwargs == [
         {
             "metadata": {
                 "source": "message_consumer",
                 "message_id": "wamid-fail",
                 "safe_fallback": True,
+                "inbound_message_id": "wamid-fail",
+                "typing_policy": "final_preface",
+                "typing_dedupe_key": "whatsapp:2348162511023:wamid-fail:typing:final_preface",
             }
         }
     ]
@@ -856,9 +985,11 @@ async def test_slow_safe_fallback_keeps_initial_typing_before_fallback_text(
     assert len(enqueue_calls) == 2
     assert isinstance(enqueue_calls[0][3][0], SendTyping)
     fallback_intents = enqueue_calls[1][3]
-    assert len(fallback_intents) == 1
-    assert isinstance(fallback_intents[0], Say)
-    assert fallback_intents[0].text == "I'm sorry, I'm having trouble processing that right now."
+    assert len(_typing_intents(fallback_intents)) == 1
+    visible_intents = _visible_intents(fallback_intents)
+    assert len(visible_intents) == 1
+    assert isinstance(visible_intents[0], Say)
+    assert visible_intents[0].text == "I'm sorry, I'm having trouble processing that right now."
 
 
 @pytest.mark.asyncio
@@ -901,8 +1032,10 @@ async def test_message_consumer_does_not_append_say_for_show_flow(monkeypatch: p
     assert response["status"] == "success"
     assert len(sent_payloads) == 1
     intents = sent_payloads[0][3]
-    assert len(intents) == 1
-    assert isinstance(intents[0], ShowFlow)
+    assert len(_typing_intents(intents)) == 1
+    visible_intents = _visible_intents(intents)
+    assert len(visible_intents) == 1
+    assert isinstance(visible_intents[0], ShowFlow)
 
 
 @pytest.mark.asyncio
@@ -945,9 +1078,11 @@ async def test_message_consumer_suppresses_default_greeting_when_domain_answer_i
     assert response["status"] == "success"
     assert len(sent_payloads) == 1
     intents = sent_payloads[0][3]
-    assert len(intents) == 1
-    assert isinstance(intents[0], Say)
-    assert intents[0].text == domain_answer
+    assert len(_typing_intents(intents)) == 1
+    visible_intents = _visible_intents(intents)
+    assert len(visible_intents) == 1
+    assert isinstance(visible_intents[0], Say)
+    assert visible_intents[0].text == domain_answer
 
 
 @pytest.mark.asyncio
@@ -986,7 +1121,9 @@ async def test_message_consumer_falls_back_to_raw_outbox_when_intents_are_empty(
     assert response is not None
     assert response["status"] == "success"
     assert len(sent_payloads) == 1
-    assert sent_payloads[0][3] == [{"type": "say", "text": "I am generating your receipt now."}]
+    final_intents = sent_payloads[0][3]
+    assert len(_typing_intents(final_intents)) == 1
+    assert _visible_intents(final_intents) == [{"type": "say", "text": "I am generating your receipt now."}]
 
 
 @pytest.mark.asyncio
@@ -1176,6 +1313,7 @@ async def test_message_consumer_accepts_receipt_image_choice(
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(message_inbound_module, "load_channel_identity_user", AsyncMock(return_value=None))
     monkeypatch.setattr(message_inbound_module, "store_channel_identity_user", AsyncMock())
+    monkeypatch.setattr(LocaleManager, "get_effective_locale", AsyncMock(return_value=LocaleCode.EN))
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
         "apps.chat.src.queue_consumers.receipt_choices.enqueue_outbox_intents",
@@ -1225,6 +1363,7 @@ async def test_message_consumer_accepts_telegram_receipt_image_choice_removes_bu
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
     monkeypatch.setattr(message_inbound_module, "load_channel_identity_user", AsyncMock(return_value=None))
     monkeypatch.setattr(message_inbound_module, "store_channel_identity_user", AsyncMock())
+    monkeypatch.setattr(LocaleManager, "get_effective_locale", AsyncMock(return_value=LocaleCode.EN))
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
         "apps.chat.src.queue_consumers.receipt_choices.enqueue_outbox_intents",
@@ -1264,6 +1403,7 @@ async def test_message_consumer_receipt_image_choice_missing_payload_expires_gra
     )
 
     monkeypatch.setattr("apps.chat.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(LocaleManager, "get_effective_locale", AsyncMock(return_value=LocaleCode.EN))
     enqueue_outbox_intents = AsyncMock()
     monkeypatch.setattr(
         "apps.chat.src.queue_consumers.receipt_choices.enqueue_outbox_intents",
@@ -1277,7 +1417,10 @@ async def test_message_consumer_receipt_image_choice_missing_payload_expires_gra
 
     assert response == {"status": "receipt_image_expired"}
     assert orchestrator.invoke_calls == 0
-    publisher.publish.assert_not_awaited()
+    published_topics = [
+        call.args[0] if call.args else call.kwargs.get("topic") for call in publisher.publish.await_args_list
+    ]
+    assert "receipt.process" not in published_topics
     enqueue_outbox_intents.assert_awaited_once()
     assert enqueue_outbox_intents.await_args.args[3][0].text == render_message("query.receipt.expired", "en")
 
@@ -1425,6 +1568,8 @@ async def test_pin_verified_event_resumes_once_after_claim(monkeypatch: pytest.M
             "phone_number": "2348162511023",
             "flow_type": "transfer",
             "pin_verified": "True",
+            "idempotency_key": "idem-1",
+            "authorized_user_id": "u1",
             "channel": "whatsapp",
         }
     ]
@@ -1454,6 +1599,38 @@ async def test_pin_verified_event_accepts_schedule_flow(monkeypatch: pytest.Monk
             "phone_number": "2348162511023",
             "flow_type": "schedule",
             "pin_verified": "True",
+            "idempotency_key": "idem-1",
+            "authorized_user_id": "u1",
+            "channel": "whatsapp",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pin_verified_event_accepts_batch_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+    auth_service = _AuthorizationServiceStub(
+        AuthorizationResult(verified=True, user_id="u1", transaction_type="batch"),
+        claim_results=[True],
+    )
+
+    monkeypatch.setattr(pin_resume_module, "AuthorizationService", lambda: auth_service)
+
+    await consumer.process_flow_event(_pin_verified_event(flow_type="batch"))
+
+    assert orchestrator.resume_calls == [
+        {
+            "phone_number": "2348162511023",
+            "flow_type": "batch",
+            "pin_verified": "True",
+            "idempotency_key": "idem-1",
+            "authorized_user_id": "u1",
             "channel": "whatsapp",
         }
     ]

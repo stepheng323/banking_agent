@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -23,6 +24,7 @@ logger = get_logger(__name__)
 
 _worker_task: asyncio.Task[None] | None = None
 _stop_event: asyncio.Event | None = None
+_STALE_CLAIM_INTERVAL_SECONDS = 30.0
 _RECEIPT_STREAM_TOPICS: tuple[TopicType, ...] = ("receipt.process", "notification.send")
 
 
@@ -73,13 +75,17 @@ async def _run_receipt_stream_worker(stop_event: asyncio.Event) -> None:
     )
     logger.info("receipt_stream_worker_started", streams=stream_consumer.stream_names)
     await stream_consumer.ensure_groups()
+    last_stale_claim = -_STALE_CLAIM_INTERVAL_SECONDS
 
     while not stop_event.is_set():
-        claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
-        for record in claimed:
-            await _process_stream_record(consumers, stream_consumer, record)
+        now = time.monotonic()
+        if now - last_stale_claim >= _STALE_CLAIM_INTERVAL_SECONDS:
+            claimed = await stream_consumer.claim_stale(min_idle_ms=60_000, count=25)
+            for record in claimed:
+                await _process_stream_record(consumers, stream_consumer, record)
+            last_stale_claim = now
 
-        records = await stream_consumer.consume(count=25, block_ms=5000)
+        records = await stream_consumer.consume(count=25, block_ms=settings.receipt_worker_stream_block_ms)
         for record in records:
             await _process_stream_record(consumers, stream_consumer, record)
 

@@ -19,6 +19,38 @@ class _StreamConsumerStub:
         self.acked.append((stream_name, record_id))
 
 
+class _TimedLoopStreamStub:
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        del args, kwargs
+        self.stream_names = ["async:test"]
+        self.claim_calls = 0
+        self.block_values: list[int] = []
+
+    async def ensure_groups(self) -> None:
+        pass
+
+    async def claim_stale(self, *, min_idle_ms: int, count: int) -> list[RedisStreamRecord]:
+        assert min_idle_ms == 60_000
+        assert count == 25
+        self.claim_calls += 1
+        return []
+
+    async def consume(self, *, count: int, block_ms: int) -> list[RedisStreamRecord]:
+        assert count == 25
+        self.block_values.append(block_ms)
+        if len(self.block_values) >= 3:
+            raise asyncio.CancelledError
+        return []
+
+
+class _LoggerStub:
+    def __init__(self) -> None:
+        self.debugs: list[tuple[str, dict[str, object]]] = []
+
+    def debug(self, event: str, **fields: object) -> None:
+        self.debugs.append((event, fields))
+
+
 def _record(topic: str, payload: dict | None = None) -> RedisStreamRecord:
     return RedisStreamRecord(
         stream_name="async:test",
@@ -127,6 +159,89 @@ async def test_ledger_reconciliation_tick_skips_exposure_when_posting_does_not_c
     await transaction_main._run_ledger_reconciliation_tick(consumers, lock_ttl_seconds=60)
 
     assert events == []
+
+
+@pytest.mark.asyncio
+async def test_transaction_stream_worker_claims_stale_on_timer_and_uses_configured_block_ms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream = _TimedLoopStreamStub()
+    times = iter([0.0, 10.0, 20.0])
+
+    monkeypatch.setattr(transaction_main, "time", SimpleNamespace(monotonic=lambda: next(times)))
+    monkeypatch.setattr(transaction_main.settings, "transaction_worker_stream_block_ms", 2345)
+    monkeypatch.setattr(transaction_main, "RedisStreamConsumer", lambda *args, **kwargs: stream)
+    monkeypatch.setattr(transaction_main, "setup_transaction_worker_consumers", lambda: SimpleNamespace())
+
+    with pytest.raises(asyncio.CancelledError):
+        await transaction_main._run_transaction_stream_worker(asyncio.Event())
+
+    assert stream.claim_calls == 1
+    assert stream.block_values == [2345, 2345, 2345]
+
+
+def test_transaction_worker_success_and_lock_skip_logs_are_debug_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = _LoggerStub()
+    operational_events: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_emit_operational_event(*args: object, **kwargs: object) -> None:
+        operational_events.append((args, kwargs))
+
+    monkeypatch.setattr(transaction_main, "logger", logger)
+    monkeypatch.setattr(transaction_main, "emit_operational_event", fake_emit_operational_event)
+
+    transaction_main._mark_loop_success("ledger_posting_reconciliation", domain="ledger")
+    transaction_main._mark_loop_lock_skipped("ledger_posting_reconciliation", domain="ledger")
+
+    assert operational_events == []
+    assert logger.debugs == [
+        ("ledger_posting_reconciliation_tick_completed", {"domain": "ledger"}),
+        ("ledger_posting_reconciliation_tick_skipped_lock_held", {"domain": "ledger"}),
+    ]
+
+
+def test_transaction_worker_failure_remains_operational_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = _LoggerStub()
+    operational_events: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_emit_operational_event(*args: object, **kwargs: object) -> None:
+        operational_events.append((args, kwargs))
+
+    monkeypatch.setattr(transaction_main, "logger", logger)
+    monkeypatch.setattr(transaction_main, "emit_operational_event", fake_emit_operational_event)
+
+    transaction_main._mark_loop_failure("ledger_posting_reconciliation", domain="ledger", exc=RuntimeError("boom"))
+
+    assert len(operational_events) == 1
+    args, kwargs = operational_events[0]
+    assert args == ("ledger_posting_reconciliation_tick_failed",)
+    assert kwargs["severity"] == "high"
+    assert kwargs["domain"] == "ledger"
+    assert kwargs["details"] == {"error_type": "RuntimeError"}
+    assert kwargs["logger"] is logger
+
+
+@pytest.mark.asyncio
+async def test_receipt_stream_worker_claims_stale_on_timer_and_uses_configured_block_ms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream = _TimedLoopStreamStub()
+    times = iter([0.0, 10.0, 20.0])
+
+    monkeypatch.setattr(receipt_main, "time", SimpleNamespace(monotonic=lambda: next(times)))
+    monkeypatch.setattr(receipt_main.settings, "receipt_worker_stream_block_ms", 3456)
+    monkeypatch.setattr(receipt_main, "RedisStreamConsumer", lambda *args, **kwargs: stream)
+    monkeypatch.setattr(receipt_main, "setup_receipt_worker_consumers", lambda: (object(), object()))
+
+    with pytest.raises(asyncio.CancelledError):
+        await receipt_main._run_receipt_stream_worker(asyncio.Event())
+
+    assert stream.claim_calls == 1
+    assert stream.block_values == [3456, 3456, 3456]
 
 
 @pytest.mark.asyncio
