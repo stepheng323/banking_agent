@@ -1,15 +1,10 @@
 import re
 from typing import Any
 
+from banking.support.reference_selection import is_strict_receipt_selector_message
+
 _RECEIPT_REQUEST_RE = re.compile(
     r"\b(?:receipt|proof\s+of\s+payment|payment\s+receipt|show\s+receipt|send\s+receipt)\b",
-    re.IGNORECASE,
-)
-_RECEIPT_SELECTOR_FOLLOWUP_RE = re.compile(
-    r"\b(?:both|all|every|except|excluding|only|just|other(?:\s+one)?|remaining|rest|"
-    r"first|second|third|fourth|fifth|last)\b|"
-    r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?\b|"
-    r"\bone\s+for\b",
     re.IGNORECASE,
 )
 
@@ -26,4 +21,4 @@ def _looks_like_receipt_request(message_text: str) -> bool:
 
 
 def _looks_like_receipt_selector_followup(message_text: str) -> bool:
-    return bool(_RECEIPT_SELECTOR_FOLLOWUP_RE.search(message_text or ""))
+    return is_strict_receipt_selector_message(message_text or "")

@@ -61,6 +61,9 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_router_stag
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_unsupported_capability_stage import (
     _stage_semantic_unsupported_capability,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.stale_context_arbitration import (
+    _stage_stale_context_arbitration,
+)
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.support_context_stages import (
     _stage_recent_transaction_support_request,
     _stage_support_context_followup,
@@ -202,6 +205,17 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
         may_call_llm=False,
         description="Route deterministic data-plan catalog lookup requests.",
         eligibility=all_of(no_live_pending_interrupt, no_quote, phrase_heavy_fastpath_allowed),
+    ),
+    GateHandlerSpec(
+        id="stale_context_arbitration",
+        layer=GateLayer.CONTEXT_FOLLOWUPS,
+        priority=5,
+        handler=_stage_stale_context_arbitration,
+        owner="semantic_router",
+        outcome_kind=GateOutcomeKind.TASK_DISPATCH,
+        may_call_llm=True,
+        description="Semantically arbitrate non-terse turns while stale context is active.",
+        eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state, no_quote, task_planner_available),
     ),
     GateHandlerSpec(
         id="recent_transaction_support_request",

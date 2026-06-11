@@ -1,6 +1,7 @@
 """Support context manager for Redis persistence."""
 
 import json
+import time
 
 import redis.asyncio as redis
 
@@ -22,6 +23,22 @@ class SupportContextManager:
     def _key(self, user_id: str) -> str:
         return f"{SUPPORT_CONTEXT_PREFIX}{user_id}"
 
+    @staticmethod
+    def _prune_expired_ephemeral_context(context: SupportContext) -> bool:
+        now = time.time()
+        changed = False
+        pending_reference = context.pending_reference
+        if pending_reference is not None and pending_reference.expires_at_ts is not None:
+            if pending_reference.expires_at_ts <= now:
+                context.pending_reference = None
+                changed = True
+        receipt_thread_state = context.receipt_thread_state
+        if receipt_thread_state is not None and receipt_thread_state.expires_at_ts is not None:
+            if receipt_thread_state.expires_at_ts <= now:
+                context.receipt_thread_state = None
+                changed = True
+        return changed
+
     async def get(self, user_id: str) -> SupportContext:
         """Get support context for a user. Returns empty context if not found."""
         try:
@@ -36,7 +53,10 @@ class SupportContextManager:
                     except ValueError:
                         parsed["last_issue_intent"] = None
 
-                return SupportContext(**parsed)
+                context = SupportContext(**parsed)
+                if self._prune_expired_ephemeral_context(context):
+                    await self.save(user_id, context)
+                return context
 
             return SupportContext()
 

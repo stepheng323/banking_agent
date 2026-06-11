@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 SCHEMA_VERSION = 1
+EPHEMERAL_CONTEXT_TTL_SECONDS = 900
 
 
 class SupportIntent(str, Enum):
@@ -96,6 +97,7 @@ class PendingReferenceState(BaseModel):
     candidates: list[SupportReferenceCandidate] = Field(default_factory=list)
     reminder: str | None = None
     intent: str | None = None
+    expires_at_ts: float | None = None
 
 
 class ReceiptBatchSelectionRef(BaseModel):
@@ -126,6 +128,7 @@ class ReceiptBatchThreadState(BaseModel):
     last_selector_result_ids: list[str] = Field(default_factory=list)
     last_served_transaction_ids: list[str] = Field(default_factory=list)
     reminder: str | None = None
+    expires_at_ts: float | None = None
 
 
 class SupportContext(BaseModel):

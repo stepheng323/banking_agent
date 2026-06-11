@@ -148,7 +148,14 @@ async def test_data_plan_query_preempts_stale_data_plan_context_frame() -> None:
 @pytest.mark.asyncio
 async def test_account_balance_query_preempts_stale_account_list_context_frame() -> None:
     planner = _RouteTurnPlanner(
-        SemanticRouteDecision(decision="direct_reply", response="should not be used"),
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.94,
+            detected_language="English",
+            reason="fresh account balance query wins over stale account list frame",
+        ),
         frame_followup_decision=ContextFrameFollowupDecision(
             decision="show_details",
             confidence=0.96,
@@ -180,14 +187,13 @@ async def test_account_balance_query_preempts_stale_account_list_context_frame()
 
     updates = await session_gate_direct_path(state, config)
 
+    assert planner.route_calls == 1
     assert planner.frame_followup_calls == 0
-    assert updates["semantic_path_shape"] == "balance_direct"
-    assert updates["route_source"] == "account_balance_guard"
-    task = updates["tasks"]["direct_account_balance"]
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["route_source"] == "semantic_router"
+    task = updates["tasks"]["direct_account"]
     assert task.type == "account"
-    assert task.payload["action"] == "check_balance"
     assert task.payload["message"] == "Show my first bank balance"
-    assert "skip_parse" not in task.payload
 
 
 @pytest.mark.asyncio
@@ -1734,15 +1740,15 @@ async def test_gate_routes_recent_batch_receipt_followup_to_support_without_plan
 async def test_gate_routes_captioned_receipt_image_instruction_to_transfer_not_receipt_support() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
-            decision="domain_query",
+            decision="domain_transfer",
             mode="new",
-            target_intent="query",
+            target_intent="transfer",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
-            expected_transaction_executors=[],
-            reason="should not run for captioned media transfer",
+            expected_transaction_executors=["transfer"],
+            reason="captioned media contains a fresh money-move instruction",
         )
     )
     redis_client = _TrackingLocaleRedis()
@@ -1784,11 +1790,13 @@ async def test_gate_routes_captioned_receipt_image_instruction_to_transfer_not_r
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_owner"] == "guardrail"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
     assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "domain_transfer"
+    assert updates["route_source"] == "semantic_router"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert "send 21k" in task.payload["message"]
@@ -1853,7 +1861,7 @@ async def test_gate_routes_active_receipt_thread_followup_to_support_without_rec
         phone_number="2348162511023",
         channel="telegram",
         channel_identity="927331985",
-        last_message_text="Also for the other one",
+        last_message_text="other one",
         loaded_context={"language": "en", "user_id": "u_gate_receipt_thread_1"},
     )
     config: RunnableConfig = {
@@ -1870,6 +1878,216 @@ async def test_gate_routes_active_receipt_thread_followup_to_support_without_rec
     assert task.type == "support"
     assert task.payload["intent"] == "receipt_request"
     assert task.payload["receipt_thread_followup"] is True
+
+
+async def test_gate_active_receipt_thread_does_not_steal_fresh_mixed_transaction() -> None:
+    redis_client = _TrackingLocaleRedis()
+    redis_client.store["support_context:u_gate_receipt_thread_fresh_mixed"] = json.dumps(
+        {
+            "receipt_thread_state": {
+                "async_group_id": "group-1",
+                "candidates": [
+                    {
+                        "transaction_id": "tx-1",
+                        "ordinal": 1,
+                        "task_type": "transfer",
+                        "amount": 10000,
+                        "recipient_name": "Tolu",
+                        "recipient_resolved_name": "Tolu Adebayo",
+                        "recipient_label": "Tolu Adebayo",
+                        "bank_display": "Access Bank",
+                        "account_display": "2010000001",
+                        "final_status": "success",
+                        "receipt_allowed": True,
+                    },
+                    {
+                        "transaction_id": "tx-2",
+                        "ordinal": 2,
+                        "task_type": "airtime",
+                        "amount": 1000,
+                        "recipient_name": "Airtime",
+                        "recipient_label": "Airtime",
+                        "final_status": "success",
+                        "receipt_allowed": False,
+                    },
+                ],
+                "served_transaction_ids": ["tx-1"],
+                "remaining_transaction_ids": ["tx-2"],
+                "last_selector_result_ids": ["tx-1"],
+                "last_served_transaction_ids": ["tx-1"],
+                "reminder": "Reply with 1 or 2.",
+            }
+        }
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_airtime",
+            mode="new",
+            target_intent="airtime",
+            confidence=0.93,
+            detected_language="English",
+            expected_transaction_executors=["airtime"],
+            reason="router single-domain miss",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_receipt_thread_fresh_mixed",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="send 20k to adebayo and buy me airtime of 2k",
+        loaded_context={"language": "en", "user_id": "u_gate_receipt_thread_fresh_mixed"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates.get("direct_path_triggered") is None
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_handoff"
+    assert updates["route_source"] == "planner"
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
+    assert "tasks" not in updates
+
+
+async def test_gate_active_receipt_thread_does_not_steal_acknowledged_fresh_batch_transfer() -> None:
+    redis_client = _TrackingLocaleRedis()
+    redis_client.store["support_context:u_gate_receipt_thread_ack_batch"] = json.dumps(
+        {
+            "receipt_thread_state": {
+                "async_group_id": "group-1",
+                "candidates": [
+                    {
+                        "transaction_id": "tx-1",
+                        "ordinal": 1,
+                        "task_type": "transfer",
+                        "amount": 20000,
+                        "recipient_name": "Tolu",
+                        "recipient_resolved_name": "Tolu Adebayo",
+                        "recipient_label": "Tolu Adebayo",
+                        "bank_display": "Access Bank",
+                        "account_display": "2010000001",
+                        "final_status": "success",
+                        "receipt_allowed": True,
+                    },
+                    {
+                        "transaction_id": "tx-2",
+                        "ordinal": 2,
+                        "task_type": "airtime",
+                        "amount": 2000,
+                        "recipient_name": "Airtime",
+                        "recipient_label": "Airtime",
+                        "final_status": "success",
+                        "receipt_allowed": False,
+                    },
+                ],
+                "served_transaction_ids": ["tx-1"],
+                "remaining_transaction_ids": ["tx-2"],
+                "last_selector_result_ids": ["tx-1"],
+                "last_served_transaction_ids": ["tx-1"],
+                "reminder": "Reply with 1 or 2.",
+            }
+        }
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_mixed",
+            confidence=0.93,
+            detected_language="English",
+            expected_transaction_executors=["transfer"],
+            reason="fresh batch transfer wins over stale receipt thread",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_receipt_thread_ack_batch",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="Oh very good send 40k to mom and 30k to ay",
+        loaded_context={"language": "en", "user_id": "u_gate_receipt_thread_ack_batch"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_mixed"
+    assert updates["route_source"] == "planner"
+    saved_support_context = json.loads(redis_client.store["support_context:u_gate_receipt_thread_ack_batch"])
+    assert saved_support_context["pending_reference"] is None
+    assert saved_support_context["receipt_thread_state"] is None
+
+
+async def test_gate_active_support_pending_reference_does_not_steal_fresh_transfer() -> None:
+    redis_client = _TrackingLocaleRedis()
+    redis_client.store["support_context:u_gate_support_pending_fresh_transfer"] = json.dumps(
+        {
+            "pending_reference": {
+                "source": "recent_batch",
+                "intent": "receipt_request",
+                "reminder": "Reply with 1 or 2.",
+                "candidates": [
+                    {
+                        "transaction_id": "tx-1",
+                        "ordinal": 1,
+                        "task_type": "transfer",
+                        "amount": 10000,
+                        "recipient_name": "Tolu",
+                        "recipient_resolved_name": "Tolu Adebayo",
+                        "recipient_label": "Tolu Adebayo",
+                        "bank_display": "Access Bank",
+                        "account_display": "2010000001",
+                        "final_status": "success",
+                        "receipt_allowed": True,
+                    }
+                ],
+            }
+        }
+    )
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.94,
+            detected_language="English",
+            expected_transaction_executors=[],
+            reason="fresh transfer wins over pending support reference",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_support_pending_fresh_transfer",
+        phone_number="2348162511023",
+        channel="whatsapp",
+        last_message_text="send 5k to adebayo",
+        loaded_context={"language": "en", "user_id": "u_gate_support_pending_fresh_transfer"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_decision"] == "domain_transfer"
+    assert updates["routing_target_domain"] == "transfer"
+    assert "direct_transfer" in updates["tasks"]
+    saved_support_context = json.loads(redis_client.store["support_context:u_gate_support_pending_fresh_transfer"])
+    assert saved_support_context["pending_reference"] is None
+    assert saved_support_context["receipt_thread_state"] is None
 
 
 async def test_gate_handles_capitalized_greeting_meta_before_query_routing() -> None:
@@ -3891,10 +4109,13 @@ async def test_gate_context_frame_start_new_task_falls_through_to_fresh_benefici
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.frame_followup_calls == 1
-    assert planner.route_calls == 0
+    assert planner.frame_followup_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_beneficiary_domain"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_decision"] == "domain_beneficiary"
+    assert updates["route_source"] == "semantic_router"
     task = updates["tasks"]["direct_beneficiary"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "list_beneficiaries"
@@ -3904,15 +4125,15 @@ async def test_gate_context_frame_start_new_task_falls_through_to_fresh_benefici
 async def test_gate_context_frame_does_not_steal_fresh_transfer_request() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
-            decision="domain_beneficiary",
+            decision="domain_transfer",
             mode="new",
-            target_intent="beneficiary",
+            target_intent="transfer",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
-            expected_transaction_executors=[],
-            reason="would show beneficiary details if frame follow-up stole the transfer",
+            expected_transaction_executors=["transfer"],
+            reason="fresh money move should outrank stale beneficiary frame",
         ),
         frame_followup_decision=ContextFrameFollowupDecision(
             decision="lookup_entity",
@@ -3954,14 +4175,13 @@ async def test_gate_context_frame_does_not_steal_fresh_transfer_request() -> Non
     updates = await session_gate_direct_path(state, config)
 
     assert planner.frame_followup_calls == 0
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
     assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "fresh_transfer_command"
-    assert updates["route_source"] == "transfer_domain_guard"
-    assert updates["routing_heuristic_type"] == "slot_parser"
-    assert updates["routing_heuristic_name"] == "fresh_transfer_command"
+    assert updates["routing_decision"] == "domain_transfer"
+    assert updates["route_source"] == "semantic_router"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 10k to tolu adebayo"
@@ -5029,14 +5249,14 @@ async def test_gate_routes_support_reference_followup_before_query() -> None:
 async def test_gate_routes_support_detail_followup_before_query() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
-            decision="domain_query",
+            decision="domain_support",
             mode="new",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not run",
+            reason="active support context detail follow-up",
         )
     )
     redis = _RedisWithSupportContext(
@@ -5061,9 +5281,11 @@ async def test_gate_routes_support_detail_followup_before_query() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_context_direct"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_decision"] == "domain_support"
     assert updates["tasks"]["direct_support"].type == "support"
 
 
@@ -5203,14 +5425,14 @@ async def test_gate_contextual_worker_acknowledgement_handles_multilingual_failu
 async def test_gate_support_retry_followup_still_routes_to_support_context() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
-            decision="domain_query",
+            decision="domain_support",
             mode="new",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not run",
+            reason="active support context retry follow-up",
         )
     )
     redis = _RedisWithSupportContext(
@@ -5235,9 +5457,11 @@ async def test_gate_support_retry_followup_still_routes_to_support_context() -> 
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "support_context_direct"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_decision"] == "domain_support"
     assert updates["tasks"]["direct_support"].type == "support"
 
 
@@ -6702,7 +6926,16 @@ async def test_gate_resume_prompt_uses_guarded_classifier_fallback_without_seman
 
 
 async def test_gate_resume_prompt_does_not_capture_fresh_transfer_request() -> None:
-    planner = _RouteTurnPlanner(SemanticRouteDecision(decision="direct_reply", response="semantic path"))
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            confidence=0.96,
+            detected_language="English",
+            expected_transaction_executors=["transfer"],
+            reason="fresh transfer request during stale resume prompt",
+        )
+    )
     state = OrchestratorState(
         user_id="u_gate_resume_fresh",
         phone_number="2348000000102",
@@ -6716,6 +6949,7 @@ async def test_gate_resume_prompt_does_not_capture_fresh_transfer_request() -> N
     updates = await session_gate_direct_path(state, config)
 
     assert updates["semantic_path_shape"] != "resume_session_direct"
+    assert planner.route_calls == 1
     assert next(iter(updates["tasks"].values())).type == "transfer"
 
 
@@ -6762,6 +6996,10 @@ class _TrackingLocaleRedis(_TrackingRedis):
 
     async def set(self, key: str, value: str, ex: int | None = None) -> None:
         self.set_calls.append((key, value, ex))
+        self.store[key] = value
+
+    async def setex(self, key: str, ttl: int, value: str) -> None:
+        self.set_calls.append((key, value, ttl))
         self.store[key] = value
 
     async def get(self, key: str) -> str | None:
@@ -7645,9 +7883,7 @@ async def test_gate_obvious_mixed_transaction_sets_expected_executors_without_se
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
 
 
-async def test_gate_obvious_mixed_transfer_airtime_bypasses_semantic_router_and_falls_through_to_planner() -> (
-    None
-):
+async def test_gate_obvious_mixed_transfer_airtime_bypasses_semantic_router_and_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_airtime",

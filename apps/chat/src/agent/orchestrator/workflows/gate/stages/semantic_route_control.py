@@ -42,13 +42,17 @@ def append_routing_hints(route_context: str, hints: list[dict[str, str]]) -> str
     return f"{route_context}\n" + "\n".join(lines)
 
 
+def _has_support_issue_hint(ctx: GateContext) -> bool:
+    return any(hint.get("domain") == "support" and hint.get("source") != "stale_context" for hint in ctx.routing_hints)
+
+
 def support_hint_veto_updates(
     ctx: GateContext,
     *,
     canonical_decision: str | None,
     canonical_mode: str | None,
 ) -> dict[str, Any] | None:
-    if not ctx.has_routing_hint("support") or canonical_decision not in {
+    if not _has_support_issue_hint(ctx) or canonical_decision not in {
         "domain_query",
         "direct_reply",
         "direct_context_answer",

@@ -38,6 +38,7 @@ _GATE_STAGE_NAMES = (
     "_stage_resume_prompt_action",
     "_stage_data_plan_reference_purchase",
     "_stage_data_plan_query",
+    "_stage_stale_context_arbitration",
     "_stage_recent_transaction_support_request",
     "_stage_support_issue_request",
     "_stage_context_frame_followup",

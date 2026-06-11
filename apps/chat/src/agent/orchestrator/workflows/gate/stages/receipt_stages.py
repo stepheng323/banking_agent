@@ -7,6 +7,9 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.receipt_request
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _classify_obvious_transfer_request,
+    _is_obvious_airtime_request,
+    _is_obvious_data_request,
+    _obvious_mixed_transaction_executors,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
@@ -40,11 +43,21 @@ def _is_captioned_media_transfer_request(message_text: str) -> bool:
     return _classify_obvious_transfer_request(message_text) in _CAPTION_TRANSFER_REASONS
 
 
+def _is_fresh_transaction_request(message_text: str) -> bool:
+    return bool(
+        _obvious_mixed_transaction_executors(message_text)
+        or _classify_obvious_transfer_request(message_text)
+        or _is_obvious_airtime_request(message_text)
+        or _is_obvious_data_request(message_text)
+    )
+
+
 async def _stage_receipt_thread_followup(ctx: GateContext) -> dict[str, Any] | None:
     """Active receipt thread support dispatch."""
     if (
         ctx.live_pending_interrupt
         or not ctx.redis_client
+        or _is_fresh_transaction_request(ctx.message_text)
         or _is_captioned_media_transfer_request(ctx.message_text)
         or not _looks_like_receipt_selector_followup(ctx.message_text)
     ):

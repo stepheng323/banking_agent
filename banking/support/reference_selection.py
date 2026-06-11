@@ -1,12 +1,14 @@
 """Recent-batch support reference and receipt selection helpers."""
 
 import re
+import time
 from typing import Literal
 
 from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
 from banking.support.models import (
+    EPHEMERAL_CONTEXT_TTL_SECONDS,
     PendingReferenceState,
     ReceiptBatchSelection,
     ReceiptBatchSelectionRef,
@@ -21,6 +23,25 @@ _SelectionMode = Literal["all", "subset", "remainder"]
 
 _ORDINAL_RE = re.compile(r"\b(?:(first|second|third|fourth|fifth|last)|([1-5])(?:st|nd|rd|th)?)\b", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)")
+_AMOUNT_ONLY_SELECTOR_RE = re.compile(r"^(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?$", re.IGNORECASE)
+_ORDINAL_ONLY_SELECTOR_RE = re.compile(
+    r"^(?:the\s+)?(?:(?:first|second|third|fourth|fifth|last)(?:\s+one)?|[1-5](?:st|nd|rd|th)?)$",
+    re.IGNORECASE,
+)
+_RECEIPT_ONLY_SELECTOR_RE = re.compile(
+    r"^(?:send\s+)?(?:the\s+)?(?:receipt|receipts|proof|proof\s+of\s+payment)$",
+    re.IGNORECASE,
+)
+_EXPLICIT_RECEIPT_SELECTION_RE = re.compile(
+    r"\b(?:receipt|receipts|proof\s+of\s+payment|payment\s+proof)\b",
+    re.IGNORECASE,
+)
+_REFERENCE_SELECTOR_ACTION_BLOCK_RE = re.compile(
+    r"\b(?:send|transfer|pay|buy|recharge|top\s*up|topup|load|airtime|data|bundle|"
+    r"balance|account|accounts|beneficiar(?:y|ies)|transaction|transactions|history|"
+    r"how|what|when|where|why|show|list|check|get|fetch)\b",
+    re.IGNORECASE,
+)
 _ALL_RECEIPTS_RE = re.compile(r"\b(?:all|every)\b.*\breceipts?\b|\breceipts?\b.*\b(?:all|every)\b", re.IGNORECASE)
 _BOTH_RECEIPTS_RE = re.compile(r"\b(?:both|the two(?:\s+of\s+them)?|two of them)\b", re.IGNORECASE)
 _OTHER_ONE_RE = re.compile(r"\b(?:the other one|other one|the other)\b", re.IGNORECASE)
@@ -84,6 +105,79 @@ def amounts_from_message(message: str) -> list[float]:
         if amount > 0 and amount not in amounts:
             amounts.append(amount)
     return amounts
+
+
+def _normalized_selector_text(message: str) -> str:
+    return re.sub(r"\s+", " ", (message or "").strip()).strip(" \t\r\n.,;:!?\"'()[]{}")
+
+
+def is_amount_only_selector_message(message: str) -> bool:
+    """Return true when the whole message is just an amount selector."""
+    return bool(_AMOUNT_ONLY_SELECTOR_RE.fullmatch(_normalized_selector_text(message)))
+
+
+def is_strict_receipt_selector_message(message: str) -> bool:
+    """Return true for terse receipt-thread selectors only."""
+    normalized = _normalized_selector_text(message)
+    if not normalized or len(normalized) > 80:
+        return False
+    if is_amount_only_selector_message(normalized):
+        return True
+    if _ORDINAL_ONLY_SELECTOR_RE.fullmatch(normalized):
+        return True
+    if _RECEIPT_ONLY_SELECTOR_RE.fullmatch(normalized):
+        return True
+    if re.fullmatch(r"(?:both|all|every)(?:\s+(?:of\s+)?(?:them|those|receipts?))?", normalized, re.IGNORECASE):
+        return True
+    if re.fullmatch(
+        r"(?:the\s+)?(?:other(?:\s+one)?|remaining(?:\s+ones?)?|rest(?:\s+of\s+them)?)",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return True
+    only_match = re.fullmatch(r"(?:only|just)\s+(?P<tail>.+)", normalized, re.IGNORECASE)
+    if only_match:
+        tail = str(only_match.group("tail") or "")
+        return is_strict_receipt_selector_message(tail)
+    return False
+
+
+def is_strict_reference_selector_message(message: str) -> bool:
+    """Return true for terse pending-reference selectors.
+
+    This is intentionally broader than receipt selection so a user can answer a
+    pending support clarification with a short recipient label like "Tolu".
+    """
+    normalized = _normalized_selector_text(message)
+    if not normalized or len(normalized) > 80:
+        return False
+    if is_strict_receipt_selector_message(normalized):
+        return True
+    if _REFERENCE_SELECTOR_ACTION_BLOCK_RE.search(normalized):
+        return False
+    tokens = re.findall(r"[\w']+", normalized, re.UNICODE)
+    return 0 < len(tokens) <= 4
+
+
+def is_receipt_selection_message(message: str) -> bool:
+    """Return true when a message may safely select recent-batch receipts."""
+    normalized = _normalized_selector_text(message)
+    return is_strict_receipt_selector_message(normalized) or bool(_EXPLICIT_RECEIPT_SELECTION_RE.search(normalized))
+
+
+def _can_attempt_receipt_selection(message: str) -> bool:
+    normalized = _normalized_selector_text(message)
+    if is_receipt_selection_message(normalized):
+        return True
+    if _OTHER_ONE_RE.search(normalized) or _REMAINING_RE.search(normalized):
+        return True
+    if _ALL_EXCEPT_RE.search(normalized):
+        return True
+    only_match = _ONLY_SELECTION_RE.search(normalized)
+    if only_match:
+        tail = str(only_match.group("tail") or "").strip()
+        return bool(tail)
+    return False
 
 
 def candidate_label(candidate: SupportReferenceCandidate) -> str:
@@ -217,6 +311,7 @@ def build_receipt_thread_state(
         last_selector_result_ids=list(dict.fromkeys(last_selector_result_ids or [])),
         last_served_transaction_ids=list(dict.fromkeys(last_served_transaction_ids or [])),
         reminder=build_reference_reminder(eligible_receipt_candidates(candidates), locale),
+        expires_at_ts=time.time() + EPHEMERAL_CONTEXT_TTL_SECONDS,
     )
 
 
@@ -307,6 +402,7 @@ def pending_reference_state(
         candidates=candidates,
         reminder=build_reference_reminder(candidates, locale),
         intent=intent.value if intent is not None else None,
+        expires_at_ts=time.time() + EPHEMERAL_CONTEXT_TTL_SECONDS,
     )
 
 
@@ -329,6 +425,9 @@ def select_recent_batch_candidates(
         if not thread_state or candidate.transaction_id in thread_state.remaining_transaction_ids
     ]
     normalized_message = message.strip()
+    if not _can_attempt_receipt_selection(normalized_message):
+        return [], None, None, None
+
     all_except_match = _ALL_EXCEPT_RE.search(normalized_message)
 
     if _OTHER_ONE_RE.search(normalized_message):
@@ -443,7 +542,11 @@ __all__ = [
     "candidate_label",
     "eligible_receipt_candidates",
     "is_all_receipts_request",
+    "is_amount_only_selector_message",
     "is_both_receipts_request",
+    "is_receipt_selection_message",
+    "is_strict_receipt_selector_message",
+    "is_strict_reference_selector_message",
     "leg_to_candidate",
     "match_reference_candidates",
     "normalize_match_text",

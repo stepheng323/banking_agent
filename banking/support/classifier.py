@@ -3,6 +3,7 @@
 import json
 import re
 from dataclasses import dataclass
+from time import perf_counter
 
 from langchain_core.runnables import Runnable
 
@@ -17,6 +18,7 @@ from banking.support.models import (
 )
 from banking.support.prompts.classifier import SUPPORT_CLASSIFIER_PROMPT
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import record_llm_call
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -83,6 +85,7 @@ class SupportClassifier:
         Returns ClassificationResult with intent (or None if not support-related).
         """
         prompt = SUPPORT_CLASSIFIER_PROMPT.format(message=message)
+        started_at = perf_counter()
 
         try:
             response = await ainvoke_with_config(
@@ -95,7 +98,22 @@ class SupportClassifier:
                 )
                 or None,
             )
+            duration_ms = (perf_counter() - started_at) * 1000
             content = response.content if hasattr(response, "content") else str(response)
+            model = getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None)
+            record_llm_call(
+                event_name="support_classifier_llm_call",
+                duration_ms=duration_ms,
+                model=model,
+                response_type="SupportClassificationResult",
+                system_chars=len(SUPPORT_CLASSIFIER_PROMPT),
+                user_chars=len(message),
+                output_json_chars=len(content),
+                output_token_estimate=max(1, round(len(content) / 4)) if content else 0,
+                extra_fields={
+                    "prompt_chars": len(prompt),
+                },
+            )
 
             result, should_fallback = self._parse_response(content, message)
             logger.info(
@@ -118,6 +136,20 @@ class SupportClassifier:
             return result
 
         except Exception as e:
+            duration_ms = (perf_counter() - started_at) * 1000
+            model = getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None)
+            record_llm_call(
+                event_name="support_classifier_llm_call",
+                duration_ms=duration_ms,
+                model=model,
+                response_type="SupportClassificationResult",
+                system_chars=len(SUPPORT_CLASSIFIER_PROMPT),
+                user_chars=len(message),
+                error_type=type(e).__name__,
+                extra_fields={
+                    "prompt_chars": len(prompt),
+                },
+            )
             logger.error("support_classification_failed", error=str(e))
             if fallback := self._rule_based_fallback(message):
                 logger.info(
@@ -320,3 +352,8 @@ class SupportClassifier:
     def is_support_intent(self, result: ClassificationResult) -> bool:
         """Check if classification result is a valid support intent."""
         return result.intent is not None and result.confidence >= 0.5
+
+
+def classify_support_intent_deterministic(message: str) -> ClassificationResult | None:
+    """Return a high-confidence rule-based support classification when the text is explicit."""
+    return SupportClassifier._rule_based_fallback(message)

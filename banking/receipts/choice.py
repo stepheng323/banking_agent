@@ -9,7 +9,7 @@ from shared.messaging.intents import ShowOptions
 
 RECEIPT_IMAGE_ACTION_ID = "rcpt:send"
 RECEIPT_IMAGE_ACTION = "generate_receipt_image"
-RECEIPT_IMAGE_ACTION_TTL_DAYS = 3650
+RECEIPT_IMAGE_ACTION_TTL_DAYS = 1
 
 
 def parse_receipt_choice_action(text: str) -> bool:

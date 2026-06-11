@@ -18,7 +18,10 @@ from banking.transfers.extraction.parsers import parse_amount_input
 from shared.utils.bank_aliases import display_bank_name
 
 SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
-_POLITE_PREFIX = r"(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+_POLITE_PREFIX = (
+    r"(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly|"
+    r"oh|very\s+good|good|great|nice|cool|alright|thanks|thank\s+you)\s+)*"
+)
 _TRANSFER_VERB_PATTERN = r"(?:send|transfer|pay|remit)"
 _SOURCE_CUE_PATTERN = r"(?:use|using|from|with|debit|via)"
 _TRANSFER_DIRECT_PREFIX_RE = re.compile(
@@ -241,9 +244,7 @@ def _match_unique_source_bank(accounts: list[dict[str, Any]], source_text: str) 
         return None
 
     unique_accounts = _unique_account_entries(accounts)
-    matches = [
-        account for account in unique_accounts if find_account_by_bank_name([account], source) is not None
-    ]
+    matches = [account for account in unique_accounts if find_account_by_bank_name([account], source) is not None]
     if len(matches) != 1:
         return None
 

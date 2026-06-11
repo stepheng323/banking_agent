@@ -19,6 +19,7 @@ from banking.support.reference_selection import (
     build_reference_prompt,
     build_reference_reminder,
     eligible_receipt_candidates,
+    is_strict_reference_selector_message,
     leg_to_candidate,
     match_reference_candidates,
     pending_reference_state,
@@ -127,6 +128,9 @@ class SupportReferenceFlow:
             reminder = pending.reminder or build_reference_reminder(pending.candidates, locale)
             await self._context_manager.save(user_id, support_ctx)
             return None, SupportResult(outcome=SupportOutcome.NEEDS_INPUT, response=reminder)
+
+        if not is_strict_reference_selector_message(message):
+            return None, None
 
         matches = match_reference_candidates(message=message, candidates=pending.candidates)
         if len(matches) != 1:

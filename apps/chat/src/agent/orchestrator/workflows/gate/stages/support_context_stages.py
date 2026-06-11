@@ -17,6 +17,7 @@ from banking.intent.routing_signals import (
 from banking.presentation.i18n.renderer import render_message
 from banking.support.classifier import classify_support_intent_deterministic
 from banking.support.context_manager import SupportContextManager
+from banking.support.reference_selection import is_strict_reference_selector_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -120,9 +121,7 @@ def _looks_like_support_context_followup(message_text: str, support_ctx: Any) ->
     last_support_step = getattr(support_ctx, "last_support_step", None)
     last_transaction_ref = getattr(support_ctx, "last_transaction_ref", None)
 
-    if pending_reference is not None and (
-        _SUPPORT_CONTEXT_REFERENCE_RE.search(normalized) or _SUPPORT_CONTEXT_ACTION_RE.search(normalized)
-    ):
+    if pending_reference is not None and is_strict_reference_selector_message(normalized):
         return True
     if last_support_step == "asked_for_reference" and _SUPPORT_CONTEXT_REFERENCE_RE.search(normalized):
         return True
