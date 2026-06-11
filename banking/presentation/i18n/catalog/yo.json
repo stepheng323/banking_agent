@@ -139,9 +139,9 @@
     "need_tx_reference": "Mo nilo itọkasi transaction lati ran ọ lọwọ pẹlu eyi.",
     "unavailable": "Mi o le wọle si support lọwọlọwọ.",
     "escalation_unavailable": "Mo n fi sii lọ si support, ṣugbọn iṣẹ ticket ko si lọwọlọwọ.",
-    "unable_to_process": "Unable to process.",
+    "unable_to_process": "Ko le ṣiṣẹ lori rẹ.",
     "common": {
-      "reason": "Reason: {reason}"
+      "reason": "Idi: {reason}"
     },
     "reference": {
       "which_transaction": "Transaction wo ni o tumo si?",
@@ -151,12 +151,12 @@
       "reply_with_range": "Fesi pelu 1 tabi {count}."
     },
     "failure": {
-      "success_no_failure": "• This transfer was actually successful. No failure occurred.",
-      "reason_not_provided": "The bank did not provide a specific reason.",
-      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not failed.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
-      "debited_failed": "× This ₦{amount} transfer failed after your account was debited.\nReason: {reason}\nA refund is being processed.",
-      "not_debited_failed": "× This ₦{amount} transfer failed.\nReason: {reason}\nNo money was debited from your account.",
-      "unknown_reason_contact": "Unable to determine failure reason. Please contact support.",
+      "success_no_failure": "• This transfer was actually ṣaṣeyọri. No failure occurred.",
+      "reason_not_provided": "Banki ko pese idi pato.",
+      "marked_processing": "I found the ₦{amount} transfer to {recipient}, but our records currently show it as {status}, not kuna.\nKnown reason: not available until the bank confirms a failure.\nNext action: wait for confirmation, then ask again if it changes or remains stuck.",
+      "debited_failed": "× This ₦{amount} transfer kuna after your account ti debit.\nReason: {reason}\nA refund n processed.",
+      "not_debited_failed": "× This ₦{amount} transfer kuna.\nReason: {reason}\nNo money ti debit from your account.",
+      "unknown_reason_contact": "Ko le determine failure reason. Please contact support.",
       "guidance": {
         "provider_unavailable": "O le tun gbiyanju bayi, tabi duro die ti provider ba tun n ni wahala.",
         "provider_declined": "Provider ko gba a. O le tun gbiyanju, sugbon ti o ba tun sele, kan si support.",
@@ -167,27 +167,27 @@
       }
     },
     "wrong_debit": {
-      "success_debit_correct": "• This transfer was successful. The debit was correct.",
-      "failed_but_debited": "⚠ Your account was debited ₦{amount}, but the transfer did not complete.\nThis is being reversed automatically.\nCurrent status: Reversal in progress",
-      "failed_not_debited": "× The transfer failed, but no money was debited from your account.",
-      "pending_processing": "○ This transfer is still processing.\nIf it fails, any debit will be reversed automatically.",
-      "investigating": "We're investigating this debit issue."
+      "success_debit_correct": "• This transfer was ṣaṣeyọri. The debit was correct.",
+      "failed_but_debited": "⚠ Your account ti debit ₦{amount}, but the transfer did not complete.\nThis n reversed automatically.\nCurrent status: Reversal in progress",
+      "failed_not_debited": "× The transfer kuna, but no money ti debit from your account.",
+      "pending_processing": "○ This transfer ṣi wa n ṣiṣẹ.\nIf it fails, any debit yoo ṣe reversal automatically.",
+      "investigating": "A n ṣe iwadii debit yii."
     },
     "reversal": {
-      "success_no_reversal": "• This transfer was successful. It can't be reversed or refunded from here.",
-      "reversed": "• Your ₦{amount} has been reversed to your account.",
-      "no_refund_needed": "No money was debited, so no refund is needed.",
-      "completed": "• The ₦{amount} refund has been completed.",
-      "processing": "○ The ₦{amount} reversal is being processed.\nRefunds typically return to your account within 24-48 hours.",
-      "needs_escalation": "⚠ You were debited ₦{amount} and a reversal is needed.\nEscalating this to our support team.",
-      "unknown": "Unable to determine refund status."
+      "success_no_reversal": "• Transfer yii ṣaṣeyọri. Ko le ṣe reversal tabi refund lati ibi yii.",
+      "reversed": "• Your ₦{amount} ti reversed to your account.",
+      "no_refund_needed": "No money ti debit, so no refund is needed.",
+      "completed": "• The ₦{amount} refund ti pari.",
+      "processing": "○ The ₦{amount} reversal n processed.\nRefunds typically return to your account within 24-48 hours.",
+      "needs_escalation": "⚠ A debit rẹ ₦{amount}, reversal si nilo.\nMo n gbe e lọ si support team wa.",
+      "unknown": "Ko le determine refund status."
     },
     "retry": {
-      "already_success": "• This transfer was already successful.\nWould you like to send another ₦{amount} to {recipient}?",
-      "pending_wait": "○ This transfer is still processing.\nPlease wait for it to complete before retrying.",
-      "ready": "Ready to retry ₦{amount} to {recipient}.\nReply 'yes' to confirm.",
-      "not_retryable": "× Cannot retry this transfer: {error}\nPlease resolve the issue first.",
-      "unknown_status": "Cannot determine if this transfer can be retried. Status: {status}",
+      "already_success": "• This transfer was already ṣaṣeyọri.\nṢe o fẹ to send another ₦{amount} to {recipient}?",
+      "pending_wait": "○ This transfer ṣi wa n ṣiṣẹ.\nPlease wait for it to complete before retrying.",
+      "ready": "Ready to retry ₦{amount} to {recipient}.\nFesi 'yes' to confirm.",
+      "not_retryable": "× Ko le retry this transfer: {error}\nPlease resolve the issue first.",
+      "unknown_status": "Ko le determine if this transfer can be retried. Ipo: {status}",
       "block": {
         "insufficient_funds": "Lo source account miran tabi din amount ku ki o to retry.",
         "source_account": "Yan source account miran tabi ṣe mandate naa ki o to retry.",
@@ -195,67 +195,67 @@
       }
     },
     "status": {
-      "success_no_time": "• This transfer of ₦{amount} to {recipient} was successful.",
+      "success_no_time": "• Transfer ₦{amount} si {recipient} ṣaṣeyọri.",
       "success_with_time": "• This transfer of ₦{amount} to {recipient} was successful on {time}.",
-      "pending": "○ This transfer of ₦{amount} to {recipient} is still pending.\nWe're awaiting confirmation from the bank.",
-      "failed": "× This transfer of ₦{amount} to {recipient} failed.",
-      "raw_status": "Transfer status: {status}"
+      "pending": "○ This transfer of ₦{amount} to {recipient} ṣi wa pending.\nWe're awaiting confirmation from the bank.",
+      "failed": "× This transfer of ₦{amount} to {recipient} kuna.",
+      "raw_status": "Ipo transfer: {status}"
     },
     "pending": {
-      "pending": "○ Your transfer of ₦{amount} to {recipient} is still being processed.\nBank confirmations can take a few minutes.",
-      "success_completed": "• Good news! This transfer actually completed successfully.",
-      "failed_no_longer_pending": "× This transfer failed and is no longer pending.",
-      "raw_status": "Current status: {status}"
+      "pending": "○ Your transfer of ₦{amount} to {recipient} ṣi wa being processed.\nBank confirmations can take a few minutes.",
+      "success_completed": "• Good news! This transfer actually pari ṣaṣeyọrily.",
+      "failed_no_longer_pending": "× This transfer kuna and is no longer pending.",
+      "raw_status": "Ipo lọwọlọwọ: {status}"
     },
     "receipt": {
-      "unavailable_for_status": "× Cannot provide receipt. This transfer {status}.",
+      "unavailable_for_status": "× Ko le provide receipt. This transfer {status}.",
       "title": "*Transfer Receipt*",
       "divider": "─────────────────",
       "amount": "Amount: ₦{amount}",
-      "to": "To: {recipient}",
+      "to": "Si: {recipient}",
       "bank": "Bank: {bank}",
       "account": "Account: {account}",
       "ref": "Ref: {reference}",
-      "date": "Date: {date}",
-      "status_success": "Status: • Successful",
+      "date": "Ọjọ: {date}",
+      "status_success": "Ipo: • Successful",
       "batch_sending_one": "Mo n fi receipt ranse bayi.",
       "batch_sending_many": "Mo n fi receipts fun successful transfers ranse bayi.",
-      "batch_skipped_failed": "{count} failed",
-      "batch_skipped_pending": "{count} pending",
-      "batch_skipped_non_transfer": "{count} non-transfer",
+      "batch_skipped_failed": "{count} kuna",
+      "batch_skipped_pending": "{count} to wa pending",
+      "batch_skipped_non_transfer": "{count} ti kii se transfer",
       "batch_skipped_items": "{base} Mo fo {skipped} item{item_suffix}.",
       "batch_exhausted": "Mo ti fi available receipts fun batch yen ranse tele.",
       "batch_no_completed": "Mi o le fi receipts fun batch yen ranse nitori ko si transfer leg to pari successfully."
     },
     "ticket": {
-      "not_found": "I couldn't find a ticket with code {ticket_code}.\n\nPlease check the code and try again.",
-      "none_open": "I don't see any open support tickets for you.\n\nIs there something I can help you with?",
-      "status_open": "Your case is open and queued for review.",
-      "status_in_progress": "Our team is actively working on this.",
-      "status_resolved": "This case has been resolved.",
-      "status_closed": "This case has been closed.",
-      "status_unknown": "Status unknown",
+      "not_found": "Mi o le ri a ticket with code {ticket_code}.\n\nJọwọ ṣayẹwo the code and try again.",
+      "none_open": "Mi o see any open support tickets for you.\n\nIs there something I can help you with?",
+      "status_open": "Case rẹ ṣi wa fun review.",
+      "status_in_progress": "Team wa n ṣiṣẹ lori rẹ.",
+      "status_resolved": "This case ti resolved.",
+      "status_closed": "This case ti closed.",
+      "status_unknown": "Ipo aimọ",
       "created_recently": "recently",
-      "summary": "**Ticket:** {ticket_code}\n**Status:** {status_text}\n**Created:** {created}\n\n",
-      "open_hint": "Our team typically responds within 24 hours.",
-      "in_progress_hint": "You'll receive an update once we have more information.",
-      "resolved_on": "Resolved on {resolved}.",
-      "no_updates": "I don't have any pending updates for you.\n\nIs there something specific I can help with?"
+      "summary": "**Ticket:** {ticket_code}\n**Ipo:** {status_text}\n**Created:** {created}\n\n",
+      "open_hint": "Team wa maa n dahun laarin wakati 24.",
+      "in_progress_hint": "Iwọ yoo gba update nigba ti a ba ni alaye diẹ sii.",
+      "resolved_on": "Ti yanju ni {resolved}.",
+      "no_updates": "Mi o have any pending updates for you.\n\nIs there something specific I can help with?"
     },
     "fraud": {
-      "alert": "⚠ We're taking this seriously.\nA support agent will contact you shortly to investigate.\nDo not share any PINs or passwords."
+      "alert": "⚠ We're taking this seriously.\nA support agent will contact o shortly to investigate.\nDo not share any PINs or passwords."
     },
     "escalation": {
-      "logged": "I've logged this for review.\n\n",
-      "ticket": "**Ticket:** {ticket_code}\n\n",
-      "fraud_priority": "Our security team will prioritize this. You'll hear back within 1 hour.",
-      "with_transaction_ref": "Our team will investigate and get back to you within 24 hours.",
-      "ask_transaction_ref": "If you have the transaction reference, reply with it to speed things up.",
-      "summary_fraud_suspected": "User reported suspected fraud",
-      "summary_max_attempts": "Unable to resolve after multiple attempts",
-      "summary_user_requested": "User requested human support",
-      "summary_default": "Support escalation: {reason_or_intent}",
-      "summary_system": "System escalation: {reason}",
+      "logged": "Mo ti log eyi fun review.\n\n",
+      "ticket": "**Koodu ticket:** {ticket_code}\n\n",
+      "fraud_priority": "Security team wa yoo fun eyi ni priority. Iwọ yoo gba esi laarin wakati 1.",
+      "with_transaction_ref": "Team wa yoo ṣe iwadii ki o si dahun laarin wakati 24.",
+      "ask_transaction_ref": "Ti o ba ni transaction reference, fesi pelu rẹ ki o yara.",
+      "summary_fraud_suspected": "User royin fraud ti o ṣeeṣe",
+      "summary_max_attempts": "Ko le resolve after multiple attempts",
+      "summary_user_requested": "User beere support eniyan",
+      "summary_default": "Escalation support: {reason_or_intent}",
+      "summary_system": "Escalation eto: {reason}",
       "summary_context_suffix": " - {message}"
     }
   },
@@ -270,23 +270,23 @@
       "transaction": "transaction"
     },
     "drill_down": {
-      "no_items": "No items to drill down into."
+      "no_items": "Ko si item fun drill down."
     },
     "receipt": {
-      "only_transfer": "Receipts are only available for bank transfers. This is a {transaction_type}.",
-      "offer": "Would you like a receipt image for this transfer?",
-      "offer_accept": "Send receipt image",
-      "offer_accept_button": "Send receipt",
-      "generating": "I'm generating your receipt now. I'll send it to you as an image shortly.",
-      "already_generating": "I'm already generating that receipt image.",
-      "expired": "I couldn't find the receipt details for that button. Reply 'receipt' if you still need it.",
-      "failed": "Sorry, I couldn't generate the receipt at this moment. Please try again later.",
-      "bank_unknown": "Unknown Bank",
+      "only_transfer": "Receipts wa fun bank transfers nikan. Eyi jẹ {transaction_type}.",
+      "offer": "Ṣe o fẹ aworan receipt fun transfer yii?",
+      "offer_accept": "Fi aworan receipt ranṣẹ",
+      "offer_accept_button": "Fi receipt ranṣẹ",
+      "generating": "Mo n ṣẹda your receipt now. I'll send it to you as an image shortly.",
+      "already_generating": "Mo ti n generating that receipt image.",
+      "expired": "Mi o le ri the receipt details for that button. Fesi 'receipt' if you still need it.",
+      "failed": "Sorry, Mi o le generate the receipt at this moment. Please try again later.",
+      "bank_unknown": "Aimọ Bank",
       "na": "N/A",
-      "user_account": "User Account"
+      "user_account": "Account user"
     },
     "report_issue": {
-      "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction failed but I was debited\n2️⃣ I don't recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Reply with the number or describe your issue._"
+      "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction kuna but I ti debit\n2️⃣ Mi o recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Fesi pelu the number or describe your issue._"
     },
     "reply": {
       "date": {
@@ -362,101 +362,101 @@
       }
     },
     "session": {
-      "completed": "Query completed.",
-      "dismissive_goodbye": "Okay. I'll step back now.",
-      "goodbye": "Goodbye!",
-      "you_are_welcome": "You're welcome! 😊"
+      "completed": "Query ti pari.",
+      "dismissive_goodbye": "O dara, emi yoo duro sẹhin bayi.",
+      "goodbye": "O dabọ!",
+      "you_are_welcome": "Ko to nkan! 😊"
     },
     "continuity": {
-      "prompt_items_header": "Available items (for drill_down, set drill_down_index to item number):",
-      "prompt_surface_top_keys": "Top keys: {keys}",
-      "prompt_surface_showing_items": "Showing {count} items"
+      "prompt_items_header": "Awon item to wa (fun drill_down, set drill_down_index si nomba item):",
+      "prompt_surface_top_keys": "Awon key pataki: {keys}",
+      "prompt_surface_showing_items": "N fi {count} items han"
     },
     "clarify": {
-      "default": "Could you clarify?",
-      "time_vague": "What time period did you mean by '{context}'? You can say something like '{suggestion}'.",
-      "unsure_rephrase": "I'm not sure what you're referring to. Could you rephrase?",
-      "which_one": "I'm not sure which one you mean{context_suffix}.",
-      "are_you_referring": "Are you referring to:",
-      "reply_number_or_rephrase": "Reply with the number or rephrase.",
+      "default": "Ṣe o le ṣalaye diẹ sii?",
+      "time_vague": "Kini time period did you mean by '{context}'? You can say something like '{suggestion}'.",
+      "unsure_rephrase": "Mi o daju ohun ti o tumọ si. Ṣe o le sọ ni ọna miran?",
+      "which_one": "Mi o daju ewo ni o tumọ si{context_suffix}.",
+      "are_you_referring": "Ṣe eyi ni o tumọ si:",
+      "reply_number_or_rephrase": "Fesi pelu nomba tabi sọ ni ọna miran.",
       "context_suffix": " ({context})",
       "option_line": "{index}️⃣ {amount} — {description}"
     },
     "notice": {
-      "clamped_days": "Showing last {days_back} days (max available)."
+      "clamped_days": "N fi ọjọ {days_back} to kẹhin han (max available)."
     },
     "error": {
-      "missing_params": "Internal error: Missing query parameters.",
-      "general": "Sorry, I encountered an error providing that information.",
-      "unknown_intent": "I couldn't understand that query.",
-      "execution_failed": "Something went wrong. Please try again."
+      "missing_params": "Aṣiṣe inu eto: alaye query ko pe.",
+      "general": "Ma binu, iṣoro waye nigba fifun alaye naa.",
+      "unknown_intent": "Mi o ye query naa.",
+      "execution_failed": "Nkan kan ko ṣiṣẹ. Jọwọ gbiyanju lẹẹkansi."
     },
     "account": {
-      "not_found_by_name": "I couldn't find an account matching '{account_name}'."
+      "not_found_by_name": "Mi o le ri an account matching '{account_name}'."
     },
     "format": {
-      "no_results_display": "No results to display.",
-      "accounts_header": "💰 *Your Accounts*",
+      "no_results_display": "Ko si esi lati fi han.",
+      "accounts_header": "💰 *Awon Account Rẹ*",
       "total_line": "*Total: {total}*",
       "breakdown_item": "{amount} — {name} ({percentage}, {count} txns)",
-      "total_spent_month": "Total spent this month: ₦{amount}",
-      "no_matching_transactions": "No matching transactions found for your search.",
-      "no_transactions_today": "You had no transactions today.",
-      "no_transactions_yesterday": "You had no transactions yesterday.",
-      "no_transactions_period": "You had no transactions during that period.",
-      "no_transactions_with_type_today": "You had no {transaction_type} transactions today.",
-      "no_transactions_with_type_yesterday": "You had no {transaction_type} transactions yesterday.",
-      "no_transactions_with_type_period": "You had no {transaction_type} transactions during that period.",
-      "no_results_with_type": "No {transaction_type} transactions found{time_suffix}.",
+      "total_spent_month": "Total ti o na ni oṣu yii: ₦{amount}",
+      "no_matching_transactions": "Ko si transaction to ba search rẹ mu.",
+      "no_transactions_today": "O ko ni transactions loni.",
+      "no_transactions_yesterday": "O ko ni transactions lana.",
+      "no_transactions_period": "O ko ni transactions ninu akoko yẹn.",
+      "no_transactions_with_type_today": "O ko ni {transaction_type} transactions loni.",
+      "no_transactions_with_type_yesterday": "O ko ni {transaction_type} transactions lana.",
+      "no_transactions_with_type_period": "O ko ni {transaction_type} transactions ninu akoko yẹn.",
+      "no_results_with_type": "Ko ri {transaction_type} transactions{time_suffix}.",
       "no_results_time_suffix_today": " today",
-      "no_results_time_suffix_period": " for this period",
+      "no_results_time_suffix_period": " fun akoko yii",
       "heading_transactions_default": "*Transactions*",
       "heading_transactions_type": "*{transaction_type} Transactions*",
       "heading_transactions_category": "*{category} Transactions*",
       "heading_spending_category": "*{category} Spending*",
       "heading_suffix_account": "{heading} — {account}",
       "heading_suffix_period": "{heading} — {period}",
-      "heading_type_credit": "Credit",
-      "heading_type_debit": "Debit",
+      "heading_type_credit": "Credit ti n wọle",
+      "heading_type_debit": "Debit ti n jade",
       "heading_period_today": "Today",
-      "heading_period_this_month": "This Month",
+      "heading_period_this_month": "Oṣu yii",
       "heading_period_range": "{start}–{end}",
       "transaction_details_title": "Transaction Details",
       "last_transaction_title": "Your last transaction was:",
       "last_transaction_type_title": "Your last {transaction_type} transaction was:",
       "field_amount": "*Amount:* {amount}",
-      "field_description": "*Description:* {description}",
-      "field_counterparty": "*Counterparty:* {counterparty}",
-      "field_date": "*Date:* {date}",
-      "field_type": "*Type:* {type}",
+      "field_description": "*Apejuwe:* {description}",
+      "field_counterparty": "*Eni keji:* {counterparty}",
+      "field_date": "*Ọjọ:* {date}",
+      "field_type": "*Iru:* {type}",
       "field_bank": "*Bank:* {bank_name}",
-      "field_category": "*Category:* {category}",
-      "field_status": "*Status:* {status}",
+      "field_category": "*Ẹka:* {category}",
+      "field_status": "*Ipo:* {status}",
       "field_ref": "*Ref:* {reference}",
-      "status_success": "✓ Successful",
+      "status_success": "✓ Ṣaṣeyọri",
       "status_pending_generic": "⏳ {status}",
-      "transfer_reply_hint": "_Reply: 'receipt' for proof | 'issue' to report a problem_",
+      "transfer_reply_hint": "_Fesi: 'receipt' for proof | 'issue' to report a problem_",
       "transactions_heading": "*Transactions*",
-      "pagination_showing": "Showing {showing} of {total}",
+      "pagination_showing": "N fi {showing} ninu {total} han",
       "transactions_across_accounts": "*Transactions* _(across {account_count} accounts)_",
       "recipient_fallback": "recipient",
-      "label_received": "Received",
-      "label_sent": "Sent",
-      "remaining_transactions": "_{count} more transactions. Reply **Next** to continue._",
-      "more_for_next_page": "_*more* for next page_",
-      "unknown": "Unknown",
+      "label_received": "Ti wọle",
+      "label_sent": "Ti jade",
+      "remaining_transactions": "_{count} more transactions. Fesi **Next** to continue._",
+      "more_for_next_page": "_*diẹ sii* fun page to tẹle_",
+      "unknown": "Aimọ",
       "narration": {
         "transaction": "Transaction",
-        "transfer_to": "Transfer to",
-        "transfer_from": "Transfer from",
+        "transfer_to": "Transfer si",
+        "transfer_from": "Transfer lati",
         "bank_transfer": "Bank Transfer",
-        "pos_purchase": "POS Purchase",
-        "atm_withdrawal": "ATM Withdrawal",
+        "pos_purchase": "Rira POS",
+        "atm_withdrawal": "Yiyọ ATM",
         "airtime": "Airtime",
         "type_for_recipient": "{type} for {recipient}"
       },
-      "type_incoming_credit": "Incoming (Credit)",
-      "type_outgoing_debit": "Outgoing (Debit)",
+      "type_incoming_credit": "Ti n wọle (Credit)",
+      "type_outgoing_debit": "Ti n jade (Debit)",
       "accounts_item": "{amount} — {bank_name}",
       "breakdown_heading": "📊 *{summary}*",
       "ranked_heading": "🏆 *{summary}*",
@@ -465,81 +465,82 @@
       "transaction_item": "{amount} • {label} — {narration}"
     },
     "affordability": {
-      "balance_unavailable": "Could not retrieve balance.",
-      "can_afford": "Your balance (₦{balance}) covers ₦{amount}. Remaining: ₦{remaining}",
-      "cannot_afford": "₦{amount} exceeds your balance (₦{balance}). Shortfall: ₦{shortfall}"
+      "balance_unavailable": "Ko le gba balance.",
+      "can_afford": "Tirẹ balance (₦{balance}) covers ₦{amount}. Remaining: ₦{remaining}",
+      "cannot_afford": "₦{amount} exceeds or balance (₦{balance}). Shortfall: ₦{shortfall}"
     },
     "balance": {
-      "unavailable": "Could not retrieve balance.",
-      "single_account": "Your {bank_name} balance: ₦{balance}",
+      "unavailable": "Ko le gba balance.",
+      "single_account": "Tirẹ {bank_name} balance: ₦{balance}",
       "account_fallback": "Account"
     },
     "analytics": {
-      "no_aggregation": "No aggregation specified.",
-      "no_transactions": "No transactions found.",
-      "no_spending": "You didn't spend anything{target_description}{timeframe}.",
-      "no_sent": "You didn't send anything{target_description}{timeframe}.",
-      "no_income": "You didn't receive any inflow{target_description}{timeframe}.",
-      "target_merchant": " on {merchant}",
-      "target_account": " with {account}",
-      "target_counterparty": " with {counterparty}",
-      "target_counterparty_debit": " to {counterparty}",
-      "target_counterparty_credit": " from {counterparty}",
-      "summary_spent": "You spent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_sent": "You sent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_received": "You received *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_average": "Your average transaction is *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' to see details_",
-      "summary_count": "You made *{count}* transaction(s){timeframe}.",
+      "no_aggregation": "Ko si iru akopọ ti a yan.",
+      "no_transactions": "Ko si transaction ti a ri.",
+      "no_spending": "O ko na anything{target_description}{timeframe}.",
+      "no_sent": "O ko fi ranṣẹ anything{target_description}{timeframe}.",
+      "no_income": "O ko gba any inflow{target_description}{timeframe}.",
+      "target_merchant": " lori {merchant}",
+      "target_account": " pelu {account}",
+      "target_counterparty": " pelu {counterparty}",
+      "target_counterparty_debit": " si {counterparty}",
+      "target_counterparty_credit": " lati {counterparty}",
+      "summary_spent": "O na *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_sent": "O fi ranṣẹ *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_received": "O gba *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_average": "Average transaction rẹ jẹ *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' si see details_",
+      "summary_count": "O ṣe *{count}* {transaction_label}{timeframe}.",
+      "summary_count_zero": "O ko ṣe any transactions{timeframe}.",
       "transaction_singular": "transaction",
       "transaction_plural": "transactions",
-      "single_expense": "Your {adjective} expense{timeframe}",
-      "label_expenses": "Expenses",
+      "single_expense": "Tirẹ {adjective} expense{timeframe}",
+      "label_expenses": "Inawo",
       "label_transactions": "Transactions",
-      "title_largest": "Largest",
-      "title_smallest": "Smallest",
-      "adjective_biggest": "biggest",
-      "adjective_smallest": "smallest",
-      "ranked_other": "Other {adjective} expenses (Rank {start}-{end})",
+      "title_largest": "Tóbi jù",
+      "title_smallest": "Kéré jù",
+      "adjective_biggest": "tóbi jù",
+      "adjective_smallest": "kéré jù",
+      "ranked_other": "Miiran {adjective} expenses (Rank {start}-{end})",
       "ranked_top": "Top {limit} {adj_title} {label}",
-      "aggregation_completed": "Aggregation completed.",
-      "breakdown_by": "Breakdown by {group_by}",
-      "group_by_transaction_type": "transaction type",
-      "timeframe_default": " in the last 30 days",
+      "aggregation_completed": "Aggregation pari.",
+      "breakdown_by": "Pipin nipa {group_by}",
+      "group_by_transaction_type": "iru transaction",
+      "timeframe_default": " ni ọjọ 30 si kẹhin",
       "timeframe_today": " today",
-      "timeframe_yesterday": " yesterday",
-      "timeframe_on_date": " on {date}",
+      "timeframe_yesterday": " lana",
+      "timeframe_on_date": " ni {date}",
       "timeframe_range": " from {start} to {end}"
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
       "heading_top": "Top",
       "timeframe_range": "{start} – {end}",
-      "timeframe_last_30_days": "last 30 days",
+      "timeframe_last_30_days": "timeframe last 30 days: last 30 days",
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
       "summary_line": "{name} • ₦{total} ({count}x)",
-      "no_outgoing_transfers": "No outgoing transfers found.",
-      "reply_name_hint": "_Reply with a name to see those transactions_"
+      "no_outgoing_transfers": "Ko si outgoing transfers found.",
+      "reply_name_hint": "_Fesi pelu a name to see those transactions_"
     },
     "time_comparison": {
-      "prompt_specify_period": "Please specify a time period to compare.",
-      "item_spending": "Spending: {change}",
-      "item_income": "Income: {change}",
-      "item_transactions": "Transactions: {current} vs {comparison}",
-      "no_change": "No change",
-      "verb_spent_more": "spent more",
-      "verb_spent_less": "spent less",
-      "same_spending": "Your spending in {current_label} is the same as {comparison_label}.",
-      "summary": "You {verb} (₦{amount}) in {current_label} compared to {comparison_label}."
+      "prompt_specify_period": "Jọwọ sọ a time period to compare.",
+      "item_spending": "Inawo: {change}",
+      "item_income": "Owo wole: {change}",
+      "item_transactions": "Transactions: {current} pelu {comparison}",
+      "no_change": "Ko si ayipada",
+      "verb_spent_more": "na diẹ sii",
+      "verb_spent_less": "na kere",
+      "same_spending": "Tirẹ spending in {current_label} is the same as {comparison_label}.",
+      "summary": "You {verb} (₦{amount}) in {current_label} compared si {comparison_label}."
     },
     "fetch": {
       "counterparty": {
-        "unknown": "Unknown",
+        "unknown": "Aimọ",
         "bank_transfer": "Bank Transfer",
         "transfer": "Transfer",
-        "pos_purchase": "POS Purchase",
-        "bank_charges": "Bank Charges",
+        "pos_purchase": "Rira POS",
+        "bank_charges": "Owo banki",
         "airtime": "Airtime",
-        "atm_withdrawal": "ATM Withdrawal"
+        "atm_withdrawal": "Yiyọ ATM"
       },
       "local": {
         "transfer_to": "Transfer to {recipient}",
@@ -548,51 +549,55 @@
     }
   },
   "account": {
-    "user_not_found": "User not found.",
-    "no_linked_accounts": "You don't have any linked accounts.",
-    "account_not_found": "I couldn't find an account matching '{identifier}'.",
-    "account_not_found_with_count": "I couldn't find an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
-    "default_updated": "✓ *Default account updated!*\n\n{bank_name} ({masked}) is now your default.",
+    "user_not_found": "A ko ri user.",
+    "no_linked_accounts": "O ko ni account ti a ti link.",
+    "account_not_found": "Mi o le ri an account matching '{identifier}'.",
+    "account_not_found_with_count": "Mi o le ri an account matching '{identifier}'.\n\nYou have {count} linked account(s).",
+    "default_updated": "✓ *Default account updated!*\n\n{bank_name} ({masked}) is now or default.",
     "unlink": {
-      "success": "✓ *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
-      "only_account": "⚠️ You can't unlink your only account. Link another one first."
+      "success": "success: ✓ *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
+      "only_account": "⚠️ O can't unlink or only account. Link another one first."
     },
     "list": {
-      "empty": "You don't have any linked bank accounts yet.\n\nSay 'link account' to connect your bank.",
-      "header": "*Your Bank Accounts*",
+      "empty": "O don't have any linked bank accounts yet.\n\nSay 'link account' to connect or bank.",
+      "header": "*Tirẹ Bank Accounts*",
+      "count_zero": "O ko ni linked account kankan.",
+      "count_one": "O ni linked account 1.",
+      "count_many": "O ni linked accounts {count}.",
+      "preview_header": "Awon apere:",
       "default_badge": " (default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
     },
     "balance": {
-      "none_available": "No balance information available.",
-      "header_single": "*Your Balance*",
-      "header_multi": "*Your Balances*",
+      "none_available": "Ko si alaye balance to wa.",
+      "header_single": "*Balance rẹ*",
+      "header_multi": "*Awon balance rẹ*",
       "total": "Àpapọ̀ gbogbo rẹ̀ jẹ́ **₦{total_balance}**.",
-      "unavailable": "I couldn't retrieve your balance at the moment.",
+      "unavailable": "Mi o le retrieve your balance at the moment.",
       "natural_single": "Account {bank_name} rẹ ({masked}) ní ìyókù owó tó jẹ **₦{amount}**.",
       "natural_multi_intro": "Èyí ni àwọn ìyókù owó account rẹ:",
       "natural_multi_item": "• {bank_name} ({masked}): **₦{amount}**"
     },
     "prompt": {
-      "unlink_identifier": "Which account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
-      "default_identifier": "Which account should be your default? Say 'set [bank name] as default'.",
-      "which_account": "Which account?"
+      "unlink_identifier": "Ewo account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
+      "default_identifier": "Ewo account should be your default? Say 'set [bank name] as default'.",
+      "which_account": "Account wo?"
     },
     "error": {
-      "status_check_failed": "Account status check failed. Please try again.",
-      "default_update_failed": "Sorry, I couldn't update your default account.",
-      "unlink_failed": "Sorry, I couldn't unlink that account."
+      "status_check_failed": "Account status check kuna. Jọwọ gbiyanju lẹẹkansi.",
+      "default_update_failed": "Sorry, Mi o le update your default account.",
+      "unlink_failed": "Sorry, Mi o le unlink that account."
     },
     "linking": {
-      "unavailable": "Account linking unavailable.",
-      "bvn_missing": "BVN not found. Please complete onboarding first.",
-      "start_failed": "Failed to start linking.",
+      "unavailable": "Linking account ko si bayi.",
+      "bvn_missing": "BVN ko ri. Jọwọ pari onboarding first.",
+      "start_failed": "Ko le start linking.",
       "fallback_link": "Link account: {app_public_base_url}/link/{flow_token}"
     }
   },
   "orchestrator": {
     "fallback": {
-      "processing_error": "I'm sorry, I'm having trouble processing that right now."
+      "processing_error": "Ma binu, iṣoro wa nigba ṣiṣe eyi bayi."
     },
     "ambiguity": {
       "transfer_recipient": "Se o fe fi owo ranse? Ti bee ni, ta ni recipient?",
@@ -604,70 +609,70 @@
       "mixed_supported_unsupported": "Mo le ran ọ lọwọ pẹlu {supported}, ṣugbọn mi o le ran ọ lọwọ pẹlu {unsupported} nibi. Ibeere supported wo ni ki n kọkọ ṣe?"
     },
     "error": {
-      "transfer_worker_unavailable": "System error: Transfer worker unavailable",
-      "account_worker_unavailable": "System error: Account worker unavailable",
-      "account_action_failed": "Account action failed.",
-      "beneficiary_operation_failed": "Beneficiary operation failed.",
-      "suggestion_service_unavailable": "System error: Suggestion service unavailable",
-      "save_beneficiary_failed": "Failed to save beneficiary.",
-      "airtime_worker_unavailable": "System error: Airtime worker unavailable",
-      "airtime_purchase_failed": "Airtime purchase failed",
-      "query_worker_unavailable": "System error: Query worker unavailable",
-      "query_processing_failed": "Query processing failed.",
-      "data_worker_unavailable": "System error: Data worker unavailable",
-      "data_purchase_failed": "Data purchase failed",
-      "faq_worker_unavailable": "System error: FAQ worker unavailable",
-      "faq_failed": "FAQ failed",
-      "support_worker_unavailable": "System error: Support worker unavailable",
-      "support_flow_failed": "Support flow failed",
+      "transfer_worker_unavailable": "System error: Transfer worker ko si",
+      "account_worker_unavailable": "System error: Account worker ko si",
+      "account_action_failed": "Account action kuna.",
+      "beneficiary_operation_failed": "Beneficiary operation kuna.",
+      "suggestion_service_unavailable": "System error: Suggestion service ko si",
+      "save_beneficiary_failed": "Ko le save beneficiary.",
+      "airtime_worker_unavailable": "System error: Airtime worker ko si",
+      "airtime_purchase_failed": "Airtime purchase kuna",
+      "query_worker_unavailable": "System error: Query worker ko si",
+      "query_processing_failed": "Query n ṣiṣẹ kuna.",
+      "data_worker_unavailable": "System error: Data worker ko si",
+      "data_purchase_failed": "Data purchase kuna",
+      "faq_worker_unavailable": "System error: FAQ worker ko si",
+      "faq_failed": "FAQ kuna",
+      "support_worker_unavailable": "System error: Support worker ko si",
+      "support_flow_failed": "Support flow kuna",
       "audio_unprocessable": "Attributes of the audio could not be processed.",
-      "image_unprocessable": "I couldn't read that image clearly. Please type the bank name, account number, amount, and what you want me to do."
+      "image_unprocessable": "Mi o le read that image clearly. Please type the bank name, account number, amount, and what you want me to do."
     },
     "session": {
-      "no_stashed": "No session to resume.",
+      "no_stashed": "Ko si session lati tẹsiwaju.",
       "default_intent": "transaction",
       "resume_declined": "O da, mi o ni tesiwaju pelu ibeere naa.",
-      "resuming": "Resuming {intent}...",
-      "transaction_expired": "That transaction session has expired, so I can't continue it. Please start the transaction again."
+      "resuming": "N tẹsiwaju {intent}...",
+      "transaction_expired": "That transaction session ti pari, so I can't continue it. Please start the transaction again."
     },
     "closure": {
       "intent": {
         "transfer": "transfer",
-        "airtime": "airtime purchase",
-        "data": "data purchase",
+        "airtime": "rira airtime",
+        "data": "rira data",
         "transaction": "transaction"
       },
       "detour": {
-        "paused_while": "I paused the {paused_intent} while I {target_action}.",
+        "paused_while": "Mo da the {paused_intent} nigba ti mo n {target_action}.",
         "action": {
-          "account": "check your account",
-          "query": "check those transactions",
-          "support": "handle the support request",
-          "faq": "answer that question",
-          "beneficiary": "check your beneficiaries",
-          "transaction": "start the new {intent}",
-          "generic": "handle that"
+          "account": "check or account",
+          "query": "ṣayẹwo transactions naa",
+          "support": "ṣiṣẹ lori support request naa",
+          "faq": "dahun ibeere naa",
+          "beneficiary": "check or beneficiaries",
+          "transaction": "bẹrẹ tuntun {intent}",
+          "generic": "generic: handle that"
         }
       },
       "resume": {
         "declined": "O da, mi o ni tesiwaju pelu {intent} naa."
       },
       "edit": {
-        "amount": "Updated the amount to {amount}.",
-        "source_account": "Updated the source account to {bank}.",
-        "recipient": "Updated the recipient to {recipient}.",
-        "phone": "Updated the phone number to {phone}.",
-        "network": "Updated the network to {network}.",
-        "data_plan": "Updated the data plan to {plan}.",
-        "generic": "Updated the transaction details."
+        "amount": "A ti update amount to {amount}.",
+        "source_account": "A ti update source account to {bank}.",
+        "recipient": "A ti update recipient to {recipient}.",
+        "phone": "A ti update phone number to {phone}.",
+        "network": "A ti update network to {network}.",
+        "data_plan": "A ti update data plan to {plan}.",
+        "generic": "A ti update transaction details."
       }
     },
     "execution": {
       "source_account_info": "Lati: {bank} (···{last4})",
       "source_account_info_with_balance": "Lati: {bank} (···{last4}) • Iwontunwonsi: ₦{balance}",
-      "recipient_resolved_with_bank": "✓ {label} resolved: {resolved} ({bank} • {account})",
-      "recipient_resolved": "✓ {label} resolved: {resolved}",
-      "recipient_resolved_generic": "✓ {label} resolved",
+      "recipient_resolved_with_bank": "✓ {label} ti yanju: {resolved} ({bank} • {account})",
+      "recipient_resolved": "✓ {label} ti yanju: {resolved}",
+      "recipient_resolved_generic": "✓ {label} ti yanju",
       "input_attempts_exhausted": "Mi ò lè loye alaye tí mo nílò, nítorí náà mo ti pa transaction yẹn rẹ. Ẹ jẹ ká bẹ̀rẹ̀ tuntun. Kini o fẹ ṣe?",
       "input_greeting": "Pẹlẹ o. Mo ṣi nilo idahun rẹ lati tẹsiwaju. Jọwọ dahun ibeere to kẹhin, tabi sọ cancel.",
       "input_greeting_data_plan": "Pẹlẹ o. A ṣi n yan eto data. Dahun pẹlu nomba option, tabi sọ cancel.",
@@ -678,34 +683,34 @@
       "input_greeting_airtime_amount_network": "Pẹlẹ o. Mo ṣi nilo iye airtime fun line {network} yii. Dahun pẹlu iye naa, tabi sọ cancel.",
       "input_greeting_airtime_line_amount": "Pẹlẹ o. Mo ṣi nilo line ati iye fun airtime yii. Dahun pẹlu mejeeji, tabi sọ cancel.",
       "input_greeting_airtime_line_amount_network": "Pẹlẹ o. Mo ṣi nilo line {network} ati iye airtime. Dahun pẹlu mejeeji, tabi sọ cancel.",
-      "pin_prompt_default": "Please enter your PIN.",
-      "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
+      "pin_prompt_default": "Jọwọ enter or PIN.",
+      "batch_each_total": "O n fi ranṣẹ {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
-      "choose_account_fallback": "*Which account would you like to use?*",
-      "single_found_with_bank_need_details": "I found {resolved_name} ({resolved_bank}). I now need account details for {focused_name}.",
-      "single_found_need_details": "I found {resolved_name}. I now need account details for {focused_name}.",
-      "need_account_details_for": "I need account details for {focused_name}.",
-      "found_many_need_details": "I found {found_names}. I need account details for {focused_name}.",
-      "found_names": "I found {found_names}.",
+      "choose_account_fallback": "*Ewo account would you like to use?*",
+      "single_found_with_bank_need_details": "Mo ri {resolved_name} ({resolved_bank}). I now need account details for {focused_name}.",
+      "single_found_need_details": "Mo ri {resolved_name}. I now need account details for {focused_name}.",
+      "need_account_details_for": "Mo nilo account details for {focused_name}.",
+      "found_many_need_details": "Mo ri {found_names}. Mo nilo account details for {focused_name}.",
+      "found_names": "Mo ri {found_names}.",
       "queued_next_notice": "Also in this batch:\n{queued_intents}",
-      "need_some_details": "I need some details.",
-      "auth_reason_transfer": "Transfer Authorization",
-      "auth_reason_airtime": "Airtime Purchase",
-      "auth_reason_data": "Data Purchase",
-      "auth_reason_default": "Authorize Transaction",
-      "source_repair_header": "Got it - {count} action{plural_suffix}:",
+      "need_some_details": "Mo nilo some details.",
+      "auth_reason_transfer": "Authorization Transfer",
+      "auth_reason_airtime": "Rira Airtime",
+      "auth_reason_data": "Rira Data",
+      "auth_reason_default": "Fun transaction ni authorization",
+      "source_repair_header": "O ye - {count} action{plural_suffix}:",
       "source_repair_bullet": "• {intent}",
-      "source_repair_discrepancy": "You said from your **{failed_hint}**, but I can't see an **{failed_hint}** account linked.",
-      "source_repair_question": "Do you want to:",
+      "source_repair_discrepancy": "O said from or **{failed_hint}**, but I can't see an **{failed_hint}** account linked.",
+      "source_repair_question": "Do o want to:",
       "source_repair_use_bank": "Use **{bank}**",
       "source_repair_use_bank_for_both": "Use **{bank}** for both",
-      "source_repair_use_different_accounts": "Use different accounts for each",
-      "source_repair_reply_hint": "_Reply with {choices}._"
+      "source_repair_use_different_accounts": "Lo accounts oto fun ọkọọkan",
+      "source_repair_reply_hint": "_Fesi pelu {choices}._"
     },
     "finalize": {
-      "failed_unknown": "Unknown error.",
-      "failed_prefix": "Failed: {error}",
-      "resume_prompt": "Would you like to resume your {intent}?",
+      "failed_unknown": "Aṣiṣe aimọ.",
+      "failed_prefix": "O kuna: {error}",
+      "resume_prompt": "Ṣe o fẹ to resume your {intent}?",
       "resume_prompt_transfer_specific": "O tun ni transfer kan ti o duro: {amount} si {recipient}. Se ki n tesiwaju?",
       "resume_prompt_transfer_generic": "O tun ni transfer kan ti o duro. Se ki n tesiwaju?",
       "resume_prompt_airtime_specific": "O tun ni rira airtime kan ti o duro: {amount} fun {phone}. Se ki n tesiwaju?",
@@ -713,18 +718,18 @@
       "resume_prompt_data_specific": "O tun ni rira data kan ti o duro: {amount} fun {phone}. Se ki n tesiwaju?",
       "resume_prompt_data_generic": "O tun ni rira data kan ti o duro. Se ki n tesiwaju?",
       "recipient_fallback": "recipient",
-      "transfer_processing": "Transfer of ₦{amount} to {display_name} is being processed.",
-      "transaction_completed": "Transaction completed",
+      "transfer_processing": "Transfer of ₦{amount} to {display_name} n processed.",
+      "transaction_completed": "Transaction pari",
       "async_status_message": "• *{status}*: {message}",
       "na": "N/A"
     }
   },
   "context_frame": {
     "noun": {
-      "saved_beneficiary": "saved beneficiary",
+      "saved_beneficiary": "beneficiary ti a fipamọ",
       "saved_beneficiaries": "saved beneficiaries",
-      "linked_account": "linked account",
-      "linked_accounts": "linked accounts",
+      "linked_account": "account ti a link",
+      "linked_accounts": "account ti a links",
       "scheduled_transaction": "scheduled transaction",
       "scheduled_transactions": "scheduled transactions",
       "transaction_or_result": "transaction or result",
@@ -736,55 +741,56 @@
       "items": "items"
     },
     "header": {
-      "data_plan_details": "Data Plan Details",
-      "saved_beneficiary_details": "Saved Beneficiary Details",
-      "beneficiary_details": "Beneficiary Details",
-      "linked_account_details": "Linked Account Details",
-      "account_details": "Account Details",
-      "transaction_details": "Transaction Details",
-      "receipt_details": "Receipt Details",
-      "scheduled_transaction_details": "Scheduled Transaction Details",
-      "details": "Details"
+      "data_plan_details": "Data Plan Alaye",
+      "saved_beneficiary_details": "Saved Beneficiary Alaye",
+      "beneficiary_details": "Beneficiary Alaye",
+      "linked_account_details": "Linked Account Alaye",
+      "account_details": "Account Alaye",
+      "transaction_details": "Transaction Alaye",
+      "receipt_details": "Receipt Alaye",
+      "scheduled_transaction_details": "Scheduled Transaction Alaye",
+      "details": "Alaye"
     },
     "detail": {
       "next_run": "Next run: {value}",
       "from": "From: {value}",
-      "status": "Status: {value}"
+      "status": "Ipo: {value}"
     },
     "followup": {
-      "showing_items": "Showing {shown_count} of {total_count} {noun}.",
-      "showing_matches": "Showing {shown_count} of {total_count} matches.",
-      "missing_entity": "I don't see {target} in the {noun} I showed.",
+      "showing_items": "N fi {shown_count} of {total_count} {noun}.",
+      "showing_matches": "N fi {shown_count} of {total_count} matches.",
+      "missing_entity": "Mi o see {target} in the {noun} I showed.",
       "found_entity": "Yes. {target} is in the {noun} I showed.",
-      "found_matching": "I found {count} matching {noun}:",
-      "found_matches_in_frame": "I found {count} matches in the {noun} I showed.",
-      "pending_scheduled_count": "You have {count} pending {noun}.",
-      "only_found": "Yes. That's the only {noun} I found.",
-      "count_found": "Yes. Those are the {count} {noun} I found.",
+      "found_matching": "Mo ri {count} matching {noun}:",
+      "found_matches_in_frame": "Mo ri {count} matches in the {noun} I showed.",
+      "pending_scheduled_count": "O have {count} pending {noun}.",
+      "only_found": "Yes. That's the only {noun} Mo ri.",
+      "count_found": "Yes. Those are the {count} {noun} Mo ri.",
+      "count_preview_clarification": "Mo fi àpẹẹrẹ {shown_count} hàn kí ó má gun. O ni {total_count} {noun} lapapọ.",
       "comparison_header": "Comparison",
       "explain_count": "I showed {count} {noun} from the last result.",
       "and_more_suffix": ", and {count} more",
       "explain_labels": "I showed {count} {noun}: {labels}{suffix}.",
-      "clarify_beneficiary": "Are you asking about the saved beneficiaries I just showed?",
-      "clarify_account": "Are you asking about the linked accounts I just showed?",
-      "clarify_query": "Are you asking about the result I just showed?",
-      "clarify_schedule": "Are you asking about the scheduled transactions I just showed?",
-      "clarify_items": "Are you asking about the items I just showed?"
+      "clarify_beneficiary": "Are o asking about the saved beneficiaries I just showed?",
+      "clarify_account": "Are o asking about the account ti a links I just showed?",
+      "clarify_query": "Are o asking about the result I just showed?",
+      "clarify_schedule": "Are o asking about the scheduled transactions I just showed?",
+      "clarify_items": "Are o asking about the items I just showed?"
     }
   },
   "referent": {
     "phone": {
-      "which_number": "Which number did you mean?"
+      "which_number": "Ewo number did you mean?"
     }
   },
   "source_account": {
-    "no_accounts": "No accounts available.",
-    "bank_not_found": "I couldn't find your {bank_name} account.",
-    "choose_prompt": "*Which account would you like to use?*\n\n{accounts_list}",
-    "no_accounts_found": "No accounts found.",
-    "profile_no_accounts": "I couldn't find any account on your profile. Please add an account first.",
-    "profile_no_accounts_proceed": "I couldn't find any account on your profile. Please add an account first to proceed with this transaction.",
-    "select_account_prompt": "Please select an account.",
+    "no_accounts": "Ko si accounts available.",
+    "bank_not_found": "Mi o le ri your {bank_name} account.",
+    "choose_prompt": "*Ewo account would you like to use?*\n\n{accounts_list}",
+    "no_accounts_found": "Ko si accounts found.",
+    "profile_no_accounts": "Mi o le ri any account on your profile. Please add an account first.",
+    "profile_no_accounts_proceed": "Mi o le ri any account on your profile. Please add an account first to proceed with this transaction.",
+    "select_account_prompt": "Jọwọ yan an account.",
     "list": {
       "bank_label_fallback": "Account",
       "last4_fallback": "????",
@@ -793,34 +799,38 @@
   },
   "beneficiary": {
     "prompt": {
-      "which_contact": "Which contact did you mean?"
+      "which_contact": "Ewo contact did you mean?"
     },
     "error": {
-      "user_identification_failed": "User identification failed.",
-      "process_failed": "Failed to process beneficiary request."
+      "user_identification_failed": "User identification kuna.",
+      "process_failed": "Ko le process beneficiary request."
     },
     "list": {
-      "empty": "You haven't saved any beneficiaries yet.",
-      "header": "*Saved Beneficiaries*"
+      "empty": "O haven't saved any beneficiaries yet.",
+      "header": "*Ti fipamọ Beneficiaries*",
+      "count_zero": "O ko tii fi beneficiary kankan pamo.",
+      "count_one": "O ni saved beneficiary 1.",
+      "count_many": "O ni saved beneficiaries {count}.",
+      "preview_header": "Awon apere:"
     },
     "common": {
       "default_name": "Beneficiary",
-      "bank_unknown": "Unknown Bank"
+      "bank_unknown": "Aimọ Bank"
     },
     "add": {
-      "manual_disabled": "Beneficiaries are saved after a successful transfer. Send money to the recipient first, then I can save them for next time.",
-      "missing_account_or_bank": "I need the account number and bank to add a beneficiary.",
-      "account_verification_failed": "Could not verify account {account_number}. Please check the details.",
-      "account_lookup_failed": "Account lookup failed/invalid for {account_number} at {bank_name}.",
-      "success": "✓ Verified & Added **{display_name}** ({account_name}) to your beneficiaries."
+      "manual_disabled": "Beneficiaries are saved after a ṣaṣeyọri transfer. Send money to the recipient first, then I can save them for next time.",
+      "missing_account_or_bank": "Mo nilo the account number and bank to add a beneficiary.",
+      "account_verification_failed": "Ko le verify account {account_number}. Jọwọ ṣayẹwo the details.",
+      "account_lookup_failed": "Account lookup kuna/invalid for {account_number} at {bank_name}.",
+      "success": "✓ Verified & Added **{display_name}** ({account_name}) to or beneficiaries."
     },
     "delete": {
-      "missing_target": "Please specify which beneficiary to remove.",
-      "not_found": "I couldn't find a beneficiary named '{target}'.",
-      "success": "Deleted **{target}** from beneficiaries."
+      "missing_target": "Jọwọ sọ which beneficiary to remove.",
+      "not_found": "Mi o le ri a beneficiary named '{target}'.",
+      "success": "Ti paarẹ **{target}** from beneficiaries."
     },
     "update": {
-      "not_supported": "Updating beneficiaries is not yet supported."
+      "not_supported": "Update beneficiaries is not yet supported."
     },
     "suggestion": {
       "ask_save_transfer_with_alias": "Ṣe o fẹ́ kí n fi {recipient_display} ({bank_display} • {masked_account}) pamọ́ gẹ́gẹ́ bí beneficiary?\n- Dahun 'save' kí n fi pamọ́ gẹ́gẹ́ bí '{alias}'\n- Tàbí fi orúkọ míì ranṣẹ́",
@@ -833,7 +843,7 @@
       "save_failed": "Pẹ̀lẹ́, mi ò le fi beneficiary yẹn pamọ́ báyìí."
     },
     "format": {
-      "suggestion": "💡 Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
+      "suggestion": "💡 Ṣe o fẹ to save {recipient_name} as a beneficiary for faster transfers? Fesi to confirm."
     }
   },
   "transfer": {
@@ -856,34 +866,34 @@
       }
     },
     "funding": {
-      "plan_failed": "Failed to plan funding.",
-      "insufficient_funds": "Insufficient funds.",
+      "plan_failed": "Ko le plan funding.",
+      "insufficient_funds": "Owo ko to.",
       "insufficient_funds_variants": {
-        "standard": "Insufficient funds.",
+        "standard": "Owo ko to.",
         "reassuring": "Balance ko to fun transfer yii. O le dinku iye naa, fi owo kun, tabi yan account miiran."
       }
     },
     "validation": {
-      "ask_amount": "How much would you like to send?",
+      "ask_amount": "Elo would o like to send?",
       "ask_amount_with_suggestion": "Elo ni ki n fi ranṣẹ si {recipient_name}? Mo le lo iye to kẹhin ({amount}). Dahun 'yes' lati lo o, tabi tẹ iye tuntun.",
-      "same_bank_fallback": "the same bank",
-      "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Please provide a different recipient account.",
-      "same_source_destination_fallback": "Source and destination accounts are the same. Please specify different accounts.",
-      "try_again_or_provide_details": "Please try again or provide different details."
+      "same_bank_fallback": "banki kanna",
+      "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Jọwọ pese a different recipient account.",
+      "same_source_destination_fallback": "Source and destination accounts are the same. Jọwọ sọ different accounts.",
+      "try_again_or_provide_details": "Jọwọ try again or provide different details."
     },
     "resolve": {
-      "need_bank_name_for_account": "I have account {recipient_account}, but I need the Bank Name.",
-      "bank_name_not_found": "I couldn't find a bank named '{bank_name}'. Could you verify the name?",
-      "account_verification_failed_need_name": "I couldn't verify account {recipient_account} at {recipient_bank_name}. Please provide the Recipient Name to proceed manually.",
-      "ask_recipient": "Who is the recipient?",
+      "need_bank_name_for_account": "I have account {recipient_account}, but Mo nilo the Bank Name.",
+      "bank_name_not_found": "Mi o le ri a bank named '{bank_name}'. Could you verify the name?",
+      "account_verification_failed_need_name": "Mi o le verify account {recipient_account} at {recipient_bank_name}. Jọwọ pese the Recipient Name to proceed manually.",
+      "ask_recipient": "Ta ni recipient naa?",
       "my_bank_account": "My {bank_name} Account",
       "my_bank_name": "My {bank_name}",
-      "which_recipient": "Which recipient did you mean?",
+      "which_recipient": "Ewo recipient did you mean?",
       "missing_account_number": "account number",
       "missing_bank_name": "bank name",
-      "ready_to_send": "I'm ready to send money to {recipient_name}",
-      "can_send_amount": "I can send {amount} to {recipient_name}",
-      "need_missing_details": "{base}, but I need their {missing}. Please provide the account details."
+      "ready_to_send": "Mo n ready to send money to {recipient_name}",
+      "can_send_amount": "Mo le fi ranṣẹ {amount} to {recipient_name}",
+      "need_missing_details": "{base}, but I need their {missing}. Jọwọ pese the account details."
     },
     "format": {
       "summary": {
@@ -905,30 +915,30 @@
         "field_to": "*To:* {recipient_name}",
         "field_bank": "*Bank:* {recipient_bank}",
         "field_account": "*Account:* `{recipient_account}`",
-        "narration": "Narration: {narration}",
+        "narration": "narration: Narration: {narration}",
         "funding_header": "*Funding from:*",
         "bank_fallback": "Account",
         "funding_item": "  • {bank} (···{last4}): {amount}",
-        "fee": "*Fee:* {fee}",
-        "total": "*Total:* {total}",
-        "authorize": "Tap *Authorize* to enter your PIN."
+        "fee": "fee: *Fee:* {fee}",
+        "total": "total: *Total:* {total}",
+        "authorize": "Tap *Authorize* to enter or PIN."
       },
       "multi_source_receipt": {
-        "success_header": "✓ *Transfer Successful!*",
+        "success_header": "✓ *Transfer ṣaṣeyọri!*",
         "title": "*{amount}* → {recipient_name}",
         "location_line": "📍 {recipient_bank} (`{recipient_account}`)",
         "funded_header": "*Funded from:*",
         "from_line": "*From:* {bank} (···{last4})",
         "ref": "*Ref:* `{reference}`",
-        "time": "*Time:* {time}"
+        "time": "time: *Time:* {time}"
       },
       "funding_plan": {
         "secondary_bank_fallback": "another account",
         "bank_fallback": "Account",
         "recipient_title": "*{amount} → {recipient_display} ({recipient_bank})*",
         "account_line": "Account: {recipient_account}",
-        "primary_balance": "Your {primary_bank} has *{balance}* — not enough for this transfer.",
-        "ask_use_secondary": "Would you like to use *{amount}* from your {secondary_bank} to complete it?",
+        "primary_balance": "Tirẹ {primary_bank} has *{balance}* — not enough for this transfer.",
+        "ask_use_secondary": "Ṣe o fẹ to use *{amount}* from your {secondary_bank} to complete it?",
         "suggested_header": "*Suggested breakdown:*",
         "suggested_item": "• {bank}: *{amount}*",
         "divider": "─────────────",
@@ -936,40 +946,40 @@
         "credit_after_debits": "Recipient yoo gba owo naa once gbogbo funding debits ba succeed."
       },
       "notifications": {
-        "success": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+        "success": "✓ Transfer ṣaṣeyọri! {amount} ti sent to {recipient_name}.",
         "success_variants": {
-          "standard": "✓ Transfer successful! {amount} has been sent to {recipient_name}.",
+          "standard": "✓ Transfer ṣaṣeyọri! {amount} ti sent to {recipient_name}.",
           "warm": "Ó ti ṣe. {amount} ti lọ si {recipient_name}.",
           "celebratory": "Ó ti pari. {amount} ti lọ si {recipient_name}."
         },
-        "pending": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+        "pending": "⏳ Your {amount} transfer to {recipient_name} is n ṣiṣẹ.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
         "pending_variants": {
-          "standard": "⏳ Your {amount} transfer to {recipient_name} is processing.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
+          "standard": "⏳ Your {amount} transfer to {recipient_name} is n ṣiṣẹ.\n\nYou'll receive confirmation shortly. If you don't receive it within 5 minutes,\nplease contact support.",
           "warm": "Mo ti gba. Transfer {amount} si {recipient_name} n ṣiṣẹ.\n\nIwọ yoo gba ìmúdájú laipẹ.",
           "reassuring": "Transfer {amount} si {recipient_name} n ṣiṣẹ. Ìmúdájú banki le gba iṣẹju diẹ."
         },
-        "queued": "✓ Your transfer of {amount} to {recipient_name} has been authorized and is being processed."
+        "queued": "✓ Your transfer of {amount} to {recipient_name} ti authorized and n processed."
       }
     },
     "execution": {
       "date_now": "Now",
-      "failed": "Execution failed: {error}",
-      "funding_setup_failed": "Funding setup failed",
+      "failed": "Execution kuna: {error}",
+      "funding_setup_failed": "Funding setup kuna",
       "failed_variants": {
-        "standard": "Execution failed: {error}",
+        "standard": "Execution kuna: {error}",
         "reassuring": "Mi o le pari transfer naa: {error}. Jọwọ gbiyanju lẹẹkansi tabi kan si support ti o ba tẹsiwaju."
       }
     },
     "error": {
-      "execution_failed": "Transfer could not be completed. Please try again.",
+      "execution_failed": "Transfer ko pari. Jọwọ gbiyanju lẹẹkansi.",
       "execution_failed_variants": {
-        "standard": "Transfer could not be completed. Please try again.",
+        "standard": "Transfer ko pari. Jọwọ gbiyanju lẹẹkansi.",
         "reassuring": "Transfer ko le pari ni bayi. Jọwọ gbiyanju lẹẹkansi."
       },
-      "pipeline_failed": "Pipeline failed: {error}",
-      "provider_failed": "Transfer failed at provider",
+      "pipeline_failed": "Pipeline kuna: {error}",
+      "provider_failed": "Transfer kuna at provider",
       "provider_failed_variants": {
-        "standard": "Transfer failed at provider",
+        "standard": "Transfer kuna at provider",
         "reassuring": "Provider ko le pari transfer naa ni bayi."
       }
     }
@@ -1003,7 +1013,7 @@
     "format": {
       "summary": {
         "source_bank_fallback": "Account",
-        "target_self": "your number",
+        "target_self": "nomba rẹ",
         "title": "*{amount} airtime fun {recipient_display}*",
         "title_variants": {
           "standard": "*{amount} airtime fun {recipient_display}*",
@@ -1024,12 +1034,12 @@
         "reassuring": "Airtime ₦{amount} fun {recipient_target} ({network}) n lọ lọwọ. Ijẹrisi provider le gba iṣẹju diẹ."
       },
       "processing_status": "Rira airtime yii ṣi n lọ lọwọ.",
-      "system_error": "System error during execution."
+      "system_error": "Aṣiṣe eto during execution."
     },
     "error": {
-      "execution_failed": "Airtime purchase could not be completed. Please try again.",
-      "pipeline_failed": "Pipeline failed: {error}",
-      "provider_failed": "Airtime purchase failed at provider"
+      "execution_failed": "Rira airtime ko pari. Jọwọ gbiyanju lẹẹkansi.",
+      "pipeline_failed": "Pipeline kuna: {error}",
+      "provider_failed": "Airtime purchase kuna at provider"
     },
     "executor": {
       "reference_fallback": "N/A",
@@ -1098,29 +1108,29 @@
       "generic_matches": "Awon eto data {network} kan niyi:\n{options}"
     },
     "error": {
-      "execution_failed": "Data purchase could not be completed. Please try again.",
-      "pipeline_failed": "Pipeline failed: {error}",
-      "system_processing": "System error during transaction processing.",
-      "pipeline_no_result": "Pipeline completed without definitive result.",
-      "provider_failed": "Data purchase failed at provider"
+      "execution_failed": "Rira data ko pari. Jọwọ gbiyanju lẹẹkansi.",
+      "pipeline_failed": "Pipeline kuna: {error}",
+      "system_processing": "System error during transaction n ṣiṣẹ.",
+      "pipeline_no_result": "Pipeline pari without definitive result.",
+      "provider_failed": "Data purchase kuna at provider"
     },
     "format": {
       "validity_days": "{days} days",
       "suggestion": {
-        "repeat": "You usually buy *{size} {network}* ({validity}) for ₦{amount}.\nWant me to get that again?\n\nReply *yes* to continue or *show plans* to see other options.",
-        "budget": "With ₦{amount}, the best option is:\n• *{network} {size}* — valid {validity}\n\nReply *yes* to continue or *show plans* to choose.",
-        "default": "I recommend:\n• *{network} {size}* — ₦{amount} ({validity})\n\nReply *yes* to continue or *show plans* to see other options."
+        "repeat": "You usually buy *{size} {network}* ({validity}) for ₦{amount}.\nWant me to get that again?\n\nFesi *yes* to continue or *show plans* to see other options.",
+        "budget": "With ₦{amount}, the best option is:\n• *{network} {size}* — valid {validity}\n\nFesi *yes* to continue or *show plans* to choose.",
+        "default": "I recommend:\n• *{network} {size}* — ₦{amount} ({validity})\n\nFesi *yes* to continue or *show plans* to see other options."
       },
       "plan_list": {
-        "header": "*{network} Data Plans:*",
+        "header": "header: *{network} Data Plans:*",
         "item": "• *{size}* — ₦{amount} ({validity})",
-        "reply_show_more": "Reply with plan size (e.g. *5GB*) or *show more*.",
-        "reply_select": "Reply with plan size (e.g. *5GB*) to select."
+        "reply_show_more": "Fesi pelu plan size (e.g. *5GB*) or *show more*.",
+        "reply_select": "Fesi pelu plan size (e.g. *5GB*) to select."
       },
       "summary": {
         "plan_name_fallback": "Data Plan",
         "source_bank_fallback": "Account",
-        "target_self": "your number",
+        "target_self": "nomba rẹ",
         "title": "*{plan_name} fun {target_display}*",
         "title_variants": {
           "standard": "*{plan_name} fun {target_display}*",
@@ -1153,11 +1163,11 @@
     }
   },
   "onboarding": {
-    "fallback_text": "Welcome to {app_name}! To complete your onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
+    "fallback_text": "Welcome to {app_name}! To complete or onboarding, please visit our secure portal: {onboarding_url}\n\n(Interactive onboarding is not supported on this channel)",
     "flow": {
-      "cta": "Start Onboarding",
-      "header": "Welcome to {app_name}",
-      "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
+      "cta": "Bẹrẹ onboarding",
+      "header": "Kaabo si {app_name}",
+      "body": "Hi, Mo n {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
   "schedule": {
@@ -1252,33 +1262,33 @@
   },
   "transaction_copy": {
     "confirmation": {
-      "transfer": "Confirm Transfer",
+      "transfer": "Jẹrisi Transfer",
       "transfer_variants": {
-        "standard": "Confirm Transfer",
-        "warm": "Review Transfer",
+        "standard": "Jẹrisi Transfer",
+        "warm": "Ṣayẹwo Transfer",
         "careful": "Ṣayẹwo Transfer Dáadáa",
-        "trusted_careful": "Review Transfer"
+        "trusted_careful": "Ṣayẹwo Transfer"
       },
-      "scheduled_transfer": "Confirm Scheduled Transfer",
-      "scheduled_airtime": "Confirm Scheduled Airtime Purchase",
-      "scheduled_data": "Confirm Scheduled Data Purchase",
-      "schedule_update": "Confirm Schedule Update",
-      "airtime": "Confirm Airtime Purchase",
+      "scheduled_transfer": "Jẹrisi scheduled transfer",
+      "scheduled_airtime": "Jẹrisi scheduled airtime",
+      "scheduled_data": "Jẹrisi scheduled data",
+      "schedule_update": "Jẹrisi update schedule",
+      "airtime": "Jẹrisi rira airtime",
       "airtime_variants": {
-        "standard": "Review Airtime Purchase",
-        "warm": "Review Airtime Purchase",
+        "standard": "Ṣayẹwo rira airtime",
+        "warm": "Ṣayẹwo rira airtime",
         "careful": "Ṣayẹwo Airtime Purchase Dáadáa",
-        "trusted_careful": "Review Airtime Purchase"
+        "trusted_careful": "Ṣayẹwo rira airtime"
       },
-      "data": "Confirm Data Purchase",
+      "data": "Jẹrisi rira data",
       "data_variants": {
-        "standard": "Review Data Purchase",
-        "warm": "Review Data Purchase",
+        "standard": "Ṣayẹwo rira data",
+        "warm": "Ṣayẹwo rira data",
         "careful": "Ṣayẹwo Data Purchase Dáadáa",
-        "trusted_careful": "Review Data Purchase"
+        "trusted_careful": "Ṣayẹwo rira data"
       },
-      "mixed": "Confirm Transactions",
-      "generic": "Confirm Transaction",
+      "mixed": "Jẹrisi transactions",
+      "generic": "Jẹrisi transaction",
       "section": {
         "transfer": "*Transfer*",
         "airtime": "*Airtime*",
@@ -1288,34 +1298,34 @@
     },
     "completion": {
       "header": {
-        "transfer": "*Transfer Complete*",
-        "transfer_plural": "*Transfers Complete*",
-        "airtime": "*Airtime Purchase Complete*",
+        "transfer": "*Transfer ti pari*",
+        "transfer_plural": "*Awon transfer ti pari*",
+        "airtime": "*Rira airtime ti pari*",
         "airtime_plural": "*Airtime Purchases Complete*",
-        "data": "*Data Purchase Complete*",
+        "data": "*Rira data ti pari*",
         "data_plural": "*Data Purchases Complete*",
         "mixed": "*Transaction Summary*"
       },
       "footer": {
-        "transfer": "_Transfer completed successfully_",
-        "transfer_plural": "_Transfers completed successfully_",
-        "airtime": "_Airtime purchase completed successfully_",
-        "airtime_plural": "_Airtime purchases completed successfully_",
-        "data": "_Data purchase completed successfully_",
-        "data_plural": "_Data purchases completed successfully_",
-        "mixed": "_All transactions completed successfully_"
+        "transfer": "_Transfer pari ṣaṣeyọrily_",
+        "transfer_plural": "_Transfers pari ṣaṣeyọrily_",
+        "airtime": "_Airtime purchase pari ṣaṣeyọrily_",
+        "airtime_plural": "_Airtime purchases pari ṣaṣeyọrily_",
+        "data": "_Data purchase pari ṣaṣeyọrily_",
+        "data_plural": "_Data purchases pari ṣaṣeyọrily_",
+        "mixed": "_All transactions pari ṣaṣeyọrily_"
       }
     }
   },
   "transaction_summary": {
     "batch": {
-      "confirm_title": "*Confirm Transfers ({count})*",
+      "confirm_title": "*Jẹrisi Transfers ({count})*",
       "total": "Lapapọ ti yoo jade: {amount}"
     },
     "multi": {
       "header": "*Transaction Summary*",
       "transfer_batch_line": "*Transfer:* {amount} to {count} recipients",
-      "recipient_unknown": "Unknown",
+      "recipient_unknown": "Aimọ",
       "recipient_fallback": "recipient",
       "transfer_single_line": "*Transfer:* {amount} to {recipient}",
       "transfer_compact_line": "{icon} {amount} → {recipient} • {bank} • {account}",
@@ -1328,7 +1338,7 @@
       "failure_reason": "  Reason: {reason}",
       "other_completed_line": "*{task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
-      "success_footer": "_All transactions completed successfully_",
+      "success_footer": "_All transactions pari ṣaṣeyọrily_",
       "update_header": {
         "transfer": "*Transfer Update*",
         "transfer_plural": "*Transfers Update*",
@@ -1349,7 +1359,7 @@
     },
     "intent": {
       "transfer_recipient_fallback": "Recipient",
-      "phone_fallback": "your line",
+      "phone_fallback": "laini rẹ",
       "data_plan_fallback": "Data",
       "transfer": "Send {amount} to {recipient}",
       "airtime": "Buy {amount} airtime for {phone}",
@@ -1359,65 +1369,65 @@
   },
   "funding": {
     "planner": {
-      "no_active_mandates": "No accounts with active mandates.",
-      "preferred_account_not_eligible": "Specified account not found or not eligible for direct debit.",
-      "preferred_insufficient": "Your {bank_name} has ₦{balance}. Need ₦{shortfall} more.",
-      "unable_to_create": "Unable to create funding plan."
+      "no_active_mandates": "Ko si accounts with active mandates.",
+      "preferred_account_not_eligible": "Specified account ko ri or not eligible for direct debit.",
+      "preferred_insufficient": "Tirẹ {bank_name} has ₦{balance}. Need ₦{shortfall} more.",
+      "unable_to_create": "Ko le create funding plan."
     },
     "batch": {
-      "shortfall_header": "⚠️ Insufficient funds for this batch",
-      "shortfall_body": "This batch needs {demanded}, but only {available} is currently available.",
+      "shortfall_header": "⚠️ Owo ko to fun batch yii",
+      "shortfall_body": "Batch yii nilo {demanded}, but only {available} is currently available.",
       "task_covered": "{task_id}: {amount} available from {bank}.",
       "task_short": "{task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
-      "alternate_suggestion": "💡 {bank} has {available}. Should I use it instead?",
-      "total_infeasible": "Reply with updated source accounts/split, or reduce the transfer amounts."
+      "alternate_suggestion": "💡 {bank} has {available}. Ṣe ki n lo dipo?",
+      "total_infeasible": "Fesi pelu updated source accounts/split, or reduce the transfer amounts."
     },
     "format": {
       "insufficient": {
-        "header": "*Insufficient Funds*",
+        "header": "*Owo Ko To*",
         "recipient_fallback": "Recipient",
-        "body": "You're trying to send *{transfer_amount}* to {recipient_display}, but your *{bank_name}* balance is only *{balance}*.",
+        "body": "O n gbiyanju lati fi *{transfer_amount}* ranṣẹ si {recipient_display}, sugbon balance *{bank_name}* rẹ jẹ *{balance}* nikan.",
         "options_header": "*Options:*",
         "option_send_instead": "• Send *{amount}* instead",
-        "option_add_funds_retry": "• Add funds & retry",
-        "option_cancel": "• Cancel transaction"
+        "option_add_funds_retry": "• Fi owo kun ki o tun gbiyanju",
+        "option_cancel": "• Fagile transaction"
       },
       "plan": {
         "bank_fallback_lower": "account",
         "bank_fallback": "Account",
-        "single_source_debit": "{amount} will be debited from your {bank} account.",
-        "multi_source_header": "To send {amount}, I'll combine:",
+        "single_source_debit": "{amount} will be debited from or {bank} account.",
+        "multi_source_header": "Lati fi ranṣẹ {amount}, I'll combine:",
         "multi_source_item": "• {amount} from {bank}"
       }
     }
   },
   "mandate": {
-    "expired_reinitiate": "Your account authorization has expired. Please reinitiate to continue.",
-    "pending_with_destinations": "Your account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n⏱️ {minutes_left} minutes remaining",
-    "pending_complete_transfer": "Your account authorization is pending. Please complete the ₦50 transfer to activate your account.",
-    "bank_fallback": "your bank",
+    "expired_reinitiate": "Authorization account rẹ ti pari. Jọwọ bẹrẹ lẹẹkansi lati tẹsiwaju.",
+    "pending_with_destinations": "Tirẹ account authorization is pending.\n\nTransfer ₦50 to any of these accounts:\n{destinations}\n\n⏱️ {minutes_left} minutes remaining",
+    "pending_complete_transfer": "Your account authorization is pending. Jọwọ pari the ₦50 transfer to activate your account.",
+    "bank_fallback": "or bank",
     "approved_awaiting_nibss": "✓ Your ₦50 authorization transfer was received!\n\nYour {bank_name} account {account_suffix} is being verified by NIBSS. This usually takes a few minutes but can take up to 24 hours.\n\nWe'll notify you as soon as it's ready! 🔔",
     "status_paused": "⏸️ Your account has been temporarily paused.\nPlease contact support to reinstate it.",
     "status_rejected": "❌ Your account authorization was rejected.\nPlease contact support to resolve this.",
-    "status_cancelled": "Your account authorization was cancelled.\nWould you like to reinitiate? Say *'reinitiate'* to start again.",
-    "status_not_ready": "Your account is not ready for payments yet."
+    "status_cancelled": "Your account authorization was cancelled.\nṢe o fẹ to reinitiate? Say *'reinitiate'* to start again.",
+    "status_not_ready": "Account rẹ ko ti ṣetan fun payments."
   },
   "authorization": {
     "error": {
-      "processing_failed": "Failed to process authorization. Please try again."
+      "processing_failed": "Authorization ko ṣiṣẹ. Jọwọ gbiyanju lẹẹkansi."
     }
   },
   "validation": {
     "amount": {
       "required": "Amount is required",
-      "invalid_format": "Invalid amount format. Please enter a valid number.",
-      "invalid_format_short": "Invalid amount format",
+      "invalid_format": "Ko tọ amount format. Jọwọ enter a valid number.",
+      "invalid_format_short": "Ko tọ amount format",
       "gt_zero": "Amount must be greater than zero.",
-      "minimum": "Minimum {transaction_type} amount is ₦{amount}.",
-      "maximum": "Maximum {transaction_type} amount is ₦{amount}."
+      "minimum": "O kere ju {transaction_type} amount is ₦{amount}.",
+      "maximum": "O pọju {transaction_type} amount is ₦{amount}."
     },
     "percentage": {
-      "invalid_format": "Invalid percentage format. Please enter a valid number.",
+      "invalid_format": "Ko tọ percentage format. Jọwọ enter a valid number.",
       "gt_zero": "Percentage must be greater than zero.",
       "max_100": "Percentage cannot exceed 100%."
     }
@@ -1431,141 +1441,141 @@
       "resolving_followup": {
         "first_generic": "Let me check that.",
         "first_scoped": "Let me check {scope_label}.",
-        "first_sent_to": "Checking recent payments to {counterparty_label}.",
-        "first_received_from": "Checking recent payments from {counterparty_label}.",
-        "first_with_counterparty": "Checking recent transactions with {counterparty_label}.",
-        "followup_generic": "Still checking that.",
-        "followup_scoped": "Still checking {scope_label}.",
-        "followup_sent_to": "Still checking recent payments to {counterparty_label}.",
-        "followup_received_from": "Still checking recent payments from {counterparty_label}.",
-        "followup_with_counterparty": "Still checking recent transactions with {counterparty_label}."
+        "first_sent_to": "Mo n ṣayẹwo recent payments to {counterparty_label}.",
+        "first_received_from": "Mo n ṣayẹwo recent payments from {counterparty_label}.",
+        "first_with_counterparty": "Mo n ṣayẹwo recent transactions with {counterparty_label}.",
+        "followup_generic": "Mo ṣi n ṣayẹwo that.",
+        "followup_scoped": "Mo ṣi n ṣayẹwo {scope_label}.",
+        "followup_sent_to": "Mo ṣi n ṣayẹwo recent payments to {counterparty_label}.",
+        "followup_received_from": "Mo ṣi n ṣayẹwo recent payments from {counterparty_label}.",
+        "followup_with_counterparty": "Mo ṣi n ṣayẹwo recent transactions with {counterparty_label}."
       },
       "fetching_transactions": {
         "first_generic": "Let me check that.",
         "first_scoped": "Let me check {scope_label}.",
-        "first_sent_to": "Checking recent payments to {counterparty_label}.",
-        "first_received_from": "Checking recent payments from {counterparty_label}.",
-        "first_with_counterparty": "Checking recent transactions with {counterparty_label}.",
+        "first_sent_to": "Mo n ṣayẹwo recent payments to {counterparty_label}.",
+        "first_received_from": "Mo n ṣayẹwo recent payments from {counterparty_label}.",
+        "first_with_counterparty": "Mo n ṣayẹwo recent transactions with {counterparty_label}.",
         "followup_generic": "Still checking that.",
-        "followup_scoped": "Still checking {scope_label}.",
-        "followup_sent_to": "Still checking recent payments to {counterparty_label}.",
-        "followup_received_from": "Still checking recent payments from {counterparty_label}.",
-        "followup_with_counterparty": "Still checking recent transactions with {counterparty_label}."
+        "followup_scoped": "Mo ṣi n ṣayẹwo {scope_label}.",
+        "followup_sent_to": "Mo ṣi n ṣayẹwo recent payments to {counterparty_label}.",
+        "followup_received_from": "Mo ṣi n ṣayẹwo recent payments from {counterparty_label}.",
+        "followup_with_counterparty": "Mo ṣi n ṣayẹwo recent transactions with {counterparty_label}."
       },
       "comparing_periods": {
         "first_generic": "Let me compare that.",
         "first_scoped": "Let me compare {scope_label}.",
-        "first_sent_to": "Comparing payments to {counterparty_label}.",
-        "first_received_from": "Comparing payments from {counterparty_label}.",
-        "first_with_counterparty": "Comparing transactions with {counterparty_label}.",
+        "first_sent_to": "Mo n fiwe payments to {counterparty_label}.",
+        "first_received_from": "Mo n fiwe payments from {counterparty_label}.",
+        "first_with_counterparty": "Mo n fiwe transactions with {counterparty_label}.",
         "followup_generic": "Still comparing that.",
-        "followup_scoped": "Still comparing {scope_label}.",
-        "followup_sent_to": "Still comparing payments to {counterparty_label}.",
-        "followup_received_from": "Still comparing payments from {counterparty_label}.",
-        "followup_with_counterparty": "Still comparing transactions with {counterparty_label}."
+        "followup_scoped": "Mo ṣi n fiwe {scope_label}.",
+        "followup_sent_to": "Mo ṣi n fiwe payments to {counterparty_label}.",
+        "followup_received_from": "Mo ṣi n fiwe payments from {counterparty_label}.",
+        "followup_with_counterparty": "Mo ṣi n fiwe transactions with {counterparty_label}."
       }
     },
     "transfer": {
       "resolving_recipient": {
         "first_generic": "Let me sort that out.",
-        "first_scoped": "Looking up {recipient_display}.",
+        "first_scoped": "Mo n wa {recipient_display}.",
         "followup_generic": "Still working on that.",
-        "followup_scoped": "Still looking up {recipient_display}."
+        "followup_scoped": "Mo ṣi n wa {recipient_display}."
       },
       "confirming_details": {
         "first_generic": "Let me sort that out.",
-        "first_scoped": "Verifying {recipient_display}'s account details.",
+        "first_scoped": "Mo n verify {recipient_display}'s account details.",
         "followup_generic": "Still working on that.",
-        "followup_scoped": "Still verifying {recipient_display}'s account details."
+        "followup_scoped": "Mo ṣi n verify {recipient_display}'s account details."
       },
       "authorizing_transfer": {
         "first_generic": "Let me sort that out.",
-        "first_scoped": "Authorizing your {amount} transfer to {recipient_display}.",
+        "first_scoped": "Mo n authorize {amount} transfer to {recipient_display}.",
         "followup_generic": "Still working on that.",
-        "followup_scoped": "Still authorizing your {amount} transfer to {recipient_display}."
+        "followup_scoped": "Mo ṣi n authorize {amount} transfer to {recipient_display}."
       },
       "processing_transfer": {
-        "first_generic": "Processing your transfer now.",
-        "followup_generic": "Still processing your transfer.",
+        "first_generic": "Mo n ṣiṣẹ lori transfer rẹ bayi.",
+        "followup_generic": "Still n ṣiṣẹ your transfer.",
         "first_scoped": "A ń ṣiṣẹ lori gbigbe {amount} rẹ si {recipient_display} bayi.",
         "followup_scoped": "A ṣì ń ṣiṣẹ lori gbigbe {amount} rẹ si {recipient_display}."
       }
     },
     "scope": {
-      "transactions": "your transactions",
-      "outgoing_transactions": "your outgoing transactions",
-      "incoming_transactions": "your incoming transactions",
-      "spending": "your spending",
-      "sent": "what you sent",
-      "received": "what you received",
-      "sent_to": "what you sent to {counterparty}",
-      "received_from": "what you received from {counterparty}",
-      "transactions_with": "your transactions with {counterparty}",
-      "with_category": "{scope_label} for {category}",
+      "transactions": "transactions rẹ",
+      "outgoing_transactions": "transactions ti o ran jade",
+      "incoming_transactions": "transactions ti o gba",
+      "spending": "inawo rẹ",
+      "sent": "ohun ti o ranṣẹ",
+      "received": "ohun ti o gba",
+      "sent_to": "ohun ti o ranṣẹ si {counterparty}",
+      "received_from": "ohun ti o gba lati {counterparty}",
+      "transactions_with": "transactions rẹ with {counterparty}",
+      "with_category": "{scope_label} fun {category}",
       "with_time": "{scope_label} {time_phrase}"
     },
     "time": {
       "today": "today",
-      "this_month": "this month",
-      "range": "from {start} to {end}"
+      "this_month": "oṣu yii",
+      "range": "lati {start} si {end}"
     }
   },
   "response": {
     "common": {
       "recipient_fallback": "recipient",
-      "unknown": "Unknown",
+      "unknown": "Aimọ",
       "na": "N/A",
-      "error_occurred": "An error occurred"
+      "error_occurred": "Aṣiṣe waye"
     },
     "format": {
       "candidate_item": "• {name} ({bank_name} • …{last4})"
     },
     "fallback": {
-      "generic": "I'm sorry, something went wrong. Please try again."
+      "generic": "Ma binu, nkan kan ko ṣiṣẹ. Jọwọ gbiyanju lẹẹkansi."
     },
     "templates": {
-      "ask_amount": "How much would you like to send?",
-      "ask_recipient": "I don't have '{recipient_name}' saved as a beneficiary yet. What's their account number and bank?",
-      "ask_recipient_no_name": "Who would you like to send money to? You can provide their name, account number, or both.",
-      "ask_bank": "Which bank is that for?",
-      "ask_account_number": "What's the account number for {recipient_name}?",
+      "ask_amount": "Elo ni o fẹ fi ranṣẹ?",
+      "ask_recipient": "Mi o ti fi '{recipient_name}' pamọ bi beneficiary. Kini account number ati banki wọn?",
+      "ask_recipient_no_name": "Ta ni o fẹ fi owo ranṣẹ si? O le fi orukọ, account number, tabi mejeeji ranṣẹ.",
+      "ask_bank": "Banki wo ni?",
+      "ask_account_number": "Kini account number fun {recipient_name}?",
       "ask_account_number_and_bank": "Kini nomba account ati banki ti {recipient_name}?",
-      "ask_phone_number": "What phone number should I send to?",
-      "ask_network": "Which network is {phone_masked}?",
-      "ask_data_plan": "Which data plan would you like?",
-      "clarify_beneficiary": "I found multiple matches for '{recipient_name}'. Which one did you mean?\n{candidates_list}",
-      "clarify_account": "Which of your accounts would you like to send from?",
-      "clarify_bank": "I couldn't find a bank called '{bank_name}'. Please provide the correct bank name.",
-      "confirm_transfer": "Just to confirm: {formatted_amount} to {recipient_name} at {bank_name}?",
-      "confirm_airtime": "Just to confirm: {formatted_amount} airtime to {phone_masked} ({network})?",
-      "confirm_data": "Just to confirm: {data_plan} data for {phone_masked} ({network})?",
-      "transfer_success": "✓ Done! {formatted_amount} has been sent to {recipient_name}.",
+      "ask_phone_number": "Nomba foonu wo ni ki n fi ranṣẹ si?",
+      "ask_network": "Network wo ni {phone_masked}?",
+      "ask_data_plan": "Data plan wo ni o fẹ?",
+      "clarify_beneficiary": "Mo ri matches ju ọkan lọ fun '{recipient_name}'. Ewo ni o tumọ si?\n{candidates_list}",
+      "clarify_account": "Account rẹ wo ni ki n lo?",
+      "clarify_bank": "Mi o ri banki ti a npe ni '{bank_name}'. Jọwọ fi orukọ banki to tọ ranṣẹ.",
+      "confirm_transfer": "Lati jẹrisi: {formatted_amount} si {recipient_name} ni {bank_name}?",
+      "confirm_airtime": "Lati jẹrisi: {formatted_amount} airtime to {phone_masked} ({network})?",
+      "confirm_data": "Lati jẹrisi: {data_plan} data for {phone_masked} ({network})?",
+      "transfer_success": "✓ Ti pari! {formatted_amount} ti ranṣẹ si {recipient_name}.",
       "airtime_success": "✓ Ti pari! Airtime {formatted_amount} ti lọ si {phone_masked}.",
       "data_success": "✓ Ti pari! Data {data_plan} ti ṣiṣẹ fun {phone_masked}.",
-      "insufficient_balance": "You don't have enough balance. Available: {formatted_amount}.",
-      "account_not_found": "I couldn't find that account. Please check the account number and try again.",
-      "account_validation_failed": "I couldn't verify that account right now. Please try again.",
-      "bank_not_found": "I couldn't find a bank called '{bank_name}'. Please provide the correct bank name.",
-      "session_expired": "Your session has expired. Please start again.",
-      "pin_failed": "Incorrect PIN. Please try again.",
-      "max_attempts_exceeded": "Maximum attempts exceeded. Please start a new transaction.",
-      "transfer_failed": "Transfer failed: {error_message}",
+      "insufficient_balance": "Balance rẹ ko to. Eyi to wa: {formatted_amount}.",
+      "account_not_found": "Mi o ri account naa. Jọwọ ṣayẹwo account number ki o tun gbiyanju.",
+      "account_validation_failed": "Mi o le verify that account right now. Jọwọ gbiyanju lẹẹkansi.",
+      "bank_not_found": "Mi o le ri a bank called '{bank_name}'. Jọwọ pese the correct bank name.",
+      "session_expired": "Session rẹ ti pari. Jọwọ bẹrẹ lẹẹkansi.",
+      "pin_failed": "PIN ko tọ. Jọwọ gbiyanju lẹẹkansi.",
+      "max_attempts_exceeded": "O pọju attempts exceeded. Jọwọ start a new transaction.",
+      "transfer_failed": "Transfer kuna: {error_message}",
       "airtime_failed": "Airtime purchase ko pari: {error_message}",
       "data_failed": "Data purchase ko pari: {error_message}",
-      "invalid_amount": "Invalid amount. {error_message}",
-      "invalid_phone_number": "Invalid phone number. Please enter a valid Nigerian number (e.g., 08012345678).",
-      "invalid_network": "Invalid network. Please choose from: MTN, Airtel, Glo, or 9mobile.",
-      "cancelled": "Transaction cancelled.",
+      "invalid_amount": "Ko tọ amount. {error_message}",
+      "invalid_phone_number": "Ko tọ phone number. Jọwọ enter a valid Nigerian number (e.g., 08012345678).",
+      "invalid_network": "Ko tọ network. Jọwọ choose from: MTN, Airtel, Glo, or 9mobile.",
+      "cancelled": "Transaction ti fagile.",
       "mandate_required": "⚠️ {error_message}",
-      "account_selection_required": "Which account would you like to use?",
-      "greeting": "Hi{user_greeting}! How can I help you today?",
-      "help": "I can help you with:\n• Sending money\n• Buying airtime\n• Buying data\n• Checking your balance\n\nWhat would you like to do?",
-      "beneficiary_saved": "✓ Saved {recipient_name} as a beneficiary.",
-      "recipient_changed": "Got it, updating the recipient to {recipient_name}.",
-      "amount_changed": "Got it, updating the amount to {formatted_amount}.",
-      "acknowledge_change": "Alright, changing {changes_text}.",
-      "transfer_all_acknowledged": "Sending your full balance to {recipient_name}...",
-      "cancellation_continue": "No problem, continuing with your {formatted_amount} transfer to {recipient_name}."
+      "account_selection_required": "Ewo account would you like to use?",
+      "greeting": "Bawo{user_greeting}! Kini ni mo le ran ọ lọwọ pẹlu loni?",
+      "help": "I can help you with:\n• Sending money\n• Buying airtime\n• Buying data\n• Checking your balance\n\nKini would you like to do?",
+      "beneficiary_saved": "✓ Ti fipamọ {recipient_name} as a beneficiary.",
+      "recipient_changed": "O ye, n update the recipient to {recipient_name}.",
+      "amount_changed": "O ye, n update the amount to {formatted_amount}.",
+      "acknowledge_change": "O dara, changing {changes_text}.",
+      "transfer_all_acknowledged": "Sending or full balance to {recipient_name}...",
+      "cancellation_continue": "Ko si problem, continuing with or {formatted_amount} transfer to {recipient_name}."
     }
   }
 }

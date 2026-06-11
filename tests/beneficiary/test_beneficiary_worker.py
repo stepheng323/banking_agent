@@ -84,3 +84,102 @@ async def test_delete_beneficiary_passes_instance_to_repository_delete(monkeypat
     assert result.outcome == TransactionOutcome.OK
     assert repo.deleted is existing
     assert uow.commit_calls == 1
+
+
+async def test_list_beneficiaries_count_shape_returns_count_first_preview(monkeypatch) -> None:
+    repo = _FakeBeneficiaryRepo(
+        existing=[
+            SimpleNamespace(
+                id="bene-1",
+                alias="Mum",
+                account_name="Mama Nkechi",
+                bank_name="Opay",
+                account_number="8162511023",
+            ),
+            SimpleNamespace(
+                id="bene-2",
+                alias="Tolu Access",
+                account_name="Tolu Adebayo",
+                bank_name="Access Bank",
+                account_number="2010000001",
+            ),
+            SimpleNamespace(
+                id="bene-3",
+                alias="Tolu GTB",
+                account_name="Tolu Adeyemi",
+                bank_name="GTBank",
+                account_number="2010000002",
+            ),
+            SimpleNamespace(
+                id="bene-4",
+                alias="Tolu First",
+                account_name="Tolulope Johnson",
+                bank_name="First Bank",
+                account_number="2010000003",
+            ),
+        ]
+    )
+    monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await BeneficiaryWorker().run(
+        {"action": "list_beneficiaries", "intent": "list_beneficiaries", "response_shape": "fact_count"},
+        {"user_id": "user-1", "language": "en"},
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response == (
+        "You have 4 saved beneficiaries.\n\n"
+        "Examples:\n"
+        "• Mum (Mama Nkechi) - Opay • …1023\n"
+        "• Tolu Access (Tolu Adebayo) - Access Bank • …0001\n"
+        "• Tolu GTB (Tolu Adeyemi) - GTBank • …0002"
+    )
+    assert "Tolu First" not in result.response
+
+
+async def test_list_beneficiaries_zero_count_uses_natural_copy(monkeypatch) -> None:
+    repo = _FakeBeneficiaryRepo(existing=[])
+    monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await BeneficiaryWorker().run(
+        {"action": "list_beneficiaries", "intent": "list_beneficiaries", "response_shape": "fact_count"},
+        {"user_id": "user-1", "language": "en"},
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response == "You haven't saved any beneficiaries yet."
+    assert " 0 " not in f" {result.response} "
+
+
+async def test_list_beneficiaries_surface_list_keeps_full_list(monkeypatch) -> None:
+    repo = _FakeBeneficiaryRepo(
+        existing=[
+            SimpleNamespace(
+                id="bene-1",
+                alias="Mum",
+                account_name="Mama Nkechi",
+                bank_name="Opay",
+                account_number="8162511023",
+            ),
+            SimpleNamespace(
+                id="bene-2",
+                alias="Tolu Access",
+                account_name="Tolu Adebayo",
+                bank_name="Access Bank",
+                account_number="2010000001",
+            ),
+        ]
+    )
+    monkeypatch.setattr(worker_module, "UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await BeneficiaryWorker().run(
+        {"action": "list_beneficiaries", "intent": "list_beneficiaries", "response_shape": "surface_list"},
+        {"user_id": "user-1", "language": "en"},
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response is not None
+    assert result.response.startswith("*Saved Beneficiaries*")
+    assert "*Mum* (Mama Nkechi)" in result.response
+    assert "*Tolu Access* (Tolu Adebayo)" in result.response
+    assert "You have 2 saved beneficiaries." not in result.response

@@ -28,6 +28,8 @@ class BeneficiaryWorker:
         """Run beneficiary operation."""
         del user_message, pin_verified
         locale = LocaleManager.normalize(context.get("language")).value
+        if payload.get("response_shape") and not context.get("response_shape"):
+            context = {**context, "response_shape": payload.get("response_shape")}
         try:
             intent = payload.get("intent")
             user_id = context.get("user_id") or payload.get("user_id")
@@ -70,6 +72,7 @@ class BeneficiaryWorker:
 
     async def _list_beneficiaries(self, user_id: str, context: dict[str, Any]) -> TransactionResult:
         locale = LocaleManager.normalize(context.get("language")).value
+        response_shape = str(context.get("response_shape") or "").strip().lower()
         async with UnitOfWork() as uow:
             beneficiaries = await uow.beneficiaries.get_by_user(user_id)
 
@@ -77,6 +80,23 @@ class BeneficiaryWorker:
                 {"name": b.account_name, "alias": b.alias, "bank": b.bank_name, "account": b.account_number}
                 for b in beneficiaries
             ]
+
+            if response_shape in {"fact_count", "fact_bool"}:
+                count = len(beneficiaries)
+                if count == 0:
+                    lines = [render_message("beneficiary.list.count_zero", locale)]
+                elif count == 1:
+                    lines = [render_message("beneficiary.list.count_one", locale)]
+                else:
+                    lines = [render_message("beneficiary.list.count_many", locale, {"count": count})]
+                preview_lines = self._beneficiary_preview_lines(beneficiaries[:3])
+                if preview_lines:
+                    lines.extend(["", render_message("beneficiary.list.preview_header", locale), *preview_lines])
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    response="\n".join(lines),
+                    details={"viewed_beneficiaries": simple_list} if simple_list else {},
+                )
 
             if not beneficiaries:
                 return TransactionResult(
@@ -116,6 +136,33 @@ class BeneficiaryWorker:
             outcome=TransactionOutcome.FAILED,
             error=render_message("beneficiary.error.process_failed", locale),
         )
+
+    @staticmethod
+    def _beneficiary_preview_lines(beneficiaries: list[Any]) -> list[str]:
+        lines: list[str] = []
+        for b in beneficiaries:
+            alias = b.alias or b.account_name
+            account_name = b.account_name
+            bank_name = b.bank_name
+            account_number = b.account_number
+            display = str(alias or account_name or "").strip()
+            if (
+                isinstance(alias, str)
+                and isinstance(account_name, str)
+                and alias.strip()
+                and account_name.strip()
+                and alias.lower() != account_name.lower()
+            ):
+                display = f"{alias} ({account_name})"
+            detail_parts = []
+            if bank_name:
+                detail_parts.append(str(bank_name))
+            if account_number:
+                detail_parts.append(f"…{str(account_number)[-4:]}")
+            details = f" - {' • '.join(detail_parts)}" if detail_parts else ""
+            if display:
+                lines.append(f"• {display}{details}")
+        return lines
 
     async def _add_beneficiary(self, user_id: str, payload: dict, context: dict) -> TransactionResult:
         del user_id, payload

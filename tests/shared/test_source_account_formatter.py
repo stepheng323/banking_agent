@@ -36,6 +36,24 @@ def test_source_account_info_resolves_number_from_source_account_id() -> None:
     assert line == "From: Access Bank (···0003)"
 
 
+def test_pidgin_source_account_info_uses_clear_banking_label() -> None:
+    line = build_source_account_info(
+        task_payload={"source_account_id": "acct-access", "source_bank_name": "Access Bank"},
+        snapshot={},
+        accounts=[
+            {
+                "id": "acct-access",
+                "bank_name": "Access Bank",
+                "account_number": "1234500003",
+            }
+        ],
+        locale="pcm",
+    )
+
+    assert line == "From account: Access Bank (···0003)"
+    assert "Comot from" not in line
+
+
 def test_source_account_info_uses_serialized_account_last4_when_number_is_encrypted() -> None:
     line = build_source_account_info(
         task_payload={"source_account_id": "acct-access", "source_bank_name": "Access Bank"},
@@ -67,6 +85,25 @@ def test_transfer_summary_uses_shared_source_line_formatter() -> None:
         locale="en",
     )
     assert "From: First Bank (···7890)" in summary
+
+
+def test_transfer_summary_preserves_canonical_bank_display() -> None:
+    summary = format_transfer_summary(
+        {
+            "amount": 5000,
+            "recipientName": "Tolu Adebayo",
+            "recipientBank": "GTB",
+            "recipientAccount": "8067892221",
+            "sourceBank": "access",
+            "sourceAccount": "1234567890",
+        },
+        include_source=True,
+        locale="en",
+    )
+
+    assert "GTBank • 8067892221" in summary
+    assert "Gtbank • 8067892221" not in summary
+    assert "From: Access Bank (···7890)" in summary
 
 
 def test_transfer_success_message_omits_provider_transaction_id() -> None:

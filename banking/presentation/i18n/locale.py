@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from difflib import SequenceMatcher
 from typing import ClassVar
 
 from banking.presentation.i18n.models import LanguageDetectionSignal, LocaleCode
@@ -20,6 +22,8 @@ class LocaleManager:
     AUTO_SWITCH_THRESHOLD: ClassVar[int] = 2
     LOCALE_TTL_SECONDS: ClassVar[int] = 60 * 60 * 24 * 30
     CANDIDATE_TTL_SECONDS: ClassVar[int] = 60 * 60 * 24 * 7
+    FUZZY_ALIAS_MIN_LENGTH: ClassVar[int] = 5
+    FUZZY_ALIAS_THRESHOLD: ClassVar[float] = 0.82
 
     _ALIASES: ClassVar[dict[str, LocaleCode]] = {
         "en": LocaleCode.EN,
@@ -43,14 +47,48 @@ class LocaleManager:
         return parsed if parsed is not None else cls.DEFAULT_LOCALE
 
     @classmethod
-    def parse_locale_name(cls, value: str | LocaleCode | None) -> LocaleCode | None:
+    def _normalize_alias_token(cls, value: str) -> str:
+        token = re.sub(r"[^a-z0-9\s-]+", " ", value.strip().lower())
+        return re.sub(r"\s+", " ", token).strip()
+
+    @classmethod
+    def _parse_fuzzy_alias(cls, token: str) -> LocaleCode | None:
+        if len(token) < cls.FUZZY_ALIAS_MIN_LENGTH or " " in token:
+            return None
+
+        best_alias = None
+        best_score = 0.0
+        for alias in cls._ALIASES:
+            if len(alias) < cls.FUZZY_ALIAS_MIN_LENGTH or " " in alias:
+                continue
+            score = SequenceMatcher(a=token, b=alias).ratio()
+            if score > best_score:
+                best_alias = alias
+                best_score = score
+
+        if best_alias is None or best_score < cls.FUZZY_ALIAS_THRESHOLD:
+            return None
+        return cls._ALIASES[best_alias]
+
+    @classmethod
+    def parse_locale_name(cls, value: str | LocaleCode | None, *, allow_fuzzy: bool = False) -> LocaleCode | None:
         if isinstance(value, LocaleCode):
             return value
         if not value:
             return None
 
-        token = value.strip().lower()
-        return cls._ALIASES.get(token)
+        token = cls._normalize_alias_token(value)
+        parsed = cls._ALIASES.get(token)
+        if parsed is not None or not allow_fuzzy:
+            return parsed
+        return cls._parse_fuzzy_alias(token)
+
+    @classmethod
+    def aliases_for(cls, locale: str | LocaleCode) -> tuple[str, ...]:
+        resolved = cls.parse_locale_name(locale)
+        if resolved is None:
+            return ()
+        return tuple(alias for alias, alias_locale in cls._ALIASES.items() if alias_locale == resolved)
 
     @classmethod
     def from_detection(cls, detected_language: str | None) -> LocaleCode:

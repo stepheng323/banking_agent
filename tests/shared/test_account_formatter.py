@@ -1,4 +1,5 @@
 from banking.accounts.management.formatter import AccountFormatter
+from banking.presentation.formatters.accounts import get_last4
 
 
 def test_format_balance_response_single_account_natural_sentence() -> None:
@@ -50,3 +51,43 @@ def test_format_balance_response_multi_account_bullet_points() -> None:
     assert "Here are your account balances" in rendered
     assert "total of" in rendered
     assert "₦45,000.00" in rendered
+
+
+def test_account_list_does_not_mask_internal_account_id_as_account_number() -> None:
+    rendered = AccountFormatter.format_account_list(
+        [
+            {
+                "id": "b479e495-2e59-40f1-b7c3-85cb2dcd89f0",
+                "bank_name": "First Bank",
+                "mandate_status": "ready",
+            }
+        ],
+        locale="en",
+    )
+
+    assert "First Bank (···????)" in rendered
+    assert "89f0" not in rendered
+
+
+def test_account_list_uses_explicit_account_number_last4_when_number_is_not_available() -> None:
+    rendered = AccountFormatter.format_account_list(
+        [
+            {
+                "id": "b479e495-2e59-40f1-b7c3-85cb2dcd89f0",
+                "bank_name": "First Bank",
+                "account_number_last4": "5262",
+                "mandate_status": "ready",
+            }
+        ],
+        locale="en",
+    )
+
+    assert "First Bank (···5262)" in rendered
+    assert "89f0" not in rendered
+    assert "****5262" not in rendered
+
+
+def test_get_last4_never_falls_back_to_internal_id_suffix() -> None:
+    last4 = get_last4({"id": "b479e495-2e59-40f1-b7c3-85cb2dcd89f0"}, locale="en")
+
+    assert last4 == "????"

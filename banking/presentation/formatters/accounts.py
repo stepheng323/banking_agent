@@ -13,23 +13,21 @@ def get_last4(account: Any, locale: str = "en") -> str:
         if number:
             return number[-4:]
 
-        last4 = account.get("last4")
+        last4 = account.get("last4") or account.get("account_number_last4")
         if last4:
             return str(last4)
 
-        acc_id = str(account.get("id") or "")
-        return acc_id[-4:] if acc_id else fallback_last4
+        return fallback_last4
     else:
         number = str(getattr(account, "account_number", "") or getattr(account, "number", "") or "")
         if number:
             return number[-4:]
 
-        last4 = getattr(account, "last4", None)
+        last4 = getattr(account, "last4", None) or getattr(account, "account_number_last4", None)
         if last4:
             return str(last4)
 
-        acc_id = str(getattr(account, "id", "") or getattr(account, "account_id", "") or "")
-        return acc_id[-4:] if acc_id else fallback_last4
+        return fallback_last4
 
 
 def get_bank_label(account: Any, locale: str = "en") -> str:

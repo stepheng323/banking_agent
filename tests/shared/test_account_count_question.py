@@ -53,7 +53,59 @@ async def test_account_worker_answers_count_question() -> None:
     )
 
     assert result.outcome == AccountOutcome.OK
-    assert result.response == "You have 3 linked accounts."
+    assert result.response == (
+        "You have 3 linked accounts.\n\nExamples:\n• First • …0001\n• GTB • …0002\n• Access • …0003"
+    )
+
+
+async def test_account_worker_zero_count_uses_natural_copy() -> None:
+    worker = AccountWorker(
+        account_repo=_DummyRepo(),
+        user_repo=_DummyRepo(),
+        llm=_DummyLLM(),
+        banking_provider=_DummyBankingProvider(),
+        session_manager=None,
+        direct_debit_provider=None,
+    )
+
+    result = await worker.run(
+        payload={"action": "count"},
+        context={"profile": {"id": "u_1"}, "language": "en", "accounts": []},
+        user_message="How many accounts do I have?",
+    )
+
+    assert result.outcome == AccountOutcome.OK
+    assert result.response == "You don't have any linked accounts."
+    assert " 0 " not in f" {result.response} "
+
+
+async def test_account_worker_keeps_list_shape_distinct_from_count() -> None:
+    worker = AccountWorker(
+        account_repo=_DummyRepo(),
+        user_repo=_DummyRepo(),
+        llm=_DummyLLM(),
+        banking_provider=_DummyBankingProvider(),
+        session_manager=None,
+        direct_debit_provider=None,
+    )
+
+    result = await worker.run(
+        payload={"action": "list_accounts", "response_shape": "surface_list"},
+        context={
+            "profile": {"id": "u_1"},
+            "language": "en",
+            "accounts": [
+                {"id": "a1", "bank_name": "First", "account_number": "0001"},
+                {"id": "a2", "bank_name": "GTB", "account_number": "0002"},
+            ],
+        },
+        user_message="Show my accounts",
+    )
+
+    assert result.outcome == AccountOutcome.OK
+    assert result.response is not None
+    assert result.response.startswith("*Your Bank Accounts*")
+    assert "You have 2 linked accounts." not in result.response
 
 
 def test_account_worker_serializes_dict_accounts_for_context_frames() -> None:

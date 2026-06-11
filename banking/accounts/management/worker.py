@@ -94,6 +94,8 @@ class AccountWorker:
         action = payload.get("action")
         identifier = payload.get("identifier")
         identifiers = payload.get("identifiers")
+        response_shape = str(payload.get("response_shape") or "").strip().lower()
+        skip_parse = bool(payload.get("skip_parse"))
 
         if not action:
             parsed = await self.parser.parse(text)
@@ -116,6 +118,7 @@ class AccountWorker:
             and not identifier
             and not identifiers
             and text
+            and not skip_parse
         ):
             parsed = await self.parser.parse(text)
             identifier = parsed.identifier
@@ -124,7 +127,7 @@ class AccountWorker:
                 patch["identifier"] = identifier
             if identifiers:
                 patch["identifiers"] = identifiers
-        elif action in ("list", "list_accounts") and text:
+        elif action in ("list", "list_accounts") and response_shape != "surface_list" and text:
             # Let parser refine list-like intents into nuanced account intents (e.g. count).
             parsed = await self.parser.parse(text)
             if parsed.action and parsed.action != "unknown":
@@ -138,6 +141,10 @@ class AccountWorker:
 
         if action == "list_accounts":
             action = "list"
+            patch["action"] = action
+
+        if response_shape in {"fact_count", "fact_bool"} and action == "list":
+            action = "count"
             patch["action"] = action
 
         if action == "unknown" or not action:
@@ -172,11 +179,18 @@ class AccountWorker:
             if not accounts and user_id:
                 accounts = await self.account_repo.get_by_user(user_id)
             count = len(accounts)
-            noun = "account" if count == 1 else "accounts"
-            response = f"You have {count} linked {noun}."
+            if count == 0:
+                lines = [render_message("account.list.count_zero", locale)]
+            elif count == 1:
+                lines = [render_message("account.list.count_one", locale)]
+            else:
+                lines = [render_message("account.list.count_many", locale, {"count": count})]
+            preview_lines = self._account_preview_lines(list(accounts)[:3])
+            if preview_lines:
+                lines.extend(["", render_message("account.list.preview_header", locale), *preview_lines])
             return AccountResult(
                 outcome=AccountOutcome.OK,
-                response=response,
+                response="\n".join(lines),
                 patch=patch,
                 details={"viewed_accounts": serialize_accounts(accounts)} if accounts else {},
             )
@@ -256,3 +270,18 @@ class AccountWorker:
     def _resolve_locale(user_ctx: dict[str, Any], payload: dict[str, Any]) -> str:
         language = user_ctx.get("language") or payload.get("language")
         return LocaleManager.normalize(language).value
+
+    @staticmethod
+    def _account_preview_lines(accounts: list[Any]) -> list[str]:
+        lines: list[str] = []
+        for account in accounts:
+            if isinstance(account, dict):
+                bank_name = str(account.get("bank_name") or account.get("bank") or "Account").strip()
+                account_number = str(account.get("account_number") or account.get("number") or "").strip()
+            else:
+                bank_name = str(getattr(account, "bank_name", None) or getattr(account, "bank", None) or "Account")
+                account_number = str(getattr(account, "account_number", None) or getattr(account, "number", None) or "")
+            suffix = f" • …{account_number[-4:]}" if account_number else ""
+            if bank_name:
+                lines.append(f"• {bank_name}{suffix}")
+        return lines

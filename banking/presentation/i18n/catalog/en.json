@@ -489,7 +489,8 @@
       "summary_sent": "You sent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_received": "You received *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_average": "Your average transaction is *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' to see details_",
-      "summary_count": "You made *{count}* transaction(s){timeframe}.",
+      "summary_count": "You made *{count}* {transaction_label}{timeframe}.",
+      "summary_count_zero": "You didn't make any transactions{timeframe}.",
       "transaction_singular": "transaction",
       "transaction_plural": "transactions",
       "single_expense": "Your {adjective} expense{timeframe}",
@@ -560,6 +561,10 @@
     "list": {
       "empty": "You don't have any linked bank accounts yet.\n\nSay 'link account' to connect your bank.",
       "header": "*Your Bank Accounts*",
+      "count_zero": "You don't have any linked accounts.",
+      "count_one": "You have 1 linked account.",
+      "count_many": "You have {count} linked accounts.",
+      "preview_header": "Examples:",
       "default_badge": " (default)",
       "commands_hint": "_'set 2 as default' | 'unlink GTB'_"
     },
@@ -761,6 +766,7 @@
       "pending_scheduled_count": "You have {count} pending {noun}.",
       "only_found": "Yes. That's the only {noun} I found.",
       "count_found": "Yes. Those are the {count} {noun} I found.",
+      "count_preview_clarification": "I showed {shown_count} examples to keep it short. You have {total_count} {noun} in total.",
       "comparison_header": "Comparison",
       "explain_count": "I showed {count} {noun} from the last result.",
       "and_more_suffix": ", and {count} more",
@@ -801,7 +807,11 @@
     },
     "list": {
       "empty": "You haven't saved any beneficiaries yet.",
-      "header": "*Saved Beneficiaries*"
+      "header": "*Saved Beneficiaries*",
+      "count_zero": "You haven't saved any beneficiaries yet.",
+      "count_one": "You have 1 saved beneficiary.",
+      "count_many": "You have {count} saved beneficiaries.",
+      "preview_header": "Examples:"
     },
     "common": {
       "default_name": "Beneficiary",

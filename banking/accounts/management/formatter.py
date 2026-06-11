@@ -20,6 +20,12 @@ STATUS_ICONS = {
 
 class AccountFormatter:
     @staticmethod
+    def _mask_from_last4(last4: str | None) -> str:
+        """Build a markdown-safe masked account suffix from a known last4 value."""
+        suffix = (last4 or "").strip() or "????"
+        return f"···{suffix}"
+
+    @staticmethod
     def format_account_list(accounts: list[Any], locale: str = "en") -> str:
         """Format list of accounts for display."""
         if not accounts:
@@ -40,8 +46,9 @@ class AccountFormatter:
             effective_status = effective_mandate_status(account)
             status_icon = STATUS_ICONS.get(effective_status, "")
             status_suffix = f" [{status_icon}]" if status_icon else ""
+            masked = AccountFormatter._mask_from_last4(last4)
 
-            lines.append(f"{i}. {bank_name} (****{last4}){default_badge}{status_suffix}")
+            lines.append(f"{i}. {bank_name} ({masked}){default_badge}{status_suffix}")
 
         lines.append("")
         lines.append(render_message("account.list.commands_hint", locale))
@@ -52,7 +59,7 @@ class AccountFormatter:
     def _mask_account(account_number: str | None) -> str:
         """Build markdown-safe masked account suffix."""
         last4 = account_number[-4:] if account_number else "????"
-        return f"···{last4}"
+        return AccountFormatter._mask_from_last4(last4)
 
     @staticmethod
     def format_balance_response(balances: list[dict], total_balance: MoneyAmount | None, locale: str = "en") -> str:
