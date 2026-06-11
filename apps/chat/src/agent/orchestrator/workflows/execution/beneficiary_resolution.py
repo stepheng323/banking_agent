@@ -14,9 +14,13 @@ def _normalize_beneficiary_rows(rows: list[Any]) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for row in rows:
         if isinstance(row, dict):
-            normalized.append(row)
+            record = dict(row)
         else:
-            normalized.append(sqlalchemy_to_dict(row))
+            record = sqlalchemy_to_dict(row)
+            account_number = getattr(row, "account_number", None)
+            if account_number is not None:
+                record["account_number"] = str(account_number)
+        normalized.append(record)
     return normalized
 
 

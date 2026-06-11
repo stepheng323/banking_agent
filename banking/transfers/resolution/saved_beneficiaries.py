@@ -110,11 +110,44 @@ async def saved_beneficiary_result(
     bank_cache: Any | None,
 ) -> TransactionResult:
     """Return a saved-beneficiary patch, resolving Mono bank code when the saved record has only a bank name."""
-    if patch.get("recipient_bank_code"):
-        return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
-
     account_number = optional_text(patch.get("recipient_account"))
     bank_name = optional_text(patch.get("recipient_bank_name"))
+    bank_code = optional_text(patch.get("recipient_bank_code"))
+    recipient_name = patch.get("recipient_name") or payload.recipient_name
+
+    if not account_number and not (bank_name or bank_code):
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_account", "recipient_bank_name"],
+            prompt=ask_account_and_bank_prompt(locale, recipient_name),
+            patch=patch,
+        )
+    if not account_number:
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_account"],
+            prompt=render_message(
+                "response.templates.ask_account_number",
+                locale,
+                {"recipient_name": recipient_name or render_message("response.common.recipient_fallback", locale)},
+            ),
+            patch=patch,
+        )
+    if not (bank_name or bank_code):
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_bank_name"],
+            prompt=render_message(
+                "transfer.resolve.need_bank_name_for_account",
+                locale,
+                {"recipient_account": account_number},
+            ),
+            patch=patch,
+        )
+
+    if bank_code:
+        return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
+
     if not account_number or not bank_name or not resolver_provider or not bank_cache:
         return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
 
@@ -193,6 +226,14 @@ def build_beneficiary_clarify_result(
                 "beneficiary_id": beneficiary_id,
                 "option_id": option_id,
                 "label": label,
+                "recipient_name": candidate.alias or candidate.account_name,
+                "recipient_resolved_name": candidate.account_name or candidate.alias,
+                "recipient_account": optional_text(candidate.account_number),
+                "recipient_bank_name": candidate.bank_name,
+                "recipient_bank_code": optional_text(candidate.bank_code),
+                "recipient_bank_code_provider": beneficiary_provider(None, candidate.bank_code),
+                "recipient_resolution_provider": beneficiary_provider(None, candidate.bank_code),
+                "resolved_from_saved_beneficiary": True,
             }
         )
         options.append({"id": option_id, "title": label})

@@ -6,6 +6,7 @@ from typing import Any
 from banking.presentation.formatters.currency import format_naira
 from banking.transactions.shared.source_account_guard import find_account_by_bank_name
 from banking.transfers.models.types import TransferContext, TransferPayload
+from shared.utils.bank_aliases import display_bank_name
 from shared.utils.sanitize import normalize_bank_account_number
 
 _ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN = re.compile(r"^\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s+(?P<bank>.+?)\s*$")
@@ -87,7 +88,7 @@ _CONFIRMATION_NARRATION_RE = re.compile(
     r"^(?:"
     r"(?:add\s+that\s+)?(?:it'?s|its|it\s+is|this\s+is)\s+for\s+(?P<for_text>.+)"
     r"|for\s+(?P<bare_for_text>.+)"
-    r"|(?:narration|memo|note|description|reason|purpose)(?:\s+(?:should\s+be|is|as|to\s+be|to))?[:\s]+(?P<label_text>.+)"
+    r"|(?:the\s+)?(?:narration|memo|note|description|reason|purpose)(?:\s+(?:should\s+be|is|as|to\s+be|to))?[:\s]+(?P<label_text>.+)"
     r"|use\s+(?P<use_text>.+?)\s+as\s+(?:narration|memo|note|description)"
     r")$",
     re.IGNORECASE,
@@ -210,7 +211,7 @@ def parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
             and not bank_name.isdigit()
             and not _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name)
         ):
-            return normalized_account, bank_name
+            return normalized_account, display_bank_name(bank_name) or bank_name
 
     for pattern in (_ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN, _ACCOUNT_BANK_BANK_FIRST_PATTERN):
         match = pattern.match(re.sub(r"\s+", " ", text.replace("\n", " ")).strip())
@@ -227,7 +228,7 @@ def parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
         if _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name):
             continue
 
-        return normalized_account, bank_name
+        return normalized_account, display_bank_name(bank_name) or bank_name
 
     return None
 
@@ -309,6 +310,7 @@ def parse_simple_transfer_command(
                 "recipient_bank_code": None,
                 "recipient_bank_code_provider": None,
                 "recipient_resolution_provider": None,
+                "recipient_resolution_mode": None,
                 "recipient_resolved_name": None,
                 "name_mismatch": False,
                 "name_match_score": None,
@@ -528,6 +530,11 @@ def _parse_single_confirmation_narration_edit(user_message: str) -> dict[str, An
         "transition_acknowledgment": "Added narration.",
     }
     return patch
+
+
+def parse_confirmation_narration_edit(user_message: str) -> dict[str, Any] | None:
+    """Parse a single-transfer confirmation narration update without requiring prior snapshot state."""
+    return _parse_single_confirmation_narration_edit(user_message)
 
 
 def parse_single_confirmation_transfer_edit(

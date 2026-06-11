@@ -197,6 +197,7 @@ def _apply_transfer_payload_fields(
             payload.pop("recipient_bank_code", None)
             payload.pop("recipient_bank_code_provider", None)
             payload.pop("recipient_resolution_provider", None)
+            payload.pop("recipient_resolution_mode", None)
 
     recipient_bank_name = payload.get("recipient_bank_name")
     if isinstance(recipient_bank_name, str) and recipient_bank_name:
@@ -205,6 +206,7 @@ def _apply_transfer_payload_fields(
             payload.pop("recipient_bank_code", None)
             payload.pop("recipient_bank_code_provider", None)
             payload.pop("recipient_resolution_provider", None)
+            payload.pop("recipient_resolution_mode", None)
             payload.pop("recipient_resolved_name", None)
 
     if format_narration_requires_recipient_field and not has_recipient_field:

@@ -14,6 +14,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_demands import (
     _batch_transfer_task_ids_for_wave,
     _batch_transfer_tasks_not_ready_for_funding,
+    _recipient_ready_for_funding,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import (
@@ -409,6 +410,29 @@ def _batch_not_ready_task_ids_for_transfer(task_id: str, ctx: ExecutionTurnConte
     return _batch_transfer_tasks_not_ready_for_funding(ctx.state, current_wave, task_id=task_id)
 
 
+def _result_makes_current_transfer_ready_for_batch(
+    *,
+    task_id: str,
+    result: TransactionResult,
+    ctx: ExecutionTurnContext,
+) -> bool:
+    task = ctx.state.tasks.get(task_id)
+    payload = dict(task.payload) if task and isinstance(task.payload, dict) else {}
+    if isinstance(result.patch, dict):
+        payload.update(result.patch)
+
+    snapshot = result.confirmation_snapshot if isinstance(result.confirmation_snapshot, dict) else {}
+    if snapshot:
+        if not payload.get("recipient_account"):
+            payload["recipient_account"] = snapshot.get("recipient_account") or snapshot.get("recipientAccount")
+        if not payload.get("recipient_bank_name") and not payload.get("recipient_bank_code"):
+            payload["recipient_bank_name"] = snapshot.get("recipient_bank") or snapshot.get("recipientBank")
+        if not payload.get("recipient_resolved_name"):
+            payload["recipient_resolved_name"] = snapshot.get("recipient_name") or snapshot.get("recipientName")
+
+    return _recipient_ready_for_funding(payload)
+
+
 def _should_suppress_single_leg_batch_blocker(
     *,
     task_id: str,
@@ -424,6 +448,12 @@ def _should_suppress_single_leg_batch_blocker(
 
     if result.outcome in {TransactionOutcome.NEEDS_CONFIRMATION, TransactionOutcome.NEEDS_AUTH}:
         waiting_task_ids = _batch_not_ready_task_ids_for_transfer(task_id, ctx)
+        if task_id in waiting_task_ids and _result_makes_current_transfer_ready_for_batch(
+            task_id=task_id,
+            result=result,
+            ctx=ctx,
+        ):
+            waiting_task_ids = [candidate_id for candidate_id in waiting_task_ids if candidate_id != task_id]
         return bool(waiting_task_ids), waiting_task_ids
 
     return False, []

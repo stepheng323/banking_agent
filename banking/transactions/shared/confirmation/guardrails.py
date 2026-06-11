@@ -17,6 +17,10 @@ _MODIFICATION_RE = re.compile(
     r"beneficiary|narration|memo|note|description|reason|purpose)\b",
     re.IGNORECASE,
 )
+_NARRATION_PURPOSE_RE = re.compile(
+    r"\b(?:na\s+for|it's\s+for|its\s+for|is\s+for|for)\s+[a-z][\w' -]{1,80}$",
+    re.IGNORECASE,
+)
 _NEW_REQUEST_RE = re.compile(
     r"\b(?:send|transfer|pay|buy|airtime|data|bundle|recharge|top\s*up|balance|"
     r"show|list|check|beneficiar|recipient|receipt|transaction)\b",
@@ -44,7 +48,7 @@ def confirmation_guardrail_decision(
 
     has_account = bool(_ACCOUNT_NUMBER_RE.search(normalized))
     has_amount = bool(_AMOUNT_RE.search(normalized))
-    has_modify = bool(_MODIFICATION_RE.search(normalized))
+    has_modify = bool(_MODIFICATION_RE.search(normalized) or _NARRATION_PURPOSE_RE.search(normalized))
 
     if has_account or has_modify:
         return ConfirmationDecision("modify", "guardrail", 0.99, "modification_or_account_detail")

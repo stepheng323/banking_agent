@@ -5,7 +5,12 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import (
+    AuthorizationContext,
+    PendingInterrupt,
+    TaskSpec,
+    TaskStage,
+)
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
@@ -1103,6 +1108,9 @@ async def test_multi_transfer_update_messages_compact_to_single_heads_up() -> No
                 payload={
                     "amount": 20000,
                     "recipient_name": "Mum",
+                    "recipient_resolved_name": "Mum",
+                    "recipient_account": "2010000001",
+                    "recipient_bank_name": "Access Bank",
                     "source_account_id": "acct-1",
                     "update_message_override": "Changing amount to ₦20,000.",
                 },
@@ -1114,6 +1122,9 @@ async def test_multi_transfer_update_messages_compact_to_single_heads_up() -> No
                 payload={
                     "amount": 10000,
                     "recipient_name": "Gaines",
+                    "recipient_resolved_name": "Gaines",
+                    "recipient_account": "2010000002",
+                    "recipient_bank_name": "GTBank",
                     "source_account_id": "acct-1",
                     "update_message_override": "Updating recipient to Gaines.",
                 },
@@ -1274,14 +1285,20 @@ async def test_mixed_two_transfers_and_airtime_keep_all_tasks_after_late_source_
     state = _apply(state, first_updates).model_copy(
         update={
             "last_message_text": "0760705267, Access",
-            "waves": [["t_gaines", "t_airtime"]],
+            "waves": [["t_gaines", "t_tolu", "t_airtime"]],
         }
     )
 
     details_updates = await handle_pending_interrupt(state, config)
     state = _apply(state, details_updates)
-    source_updates = await advance_wave(state, config)
-    state = _apply(state, source_updates).model_copy(update={"last_message_text": "1"})
+
+    review_updates = await advance_wave(state, config)
+    assert "Recipient review" in review_updates["outbox"][0]["text"]
+    state = _apply(state, review_updates).model_copy(update={"last_message_text": "yes"})
+
+    review_acceptance_updates = await handle_pending_interrupt(state, config)
+    assert "Which account would you like to use?" in review_acceptance_updates["outbox"][0]["text"]
+    state = _apply(state, review_acceptance_updates).model_copy(update={"last_message_text": "1"})
 
     source_selection_updates = await handle_pending_interrupt(state, config)
     state = _apply(state, source_selection_updates)
@@ -1542,14 +1559,19 @@ async def test_mixed_transfer_clarification_keeps_airtime_in_final_confirmation(
     state = _apply(state, first_updates).model_copy(update={"last_message_text": "1"})
     beneficiary_updates = await handle_pending_interrupt(state, config)
     state = _apply(state, beneficiary_updates)
-    source_updates = await advance_wave(state, config)
-    source_prompt = source_updates["outbox"][0]
-    assert source_updates["pending_interrupt"].task_ids == ["t_transfer"]
+    review_updates = await advance_wave(state, config)
+    assert review_updates["pending_interrupt"].task_ids == ["t_transfer"]
+    assert "Recipient review" in review_updates["outbox"][0]["text"]
+
+    state = _apply(state, review_updates).model_copy(update={"last_message_text": "yes"})
+    review_acceptance_updates = await handle_pending_interrupt(state, config)
+    source_prompt = review_acceptance_updates["outbox"][0]
+    assert review_acceptance_updates["pending_interrupt"].task_ids == ["t_transfer"]
     assert "Also in this batch" in (source_prompt.get("title") or source_prompt.get("text") or "")
     assert "Buy ₦500 airtime for 08162511023" in (source_prompt.get("title") or source_prompt.get("text") or "")
     assert source_prompt["queue"]["queued_task_ids"] == ["t_airtime"]
 
-    state = _apply(state, source_updates).model_copy(update={"last_message_text": "1"})
+    state = _apply(state, review_acceptance_updates).model_copy(update={"last_message_text": "1"})
     source_selection_updates = await handle_pending_interrupt(state, config)
     state = _apply(state, source_selection_updates)
     final_updates = await advance_wave(state, config)
@@ -2711,8 +2733,19 @@ async def test_added_airtime_batch_overwrites_stale_single_transfer_async_group_
         waves=[["t_transfer", "t_airtime"]],
         current_wave_index=0,
         pin_verified=True,
-        last_callback={"pin_verified": True, "flow_type": "transfer"},
-        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        last_callback={"pin_verified": True, "flow_type": "batch", "idempotency_key": "idem-added-batch"},
+        authorization_context=AuthorizationContext(
+            idempotency_key="idem-added-batch",
+            flow_type="batch",
+            user_id="u_added_airtime_stale_single_group",
+            authorized_task_idempotency_keys=["idem-transfer", "idem-airtime"],
+        ),
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t_transfer", "t_airtime"],
+            authorization_idempotency_key="idem-added-batch",
+            authorized_task_idempotency_keys=["idem-transfer", "idem-airtime"],
+        ),
         loaded_context={
             "language": "en",
             "accounts": [
@@ -2738,6 +2771,7 @@ async def test_added_airtime_batch_overwrites_stale_single_transfer_async_group_
                     "recipient_bank_name": "First Bank",
                     "source_account_id": "acct-access",
                     "confirmation": {"summary": "Confirm transfer", "snapshot": {"amount": 2000}},
+                    "idempotency_key": "idem-transfer",
                     "async_group_id": "old-single-transfer-group",
                     "async_group_size": 1,
                     "async_group_kind": "single",
@@ -2754,6 +2788,7 @@ async def test_added_airtime_batch_overwrites_stale_single_transfer_async_group_
                     "network": "mtn",
                     "source_account_id": "acct-access",
                     "confirmation": {"summary": "Confirm airtime", "snapshot": {"amount": 1000}},
+                    "idempotency_key": "idem-airtime",
                 },
             ),
         },
@@ -2802,11 +2837,13 @@ async def test_transfer_pin_resume_rehydrates_missing_payload_from_auth_snapshot
         channel="whatsapp",
         waves=[["t_adebayo"]],
         current_wave_index=0,
-        last_callback={"pin_verified": True, "flow_type": "transfer"},
+        last_callback={"pin_verified": True, "flow_type": "transfer", "idempotency_key": "idem-adebayo"},
         pending_interrupt=PendingInterrupt(
             kind="auth",
             task_ids=["t_adebayo"],
             auth_method="pin",
+            authorization_idempotency_key="idem-adebayo",
+            authorized_task_idempotency_keys=["idem-adebayo"],
             prompt="Confirm Transfer\n\n₦6,000 → Adebayo (Tolu Adebayo)\nAccess Bank • 2010000001",
         ),
         loaded_context={
@@ -2891,8 +2928,13 @@ async def test_multi_transfer_batch_pin_callback_executes_all_tasks_and_emits_pr
         channel="whatsapp",
         waves=[["t_adebayo", "t_mum"]],
         current_wave_index=0,
-        last_callback={"pin_verified": True, "flow_type": "transfer"},
-        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_adebayo", "t_mum"]),
+        last_callback={"pin_verified": True, "flow_type": "batch", "idempotency_key": "idem-multi-transfer"},
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t_adebayo", "t_mum"],
+            authorization_idempotency_key="idem-multi-transfer",
+            authorized_task_idempotency_keys=["idem-adebayo", "idem-mum"],
+        ),
         loaded_context={
             "language": "en",
             "accounts": [

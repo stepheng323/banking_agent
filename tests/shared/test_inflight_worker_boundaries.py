@@ -53,12 +53,8 @@ DELETED_PACKAGE_PATHS = (
     "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_models.py")),
     "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "confirmation_phrases.py")),
     "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "__init__.py")),
-    "/".join(
-        ("apps", "chat", "src", "agent", "orchestrator", "confirmation", "affirmation", "__init__.py")
-    ),
-    "/".join(
-        ("apps", "chat", "src", "agent", "orchestrator", "confirmation", "affirmation", "service.py")
-    ),
+    "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "affirmation", "__init__.py")),
+    "/".join(("apps", "chat", "src", "agent", "orchestrator", "confirmation", "affirmation", "service.py")),
     "/".join(("apps", "chat", "src", "schedulers")),
     "/".join(("banking", "knowledge")),
 )

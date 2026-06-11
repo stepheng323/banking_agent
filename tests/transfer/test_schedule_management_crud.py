@@ -171,6 +171,22 @@ async def test_schedule_management_count_mode_reports_pending_count(monkeypatch:
 
 
 @pytest.mark.asyncio
+async def test_schedule_management_count_mode_zero_uses_natural_empty_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _FakeScheduleRepo([])
+    monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))
+
+    result = await _scheduling().list_schedules(
+        data=TransferPayload(schedule_response_mode="count"),
+        user_id="user-1",
+        locale="en",
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.response == "You have no active scheduled transactions."
+    assert " 0 " not in f" {result.response} "
+
+
+@pytest.mark.asyncio
 async def test_schedule_management_empty_list_uses_locale_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _FakeScheduleRepo([])
     monkeypatch.setattr("banking.transfers.scheduling.UnitOfWork", lambda: _FakeUnitOfWork(repo))

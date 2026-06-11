@@ -33,6 +33,29 @@ def _normalize_text(value: str | None) -> str:
     return " ".join(tokens)
 
 
+def _beneficiary_identity_key(beneficiary: Beneficiary) -> tuple[str, str, str, str, str]:
+    account_number = re.sub(r"\D+", "", str(beneficiary.account_number or ""))
+    return (
+        _normalize_text(str(beneficiary.alias or "")),
+        _normalize_text(str(beneficiary.account_name or "")),
+        account_number,
+        _normalize_text(str(beneficiary.bank_name or "")),
+        str(beneficiary.bank_code or "").strip().lower(),
+    )
+
+
+def _dedupe_beneficiaries(beneficiaries: list[Beneficiary]) -> list[Beneficiary]:
+    unique: list[Beneficiary] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+    for beneficiary in beneficiaries:
+        key = _beneficiary_identity_key(beneficiary)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(beneficiary)
+    return unique
+
+
 class BeneficiaryMatcher:
     """Fuzzy match beneficiary names from a saved list.
 
@@ -46,6 +69,23 @@ class BeneficiaryMatcher:
         self.max_candidates = max_candidates
         self.threshold_single = threshold_single
         self.threshold_min = threshold_min
+
+    def exact_matches(self, name: str, beneficiaries: list[Beneficiary]) -> list[Beneficiary]:
+        """Return de-duplicated beneficiaries whose alias or account name exactly matches name."""
+        if not name or not beneficiaries:
+            return []
+
+        normalized_query = _normalize_text(name)
+        if not normalized_query:
+            return []
+
+        exact_matches: list[Beneficiary] = []
+        for beneficiary in _dedupe_beneficiaries(beneficiaries):
+            alias = _normalize_text(str(beneficiary.alias or ""))
+            account_name = _normalize_text(str(beneficiary.account_name or ""))
+            if (alias and alias == normalized_query) or (account_name and account_name == normalized_query):
+                exact_matches.append(beneficiary)
+        return exact_matches
 
     @staticmethod
     def _beneficiary_best_ratio(query: str, beneficiary: Beneficiary) -> float:
@@ -69,19 +109,14 @@ class BeneficiaryMatcher:
         if not name or not beneficiaries:
             return "ask_details", None, []
 
+        beneficiaries = _dedupe_beneficiaries(beneficiaries)
         normalized_query = _normalize_text(name)
         query_tokens = normalized_query.split()
 
         # First, collect exact matches (case-insensitive).
         # For short single-token queries (e.g. "tolu"), one exact alias can still be ambiguous
         # if multiple beneficiaries contain the same token.
-        exact_matches: list[Beneficiary] = []
-        for b in beneficiaries:
-            alias = _normalize_text(str(b.alias or ""))
-            account_name = _normalize_text(str(b.account_name or ""))
-
-            if (alias and alias == normalized_query) or (account_name and account_name == normalized_query):
-                exact_matches.append(b)
+        exact_matches = self.exact_matches(name, beneficiaries)
 
         if len(exact_matches) > 1:
             return "clarify", None, exact_matches[: self.max_candidates]

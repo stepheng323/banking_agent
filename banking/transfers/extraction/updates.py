@@ -92,6 +92,7 @@ async def extract_transfer_update(
             extracted_data["recipient_bank_code"] = None
             extracted_data["recipient_bank_code_provider"] = None
             extracted_data["recipient_resolution_provider"] = None
+            extracted_data["recipient_resolution_mode"] = None
             extracted_data["recipient_resolved_name"] = None
             extracted_data["name_mismatch"] = False
             extracted_data["name_match_score"] = None
@@ -130,6 +131,7 @@ async def extract_transfer_update(
 
         if "recipient_account" in extracted_data:
             extracted_data["recipient_resolved_name"] = None
+            extracted_data["recipient_resolution_mode"] = None
             extracted_data["name_mismatch"] = False
             extracted_data["name_match_score"] = None
             extracted_data["name_mismatch_warning"] = None
@@ -158,6 +160,7 @@ async def extract_transfer_update(
                 extracted_data.pop("recipient_bank_code", None)
                 extracted_data.pop("recipient_bank_code_provider", None)
                 extracted_data.pop("recipient_resolution_provider", None)
+                extracted_data.pop("recipient_resolution_mode", None)
                 extracted_data.pop("recipient_bank_name", None)
 
             elif not names_match:
@@ -165,6 +168,7 @@ async def extract_transfer_update(
                 extracted_data["recipient_bank_code"] = None
                 extracted_data["recipient_bank_code_provider"] = None
                 extracted_data["recipient_resolution_provider"] = None
+                extracted_data["recipient_resolution_mode"] = None
                 extracted_data["recipient_bank_name"] = None
                 extracted_data["recipient_resolved_name"] = None
                 extracted_data["beneficiary_id"] = None

@@ -34,9 +34,46 @@ from banking.transfers.resolution.saved_beneficiaries import (
 )
 from shared.config.settings import settings
 from shared.database.models import Beneficiary
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
+
+
+def _bank_alias_suffixes(bank_name: str | None) -> list[str]:
+    raw = str(bank_name or "").strip()
+    if not raw:
+        return []
+
+    values = [raw]
+    lowered = raw.lower()
+    if lowered.endswith(" bank"):
+        values.append(raw[: -len(" bank")].strip())
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = value.lower()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        unique.append(value)
+    return unique
+
+
+def _recipient_bank_alias_candidates(payload: TransferPayload, recipient_name: str | None) -> list[str]:
+    name = str(recipient_name or "").strip()
+    if not name:
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for bank_suffix in _bank_alias_suffixes(payload.recipient_bank_name):
+        candidate = f"{name} {bank_suffix}".strip()
+        key = candidate.lower()
+        if candidate and key not in seen:
+            seen.add(key)
+            candidates.append(candidate)
+    return candidates
 
 
 async def resolve_beneficiary(
@@ -61,17 +98,37 @@ async def resolve_beneficiary(
             else:
                 current_name = str(payload.recipient_name or "").strip()
                 selected_alias = str(selected.get("alias") or "").strip()
-                selected_account_name = str(selected.get("account_name") or "").strip()
+                selected_account_name = str(
+                    selected.get("account_name") or selected.get("recipient_resolved_name") or ""
+                ).strip()
                 recipient_name = current_name or selected_alias or selected_account_name or None
                 resolved_name = selected_account_name or selected_alias or current_name or None
-                bank_code = optional_text(selected.get("bank_code"))
-                provider = beneficiary_provider(selected.get("bank_code_provider"), bank_code)
-                resolution_provider = beneficiary_provider(selected.get("resolution_provider"), bank_code)
+                account_number = optional_text(
+                    selected.get("account_number") or selected.get("recipient_account") or payload.recipient_account
+                )
+                bank_code = optional_text(
+                    selected.get("bank_code") or selected.get("recipient_bank_code") or payload.recipient_bank_code
+                )
+                bank_name = (
+                    selected.get("bank_name") or selected.get("recipient_bank_name") or payload.recipient_bank_name
+                )
+                provider = beneficiary_provider(
+                    selected.get("bank_code_provider")
+                    or selected.get("recipient_bank_code_provider")
+                    or payload.recipient_bank_code_provider,
+                    bank_code,
+                )
+                resolution_provider = beneficiary_provider(
+                    selected.get("resolution_provider")
+                    or selected.get("recipient_resolution_provider")
+                    or payload.recipient_resolution_provider,
+                    bank_code,
+                )
                 return await saved_beneficiary_result(
                     {
-                        "recipient_account": optional_text(selected.get("account_number")),
+                        "recipient_account": account_number,
                         "recipient_bank_code": bank_code,
-                        "recipient_bank_name": selected.get("bank_name"),
+                        "recipient_bank_name": bank_name,
                         "recipient_bank_code_provider": provider,
                         "recipient_resolution_provider": resolution_provider or provider,
                         "recipient_name": recipient_name,
@@ -88,7 +145,11 @@ async def resolve_beneficiary(
                     bank_cache,
                 )
 
-    if payload.recipient_resolved_name:
+    if (
+        payload.recipient_resolved_name
+        and payload.recipient_account
+        and (payload.recipient_bank_code or payload.recipient_bank_name)
+    ):
         return TransactionResult(outcome=TransactionOutcome.OK)
 
     raw_recipient_name = payload.recipient_name
@@ -294,14 +355,36 @@ async def resolve_beneficiary(
             )
 
     matcher = BeneficiaryMatcher()
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "beneficiary_match_attempt",
         recipient_name=recipient_name_for_match,
         beneficiary_count=len(beneficiaries),
     )
 
+    for alias_candidate in _recipient_bank_alias_candidates(payload, recipient_name_for_match):
+        exact_candidates = matcher.exact_matches(alias_candidate, beneficiaries)
+        if not exact_candidates:
+            continue
+        log_orchestrator_diagnostic(
+            logger,
+            "beneficiary_exact_alias_match_attempt",
+            alias_candidate=alias_candidate,
+            candidate_count=len(exact_candidates),
+        )
+        if len(exact_candidates) == 1:
+            return await saved_beneficiary_result(
+                build_single_beneficiary_patch(exact_candidates[0], alias_candidate),
+                payload,
+                locale,
+                resolver_provider,
+                bank_cache,
+            )
+        return build_beneficiary_clarify_result(alias_candidate, exact_candidates, locale)
+
     status, single, candidates = matcher.match(recipient_name_for_match, beneficiaries)
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "beneficiary_match_result",
         status=status,
         candidate_count=len(candidates),

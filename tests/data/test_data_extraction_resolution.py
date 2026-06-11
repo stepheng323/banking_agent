@@ -8,6 +8,7 @@ from banking.bills.data.models.types import DataContext, DataGates, DataPayload
 from banking.bills.data.nodes.confirmation import ConfirmationStep
 from banking.bills.data.nodes.extraction import ExtractionStep
 from banking.bills.data.nodes.resolution import ResolutionStep
+from banking.bills.data.nodes.selection import SourceSelectionStep
 from banking.runtime.results import TransactionOutcome
 
 
@@ -155,6 +156,46 @@ async def test_data_source_account_slot_accepts_bank_reference_without_extractor
     assert payload.source_account_number == "0000000002"
     assert payload.source_account_index is None
     assert payload.stage == "extracted"
+
+
+@pytest.mark.asyncio
+async def test_data_source_selection_uses_account_last4_when_full_number_is_encrypted() -> None:
+    step = SourceSelectionStep()
+    payload = DataPayload(
+        amount=1500,
+        target_phone="08162511023",
+        network="MTN",
+        plan_code="mtn-2gb",
+        plan_name="MTN 2GB",
+    )
+    context = DataContext(
+        phone_number="2348000000000",
+        language="en",
+        accounts=[
+            {
+                "id": "access-1",
+                "bank_name": "Access Bank",
+                "account_name": "Access Main",
+                "account_number_last4": "0003",
+                "is_default": True,
+            }
+        ],
+    )
+
+    result = await step.run(payload, context, DataGates(), SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.OK
+    assert payload.source_account_id == "access-1"
+    assert payload.source_bank_name == "Access Bank"
+    assert payload.source_account_name == "Access Main"
+    assert payload.source_account_number == "0003"
+
+    confirmation = await ConfirmationStep().run(payload, context, DataGates(), SimpleNamespace())
+
+    assert confirmation is not None
+    assert confirmation.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert "From: Access Bank (···0003)" in (confirmation.confirmation_summary or "")
+    assert "????" not in (confirmation.confirmation_summary or "")
 
 
 @pytest.mark.asyncio

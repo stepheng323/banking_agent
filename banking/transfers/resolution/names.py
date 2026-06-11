@@ -135,14 +135,20 @@ def build_name_consistency_patch(payload: TransferPayload, resolved_name: str | 
 
 def matches_selected_beneficiary(payload: TransferPayload, selected: dict[str, Any]) -> bool:
     """Return True when current payload still targets the selected beneficiary."""
-    selected_account = str(selected.get("account_number") or "").strip()
-    selected_bank_code = str(selected.get("bank_code") or "").strip()
+    selected_account = str(selected.get("account_number") or selected.get("recipient_account") or "").strip()
+    selected_bank_code = str(selected.get("bank_code") or selected.get("recipient_bank_code") or "").strip()
     selected_bank_code_provider = (
-        str(selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name).strip().lower()
+        str(
+            selected.get("bank_code_provider")
+            or selected.get("recipient_bank_code_provider")
+            or settings.beneficiary_resolver_provider_name
+        )
+        .strip()
+        .lower()
     )
-    selected_bank_name = str(selected.get("bank_name") or "").strip()
+    selected_bank_name = str(selected.get("bank_name") or selected.get("recipient_bank_name") or "").strip()
     selected_alias = str(selected.get("alias") or "").strip()
-    selected_account_name = str(selected.get("account_name") or "").strip()
+    selected_account_name = str(selected.get("account_name") or selected.get("recipient_resolved_name") or "").strip()
 
     req_account = str(payload.recipient_account or "").strip()
     if req_account and selected_account and req_account != selected_account:
@@ -173,15 +179,22 @@ def matches_selected_beneficiary(payload: TransferPayload, selected: dict[str, A
 
 def clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[str, Any]) -> None:
     """Detach payload from previously selected beneficiary when recipient changes."""
-    selected_account = str(selected.get("account_number") or "").strip()
-    selected_bank_code = str(selected.get("bank_code") or "").strip()
+    selected_account = str(selected.get("account_number") or selected.get("recipient_account") or "").strip()
+    selected_bank_code = str(selected.get("bank_code") or selected.get("recipient_bank_code") or "").strip()
     selected_bank_code_provider = (
-        str(selected.get("bank_code_provider") or settings.beneficiary_resolver_provider_name).strip().lower()
+        str(
+            selected.get("bank_code_provider")
+            or selected.get("recipient_bank_code_provider")
+            or settings.beneficiary_resolver_provider_name
+        )
+        .strip()
+        .lower()
     )
-    selected_bank_name = str(selected.get("bank_name") or "").strip()
+    selected_bank_name = str(selected.get("bank_name") or selected.get("recipient_bank_name") or "").strip()
 
     payload.beneficiary_id = None
     payload.recipient_resolved_name = None
+    payload.recipient_resolution_mode = None
     payload.resolved_from_saved_beneficiary = False
 
     req_account = str(payload.recipient_account or "").strip()
@@ -199,6 +212,7 @@ def clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[str
         payload.recipient_bank_code = None
         payload.recipient_bank_code_provider = None
         payload.recipient_resolution_provider = None
+        payload.recipient_resolution_mode = None
 
     req_bank_name = str(payload.recipient_bank_name or "").strip()
     if req_bank_name and selected_bank_name and normalize_name(req_bank_name) == normalize_name(selected_bank_name):

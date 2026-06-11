@@ -12,7 +12,7 @@ from banking.transfers.models.types import (
     TransferGates,
     TransferPayload,
 )
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 from shared.utils.sanitize import normalize_bank_account_number
 
 logger = get_logger(__name__)
@@ -44,7 +44,7 @@ class TransferStep(ABC):
         else:
             current_state = data.dict(exclude_unset=True)
 
-        result.patch.update(current_state)
+        result.patch = {**current_state, **result.patch}
         if data.idempotency_key:
             result.patch["idempotency_key"] = data.idempotency_key
         return result
@@ -106,7 +106,8 @@ class TransferPipeline:
             result = await step.execute(data, context, gates, worker_context)
             s_duration = (time.perf_counter() - s_start) * 1000
 
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "perf_timer_latency",
                 gate=f"transfer_pipeline_step_{step_name.lower().replace('step', '')}",
                 duration_ms=round(s_duration, 2),
@@ -137,7 +138,7 @@ class TransferPipeline:
         else:
             current_state = data.dict(exclude_unset=True)
 
-        result.patch.update(current_state)
+        result.patch = {**current_state, **result.patch}
         if data.idempotency_key:
             result.patch["idempotency_key"] = data.idempotency_key
 

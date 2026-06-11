@@ -127,9 +127,14 @@ class TransferSchedulingHandler:
 
         if data and data.schedule_response_mode == "count":
             count = len(schedules)
+            response = (
+                render_message("schedule.list.empty", locale)
+                if count == 0
+                else render_message("schedule.list.count", locale, {"count": count})
+            )
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                response=render_message("schedule.list.count", locale, {"count": count}),
+                response=response,
                 patch={
                     "is_scheduled_operation": True,
                     "skip_finalize_summary": True,

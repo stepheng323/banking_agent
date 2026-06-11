@@ -6,8 +6,10 @@ import pytest
 from banking.bills.airtime.models.types import AirtimeContext, AirtimeGates, AirtimePayload
 from banking.bills.airtime.nodes.confirmation import ConfirmationStep
 from banking.bills.airtime.nodes.extraction import ExtractionStep
+from banking.bills.airtime.nodes.resolution import ResolutionStep
 from banking.bills.airtime.nodes.selection import SourceSelectionStep
 from banking.bills.airtime.nodes.validation import ValidationStep
+from banking.bills.airtime.pipeline.base import AirtimePipeline
 from banking.bills.airtime.worker import AirtimeWorker
 from banking.runtime.results import TransactionOutcome
 
@@ -173,6 +175,42 @@ async def test_airtime_source_selection_honors_explicit_bank_over_default() -> N
         "source_account_name": "GT Main",
         "source_account_number": "0000000002",
     }
+
+
+@pytest.mark.asyncio
+async def test_airtime_source_selection_uses_account_last4_when_full_number_is_encrypted() -> None:
+    step = SourceSelectionStep()
+    payload = AirtimePayload(amount=5000, recipient_phone="08162511023", network="MTN")
+    context = AirtimeContext(
+        phone_number="2348000000000",
+        language="en",
+        accounts=[
+            {
+                "id": "access-1",
+                "bank_name": "Access Bank",
+                "account_name": "Access Main",
+                "account_number_last4": "0003",
+                "is_default": True,
+            }
+        ],
+    )
+
+    result = await step.execute(payload, context, AirtimeGates(), SimpleNamespace())
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch == {
+        "source_account_id": "access-1",
+        "source_bank_name": "Access Bank",
+        "source_account_name": "Access Main",
+        "source_account_number": "0003",
+    }
+
+    payload = payload.model_copy(update=result.patch)
+    confirmation = await ConfirmationStep().execute(payload, context, AirtimeGates(), SimpleNamespace())
+
+    assert confirmation.outcome == TransactionOutcome.NEEDS_CONFIRMATION
+    assert "From: Access Bank (···0003)" in (confirmation.confirmation_summary or "")
+    assert "????" not in (confirmation.confirmation_summary or "")
 
 
 @pytest.mark.asyncio
@@ -711,19 +749,25 @@ async def test_airtime_skip_extraction_overrides_for_network_signal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_airtime_skip_extraction_overrides_for_self_signal() -> None:
-    step = ExtractionStep("buy me 5k airtime")
-    payload = AirtimePayload(amount=5000, skip_extraction=True)
+async def test_airtime_skip_extraction_self_payload_resolves_user_phone_without_extractor() -> None:
+    pipeline = AirtimePipeline([ExtractionStep("buy me 5k airtime"), ResolutionStep()])
+    payload = AirtimePayload(amount=5000, network="MTN", is_self=True, skip_extraction=True)
     context = AirtimeContext(phone_number="2348000000000", language="en")
     gates = AirtimeGates()
     extractor = _ExtractorStub({"entities": {}, "correction": None})
     worker_context = SimpleNamespace(required_fields=[], extractor=extractor)
 
-    result = await step.execute(payload, context, gates, worker_context)
+    result = await pipeline.run(payload, context, gates, worker_context)
 
     assert result.outcome == TransactionOutcome.OK
-    assert extractor.calls == 1
-    assert result.patch == {"is_self": True, "skip_extraction": False}
+    assert extractor.calls == 0
+    assert result.patch == {
+        "skip_extraction": False,
+        "recipient_phone": "08000000000",
+        "recipient_name": "My Number",
+        "is_self": True,
+        "network": "MTN",
+    }
 
 
 @pytest.mark.asyncio

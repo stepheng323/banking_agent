@@ -5,6 +5,7 @@ from banking.bills.data.pipeline.base import PipelineStep, continue_pipeline
 from banking.presentation.formatters.accounts import format_accounts_list
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.shared.account_selection.reference import source_account_display_number
 from banking.transactions.shared.source_account_guard import (
     build_nonready_source_account_message,
     find_account_by_bank_name,
@@ -21,7 +22,7 @@ def _build_account_options(accounts: list[dict[str, Any]]) -> list[dict[str, str
     options: list[dict[str, str]] = []
     for idx, account in enumerate(accounts, start=1):
         bank = account.get("bank_name") or "Account"
-        number = str(account.get("account_number") or "")
+        number = str(source_account_display_number(account) or "")
         suffix = number[-4:] if len(number) >= 4 else number
         title = f"{bank} (···{suffix})" if suffix else str(bank)
         options.append({"id": str(idx), "title": title})
@@ -43,7 +44,7 @@ class SourceSelectionStep(PipelineStep):
                 if acc:
                     payload.source_account_name = acc.get("account_name")
                     payload.source_bank_name = acc.get("bank_name")
-                    payload.source_account_number = acc.get("account_number")
+                    payload.source_account_number = source_account_display_number(acc)
                 else:
                     linked_account = find_account_by_id(linked_accounts, payload.source_account_id)
                     if linked_account and not is_account_ready(linked_account):
@@ -72,7 +73,7 @@ class SourceSelectionStep(PipelineStep):
                 payload.source_account_id = str(acc.get("id"))
                 payload.source_bank_name = acc.get("bank_name")
                 payload.source_account_name = acc.get("account_name")
-                payload.source_account_number = acc.get("account_number")
+                payload.source_account_number = source_account_display_number(acc)
                 payload.source_account_index = None
                 return continue_pipeline(payload)
             linked_account = find_account_by_index(linked_accounts, payload.source_account_index)
@@ -93,7 +94,7 @@ class SourceSelectionStep(PipelineStep):
                 payload.source_account_id = str(acc.get("id"))
                 payload.source_bank_name = acc.get("bank_name")
                 payload.source_account_name = acc.get("account_name")
-                payload.source_account_number = acc.get("account_number")
+                payload.source_account_number = source_account_display_number(acc)
                 return continue_pipeline(payload)
             else:
                 linked_account = find_account_by_bank_name(linked_accounts, payload.source_bank_name)
@@ -121,7 +122,7 @@ class SourceSelectionStep(PipelineStep):
             payload.source_account_id = str(acc.get("id"))
             payload.source_bank_name = acc.get("bank_name")
             payload.source_account_name = acc.get("account_name")
-            payload.source_account_number = acc.get("account_number")
+            payload.source_account_number = source_account_display_number(acc)
             return continue_pipeline(payload)
 
         default = next((a for a in accounts if a.get("is_default")), None)
@@ -129,7 +130,7 @@ class SourceSelectionStep(PipelineStep):
             payload.source_account_id = str(default.get("id"))
             payload.source_bank_name = default.get("bank_name")
             payload.source_account_name = default.get("account_name")
-            payload.source_account_number = default.get("account_number")
+            payload.source_account_number = source_account_display_number(default)
             return continue_pipeline(payload)
 
         accounts_list = format_accounts_list(accounts, locale=locale)

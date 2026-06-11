@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from banking.runtime.results import TransactionOutcome
 from banking.transfers.extraction.extractor import TransferEntityExtractor
+from banking.transfers.extraction.parsers import parse_confirmation_narration_edit
 from banking.transfers.extraction.updates import extract_transfer_update
 from banking.transfers.models.entities import TransferEntities
 from banking.transfers.models.extraction import (
@@ -48,6 +49,16 @@ class _RecentTransferRepository:
         del user_id, recipient_hint
         self.calls += 1
         return SimpleNamespace(amount=self.amount)
+
+
+def test_confirmation_narration_parser_accepts_the_purpose_phrase() -> None:
+    patch = parse_confirmation_narration_edit("The purpose is for launch")
+
+    assert patch is not None
+    assert patch["narration"] == "for launch"
+    assert patch["authored_narration"] == "for launch"
+    assert patch["user_note"] == "for launch"
+    assert patch["confirmation"] == {"confirmed": False}
 
 
 async def test_extraction_step_passes_required_fields_previous_response_and_known_recipient() -> None:
@@ -216,6 +227,10 @@ async def test_extraction_step_numeric_reply_selects_beneficiary_when_awaiting_b
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["beneficiary_id"] == second_id
+    assert result.patch["recipient_account"] == "9988776655"
+    assert result.patch["recipient_bank_name"] == "GTBank"
+    assert result.patch["recipient_resolved_name"] == "John Smith"
+    assert result.patch["resolved_from_saved_beneficiary"] is True
     assert "source_account_index" not in result.patch
 
 
@@ -230,7 +245,31 @@ async def test_extraction_step_accepts_option_id_for_beneficiary_selection() -> 
             {"index": 2, "beneficiary_id": second_id, "option_id": f"bene:{second_id}", "label": "John Smith"},
         ],
     )
-    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    context = TransferContext(
+        phone_number="2348000000999",
+        language="en",
+        beneficiaries=[
+            {
+                "id": first_id,
+                "user_id": str(uuid4()),
+                "account_name": "John Doe",
+                "alias": "John D",
+                "account_number": "0011223344",
+                "bank_code": "044",
+                "bank_name": "Access Bank",
+            },
+            {
+                "id": second_id,
+                "user_id": str(uuid4()),
+                "account_name": "John Smith",
+                "alias": "John S",
+                "account_number": "9988776655",
+                "bank_code": "058",
+                "bank_name": "GTBank",
+            },
+        ],
+        accounts=[],
+    )
     worker_context = SimpleNamespace(
         extractor=None,
         required_fields=["beneficiary_id"],
@@ -241,6 +280,10 @@ async def test_extraction_step_accepts_option_id_for_beneficiary_selection() -> 
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["beneficiary_id"] == second_id
+    assert result.patch["recipient_account"] == "9988776655"
+    assert result.patch["recipient_bank_name"] == "GTBank"
+    assert result.patch["recipient_resolved_name"] == "John Smith"
+    assert result.patch["resolved_from_saved_beneficiary"] is True
     assert result.patch["beneficiary_candidates"] == []
 
 
@@ -407,6 +450,216 @@ async def test_extraction_step_accepts_unique_bank_label_for_beneficiary_selecti
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["beneficiary_id"] == second_id
+    assert result.patch["beneficiary_candidates"] == []
+
+
+async def test_extraction_step_accepts_pasted_beneficiary_option_line_with_prompt_noise() -> None:
+    first_id = str(uuid4())
+    second_id = str(uuid4())
+    third_id = str(uuid4())
+    step = ExtractionStep(
+        user_message=(
+            "I found multiple matches for 'tolu'. Which one did you mean?\n"
+            "Reply with the number or rephrase.\n"
+            "Tolu Adeyemi • GTBan"
+        )
+    )
+    payload = TransferPayload(
+        recipient_name="tolu",
+        beneficiary_candidates=[
+            {
+                "index": 1,
+                "beneficiary_id": first_id,
+                "option_id": f"bene:{first_id}",
+                "label": "Tolu Adebayo • Access Bank • ****0001",
+            },
+            {
+                "index": 2,
+                "beneficiary_id": second_id,
+                "option_id": f"bene:{second_id}",
+                "label": "Tolu Adeyemi • GTBank • ****0002",
+            },
+            {
+                "index": 3,
+                "beneficiary_id": third_id,
+                "option_id": f"bene:{third_id}",
+                "label": "Tolulope Johnson • First Bank • ****0003",
+            },
+        ],
+    )
+    context = TransferContext(
+        phone_number="2348000000999",
+        language="en",
+        beneficiaries=[
+            {
+                "id": first_id,
+                "user_id": str(uuid4()),
+                "account_name": "Tolu Adebayo",
+                "alias": "Tolu Access",
+                "account_number": "2010000001",
+                "bank_code": "044",
+                "bank_name": "Access Bank",
+            },
+            {
+                "id": second_id,
+                "user_id": str(uuid4()),
+                "account_name": "Tolu Adeyemi",
+                "alias": "Tolu GTB",
+                "account_number": "2010000002",
+                "bank_code": "058",
+                "bank_name": "GTBank",
+            },
+            {
+                "id": third_id,
+                "user_id": str(uuid4()),
+                "account_name": "Tolulope Johnson",
+                "alias": "Tolu First",
+                "account_number": "2010000003",
+                "bank_code": "011",
+                "bank_name": "First Bank",
+            },
+        ],
+        accounts=[],
+    )
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["beneficiary_id"],
+        previous_response="I found multiple matches.",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["beneficiary_id"] == second_id
+    assert result.patch["recipient_account"] == "2010000002"
+    assert result.patch["recipient_bank_name"] == "GTBank"
+    assert result.patch["recipient_resolved_name"] == "Tolu Adeyemi"
+    assert result.patch["resolved_from_saved_beneficiary"] is True
+    assert result.patch["beneficiary_candidates"] == []
+
+
+async def test_extraction_step_hydrates_selected_beneficiary_from_candidate_payload() -> None:
+    first_id = str(uuid4())
+    second_id = str(uuid4())
+    step = ExtractionStep(user_message="Tolu Adeyemi • GTBan")
+    payload = TransferPayload(
+        recipient_name="tolu",
+        beneficiary_candidates=[
+            {
+                "index": 1,
+                "beneficiary_id": first_id,
+                "option_id": f"bene:{first_id}",
+                "label": "Tolu Adebayo • Access Bank • ****0001",
+                "recipient_name": "Tolu Access",
+                "recipient_resolved_name": "Tolu Adebayo",
+                "recipient_account": "2010000001",
+                "recipient_bank_name": "Access Bank",
+                "recipient_bank_code": "044",
+                "recipient_bank_code_provider": "saved_beneficiary",
+                "recipient_resolution_provider": "saved_beneficiary",
+                "resolved_from_saved_beneficiary": True,
+            },
+            {
+                "index": 2,
+                "beneficiary_id": second_id,
+                "option_id": f"bene:{second_id}",
+                "label": "Tolu Adeyemi • GTBank • ****0002",
+                "recipient_name": "Tolu GTB",
+                "recipient_resolved_name": "Tolu Adeyemi",
+                "recipient_account": "2010000002",
+                "recipient_bank_name": "GTBank",
+                "recipient_bank_code": "058",
+                "recipient_bank_code_provider": "saved_beneficiary",
+                "recipient_resolution_provider": "saved_beneficiary",
+                "resolved_from_saved_beneficiary": True,
+            },
+        ],
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["beneficiary_id"],
+        previous_response="I found multiple matches.",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["beneficiary_id"] == second_id
+    assert result.patch["recipient_name"] == "Tolu GTB"
+    assert result.patch["recipient_account"] == "2010000002"
+    assert result.patch["recipient_bank_name"] == "GTBank"
+    assert result.patch["recipient_resolved_name"] == "Tolu Adeyemi"
+    assert result.patch["resolved_from_saved_beneficiary"] is True
+    assert result.patch["beneficiary_candidates"] == []
+
+
+async def test_extraction_step_uses_candidate_payload_when_context_beneficiary_lacks_account() -> None:
+    first_id = str(uuid4())
+    second_id = str(uuid4())
+    step = ExtractionStep(user_message="Tolu Adeyemi • GTBan")
+    payload = TransferPayload(
+        recipient_name="tolu",
+        beneficiary_candidates=[
+            {
+                "index": 1,
+                "beneficiary_id": first_id,
+                "option_id": f"bene:{first_id}",
+                "label": "Tolu Adebayo • Access Bank • ****0001",
+                "recipient_name": "Tolu Access",
+                "recipient_resolved_name": "Tolu Adebayo",
+                "recipient_account": "2010000001",
+                "recipient_bank_name": "Access Bank",
+                "recipient_bank_code": "044",
+                "recipient_bank_code_provider": "saved_beneficiary",
+                "recipient_resolution_provider": "saved_beneficiary",
+                "resolved_from_saved_beneficiary": True,
+            },
+            {
+                "index": 2,
+                "beneficiary_id": second_id,
+                "option_id": f"bene:{second_id}",
+                "label": "Tolu Adeyemi • GTBank • ****0002",
+                "recipient_name": "Tolu GTB",
+                "recipient_resolved_name": "Tolu Adeyemi",
+                "recipient_account": "2010000002",
+                "recipient_bank_name": "GTBank",
+                "recipient_bank_code": "058",
+                "recipient_bank_code_provider": "saved_beneficiary",
+                "recipient_resolution_provider": "saved_beneficiary",
+                "resolved_from_saved_beneficiary": True,
+            },
+        ],
+    )
+    context = TransferContext(
+        phone_number="2348000000999",
+        language="en",
+        beneficiaries=[
+            {
+                "id": second_id,
+                "user_id": str(uuid4()),
+                "account_name": "Tolu Adeyemi",
+                "alias": "Tolu GTB",
+                "bank_code": "058",
+                "bank_name": "GTBank",
+            }
+        ],
+        accounts=[],
+    )
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["beneficiary_id"],
+        previous_response="I found multiple matches.",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["beneficiary_id"] == second_id
+    assert result.patch["recipient_name"] == "Tolu GTB"
+    assert result.patch["recipient_account"] == "2010000002"
+    assert result.patch["recipient_bank_name"] == "GTBank"
+    assert result.patch["recipient_resolved_name"] == "Tolu Adeyemi"
     assert result.patch["beneficiary_candidates"] == []
 
 
@@ -819,6 +1072,33 @@ async def test_deterministic_initial_account_bank_fastpath_parses_inline_details
     assert extractor.called is False
 
 
+async def test_deterministic_initial_account_bank_fastpath_canonicalizes_bank_alias() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="0760505261, Access")
+    payload = TransferPayload()
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "0760505261"
+    assert result.patch["recipient_bank_name"] == "Access Bank"
+    assert extractor.called is False
+
+
 async def test_account_bank_reply_cleans_scheduled_phrase_from_existing_recipient() -> None:
     class _NeverCalledExtractor:
         def __init__(self) -> None:
@@ -843,7 +1123,7 @@ async def test_account_bank_reply_cleans_scheduled_phrase_from_existing_recipien
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["recipient_name"] == "Mum"
     assert result.patch["recipient_account"] == "0034575515"
-    assert result.patch["recipient_bank_name"] == "Gtb"
+    assert result.patch["recipient_bank_name"] == "GTBank"
     assert extractor.called is False
 
 

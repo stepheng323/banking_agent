@@ -40,6 +40,22 @@ def _join_missing_fields(fields: list[str], locale: str) -> str:
     )
 
 
+def _airtime_validation_log_summary(data: AirtimePayload) -> dict[str, Any]:
+    return {
+        "has_amount": data.amount is not None,
+        "has_recipient_phone": bool(data.recipient_phone),
+        "has_network": bool(data.network),
+        "is_self": data.is_self,
+        "has_source_account_id": bool(data.source_account_id),
+        "schedule_mode": data.schedule_mode,
+        "async_group_kind": data.async_group_kind,
+        "async_group_size": data.async_group_size,
+        "async_group_index": data.async_group_index,
+        "confirmation_confirmed": bool(data.confirmation and data.confirmation.confirmed),
+        "referent_phone_candidate_count": len(data.referent_phone_candidates),
+    }
+
+
 class ValidationStep(AirtimeStep):
     """Validates airtime data."""
 
@@ -54,7 +70,7 @@ class ValidationStep(AirtimeStep):
         locale = context.language
         missing: list[str] = []
         required_fields: list[str] = []
-        logger.info("Validating airtime data", data=data)
+        logger.info("airtime_validation_start", **_airtime_validation_log_summary(data))
 
         if not data.recipient_phone:
             missing.append("recipient_phone")

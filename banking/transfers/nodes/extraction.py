@@ -234,6 +234,7 @@ class ExtractionStep(TransferStep):
                             "recipient_bank_code": None,
                             "recipient_bank_code_provider": None,
                             "recipient_resolution_provider": None,
+                            "recipient_resolution_mode": None,
                             "recipient_resolved_name": None,
                             "confirmation": {"confirmed": False},
                         }
@@ -382,6 +383,7 @@ class ExtractionStep(TransferStep):
                         "recipient_bank_code": None,
                         "recipient_bank_code_provider": None,
                         "recipient_resolution_provider": None,
+                        "recipient_resolution_mode": None,
                         "recipient_resolved_name": None,
                         "name_mismatch": False,
                         "name_match_score": None,

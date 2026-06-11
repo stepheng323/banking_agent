@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
+from apps.chat.src.agent.orchestrator.workflows.execution.beneficiary_resolution import _normalize_beneficiary_rows
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.executors.transfer import TransferTaskExecutor
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
@@ -50,6 +51,36 @@ class _BeneficiaryRepoStub:
     async def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[dict[str, Any]]:
         self.full_calls.append((user_id, beneficiary_type))
         return self.full_rows
+
+
+class _BeneficiaryLikeWithAccountProperty:
+    def __init__(self) -> None:
+        self.id = "bene-2"
+        self.alias = "Tolu GTB"
+        self.account_name = "Tolu Adeyemi"
+        self.bank_name = "GTBank"
+        self.bank_code = "058"
+        self.beneficiary_type = "transfer"
+
+    @property
+    def account_number(self) -> str:
+        return "2010000002"
+
+
+def test_normalize_beneficiary_rows_preserves_decrypted_account_number_property() -> None:
+    rows = _normalize_beneficiary_rows([_BeneficiaryLikeWithAccountProperty()])
+
+    assert rows == [
+        {
+            "id": "bene-2",
+            "alias": "Tolu GTB",
+            "account_name": "Tolu Adeyemi",
+            "bank_name": "GTBank",
+            "bank_code": "058",
+            "beneficiary_type": "transfer",
+            "account_number": "2010000002",
+        }
+    ]
 
 
 async def _run_transfer_with_message(last_message_text: str | None) -> str | None:
@@ -349,6 +380,97 @@ async def test_transfer_handler_falls_back_to_full_beneficiary_reload_after_targ
     assert repo.full_calls == [("u_transfer_guard", "transfer")]
     assert worker.last_context is not None
     assert worker.last_context["beneficiaries"][0]["alias"] == "Mum"
+
+
+@pytest.mark.asyncio
+async def test_transfer_handler_reloads_beneficiaries_for_skinny_candidate_selection_checkpoint() -> None:
+    worker = _CaptureTransferWorker()
+    repo = _BeneficiaryRepoStub(
+        full_rows=[
+            {
+                "id": "bene-1",
+                "alias": "Tolu Access",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+                "beneficiary_type": "transfer",
+            },
+            {
+                "id": "bene-2",
+                "alias": "Tolu GTB",
+                "account_name": "Tolu Adeyemi",
+                "account_number": "2010000002",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+                "beneficiary_type": "transfer",
+            },
+        ],
+    )
+    task = TaskSpec(
+        id="t1",
+        type="transfer",
+        stage=TaskStage.EXTRACTED,
+        payload={
+            "recipient_name": "tolu",
+            "amount": 2000,
+            "beneficiary_candidates": [
+                {
+                    "index": 1,
+                    "beneficiary_id": "bene-1",
+                    "option_id": "bene:bene-1",
+                    "label": "Tolu Adebayo • Access Bank • ****0001",
+                },
+                {
+                    "index": 2,
+                    "beneficiary_id": "bene-2",
+                    "option_id": "bene:bene-2",
+                    "label": "Tolu Adeyemi • GTBank • ****0002",
+                },
+            ],
+        },
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_guard",
+        phone_number="2348000000123",
+        channel="whatsapp",
+        last_message_text="Tolu Adeyemi • GTBan",
+        loaded_context={
+            "language": "en",
+            "user_id": "u_transfer_guard",
+            "accounts": [],
+            "beneficiaries": [
+                {
+                    "id": "stale-bene",
+                    "alias": "Mum",
+                    "account_name": "Mercy Johnson",
+                    "account_number": "8162511023",
+                    "bank_name": "Opay",
+                    "bank_code": "999991",
+                    "beneficiary_type": "transfer",
+                }
+            ],
+            "beneficiary_context_mode": "cache_only",
+        },
+        tasks={"t1": task},
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"beneficiary_repo": repo}, "recursion_limit": 50}
+    ctx = ExecutionTurnContext(
+        state=state,
+        config=config,
+        services=OrchestrationServices.from_mapping({"transfer": worker}),
+        current_wave_len=1,
+        accumulator=ExecutionAccumulator(state.tasks),
+    )
+
+    await TransferTaskExecutor().execute(task, "t1", ctx)
+
+    assert repo.search_calls == []
+    assert repo.full_calls == [("u_transfer_guard", "transfer")]
+    assert worker.last_context is not None
+    assert [row["id"] for row in worker.last_context["beneficiaries"]] == ["bene-1", "bene-2"]
 
 
 @pytest.mark.asyncio

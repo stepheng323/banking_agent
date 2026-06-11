@@ -102,6 +102,7 @@ async def test_confirmation_decision_llm_can_reject_safe_resume_reply() -> None:
         ("send 5k to Ada", "new_request"),
         ("make it 10k", "modify"),
         ("add it for feeding", "modify"),
+        ("na for transport", "modify"),
         ("use 0123456789 instead", "modify"),
     ],
 )
@@ -109,6 +110,15 @@ def test_confirmation_decision_guardrails_block_approval(text: str, expected_act
     decision = classify_confirmation_reply_sync(text, prompt_kind="resume_prompt", locale="en")
 
     assert decision.action == expected_action
+    assert decision.source == "guardrail"
+
+
+def test_transaction_confirmation_guardrail_blocks_pidgin_narration_purpose() -> None:
+    decision = classify_confirmation_reply_sync(
+        "Na for transport", prompt_kind="transaction_confirmation", locale="pcm"
+    )
+
+    assert decision.action == "modify"
     assert decision.source == "guardrail"
 
 

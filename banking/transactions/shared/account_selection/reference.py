@@ -81,7 +81,7 @@ def build_source_account_patch(account: dict[str, Any]) -> dict[str, Any]:
     account_id = account.get("id") or account.get("account_id") or account.get("source_account_id")
     bank_name = account.get("bank_name") or account.get("bank") or account.get("source_bank_name")
     account_name = account.get("account_name") or account.get("name") or account.get("source_account_name")
-    account_number = account.get("account_number") or account.get("number") or account.get("source_account_number")
+    account_number = source_account_display_number(account)
     return {
         "source_account_id": str(account_id).strip() if account_id else None,
         "source_bank_name": bank_name,
@@ -92,3 +92,11 @@ def build_source_account_patch(account: dict[str, Any]) -> dict[str, Any]:
         "funding_plan": None,
         "confirmation": {"confirmed": False},
     }
+
+
+def source_account_display_number(account: dict[str, Any]) -> str | None:
+    account_number = account.get("account_number") or account.get("number") or account.get("source_account_number")
+    if account_number:
+        return str(account_number)
+    last4 = account.get("account_number_last4") or account.get("last4") or account.get("source_account_number_last4")
+    return str(last4) if last4 else None
