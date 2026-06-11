@@ -7,6 +7,7 @@ from banking.presentation.formatters.currency import coerce_amount, format_naira
 from banking.presentation.formatters.transfer_common import resolve_display_narration
 from banking.presentation.i18n.personality import PersonalityContext, render_personalized_message
 from banking.presentation.i18n.renderer import render_message
+from shared.utils.bank_aliases import display_bank_name
 
 
 def format_transfer_summary(
@@ -20,9 +21,9 @@ def format_transfer_summary(
     recipient_name = str(
         data.get("recipientName") or render_message("transfer.format.summary.recipient_fallback", locale)
     )
-    recipient_bank = str(data.get("recipientBank") or "")
+    recipient_bank = str(display_bank_name(data.get("recipientBank")) or "")
     recipient_account = str(data.get("recipientAccount") or "")
-    source_bank = str(data.get("sourceBank") or "")
+    source_bank = str(display_bank_name(data.get("sourceBank")) or "")
     source_account = str(data.get("sourceAccount") or "")
     display_narration = resolve_display_narration(data)
     lines = [
@@ -35,7 +36,7 @@ def format_transfer_summary(
         render_message(
             "transfer.format.summary.recipient_line",
             locale,
-            {"recipient_bank": recipient_bank.title(), "recipient_account": recipient_account},
+            {"recipient_bank": recipient_bank, "recipient_account": recipient_account},
         ),
     ]
 

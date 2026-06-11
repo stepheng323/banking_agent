@@ -39,6 +39,7 @@ class TransferPayload(BaseModel):
     recipient_bank_name: str | None = None
     recipient_bank_code_provider: str | None = None
     recipient_resolution_provider: str | None = None
+    recipient_resolution_mode: Literal["single_source", "pooled"] | None = None
     recipient_resolved_name: str | None = None
     recipient_reference: dict[str, Any] | None = None
     recipient_binding_source: Literal["fanout"] | None = None
@@ -63,6 +64,7 @@ class TransferPayload(BaseModel):
     explicit_split: dict[str, MoneyAmount] | None = None
 
     funding_plan: dict[str, Any] | None = None
+    suggested_funding_plan: dict[str, Any] | None = None
 
     idempotency_key: str | None = None
     transaction_id: str | None = None

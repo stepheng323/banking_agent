@@ -42,6 +42,8 @@ def _should_defer_during_input_interrupt(
     active_input_task_types: set[str],
 ) -> bool:
     interrupt = last_interrupt(state)
+    if _is_same_batch_transaction_sibling(state, task_id):
+        return False
     return bool(
         interrupt.is_kind("input")
         and interrupt.task_ids
@@ -50,6 +52,32 @@ def _should_defer_during_input_interrupt(
         and task.stage in INPUT_MUTABLE_STAGES
         and not _is_same_batch_source_selection_sibling(state, task_id)
     )
+
+
+def _is_same_batch_transaction_sibling(state: OrchestratorState, task_id: str) -> bool:
+    interrupt = last_interrupt(state)
+    if not interrupt.is_kind("input") or not interrupt.task_ids:
+        return False
+
+    task = task_map(state).get(task_id)
+    if not task or task.type not in TRANSACTION_TASK_TYPES:
+        return False
+
+    group_id = task.payload.get("async_group_id")
+    if not group_id:
+        return False
+
+    for active_task_id in interrupt.task_ids:
+        if active_task_id == task_id:
+            continue
+        active_task = task_map(state).get(active_task_id)
+        if (
+            active_task
+            and active_task.type in TRANSACTION_TASK_TYPES
+            and active_task.payload.get("async_group_id") == group_id
+        ):
+            return True
+    return False
 
 
 def _apply_dependency_status(
@@ -114,5 +142,6 @@ __all__ = [
     "_apply_dependency_status",
     "_apply_mandate_gate_failure",
     "_cancel_deadlocked_wave_tasks",
+    "_is_same_batch_transaction_sibling",
     "_should_defer_during_input_interrupt",
 ]

@@ -220,10 +220,46 @@ Pending task context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 
+BATCH_SLOT_PATCH_SYSTEM_PROMPT = """You extract scoped slot updates for an active, pre-authorization transaction batch.
+Return ONLY JSON for this schema:
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- updates: list of {target_task_id, target_texts, recipient_account, recipient_bank_name, amount,
+  narration, source_bank_name, source_accounts, use_dual_accounts}
+- needs_clarification: true/false
+- clarification: short user-facing clarification question, else null
+- reason: short reason
+
+Rules:
+1) Use only task ids and recipient labels present in the batch context.
+2) Map each clause to the intended task. Handle aliases/nicknames and multilingual phrasing.
+3) Extract account+bank details, amount edits, narration edits, and source-account/funding edits.
+4) If a label could refer to multiple tasks or a detail cannot be assigned, set needs_clarification=true.
+5) Do not approve, execute, or authorize anything. This only patches slots before confirmation/PIN.
+6) Do not invent account names, bank resolution, balances, or beneficiaries.
+7) Keep updates sparse: include only fields explicitly supplied by the user.
+
+Examples:
+- Batch has t_mom recipient_name=mom, t_ay recipient_name=ay.
+  "8067892221, wema for mum and 8080844362, opay for ayo"
+  -> updates for t_mom and t_ay with recipient_account/recipient_bank_name.
+- "mum own na 8067892221 wema, ayo own na 8080844362 opay"
+  -> same updates.
+- "reduce ay to 20k and use GTBank too"
+  -> update t_ay amount=20000 and source_bank_name=GTBank if the text clearly applies to that task.
+"""
+
+BATCH_SLOT_PATCH_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Batch context: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
 __all__ = [
     "INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT",
     "INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL",
     "INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE",
     "PENDING_ACTION_EDIT_SYSTEM_PROMPT",
     "PENDING_ACTION_EDIT_USER_PROMPT_TEMPLATE",
+    "BATCH_SLOT_PATCH_SYSTEM_PROMPT",
+    "BATCH_SLOT_PATCH_USER_PROMPT_TEMPLATE",
 ]

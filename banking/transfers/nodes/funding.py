@@ -3,9 +3,15 @@
 from typing import Any
 from uuid import UUID
 
+from banking.presentation.formatters.currency import format_naira
 from banking.presentation.i18n.personality import render_personalized_message, transfer_personality_context_from_payload
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transfers.funding.plan_validation import (
+    build_funding_plan_signature,
+    funding_adjustment_details,
+    funding_plan_matches_signature,
+)
 from banking.transfers.funding.planner import FundingPlanner
 from banking.transfers.models.types import (
     TransferContext,
@@ -14,7 +20,7 @@ from banking.transfers.models.types import (
 )
 from banking.transfers.pipeline.base import TransferStep
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.money import naira_to_json, require_naira
+from shared.money import require_naira
 from shared.utils.logging import get_logger
 
 
@@ -36,6 +42,11 @@ class FundingStep(TransferStep):
 
 
 logger = get_logger(__name__)
+
+
+def _last4(value: object) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits[-4:] if len(digits) >= 4 else "????"
 
 
 def _insufficient_funds_message(payload: TransferPayload, locale: str) -> str:
@@ -67,6 +78,74 @@ class AccountAdapter:
         self.extra_data = raw_extra if isinstance(raw_extra, dict) else {}
 
 
+def _funding_plan_dict(plan: Any, signature: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "transfer_amount": plan.transfer_amount,
+        "total_funded": plan.total_funded,
+        "is_sufficient": plan.is_sufficient,
+        "is_single_source": plan.is_single_source,
+        "trigger_mode": plan.trigger_mode,
+        "requested_sources": plan.requested_sources,
+        "explicit_split_applied": plan.explicit_split_applied,
+        "primary_account_id": str(plan.primary_account_id) if plan.primary_account_id else None,
+        "primary_bank_name": plan.primary_bank_name,
+        "primary_available_balance": plan.primary_available_balance,
+        "planned_for_amount": signature["planned_for_amount"],
+        "planned_for_source_account_id": signature["planned_for_source_account_id"],
+        "planned_for_source_accounts": signature["planned_for_source_accounts"],
+        "planned_for_use_dual_accounts": signature["planned_for_use_dual_accounts"],
+        "planned_for_explicit_split": signature["planned_for_explicit_split"],
+        "steps": [
+            {
+                "account_id": str(s.account_id),
+                "account_number": s.account_number,
+                "amount": s.amount,
+                "bank_name": s.bank_name,
+                "sequence": s.sequence,
+            }
+            for s in plan.steps
+        ],
+    }
+
+
+def _implicit_pooled_plan_needs_approval(payload: TransferPayload, plan: Any) -> bool:
+    return bool(
+        plan.is_multi_source
+        and plan.trigger_mode == "auto"
+        and payload.source_affinity_mode != "explicit"
+        and not payload.use_dual_accounts
+        and not payload.source_accounts
+        and not payload.explicit_split
+    )
+
+
+def _single_transfer_funding_approval_prompt(payload: TransferPayload, plan: Any) -> str:
+    amount = payload.amount or plan.transfer_amount
+    lines = ["Funding review", "", f"This transfer needs {format_naira(amount)}."]
+    primary_bank = plan.primary_bank_name or (plan.steps[0].bank_name if plan.steps else None)
+    primary_balance = plan.primary_available_balance
+    if primary_bank and primary_balance is not None:
+        label = "selected" if payload.source_affinity_mode == "explicit" else "default"
+        lines.append(f"Your {label} {primary_bank} has {format_naira(primary_balance)}.")
+
+    extra_banks = [step.bank_name for step in plan.steps[1:] if step.bank_name]
+    lines.append("")
+    if extra_banks:
+        lines.append(f"I can suggest this breakdown and add {' and '.join(extra_banks)} to complete it:")
+    else:
+        lines.append("I can suggest this breakdown:")
+    lines.append("")
+    for step in plan.steps:
+        lines.append(f"* {step.bank_name} (···{_last4(step.account_number)}): {format_naira(step.amount)}")
+    lines.extend(
+        [
+            "",
+            "Reply yes to use this breakdown, or tell me a different source or amount.",
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
 async def plan_transaction_funding(
     payload: TransferPayload,
     ctx: TransferContext,
@@ -74,9 +153,9 @@ async def plan_transaction_funding(
 ) -> TransactionResult:
     """Plan funding using shared FundingPlanner."""
     locale = ctx.language
-    signature = _build_plan_signature(payload)
+    signature = build_funding_plan_signature(payload)
     existing_plan = payload.funding_plan if isinstance(payload.funding_plan, dict) else None
-    if existing_plan and _signature_matches(existing_plan, signature):
+    if existing_plan and funding_plan_matches_signature(existing_plan, signature):
         return TransactionResult(outcome=TransactionOutcome.OK)
 
     planner = FundingPlanner(direct_debit_provider=dd_provider)
@@ -115,6 +194,7 @@ async def plan_transaction_funding(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["explicit_split", "source_accounts"],
                 prompt=plan.error or _insufficient_funds_message(payload, locale),
+                details=funding_adjustment_details("insufficient"),
                 patch={"funding_plan": None},
             )
         if plan.is_pending_mandate:
@@ -127,46 +207,19 @@ async def plan_transaction_funding(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["amount"],
             prompt=plan.error or _insufficient_funds_message(payload, locale),
+            details=funding_adjustment_details("insufficient"),
             patch={"funding_plan": None},
         )
 
-    plan_dict = {
-        "transfer_amount": plan.transfer_amount,
-        "total_funded": plan.total_funded,
-        "is_sufficient": plan.is_sufficient,
-        "is_single_source": plan.is_single_source,
-        "trigger_mode": plan.trigger_mode,
-        "requested_sources": plan.requested_sources,
-        "explicit_split_applied": plan.explicit_split_applied,
-        "primary_account_id": str(plan.primary_account_id) if plan.primary_account_id else None,
-        "primary_bank_name": plan.primary_bank_name,
-        "primary_available_balance": plan.primary_available_balance,
-        "planned_for_amount": signature["planned_for_amount"],
-        "planned_for_source_account_id": signature["planned_for_source_account_id"],
-        "planned_for_source_accounts": signature["planned_for_source_accounts"],
-        "planned_for_use_dual_accounts": signature["planned_for_use_dual_accounts"],
-        "planned_for_explicit_split": signature["planned_for_explicit_split"],
-        "steps": [
-            {"account_id": str(s.account_id), "amount": s.amount, "bank_name": s.bank_name, "sequence": s.sequence}
-            for s in plan.steps
-        ],
-    }
+    plan_dict = _funding_plan_dict(plan, signature)
+
+    if _implicit_pooled_plan_needs_approval(payload, plan):
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["suggested_funding_plan", "amount", "source_accounts", "explicit_split"],
+            prompt=_single_transfer_funding_approval_prompt(payload, plan),
+            details=funding_adjustment_details("suggested_pooling"),
+            patch={"suggested_funding_plan": plan_dict, "funding_plan": None},
+        )
 
     return TransactionResult(outcome=TransactionOutcome.OK, patch={"funding_plan": plan_dict})
-
-
-def _build_plan_signature(payload: TransferPayload) -> dict[str, Any]:
-    explicit_split = payload.explicit_split or {}
-    normalized_split = {str(k): naira_to_json(v) for k, v in sorted(explicit_split.items(), key=lambda item: item[0])}
-    source_accounts = sorted([str(bank) for bank in (payload.source_accounts or []) if str(bank).strip()])
-    return {
-        "planned_for_amount": naira_to_json(payload.amount) or "0.00",
-        "planned_for_source_account_id": payload.source_account_id,
-        "planned_for_source_accounts": source_accounts,
-        "planned_for_use_dual_accounts": bool(payload.use_dual_accounts),
-        "planned_for_explicit_split": normalized_split,
-    }
-
-
-def _signature_matches(plan: dict[str, Any], signature: dict[str, Any]) -> bool:
-    return all(plan.get(key) == expected for key, expected in signature.items())

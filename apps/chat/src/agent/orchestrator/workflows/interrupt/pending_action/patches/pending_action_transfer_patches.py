@@ -36,6 +36,7 @@ def _recipient_patch(field: str, value: Any) -> dict[str, Any] | None:
                 "recipient_bank_code": None,
                 "recipient_bank_code_provider": None,
                 "recipient_resolution_provider": None,
+                "recipient_resolution_mode": None,
             }
         )
     elif field == "recipient_account":
@@ -43,12 +44,14 @@ def _recipient_patch(field: str, value: Any) -> dict[str, Any] | None:
         patch["recipient_account_number"] = text
         patch["recipient_resolved_name"] = None
         patch["recipient_resolution_provider"] = None
+        patch["recipient_resolution_mode"] = None
     elif field == "recipient_bank_name":
         patch["recipient_bank_name"] = text
         patch["bank_name"] = text
         patch["recipient_bank_code"] = None
         patch["recipient_bank_code_provider"] = None
         patch["recipient_resolution_provider"] = None
+        patch["recipient_resolution_mode"] = None
         patch["recipient_resolved_name"] = None
     else:
         return None

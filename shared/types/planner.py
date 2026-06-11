@@ -580,21 +580,11 @@ TransferAirtimeActionPlannerTask: TypeAlias = Annotated[
     Field(discriminator="action"),
 ]
 TransferDataActionPlannerTask: TypeAlias = Annotated[
-    SendMoneyTask
-    | ScheduleTransferTask
-    | RecurringTransferTask
-    | BuyDataTask
-    | ScheduleDataTask
-    | RecurringDataTask,
+    SendMoneyTask | ScheduleTransferTask | RecurringTransferTask | BuyDataTask | ScheduleDataTask | RecurringDataTask,
     Field(discriminator="action"),
 ]
 AirtimeDataActionPlannerTask: TypeAlias = Annotated[
-    BuyAirtimeTask
-    | ScheduleAirtimeTask
-    | RecurringAirtimeTask
-    | BuyDataTask
-    | ScheduleDataTask
-    | RecurringDataTask,
+    BuyAirtimeTask | ScheduleAirtimeTask | RecurringAirtimeTask | BuyDataTask | ScheduleDataTask | RecurringDataTask,
     Field(discriminator="action"),
 ]
 TransactionalActionPlannerTask: TypeAlias = Annotated[
@@ -1231,6 +1221,41 @@ class ContextFrameReplayModifier(BaseModel):
         description="Exact user-message phrase supporting narration, else null",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+
+
+class BatchSlotPatchUpdate(BaseModel):
+    """One scoped slot update for an active pre-auth transaction batch."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_task_id: str | None = Field(default=None, description="Known task id this update targets, if inferred")
+    target_texts: list[str] = Field(
+        default_factory=list,
+        description="Natural-language references such as recipient alias, amount, or 'both transfers'",
+    )
+    recipient_account: str | None = Field(default=None, description="Destination account number")
+    recipient_bank_name: str | None = Field(default=None, description="Destination bank name")
+    amount: MoneyAmount | None = Field(default=None, description="Updated transfer amount")
+    narration: str | None = Field(default=None, description="Updated transfer narration/memo")
+    source_bank_name: str | None = Field(default=None, description="Source account bank reference")
+    source_accounts: list[str] | None = Field(default=None, description="Source accounts/banks requested for pooling")
+    use_dual_accounts: bool | None = Field(default=None, description="Whether pooled funding is requested")
+
+
+class BatchSlotPatchDecision(BaseModel):
+    """LLM interpretation of a slot-filling turn for an active transaction batch."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confidence: float = Field(default=0.0, description="Confidence in the slot patch interpretation")
+    detected_language: str | None = Field(default=None, description="Detected user language")
+    updates: list[BatchSlotPatchUpdate] = Field(
+        default_factory=list,
+        description="Scoped updates to validate and apply to active batch tasks",
+    )
+    needs_clarification: bool = Field(default=False, description="True when the user reply is ambiguous")
+    clarification: str | None = Field(default=None, description="Short clarification prompt if needed")
+    reason: str | None = Field(default=None, description="Short observability/debugging reason")
 
 
 class InterruptRouteDecision(BaseModel):

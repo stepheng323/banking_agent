@@ -12,6 +12,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.control_state import e
 from apps.chat.src.agent.orchestrator.workflows.execution.funding.batch_funding_coordination import (
     _maybe_coordinate_batch_funding,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.recipient_review import maybe_request_recipient_review
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.result import ExecutionWaveResult
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_finalize import finalize_execution_wave_updates
 from apps.chat.src.agent.orchestrator.workflows.execution.wave.runner_setup import build_execution_wave_runtime
@@ -50,6 +51,18 @@ async def run_execution_wave(state: OrchestratorState, config: RunnableConfig) -
 
     runtime = build_execution_wave_runtime(state=state, config=config, current_wave=current_wave)
 
+    recipient_review_block = maybe_request_recipient_review(
+        state=state,
+        current_wave=current_wave,
+        agg=runtime.accumulator,
+    )
+    if recipient_review_block:
+        return ExecutionWaveResult(
+            updates=recipient_review_block,
+            phase="recipient_review_block",
+            current_wave=current_wave,
+        )
+
     batch_block = await _maybe_coordinate_batch_funding(
         state=state,
         current_wave=current_wave,
@@ -65,6 +78,35 @@ async def run_execution_wave(state: OrchestratorState, config: RunnableConfig) -
         )
 
     await execute_current_wave_tasks(state=state, runtime=runtime)
+    recipient_review_block = maybe_request_recipient_review(
+        state=state,
+        current_wave=current_wave,
+        agg=runtime.accumulator,
+    )
+    if recipient_review_block:
+        return ExecutionWaveResult(
+            updates=recipient_review_block,
+            phase="recipient_review_block",
+            current_wave=current_wave,
+            worker_phase_entered=True,
+        )
+
+    batch_block = await _maybe_coordinate_batch_funding(
+        state=state,
+        current_wave=current_wave,
+        services=runtime.services,
+        agg=runtime.accumulator,
+        locale=runtime.locale,
+        allow_existing_funding_plans=True,
+    )
+    if batch_block:
+        return ExecutionWaveResult(
+            updates=batch_block,
+            phase="batch_funding_block",
+            current_wave=current_wave,
+            worker_phase_entered=True,
+        )
+
     updates: dict[str, Any] = finalize_execution_wave_updates(state=state, runtime=runtime)
     return ExecutionWaveResult(
         updates=updates,

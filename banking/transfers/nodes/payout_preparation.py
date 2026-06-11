@@ -11,6 +11,11 @@ from banking.transfers.models.types import (
     TransferPayload,
 )
 from banking.transfers.pipeline.base import TransferStep
+from banking.transfers.resolution.modes import (
+    POOLED_MODE,
+    provider_identity_is_authoritative,
+    recipient_names_equivalent,
+)
 from shared.config.settings import settings
 from shared.utils.logging import get_logger, log_fingerprint
 
@@ -83,8 +88,8 @@ async def prepare_payout_recipient(
     if (
         payload.recipient_bank_code
         and payload.recipient_resolved_name
+        and payload.recipient_resolution_mode == POOLED_MODE
         and str(payload.recipient_bank_code_provider or "").strip().lower() == provider_name
-        and str(payload.recipient_resolution_provider or "").strip().lower() == provider_name
     ):
         return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
@@ -127,16 +132,38 @@ async def prepare_payout_recipient(
             )
 
         verified_bank_code = resolved.account.bank_code or payout_bank_code
-        return TransactionResult(
-            outcome=TransactionOutcome.OK,
-            patch={
-                "recipient_account": resolved.account.account_number or payload.recipient_account,
-                "recipient_bank_code": verified_bank_code,
-                "recipient_bank_code_provider": provider_name,
-                "recipient_resolution_provider": provider_name,
-                "recipient_resolved_name": resolved.account.account_name,
-            },
-        )
+        verified_name = resolved.account.account_name
+        identity_is_authoritative = provider_identity_is_authoritative(resolver_provider)
+        existing_name = payload.recipient_resolved_name
+        existing_provider = payload.recipient_resolution_provider
+        resolved_name = verified_name
+        resolution_provider: str | None = provider_name
+        if not identity_is_authoritative and existing_name:
+            resolved_name = existing_name
+            resolution_provider = existing_provider
+
+        if (
+            identity_is_authoritative
+            and existing_name
+            and not recipient_names_equivalent(existing_name, verified_name)
+        ):
+            logger.warning(
+                "payout_recipient_identity_mismatch",
+                provider=provider_name,
+                recipient_account_hash=log_fingerprint(payload.recipient_account),
+                recipient_bank_code=verified_bank_code,
+            )
+
+        patch = {
+            "recipient_account": resolved.account.account_number or payload.recipient_account,
+            "recipient_bank_code": verified_bank_code,
+            "recipient_bank_code_provider": provider_name,
+            "recipient_resolution_mode": POOLED_MODE,
+            "recipient_resolved_name": resolved_name,
+        }
+        if resolution_provider:
+            patch["recipient_resolution_provider"] = resolution_provider
+        return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
     except Exception as exc:
         logger.error(
             "payout_preparation_failed",

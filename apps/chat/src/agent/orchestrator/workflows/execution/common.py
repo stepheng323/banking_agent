@@ -18,6 +18,7 @@ INPUT_MUTABLE_STAGES = {
     TaskStage.EXTRACTED,
     TaskStage.RESOLVED,
     TaskStage.VALIDATED,
+    TaskStage.AWAITING_FUNDING_ADJUSTMENT,
 }
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 

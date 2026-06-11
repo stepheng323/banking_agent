@@ -2,6 +2,9 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.auth.auth_flow import _handle_auth_interrupt
+from apps.chat.src.agent.orchestrator.workflows.interrupt.batch_slot_fill import (
+    _resolve_batch_slot_fill_updates,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_additive import (
     _deterministic_additive_transaction_updates,
 )
@@ -20,6 +23,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_d
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_input import (
     _input_greeting_updates,
     _input_shortcut_updates,
+    _suggested_funding_acceptance_updates,
 )
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_status import (
     _account_balance_switch_updates,
@@ -70,7 +74,15 @@ async def _resolve_pre_router_interrupt_updates(
     if account_switch_updates is not None:
         return account_switch_updates
 
-    input_shortcut_updates = _input_shortcut_updates(state=state, runtime=runtime)
+    suggested_funding_updates = await _suggested_funding_acceptance_updates(state=state, runtime=runtime)
+    if suggested_funding_updates is not None:
+        return suggested_funding_updates
+
+    batch_slot_updates = await _resolve_batch_slot_fill_updates(state=state, runtime=runtime)
+    if batch_slot_updates is not None:
+        return batch_slot_updates
+
+    input_shortcut_updates = await _input_shortcut_updates(state=state, runtime=runtime)
     if input_shortcut_updates is not None:
         return input_shortcut_updates
 

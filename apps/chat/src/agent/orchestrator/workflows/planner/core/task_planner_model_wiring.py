@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models
 )
 from banking.transactions.shared.confirmation.models import ConfirmationDecisionOutput
 from shared.types.planner import (
+    BatchSlotPatchDecision,
     ContextFrameFollowupDecision,
     ContextFrameReplayModifier,
     InterruptRouteDecision,
@@ -31,6 +32,7 @@ class TaskPlannerStructuredOutputs:
     context_frame_followup: Any
     context_frame_replay_modifier: Any
     pending_action_edit: Any
+    batch_slot_patch: Any
     confirmation_decision: Any
     unsupported_capability: Any
     unsupported_boundary_turn: Any
@@ -103,6 +105,10 @@ def build_task_planner_structured_outputs(
         pending_action_edit=with_structured_output(
             interrupt_llm,
             PendingActionEditDecision,
+        ),
+        batch_slot_patch=with_structured_output(
+            interrupt_llm,
+            BatchSlotPatchDecision,
         ),
         confirmation_decision=with_structured_output(
             interrupt_llm,

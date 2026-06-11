@@ -22,12 +22,15 @@ from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.runtime.personality_enrichment import enrich_transfer_personality_context
 from banking.transactions.shared.scheduling import format_schedule_confirmation_line
 from banking.transfers.authorization.pin_token import persist_transfer_pin_token
+from banking.transfers.funding.plan_validation import funding_adjustment_details, funding_plan_confirmability
 from banking.transfers.models.types import (
     TransferContext,
     TransferGates,
     TransferPayload,
 )
 from banking.transfers.pipeline.base import TransferStep
+from banking.transfers.resolution.modes import POOLED_MODE, is_pooled_funding_plan
+from shared.config.settings import settings
 from shared.money import require_naira, to_naira
 from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
@@ -81,6 +84,45 @@ class ConfirmationStep(TransferStep):
         if gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
+        if getattr(worker_context, "dd_provider", None) is not None:
+            confirmable, funding_reason = funding_plan_confirmability(data)
+            if not confirmable:
+                logger.warning(
+                    "transfer_confirmation_blocked_by_funding_plan",
+                    reason=funding_reason,
+                    has_funding_plan=isinstance(data.funding_plan, dict),
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["funding_plan", "amount", "source_accounts", "explicit_split"],
+                    prompt=_funding_adjustment_prompt(data, context, funding_reason),
+                    details=funding_adjustment_details(funding_reason),
+                    patch={"funding_plan": None} if funding_reason == "stale" else {},
+                )
+
+            if is_pooled_funding_plan(data.funding_plan):
+                payout_provider = settings.payout_provider_name.strip().lower()
+                if (
+                    data.recipient_resolution_mode != POOLED_MODE
+                    or str(data.recipient_bank_code_provider or "").strip().lower() != payout_provider
+                ):
+                    logger.warning(
+                        "transfer_confirmation_blocked_by_recipient_resolution_mode",
+                        recipient_resolution_mode=data.recipient_resolution_mode,
+                        recipient_bank_code_provider=data.recipient_bank_code_provider,
+                        expected_provider=payout_provider,
+                    )
+                    return TransactionResult(
+                        outcome=TransactionOutcome.NEEDS_INPUT,
+                        required_fields=["recipient_account", "recipient_bank_name"],
+                        prompt=render_message(
+                            "response.templates.account_validation_failed",
+                            context.language,
+                        ),
+                        details=funding_adjustment_details("recipient_resolution_mode"),
+                        patch={"funding_plan": None},
+                    )
+
         risk_patch = await _build_dynamic_risk_patch(data, context, worker_context)
         if risk_patch:
             data = data.model_copy(update=risk_patch)
@@ -105,6 +147,24 @@ class ConfirmationStep(TransferStep):
         )
 
         return res
+
+
+def _funding_adjustment_prompt(
+    payload: TransferPayload,
+    ctx: TransferContext,
+    reason: str | None,
+) -> str:
+    if reason == "insufficient":
+        return render_personalized_message(
+            "transfer.funding.insufficient_funds",
+            ctx.language,
+            context=transfer_personality_context_from_payload(payload, moment="insufficient_funds"),
+        )
+    return render_text(
+        "I need to recheck the funding for this transfer before confirmation. "
+        "You can reduce the amount or tell me which account(s) to use.",
+        ctx.language,
+    )
 
 
 def _compute_percentile(values: list[float], percentile: float) -> float:

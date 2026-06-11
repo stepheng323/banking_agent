@@ -10,10 +10,12 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import 
     complete_task,
     fail_task,
     set_task_confirmation,
+    set_task_payload_value,
     set_task_stage,
     update_task_payload,
 )
 from banking.runtime.results import TransactionOutcome
+from banking.transfers.funding.plan_validation import FUNDING_ADJUSTMENT_REVIEW_STATE
 
 WorkerResultPatch = dict[str, Any]
 
@@ -49,9 +51,18 @@ def _handle_transaction_outcome(
 ) -> None:
     if result.outcome == TransactionOutcome.OK:
         complete_task(task, receipt=result.receipt)
+        if task.type == "transfer" and isinstance(result.receipt, dict):
+            receipt_status = str(result.receipt.get("status") or "").strip().lower()
+            if receipt_status == "processing":
+                set_task_payload_value(task, "final_status", "processing")
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
-        set_task_stage(task, TaskStage.EXTRACTED)
+        details = getattr(result, "details", None)
+        review_state = details.get("review_state") if isinstance(details, dict) else None
+        if task.type == "transfer" and review_state == FUNDING_ADJUSTMENT_REVIEW_STATE:
+            set_task_stage(task, TaskStage.AWAITING_FUNDING_ADJUSTMENT)
+        else:
+            set_task_stage(task, TaskStage.EXTRACTED)
         accumulator.add_missing_fields(task_id, result.required_fields)
         accumulator.add_details(task_id, result.details)
         accumulator.add_prompt(result.prompt, task_id)

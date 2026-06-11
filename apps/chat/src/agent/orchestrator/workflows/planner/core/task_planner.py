@@ -60,6 +60,7 @@ from banking.transactions.shared.confirmation.models import (
 from shared.observability.llm import build_llm_runnable_config
 from shared.observability.llm_call_metrics import record_llm_call, structured_output_metrics
 from shared.types.planner import (
+    BatchSlotPatchDecision,
     ContextFrameFollowupDecision,
     ContextFrameReplayModifier,
     InterruptRouteDecision,
@@ -234,7 +235,7 @@ def _build_clean_source_transfer_context_hint(
 
     return (
         "CLEAN_SOURCE_TRANSFER_HINT_JSON: output exactly one transfer send_money task with "
-        f'parameters={{{",".join(fields)}}}. Copy these slots exactly; omit recipient_bank_name and bank_name. '
+        f"parameters={{{','.join(fields)}}}. Copy these slots exactly; omit recipient_bank_name and bank_name. "
         f'Treat every word in "{_format_hint_text(recipient_name)}" as recipient alias text, not bank_name. '
         'Wrong: {"bank_name":"Access Bank"}.'
     )
@@ -328,6 +329,7 @@ class TaskPlanner:
         self.structured_context_frame_followup = structured_outputs.context_frame_followup
         self.structured_context_frame_replay_modifier = structured_outputs.context_frame_replay_modifier
         self.structured_pending_action_edit = structured_outputs.pending_action_edit
+        self.structured_batch_slot_patch = structured_outputs.batch_slot_patch
         self.structured_confirmation_decision = structured_outputs.confirmation_decision
         self.structured_unsupported_capability = structured_outputs.unsupported_capability
         self.structured_unsupported_boundary_turn = structured_outputs.unsupported_boundary_turn
@@ -786,6 +788,42 @@ class TaskPlanner:
                 phone_number=phone_number,
                 path_label=path_label,
                 task_domain="pending_action",
+            ),
+        )
+
+    async def interpret_batch_slot_patch(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> BatchSlotPatchDecision:
+        """Extract scoped slot updates for an active pre-auth transaction batch."""
+        user_prompt = interrupt_prompts.BATCH_SLOT_PATCH_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+            context=context,
+        )
+        return await invoke_structured_prompt(
+            self.structured_batch_slot_patch,
+            BatchSlotPatchDecision,
+            system_prompt=interrupt_prompts.BATCH_SLOT_PATCH_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            logger=logger,
+            event_name="batch_slot_patch_llm_call",
+            model_llm=self.interrupt_llm,
+            path_label=path_label,
+            latency_span="batch_slot_patch_llm",
+            log_fields={
+                "context_chars": len(context),
+                "context_mode": "compact" if context == "None" else "full",
+            },
+            config=build_llm_runnable_config(
+                role="interrupt_router",
+                phone_number=phone_number,
+                path_label=path_label,
+                task_domain="batch_slot_patch",
             ),
         )
 

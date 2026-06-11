@@ -43,6 +43,7 @@ def _funding_plan_to_payload_dict(plan: Any, task_payload: dict[str, Any]) -> di
         "steps": [
             {
                 "account_id": str(step.account_id),
+                "account_number": step.account_number,
                 "amount": naira_to_json(step.amount),
                 "bank_name": step.bank_name,
                 "sequence": int(step.sequence),

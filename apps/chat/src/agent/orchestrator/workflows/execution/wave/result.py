@@ -8,6 +8,7 @@ from typing import Any, Literal
 ExecutionWavePhase = Literal[
     "no_current_wave",
     "pending_interrupt",
+    "recipient_review_block",
     "batch_funding_block",
     "finalized",
 ]

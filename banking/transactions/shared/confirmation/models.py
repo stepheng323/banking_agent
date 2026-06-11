@@ -14,6 +14,8 @@ ConfirmationPromptKind = Literal[
     "resume_prompt",
     "beneficiary_save",
     "amount_suggestion",
+    "recipient_review",
+    "funding_suggestion",
 ]
 
 APPROVAL_CONFIDENCE_THRESHOLD = 0.90
