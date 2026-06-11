@@ -154,10 +154,7 @@ class ReadinessRunResult:
     @property
     def llm_call_summary(self) -> dict[str, Any]:
         calls = [
-            call
-            for turn in self.turns
-            for call in turn.llm_calls
-            if isinstance(call.get("duration_ms"), int | float)
+            call for turn in self.turns for call in turn.llm_calls if isinstance(call.get("duration_ms"), int | float)
         ]
         by_event: dict[str, dict[str, float | int]] = {}
         for call in calls:
@@ -200,18 +197,18 @@ class ReadinessRunResult:
             event_summary["output_token_estimate"] = int(event_summary["output_token_estimate"]) + int(
                 call.get("output_token_estimate") or 0
             )
-            event_summary["output_compact_token_estimate"] = int(
-                event_summary["output_compact_token_estimate"]
-            ) + int(call.get("output_compact_token_estimate") or 0)
+            event_summary["output_compact_token_estimate"] = int(event_summary["output_compact_token_estimate"]) + int(
+                call.get("output_compact_token_estimate") or 0
+            )
             event_summary["output_expanded_token_estimate"] = int(
                 event_summary["output_expanded_token_estimate"]
             ) + int(call.get("output_expanded_token_estimate") or 0)
             event_summary["output_expanded_json_chars"] = int(event_summary["output_expanded_json_chars"]) + int(
                 call.get("output_expanded_json_chars") or 0
             )
-            event_summary["output_default_overhead_chars"] = int(
-                event_summary["output_default_overhead_chars"]
-            ) + int(call.get("output_default_overhead_chars") or 0)
+            event_summary["output_default_overhead_chars"] = int(event_summary["output_default_overhead_chars"]) + int(
+                call.get("output_default_overhead_chars") or 0
+            )
             event_summary["output_null_field_count"] = int(event_summary["output_null_field_count"]) + int(
                 call.get("output_null_field_count") or 0
             )

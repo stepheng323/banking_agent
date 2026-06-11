@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import time
 import uuid
@@ -12,6 +13,7 @@ from typing import Any
 # Allow direct execution via scripts that import this module.
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+os.environ.setdefault("READINESS_VERBOSE_EVENTS", "true")
 
 import scripts.readiness_assertions as readiness_assertions
 import scripts.readiness_rendering as readiness_rendering
@@ -205,7 +207,7 @@ async def run_deterministic_readiness(
     )
 
 
-async def reset_redis_session(*, redis_client: Any, phone: str, channel: str) -> int:
+async def reset_redis_session(*, redis_client: Any, phone: str, channel: str, user_id: str | None = None) -> int:
     patterns = [
         f"checkpoint:{channel}:{phone}:*",
         f"checkpoint_write:{channel}:{phone}:*",
@@ -214,7 +216,10 @@ async def reset_redis_session(*, redis_client: Any, phone: str, channel: str) ->
         f"user:{phone}:chat_history",
         f"query:session:{phone}",
         f"context_frames:{phone}",
+        f"support_context:{phone}",
     ]
+    if user_id:
+        patterns.append(f"support_context:{user_id}")
     deleted = 0
     for pattern in patterns:
         keys = [key async for key in redis_client.scan_iter(match=pattern)]
@@ -346,7 +351,12 @@ async def run_dry_run_readiness(
     async def before_scenario(scenario: ReadinessScenario) -> None:
         if not reset_session or scenario.id in reset_scenarios:
             return
-        deleted = await reset_redis_session(redis_client=redis_client, phone=target_user.phone_number, channel=channel)
+        deleted = await reset_redis_session(
+            redis_client=redis_client,
+            phone=target_user.phone_number,
+            channel=channel,
+            user_id=str(user.id),
+        )
         print(f"[setup] reset Redis session keys before {scenario.id}: {deleted}")
         reset_scenarios.add(scenario.id)
 
@@ -364,10 +374,19 @@ async def run_dry_run_readiness(
                 user=user,
             )
             if turn.pin_after:
+                pin_idempotency_key = next(
+                    (
+                        str(entry.get("idempotency_key"))
+                        for entry in response.get("outbox", [])
+                        if isinstance(entry, dict) and entry.get("idempotency_key")
+                    ),
+                    "no-key",
+                )
                 pin_response = await agent.resume_transaction(
                     phone_number=target_user.phone_number,
                     flow_type=turn.pin_flow_type,
                     pin_verified=True,
+                    idempotency_key=pin_idempotency_key,
                     channel=channel,
                 )
                 response = {

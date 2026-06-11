@@ -420,7 +420,9 @@ def test_planner_scenario_is_dry_run_planner_probe_set() -> None:
     assert any("airtime" in turn.text for turn in all_turns)
     assert any("1GB MTN data" in turn.text for turn in all_turns)
     planner_turns = [turn for turn in all_turns if turn.expectation.expect_planner_clean is True]
-    direct_turns = [turn for turn in all_turns if turn.expectation.expect_routing_decision == "source_aware_transfer_command"]
+    direct_turns = [
+        turn for turn in all_turns if turn.expectation.expect_routing_decision == "source_aware_transfer_command"
+    ]
     assert len(planner_turns) == 4
     assert len(direct_turns) == 1
     assert all(turn.expectation.expect_llm_call_count == 1 for turn in planner_turns)

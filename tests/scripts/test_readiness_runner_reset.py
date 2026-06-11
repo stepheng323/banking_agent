@@ -21,8 +21,15 @@ class _RedisResetStub:
 async def test_reset_redis_session_clears_checkpoint_latest() -> None:
     redis = _RedisResetStub()
 
-    deleted = await reset_redis_session(redis_client=redis, phone="2348000000001", channel="whatsapp")
+    deleted = await reset_redis_session(
+        redis_client=redis,
+        phone="2348000000001",
+        channel="whatsapp",
+        user_id="user-1",
+    )
 
-    assert deleted == 7
+    assert deleted == 9
     assert "checkpoint_latest:whatsapp:2348000000001:*" in redis.scanned_patterns
+    assert "support_context:2348000000001" in redis.scanned_patterns
+    assert "support_context:user-1" in redis.scanned_patterns
     assert any(key.startswith("checkpoint_latest:whatsapp:2348000000001:") for key in redis.deleted_keys)

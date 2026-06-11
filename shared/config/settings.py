@@ -71,6 +71,13 @@ class Settings:
             app_env=os.getenv("APP_ENV", "development"),
             infrastructure_environment=os.getenv("ENVIRONMENT", "dev"),
         )
+        self.log_level: str = os.getenv("LOG_LEVEL", "info").strip().lower() or "info"
+        self.orchestrator_verbose_logs: bool = bool(
+            self._parse_optional_bool(os.getenv("ORCHESTRATOR_VERBOSE_LOGS")) or False
+        )
+        self.readiness_verbose_events: bool = bool(
+            self._parse_optional_bool(os.getenv("READINESS_VERBOSE_EVENTS")) or False
+        )
         raw_whatsapp_allowed_numbers = os.getenv("WHATSAPP_ALLOWED_NUMBERS", "")
         self.whatsapp = WhatsAppConfig(
             runtime=self.runtime,

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Sequence
+
+os.environ.setdefault("READINESS_VERBOSE_EVENTS", "true")
 
 from scripts.readiness_runner import run_readiness_sync
 

@@ -64,9 +64,7 @@ def assert_readiness_turn(
         planner_clean = route_metadata.get("planner_clean")
         if planner_clean != expectation.expect_planner_clean:
             dirty_reasons = route_metadata.get("planner_dirty_reasons") or ()
-            dirty_reasons_display = (
-                list(dirty_reasons) if isinstance(dirty_reasons, (list, tuple)) else dirty_reasons
-            )
+            dirty_reasons_display = list(dirty_reasons) if isinstance(dirty_reasons, (list, tuple)) else dirty_reasons
             errors.append(
                 " ".join(
                     (
