@@ -41,6 +41,7 @@ class FinalizeAccumulator:
             "pending_interrupt": None,
             "last_interrupt": None,
             "pin_verified": False,
+            "authorization_context": None,
             "last_callback": None,
             "session_stack": [],
             "active_domain": None,

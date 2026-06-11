@@ -5,7 +5,13 @@ from typing import Any, Literal
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
+from apps.chat.src.agent.orchestrator.models.domain import (
+    ActiveSession,
+    AuthorizationContext,
+    PendingInterrupt,
+    TaskSpec,
+    TaskStage,
+)
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
 from apps.chat.src.agent.orchestrator.workflows.interrupt.questions.active_flow_questions import (
@@ -300,6 +306,20 @@ async def test_active_flow_question_verified_confirmation_tail_skips_authorizati
             "recipient_account": "8067892221",
         },
         pin_verified=True,
+    )
+    state = state.model_copy(
+        update={
+            "authorization_context": AuthorizationContext(
+                idempotency_key="idem-transfer",
+                flow_type="transfer",
+                authorized_task_idempotency_keys=["idem-transfer"],
+            ),
+            "pending_interrupt": state.pending_interrupt.model_copy(
+                update={"authorization_idempotency_key": "idem-transfer"}
+            )
+            if state.pending_interrupt is not None
+            else None,
+        }
     )
     planner = _RoutePlanner(_route("current_value", target_field="amount"))
 

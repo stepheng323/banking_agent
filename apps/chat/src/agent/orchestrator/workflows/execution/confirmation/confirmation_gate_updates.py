@@ -91,6 +91,12 @@ def _build_confirmation_gate_updates(
     snapshots_by_task = {
         task_id: task.payload.get("confirmation", {}).get("snapshot", {}) for task_id, task in confirmation_tasks
     }
+    authorized_idempotency_keys = [
+        str(task.payload.get("idempotency_key") or "").strip()
+        for _task_id, task in confirmation_tasks
+        if str(task.payload.get("idempotency_key") or "").strip()
+    ]
+    authorization_idempotency_key = authorized_idempotency_keys[0] if authorized_idempotency_keys else None
 
     outbox: list[dict[str, Any]] = []
     if update_msg:
@@ -120,7 +126,13 @@ def _build_confirmation_gate_updates(
         }
     )
 
-    agg.set_confirmation_interrupt_outbox(task_ids=confirm_task_ids, prompt=summ, entries=outbox)
+    agg.set_confirmation_interrupt_outbox(
+        task_ids=confirm_task_ids,
+        prompt=summ,
+        entries=outbox,
+        authorization_idempotency_key=authorization_idempotency_key,
+        authorized_task_idempotency_keys=authorized_idempotency_keys,
+    )
     return cast(dict[str, Any], agg.to_updates())
 
 

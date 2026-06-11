@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import (
     ActiveSession,
+    AuthorizationContext,
     PendingInterrupt,
     TaskSpec,
     TaskStage,
@@ -3658,6 +3659,7 @@ async def test_auth_approve_flow_advances_non_pin_auth_to_executing() -> None:
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
+    assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
 
 
 @pytest.mark.asyncio
@@ -3698,19 +3700,29 @@ async def test_pin_auth_approval_text_does_not_authorize_transfer() -> None:
 @pytest.mark.asyncio
 async def test_callback_pin_verified_auto_approves_confirmation_without_router_call() -> None:
     state = OrchestratorState(
-        user_id="u_interrupt_10",
+        user_id="u1",
         phone_number="2348010101010",
         channel="whatsapp",
         last_message_text=None,
-        last_callback={"pin_verified": True, "flow_type": "transfer"},
+        last_callback={"pin_verified": True, "flow_type": "transfer", "idempotency_key": "idem-transfer"},
         pin_verified=True,
-        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"], prompt="Confirm transfer"),
+        authorization_context=AuthorizationContext(idempotency_key="idem-transfer", flow_type="transfer", user_id="u1"),
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t1"],
+            prompt="Confirm transfer",
+            authorization_idempotency_key="idem-transfer",
+            authorized_task_idempotency_keys=["idem-transfer"],
+        ),
         tasks={
             "t1": TaskSpec(
                 id="t1",
                 type="transfer",
                 stage=TaskStage.AWAITING_CONFIRMATION,
-                payload={"confirmation": {"summary": "Confirm transfer", "confirmed": False}},
+                payload={
+                    "idempotency_key": "idem-transfer",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
             )
         },
     )
@@ -3724,27 +3736,166 @@ async def test_callback_pin_verified_auto_approves_confirmation_without_router_c
 
 
 @pytest.mark.asyncio
+async def test_callback_pin_verified_accepts_phone_keyed_graph_state_with_loaded_user_id() -> None:
+    state = OrchestratorState(
+        user_id="2348010101010",
+        phone_number="2348010101010",
+        channel="whatsapp",
+        last_message_text=None,
+        last_callback={"pin_verified": True, "flow_type": "transfer", "idempotency_key": "idem-transfer"},
+        pin_verified=True,
+        authorization_context=AuthorizationContext(
+            idempotency_key="idem-transfer",
+            flow_type="transfer",
+            user_id="db-user-1",
+        ),
+        loaded_context={"user_id": "db-user-1"},
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t1"],
+            prompt="Confirm transfer",
+            authorization_idempotency_key="idem-transfer",
+            authorized_task_idempotency_keys=["idem-transfer"],
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "idempotency_key": "idem-transfer",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
+    assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_callback_pin_verified_rejects_loaded_user_id_mismatch() -> None:
+    state = OrchestratorState(
+        user_id="2348010101010",
+        phone_number="2348010101010",
+        channel="whatsapp",
+        last_message_text=None,
+        last_callback={"pin_verified": True, "flow_type": "transfer", "idempotency_key": "idem-transfer"},
+        pin_verified=True,
+        authorization_context=AuthorizationContext(
+            idempotency_key="idem-transfer",
+            flow_type="transfer",
+            user_id="db-user-1",
+        ),
+        loaded_context={"user_id": "db-user-2"},
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t1"],
+            prompt="Confirm transfer",
+            authorization_idempotency_key="idem-transfer",
+            authorized_task_idempotency_keys=["idem-transfer"],
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "idempotency_key": "idem-transfer",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert updates["pin_verified"] is False
+    assert updates["authorization_context"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+
+
+@pytest.mark.asyncio
+async def test_callback_pin_verified_wrong_idempotency_does_not_approve_confirmation() -> None:
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348010101010",
+        channel="whatsapp",
+        last_message_text=None,
+        last_callback={"pin_verified": True, "flow_type": "transfer", "idempotency_key": "idem-A"},
+        pin_verified=True,
+        authorization_context=AuthorizationContext(idempotency_key="idem-A", flow_type="transfer", user_id="u1"),
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t1"],
+            prompt="Confirm transfer",
+            authorization_idempotency_key="idem-B",
+            authorized_task_idempotency_keys=["idem-B"],
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "idempotency_key": "idem-B",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert updates["pin_verified"] is False
+    assert updates["authorization_context"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is False
+
+
+@pytest.mark.asyncio
 async def test_callback_batch_pin_verified_auto_approves_transaction_batch_without_router_call() -> None:
     state = OrchestratorState(
-        user_id="u_interrupt_batch_pin",
+        user_id="u1",
         phone_number="2348010101018",
         channel="whatsapp",
         last_message_text=None,
-        last_callback={"pin_verified": True, "flow_type": "batch"},
+        last_callback={"pin_verified": True, "flow_type": "batch", "idempotency_key": "idem-transfer"},
         pin_verified=True,
-        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        authorization_context=AuthorizationContext(idempotency_key="idem-transfer", flow_type="batch", user_id="u1"),
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t_transfer", "t_airtime"],
+            authorization_idempotency_key="idem-transfer",
+            authorized_task_idempotency_keys=["idem-transfer", "idem-airtime"],
+        ),
         tasks={
             "t_transfer": TaskSpec(
                 id="t_transfer",
                 type="transfer",
                 stage=TaskStage.AWAITING_CONFIRMATION,
-                payload={"confirmation": {"summary": "Confirm transfer", "confirmed": False}},
+                payload={
+                    "idempotency_key": "idem-transfer",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
             ),
             "t_airtime": TaskSpec(
                 id="t_airtime",
                 type="airtime",
                 stage=TaskStage.AWAITING_CONFIRMATION,
-                payload={"confirmation": {"summary": "Confirm airtime", "confirmed": False}},
+                payload={
+                    "idempotency_key": "idem-airtime",
+                    "confirmation": {"summary": "Confirm airtime", "confirmed": False},
+                },
             ),
         },
     )
@@ -3842,19 +3993,28 @@ async def test_schedule_update_confirmation_with_auth_waits_for_pin() -> None:
 @pytest.mark.asyncio
 async def test_callback_pin_verified_auto_approves_schedule_auth_without_router_call() -> None:
     state = OrchestratorState(
-        user_id="u_interrupt_schedule_pin",
+        user_id="u1",
         phone_number="2348010101015",
         channel="whatsapp",
         last_message_text=None,
-        last_callback={"pin_verified": True, "flow_type": "schedule"},
+        last_callback={"pin_verified": True, "flow_type": "schedule", "idempotency_key": "idem-schedule"},
         pin_verified=True,
-        pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin", prompt="Enter PIN"),
+        authorization_context=AuthorizationContext(idempotency_key="idem-schedule", flow_type="schedule", user_id="u1"),
+        pending_interrupt=PendingInterrupt(
+            kind="auth",
+            task_ids=["t1"],
+            auth_method="pin",
+            prompt="Enter PIN",
+            authorization_idempotency_key="idem-schedule",
+            authorized_task_idempotency_keys=["idem-schedule"],
+        ),
         tasks={
             "t1": TaskSpec(
                 id="t1",
                 type="schedule",
                 stage=TaskStage.AWAITING_AUTH,
                 payload={
+                    "idempotency_key": "idem-schedule",
                     "action": "edit_scheduled_transaction",
                     "schedule_edit_requires_auth": True,
                     "confirmation": {"summary": "Confirm schedule update", "confirmed": True},
@@ -3873,19 +4033,27 @@ async def test_callback_pin_verified_auto_approves_schedule_auth_without_router_
 @pytest.mark.asyncio
 async def test_callback_pin_verified_auto_approves_auth_without_router_call() -> None:
     state = OrchestratorState(
-        user_id="u_interrupt_11",
+        user_id="u1",
         phone_number="2348010101011",
         channel="whatsapp",
         last_message_text=None,
-        last_callback={"pin_verified": True, "flow_type": "transfer"},
+        last_callback={"pin_verified": True, "flow_type": "transfer", "idempotency_key": "idem-auth"},
         pin_verified=True,
-        pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin", prompt="Enter PIN"),
+        authorization_context=AuthorizationContext(idempotency_key="idem-auth", flow_type="transfer", user_id="u1"),
+        pending_interrupt=PendingInterrupt(
+            kind="auth",
+            task_ids=["t1"],
+            auth_method="pin",
+            prompt="Enter PIN",
+            authorization_idempotency_key="idem-auth",
+            authorized_task_idempotency_keys=["idem-auth"],
+        ),
         tasks={
             "t1": TaskSpec(
                 id="t1",
                 type="transfer",
                 stage=TaskStage.AWAITING_AUTH,
-                payload={"confirmation": {"summary": "Confirm transfer"}},
+                payload={"idempotency_key": "idem-auth", "confirmation": {"summary": "Confirm transfer"}},
             )
         },
     )
@@ -3895,6 +4063,7 @@ async def test_callback_pin_verified_auto_approves_auth_without_router_call() ->
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXECUTING
+    assert updates["tasks"]["t1"].payload["confirmation"]["confirmed"] is True
 
 
 @pytest.mark.asyncio

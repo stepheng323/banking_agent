@@ -22,6 +22,7 @@ class TaskStage(str, Enum):
     EXTRACTED = "extracted"
     RESOLVED = "resolved"
     VALIDATED = "validated"
+    AWAITING_FUNDING_ADJUSTMENT = "awaiting_funding_adjustment"
     AWAITING_CONFIRMATION = "awaiting_confirmation"
     AWAITING_AUTH = "awaiting_auth"
     EXECUTING = "executing"
@@ -62,6 +63,7 @@ class TransferPayload(BaseModel):
     recipient_bank_code: str | None = None
     recipient_bank_code_provider: str | None = None
     recipient_resolution_provider: str | None = None
+    recipient_resolution_mode: Literal["single_source", "pooled"] | None = None
     recipient_reference: dict[str, Any] | None = None
     beneficiary_id: str | None = None
     referent_recipient_candidates: list[dict[str, Any]] = Field(default_factory=list)
@@ -83,6 +85,7 @@ class TransferPayload(BaseModel):
     # Execution Logic
     idempotency_key: str | None = None
     funding_plan: dict[str, Any] | None = None
+    suggested_funding_plan: dict[str, Any] | None = None
 
     # Scheduling (transfer phase 1)
     schedule_mode: Literal["one_time", "recurring"] | None = None
@@ -135,6 +138,22 @@ class TaskSpec(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuthorizationContext(BaseModel):
+    """PIN authorization bound to one transaction resume event."""
+
+    idempotency_key: str
+    flow_type: str
+    user_id: str | None = None
+    channel: str | None = None
+    verified_at_ts: float = Field(default_factory=time)
+    authorized_task_idempotency_keys: list[str] = Field(default_factory=list)
+
+    def authorized_keys(self) -> set[str]:
+        keys = {self.idempotency_key}
+        keys.update(key for key in self.authorized_task_idempotency_keys if key)
+        return keys
+
+
 # --- 3. Interrupts (One distinct blocker at a time) ---
 
 
@@ -152,6 +171,7 @@ class PendingInterrupt(BaseModel):
     # input specific
     fields_by_task: dict[str, list[str]] = Field(default_factory=dict)
     prompt: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     # confirmation specific
     confirmation_token: str | None = None
@@ -159,6 +179,8 @@ class PendingInterrupt(BaseModel):
     # auth specific
     auth_method: Literal["pin", "otp"] | None = None
     attempts: int = 0
+    authorization_idempotency_key: str | None = None
+    authorized_task_idempotency_keys: list[str] = Field(default_factory=list)
 
 
 class ActiveSession(BaseModel):

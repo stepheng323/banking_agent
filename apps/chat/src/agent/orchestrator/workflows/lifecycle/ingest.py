@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from apps.chat.src.agent.orchestrator.models.domain import AuthorizationContext
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.state_view import (
     LifecycleStateView,
@@ -67,6 +68,7 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
                 "normalized_instruction": None,
                 "pending_interrupt": None,
                 "pin_verified": False,
+                "authorization_context": None,
                 "session_stack": [],
                 "active_domain": None,
                 "stashed_sessions": [],
@@ -92,6 +94,7 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
                 "session_stack": [],
                 "active_domain": None,
                 "pin_verified": False,
+                "authorization_context": None,
             }
         )
     elif _has_unblocked_nonterminal_wave(state_view):
@@ -113,6 +116,7 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
                 "session_stack": [],
                 "active_domain": None,
                 "pin_verified": False,
+                "authorization_context": None,
             }
         )
 
@@ -121,6 +125,19 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
         updates["last_message_text"] = None
         updates["last_message_id"] = None
         if state_view.last_callback_pin_verified:
-            updates["pin_verified"] = True
+            callback = state_view.last_callback or {}
+            idempotency_key = str(callback.get("idempotency_key") or "").strip()
+            if idempotency_key:
+                updates["pin_verified"] = True
+                updates["authorization_context"] = AuthorizationContext(
+                    idempotency_key=idempotency_key,
+                    flow_type=str(callback.get("flow_type") or ""),
+                    user_id=str(callback.get("authorized_user_id") or "") or None,
+                    channel=str(callback.get("channel") or state_view.channel or "") or None,
+                )
+            else:
+                updates["pin_verified"] = True
+                updates["authorization_context"] = None
+                logger.warning("pin_callback_missing_idempotency_key")
 
     return updates

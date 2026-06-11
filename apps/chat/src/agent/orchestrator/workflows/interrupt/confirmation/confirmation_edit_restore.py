@@ -89,6 +89,7 @@ def restore_confirmation_tasks_and_reconfirm_updates(
         "current_wave_index": min(state_view.current_wave_index, max(len(waves) - 1, 0)),
         "removed_confirmation_tasks": removed_tasks,
         "pin_verified": False,
+        "authorization_context": None,
         "last_callback": None,
     }
 

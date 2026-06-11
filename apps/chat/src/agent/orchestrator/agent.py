@@ -58,11 +58,19 @@ class OrchestratorAgent:
         phone_number: str,
         flow_type: str,
         pin_verified: bool,
+        idempotency_key: str,
+        authorized_user_id: str | None = None,
         channel: ChannelInput = MessagingChannel.WHATSAPP,
     ) -> dict[str, Any]:
         """Resume a transaction after an external event (like PIN verification)."""
         normalized_channel = normalize_messaging_channel(channel)
-        payload = {"pin_verified": pin_verified, "flow_type": flow_type}
+        payload = {
+            "pin_verified": pin_verified,
+            "flow_type": flow_type,
+            "idempotency_key": idempotency_key,
+            "authorized_user_id": authorized_user_id,
+            "channel": normalized_channel,
+        }
         return await self.orchestrator_handler.resume_flow(
             phone_number=phone_number,
             payload=payload,

@@ -48,6 +48,7 @@ def _build_stash_switch_updates(
         "session_stack": cleaned_stack,
         "active_domain": active_domain,
         "pin_verified": False,
+        "authorization_context": None,
         "last_callback": None,
     }
     detour_notice = build_detour_pause_notice_for_state(
@@ -92,6 +93,7 @@ def _build_replace_switch_updates(
         "session_stack": cleaned_stack,
         "active_domain": active_domain,
         "pin_verified": False,
+        "authorization_context": None,
         "last_callback": None,
     }
     if planner_output is not None:
@@ -130,6 +132,7 @@ def _build_transaction_replacement_updates(
         "session_stack": cleaned_stack,
         "active_domain": cleaned_stack[-1].domain if cleaned_stack else None,
         "pin_verified": False,
+        "authorization_context": None,
         "last_callback": None,
     }
     if planner_output is not None:

@@ -131,6 +131,7 @@ async def _stage_expired_pin(ctx: GateContext) -> dict[str, Any] | None:
     if not ctx.state_view.pin_verified or ctx.live_pending_interrupt:
         return None
     ctx.gate_updates["pin_verified"] = False
+    ctx.gate_updates["authorization_context"] = None
     if not _stale_pin_message_targets_missing_session(ctx):
         return None
     logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")

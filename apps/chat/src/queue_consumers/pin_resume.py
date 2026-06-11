@@ -141,6 +141,8 @@ async def handle_pin_verified(
         phone_number=phone_number,
         flow_type=_resume_flow_type(event_flow_type=normalized_flow_type, recorded_flow_type=recorded_flow_type),
         pin_verified=True,
+        idempotency_key=idempotency_key,
+        authorized_user_id=str(auth_result.user_id),
         channel=channel,
     )
 

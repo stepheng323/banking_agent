@@ -70,12 +70,19 @@ def _build_auth_gate_updates(
         task_id: task.payload.get("confirmation", {}).get("snapshot", {}) for task_id, task in auth_tasks
     }
 
-    idem_key = first_task.payload.get("idempotency_key", "no-key")
+    authorized_idempotency_keys = [
+        str(task.payload.get("idempotency_key") or "").strip()
+        for _task_id, task in auth_tasks
+        if str(task.payload.get("idempotency_key") or "").strip()
+    ]
+    idem_key = authorized_idempotency_keys[0] if authorized_idempotency_keys else "no-key"
     reason = _auth_header_for_tasks(state, auth_task_ids, locale=locale)
 
     agg.set_auth_interrupt_outbox(
         task_ids=auth_task_ids,
         prompt=summ,
+        authorization_idempotency_key=idem_key,
+        authorized_task_idempotency_keys=authorized_idempotency_keys,
         entries=[
             {
                 "type": "auth_request",

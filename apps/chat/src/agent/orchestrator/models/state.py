@@ -14,7 +14,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
+from apps.chat.src.agent.orchestrator.models.domain import (
+    ActiveSession,
+    AuthorizationContext,
+    PendingInterrupt,
+    TaskSpec,
+)
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
@@ -79,6 +84,7 @@ class OrchestratorState(BaseModel):
     removed_confirmation_tasks: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     pin_verified: bool = False
+    authorization_context: AuthorizationContext | None = None
     pending_interrupt: PendingInterrupt | None = None
     last_interrupt: PendingInterrupt | None = None
     outbox: list[dict[str, Any]] = Field(default_factory=list)

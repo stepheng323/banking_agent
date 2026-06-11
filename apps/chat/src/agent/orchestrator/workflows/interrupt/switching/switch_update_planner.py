@@ -35,6 +35,7 @@ def _build_planner_switch_updates(
         "session_stack": cleaned_stack,
         "active_domain": active_domain,
         "pin_verified": False,
+        "authorization_context": None,
         "last_callback": None,
     }
     if expected_executors:

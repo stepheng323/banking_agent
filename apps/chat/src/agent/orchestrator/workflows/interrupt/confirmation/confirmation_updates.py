@@ -18,6 +18,7 @@ def _amount_patch(amount: float) -> dict[str, Any]:
         "transfer_percentage": None,
         "transfer_all": False,
         "funding_plan": None,
+        "suggested_funding_plan": None,
         "suggested_amount": None,
     }
 

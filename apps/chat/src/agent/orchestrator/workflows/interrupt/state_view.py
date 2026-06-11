@@ -8,7 +8,12 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
 from apps.chat.src.agent.orchestrator.context.referents.models import ShortTermReferentMemory
 from apps.chat.src.agent.orchestrator.guardrails.interrupt_shortcuts import resolve_shortcut_locale
-from apps.chat.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec
+from apps.chat.src.agent.orchestrator.models.domain import (
+    ActiveSession,
+    AuthorizationContext,
+    PendingInterrupt,
+    TaskSpec,
+)
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LocaleCode
@@ -43,6 +48,10 @@ class InterruptStateView:
     @property
     def phone_number(self) -> str:
         return self.state.phone_number
+
+    @property
+    def user_id(self) -> str | None:
+        return self.state.user_id
 
     @property
     def loaded_context(self) -> dict[str, Any]:
@@ -118,6 +127,10 @@ class InterruptStateView:
     @property
     def pin_verified(self) -> bool:
         return self.state.pin_verified
+
+    @property
+    def authorization_context(self) -> AuthorizationContext | None:
+        return self.state.authorization_context
 
     @property
     def context_frames(self) -> list[ContextFrame]:

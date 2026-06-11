@@ -86,6 +86,7 @@ def remove_confirmation_tasks_and_reconfirm_updates(
         "current_wave_index": current_wave_index,
         "removed_confirmation_tasks": removed_tasks,
         "pin_verified": False,
+        "authorization_context": None,
         "last_callback": None,
     }
 

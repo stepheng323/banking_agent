@@ -103,6 +103,7 @@ def _build_confirmation_additive_transaction_updates(
         "session_stack": cleaned_stack,
         "active_domain": cleaned_stack[-1].domain if cleaned_stack else None,
         "pin_verified": False,
+        "authorization_context": None,
         "last_callback": None,
     }
     if planner_output is not None:

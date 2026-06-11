@@ -90,6 +90,7 @@ async def _handle_purchase_task(
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
+        "authorization_context": turn.authorization_context_payload,
     }
     if include_channel:
         context_data["channel"] = turn.channel

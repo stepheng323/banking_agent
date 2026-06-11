@@ -90,6 +90,7 @@ class ExecutionAccumulator:
         fields_by_task: dict[str, list[str]],
         prompt: str,
         entries: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         self._set_interrupt_outbox(
             PendingInterrupt(
@@ -97,6 +98,7 @@ class ExecutionAccumulator:
                 task_ids=task_ids,
                 fields_by_task=fields_by_task,
                 prompt=prompt,
+                metadata=metadata or {},
             ),
             entries,
         )
@@ -107,12 +109,16 @@ class ExecutionAccumulator:
         task_ids: list[str],
         prompt: str,
         entries: list[dict[str, Any]],
+        authorization_idempotency_key: str | None = None,
+        authorized_task_idempotency_keys: list[str] | None = None,
     ) -> None:
         self._set_interrupt_outbox(
             PendingInterrupt(
                 kind="confirmation",
                 task_ids=task_ids,
                 prompt=prompt,
+                authorization_idempotency_key=authorization_idempotency_key,
+                authorized_task_idempotency_keys=authorized_task_idempotency_keys or [],
             ),
             entries,
         )
@@ -123,6 +129,8 @@ class ExecutionAccumulator:
         task_ids: list[str],
         prompt: str,
         entries: list[dict[str, Any]],
+        authorization_idempotency_key: str | None = None,
+        authorized_task_idempotency_keys: list[str] | None = None,
     ) -> None:
         self._set_interrupt_outbox(
             PendingInterrupt(
@@ -130,6 +138,8 @@ class ExecutionAccumulator:
                 task_ids=task_ids,
                 auth_method="pin",
                 prompt=prompt,
+                authorization_idempotency_key=authorization_idempotency_key,
+                authorized_task_idempotency_keys=authorized_task_idempotency_keys or [],
             ),
             entries,
         )

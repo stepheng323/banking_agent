@@ -10,6 +10,9 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_re
 )
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 _INPUT_FIELD_TAIL_KEYS: dict[str, MessageKey] = {
     "amount": "interrupt.return_to_flow.input.amount",
@@ -126,8 +129,19 @@ def _task_skips_auth_after_confirmation(task: TaskSpec) -> bool:
 
 def _confirmation_requires_auth(state: OrchestratorState, interrupt: PendingInterrupt) -> bool:
     state_view = interrupt_state_view(state)
+    auth_context = state.authorization_context
+    if state_view.pin_verified and auth_context is not None:
+        interrupt_keys = {key for key in interrupt.authorized_task_idempotency_keys if key}
+        if interrupt.authorization_idempotency_key:
+            interrupt_keys.add(interrupt.authorization_idempotency_key)
+        if interrupt_keys and interrupt_keys.issubset(auth_context.authorized_keys()):
+            return False
+
     if state_view.pin_verified:
-        return False
+        logger.warning(
+            "confirmation_pin_verified_without_matching_authorization",
+            tasks=interrupt.task_ids,
+        )
 
     saw_task = False
     for task_id in interrupt.task_ids:

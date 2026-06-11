@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted
+from apps.chat.src.agent.orchestrator.workflows.execution.wave.wave_state import wave_position
 from apps.chat.src.agent.orchestrator.workflows.interrupt.confirmation.confirmation_selection import (
     _select_confirmation_continue_flow_task_ids,
 )
@@ -15,6 +16,28 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 
 
+def _ordered_reset_task_ids(
+    *,
+    state: OrchestratorState,
+    interrupt_task_ids: list[str],
+    payload_override_task_ids: list[str],
+) -> list[str]:
+    requested = [*interrupt_task_ids, *payload_override_task_ids]
+    if not requested:
+        return []
+
+    requested_set = set(requested)
+    seen: set[str] = set()
+    ordered: list[str] = []
+    current_wave = wave_position(state).current_wave
+    tasks = interrupt_state_view(state).tasks
+    for task_id in [*current_wave, *requested]:
+        if task_id in requested_set and task_id in tasks and task_id not in seen:
+            ordered.append(task_id)
+            seen.add(task_id)
+    return ordered
+
+
 def _continue_flow_updates(
     state: OrchestratorState,
     interrupt: Any,
@@ -22,20 +45,29 @@ def _continue_flow_updates(
 ) -> dict[str, Any]:
     state_view = interrupt_state_view(state)
     if interrupt.kind in {"input", "confirmation"}:
-        task_ids_to_reset = [str(task_id) for task_id in interrupt.task_ids]
+        original_task_ids = [str(task_id) for task_id in interrupt.task_ids]
+        payload_overrides: dict[str, dict[str, Any]] = dict(precomputed_payload_overrides or {})
+        task_ids_to_reset = _ordered_reset_task_ids(
+            state=state,
+            interrupt_task_ids=original_task_ids,
+            payload_override_task_ids=list(payload_overrides),
+        )
         selection_reason = "input_flow"
         matched_task_ids: list[str] = []
-        payload_overrides: dict[str, dict[str, Any]] = dict(precomputed_payload_overrides or {})
         message_overrides: dict[str, str] = {}
         if interrupt.kind == "confirmation":
             task_ids_to_reset, selection_reason, matched_task_ids = _select_confirmation_continue_flow_task_ids(
                 state,
                 interrupt,
             )
-            original_task_ids = [str(task_id) for task_id in interrupt.task_ids]
             if payload_overrides:
-                task_ids_to_reset = [task_id for task_id in original_task_ids if task_id in payload_overrides]
+                task_ids_to_reset = _ordered_reset_task_ids(
+                    state=state,
+                    interrupt_task_ids=[],
+                    payload_override_task_ids=list(payload_overrides),
+                )
                 selection_reason = "precomputed_correction_scope"
+                matched_task_ids = task_ids_to_reset
         logger.info(
             "confirmation_update_detected",
             tasks=interrupt.task_ids,
@@ -103,6 +135,7 @@ def _continue_flow_updates(
             "last_interrupt": last_interrupt,
             "tasks": state_view.tasks,
             "pin_verified": False,
+            "authorization_context": None,
             "last_callback": None,
         }
     return {}

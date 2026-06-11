@@ -21,8 +21,9 @@ from banking.policy.service import capability_block_message
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.security.authorization_context import is_task_authorized_by_pin
 from shared.config.settings import settings
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -152,7 +153,17 @@ class DataWorker:
 
         data = self._ensure_idempotency_key(DataPayload(**payload))
         ctx = self._build_context(context)
-        gates = self._build_gates(data, pin_verified)
+        bound_pin_verified = is_task_authorized_by_pin(
+            context=context,
+            idempotency_key=data.idempotency_key,
+            pin_verified=pin_verified,
+        )
+        if pin_verified and not bound_pin_verified:
+            logger.warning(
+                "data_pin_verified_without_matching_authorization",
+                has_idempotency_key=bool(data.idempotency_key),
+            )
+        gates = self._build_gates(data, bound_pin_verified)
         worker_context = self._build_worker_context(context)
         pipeline = build_data_pipeline(user_message)
 
@@ -194,7 +205,8 @@ class DataWorker:
             )
         finally:
             duration = (time.perf_counter() - start_time) * 1000
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "perf_timer_latency",
                 gate="data_worker_total",
                 duration_ms=round(duration, 2),

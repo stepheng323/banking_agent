@@ -31,6 +31,7 @@ from banking.scheduling.services.recurrence import (
     format_lagos_schedule_datetime,
     today_lagos,
 )
+from banking.security.authorization_context import is_task_authorized_by_pin
 from banking.transactions.shared.scheduling import (
     base_schedule_fields,
     missing_schedule_fields,
@@ -39,7 +40,7 @@ from banking.transactions.shared.scheduling import (
 )
 from shared.config.settings import settings
 from shared.database.enums import ScheduledInstructionStatusEnum
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 SCHEDULING_ACTIONS = {"schedule_airtime", "recurring_airtime"}
@@ -340,7 +341,17 @@ class AirtimeWorker:
 
         data = self._ensure_idempotency_key(AirtimePayload(**payload))
         ctx = self._build_context(context)
-        gates = self._build_gates(data, pin_verified)
+        bound_pin_verified = is_task_authorized_by_pin(
+            context=context,
+            idempotency_key=data.idempotency_key,
+            pin_verified=pin_verified,
+        )
+        if pin_verified and not bound_pin_verified:
+            logger.warning(
+                "airtime_pin_verified_without_matching_authorization",
+                has_idempotency_key=bool(data.idempotency_key),
+            )
+        gates = self._build_gates(data, bound_pin_verified)
         worker_context = self._build_worker_context(context)
         pipeline = self._build_pipeline(user_message)
 
@@ -377,7 +388,8 @@ class AirtimeWorker:
             )
         finally:
             duration = (time.perf_counter() - start_time) * 1000
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "perf_timer_latency",
                 gate="airtime_worker_total",
                 duration_ms=round(duration, 2),

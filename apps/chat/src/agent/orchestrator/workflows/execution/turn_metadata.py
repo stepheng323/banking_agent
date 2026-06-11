@@ -50,6 +50,12 @@ class ExecutionTurnMetadata:
         return self.state.pin_verified
 
     @property
+    def authorization_context_payload(self) -> dict[str, Any] | None:
+        if self.state.authorization_context is None:
+            return None
+        return self.state.authorization_context.model_dump()
+
+    @property
     def stashed_query_session(self) -> dict[str, Any] | None:
         return self.state.stashed_query_session
 
