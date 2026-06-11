@@ -6,10 +6,63 @@ import pytest
 
 from apps.receipt.src.consumer import ReceiptJobConsumer
 from shared.config.settings import settings
+from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
+
+
+class _FakeReceiptTransactions:
+    def __init__(self, tx: Any) -> None:
+        self._tx = tx
+
+    async def get_by_id(self, reference: str) -> Any | None:
+        return self._tx if reference == self._tx.id else None
+
+    async def get_by_idempotency_key(self, reference: str) -> Any | None:
+        return self._tx if reference == self._tx.idempotency_key else None
+
+    async def get_by_transaction_id(self, reference: str) -> Any | None:
+        return self._tx if reference == self._tx.transaction_id else None
+
+
+class _FakeReceiptUsers:
+    def __init__(self, user: Any) -> None:
+        self._user = user
+
+    async def get_by_phone(self, phone_number: str) -> Any | None:
+        return self._user if phone_number == self._user.phone_number else None
+
+
+class _FakeReceiptUnitOfWork:
+    def __init__(self, tx: Any, user: Any) -> None:
+        self.transactions = _FakeReceiptTransactions(tx)
+        self.users = _FakeReceiptUsers(user)
+
+    async def __aenter__(self) -> "_FakeReceiptUnitOfWork":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
+
+
+def _patch_successful_receipt_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    phone_number: str,
+    reference: str,
+) -> None:
+    user = SimpleNamespace(id="user-1", phone_number=phone_number)
+    tx = SimpleNamespace(
+        id=reference,
+        idempotency_key=reference,
+        transaction_id=reference,
+        user_id=user.id,
+        transaction_type=TransactionTypeEnum.TRANSFER.value,
+        status=TransactionStatusEnum.SUCCESSFUL.value,
+    )
+    monkeypatch.setattr("apps.receipt.src.consumer.UnitOfWork", lambda: _FakeReceiptUnitOfWork(tx, user))
 
 
 @pytest.mark.asyncio
-async def test_receipt_consumer_processes_top_level_payload() -> None:
+async def test_receipt_consumer_processes_top_level_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     delivery_service = cast(Any, SimpleNamespace(deliver_intents=AsyncMock(), deliver_text=AsyncMock()))
     redis_client = cast(Any, SimpleNamespace(rpush=AsyncMock(), expire=AsyncMock()))
     consumer = ReceiptJobConsumer(delivery_service=delivery_service, redis_client=redis_client)
@@ -33,6 +86,7 @@ async def test_receipt_consumer_processes_top_level_payload() -> None:
         "transaction_reference": "TRX-001",
         "signal_key": "receipt:signal:test-1",
     }
+    _patch_successful_receipt_lookup(monkeypatch, phone_number="2348000000001", reference="TRX-001")
 
     await consumer._process_job(job)
 
@@ -84,7 +138,9 @@ async def test_receipt_consumer_rejects_wrapped_payload() -> None:
 
 
 @pytest.mark.asyncio
-async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt() -> None:
+async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     delivery_service = cast(Any, SimpleNamespace(deliver_intents=AsyncMock(), deliver_text=AsyncMock()))
     redis_client = cast(Any, SimpleNamespace(rpush=AsyncMock(), expire=AsyncMock()))
     consumer = ReceiptJobConsumer(delivery_service=delivery_service, redis_client=redis_client)
@@ -104,6 +160,7 @@ async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt() -
         "signal_key": "receipt:signal:test-3",
         "beneficiary_suggestion_message": "Would you like to save Mercy Johnson?",
     }
+    _patch_successful_receipt_lookup(monkeypatch, phone_number="2348000000003", reference="TRX-003")
 
     await consumer._process_job(job)
 
@@ -115,7 +172,9 @@ async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt() -
 
 
 @pytest.mark.asyncio
-async def test_receipt_consumer_sends_generation_notice_before_rendering_when_requested() -> None:
+async def test_receipt_consumer_sends_generation_notice_before_rendering_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     events: list[str] = []
 
     async def deliver_text(**kwargs: Any) -> None:
@@ -155,6 +214,7 @@ async def test_receipt_consumer_sends_generation_notice_before_rendering_when_re
         },
         "transaction_reference": "TRX-004",
     }
+    _patch_successful_receipt_lookup(monkeypatch, phone_number="2348000000004", reference="TRX-004")
 
     await consumer._process_job(job)
 
@@ -186,6 +246,7 @@ async def test_receipt_consumer_browser_closed_failure_retries_immediately(monke
         },
         "transaction_reference": "TRX-004",
     }
+    _patch_successful_receipt_lookup(monkeypatch, phone_number="2348000000004", reference="TRX-004")
 
     await consumer._process_job(job)
 
@@ -219,6 +280,7 @@ async def test_receipt_consumer_non_browser_failure_uses_backoff(monkeypatch: py
         },
         "transaction_reference": "TRX-005",
     }
+    _patch_successful_receipt_lookup(monkeypatch, phone_number="2348000000005", reference="TRX-005")
 
     await consumer._process_job(job)
 

@@ -12,9 +12,11 @@ from apps.receipt.src.renderer import (
     is_browser_runtime_closed_error,
 )
 from banking.messaging.delivery.service import DeliveryService
+from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from shared.cache.redis_client import Redis
+from shared.database.enums import TransactionStatusEnum, TransactionTypeEnum
 from shared.utils.logging import get_logger, log_fingerprint
 
 logger = get_logger(__name__)
@@ -82,6 +84,80 @@ class ReceiptJobConsumer:
         locale = LocaleManager.normalize(str(payload.get("language") or payload.get("locale") or "en")).value
         return render_message("query.receipt.generating", locale)
 
+    @staticmethod
+    def _receipt_unavailable_status_text(status: str | None) -> str:
+        normalized = str(status or "").strip().lower()
+        if normalized == TransactionStatusEnum.FAILED.value:
+            return "failed"
+        if normalized == TransactionStatusEnum.REVERSED.value:
+            return "was reversed"
+        if normalized == TransactionStatusEnum.PROCESSING.value:
+            return "is still processing"
+        if normalized in {TransactionStatusEnum.PENDING.value, TransactionStatusEnum.REVIEW_PENDING.value}:
+            return "is still pending"
+        return "is not available"
+
+    async def _receipt_transaction_is_renderable(
+        self,
+        *,
+        payload: dict[str, Any],
+        reference: str,
+    ) -> tuple[bool, str | None]:
+        if not reference or reference == "N/A":
+            return False, None
+        phone_number = str(payload.get("phone_number") or "").strip()
+        if not phone_number:
+            return False, None
+        async with UnitOfWork() as uow:
+            if uow.transactions is None or uow.users is None:
+                return False, None
+            tx = await uow.transactions.get_by_id(reference)
+            if tx is None:
+                tx = await uow.transactions.get_by_idempotency_key(reference)
+            if tx is None:
+                tx = await uow.transactions.get_by_transaction_id(reference)
+            if tx is None:
+                return False, None
+            user = await uow.users.get_by_phone(phone_number)
+            if user is None or str(tx.user_id) != str(user.id):
+                logger.warning(
+                    "receipt_generation_rejected_non_owned_transaction",
+                    phone_hash=log_fingerprint(phone_number),
+                    reference_hash=log_fingerprint(reference),
+                )
+                return False, str(getattr(tx, "status", "") or "")
+            if str(getattr(tx, "transaction_type", "") or "") != TransactionTypeEnum.TRANSFER.value:
+                return False, str(getattr(tx, "status", "") or "")
+            status = str(getattr(tx, "status", "") or "")
+            return status == TransactionStatusEnum.SUCCESSFUL.value, status
+        return False, None
+
+    async def _notify_receipt_unavailable(
+        self,
+        *,
+        payload: dict[str, Any],
+        outbox_phone: Any,
+        reference: str,
+        status: str | None,
+    ) -> None:
+        locale = LocaleManager.normalize(str(payload.get("language") or payload.get("locale") or "en")).value
+        channel = payload.get("channel", "whatsapp")
+        await self.delivery_service.deliver_text(
+            phone_number=str(outbox_phone),
+            channel=str(channel),
+            text=render_message(
+                "support.receipt.unavailable_for_status",
+                locale,
+                {"status": self._receipt_unavailable_status_text(status)},
+            ),
+            metadata={
+                "source": "receipt_consumer",
+                "reason": "receipt_unavailable",
+                "transaction_reference": reference,
+            },
+            dedupe_key=f"receipt-unavailable:{reference}",
+        )
+
     async def _notify_generation_started(
         self,
         *,
@@ -143,6 +219,24 @@ class ReceiptJobConsumer:
                 return
 
             signal_key = self._extract_signal_key(job, payload)
+            renderable, transaction_status = await self._receipt_transaction_is_renderable(
+                payload=payload,
+                reference=str(reference or ""),
+            )
+            if not renderable:
+                logger.warning(
+                    "receipt_generation_rejected_transaction_not_renderable",
+                    phone_hash=log_fingerprint(phone_number),
+                    reference_hash=log_fingerprint(str(reference or "")),
+                    transaction_status=transaction_status,
+                )
+                await self._notify_receipt_unavailable(
+                    payload=payload,
+                    outbox_phone=outbox_phone,
+                    reference=str(reference or ""),
+                    status=transaction_status,
+                )
+                return
             try:
                 transfer_data = self._extract_transfer_data(payload)
             except ValueError as e:
