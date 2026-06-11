@@ -26,6 +26,20 @@ class _CapturePublisher:
         self.published.append((topic, message))
 
 
+class _Notifier:
+    def __init__(self) -> None:
+        self.calls: list[tuple[SimpleNamespace, str, str | None]] = []
+
+    async def notify(
+        self,
+        transaction: SimpleNamespace,
+        event: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        self.calls.append((transaction, event, error_message))
+
+
 class _FakeDb:
     def __init__(self) -> None:
         self.added: list[object] = []
@@ -140,6 +154,7 @@ class _SharedState:
             error_message=None,
         )
         self.tx = SimpleNamespace(
+            id="tx-1",
             idempotency_key="idem-1",
             status=TransactionStatusEnum.FAILED.value,
             provider_status=None,
@@ -205,10 +220,12 @@ async def test_refund_reconciliation_marks_transaction_reversed_after_all_refund
     )
     state = _SharedState([step, failed_step])
     monkeypatch.setattr(reconciliation_module, "UnitOfWork", lambda: _FakeUnitOfWork(state))
+    notifier = _Notifier()
     consumer = RefundReconciliationConsumer(
         direct_debit_provider=_FakeProvider(
             DebitResult(success=True, status=DebitStatus.REVERSED, debit_id="refund-1", reference="pool-ref-1")
-        )
+        ),
+        notifier=notifier,
     )
 
     await consumer.process_job({"funding_step_id": "step-1", "funded_transfer_id": "funded-1"})
@@ -217,6 +234,7 @@ async def test_refund_reconciliation_marks_transaction_reversed_after_all_refund
     assert state.funded_transfers.status_updates == [("funded-1", FundedTransferStatusEnum.REFUNDED.value, None)]
     assert state.tx.status == TransactionStatusEnum.REVERSED.value
     assert state.commit_calls == 1
+    assert notifier.calls == [(state.tx, "refunded", None)]
 
 
 @pytest.mark.asyncio

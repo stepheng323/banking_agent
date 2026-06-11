@@ -6,6 +6,7 @@ from typing import Any
 from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import finalize_refund_state
+from banking.transactions.runtime.transfer_completion_notifications import TransferCompletionNotifier
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from shared.utils.logging import get_logger
@@ -16,8 +17,13 @@ logger = get_logger(__name__)
 class RefundConsumer:
     """Consumes refund jobs and attempts to reverse previously successful debits."""
 
-    def __init__(self, direct_debit_provider: DirectDebitProvider):
+    def __init__(
+        self,
+        direct_debit_provider: DirectDebitProvider,
+        notifier: TransferCompletionNotifier | None = None,
+    ):
         self.direct_debit_provider = direct_debit_provider
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         funding_step_id = payload.get("funding_step_id")
@@ -32,6 +38,7 @@ class RefundConsumer:
 
         result = await self.direct_debit_provider.reverse_debit(str(claim["refund_reference"]), reason="Funding refund")
 
+        notifiable_transaction: Any | None = None
         async with UnitOfWork() as uow:
             if not uow.funding_steps or not uow.funded_transfers:
                 return
@@ -54,6 +61,7 @@ class RefundConsumer:
 
             self._store_refund_metadata(uow, step, result, str(claim["refund_reference"]))
 
+            transfer: Any | None = None
             if result.success and result.status == DebitStatus.REVERSED:
                 updated_step = await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUNDED.value)
                 step = updated_step or step
@@ -68,7 +76,9 @@ class RefundConsumer:
                         or getattr(step, "refund_provider_id", None)
                         or str(claim["refund_reference"]),
                     )
-                    await finalize_refund_state(uow, transfer)
+                    refund_outcome = await finalize_refund_state(uow, transfer)
+                    if refund_outcome == "refunded" and uow.transactions:
+                        notifiable_transaction = await uow.transactions.get_by_idempotency_key(transfer.idempotency_key)
                 logger.info("refund_completed", funding_step_id=funding_step_id)
             elif result.status == DebitStatus.FAILED:
                 await uow.funding_steps.update_status(
@@ -91,6 +101,8 @@ class RefundConsumer:
                 await finalize_refund_state(uow, transfer)
 
             await uow.commit()
+        if self.notifier and notifiable_transaction is not None:
+            await self.notifier.notify(notifiable_transaction, "refunded")
 
     async def _claim_refund(
         self,

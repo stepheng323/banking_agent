@@ -15,6 +15,20 @@ class _CapturePublisher:
         self.published.append((topic, message))
 
 
+class _Notifier:
+    def __init__(self) -> None:
+        self.calls: list[tuple[SimpleNamespace, str, str | None]] = []
+
+    async def notify(
+        self,
+        transaction: SimpleNamespace,
+        event: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        self.calls.append((transaction, event, error_message))
+
+
 class _FakeProvider:
     provider_name = "flutterwave"
 
@@ -171,6 +185,7 @@ def _transfer() -> SimpleNamespace:
 
 def _transaction() -> SimpleNamespace:
     return SimpleNamespace(
+        id="tx-1",
         idempotency_key="idem-1",
         status=TransactionStatusEnum.PROCESSING.value,
         transaction_id=None,
@@ -208,7 +223,12 @@ async def test_reconciliation_completes_only_verified_success(monkeypatch) -> No
             "currency": "NGN",
         }
     )
-    consumer = PayoutReconciliationConsumer(payout_provider=provider, publisher=_CapturePublisher())
+    notifier = _Notifier()
+    consumer = PayoutReconciliationConsumer(
+        payout_provider=provider,
+        publisher=_CapturePublisher(),
+        notifier=notifier,
+    )
 
     await consumer.process_job({"funded_transfer_id": "funded-1", "provider_transfer_id": "trf-1"})
 
@@ -218,6 +238,7 @@ async def test_reconciliation_completes_only_verified_success(monkeypatch) -> No
     assert tx.status == TransactionStatusEnum.SUCCESSFUL.value
     assert tx.transaction_id == "trf-1"
     assert state.commit_calls == 1
+    assert notifier.calls == [(tx, "successful", None)]
 
 
 @pytest.mark.asyncio
@@ -238,7 +259,8 @@ async def test_reconciliation_keeps_pending_and_increments_retry(monkeypatch) ->
         }
     )
     publisher = _CapturePublisher()
-    consumer = PayoutReconciliationConsumer(payout_provider=provider, publisher=publisher)
+    notifier = _Notifier()
+    consumer = PayoutReconciliationConsumer(payout_provider=provider, publisher=publisher, notifier=notifier)
 
     await consumer.process_job({"funded_transfer_id": "funded-1", "provider_transfer_id": "trf-1"})
 
@@ -246,6 +268,7 @@ async def test_reconciliation_keeps_pending_and_increments_retry(monkeypatch) ->
     assert transfer.payout_retry_count == 1
     assert tx.status == TransactionStatusEnum.PROCESSING.value
     assert publisher.published == []
+    assert notifier.calls == []
 
 
 @pytest.mark.asyncio
@@ -268,7 +291,8 @@ async def test_reconciliation_failed_payout_queues_refunds(monkeypatch) -> None:
         }
     )
     publisher = _CapturePublisher()
-    consumer = PayoutReconciliationConsumer(payout_provider=provider, publisher=publisher)
+    notifier = _Notifier()
+    consumer = PayoutReconciliationConsumer(payout_provider=provider, publisher=publisher, notifier=notifier)
 
     await consumer.process_job({"funded_transfer_id": "funded-1", "provider_transfer_id": "trf-1"})
 
@@ -290,6 +314,7 @@ async def test_reconciliation_failed_payout_queues_refunds(monkeypatch) -> None:
         )
     ]
     assert state.funding_steps.status_updates == [("step-1", FundingStepStatusEnum.REFUND_PENDING.value)]
+    assert notifier.calls == [(tx, "failed", "Transfer failed")]
 
 
 @pytest.mark.asyncio

@@ -31,7 +31,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 COMPLETION_CONTEXT_KEY = "completion_context"
-TransferCompletionEvent = Literal["successful", "processing", "failed"]
+TransferCompletionEvent = Literal["successful", "processing", "failed", "refunded"]
 
 
 def _safe_meta(value: Any) -> dict[str, Any]:
@@ -100,6 +100,10 @@ class TransferCompletionNotifier:
         )
 
         transfer_data = self._transfer_data(transaction, context)
+        if event == "refunded":
+            await self._deliver_refunded(transaction, message=message, transfer_data=transfer_data, locale=locale)
+            return
+
         completion_payload = self._completion_payload(
             transfer_data,
             final_status=self._final_status(event),
@@ -173,6 +177,7 @@ class TransferCompletionNotifier:
             "successful": "successful",
             "processing": "processing",
             "failed": "failed",
+            "refunded": "failed",
         }[event]
         await scheduled_runs.update_scheduled_run(
             scheduled_runs.schedule_run_id(scheduled_runs.scheduled_meta(message)),
@@ -367,6 +372,24 @@ class TransferCompletionNotifier:
             text=text,
             metadata={"source": "transfer_completion_notifier", "transaction_id": transaction_id},
             dedupe_key=f"transfer:failed:{transaction_id}",
+        )
+
+    async def _deliver_refunded(
+        self,
+        transaction: Any,
+        *,
+        message: dict[str, Any],
+        transfer_data: dict[str, Any],
+        locale: str,
+    ) -> None:
+        amount = naira_to_json(to_naira(transfer_data.get("amount")) or Decimal("0.00")) or "0.00"
+        transaction_id = str(getattr(transaction, "id", "") or "")
+        await self.delivery_service.deliver_text(
+            phone_number=_delivery_target(message),
+            channel=str(message.get("channel") or "whatsapp"),
+            text=render_message("support.reversal.completed", locale, {"amount": amount}),
+            metadata={"source": "transfer_completion_notifier", "transaction_id": transaction_id},
+            dedupe_key=f"transfer:refunded:{transaction_id}",
         )
 
     async def _offer_receipt(self, *, message: dict[str, Any], transfer_data: dict[str, Any], transaction: Any) -> None:

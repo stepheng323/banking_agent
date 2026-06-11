@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from uuid import UUID
+
 from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
 from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
 
@@ -128,6 +131,37 @@ async def test_async_completion_latest_terminal_state_wins_before_finalization()
     assert "Gaines" in summary["text"]
     assert "Transfers completed successfully" in summary["text"]
     assert "✗" not in summary["text"]
+
+
+async def test_async_completion_serializes_uuid_values_in_group_legs() -> None:
+    redis_client = _RedisStub()
+    transaction_id = UUID("22f29871-153b-476e-b7f4-ca8597b72ea9")
+    beneficiary_id = UUID("5c29f346-5362-4a4f-9ac6-ec011a5f3619")
+
+    result = await record_group_leg_and_maybe_build_summary(
+        redis_client,
+        message={
+            "transaction_id": transaction_id,
+            "async_group": {
+                "async_group_id": "group-uuid",
+                "async_group_size": 2,
+                "async_group_kind": "mixed_batch",
+                "async_group_index": 1,
+            },
+        },
+        task_type="airtime",
+        payload={
+            **_airtime_payload(amount=1000, phone="08162511023", final_status="success"),
+            "beneficiary_id": beneficiary_id,
+        },
+        locale="en",
+    )
+
+    assert result is None
+    stored_leg = redis_client.hashes["async-group:group-uuid:legs"]["1"]
+    decoded = json.loads(stored_leg)
+    assert decoded["transaction_id"] == str(transaction_id)
+    assert decoded["payload"]["beneficiary_id"] == str(beneficiary_id)
 
 
 async def test_async_completion_duplicate_terminal_processing_emits_summary_once() -> None:

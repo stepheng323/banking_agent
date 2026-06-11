@@ -15,6 +15,20 @@ class _CapturePublisher:
         self.published.append((topic, message))
 
 
+class _Notifier:
+    def __init__(self) -> None:
+        self.calls: list[tuple[SimpleNamespace, str, str | None]] = []
+
+    async def notify(
+        self,
+        transaction: SimpleNamespace,
+        event: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        self.calls.append((transaction, event, error_message))
+
+
 class _FakeDb:
     def __init__(self) -> None:
         self.added: list[object] = []
@@ -139,6 +153,7 @@ def _transfer() -> SimpleNamespace:
 
 def _transaction() -> SimpleNamespace:
     return SimpleNamespace(
+        id="tx-1",
         idempotency_key="idem-1",
         status=TransactionStatusEnum.PROCESSING.value,
         transaction_id=None,
@@ -155,6 +170,7 @@ async def test_payout_consumer_completes_only_terminal_success(monkeypatch) -> N
     tx = _transaction()
     uow = _FakeUnitOfWork(transfer, tx)
     monkeypatch.setattr(payout_consumer_module, "UnitOfWork", lambda: uow)
+    notifier = _Notifier()
     consumer = PayoutConsumer(
         payout_executor=_FakeExecutor(
             {
@@ -163,7 +179,8 @@ async def test_payout_consumer_completes_only_terminal_success(monkeypatch) -> N
                 "transaction_id": "trf-1",
                 "reference": "idem-1",
             }
-        )
+        ),
+        notifier=notifier,
     )
 
     await consumer.process_job({"funded_transfer_id": "funded-1"})
@@ -176,6 +193,7 @@ async def test_payout_consumer_completes_only_terminal_success(monkeypatch) -> N
     assert tx.status == TransactionStatusEnum.SUCCESSFUL.value
     assert tx.transaction_id == "trf-1"
     assert uow.commit_calls == 2
+    assert notifier.calls == [(tx, "successful", None)]
 
 
 @pytest.mark.asyncio
@@ -185,6 +203,7 @@ async def test_payout_consumer_keeps_pending_payout_processing(monkeypatch) -> N
     uow = _FakeUnitOfWork(transfer, tx)
     monkeypatch.setattr(payout_consumer_module, "UnitOfWork", lambda: uow)
     publisher = _CapturePublisher()
+    notifier = _Notifier()
     consumer = PayoutConsumer(
         payout_executor=_FakeExecutor(
             {
@@ -195,6 +214,7 @@ async def test_payout_consumer_keeps_pending_payout_processing(monkeypatch) -> N
             }
         ),
         publisher=publisher,
+        notifier=notifier,
     )
 
     await consumer.process_job({"funded_transfer_id": "funded-1"})
@@ -208,6 +228,7 @@ async def test_payout_consumer_keeps_pending_payout_processing(monkeypatch) -> N
     assert tx.provider_status == "pending"
     assert publisher.published == []
     assert uow.funding_steps.status_updates == []
+    assert notifier.calls == []
 
 
 @pytest.mark.asyncio
@@ -224,6 +245,7 @@ async def test_payout_consumer_failed_payout_queues_refunds(monkeypatch) -> None
     uow = _FakeUnitOfWork(transfer, tx, steps=[step])
     monkeypatch.setattr(payout_consumer_module, "UnitOfWork", lambda: uow)
     publisher = _CapturePublisher()
+    notifier = _Notifier()
     consumer = PayoutConsumer(
         payout_executor=_FakeExecutor(
             {
@@ -235,6 +257,7 @@ async def test_payout_consumer_failed_payout_queues_refunds(monkeypatch) -> None
             }
         ),
         publisher=publisher,
+        notifier=notifier,
     )
 
     await consumer.process_job({"funded_transfer_id": "funded-1"})
@@ -259,6 +282,7 @@ async def test_payout_consumer_failed_payout_queues_refunds(monkeypatch) -> None
         )
     ]
     assert uow.funding_steps.status_updates == [("step-1", FundingStepStatusEnum.REFUND_PENDING.value)]
+    assert notifier.calls == [(tx, "failed", "Invalid recipient")]
 
 
 @pytest.mark.asyncio

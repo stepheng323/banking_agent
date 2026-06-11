@@ -104,6 +104,7 @@ class _FakeUnitOfWork:
             status=FundedTransferStatusEnum.REFUNDING.value,
         )
         self.tx = SimpleNamespace(
+            id="tx-1",
             idempotency_key="idem-1",
             status=TransactionStatusEnum.FAILED.value,
             provider_status=None,
@@ -137,6 +138,20 @@ class _RefundProvider:
         return self.result
 
 
+class _Notifier:
+    def __init__(self) -> None:
+        self.calls: list[tuple[SimpleNamespace, str, str | None]] = []
+
+    async def notify(
+        self,
+        transaction: SimpleNamespace,
+        event: str,
+        *,
+        error_message: str | None = None,
+    ) -> None:
+        self.calls.append((transaction, event, error_message))
+
+
 @pytest.mark.asyncio
 async def test_refund_consumer_uses_provider_reference_for_mono_refund(monkeypatch) -> None:
     step = SimpleNamespace(
@@ -154,7 +169,8 @@ async def test_refund_consumer_uses_provider_reference_for_mono_refund(monkeypat
     provider = _RefundProvider(
         DebitResult(success=True, status=DebitStatus.REVERSED, debit_id="refund-1", reference="pool-ref-1")
     )
-    consumer = RefundConsumer(direct_debit_provider=provider)  # type: ignore[arg-type]
+    notifier = _Notifier()
+    consumer = RefundConsumer(direct_debit_provider=provider, notifier=notifier)  # type: ignore[arg-type]
 
     await consumer.process_job({"funding_step_id": "step-1", "funded_transfer_id": "funded-1"})
 
@@ -168,6 +184,7 @@ async def test_refund_consumer_uses_provider_reference_for_mono_refund(monkeypat
     assert step.refund_provider_id == "refund-1"
     assert uow.tx.status == TransactionStatusEnum.REVERSED.value
     assert uow.commit_calls == 2
+    assert notifier.calls == [(uow.tx, "refunded", None)]
 
 
 @pytest.mark.asyncio

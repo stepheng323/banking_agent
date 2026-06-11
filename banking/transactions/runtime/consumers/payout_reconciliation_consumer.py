@@ -7,6 +7,10 @@ from typing import Any
 
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.payout_status import apply_payout_result, normalize_payout_status
+from banking.transactions.runtime.transfer_completion_notifications import (
+    TransferCompletionEvent,
+    TransferCompletionNotifier,
+)
 from shared.clients.abstractions.payment import PayoutProvider
 from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
@@ -32,9 +36,15 @@ class PayoutReconciliationTarget:
 class PayoutReconciliationConsumer:
     """Verifies pending Flutterwave payouts and applies terminal outcomes."""
 
-    def __init__(self, payout_provider: PayoutProvider, publisher: QueuePublisher | None = None):
+    def __init__(
+        self,
+        payout_provider: PayoutProvider,
+        publisher: QueuePublisher | None = None,
+        notifier: TransferCompletionNotifier | None = None,
+    ):
         self.payout_provider = payout_provider
         self.publisher = publisher
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         """Process one explicit payout reconciliation job or a stale-pending batch."""
@@ -134,6 +144,8 @@ class PayoutReconciliationConsumer:
                 return
 
         result = await self._fetch_provider_result(target)
+        notifiable_transaction: Any | None = None
+        notifiable_event: TransferCompletionEvent | None = None
         async with UnitOfWork() as uow:
             if not uow.funded_transfers:
                 return
@@ -183,6 +195,9 @@ class PayoutReconciliationConsumer:
                     )
             if uow.db is not None:
                 uow.db.add(transfer)
+            notifiable_event = _completion_event_from_payout_outcome(outcome)
+            if notifiable_event is not None and uow.transactions:
+                notifiable_transaction = await uow.transactions.get_by_idempotency_key(transfer.idempotency_key)
             await uow.commit()
 
             logger.info(
@@ -200,6 +215,13 @@ class PayoutReconciliationConsumer:
                     "outcome": outcome,
                     "provider_status": result.get("provider_status") or result.get("status"),
                 },
+            )
+        if self.notifier and notifiable_transaction is not None and notifiable_event is not None:
+            await self.notifier.notify(
+                notifiable_transaction,
+                notifiable_event,
+                error_message=str(result.get("error") or getattr(notifiable_transaction, "error_message", "") or "")
+                or None,
             )
 
     async def _queue_unclaimed_payout(self, transfer: Any) -> None:
@@ -336,3 +358,11 @@ class PayoutReconciliationConsumer:
             return None
         text = str(value).strip()
         return text or None
+
+
+def _completion_event_from_payout_outcome(outcome: str) -> TransferCompletionEvent | None:
+    if outcome == "completed":
+        return "successful"
+    if outcome == "failed":
+        return "failed"
+    return None

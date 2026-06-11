@@ -178,15 +178,21 @@ def setup_transaction_worker_consumers() -> TransactionWorkerConsumers:
     payout_consumer = PayoutConsumer(
         payout_executor=PayoutExecutor(payout_provider=payout_provider, resolver_provider=payout_resolver),
         publisher=queue_publisher,
+        notifier=transfer_completion_notifier,
     )
     payout_reconciliation_consumer = PayoutReconciliationConsumer(
         payout_provider=payout_provider,
         publisher=queue_publisher,
+        notifier=transfer_completion_notifier,
     )
-    refund_consumer = RefundConsumer(direct_debit_provider=direct_debit_provider)
+    refund_consumer = RefundConsumer(
+        direct_debit_provider=direct_debit_provider,
+        notifier=transfer_completion_notifier,
+    )
     refund_reconciliation_consumer = RefundReconciliationConsumer(
         direct_debit_provider=direct_debit_provider,
         publisher=queue_publisher,
+        notifier=transfer_completion_notifier,
     )
 
     return TransactionWorkerConsumers(

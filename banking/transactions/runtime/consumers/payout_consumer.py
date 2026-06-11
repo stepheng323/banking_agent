@@ -5,6 +5,10 @@ from typing import Any
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.executors.payout import PayoutExecutor
 from banking.transactions.runtime.payout_status import apply_payout_result
+from banking.transactions.runtime.transfer_completion_notifications import (
+    TransferCompletionEvent,
+    TransferCompletionNotifier,
+)
 from shared.config.settings import settings
 from shared.database.enums import FundedTransferStatusEnum
 from shared.money import naira_to_json
@@ -17,9 +21,15 @@ logger = get_logger(__name__)
 class PayoutConsumer:
     """Consumes payout jobs and executes a single beneficiary credit."""
 
-    def __init__(self, payout_executor: PayoutExecutor, publisher: QueuePublisher | None = None):
+    def __init__(
+        self,
+        payout_executor: PayoutExecutor,
+        publisher: QueuePublisher | None = None,
+        notifier: TransferCompletionNotifier | None = None,
+    ):
         self.payout_executor = payout_executor
         self.publisher = publisher
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         funded_transfer_id = payload.get("funded_transfer_id")
@@ -49,15 +59,26 @@ class PayoutConsumer:
                 )
                 return
 
-            await apply_payout_result(
+            outcome = await apply_payout_result(
                 uow=uow,
                 transfer=transfer,
                 result=result,
                 publisher=self.publisher,
                 provider_name=self.payout_executor.payout_provider.provider_name,
             )
+            notifiable_transaction = None
+            notifiable_event = _completion_event_from_payout_outcome(outcome)
+            if notifiable_event is not None and uow.transactions:
+                notifiable_transaction = await uow.transactions.get_by_idempotency_key(transfer.idempotency_key)
             uow.db.add(transfer)
             await uow.commit()
+        if self.notifier and notifiable_transaction is not None and notifiable_event is not None:
+            await self.notifier.notify(
+                notifiable_transaction,
+                notifiable_event,
+                error_message=str(result.get("error") or getattr(notifiable_transaction, "error_message", "") or "")
+                or None,
+            )
 
     async def _claim_payout(self, funded_transfer_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         async with UnitOfWork() as uow:
@@ -115,3 +136,11 @@ class PayoutConsumer:
                 "narration": payload.get("narration") or getattr(transfer, "narration", None),
             }
         return None
+
+
+def _completion_event_from_payout_outcome(outcome: str) -> TransferCompletionEvent | None:
+    if outcome == "completed":
+        return "successful"
+    if outcome == "failed":
+        return "failed"
+    return None

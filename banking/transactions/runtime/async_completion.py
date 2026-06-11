@@ -6,6 +6,7 @@ import json
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 from banking.presentation.formatters.multi_action_summary import format_multi_action_summary
 from banking.transactions.runtime.async_group_recent_batch import (
@@ -108,6 +109,8 @@ def _json_default(value: object) -> str:
         serialized = naira_to_json(value)
         if serialized is not None:
             return serialized
+    if isinstance(value, UUID):
+        return str(value)
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 

@@ -7,6 +7,7 @@ from typing import Any
 from banking.ledger.service import LedgerPostingService
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.transactions.runtime.funding_status import finalize_refund_state
+from banking.transactions.runtime.transfer_completion_notifications import TransferCompletionNotifier
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.config.settings import settings
 from shared.database.enums import FundingStepStatusEnum, SupportTicketPriorityEnum, SupportTicketStatusEnum
@@ -29,9 +30,15 @@ class RefundReconciliationTarget:
 class RefundReconciliationConsumer:
     """Checks stuck funding refunds and closes the main transaction when recovered."""
 
-    def __init__(self, direct_debit_provider: DirectDebitProvider, publisher: QueuePublisher | None = None):
+    def __init__(
+        self,
+        direct_debit_provider: DirectDebitProvider,
+        publisher: QueuePublisher | None = None,
+        notifier: TransferCompletionNotifier | None = None,
+    ):
         self.direct_debit_provider = direct_debit_provider
         self.publisher = publisher
+        self.notifier = notifier
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         if payload.get("funding_step_id"):
@@ -135,8 +142,10 @@ class RefundReconciliationConsumer:
                 str(refund_reference),
                 refund_id=getattr(step, "refund_provider_id", None),
             )
-            await self._apply_result(uow, step, transfer, result)
+            notifiable_transaction = await self._apply_result(uow, step, transfer, result)
             await uow.commit()
+        if self.notifier and notifiable_transaction is not None:
+            await self.notifier.notify(notifiable_transaction, "refunded")
 
     async def _queue_unclaimed_refund(self, step: Any, transfer: Any) -> None:
         """Requeue a refund that has not yet been claimed by the refund worker."""
@@ -163,7 +172,7 @@ class RefundReconciliationConsumer:
             identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
         )
 
-    async def _apply_result(self, uow: UnitOfWork, step: Any, transfer: Any, result: Any) -> None:
+    async def _apply_result(self, uow: UnitOfWork, step: Any, transfer: Any, result: Any) -> Any | None:
         funding_steps = uow.funding_steps
         if funding_steps is None:
             raise RuntimeError("funding_step_repository_unavailable")
@@ -190,7 +199,7 @@ class RefundReconciliationConsumer:
                 or getattr(step, "refund_provider_reference", None)
                 or getattr(step, "refund_provider_id", None),
             )
-            await finalize_refund_state(uow, transfer)
+            refund_outcome = await finalize_refund_state(uow, transfer)
             logger.info("refund_reconciliation_completed", funding_step_id=str(step.id))
             emit_operational_event(
                 "refund_reconciliation_repaired",
@@ -199,11 +208,13 @@ class RefundReconciliationConsumer:
                 identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
                 details={"status": "refunded"},
             )
-            return
+            if refund_outcome == "refunded" and uow.transactions:
+                return await uow.transactions.get_by_idempotency_key(transfer.idempotency_key)
+            return None
 
         if result.status == DebitStatus.FAILED:
             await self._mark_refund_failed(uow, step, transfer, result.error_message or "Refund failed")
-            return
+            return None
 
         if attempt_count >= int(settings.refund_reconciliation_max_attempts):
             await self._mark_refund_failed(
@@ -212,7 +223,7 @@ class RefundReconciliationConsumer:
                 transfer,
                 "Refund status unresolved after maximum reconciliation attempts",
             )
-            return
+            return None
 
         await funding_steps.update_status(
             str(step.id),
@@ -227,6 +238,7 @@ class RefundReconciliationConsumer:
             identifiers={"funding_step_id": step.id, "funded_transfer_id": transfer.id},
             details={"attempt_count": attempt_count},
         )
+        return None
 
     async def _mark_refund_failed(self, uow: UnitOfWork, step: Any, transfer: Any, error_message: str) -> None:
         funding_steps = uow.funding_steps
