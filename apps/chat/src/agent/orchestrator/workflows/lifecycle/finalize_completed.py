@@ -24,7 +24,10 @@ from banking.beneficiaries.services.post_transaction_beneficiary import (
     suggest_mobile_beneficiary,
     suggest_transfer_beneficiary,
 )
-from banking.presentation.formatters.multi_action_summary import format_multi_action_summary
+from banking.presentation.formatters.multi_action_summary import (
+    format_multi_action_summary,
+    format_multi_action_summary_blocks,
+)
 from banking.presentation.i18n.renderer import render_message, render_text
 from banking.receipts.choice import build_receipt_choice_intent
 from shared.utils.logging import get_logger
@@ -273,7 +276,11 @@ async def handle_completed_tasks(
     else:
         summary_source = transaction_visible_tasks or visible_tasks
         summary_text = format_multi_action_summary(summary_source, locale=locale)
-        summary_outbox: dict[str, Any] = {"type": "say", "text": summary_text}
+        summary_outbox: dict[str, Any] = {
+            "type": "say",
+            "text": summary_text,
+            "body_blocks": format_multi_action_summary_blocks(summary_source, locale=locale),
+        }
         if actionable_payload := build_actionable_payload_for_tasks(summary_source):
             summary_outbox["actionable_payload"] = actionable_payload
         outbox.append(summary_outbox)

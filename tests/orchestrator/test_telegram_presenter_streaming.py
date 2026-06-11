@@ -167,6 +167,38 @@ async def test_telegram_presenter_confirmation_formats_double_asterisk_bold() ->
 
 
 @pytest.mark.asyncio
+async def test_telegram_presenter_confirmation_prefers_body_blocks() -> None:
+    client = _StubFlowTelegramClient()
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = RequestConfirmation(
+        task_ids=["t1"],
+        summary="dense fallback",
+        token="tok-1",
+        correlation_id="corr-1",
+        header="Confirm Transactions",
+        body_blocks=[
+            {"type": "heading", "text": "*Transfers failed*"},
+            {
+                "type": "transaction_item",
+                "status": "failed",
+                "title": "₦30,000 → Mom",
+                "subtitle": "Wema • 8067892221",
+                "reason": "<provider error>",
+            },
+        ],
+    )
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    await presenter._present_confirmation(intent, context)
+
+    body = client.flow_calls[0]["flow_config"]["text_body"]
+    assert "<b>Transfers failed</b>" in body
+    assert "✗ ₦30,000 → Mom" in body
+    assert "&lt;provider error&gt;" in body
+    assert "dense fallback" not in body
+
+
+@pytest.mark.asyncio
 async def test_telegram_presenter_schedule_update_confirmation_uses_text_not_pin_flow() -> None:
     client = _StubFlowTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))

@@ -25,6 +25,7 @@ from banking.presentation.formatters.transaction_confirmation_copy import format
 from banking.presentation.formatters.transaction_copy_context import format_amount_compact
 from banking.presentation.formatters.transfer_summary import format_transfer_summary
 from banking.presentation.i18n.renderer import render_message
+from shared.messaging.body_blocks import MessageDocument
 from shared.money import MoneyAmount, to_naira
 
 
@@ -113,6 +114,18 @@ def _batch_funding_summary(
     accounts: list[dict[str, Any]],
     locale: str,
 ) -> str | None:
+    items = _batch_funding_items(tasks=tasks, accounts=accounts, locale=locale)
+    if not items:
+        return None
+    return "\n".join([render_message("transfer.format.multi_source_summary.funding_header", locale), *items])
+
+
+def _batch_funding_items(
+    *,
+    tasks: list[tuple[str, Any]],
+    accounts: list[dict[str, Any]],
+    locale: str,
+) -> list[str]:
     source_totals: dict[tuple[str, str, str], MoneyAmount] = {}
     has_multi_source_plan = False
 
@@ -141,11 +154,11 @@ def _batch_funding_summary(
             source_totals[key] = source_totals.get(key, Decimal("0.00")) + amount
 
     if not source_totals:
-        return None
+        return []
     if len(source_totals) == 1 and not has_multi_source_plan:
-        return None
+        return []
 
-    lines = [render_message("transfer.format.multi_source_summary.funding_header", locale)]
+    lines: list[str] = []
     for (_account_id, bank, account_number), amount in source_totals.items():
         lines.append(
             render_message(
@@ -158,7 +171,30 @@ def _batch_funding_summary(
                 },
             )
         )
-    return "\n".join(lines)
+    return lines
+
+
+def _batch_transfer_body_item(
+    *,
+    task_payload: dict[str, Any],
+    snapshot: dict[str, Any],
+    locale: str,
+) -> dict[str, Any] | None:
+    amount = _transfer_amount(task_payload, snapshot)
+    recipient_name = str(task_payload.get("recipient_name") or snapshot.get("recipient_name") or "").strip()
+    resolved_name = str(
+        task_payload.get("recipient_resolved_name") or snapshot.get("recipient_resolved_name") or ""
+    ).strip()
+    recipient_display = format_recipient_display_label(recipient_name, resolved_name)
+    recipient_bank = str(task_payload.get("recipient_bank_name") or snapshot.get("recipient_bank") or "").strip()
+    recipient_account = str(task_payload.get("recipient_account") or snapshot.get("recipient_account") or "").strip()
+    if amount is None or amount <= 0 or not recipient_display or not recipient_bank or not recipient_account:
+        return None
+    return {
+        "type": "transaction_item",
+        "title": f"{format_amount_compact(amount)} → {recipient_display}",
+        "subtitle": f"{recipient_bank} • {recipient_account}",
+    }
 
 
 def _build_confirmation_gate_summary(
@@ -190,6 +226,53 @@ def _build_confirmation_gate_summary(
         locale=locale,
         accounts=accounts,
     )
+
+
+def _build_confirmation_gate_body_blocks(
+    *,
+    state: OrchestratorState,
+    task_ids: list[str],
+    locale: str,
+    accounts: list[dict[str, Any]],
+) -> MessageDocument | None:
+    if len(task_ids) <= 1 or task_types_for_ids(state, task_ids) != {"transfer"}:
+        return None
+
+    total_amount = Decimal("0.00")
+    body_items: MessageDocument = []
+    transfer_tasks = required_tasks(state, task_ids)
+    for _tid, task in transfer_tasks:
+        confirmation_payload = task.payload.get("confirmation") or {}
+        snapshot = confirmation_payload.get("snapshot") or {}
+        snapshot_mapping = snapshot if isinstance(snapshot, dict) else {}
+        amount = _transfer_amount(task.payload, snapshot_mapping)
+        if amount is not None:
+            total_amount += amount
+        item = _batch_transfer_body_item(task_payload=task.payload, snapshot=snapshot_mapping, locale=locale)
+        if item:
+            body_items.append(item)
+
+    if not body_items:
+        return None
+
+    blocks: MessageDocument = [
+        {
+            "type": "key_value",
+            "label": "Total",
+            "value": format_amount_compact(total_amount),
+        }
+    ]
+    funding_items = _batch_funding_items(tasks=transfer_tasks, accounts=accounts, locale=locale)
+    if funding_items:
+        blocks.append(
+            {
+                "type": "bullet_list",
+                "title": render_message("transfer.format.multi_source_summary.funding_header", locale).strip("*"),
+                "items": [item.removeprefix("• ").strip() for item in funding_items],
+            }
+        )
+    blocks.extend(body_items)
+    return blocks
 
 
 def _build_batch_transfer_confirmation_summary(
@@ -296,4 +379,4 @@ def _build_mixed_confirmation_summary(
     )
 
 
-__all__ = ["_build_confirmation_gate_summary"]
+__all__ = ["_build_confirmation_gate_body_blocks", "_build_confirmation_gate_summary"]

@@ -1,6 +1,10 @@
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from banking.presentation.formatters.batch_transfer_summary import format_batch_transfer_summary
-from banking.presentation.formatters.multi_action_summary import format_multi_action_summary
+from banking.presentation.formatters.multi_action_summary import (
+    format_multi_action_summary,
+    format_multi_action_summary_blocks,
+)
+from shared.messaging.body_blocks import render_body_blocks_text
 
 
 def _transfer_task(
@@ -114,6 +118,37 @@ def test_multi_action_summary_total_spent_is_compact_for_multiple_tasks() -> Non
     assert "✓ ₦10,000 → Tolu (Tolu Adedayo) • Access • 0760505261" in summary
     assert "*Total Spent:* ₦20,000" in summary
     assert "₦20,000.00" not in summary
+
+
+def test_multi_action_summary_blocks_space_failed_transfers_for_mobile() -> None:
+    first = _transfer_task(
+        task_id="t1",
+        amount=30000,
+        recipient_name="Mom",
+        recipient_resolved_name="FATIMA ZAHRA MUSA",
+        bank="Wema",
+        account="8067892221",
+    )
+    first.payload["final_status"] = "failed"
+    first.payload["error_message"] = "Transfer creation failed"
+    second = _transfer_task(
+        task_id="t2",
+        amount=30000,
+        recipient_name="Ay",
+        recipient_resolved_name="EMMANUEL TUNDE BAKARE",
+        bank="Opay",
+        account="7750145200",
+    )
+    second.payload["final_status"] = "failed"
+    second.payload["error_message"] = "Transfer creation failed"
+
+    rendered = render_body_blocks_text(format_multi_action_summary_blocks([first, second], locale="en"))
+
+    assert "Transfers failed" in rendered
+    assert "✗ ₦30,000 → Mom (Fatima Zahra Musa)\nWema • 8067892221\nReason: Transfer creation failed" in rendered
+    assert "\n\n✗ ₦30,000 → Ay (Emmanuel Tunde Bakare)\nOpay • 7750145200" in rendered
+    assert "All transactions failed." in rendered
+    assert "✗ ₦30,000 → Mom (Fatima Zahra Musa) • Wema • 8067892221" not in rendered
 
 
 def test_multi_action_summary_transfer_line_uses_safe_bank_and_account_fallbacks() -> None:

@@ -17,6 +17,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.loaded_context import 
 from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationServices
 from banking.presentation.i18n.renderer import render_message
 from banking.transfers.funding.coordinator import BatchFundingCoordinator
+from shared.messaging.body_blocks import MessageDocument
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,6 +34,39 @@ def _funding_interrupt_metadata(result: Any) -> dict[str, Any]:
         metadata["candidate_source_ids"] = list(getattr(source_choice, "candidate_source_ids", []) or [])
         metadata["remaining_amount"] = str(getattr(source_choice, "remaining_amount", "") or "")
     return metadata
+
+
+def _funding_prompt_outbox(prompt: str) -> dict[str, Any]:
+    entry: dict[str, Any] = {"type": "say", "text": prompt}
+    body_blocks = _funding_prompt_body_blocks(prompt)
+    if body_blocks:
+        entry["body_blocks"] = body_blocks
+    return entry
+
+
+def _funding_prompt_body_blocks(prompt: str) -> MessageDocument | None:
+    sections = [section.strip() for section in str(prompt or "").split("\n\n") if section.strip()]
+    if not sections:
+        return None
+    blocks: MessageDocument = []
+    for section in sections:
+        lines = [line.strip() for line in section.splitlines() if line.strip()]
+        if not lines:
+            continue
+        if len(lines) == 1 and lines[0].lower() == "funding review":
+            blocks.append({"type": "heading", "text": lines[0]})
+            continue
+        bullet_lines = [line for line in lines[1:] if line.startswith(("• ", "* ", "- "))]
+        numbered_lines = [line for line in lines[1:] if line[:2].rstrip(".").isdigit()]
+        if len(lines) > 1 and (bullet_lines or numbered_lines):
+            items = [
+                line[2:].strip() if line.startswith(("• ", "* ", "- ")) else line.split(".", 1)[-1].strip()
+                for line in lines[1:]
+            ]
+            blocks.append({"type": "bullet_list", "title": lines[0], "items": items})
+            continue
+        blocks.append({"type": "text", "text": section})
+    return blocks or None
 
 
 def _default_source_account(accounts: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -147,7 +181,7 @@ async def _maybe_coordinate_batch_funding(
             task_ids=transfer_task_ids,
             fields_by_task=fields_by_task,
             prompt=prompt,
-            entries=_with_policy_notice(state, [{"type": "say", "text": prompt}]),
+            entries=_with_policy_notice(state, [_funding_prompt_outbox(prompt)]),
             metadata=_funding_interrupt_metadata(result),
         )
         agg.clear_policy_notice()
@@ -180,7 +214,7 @@ async def _maybe_coordinate_batch_funding(
             task_ids=transfer_task_ids,
             fields_by_task=fields_by_task,
             prompt=prompt,
-            entries=_with_policy_notice(state, [{"type": "say", "text": prompt}]),
+            entries=_with_policy_notice(state, [_funding_prompt_outbox(prompt)]),
             metadata=_funding_interrupt_metadata(result),
         )
         agg.clear_policy_notice()
@@ -202,7 +236,7 @@ async def _maybe_coordinate_batch_funding(
         task_ids=transfer_task_ids,
         fields_by_task=fields_by_task,
         prompt=prompt,
-        entries=_with_policy_notice(state, [{"type": "say", "text": prompt}]),
+        entries=_with_policy_notice(state, [_funding_prompt_outbox(prompt)]),
         metadata=_funding_interrupt_metadata(result),
     )
     agg.clear_policy_notice()

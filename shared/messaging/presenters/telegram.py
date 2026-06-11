@@ -9,6 +9,7 @@ from banking.persistence.unit_of_work import UnitOfWork
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.clients.telegram.formatting import format_telegram_html
 from shared.config.settings import settings
+from shared.messaging.body_blocks import render_body_blocks_telegram_html, render_body_blocks_text
 from shared.messaging.intents import (
     RequestAuth,
     RequestConfirmation,
@@ -173,13 +174,14 @@ class TelegramPresenter(Presenter):
         await self.client.send_typing_indicator(context.phone_number)
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
+        text = render_body_blocks_text(intent.body_blocks) or intent.text
         if context.metadata.get("request_contact"):
             # Use Telegram-specific _call to send a Reply Keyboard with request_contact=True
             resp = await cast(Any, self.client)._call(
                 "sendMessage",
                 {
                     "chat_id": context.phone_number,
-                    "text": intent.text,
+                    "text": text,
                     "reply_markup": {
                         "keyboard": [[{"text": "📱 Share Contact", "request_contact": True}]],
                         "resize_keyboard": True,
@@ -193,7 +195,7 @@ class TelegramPresenter(Presenter):
         if inline_buttons:
             resp = await self.client.send_interactive(
                 to=context.phone_number,
-                body_text=intent.text,
+                body_text=text,
                 options=inline_buttons,
                 suppress_typing_indicator=self._suppress_typing(context),
             )
@@ -211,14 +213,14 @@ class TelegramPresenter(Presenter):
         stream_client = cast(Any, self.client)
         if (
             stream_enabled
-            and len(intent.text.strip()) >= stream_min_chars
+            and len(text.strip()) >= stream_min_chars
             and hasattr(stream_client, "send_text_streamed")
         ):
-            resp = await stream_client.send_text_streamed(to=context.phone_number, text=intent.text)
+            resp = await stream_client.send_text_streamed(to=context.phone_number, text=text)
         else:
             resp = await self.client.send_text(
                 to=context.phone_number,
-                text=intent.text,
+                text=text,
                 suppress_typing_indicator=self._suppress_typing(context),
             )
         return self._extract_message_id(resp)
@@ -254,7 +256,9 @@ class TelegramPresenter(Presenter):
         cta_text = "Authorize Update" if prefix == "schedule" else "Enter PIN"
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-        html_summary = format_telegram_html(intent.summary or "Please enter your PIN to proceed.")
+        html_summary = render_body_blocks_telegram_html(intent.body_blocks) or format_telegram_html(
+            intent.summary or "Please enter your PIN to proceed."
+        )
 
         # Use Mini App for secure PIN entry
         resp = await self.client.send_flow(
@@ -277,7 +281,7 @@ class TelegramPresenter(Presenter):
     ) -> str | None:
         """Present confirmation via inline keyboard buttons."""
         if _is_schedule_update_confirmation(intent):
-            body = (intent.summary or "").strip()
+            body = (render_body_blocks_text(intent.body_blocks) or intent.summary or "").strip()
             prompt = "Reply yes to confirm this schedule update, or no to cancel."
             text = f"{intent.header or 'Confirm Schedule Update'}\n\n{body}\n\n{prompt}" if body else prompt
             resp = await self.client.send_text(
@@ -290,7 +294,9 @@ class TelegramPresenter(Presenter):
         prefix = _pin_flow_prefix(intent)
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-        html_summary = format_telegram_html(intent.summary or "")
+        html_summary = render_body_blocks_telegram_html(intent.body_blocks) or format_telegram_html(
+            intent.summary or ""
+        )
 
         # Use Mini App for PIN-based confirmation
         resp = await self.client.send_flow(

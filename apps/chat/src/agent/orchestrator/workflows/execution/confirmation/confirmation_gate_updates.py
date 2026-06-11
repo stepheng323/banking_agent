@@ -9,6 +9,7 @@ from apps.chat.src.agent.orchestrator.workflows.conversation_closure import buil
 from apps.chat.src.agent.orchestrator.workflows.execution.accumulator import ExecutionAccumulator
 from apps.chat.src.agent.orchestrator.workflows.execution.blocker_arbitration import gate_task_ids
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_gate_summary import (
+    _build_confirmation_gate_body_blocks,
     _build_confirmation_gate_summary,
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.confirmation.confirmation_personality import (
@@ -65,6 +66,12 @@ def _build_confirmation_gate_updates(
         locale=locale,
         accounts=accounts,
     )
+    body_blocks = _build_confirmation_gate_body_blocks(
+        state=state,
+        task_ids=confirm_task_ids,
+        locale=locale,
+        accounts=accounts,
+    )
 
     confirmation_tasks = required_tasks(state, confirm_task_ids)
     first_task = confirmation_tasks[0][1]
@@ -116,6 +123,7 @@ def _build_confirmation_gate_updates(
                 personality_context=confirmation_personality_context,
             ),
             "summary": summ,
+            "body_blocks": body_blocks,
             "snapshot": snap,
             "snapshots_by_task": snapshots_by_task,
             "idempotency_key": first_task.payload.get(

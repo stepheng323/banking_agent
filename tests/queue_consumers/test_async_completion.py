@@ -5,6 +5,7 @@ from uuid import UUID
 
 from banking.transactions.runtime.async_completion import record_group_leg_and_maybe_build_summary
 from banking.transactions.runtime.async_group_recent_batch import get_recent_batch_reference
+from shared.messaging.body_blocks import render_body_blocks_text
 
 
 class _RedisStub:
@@ -303,6 +304,11 @@ async def test_async_completion_transfer_summary_sends_initial_then_final_update
     assert "Transaction Summary" in final_summary["text"] or "Transfers Complete" in final_summary["text"]
     assert "✓ ₦10,000 → Mum" in final_summary["text"]
     assert "✗ ₦6,000 → Tolu" in final_summary["text"]
+    assert "body_blocks" in final_summary
+    rendered_blocks = render_body_blocks_text(final_summary["body_blocks"])
+    assert "✓ ₦10,000 → Mum" in rendered_blocks
+    assert "\n\n✗ ₦6,000 → Tolu" in rendered_blocks
+    assert "✗ ₦6,000 → Tolu • Opay • 8162511023" not in rendered_blocks
 
 
 async def test_async_completion_stores_recent_batch_reference_by_delivery_identity() -> None:

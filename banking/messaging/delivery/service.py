@@ -23,6 +23,7 @@ from shared.clients.abstractions.messaging import MessagingClient
 from shared.clients.disabled_messaging import DisabledMessagingClient
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.messaging.body_blocks import MessageDocument
 from shared.messaging.intents import Say, UiIntent, reconstruct_intent
 from shared.messaging.presenters.base import PresentationContext
 from shared.messaging.presenters.factory import PresenterFactory
@@ -88,12 +89,13 @@ class DeliveryService:
         dedupe_key: str | None = None,
         strict_actionable: bool = False,
         actionable_payload: dict[str, Any] | None = None,
+        body_blocks: MessageDocument | None = None,
     ) -> DeliveryAttemptResult:
         """Deliver plain text using the same pipeline as intent delivery."""
         return await self.deliver_intents(
             phone_number=phone_number,
             channel=channel,
-            intents=[Say(text=text, actionable_payload=actionable_payload)],
+            intents=[Say(text=text, body_blocks=body_blocks, actionable_payload=actionable_payload)],
             metadata=metadata,
             dedupe_key=dedupe_key,
             strict_actionable=strict_actionable,

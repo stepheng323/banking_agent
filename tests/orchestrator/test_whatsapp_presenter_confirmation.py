@@ -56,6 +56,42 @@ async def test_whatsapp_presenter_confirmation_uses_context_header() -> None:
 
 
 @pytest.mark.asyncio
+async def test_whatsapp_presenter_confirmation_prefers_body_blocks() -> None:
+    client = _StubFlowWhatsAppClient()
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+    intent = RequestConfirmation(
+        task_ids=["t1", "t2"],
+        summary="dense fallback",
+        token="tok-1",
+        correlation_id="corr-1",
+        header="Confirm Transactions",
+        body_blocks=[
+            {"type": "key_value", "label": "Total", "value": "₦60,000"},
+            {"type": "bullet_list", "title": "Funding from:", "items": ["Access Bank: ₦30,000", "GTBank: ₦30,000"]},
+            {"type": "transaction_item", "title": "₦30,000 → Mom", "subtitle": "Wema • 8067892221"},
+        ],
+    )
+    context = PresentationContext(
+        channel="whatsapp",
+        phone_number="123456789",
+        capabilities={"flows": True},
+    )
+
+    await presenter._present_confirmation(intent, context)
+
+    body = client.flow_calls[0]["flow_config"]["text_body"]
+    assert body == (
+        "Total: ₦60,000\n\n"
+        "Funding from:\n"
+        "• Access Bank: ₦30,000\n"
+        "• GTBank: ₦30,000\n\n"
+        "₦30,000 → Mom\n"
+        "Wema • 8067892221"
+    )
+    assert "dense fallback" not in body
+
+
+@pytest.mark.asyncio
 async def test_whatsapp_presenter_send_typing_uses_inbound_message_id() -> None:
     client = _StubFlowWhatsAppClient()
     presenter = WhatsAppPresenter(cast(MessagingClient, client))

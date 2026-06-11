@@ -259,6 +259,7 @@ class TransferCompletionNotifier:
             channel=str(message.get("channel") or "whatsapp"),
             text=summary["text"],
             actionable_payload=summary.get("actionable_payload"),
+            body_blocks=summary.get("body_blocks"),
             metadata={
                 "source": "transfer_completion_notifier",
                 "transaction_id": transaction_id,

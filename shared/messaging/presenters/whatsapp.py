@@ -8,6 +8,7 @@ from banking.presentation.i18n.models import LocaleCode
 from banking.presentation.i18n.renderer import render_message
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
+from shared.messaging.body_blocks import render_body_blocks_text
 from shared.messaging.intents import (
     RequestAuth,
     RequestConfirmation,
@@ -203,9 +204,10 @@ class WhatsAppPresenter(Presenter):
         await self.client.send_typing_indicator(msg_id)
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
+        text = render_body_blocks_text(intent.body_blocks) or intent.text
         resp = await self.client.send_text(
             to=context.phone_number,
-            text=self._format_text(intent.text),
+            text=self._format_text(text),
             suppress_typing_indicator=self._suppress_typing(context),
         )
         return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
@@ -216,6 +218,7 @@ class WhatsAppPresenter(Presenter):
         if intent.method == "pin" and supports_flows:
             header = intent.reason or "Authorize Transaction"
             cta = "Authorize"
+            summary = render_body_blocks_text(intent.body_blocks) or intent.summary
 
             prefix = _pin_flow_prefix(intent)
 
@@ -230,7 +233,7 @@ class WhatsAppPresenter(Presenter):
                 flow_id=settings.whatsapp.pin_confirmation_flow_id,
                 flow_config={
                     "header": header,
-                    "text_body": intent.summary,
+                    "text_body": summary,
                     "flow_cta": cta,
                     "screen_name": "Pin",
                     "flow_token": flow_token,
@@ -254,7 +257,7 @@ class WhatsAppPresenter(Presenter):
         supports_flows = context.capabilities.get("flows", False)
 
         if _is_schedule_update_confirmation(intent):
-            body = self._format_text((intent.summary or "").strip())
+            body = self._format_text((render_body_blocks_text(intent.body_blocks) or intent.summary or "").strip())
             prompt = "Reply yes to confirm this schedule update, or no to cancel."
             text = f"{intent.header or 'Confirm Schedule Update'}\n\n{body}\n\n{prompt}" if body else prompt
             resp = await self.client.send_text(
@@ -266,6 +269,7 @@ class WhatsAppPresenter(Presenter):
 
         if supports_flows:
             prefix = _pin_flow_prefix(intent)
+            summary = render_body_blocks_text(intent.body_blocks) or intent.summary
 
             flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
             resp = await self.client.send_flow(
@@ -273,7 +277,7 @@ class WhatsAppPresenter(Presenter):
                 flow_id=settings.whatsapp.pin_confirmation_flow_id,
                 flow_config={
                     "header": intent.header or "Confirm Transaction",
-                    "text_body": intent.summary,
+                    "text_body": summary,
                     "flow_cta": "Authorize",
                     "screen_name": "Pin",
                     "flow_token": flow_token,

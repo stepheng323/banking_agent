@@ -222,6 +222,7 @@ class AirtimeExecutor:
                         channel=data.get("channel", "whatsapp"),
                         text=batch_summary["text"],
                         actionable_payload=batch_summary.get("actionable_payload"),
+                        body_blocks=batch_summary.get("body_blocks"),
                         metadata={
                             "source": "airtime_executor",
                             "transaction_id": transaction_id,

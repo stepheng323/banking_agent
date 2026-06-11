@@ -269,6 +269,7 @@ class BillCompletionNotifier:
                 channel=channel,
                 text=batch_summary["text"],
                 actionable_payload=batch_summary.get("actionable_payload"),
+                body_blocks=batch_summary.get("body_blocks"),
                 metadata={
                     "source": "bill_completion_notifier",
                     "transaction_id": transaction_id,

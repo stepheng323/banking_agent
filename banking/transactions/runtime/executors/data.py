@@ -168,6 +168,7 @@ class DataExecutor:
                     channel=channel,
                     text=batch_summary["text"],
                     actionable_payload=batch_summary.get("actionable_payload"),
+                    body_blocks=batch_summary.get("body_blocks"),
                     metadata={
                         "source": "data_executor",
                         "transaction_id": transaction_id,
@@ -293,6 +294,7 @@ class DataExecutor:
                         channel=str(data.get("channel") or "whatsapp"),
                         text=batch_summary["text"],
                         actionable_payload=batch_summary.get("actionable_payload"),
+                        body_blocks=batch_summary.get("body_blocks"),
                         metadata={
                             "source": "data_executor",
                             "transaction_id": transaction_id,

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, Protocol, TypedDict
 
+from shared.messaging.body_blocks import MessageDocument
+
 ASYNC_GROUP_TTL_SECONDS = 3600
 
 
@@ -11,6 +13,7 @@ class AsyncGroupSummaryResult(TypedDict):
     text: str
     stage: Literal["initial", "final"]
     actionable_payload: NotRequired[dict[str, Any]]
+    body_blocks: NotRequired[MessageDocument]
 
 
 class RecentBatchLeg(TypedDict):

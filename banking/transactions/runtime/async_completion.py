@@ -8,7 +8,10 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
-from banking.presentation.formatters.multi_action_summary import format_multi_action_summary
+from banking.presentation.formatters.multi_action_summary import (
+    format_multi_action_summary,
+    format_multi_action_summary_blocks,
+)
 from banking.transactions.runtime.async_group_recent_batch import (
     normalize_final_status,
     remember_group_target,
@@ -240,11 +243,19 @@ async def record_group_leg_and_maybe_build_summary(
         actionable_payload = build_group_actionable_payload(ordered)
         if all_terminal:
             await redis_client.set(finalized_key, "1", ex=ASYNC_GROUP_TTL_SECONDS)
-            result: AsyncGroupSummaryResult = {"text": build_group_summary(ordered, locale=locale), "stage": "final"}
+            result: AsyncGroupSummaryResult = {
+                "text": build_group_summary(ordered, locale=locale),
+                "body_blocks": build_group_summary_blocks(ordered, locale=locale),
+                "stage": "final",
+            }
             if actionable_payload:
                 result["actionable_payload"] = actionable_payload
             return result
-        result = {"text": build_group_summary(ordered, locale=locale), "stage": "initial"}
+        result = {
+            "text": build_group_summary(ordered, locale=locale),
+            "body_blocks": build_group_summary_blocks(ordered, locale=locale),
+            "stage": "initial",
+        }
         if actionable_payload:
             result["actionable_payload"] = actionable_payload
         return result
@@ -256,7 +267,11 @@ async def record_group_leg_and_maybe_build_summary(
     if not finalized:
         return None
     await store_recent_batch_reference(redis_client, group_id=group_id, ordered=ordered, message=message)
-    result = {"text": build_group_summary(ordered, locale=locale), "stage": "final"}
+    result = {
+        "text": build_group_summary(ordered, locale=locale),
+        "body_blocks": build_group_summary_blocks(ordered, locale=locale),
+        "stage": "final",
+    }
     if actionable_payload := build_group_actionable_payload(ordered):
         result["actionable_payload"] = actionable_payload
     return result
@@ -271,6 +286,17 @@ def build_group_summary(legs: list[dict[str, Any]], *, locale: str) -> str:
             continue
         pseudo_tasks.append(SimpleNamespace(type=task_type, payload=payload))
     return format_multi_action_summary(pseudo_tasks, locale=locale)
+
+
+def build_group_summary_blocks(legs: list[dict[str, Any]], *, locale: str) -> list[dict[str, Any]]:
+    pseudo_tasks = []
+    for leg in legs:
+        task_type = str(leg.get("type") or "")
+        payload = leg.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        pseudo_tasks.append(SimpleNamespace(type=task_type, payload=payload))
+    return format_multi_action_summary_blocks(pseudo_tasks, locale=locale)
 
 
 def build_group_actionable_payload(legs: list[dict[str, Any]]) -> dict[str, Any] | None:

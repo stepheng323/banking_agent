@@ -9,6 +9,7 @@ from banking.presentation.formatters.transaction_confirmation_copy import build_
 from banking.presentation.formatters.transaction_copy_context import derive_task_mix, format_amount_compact
 from banking.presentation.i18n.message_keys import MessageKey
 from banking.presentation.i18n.renderer import render_message
+from shared.messaging.body_blocks import MessageDocument
 from shared.utils.network_utils import format_network_display_name
 from shared.utils.user_error import safe_user_error_message
 
@@ -85,6 +86,88 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
     return "\n".join(lines)
 
 
+def format_multi_action_summary_blocks(completed_tasks: list, locale: str = "en") -> MessageDocument:
+    """Format batch/multi-action transactions as mobile-friendly message blocks."""
+    task_types = [getattr(task, "type", "") for task in completed_tasks]
+    header, footer = build_completion_frame(
+        task_types=task_types,
+        locale=locale,
+        task_count=len(completed_tasks),
+    )
+    task_statuses = [
+        _normalize_final_status(str(getattr(task, "payload", {}).get("final_status") or "success").lower())
+        for task in completed_tasks
+        if isinstance(getattr(task, "payload", None), dict)
+    ]
+    any_failed = any(status == "failed" for status in task_statuses)
+    any_succeeded = any(status == "success" for status in task_statuses)
+    any_processing = any(status == "processing" for status in task_statuses)
+    task_mix = derive_task_mix(task_types)
+
+    if any_failed and not any_succeeded and not any_processing:
+        header = _failed_header(task_mix, len(completed_tasks), locale)
+    elif any_processing:
+        header = _processing_update_header(task_mix, len(completed_tasks), locale)
+
+    blocks: MessageDocument = [{"type": "heading", "text": _strip_markup(header)}]
+    total_spent = 0.0
+
+    for task in completed_tasks:
+        task_type = str(getattr(task, "type", "") or "")
+        payload = getattr(task, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        if task_type == "transfer":
+            total_spent = _append_transfer_blocks(blocks, payload, locale=locale, total_spent=total_spent)
+        elif task_type == "airtime":
+            total_spent = _append_airtime_block(blocks, payload, locale=locale, total_spent=total_spent)
+        elif task_type == "data":
+            total_spent = _append_data_block(blocks, payload, locale=locale, total_spent=total_spent)
+        else:
+            blocks.append(
+                {
+                    "type": "text",
+                    "text": render_message(
+                        "transaction_summary.multi.other_completed_line",
+                        locale,
+                        {"task_type": task_type.replace("_", " ").title()},
+                    ),
+                }
+            )
+
+    if len(completed_tasks) > 1 and total_spent > 0:
+        blocks.append(
+            {
+                "type": "key_value",
+                "label": _strip_markup(render_message("transaction_summary.multi.total_spent", locale, {"amount": ""}))
+                .replace(":", "")
+                .strip(),
+                "value": format_amount_compact(total_spent),
+            }
+        )
+
+    if any_processing:
+        if any_succeeded and any_failed:
+            footer = render_message("transaction_summary.multi.processing_footer.success_failed", locale)
+        elif any_succeeded:
+            footer = render_message("transaction_summary.multi.processing_footer.success", locale)
+        elif any_failed:
+            footer = render_message("transaction_summary.multi.processing_footer.failed", locale)
+        else:
+            footer = render_message("transaction_summary.multi.processing_footer.all_processing", locale)
+    elif any_failed:
+        footer_key: MessageKey = (
+            "transaction_summary.multi.failed_footer.partial"
+            if any_succeeded
+            else "transaction_summary.multi.failed_footer.all_failed"
+        )
+        footer = render_message(footer_key, locale)
+
+    if footer:
+        blocks.append({"type": "text", "text": _strip_markup(footer)})
+    return blocks
+
+
 def _append_transfer_lines(lines: list[str], transfer_tasks: list[Any], *, locale: str, total_spent: float) -> float:
     for task in transfer_tasks:
         recipients = task.payload.get("recipients", [])
@@ -106,6 +189,34 @@ def _append_transfer_lines(lines: list[str], transfer_tasks: list[Any], *, local
             lines.append(_format_failure_reason(reason, locale, task_type=task.type))
 
     lines.append("")
+    return total_spent
+
+
+def _append_transfer_blocks(
+    blocks: MessageDocument,
+    payload: dict[str, Any],
+    *,
+    locale: str,
+    total_spent: float,
+) -> float:
+    recipients = payload.get("recipients", [])
+    is_batch = payload.get("is_batch", False) or (isinstance(recipients, list) and len(recipients) > 1)
+    if is_batch and isinstance(recipients, list):
+        for recipient_entry in recipients:
+            if not isinstance(recipient_entry, dict):
+                continue
+            amount = float(recipient_entry.get("amount", 0) or 0)
+            status = _normalize_final_status(str(recipient_entry.get("status", "success")).lower())
+            if status == "success":
+                total_spent += amount
+            blocks.append(_batch_transfer_block(recipient_entry, amount=amount, status=status, locale=locale))
+        return total_spent
+
+    amount = float(payload.get("amount", 0) or 0)
+    status = _normalize_final_status(str(payload.get("final_status") or "success").lower())
+    if status == "success":
+        total_spent += amount
+    blocks.append(_single_transfer_block(payload, amount=amount, status=status, locale=locale))
     return total_spent
 
 
@@ -131,6 +242,34 @@ def _format_batch_transfer_line(recipient_entry: dict[str, Any], *, amount: floa
     )
 
 
+def _batch_transfer_block(
+    recipient_entry: dict[str, Any],
+    *,
+    amount: float,
+    status: str,
+    locale: str,
+) -> dict[str, Any]:
+    recipient = format_summary_recipient_display_label(
+        recipient_entry.get("recipient_name") or recipient_entry.get("alias"),
+        recipient_entry.get("recipient_resolved_name") or recipient_entry.get("name"),
+    ) or render_message("transaction_summary.multi.recipient_unknown", locale)
+    bank = str(
+        recipient_entry.get("bank_name") or recipient_entry.get("recipient_bank_name") or ""
+    ).strip() or render_message("transaction_summary.multi.bank_fallback", locale)
+    account = str(
+        recipient_entry.get("account") or recipient_entry.get("recipient_account") or ""
+    ).strip() or render_message("transaction_summary.multi.account_fallback", locale)
+    return _transfer_block(
+        amount=amount,
+        recipient=recipient,
+        bank=bank,
+        account=account,
+        status=status,
+        reason=_failure_reason(recipient_entry) if status == "failed" else None,
+        locale=locale,
+    )
+
+
 def _format_single_transfer_line(payload: dict[str, Any], *, amount: float, status: str, locale: str) -> str:
     recipient = format_summary_recipient_display_label(
         payload.get("recipient_name"),
@@ -152,6 +291,57 @@ def _format_single_transfer_line(payload: dict[str, Any], *, amount: float, stat
         status=status,
         locale=locale,
     )
+
+
+def _single_transfer_block(
+    payload: dict[str, Any],
+    *,
+    amount: float,
+    status: str,
+    locale: str,
+) -> dict[str, Any]:
+    recipient = format_summary_recipient_display_label(
+        payload.get("recipient_name"),
+        payload.get("recipient_resolved_name"),
+    ) or render_message("transaction_summary.multi.recipient_fallback", locale)
+    bank = str(payload.get("recipient_bank_name") or "").strip() or render_message(
+        "transaction_summary.multi.bank_fallback",
+        locale,
+    )
+    account = str(payload.get("recipient_account") or "").strip() or render_message(
+        "transaction_summary.multi.account_fallback",
+        locale,
+    )
+    return _transfer_block(
+        amount=amount,
+        recipient=recipient,
+        bank=bank,
+        account=account,
+        status=status,
+        reason=_failure_reason(payload) if status == "failed" else None,
+        locale=locale,
+    )
+
+
+def _transfer_block(
+    *,
+    amount: float,
+    recipient: str,
+    bank: str,
+    account: str,
+    status: str,
+    reason: str | None,
+    locale: str,
+) -> dict[str, Any]:
+    block: dict[str, Any] = {
+        "type": "transaction_item",
+        "status": status,
+        "title": f"{format_amount_compact(amount)} → {recipient}",
+        "subtitle": f"{bank} • {account}",
+    }
+    if reason:
+        block["reason"] = safe_user_error_message(reason, task_type="transfer", locale=locale)
+    return block
 
 
 def _format_transfer_line(
@@ -204,6 +394,37 @@ def _append_airtime_lines(lines: list[str], airtime_tasks: list[Any], *, locale:
     return total_spent
 
 
+def _append_airtime_block(
+    blocks: MessageDocument,
+    payload: dict[str, Any],
+    *,
+    locale: str,
+    total_spent: float,
+) -> float:
+    amount = float(payload.get("amount", 0) or 0)
+    status = _normalize_final_status(str(payload.get("final_status") or "success").lower())
+    raw_phone = (
+        payload.get("phone_number")
+        or payload.get("recipient_phone")
+        or payload.get("recipientPhone")
+        or payload.get("phone")
+    )
+    phone = str(raw_phone).strip() if raw_phone else render_message("transaction_summary.multi.phone_fallback", locale)
+    network = format_network_display_name(payload.get("network"))
+    if status == "success":
+        total_spent += amount
+    block: dict[str, Any] = {
+        "type": "transaction_item",
+        "status": status,
+        "title": f"Airtime: {format_amount_compact(amount)}",
+        "subtitle": f"{phone} ({network})",
+    }
+    if status == "failed" and (reason := _failure_reason(payload)):
+        block["reason"] = safe_user_error_message(reason, task_type="airtime", locale=locale)
+    blocks.append(block)
+    return total_spent
+
+
 def _append_data_lines(lines: list[str], data_tasks: list[Any], *, locale: str, total_spent: float) -> float:
     for task in data_tasks:
         amount = float(task.payload.get("amount", 0) or 0)
@@ -231,6 +452,35 @@ def _append_data_lines(lines: list[str], data_tasks: list[Any], *, locale: str, 
         if status == "failed" and (reason := _failure_reason(task.payload)):
             lines.append(_format_failure_reason(reason, locale, task_type=task.type))
     lines.append("")
+    return total_spent
+
+
+def _append_data_block(
+    blocks: MessageDocument,
+    payload: dict[str, Any],
+    *,
+    locale: str,
+    total_spent: float,
+) -> float:
+    amount = float(payload.get("amount", 0) or 0)
+    status = _normalize_final_status(str(payload.get("final_status") or "success").lower())
+    phone = (
+        payload.get("phone_number")
+        or payload.get("target_phone")
+        or render_message("transaction_summary.multi.phone_fallback", locale)
+    )
+    plan = payload.get("plan_name") or render_message("transaction_summary.multi.data_plan_fallback", locale)
+    if status == "success":
+        total_spent += amount
+    block: dict[str, Any] = {
+        "type": "transaction_item",
+        "status": status,
+        "title": f"Data: {plan}",
+        "subtitle": f"{format_amount_compact(amount)} for {phone}",
+    }
+    if status == "failed" and (reason := _failure_reason(payload)):
+        block["reason"] = safe_user_error_message(reason, task_type="data", locale=locale)
+    blocks.append(block)
     return total_spent
 
 
@@ -281,6 +531,18 @@ def _processing_update_header(task_mix: str, task_count: int, locale: str) -> st
     return render_message(key, locale)
 
 
+def _failed_header(task_mix: str, task_count: int, locale: str) -> str:
+    if locale == "en":
+        if task_mix == "transfer":
+            return "Transfers failed" if task_count > 1 else "Transfer failed"
+        if task_mix == "airtime":
+            return "Airtime purchases failed" if task_count > 1 else "Airtime purchase failed"
+        if task_mix == "data":
+            return "Data purchases failed" if task_count > 1 else "Data purchase failed"
+        return "Transactions failed"
+    return _processing_update_header(task_mix, task_count, locale)
+
+
 def _format_failure_reason(reason: str, locale: str, *, task_type: str | None = None) -> str:
     safe_reason = safe_user_error_message(reason, task_type=task_type, locale=locale)
     return render_message("transaction_summary.multi.failure_reason", locale, {"reason": safe_reason})
@@ -292,3 +554,7 @@ def _status_icon(status: str) -> str:
     if status == "processing":
         return "…"
     return "✗"
+
+
+def _strip_markup(text: str) -> str:
+    return str(text or "").strip().strip("*_").strip()

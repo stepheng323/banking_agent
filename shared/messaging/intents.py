@@ -7,6 +7,8 @@ They are channel-neutral and strictly define *what* needs to happen, not *how*.
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from shared.messaging.body_blocks import MessageDocument, normalize_body_blocks
+
 
 @dataclass
 class UiIntent:
@@ -24,9 +26,13 @@ class Say(UiIntent):
     """Simple text response."""
 
     text: str
+    body_blocks: MessageDocument | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"type": "say", "text": self.text, "actionable_payload": self.actionable_payload}
+        payload: dict[str, Any] = {"type": "say", "text": self.text, "actionable_payload": self.actionable_payload}
+        if self.body_blocks:
+            payload["body_blocks"] = self.body_blocks
+        return payload
 
 
 @dataclass
@@ -85,9 +91,10 @@ class RequestConfirmation(UiIntent):
     token: str
     correlation_id: str
     header: str | None = None
+    body_blocks: MessageDocument | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "type": "request_confirmation",
             "task_ids": self.task_ids,
             "summary": self.summary,
@@ -95,6 +102,9 @@ class RequestConfirmation(UiIntent):
             "idempotency_key": self.correlation_id,
             "actionable_payload": self.actionable_payload,
         }
+        if self.body_blocks:
+            payload["body_blocks"] = self.body_blocks
+        return payload
 
 
 @dataclass
@@ -106,9 +116,10 @@ class RequestAuth(UiIntent):
     correlation_id: str
     reason: str | None = None  # Semantic reason (e.g. "Transfer Authorization")
     summary: str | None = None  # Specific details (e.g. "Send 5k to Mum")
+    body_blocks: MessageDocument | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "type": "auth_request",
             "method": self.method,
             "task_ids": self.task_ids,
@@ -117,6 +128,9 @@ class RequestAuth(UiIntent):
             "summary": self.summary,
             "actionable_payload": self.actionable_payload,
         }
+        if self.body_blocks:
+            payload["body_blocks"] = self.body_blocks
+        return payload
 
 
 @dataclass
@@ -160,7 +174,7 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
     msg_type = data.get("type")
 
     if msg_type == "say":
-        intent: UiIntent = Say(text=data["text"])
+        intent: UiIntent = Say(text=data["text"], body_blocks=normalize_body_blocks(data.get("body_blocks")))
         intent.actionable_payload = data.get("actionable_payload")
         return intent
 
@@ -176,6 +190,7 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
             correlation_id=data.get("idempotency_key", "unknown"),
             reason=data.get("header"),
             summary=data.get("summary"),
+            body_blocks=normalize_body_blocks(data.get("body_blocks")),
         )
         intent.actionable_payload = data.get("actionable_payload")
         return intent
@@ -187,6 +202,7 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
             correlation_id=data.get("idempotency_key", "unknown"),
             token=data.get("idempotency_key", "unknown"),
             header=data.get("header"),
+            body_blocks=normalize_body_blocks(data.get("body_blocks")),
         )
         intent.actionable_payload = data.get("actionable_payload")
         return intent
