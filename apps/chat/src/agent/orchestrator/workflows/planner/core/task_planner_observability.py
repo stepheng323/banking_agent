@@ -28,6 +28,7 @@ from shared.observability.llm_http import (
     summarize_llm_http_records,
 )
 from shared.observability.llm_provider_metadata import extract_provider_llm_metadata
+from shared.utils.logging import log_orchestrator_diagnostic
 
 StructuredResultT = TypeVar("StructuredResultT", bound=BaseModel)
 
@@ -37,7 +38,8 @@ def model_name(llm: Any) -> str | None:
 
 
 def log_latency_span(logger: Any, *, span: str, duration_ms: float, path_label: str) -> None:
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "perf_timer_latency",
         gate=span,
         span=span,
@@ -52,9 +54,7 @@ def _role_from_event_name(event_name: str) -> str:
 
 def _output_record_fields(output_metrics: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        key: value
-        for key, value in output_metrics.items()
-        if key not in {"output_json_chars", "output_token_estimate"}
+        key: value for key, value in output_metrics.items() if key not in {"output_json_chars", "output_token_estimate"}
     }
 
 
@@ -129,9 +129,7 @@ def _response_schema_metrics(response_type: type[BaseModel]) -> dict[str, Any]:
     defs = schema.get("$defs") or schema.get("definitions") or {}
     discriminators = _find_discriminators(schema)
     action_discriminators = [item for item in discriminators if item.get("field") == "action"]
-    action_variant_count = max(
-        [int(item.get("mapping_count") or 0) for item in action_discriminators] or [0]
-    )
+    action_variant_count = max([int(item.get("mapping_count") or 0) for item in action_discriminators] or [0])
     if action_variant_count == 0:
         action_variant_count = _count_action_const_variants(schema)
 
@@ -223,6 +221,7 @@ async def invoke_structured_prompt(
                     "system_prompt_hash": system_prompt_hash,
                     "user_prompt_hash": user_prompt_hash,
                 },
+                logger=logger,
             )
             if path_label is not None and latency_span:
                 log_latency_span(logger, span=latency_span, duration_ms=duration_ms, path_label=path_label)
@@ -268,6 +267,7 @@ async def invoke_structured_prompt(
                 "user_prompt_hash": user_prompt_hash,
                 "error_type": type(exc).__name__,
             },
+            logger=logger,
         )
         raise
     http_metrics = summarize_llm_http_records(stop_llm_http_recording(http_recording_token))
@@ -300,6 +300,7 @@ async def invoke_structured_prompt(
                 "error_type": type(parsing_error).__name__,
                 **provider_fields,
             },
+            logger=logger,
         )
         _raise_parsing_error(parsing_error)
     if isinstance(parsed_result, response_type):
@@ -332,6 +333,7 @@ async def invoke_structured_prompt(
                     "error_type": type(exc).__name__,
                     **provider_fields,
                 },
+                logger=logger,
             )
             raise
     output_metrics = structured_output_metrics(validated)
@@ -388,6 +390,7 @@ async def invoke_structured_prompt(
             "user_prompt_hash": user_prompt_hash,
             "high_prompt_size": total_prompt_chars > settings.llm_high_prompt_size_chars,
         },
+        logger=logger,
     )
     emit_operational_event(
         "llm_call_counter",
@@ -400,6 +403,7 @@ async def invoke_structured_prompt(
             "response_type": response_type_name,
             "cache_status": cache_status,
         },
+        logger=logger,
     )
     if total_prompt_chars > settings.llm_high_prompt_size_chars:
         emit_operational_event(
@@ -412,6 +416,7 @@ async def invoke_structured_prompt(
                 "response_type": response_type_name,
                 "prompt_chars": total_prompt_chars,
             },
+            logger=logger,
         )
     if path_label is not None and latency_span:
         log_latency_span(logger, span=latency_span, duration_ms=duration_ms, path_label=path_label)
@@ -433,5 +438,6 @@ async def invoke_structured_prompt(
                 "system_prompt_hash": system_prompt_hash,
                 "user_prompt_hash": user_prompt_hash,
             },
+            logger=logger,
         )
     return validated

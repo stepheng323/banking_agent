@@ -23,7 +23,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.router_context import (
     _is_direct_context_recap_request,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -337,7 +337,8 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
 
     has_active_query_session = _has_active_query_session(ctx)
     has_query_session_stack = _has_query_session_stack(ctx)
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "gate_query_routing_breadcrumb",
         path="query_session_context",
         has_active_query_session=has_active_query_session or has_query_session_stack,

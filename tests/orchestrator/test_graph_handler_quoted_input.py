@@ -261,6 +261,7 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.logger.info", _capture)
+    monkeypatch.setattr(settings, "orchestrator_verbose_logs", True)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -521,6 +522,7 @@ async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.Monk
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.logger.info", _capture)
+    monkeypatch.setattr(settings, "orchestrator_verbose_logs", True)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -650,6 +652,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.chat.src.agent.orchestrator.graph.handler.logger.info", _capture)
+    monkeypatch.setattr(settings, "orchestrator_verbose_logs", True)
     monkeypatch.setattr(settings.whatsapp, "typing_indicator_delay_ms", 650)
 
     handler = OrchestratorGraphHandler(

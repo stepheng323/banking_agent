@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from langchain_openai import ChatOpenAI
 
+from shared.observability.llm_http import build_llm_http_async_client
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -120,23 +121,49 @@ def build_chat_role_models(
         interrupt_router_model=resolved_interrupt_router_model,
         extractor_model=resolved_extractor_model,
     )
+    http_async_client = build_llm_http_async_client()
 
     return ChatRoleModels(
-        planner_llm=ChatOpenAI(model=planner_model, temperature=0, timeout=30.0, max_retries=1),
-        query_llm=ChatOpenAI(model=resolved_query_model, temperature=0, timeout=30.0, max_retries=1),
+        planner_llm=ChatOpenAI(
+            model=planner_model,
+            temperature=0,
+            timeout=30.0,
+            max_retries=1,
+            http_async_client=http_async_client,
+            include_response_headers=True,
+        ),
+        query_llm=ChatOpenAI(
+            model=resolved_query_model,
+            temperature=0,
+            timeout=30.0,
+            max_retries=1,
+            http_async_client=http_async_client,
+            include_response_headers=True,
+        ),
         semantic_router_llm=ChatOpenAI(
             model=resolved_semantic_router_model,
             temperature=0,
             timeout=15.0,
             max_retries=1,
+            http_async_client=http_async_client,
+            include_response_headers=True,
         ),
         interrupt_llm=ChatOpenAI(
             model=resolved_interrupt_router_model,
             temperature=0,
             timeout=15.0,
             max_retries=1,
+            http_async_client=http_async_client,
+            include_response_headers=True,
         ),
-        extractor_llm=ChatOpenAI(model=resolved_extractor_model, temperature=0, timeout=20.0, max_retries=1),
+        extractor_llm=ChatOpenAI(
+            model=resolved_extractor_model,
+            temperature=0,
+            timeout=20.0,
+            max_retries=1,
+            http_async_client=http_async_client,
+            include_response_headers=True,
+        ),
         query_model=resolved_query_model,
         semantic_router_model=resolved_semantic_router_model,
         interrupt_router_model=resolved_interrupt_router_model,

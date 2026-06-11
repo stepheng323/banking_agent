@@ -16,7 +16,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.contracts import (
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import planner_handoff
 from apps.chat.src.agent.orchestrator.workflows.gate.trace import summarize_gate_trace
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -32,7 +32,8 @@ def _routing_value(updates: Mapping[str, object], key: str) -> str | None:
 
 
 def _log_engine_result(result: GateEngineResult) -> None:
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "gate_engine_trace_summary",
         **summarize_gate_trace(result),
     )

@@ -5,7 +5,7 @@ import time
 from collections.abc import Awaitable
 from typing import Any, Literal
 
-from shared.utils.logging import log_fingerprint
+from shared.utils.logging import log_fingerprint, log_orchestrator_diagnostic
 from shared.utils.serialization import sqlalchemy_to_dict
 
 
@@ -49,7 +49,12 @@ async def hydrate_user_context_from_cache_snapshot(
         cache_status = "hit"
     elif cache_hits > 0:
         cache_status = "partial_hit"
-    logger.info("context_user_data_cache", phone_hash=log_fingerprint(phone_number), status=cache_status)
+    log_orchestrator_diagnostic(
+        logger,
+        "context_user_data_cache",
+        phone_hash=log_fingerprint(phone_number),
+        status=cache_status,
+    )
 
     if cache_hits == 3:
         return {

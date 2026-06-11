@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from shared.utils.logging import log_orchestrator_diagnostic
+
 
 def _pending_interrupt_kind(final_state: Mapping[str, Any]) -> str | None:
     interrupt = final_state.get("pending_interrupt")
@@ -67,7 +69,8 @@ def log_orchestrator_turn_trace(
     total_duration_ms: float,
     progress_count: int,
 ) -> None:
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "orchestrator_turn_trace",
         **summarize_orchestrator_turn_trace(
             final_state=final_state,

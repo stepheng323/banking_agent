@@ -7,7 +7,7 @@ from typing import Any, Literal
 import apps.chat.src.agent.orchestrator.context.context_redis_state as context_redis_state
 from apps.chat.src.agent.orchestrator.context.context_user_data import hydrate_user_context_from_cache_snapshot
 from shared.cache.redis_client import RedisClient
-from shared.utils.logging import log_fingerprint
+from shared.utils.logging import log_fingerprint, log_orchestrator_diagnostic
 
 
 async def load_context_parallel(
@@ -91,7 +91,8 @@ async def load_context_parallel(
             and cached_user_data.get("beneficiaries") is None
             and any(results[index] for index in range(0, 5))
         ):
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "context_user_data_restart_gap",
                 phone_hash=log_fingerprint(phone_number),
                 has_conversation_state=bool(results[0]),

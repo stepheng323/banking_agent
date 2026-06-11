@@ -29,6 +29,7 @@ from apps.chat.src.agent.orchestrator.graph.route_metrics import (
     log_latency_span,
     log_route_metrics,
     log_semantic_path_shape,
+    log_turn_summary,
     record_guardrail_signal,
     resolve_path_label,
     resolve_semantic_path_shape,
@@ -37,7 +38,7 @@ from apps.chat.src.agent.orchestrator.graph.runtime import GraphRunnableConfig
 from apps.chat.src.agent.orchestrator.graph.turn_trace import log_orchestrator_turn_trace
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from shared.observability.llm import build_llm_runnable_config
-from shared.utils.logging import log_fingerprint
+from shared.utils.logging import log_fingerprint, log_orchestrator_diagnostic
 
 
 class GraphConfigFactory(Protocol):
@@ -160,7 +161,8 @@ class GraphInvocationRunner:
                 loaded_context=loaded_context,
                 semantic_path_shape=semantic_path_shape,
             )
-            self.logger.info(
+            log_orchestrator_diagnostic(
+                self.logger,
                 "orchestrator_progress_delivery_summary",
                 progress_stage=progress_snapshot.stage_key,
                 progress_count=progress_snapshot.progress_count,
@@ -177,7 +179,18 @@ class GraphInvocationRunner:
                 phone_number=phone_number,
                 path_label=path_label,
             )
-            self.logger.info("orchestrator_path_label", path_label=path_label, phone_number=phone_number)
+            log_turn_summary(
+                self.logger,
+                final_state=final_state,
+                path_label=path_label,
+                total_duration_ms=total_duration,
+            )
+            log_orchestrator_diagnostic(
+                self.logger,
+                "orchestrator_path_label",
+                path_label=path_label,
+                phone_number=phone_number,
+            )
             log_semantic_path_shape(
                 self.logger,
                 semantic_path_shape=semantic_path_shape,

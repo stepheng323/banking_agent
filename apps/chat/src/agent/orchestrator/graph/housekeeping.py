@@ -13,7 +13,7 @@ from apps.chat.src.agent.orchestrator.context.referents.store import referent_me
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.resume_prompt import STASH_RESUME_TTL_SECONDS
 from shared.config.settings import settings
 from shared.utils.async_helpers import create_background_task
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -100,7 +100,8 @@ class OrchestratorHousekeeping:
         chat_ok = await self.apply_chat_history_ttl(thread_id)
         ttl = self.checkpoint_ttl_seconds(state or {})
         if ttl <= 0:
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "checkpoint_ttl_maintenance_skipped",
                 thread_id=thread_id,
                 reason="no_retained_state",
@@ -161,7 +162,8 @@ class OrchestratorHousekeeping:
 
                 total_matched += len(keys)
                 total_applied += applied_count
-                logger.info(
+                log_orchestrator_diagnostic(
+                    logger,
                     "checkpoint_ttl_pattern_processed",
                     thread_id=thread_id,
                     pattern=pattern,
@@ -172,7 +174,8 @@ class OrchestratorHousekeeping:
                     expire_duration_ms=round(expire_duration, 2),
                 )
 
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "checkpoint_ttl_apply_summary",
                 thread_id=thread_id,
                 pattern_count=len(patterns),
@@ -191,7 +194,8 @@ class OrchestratorHousekeeping:
             start = time.perf_counter()
             key = f"user:{thread_id.split(':')[-1]}:chat_history"
             ok = await self.redis_client.expire(key, ttl)
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "chat_history_ttl_refreshed",
                 thread_id=thread_id,
                 key=key,
@@ -225,7 +229,8 @@ class OrchestratorHousekeeping:
             return True
 
         if not claimed:
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "checkpoint_ttl_refresh_skipped",
                 thread_id=thread_id,
                 reason="recently_refreshed",
@@ -369,7 +374,8 @@ class OrchestratorHousekeeping:
         session_stack = state.get("session_stack", [])
         capability_boundary = state.get("capability_boundary")
 
-        logger.info(
+        log_orchestrator_diagnostic(
+            logger,
             "cleanup_check",
             thread_id=thread_id,
             has_tasks=bool(tasks),
@@ -393,7 +399,8 @@ class OrchestratorHousekeeping:
                 ttl_ok = True
                 if refresh_claimed:
                     ttl_ok = await self.apply_session_ttl(thread_id, ttl=context_frame_ttl)
-                logger.info(
+                log_orchestrator_diagnostic(
+                    logger,
                     "orchestrator_thread_retained_for_context_followup",
                     thread_id=thread_id,
                     context_frame_ttl_seconds=context_frame_ttl,
@@ -403,7 +410,7 @@ class OrchestratorHousekeeping:
                 return ttl_ok
             try:
                 await self.checkpointer.adelete_thread(thread_id)
-                logger.info("orchestrator_thread_cleaned", thread_id=thread_id)
+                log_orchestrator_diagnostic(logger, "orchestrator_thread_cleaned", thread_id=thread_id)
                 return True
             except Exception as e:
                 logger.warning("cleanup_thread_error", thread_id=thread_id, error=str(e))

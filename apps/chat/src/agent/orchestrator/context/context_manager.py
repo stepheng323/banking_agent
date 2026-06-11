@@ -12,7 +12,7 @@ from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LanguageDetectionSignal
 from shared.cache.user_data import UserDataCache
-from shared.utils.logging import get_logger, log_fingerprint
+from shared.utils.logging import get_logger, log_fingerprint, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -33,7 +33,8 @@ class ContextManager:
 
     @staticmethod
     def _log_latency_span(*, span: str, duration_ms: float, phone_number: str, path_label: str) -> None:
-        logger.info(
+        log_orchestrator_diagnostic(
+            logger,
             "perf_timer_latency",
             gate=span,
             span=span,

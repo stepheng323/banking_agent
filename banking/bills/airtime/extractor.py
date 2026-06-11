@@ -12,6 +12,11 @@ from banking.bills.airtime.prompt.airtime_extraction import (
 )
 from banking.transactions.shared.models.smart_context import SmartContext
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
+from shared.observability.llm_call_metrics import (
+    estimated_tokens_from_chars,
+    record_llm_call,
+    structured_output_metrics,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -127,18 +132,37 @@ class AirtimeEntityExtractor:
             or None,
         )
         duration_ms = (time.perf_counter() - start) * 1000
+        validated = (
+            result if isinstance(result, AirtimeExtractionResult) else AirtimeExtractionResult.model_validate(result)
+        )
+        output_metrics = structured_output_metrics(validated)
+        model = getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None)
         logger.info(
             "airtime_extractor_llm_call",
             duration_ms=round(duration_ms, 2),
-            model=getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None),
+            model=model,
             system_chars=len(AIRTIME_EXTRACTION_PROMPT),
             user_chars=len(user_content),
+            prompt_token_estimate=estimated_tokens_from_chars(len(AIRTIME_EXTRACTION_PROMPT) + len(user_content)),
+            **output_metrics,
             context_chars=len(context_str),
             context_mode=context_mode,
         )
-        if isinstance(result, AirtimeExtractionResult):
-            return result
-        return AirtimeExtractionResult.model_validate(result)
+        record_llm_call(
+            event_name="airtime_extractor_llm_call",
+            duration_ms=duration_ms,
+            model=model,
+            response_type=AirtimeExtractionResult.__name__,
+            system_chars=len(AIRTIME_EXTRACTION_PROMPT),
+            user_chars=len(user_content),
+            output_json_chars=output_metrics["output_json_chars"],
+            output_token_estimate=output_metrics["output_token_estimate"],
+            extra_fields={
+                "context_chars": len(context_str),
+                "context_mode": context_mode,
+            },
+        )
+        return validated
 
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         """Adapter for pipeline node usage."""

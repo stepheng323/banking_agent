@@ -7,14 +7,15 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.last_interrupt import last_interrupt
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import pop_task_payload_value
 from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
 
 def _maybe_user_message(task: TaskSpec, state: OrchestratorState) -> str | None:
     interrupt = last_interrupt(state)
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "maybe_user_msg_check",
         task_id=task.id,
         last_int=interrupt.task_ids if interrupt.exists else None,

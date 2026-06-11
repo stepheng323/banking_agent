@@ -5,6 +5,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
 from shared.config.settings import settings
+from shared.utils.logging import log_orchestrator_diagnostic
 
 
 def resolve_path_label(context: MessageContext, final_state: dict[str, Any]) -> str:
@@ -40,7 +41,8 @@ def log_latency_span(
     phone_number: str,
     path_label: str,
 ) -> None:
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "perf_timer_latency",
         gate=span,
         span=span,
@@ -51,7 +53,8 @@ def log_latency_span(
 
 
 def log_semantic_path_shape(logger: Any, *, semantic_path_shape: str, path_label: str, phone_number: str) -> None:
-    logger.info(
+    log_orchestrator_diagnostic(
+        logger,
         "orchestrator_semantic_path",
         semantic_path_shape=semantic_path_shape,
         path_label=path_label,
@@ -75,6 +78,58 @@ def _planner_primary_intent(final_state: dict[str, Any]) -> str | None:
     planner_output = final_state.get("planner_output")
     primary_intent = getattr(planner_output, "primary_intent", None)
     return primary_intent if isinstance(primary_intent, str) and primary_intent else None
+
+
+def _pending_interrupt_kind(final_state: dict[str, Any]) -> str | None:
+    pending_interrupt = final_state.get("pending_interrupt") or final_state.get("last_interrupt")
+    if pending_interrupt is None:
+        return None
+    value = (
+        pending_interrupt.get("kind")
+        if isinstance(pending_interrupt, dict)
+        else getattr(pending_interrupt, "kind", None)
+    )
+    return value if isinstance(value, str) and value else None
+
+
+def _llm_total_ms(final_state: dict[str, Any]) -> float | None:
+    value = final_state.get("llm_total_ms")
+    if isinstance(value, (int, float)):
+        return round(float(value), 2)
+
+    calls = final_state.get("llm_calls")
+    if not isinstance(calls, list):
+        return None
+
+    total = 0.0
+    has_duration = False
+    for call in calls:
+        duration = call.get("duration_ms") if isinstance(call, dict) else getattr(call, "duration_ms", None)
+        if isinstance(duration, (int, float)):
+            total += float(duration)
+            has_duration = True
+    return round(total, 2) if has_duration else None
+
+
+def log_turn_summary(
+    logger: Any,
+    *,
+    final_state: dict[str, Any],
+    path_label: str,
+    total_duration_ms: float,
+) -> None:
+    task_map = final_state.get("tasks")
+    task_count = len(task_map) if isinstance(task_map, dict) else 0
+    logger.info(
+        "orchestrator_turn_summary",
+        total_ms=round(total_duration_ms, 2),
+        llm_ms=_llm_total_ms(final_state),
+        path_label=path_label,
+        routing_owner=final_state.get("routing_owner"),
+        routing_decision=final_state.get("routing_decision"),
+        interrupt_status=_pending_interrupt_kind(final_state),
+        task_count=task_count,
+    )
 
 
 def log_route_metrics(

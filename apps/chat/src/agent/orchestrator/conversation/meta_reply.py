@@ -13,7 +13,7 @@ from apps.chat.src.agent.orchestrator.models.domain import MetaIntent
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from shared.observability.llm import ainvoke_with_config, build_llm_runnable_config
-from shared.utils.logging import get_logger
+from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
 
@@ -229,7 +229,8 @@ async def generate_meta_reply(
                 or None,
             )
             duration_ms = (time.perf_counter() - start) * 1000
-            logger.info(
+            log_orchestrator_diagnostic(
+                logger,
                 "perf_timer_latency",
                 gate="meta_reply_llm",
                 span="meta_reply_llm",

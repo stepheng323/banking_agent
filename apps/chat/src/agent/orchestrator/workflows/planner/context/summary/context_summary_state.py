@@ -7,6 +7,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_types import TurnContextSummary
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
+from shared.utils.logging import log_orchestrator_diagnostic
 
 
 def summary_to_state_payload(summary: TurnContextSummary) -> dict[str, Any]:
@@ -41,7 +42,8 @@ def _get_or_build_turn_context_summary(
         query_session_source=query_session_source,
     )
     if path_label:
-        perf_logger.info(
+        log_orchestrator_diagnostic(
+            perf_logger,
             "perf_timer_latency",
             gate="turn_context_summary_build",
             span="turn_context_summary_build",
