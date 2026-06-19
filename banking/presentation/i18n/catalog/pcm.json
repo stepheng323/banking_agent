@@ -60,7 +60,8 @@
     "creator_fallback": "{name} na {creator} build am.",
     "brand_origin_fallback": "{brand_origin}",
     "capabilities_fallback": "I fit help with: {supported}.",
-    "limits_fallback": "I no fit do {unsupported} here. I fit help with {supported}."
+    "limits_fallback": "I no fit do {unsupported} here. I fit help with {supported}.",
+    "melkor_easter_egg": "And thou Melkor shalt see that no theme may be played that hath not its uttermost source in me, nor can any alter the music in my despite for he that attempteth shall prove but mine instrument in the devising of things more wonderful which he himself hath not imagined"
   },
   "conversational": {
     "greeting": "How far. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",

@@ -37,6 +37,7 @@ _RESPONSE_KEY_TOPICS = {
     "capability.unsupported_unavailable": "unsupported_boundary",
     "capability.unsupported_unavailable_followup": "unsupported_boundary",
     "capability.unsupported_unavailable_firm": "unsupported_boundary",
+    "meta.melkor_easter_egg": "unsupported_boundary",
 }
 
 

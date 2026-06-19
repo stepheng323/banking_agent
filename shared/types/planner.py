@@ -860,7 +860,24 @@ PlannerResponseKey: TypeAlias = Literal[
     "conversational.out_of_scope",
     "conversational.clarify",
     "planner.cancelled",
+    "capability.unsupported_unavailable",
 ]
+
+SemanticRouterResponseKey: TypeAlias = Literal[
+    "conversational.greeting",
+    "conversational.appreciation",
+    "conversational.checkin",
+    "conversational.identity",
+    "conversational.brand_origin",
+    "conversational.capability_question",
+    "conversational.casual_chat",
+    "conversational.out_of_scope",
+    "conversational.clarify",
+    "planner.cancelled",
+    "capability.unsupported_unavailable",
+    "meta.melkor_easter_egg",
+]
+
 
 TransactionExecutor: TypeAlias = Literal["transfer", "airtime", "data"]
 BeneficiaryRouteHint: TypeAlias = Literal["beneficiary_list", "recipient_ranking", "none"]
@@ -1299,11 +1316,14 @@ class InterruptRouteDecision(BaseModel):
 class SemanticRouteDecision(BaseModel):
     """LLM decision for first-pass semantic routing before planner-owned dispatch."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     decision: SemanticRoutingDecision = Field(default="planner_ambiguous", description="Top-level routing action")
-    confidence: float = Field(default=0.0, description="Confidence in routing decision (0.0-1.0)")
-    detected_language: str | None = Field(default=None, description="Detected language for this turn")
+    confidence: float = Field(default=0.0, alias="conf", description="Confidence in routing decision (0.0-1.0)")
+    detected_language: str | None = Field(default=None, alias="lang", description="Detected language for this turn")
     requested_language: str | None = Field(
         default=None,
+        alias="req_lang",
         description="Explicit language requested for switch when user asks to change locale.",
     )
     mode: SemanticRoutingMode | None = Field(
@@ -1312,25 +1332,34 @@ class SemanticRouteDecision(BaseModel):
     )
     target_intent: RouterDomainIntent | None = Field(
         default=None,
+        alias="intent",
         description="Optional normalized domain owner for observability/debugging.",
     )
-    response_key: PlannerResponseKey | None = Field(
+    response_key: SemanticRouterResponseKey | None = Field(
         default=None,
+        alias="res_key",
         description="Deterministic keyed response when decision=direct_reply or cancel",
     )
     response: str | None = Field(
         default=None,
+        alias="res",
         description="Direct response text when decision=direct_reply or direct_context_answer",
     )
     expected_transaction_executors: list[TransactionExecutor] = Field(
         default_factory=list,
+        alias="execs",
         description="Explicit transaction executors expected from planner, when known",
     )
     schedule_response_mode: Literal["list", "count"] | None = Field(
         default=None,
+        alias="sch_mode",
         description="For simple scheduled-transaction read intents, whether the user wants a list or count.",
     )
-    reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+    unsupported_capability: str | None = Field(
+        default=None,
+        alias="unsupported_cap",
+        description="Optional key of the detected unsupported capability, else null",
+    )
 
 
 def _strip_llm_schema_annotations(schema: dict[str, Any]) -> None:
@@ -1399,6 +1428,10 @@ class PlannerOutput(BaseModel):
             "Account action hint for planner context-read disambiguation: "
             "list/list_accounts/count/check_balance/link/unlink/set_default, else none"
         ),
+    )
+    unsupported_capability: str | None = Field(
+        default=None,
+        description="Optional key of the detected unsupported capability, else null",
     )
 
     # Planning fields

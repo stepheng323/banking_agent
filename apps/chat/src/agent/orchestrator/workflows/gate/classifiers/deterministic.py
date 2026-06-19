@@ -95,6 +95,11 @@ DETERMINISTIC_IDENTITY_EXACT = {
     "what s your name",
     "what's your name",
 }
+DETERMINISTIC_JAILBREAK_EXACT = {
+    "ignore all previous instructions",
+    "system prompt override",
+    "override orchestrator",
+}
 DETERMINISTIC_BRAND_ORIGIN_EXACT = {
     "who created you",
     "who built you",
@@ -243,6 +248,8 @@ def _is_brand_product_lookup(normalized: str) -> bool:
 
 def classify_deterministic_meta_response(message_text: str) -> DeterministicMetaResponse | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if normalized in DETERMINISTIC_JAILBREAK_EXACT:
+        return _meta_response("meta.melkor_easter_egg")
     if normalized in DETERMINISTIC_LOCALE_META_EXACT:
         response_key, response_locale = DETERMINISTIC_LOCALE_META_EXACT[normalized]
         return _meta_response(response_key, response_locale)
