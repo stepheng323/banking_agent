@@ -1,13 +1,13 @@
 import re
 from typing import Any
 
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _build_direct_domain_task
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
     _semantic_route_decision,
     _semantic_route_mode,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import _build_direct_domain_task
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -23,9 +23,7 @@ _SCHEDULE_READ_CANDIDATE_RE = re.compile(
     r"\b(?:haziri|ugwo|mbufe|azumahia)\b.*\b(?:emechaa|na-abia|oge)\b"
     r")"
 )
-_SCHEDULE_READ_COUNT_RE = re.compile(
-    r"(?iu)\b(?:how\s+many|count|number\s+of|do\s+i\s+have\s+any|any)\b"
-)
+_SCHEDULE_READ_COUNT_RE = re.compile(r"(?iu)\b(?:how\s+many|count|number\s+of|do\s+i\s+have\s+any|any)\b")
 _SCHEDULE_READ_LIST_RE = re.compile(
     r"(?iu)^\s*(?:show|list|view|get|display|see|find)\b.*"
     r"\b(?:schedul\w*|recurr\w*|pending\b.*\b(?:transaction|payment|transfer|airtime|data)\w*)\b"
@@ -111,11 +109,12 @@ async def _stage_schedule_read_router(ctx: GateContext) -> dict[str, Any] | None
             owner="guardrail",
         )
 
-    if ctx.task_planner is None:
+    router = ctx.semantic_router_llm
+    if router is None:
         return None
 
     try:
-        route = await ctx.task_planner.route_schedule_read_turn(
+        route = await router.route_schedule_read_turn(
             ctx.state_view.phone_number,
             ctx.message_text,
             path_label="direct_path",

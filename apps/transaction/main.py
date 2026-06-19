@@ -126,7 +126,7 @@ async def _run_direct_transfer_reconciliation_loop(stop_event: asyncio.Event) ->
     consumer = consumers.direct_transfer_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     loop_health.mark_started()
-    logger.info("direct_transfer_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("direct_transfer_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -231,7 +231,7 @@ async def _run_transaction_stream_worker(stop_event: asyncio.Event) -> None:
         stream_names=_enabled_stream_names(),
         group_name=f"{settings.project_name}-transaction-worker-{settings.runtime.infrastructure_environment}",
     )
-    logger.info("transaction_stream_worker_started", streams=stream_consumer.stream_names)
+    logger.debug("transaction_stream_worker_started")
     await stream_consumer.ensure_groups()
     last_stale_claim = -_STALE_CLAIM_INTERVAL_SECONDS
 
@@ -253,14 +253,14 @@ async def _run_transaction_debit_reconciliation_loop(stop_event: asyncio.Event) 
     interval_seconds = int(settings.transaction_debit_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
         _mark_loop_disabled(loop_name)
-        logger.info("transaction_debit_reconciliation_loop_disabled")
+        logger.debug("transaction_debit_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
     consumer = consumers.transaction_debit_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     _mark_loop_started(loop_name)
-    logger.info("transaction_debit_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("transaction_debit_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -295,14 +295,14 @@ async def _run_bill_reconciliation_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = int(settings.bill_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
         _mark_loop_disabled(loop_name)
-        logger.info("bill_reconciliation_loop_disabled")
+        logger.debug("bill_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
     consumer = consumers.bill_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     _mark_loop_started(loop_name)
-    logger.info("bill_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("bill_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -337,14 +337,14 @@ async def _run_transaction_debit_refund_reconciliation_loop(stop_event: asyncio.
     interval_seconds = int(settings.refund_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
         _mark_loop_disabled(loop_name)
-        logger.info("transaction_debit_refund_reconciliation_loop_disabled")
+        logger.debug("transaction_debit_refund_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
     consumer = consumers.transaction_debit_refund_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     _mark_loop_started(loop_name)
-    logger.info("transaction_debit_refund_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("transaction_debit_refund_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -379,14 +379,14 @@ async def _run_payout_reconciliation_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = int(settings.payout_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
         _mark_loop_disabled(loop_name)
-        logger.info("payout_reconciliation_loop_disabled")
+        logger.debug("payout_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
     payout_reconciliation_consumer = consumers.payout_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     _mark_loop_started(loop_name)
-    logger.info("payout_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("payout_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -428,14 +428,14 @@ async def _run_funding_reconciliation_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = int(settings.funding_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
         _mark_loop_disabled(loop_name)
-        logger.info("funding_reconciliation_loop_disabled")
+        logger.debug("funding_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
     funding_reconciliation_consumer = consumers.funding_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     _mark_loop_started(loop_name)
-    logger.info("funding_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("funding_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -477,14 +477,14 @@ async def _run_refund_reconciliation_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = int(settings.refund_reconciliation_interval_seconds or 0)
     if interval_seconds <= 0:
         _mark_loop_disabled(loop_name)
-        logger.info("refund_reconciliation_loop_disabled")
+        logger.debug("refund_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
     refund_reconciliation_consumer = consumers.refund_reconciliation
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     _mark_loop_started(loop_name)
-    logger.info("refund_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("refund_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -598,15 +598,15 @@ async def _run_ledger_reconciliation_loop(stop_event: asyncio.Event) -> None:
     if interval_seconds <= 0:
         _mark_loop_disabled("ledger_posting_reconciliation")
         _mark_loop_disabled("ledger_exposure_reconciliation")
-        logger.info("ledger_posting_reconciliation_loop_disabled")
-        logger.info("ledger_exposure_reconciliation_loop_disabled")
+        logger.debug("ledger_posting_reconciliation_loop_disabled")
+        logger.debug("ledger_exposure_reconciliation_loop_disabled")
         return
 
     consumers = setup_transaction_worker_consumers()
     lock_ttl_seconds = max(interval_seconds * 2, 60)
     _mark_loop_started("ledger_posting_reconciliation")
     _mark_loop_started("ledger_exposure_reconciliation")
-    logger.info("ledger_reconciliation_loop_started", interval_seconds=interval_seconds)
+    logger.debug("ledger_reconciliation_loop_started", interval_seconds=interval_seconds)
 
     while not stop_event.is_set():
         try:
@@ -629,7 +629,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("transaction_worker_service_starting", **build_runtime_status("transaction-worker"))
 
     _stop_event = asyncio.Event()
-    domain_flags = _enabled_domain_flags()
+
     _worker_task = asyncio.create_task(
         _run_transaction_stream_worker(_stop_event),
         name="transaction-redis-worker",
@@ -668,8 +668,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     )
     logger.info(
         "transaction_worker_active",
-        topics=list(TRANSACTION_TOPICS),
-        enabled_domains=domain_flags,
         **build_runtime_status("transaction-worker"),
     )
 

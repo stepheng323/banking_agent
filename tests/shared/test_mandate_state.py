@@ -74,5 +74,5 @@ def test_account_discovery_lists_non_ready_accounts_with_status_icon() -> None:
 
     assert "First Bank" in response
     assert "GTBank" in response
-    assert "[!]" in response
-    assert "[✓]" in response
+    assert "Unlinked" in response
+    assert "Active" in response

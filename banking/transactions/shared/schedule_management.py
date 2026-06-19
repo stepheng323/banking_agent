@@ -24,6 +24,7 @@ from banking.transactions.shared.scheduling import (
     schedule_recurrence_label,
 )
 from shared.database.enums import ScheduledInstructionStatusEnum
+from shared.messaging.body_blocks import MessageDocument
 from shared.money import naira_to_json, to_naira
 
 _SCHEDULE_FIELDS = {
@@ -278,6 +279,60 @@ def build_schedule_context_items(schedules: list[Any], *, locale: str = "en") ->
             }
         )
     return items
+
+
+def format_schedule_context_blocks(
+    items: list[dict[str, Any]],
+    *,
+    heading: str,
+) -> MessageDocument | None:
+    """Format scheduled transaction context items as mobile-friendly body blocks."""
+    schedule_items = [item for item in items if isinstance(item, dict)]
+    if not schedule_items:
+        return None
+
+    blocks: MessageDocument = [{"type": "heading", "text": _clean_block_text(heading).rstrip(":")}]
+    for index, item in enumerate(schedule_items, start=1):
+        data = item.get("data")
+        if not isinstance(data, dict):
+            data = {}
+
+        domain = _clean_block_text(data.get("domain")) or "Scheduled transaction"
+        title = f"{index}. {domain}"
+        primary = _schedule_block_primary_line(data)
+        timing = _schedule_block_timing_line(data)
+        next_run = _clean_block_text(data.get("next_run"))
+        lines = [f"{title} — {primary}" if primary else title]
+        if timing:
+            lines.append(timing)
+        if next_run:
+            lines.append(f"Next: {next_run}")
+        blocks.append({"type": "text", "text": "\n".join(lines)})
+
+    return blocks
+
+
+def _schedule_block_primary_line(data: dict[str, Any]) -> str:
+    amount = _clean_block_text(data.get("amount"))
+    target = _clean_block_text(data.get("target"))
+    domain_key = _clean_block_text(data.get("domain_key")).lower()
+    if amount and target:
+        if domain_key == "transfer":
+            return f"{amount} to {target}"
+        return f"{amount} • {target}"
+    return amount or target
+
+
+def _schedule_block_timing_line(data: dict[str, Any]) -> str:
+    parts = [
+        _clean_block_text(data.get("recurrence")),
+        _clean_block_text(data.get("schedule_time")),
+    ]
+    return " • ".join(part for part in parts if part)
+
+
+def _clean_block_text(value: Any) -> str:
+    return " ".join(str(value or "").strip().split())
 
 
 def _schedule_search_blob(schedule: Any) -> str:

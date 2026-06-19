@@ -145,6 +145,8 @@ def _build_handler(
     )
     return OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),

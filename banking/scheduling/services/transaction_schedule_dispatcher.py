@@ -164,7 +164,8 @@ class TransactionScheduleDispatcher:
 
             await uow.commit()
 
-        logger.info("schedule_dispatch_completed", processed=processed, skipped=skipped)
+        if processed > 0 or skipped > 0:
+            logger.info("schedule_dispatch_completed", processed=processed, skipped=skipped)
         return {"processed": processed, "skipped": skipped}
 
     @staticmethod

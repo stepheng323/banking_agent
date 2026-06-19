@@ -114,7 +114,7 @@ async def test_transaction_turn_ignores_pending_beneficiary_save_prompt() -> Non
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner,
+            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
             "redis_client": redis,
             "services": {},
         },

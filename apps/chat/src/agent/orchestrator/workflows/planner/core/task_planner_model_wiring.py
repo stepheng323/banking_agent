@@ -5,10 +5,6 @@ from typing import Any, Literal
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
-    UnsupportedBoundaryTurnOutput,
-    UnsupportedCapabilitySemanticOutput,
-)
 from banking.transactions.shared.confirmation.models import ConfirmationDecisionOutput
 from shared.types.planner import (
     BatchSlotPatchDecision,
@@ -17,7 +13,6 @@ from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
     PlannerOutput,
-    SemanticRouteDecision,
 )
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
@@ -25,8 +20,6 @@ from shared.types.quoted_replay import QuotedReplayInterpretation
 @dataclass(frozen=True)
 class TaskPlannerStructuredOutputs:
     planner: Any
-    semantic_router: Any
-    schedule_read_router: Any
     interrupt_router: Any
     quoted_replay: Any
     context_frame_followup: Any
@@ -34,8 +27,6 @@ class TaskPlannerStructuredOutputs:
     pending_action_edit: Any
     batch_slot_patch: Any
     confirmation_decision: Any
-    unsupported_capability: Any
-    unsupported_boundary_turn: Any
 
 
 def with_structured_output(
@@ -78,14 +69,6 @@ def build_task_planner_structured_outputs(
             PlannerOutput,
             method="function_calling",
         ),
-        semantic_router=with_structured_output(
-            semantic_router_llm,
-            SemanticRouteDecision,
-        ),
-        schedule_read_router=with_structured_output(
-            semantic_router_llm,
-            SemanticRouteDecision,
-        ),
         interrupt_router=with_structured_output(
             interrupt_llm,
             InterruptRouteDecision,
@@ -113,13 +96,5 @@ def build_task_planner_structured_outputs(
         confirmation_decision=with_structured_output(
             interrupt_llm,
             ConfirmationDecisionOutput,
-        ),
-        unsupported_capability=with_structured_output(
-            semantic_router_llm,
-            UnsupportedCapabilitySemanticOutput,
-        ),
-        unsupported_boundary_turn=with_structured_output(
-            semantic_router_llm,
-            UnsupportedBoundaryTurnOutput,
         ),
     )

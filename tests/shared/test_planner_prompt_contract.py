@@ -4,6 +4,9 @@ from typing import get_args
 
 import tiktoken
 
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import (
+    SEMANTIC_ROUTER_SYSTEM_PROMPT,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_interrupt_prompts import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT_COMPACT,
     INTERRUPT_ROUTER_SYSTEM_PROMPT_FULL,
@@ -16,9 +19,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_runtime import (
     PLANNER_PROMPT_BASELINE_RESULT,
     build_runtime_planner_system_prompt,
-)
-from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_semantic_router_prompts import (
-    SEMANTIC_ROUTER_SYSTEM_PROMPT,
 )
 from shared.types.planner import ContextReadSubtype
 

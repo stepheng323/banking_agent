@@ -24,7 +24,7 @@ from apps.chat.src.agent.orchestrator import OrchestratorAgent
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import UnsupportedBoundaryTurnOutput
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.gate.core.node import session_gate_direct_path
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_runtime import (
     refresh_runtime_planner_system_prompt,
 )

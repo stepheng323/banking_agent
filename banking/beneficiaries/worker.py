@@ -5,11 +5,13 @@ Handles basic CRUD operations for beneficiaries using UnitOfWork.
 
 from typing import Any
 
+from banking.beneficiaries.formatter import BeneficiaryFormatter
 from banking.beneficiaries.models import BeneficiaryIntent
 from banking.persistence.unit_of_work import UnitOfWork
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from shared.messaging.body_blocks import render_body_blocks_text
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -84,17 +86,21 @@ class BeneficiaryWorker:
             if response_shape in {"fact_count", "fact_bool"}:
                 count = len(beneficiaries)
                 if count == 0:
-                    lines = [render_message("beneficiary.list.count_zero", locale)]
+                    response = render_message("beneficiary.list.count_zero", locale)
                 elif count == 1:
-                    lines = [render_message("beneficiary.list.count_one", locale)]
+                    response = render_message("beneficiary.list.count_one", locale)
                 else:
-                    lines = [render_message("beneficiary.list.count_many", locale, {"count": count})]
-                preview_lines = self._beneficiary_preview_lines(beneficiaries[:3])
-                if preview_lines:
-                    lines.extend(["", render_message("beneficiary.list.preview_header", locale), *preview_lines])
+                    response = render_message("beneficiary.list.count_many", locale, {"count": count})
+                if beneficiaries:
+                    blocks = BeneficiaryFormatter.format_count_preview_blocks(
+                        beneficiaries,
+                        response,
+                        locale=locale,
+                    )
+                    response = response if blocks is None else render_body_blocks_text(blocks)
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    response="\n".join(lines),
+                    response=response,
                     details={"viewed_beneficiaries": simple_list} if simple_list else {},
                 )
 
@@ -104,32 +110,9 @@ class BeneficiaryWorker:
                     response=render_message("beneficiary.list.empty", locale),
                 )
 
-            lines = [render_message("beneficiary.list.header", locale), ""]
-            for b in beneficiaries:
-                alias = b.alias or b.account_name
-                account_name = b.account_name
-
-                if isinstance(alias, str) and isinstance(account_name, str) and alias.lower() != account_name.lower():
-                    name_line = f"*{alias}* ({account_name})"
-                else:
-                    name_line = f"*{alias}*"
-
-                detail_parts = []
-                if b.bank_name:
-                    detail_parts.append(b.bank_name)
-                if b.account_number:
-                    masked = f"…{b.account_number[-4:]}"
-                    detail_parts.append(masked)
-
-                details_line = "  " + " • ".join(detail_parts)
-
-                lines.append(name_line)
-                lines.append(details_line)
-                lines.append("")
-
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                response="\n".join(lines),
+                response=BeneficiaryFormatter.format_beneficiary_list(beneficiaries, locale=locale),
                 details={"viewed_beneficiaries": simple_list},
             )
         return TransactionResult(

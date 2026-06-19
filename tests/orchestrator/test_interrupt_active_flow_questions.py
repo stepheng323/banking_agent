@@ -674,3 +674,46 @@ def test_active_flow_question_classifier_does_not_steal_separate_banking_tasks(t
     )
 
     assert decision is None
+
+
+@pytest.mark.asyncio
+async def test_active_flow_question_unsupported_capability_refusal() -> None:
+    state = _state(
+        task_type="transfer",
+        kind="input",
+        text="I need money abeg",
+        required_fields=["amount"],
+        payload={"recipient_name": "Mum"},
+    )
+    planner = _RoutePlanner(
+        InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.9,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="router misclassified need money as continue_flow",
+        )
+    )
+
+    updates = await handle_pending_interrupt(state, _config(planner))
+
+    response = _say_text(updates)
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert "help with loans or lending" in response
+    assert "Reply with the amount" in response
+
+    state = _state(
+        task_type="transfer",
+        kind="input",
+        text="Buy bitcoin for me",
+        required_fields=["amount"],
+        payload={"recipient_name": "Mum"},
+    )
+    updates = await handle_pending_interrupt(state, _config(planner))
+
+    response = _say_text(updates)
+    assert updates["pending_interrupt"] == state.pending_interrupt
+    assert "help with investments or crypto" in response
+    assert "Reply with the amount" in response
+

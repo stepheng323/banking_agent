@@ -2,12 +2,14 @@
 
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.llm import CapabilityClassifierLLM
 from apps.chat.src.agent.orchestrator.config.dependencies import OrchestratorDependencies
 from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
 from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_topic_for_response
 from apps.chat.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.chat.src.agent.orchestrator.media.text import combine_media_text, format_media_caption_text
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
@@ -26,13 +28,18 @@ class OrchestratorAgent:
         self.context_manager = ContextManager(deps.user_repo, deps.beneficiary_repo, deps.account_repo)
         self.task_planner = TaskPlanner(
             planner_llm=deps.llm,
-            semantic_router_llm=deps.semantic_router_llm,
             interrupt_llm=deps.interrupt_llm,
             task_state_service=deps.task_state_service,
+        )
+        self.semantic_router_llm = SemanticRouterLLM(llm=deps.semantic_router_llm or deps.interrupt_llm or deps.llm)
+        self.capability_classifier_llm = CapabilityClassifierLLM(
+            llm=deps.semantic_router_llm or deps.interrupt_llm or deps.llm
         )
 
         self.orchestrator_handler = OrchestratorGraphHandler(
             task_planner=self.task_planner,
+            semantic_router_llm=self.semantic_router_llm,
+            capability_classifier_llm=self.capability_classifier_llm,
             transfer_service=self.deps.transfer_service,
             airtime_service=self.deps.airtime_service,
             query_service=self.deps.query_service,

@@ -6,7 +6,7 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity
 from apps.chat.src.agent.orchestrator.context.referents.resolution import build_resolved_referents
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
 _DATA_PLAN_QUERY_RE = re.compile(

@@ -66,13 +66,16 @@ async def _build_standard_conversational_response(
             route_logger=route_logger,
         )
     if response_key:
-        return _response_key_render_response(
+        return await _response_key_render_response(
             state=state,
+            state_view=state_view,
             planner_output=planner_output,
+            text=text,
             response_key=response_key,
             conversational_locale=conversational_locale,
             conversational_locale_updates=conversational_locale_updates,
             context_read_updates=context_read_updates,
+            conversation_responder=conversation_responder,
             route_logger=route_logger,
         )
     return await _missing_conversational_response_fallback(

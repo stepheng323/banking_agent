@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from typing import Literal
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_detection import (
+    detect_unsupported_capability,
+)
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LocaleCode
 from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply_sync
@@ -125,6 +128,22 @@ def _resolve_interrupt_shortcut(
     interrupt_kind: str,
     locale: LocaleCode | None,
 ) -> tuple[InterruptRouteDecision | None, str]:
+    if (unsupported := detect_unsupported_capability(text)) is not None:
+        detected_lang = _detected_language(locale) if locale is not None else "English"
+        return (
+            InterruptRouteDecision(
+                decision="active_flow_question",
+                confidence=0.99,
+                detected_language=detected_lang,
+                target_intent=None,
+                target_mode=None,
+                question_type="unsupported_or_unsafe",
+                unsafe_reason=unsupported.key,
+                reason=f"shortcut_unsupported_capability_{unsupported.key}",
+            ),
+            "matched",
+        )
+
     if locale not in SUPPORTED_SHORTCUT_LOCALES:
         return None, "unsupported_locale"
 

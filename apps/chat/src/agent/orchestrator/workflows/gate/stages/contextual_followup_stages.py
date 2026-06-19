@@ -8,16 +8,14 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_contex
     contextual_meta_fallback_reply,
     contextual_worker_fallback_reply,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
-from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import _support_user_id
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LocaleCode
-from banking.support.context_manager import SupportContextManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -179,7 +177,7 @@ async def _support_context_summary(ctx: GateContext) -> dict[str, Any] | None:
     if ctx.redis_client is None:
         return None
     try:
-        support_ctx = await SupportContextManager(ctx.redis_client).get(_support_user_id(ctx.state_view))
+        support_ctx = await ctx.ensure_support_context()
     except Exception as exc:
         logger.warning("gate_contextual_worker_support_context_failed", error=str(exc))
         return None

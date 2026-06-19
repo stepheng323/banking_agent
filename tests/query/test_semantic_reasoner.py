@@ -89,7 +89,9 @@ def _transaction_surface_item(index: int = 1) -> SurfaceItemView:
         id=f"txn-{index}",
         label=f"Payment {index}",
         amount=1000.0 * index,
-        payload=SelectionPayload(selection_kind="transaction", entity_type="transaction", entity_id=f"txn-{index}", label=f"Payment {index}"),
+        payload=SelectionPayload(
+            selection_kind="transaction", entity_type="transaction", entity_id=f"txn-{index}", label=f"Payment {index}"
+        ),
         metadata={"bank_name": "Access Bank", "status": "failed"},
     )
 

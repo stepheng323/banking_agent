@@ -73,7 +73,7 @@ async def _run_receipt_stream_worker(stop_event: asyncio.Event) -> None:
         stream_names=stream_names,
         group_name=f"{settings.project_name}-receipt-worker-{settings.runtime.infrastructure_environment}",
     )
-    logger.info("receipt_stream_worker_started", streams=stream_consumer.stream_names)
+    logger.info("receipt_stream_worker_started")
     await stream_consumer.ensure_groups()
     last_stale_claim = -_STALE_CLAIM_INTERVAL_SECONDS
 

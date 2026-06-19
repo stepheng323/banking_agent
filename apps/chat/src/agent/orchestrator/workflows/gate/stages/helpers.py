@@ -1,11 +1,14 @@
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
+    NON_BANKING_CONVERSATIONAL_INTENT,
+)
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 
 
 async def _build_bounded_conversational_reply(
     ctx: GateContext,
     locale: str,
     *,
-    intent: str = "non_banking_conversational",
+    intent: str = NON_BANKING_CONVERSATIONAL_INTENT,
     extra_user_ctx: dict[str, object] | None = None,
 ) -> str | None:
     """Generate a bounded conversational reply using the ConversationResponder."""

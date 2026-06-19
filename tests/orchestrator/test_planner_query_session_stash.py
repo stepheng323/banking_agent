@@ -103,7 +103,7 @@ async def test_planner_stashes_live_query_session_when_switching_to_transfer() -
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner,
+            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
             "redis_client": _RedisWithLiveQuerySession(),
             "services": {},
         },
@@ -153,7 +153,7 @@ async def test_planner_uses_stashed_query_session_context_when_redis_session_mis
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner,
+            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
             "redis_client": _RedisWithoutQuerySession(),
             "services": {},
         },
@@ -201,7 +201,7 @@ async def test_planner_uses_stashed_query_session_context_without_redis_client()
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner,
+            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
             "services": {},
         },
         "recursion_limit": 50,

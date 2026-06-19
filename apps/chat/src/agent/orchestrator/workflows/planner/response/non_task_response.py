@@ -4,8 +4,14 @@ from typing import Any
 
 import redis.asyncio as redis
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
+    get_unsupported_capability,
+)
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
-from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.reprompt.reprompt_flow import _reprompt_updates
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _detected_locale_value
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_cancellation import (
@@ -21,6 +27,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_c
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.bridge import render_safe_capability_fallback
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
@@ -54,6 +61,25 @@ async def _build_non_task_response(
     )
     if cancellation_response is not None:
         return cancellation_response
+
+    if planner_output and getattr(planner_output, "unsupported_capability", None) is not None:
+
+
+        unsupported_cap = planner_output.unsupported_capability
+        capability = get_unsupported_capability(unsupported_cap)
+        if capability is not None:
+            params = unsupported_capability_params(capability, locale=current_locale)
+            logger.info("planner_non_task_unsupported_capability", capability_key=capability.key)
+            return {
+                "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
+                "final_response": render_message(
+                    "capability.unsupported_unavailable",
+                    current_locale,
+                    params,
+                ),
+                **locale_updates,
+                **context_read_updates,
+            }
 
     if planner_output and planner_output.tasks:
         return None

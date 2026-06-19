@@ -11,6 +11,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
     unsupported_capability_label,
 )
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
+    get_unsupported_capability,
     get_unsupported_capability_by_policy_label,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import (
@@ -57,7 +58,16 @@ def _build_policy_notice(message_text: str, planner_output: PlannerOutput, local
     if not planner_output or not planner_output.tasks:
         return None
 
-    unsupported = _detect_unsupported_capabilities(message_text)
+    unsupported = []
+    unsupported_cap = getattr(planner_output, "unsupported_capability", None)
+    if unsupported_cap:
+        capability = get_unsupported_capability(unsupported_cap)
+        if capability is not None:
+            unsupported = [capability.policy_label]
+
+    if not unsupported:
+        unsupported = _detect_unsupported_capabilities(message_text)
+
     if not unsupported:
         return None
     logger.info("unsupported_detected", capabilities=unsupported)

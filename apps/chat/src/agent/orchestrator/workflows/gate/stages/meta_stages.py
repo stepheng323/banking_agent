@@ -9,6 +9,13 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import
     conversation_display_name,
     conversation_topic_for_response,
 )
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
+    NON_BANKING_CONVERSATIONAL_INTENT,
+    SOCIAL_META_INTENT,
+    SOCIAL_META_RENDER_PARAMS_CTX,
+    SOCIAL_META_RESPONSE_KEY_CTX,
+    SOCIAL_META_RESPONSE_KEYS,
+)
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import (
     deterministic_joke_fallback,
     redirect_text,
@@ -22,13 +29,14 @@ from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
     classify_deterministic_meta_response,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _locale_update
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response
-from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response
+from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
     _route_observability_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
+from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _locale_update
+from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import _build_query_session_exit_updates
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -117,7 +125,21 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
             response_key = "conversational.greeting_named"
             render_params = {**(render_params or {}), "display_name": display_name}
     if isinstance(render_params, dict) and render_params.get("casual_kind") == "joke":
-        final_response = f"{deterministic_joke_fallback(casual_streak=0)}\n{redirect_text(locale, casual_streak=0)}"
+        final_response = await _build_bounded_conversational_reply(
+            ctx,
+            locale,
+            intent=NON_BANKING_CONVERSATIONAL_INTENT,
+        ) or f"{deterministic_joke_fallback(casual_streak=0)}\n{redirect_text(locale, casual_streak=0)}"
+    elif response_key in SOCIAL_META_RESPONSE_KEYS:
+        final_response = await _build_bounded_conversational_reply(
+            ctx,
+            locale,
+            intent=SOCIAL_META_INTENT,
+            extra_user_ctx={
+                SOCIAL_META_RESPONSE_KEY_CTX: response_key,
+                SOCIAL_META_RENDER_PARAMS_CTX: render_params or {},
+            },
+        ) or render_message(response_key, locale, render_params)
     else:
         final_response = render_message(response_key, locale, render_params)
     return {

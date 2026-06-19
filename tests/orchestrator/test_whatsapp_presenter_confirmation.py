@@ -3,7 +3,7 @@ from typing import Any, cast
 import pytest
 
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
-from shared.messaging.intents import RequestAuth, RequestConfirmation, SendTyping
+from shared.messaging.intents import RequestAuth, RequestConfirmation, Say, SendTyping
 from shared.messaging.presenters.base import PresentationContext
 from shared.messaging.presenters.whatsapp import WhatsAppPresenter
 
@@ -25,6 +25,26 @@ class _StubFlowWhatsAppClient:
     async def send_typing_indicator(self, message_id: str) -> dict[str, Any]:
         self.typing_calls.append(message_id)
         return {}
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_presenter_say_prefers_body_blocks() -> None:
+    client = _StubFlowWhatsAppClient()
+    presenter = WhatsAppPresenter(cast(MessagingClient, client))
+    intent = Say(
+        text="dense fallback",
+        body_blocks=[
+            {"type": "heading", "text": "Balances"},
+            {"type": "text", "text": "Access Bank\n···0003\n₦30,000.00"},
+        ],
+    )
+    context = PresentationContext(channel="whatsapp", phone_number="123456789")
+
+    message_id = await presenter._present_say(intent, context)
+
+    assert message_id == "wa-text-msg-1"
+    assert client.text_calls[0]["text"] == "Balances\n\nAccess Bank\n···0003\n₦30,000.00"
+    assert "dense fallback" not in client.text_calls[0]["text"]
 
 
 @pytest.mark.asyncio

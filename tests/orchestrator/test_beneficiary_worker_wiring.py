@@ -18,7 +18,11 @@ class _InjectedBeneficiaryWorker:
         return TransactionResult(
             outcome=TransactionOutcome.OK,
             response="Saved beneficiaries",
-            details={"viewed_beneficiaries": [{"name": "Tolu", "alias": "Tolu"}]},
+            details={
+                "viewed_beneficiaries": [
+                    {"name": "Tolu Adebayo", "alias": "Tolu", "bank": "Access Bank", "account": "2010000001"}
+                ]
+            },
         )
 
 
@@ -52,4 +56,9 @@ async def test_beneficiary_management_uses_injected_service() -> None:
     assert worker.calls[0]["context"]["phone_number"] == "2348000000001"
     assert task.stage == TaskStage.COMPLETED
     assert task.payload["result"] == "Saved beneficiaries"
-    assert ctx.accumulator.to_updates()["outbox"] == [{"type": "say", "text": "Saved beneficiaries"}]
+    outbox = ctx.accumulator.to_updates()["outbox"]
+    assert outbox[0]["text"] == "Saved beneficiaries"
+    assert outbox[0]["body_blocks"] == [
+        {"type": "heading", "text": "Saved beneficiaries"},
+        {"type": "text", "text": "1. Tolu — Tolu Adebayo\nAccess Bank • ···0001"},
+    ]

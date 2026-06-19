@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.data_domain_stages import _stage_data_domain
-from apps.chat.src.agent.orchestrator.workflows.gate.state_view import gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import gate_state_view
 from apps.chat.src.agent.orchestrator.workflows.planner.task_flow.task_flow_build import (
     _build_planner_task_updates,
 )
@@ -185,6 +185,8 @@ async def test_direct_data_gate_blocks_before_task_creation(tmp_path: Path) -> N
             config={"configurable": {}},
             redis_client=None,
             task_planner=None,
+            semantic_router_llm=None,
+            capability_classifier_llm=None,
             conversation_responder=None,
             message_text="Buy 1GB data",
             current_locale="en",

@@ -8,6 +8,7 @@ from typing import Any
 
 import apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry as unsupported_registry
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual as contextual_responder
+import apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents as responder_intents
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_text as responder_text
 from apps.chat.src.agent.assistant_profile.voice import build_conversation_voice_block
 
@@ -26,6 +27,7 @@ class ConversationResponderPromptInput:
     prefers_banking_humor: bool
     is_joke_turn: bool
     is_banking_reaction: bool
+    is_social_meta: bool
     is_contextual_worker_followup: bool
     is_contextual_meta_followup: bool
     is_unsupported_capability_followup: bool
@@ -57,6 +59,27 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
             "- No generic banking redirect.\n"
             "- No markdown, no emojis.\n"
             "- If no specific grounded acknowledgement is possible, return an empty string.\n"
+        )
+    elif prompt_input.is_social_meta:
+        system += (
+            "The user's message is a social opener, check-in, or thanks for the banking assistant.\n"
+            "Write ONLY the final short reply. Do not add a separate redirect line.\n"
+            "Rules:\n"
+            "- Match the user's energy, vibe, and tone lightly while staying professional.\n"
+            "- Keep it to 1 or 2 short sentences.\n"
+            "- For greetings and check-ins: if the conversation history is empty or we haven't offered help "
+            "yet, include a natural banking anchor (offer help with transfers, airtime/data, balances, or "
+            "transaction queries). If the history shows we already introduced these capabilities, do NOT repeat "
+            "the full list of services; instead, use a brief banking constraint (e.g. 'how can I help with your "
+            "banking today?' or 'what banking task can we do next?') to keep the conversation scoped to banking "
+            "without being repetitive.\n"
+            "- For thanks, acknowledge briefly and invite the next banking task if it feels natural.\n"
+            "- Do not start a support, query, transfer, airtime, data, account, or FAQ workflow.\n"
+            "- Do not offer to retry, send money, buy anything, create tickets, refund, or reverse anything.\n"
+            "- No financial, legal, medical, tax, or investment advice.\n"
+            "- No promises about unsupported capabilities.\n"
+            "- No markdown, no emojis.\n"
+            "- If the user's message is unsafe or not a social/meta turn, return an empty string.\n"
         )
     elif prompt_input.is_contextual_meta_followup:
         system += (
@@ -103,6 +126,7 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
         not prompt_input.is_contextual_worker_followup
         and not prompt_input.is_contextual_meta_followup
         and not prompt_input.is_unsupported_capability_followup
+        and not prompt_input.is_social_meta
         and prompt_input.casual_streak >= 2
     ):
         system += "- The user has stayed in casual-chat mode for several turns, so keep the reply extra short.\n"
@@ -159,6 +183,16 @@ def _build_user_prompt(prompt_input: ConversationResponderPromptInput) -> str:
             user_parts.append(f"Last assistant message: {last_assistant_message.strip()}")
         if grounding_turn_lines := _grounding_turn_lines(prompt_input.grounding):
             user_parts.append("Safe recent turns:\n" + "\n".join(grounding_turn_lines))
+
+    if prompt_input.is_social_meta:
+        response_key = prompt_input.user_ctx.get(responder_intents.SOCIAL_META_RESPONSE_KEY_CTX)
+        if response_key:
+            user_parts.append(f"Social response key: {response_key}")
+        render_params = prompt_input.user_ctx.get(responder_intents.SOCIAL_META_RENDER_PARAMS_CTX)
+        if isinstance(render_params, dict):
+            display_name = render_params.get("display_name")
+            if display_name:
+                user_parts.append(f"Suggested display name: {display_name}")
 
     contextual_summary = prompt_input.user_ctx.get(contextual_responder.CONTEXTUAL_WORKER_FOLLOWUP_INTENT)
     if prompt_input.is_contextual_worker_followup and contextual_summary:

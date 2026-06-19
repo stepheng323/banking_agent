@@ -12,17 +12,15 @@ from apps.chat.src.agent.orchestrator.guardrails.gibberish import looks_like_gib
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.deterministic import (
     classify_deterministic_meta_response,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.language import _resolve_explicit_language_switch
-from apps.chat.src.agent.orchestrator.workflows.gate.locale_state import _locale_update
-from apps.chat.src.agent.orchestrator.workflows.gate.mandate_state import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response
+from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.state.locale_state import _locale_update
+from apps.chat.src.agent.orchestrator.workflows.gate.state.mandate_state import (
     _has_pending_mandate_without_ready_accounts,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import _route_observability_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.language import _resolve_explicit_language_switch
 from banking.presentation.i18n.bridge import render_locale_switched
-
-# Explicit imports from gate.py helpers
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.transactions.shared.confirmation.classifier import classify_confirmation_reply_sync

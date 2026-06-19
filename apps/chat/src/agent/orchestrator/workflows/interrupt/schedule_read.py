@@ -5,6 +5,7 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextFrameType
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import (
     _could_be_schedule_interrupt_read_request,
@@ -14,7 +15,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_f
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_response as build_context_frame_followup_response,
 )
-from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ContextFrameFollowupDecision
 
@@ -24,7 +24,7 @@ async def _resolve_schedule_read_during_pending_confirmation(
     state: OrchestratorState,
     interrupt: Any,
     text: str,
-    task_planner: TaskPlanner | None,
+    task_planner: SemanticRouterLLM | None,
     current_task_types: set[str],
 ) -> dict[str, Any] | None:
     """Answer read-only schedule asks without replaying a pending schedule confirmation."""

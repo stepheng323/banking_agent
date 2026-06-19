@@ -17,6 +17,14 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semant
     validate_semantic_unsupported_capability,
     validate_unsupported_boundary_turn,
 )
+from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_routing.pipeline import _handle_semantic_route
+from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_unsupported import _build_policy_notice
+from apps.chat.src.agent.orchestrator.workflows.planner.response.non_task_response import _build_non_task_response
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
+from shared.types.planner import PlannerOutput, SemanticRouteDecision, make_planned_task
 
 
 class _FakeStructuredLLM:
@@ -33,6 +41,7 @@ class _FakeStructuredLLM:
     ("text", "expected_key"),
     [
         ("Can you borrow me money?", "lending"),
+        ("I need money abeg", "lending"),
         ("Buy bitcoin for me", "investments"),
         ("What stock should I buy?", "financial_advice"),
         ("Can you send money abroad?", "international_transfers"),
@@ -257,3 +266,87 @@ async def test_boundary_turn_classifier_uses_structured_llm() -> None:
     assert output.capability_key == "lending"
     assert llm.messages is not None
     assert "I will pay back" in llm.messages[1]["content"]
+
+
+def test_build_policy_notice_uses_planner_output_unsupported_capability() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        unsupported_capability="lending",
+        tasks=[
+            make_planned_task(
+                task_id="t1",
+                executor="transfer",
+                action="send_money",
+                instruction="Send 2000 to Mum",
+                parameters={"amount": 2000, "recipient_name": "Mum"},
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+    notice = _build_policy_notice("send 2k to Mum and lend me 50k", planner_output, locale="en")
+    assert notice is not None
+    assert "loans or lending" in notice
+    assert "transfer" in notice
+
+
+@pytest.mark.asyncio
+async def test_build_non_task_response_handles_unsupported_capability() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        unsupported_capability="investments",
+        tasks=[]
+    )
+    state = OrchestratorState(user_id="u_1", phone_number="2348000000000")
+    state_view = planner_state_view(state)
+
+    response = await _build_non_task_response(
+        state=state,
+        state_view=state_view,
+        planner_output=planner_output,
+        text="buy bitcoin",
+        redis_client=None,
+        active_intent=None,
+        current_locale="en",
+        locale_updates={},
+        context_read_updates={},
+    )
+    assert response is not None
+    assert response["capability_boundary"].key == "investments"
+    assert "investments or crypto" in response["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_handle_semantic_route_intercepts_unsupported_capability() -> None:
+    state = OrchestratorState(
+        user_id="u_1",
+        phone_number="2348000000000",
+        last_message_text="give me loans",
+        loaded_context={"language": "en"},
+    )
+    ctx = GateContext(
+        state=state,
+        state_view=gate_state_view(state),
+        config={"configurable": {}},
+        redis_client=None,
+        task_planner=None,
+        semantic_router_llm=None,
+        capability_classifier_llm=None,
+        conversation_responder=None,
+        message_text="give me loans",
+        current_locale="en",
+        gate_updates={},
+        live_pending_interrupt=False,
+        phrase_heavy_fastpath_allowed=True,
+    )
+
+    decision = SemanticRouteDecision(
+        decision="direct_reply",
+        conf=0.95,
+        unsupported_cap="lending"
+    )
+
+    result = await _handle_semantic_route(ctx, decision)
+    assert result is not None
+    assert result["capability_boundary"].key == "lending"
+    assert "loans or lending" in result["final_response"]
+

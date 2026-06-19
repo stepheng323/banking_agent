@@ -138,6 +138,10 @@ UNSUPPORTED_CAPABILITY_REGISTRY: tuple[UnsupportedCapability, ...] = (
             r"(?:give|offer|provide)\s+(?:me|us)\s+(?:a\s+)?loan\b|"
             r"i\s+(?:need|want|would\s+like)\s+(?:to\s+borrow|a\s+loan|loan)\b)",
             r"\b(?:loan|loans|lending|lend\s+me|borrow\s+me|credit\s+me|salary\s+advance)\b",
+            r"\b(?:need\s+money|want\s+money|give\s+me\s+money|borrow\s+me\s+money|lend\s+me\s+money)\b",
+            r"\b(?:mo\s+fe\s+owo|nilo\s+owo|fun\s+mi\s+lọwọ|fun\s+mi\s+n[io]\s+owo)\b",
+            r"\b(?:nye\s+m\s+ego|choro\s+ego|nilo\s+ego)\b",
+            r"\b(?:ba\s+ni\s+kudi|ina\s+son\s+kudi|ina\s+bukatar\s+kudi)\b",
             r"\b(?:ya\s+mi\s+lowo|fun\s+mi\s+ni\s+loan|mo\s+fe\s+loan|awin|owo\s+awin|gbese)\b",
             r"\b(?:ba\s+ni|bani|a\s+ba\s+ni)\s+(?:rance|lamuni|bashi)\b",
             r"\b(?:ina\s+son|ina\s+bukatar)\s+(?:rance|lamuni|bashi)\b",

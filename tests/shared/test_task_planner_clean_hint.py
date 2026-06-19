@@ -66,7 +66,7 @@ def test_clean_transfer_hint_adds_source_aware_guidance() -> None:
     assert '"bank_name":null' not in context
     assert '"narration":"Lunch"' in context
     assert "omit recipient_bank_name and bank_name" in context
-    assert "Treat every word in \"Tolu Access\" as recipient alias text" in context
+    assert 'Treat every word in "Tolu Access" as recipient alias text' in context
     assert 'Wrong: {"bank_name":"Access Bank"}' in context
 
 

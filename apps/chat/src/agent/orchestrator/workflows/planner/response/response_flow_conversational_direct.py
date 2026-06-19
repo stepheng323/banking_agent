@@ -1,9 +1,20 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
+    SOCIAL_META_INTENT,
+    SOCIAL_META_RENDER_PARAMS_CTX,
+    SOCIAL_META_RESPONSE_KEY_CTX,
+    SOCIAL_META_RESPONSE_KEYS,
+)
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_policy_aware_greeting
-from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_common import _localized_planner_response
+from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_common import (
+    _build_bounded_conversational_reply,
+    _localized_planner_response,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_logging import _log_unexpected_turn_route
+from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.message_keys import is_message_key
 from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import PlannerOutput
@@ -38,17 +49,47 @@ def _direct_planner_response(
     }
 
 
-def _response_key_render_response(
+async def _response_key_render_response(
     *,
     state: OrchestratorState,
+    state_view: PlannerStateView,
     planner_output: PlannerOutput,
+    text: str,
     response_key: str,
     conversational_locale: str,
     conversational_locale_updates: dict[str, Any],
     context_read_updates: dict[str, Any],
+    conversation_responder: ConversationResponder | None,
     route_logger: Any | None,
 ) -> dict[str, Any]:
     logger.info("planner_response_key_used", key=response_key, locale=conversational_locale)
+    if response_key in SOCIAL_META_RESPONSE_KEYS:
+        responder_reply = await _build_bounded_conversational_reply(
+            state_view=state_view,
+            text=text,
+            locale=conversational_locale,
+            conversation_responder=conversation_responder,
+            intent=SOCIAL_META_INTENT,
+            extra_user_ctx={
+                SOCIAL_META_RESPONSE_KEY_CTX: response_key,
+                SOCIAL_META_RENDER_PARAMS_CTX: {},
+            },
+        )
+        if responder_reply:
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="conversation_responder",
+                route_reason=f"response_key:{response_key}",
+                policy_blocked=False,
+                fallback_path="planner_non_task",
+                route_logger=route_logger,
+            )
+            return {
+                "final_response": responder_reply,
+                **conversational_locale_updates,
+                **context_read_updates,
+            }
     if response_key == "conversational.greeting":
         return {
             "final_response": _build_policy_aware_greeting(conversational_locale),

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_semantic_router_prompts import (
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import (
     SEMANTIC_ROUTER_SYSTEM_PROMPT,
 )
 

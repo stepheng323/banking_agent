@@ -3,17 +3,18 @@ from typing import Any
 from banking.accounts.mandate_state import effective_mandate_status
 from banking.presentation.formatters.accounts import get_bank_label, get_last4
 from banking.presentation.i18n.renderer import render_message
+from shared.messaging.body_blocks import MessageDocument, render_body_blocks_text
 from shared.money import MoneyAmount
 
-STATUS_ICONS = {
-    "ready": "✓",
-    "pending": "○",
-    "awaiting_authorization": "○",
-    "approved": "○",
-    "expired": "!",
-    "cancelled": "!",
-    "paused": "!",
-    "rejected": "!",
+STATUS_LABELS = {
+    "ready": "Active",
+    "pending": "Finish setup",
+    "awaiting_authorization": "Finish setup",
+    "approved": "Activating",
+    "expired": "Unlinked",
+    "cancelled": "Unlinked",
+    "paused": "Paused",
+    "rejected": "Unlinked",
     None: "",
 }
 
@@ -28,32 +29,51 @@ class AccountFormatter:
     @staticmethod
     def format_account_list(accounts: list[Any], locale: str = "en") -> str:
         """Format list of accounts for display."""
-        if not accounts:
-            return render_message("account.list.empty", locale)
+        return render_body_blocks_text(AccountFormatter.format_account_list_blocks(accounts, locale=locale)) or (
+            render_message("account.list.empty", locale)
+        )
 
-        lines = [render_message("account.list.header", locale), ""]
+    @staticmethod
+    def format_account_list_blocks(accounts: list[Any], locale: str = "en") -> MessageDocument | None:
+        """Format linked accounts as mobile-friendly message blocks."""
+        del locale
+        if not accounts:
+            return None
+
+        blocks: MessageDocument = [{"type": "heading", "text": "Linked accounts"}]
+        action_hints: list[str] = []
 
         for i, account in enumerate(accounts, 1):
             bank_name = get_bank_label(account)
             last4 = get_last4(account)
-
-            if isinstance(account, dict):
-                is_default = account.get("is_default", False)
-            else:
-                is_default = getattr(account, "is_default", False)
-
-            default_badge = render_message("account.list.default_badge", locale) if is_default else ""
+            is_default = (
+                account.get("is_default", False) if isinstance(account, dict) else getattr(account, "is_default", False)
+            )
+            default_label = "Default" if is_default else ""
             effective_status = effective_mandate_status(account)
-            status_icon = STATUS_ICONS.get(effective_status, "")
-            status_suffix = f" [{status_icon}]" if status_icon else ""
+            status_label = STATUS_LABELS.get(effective_status, "")
             masked = AccountFormatter._mask_from_last4(last4)
+            detail_parts = [part for part in (default_label, status_label) if part]
+            detail_line = " • ".join(detail_parts)
+            title = f"{i}. {bank_name} ({masked})"
+            if not detail_line:
+                detail_line = "Linked"
 
-            lines.append(f"{i}. {bank_name} ({masked}){default_badge}{status_suffix}")
+            blocks.append(
+                {
+                    "type": "text",
+                    "text": f"{title} — {detail_line}",
+                }
+            )
 
-        lines.append("")
-        lines.append(render_message("account.list.commands_hint", locale))
+            if effective_status in {"expired", "cancelled", "rejected"} and len(action_hints) < 1:
+                action_hints.append(f"link {bank_name}")
 
-        return "\n".join(lines)
+        if len(accounts) > 1:
+            action_hints.append("set 2 as default")
+        action_hints.append("unlink GTB")
+        blocks.append({"type": "text", "text": f"Actions: {' | '.join(action_hints)}"})
+        return blocks
 
     @staticmethod
     def _mask_account(account_number: str | None) -> str:
@@ -64,40 +84,32 @@ class AccountFormatter:
     @staticmethod
     def format_balance_response(balances: list[dict], total_balance: MoneyAmount | None, locale: str = "en") -> str:
         """Format balance check response as natural language."""
+        return render_body_blocks_text(
+            AccountFormatter.format_balance_response_blocks(balances, total_balance, locale=locale)
+        ) or render_message("account.balance.none_available", locale)
+
+    @staticmethod
+    def format_balance_response_blocks(
+        balances: list[dict],
+        total_balance: MoneyAmount | None,
+        locale: str = "en",
+    ) -> MessageDocument | None:
+        """Format account balances as mobile-friendly message blocks."""
+        del locale
         if not balances:
-            return render_message("account.balance.none_available", locale)
+            return None
 
-        if len(balances) == 1:
-            bal = balances[0]
-            masked = AccountFormatter._mask_account(bal.get("account_number"))
-            return render_message(
-                "account.balance.natural_single",
-                locale,
-                {
-                    "bank_name": bal["bank_name"],
-                    "masked": masked,
-                    "amount": f"{bal['amount']:,.2f}",
-                },
-            )
-
-        lines = [render_message("account.balance.natural_multi_intro", locale), ""]
-
+        blocks: MessageDocument = [{"type": "heading", "text": "Balances"}]
         for bal in balances:
             masked = AccountFormatter._mask_account(bal.get("account_number"))
-            lines.append(
-                render_message(
-                    "account.balance.natural_multi_item",
-                    locale,
-                    {
-                        "bank_name": bal["bank_name"],
-                        "masked": masked,
-                        "amount": f"{bal['amount']:,.2f}",
-                    },
-                )
+            blocks.append(
+                {
+                    "type": "text",
+                    "text": f"{bal['bank_name']} ({masked}): ₦{bal['amount']:,.2f}",
+                }
             )
 
         if total_balance is not None:
-            lines.append("")
-            lines.append(render_message("account.balance.total", locale, {"total_balance": f"{total_balance:,.2f}"}))
+            blocks.append({"type": "key_value", "label": "Total", "value": f"₦{total_balance:,.2f}"})
 
-        return "\n".join(lines)
+        return blocks

@@ -173,7 +173,7 @@ async def test_planner_does_not_call_legacy_review_or_repair_paths() -> None:
         last_message_text="send 10k to mum",
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "redis_client": None},
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": None},
         "recursion_limit": 50,
     }
 
@@ -218,7 +218,7 @@ async def test_planner_uses_expected_executor_signals_in_single_call() -> None:
         preplanner_expected_transaction_executors=["transfer", "airtime"],
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "redis_client": None},
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": None},
         "recursion_limit": 50,
     }
 

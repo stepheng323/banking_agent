@@ -146,7 +146,7 @@ async def process_flow_request(req: Request) -> tuple[ProcessedRequest | None, R
     encrypted_fields_present = _ENCRYPTED_REQUEST_FIELDS.intersection(body)
     missing_encrypted_fields = _ENCRYPTED_REQUEST_FIELDS.difference(body)
     request_was_encrypted = is_encrypted(body)
-    logger.info(
+    logger.debug(
         "whatsapp_flow_request_received",
         payload_keys=_safe_keys(body),
         request_was_encrypted=request_was_encrypted,
@@ -226,7 +226,7 @@ async def process_flow_request(req: Request) -> tuple[ProcessedRequest | None, R
         authorizing_channel_user_id = _extract_whatsapp_authorizer(body)
         payload_keys = _safe_keys(body)
 
-    logger.info(
+    logger.debug(
         "whatsapp_flow_request_processed",
         screen=screen,
         action=action,

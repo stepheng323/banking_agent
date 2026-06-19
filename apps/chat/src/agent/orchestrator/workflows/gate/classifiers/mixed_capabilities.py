@@ -177,14 +177,14 @@ def analyze_mixed_supported_unsupported(text: str | None) -> MixedCapabilityMatc
 
 async def _semantic_unsupported_clause(
     *,
-    task_planner: Any,
+    capability_classifier_llm: Any,
     clause: str,
     locale: str,
 ) -> UnsupportedCapability | None:
-    if task_planner is None or not should_try_semantic_unsupported_capability(clause):
+    if capability_classifier_llm is None or not should_try_semantic_unsupported_capability(clause):
         return None
     try:
-        decision = await task_planner.classify_unsupported_capability(
+        decision = await capability_classifier_llm.classify_unsupported_capability(
             clause,
             locale=locale,
             context="None",
@@ -200,7 +200,7 @@ async def analyze_mixed_supported_unsupported_semantic(
     *,
     text: str,
     locale: str,
-    task_planner: Any,
+    capability_classifier_llm: Any,
 ) -> MixedCapabilityMatch | None:
     clauses = _split_clauses(text)
     if len(clauses) < 2:
@@ -221,7 +221,7 @@ async def analyze_mixed_supported_unsupported_semantic(
             continue
 
         semantic_capability = await _semantic_unsupported_clause(
-            task_planner=task_planner,
+            capability_classifier_llm=capability_classifier_llm,
             clause=clause,
             locale=locale,
         )

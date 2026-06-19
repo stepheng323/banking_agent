@@ -7,7 +7,7 @@ from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.beneficiary_suggestions import (
     _resolve_beneficiary_suggestion_reply,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.gate.core.node import session_gate_direct_path
 from shared.types.planner import SemanticRouteDecision
 
 
@@ -117,7 +117,7 @@ async def test_gate_suggestion_save_alias_creates_beneficiary_task_without_plann
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"redis_client": redis_client, "task_planner": planner},
+        "configurable": {"redis_client": redis_client, "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
         "recursion_limit": 50,
     }
 
@@ -252,7 +252,7 @@ async def test_gate_suggestion_bare_alias_creates_beneficiary_task_without_plann
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"redis_client": redis_client, "task_planner": planner},
+        "configurable": {"redis_client": redis_client, "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
         "recursion_limit": 50,
     }
 

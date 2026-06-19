@@ -40,6 +40,16 @@ BANKING_REFUSAL_PATTERN_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+SOCIAL_META_REFUSAL_PATTERN_RE = re.compile(
+    r"\b(?:"
+    r"i can(?:not|'t)\s+(?:help|provide|do)\b|"
+    r"sorry[, ]+\s*i can(?:not|'t)\b|"
+    r"i\s+stay\s+on\s+banking\b|"
+    r"(?:banking|money)\s+(?:tasks?|needs?)\s+only\b|"
+    r"(?:only|just)\s+(?:handle|do|support)\s+(?:banking|money)\b"
+    r")",
+    re.IGNORECASE,
+)
 JOKE_PATTERN_RE = re.compile(r"\b(?:joke|funny|laugh|another one)\b", re.IGNORECASE)
 CASUAL_FACT_PATTERN_RE = re.compile(
     r"\b(?:"
@@ -118,7 +128,12 @@ def fold_text(text: str | None) -> str:
     return WHITESPACE_RE.sub(" ", without_marks.casefold()).strip()
 
 
-def is_banking_refusal_reply(raw_text: str | None, *, locale: str) -> bool:
+def is_banking_refusal_reply(
+    raw_text: str | None,
+    *,
+    locale: str,
+    allow_positive_banking_anchor: bool = False,
+) -> bool:
     if not raw_text:
         return False
     localized = normalize_reply_text(render_text(raw_text, locale))
@@ -129,6 +144,8 @@ def is_banking_refusal_reply(raw_text: str | None, *, locale: str) -> bool:
         return True
     if localized.endswith(f"\n{redirect_text}") or localized.endswith(f" {redirect_text}"):
         return True
+    if allow_positive_banking_anchor:
+        return bool(SOCIAL_META_REFUSAL_PATTERN_RE.search(localized))
     return bool(BANKING_REFUSAL_PATTERN_RE.search(localized))
 
 
@@ -167,7 +184,12 @@ def count_trailing_casual_replies(history: list[Any], *, locale: str) -> int:
     return streak
 
 
-def sanitize_preface(raw_text: str | None, *, locale: str) -> str | None:
+def sanitize_preface(
+    raw_text: str | None,
+    *,
+    locale: str,
+    allow_positive_banking_anchor: bool = False,
+) -> str | None:
     if not raw_text:
         return None
     localized = normalize_reply_text(render_text(raw_text, locale))
@@ -179,7 +201,11 @@ def sanitize_preface(raw_text: str | None, *, locale: str) -> str | None:
         return None
     if BLOCKED_PATTERN_RE.search(localized):
         return None
-    if is_banking_refusal_reply(localized, locale=locale):
+    if is_banking_refusal_reply(
+        localized,
+        locale=locale,
+        allow_positive_banking_anchor=allow_positive_banking_anchor,
+    ):
         return None
     return localized
 

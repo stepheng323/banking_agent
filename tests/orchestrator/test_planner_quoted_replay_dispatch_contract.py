@@ -88,7 +88,7 @@ async def test_dispatch_enforces_skip_extraction_and_fresh_execution_fields() ->
         _state(),
         {
             "configurable": {
-                "task_planner": planner,
+                "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
                 "redis_client": None,
                 "actionable_message_repo": _ActionableRepoStub({"transaction_id": "tx-1"}),
             }
@@ -128,7 +128,7 @@ async def test_dispatch_clarifies_when_replay_payload_is_insufficient() -> None:
         _state(),
         {
             "configurable": {
-                "task_planner": planner,
+                "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
                 "redis_client": None,
                 "actionable_message_repo": _ActionableRepoStub({"transaction_id": "tx-1"}),
             }
@@ -166,7 +166,7 @@ async def test_dispatch_clarifies_when_actionable_seed_missing() -> None:
         _state(),
         {
             "configurable": {
-                "task_planner": planner,
+                "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
                 "redis_client": None,
                 "actionable_message_repo": _ActionableRepoStub(None),
             }
@@ -201,7 +201,7 @@ async def test_dispatch_accepts_transfer_payload_seeded_by_beneficiary_id() -> N
         _state(),
         {
             "configurable": {
-                "task_planner": planner,
+                "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
                 "redis_client": None,
                 "actionable_message_repo": _ActionableRepoStub({"transaction_id": "tx-1"}),
             }

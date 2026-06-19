@@ -9,6 +9,7 @@ from typing import Any, Literal
 import redis.asyncio as redis
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
+from apps.chat.src.agent.orchestrator.capabilities.llm import CapabilityClassifierLLM
 from apps.chat.src.agent.orchestrator.context.context_manager import ContextManager
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.graph import build_orchestrator_graph
@@ -28,6 +29,7 @@ from apps.chat.src.agent.orchestrator.graph.runtime import (
 )
 from apps.chat.src.agent.orchestrator.graph.thread_lock import thread_invocation_lock
 from apps.chat.src.agent.orchestrator.models.message_context import MessageContext
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
@@ -64,6 +66,8 @@ class OrchestratorGraphHandler:
     def __init__(
         self,
         task_planner: TaskPlanner,
+        semantic_router_llm: SemanticRouterLLM,
+        capability_classifier_llm: CapabilityClassifierLLM,
         transfer_service: WorkerProtocol,
         airtime_service: WorkerProtocol,
         query_service: WorkerProtocol,
@@ -85,6 +89,8 @@ class OrchestratorGraphHandler:
         mode: Literal["planning", "execution", "both"] = "both",
     ):
         self.task_planner = task_planner
+        self.semantic_router_llm = semantic_router_llm
+        self.capability_classifier_llm = capability_classifier_llm
         self.redis_client = redis_client
         self.publisher = publisher
         self.progress_delivery = OrchestratorProgressDelivery(publisher)
@@ -161,6 +167,8 @@ class OrchestratorGraphHandler:
     def _graph_config_dependencies(self) -> GraphConfigDependencies:
         return GraphConfigDependencies(
             task_planner=self.task_planner,
+            semantic_router_llm=self.semantic_router_llm,
+            capability_classifier_llm=self.capability_classifier_llm,
             services=self.services,
             user_repo=self.user_repo,
             beneficiary_repo=self.beneficiary_repo,

@@ -32,6 +32,9 @@ from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import FocusedReferent
+from banking.transactions.query.models.domain import QueryResult
+from banking.transactions.query.presentation.formatter import QueryFormatter
+from shared.messaging.body_blocks import MessageDocument
 
 
 class QueryTaskExecutor:
@@ -91,14 +94,18 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         if result.response:
             set_task_payload_value(task, "result", result.response)
             pagination_payload = query_pagination_actionable_payload(ctx, result)
+            body_blocks = _query_response_body_blocks(ctx, result)
             if pagination_payload:
-                ctx.accumulator.add_outbox(
-                    {
-                        "type": "say",
-                        "text": result.response,
-                        "actionable_payload": pagination_payload,
-                    }
-                )
+                outbox_entry: dict[str, Any] = {
+                    "type": "say",
+                    "text": result.response,
+                    "actionable_payload": pagination_payload,
+                }
+                if body_blocks:
+                    outbox_entry["body_blocks"] = body_blocks
+                ctx.accumulator.add_outbox(outbox_entry)
+            elif body_blocks:
+                ctx.accumulator.add_outbox({"type": "say", "text": result.response, "body_blocks": body_blocks})
             else:
                 ctx.accumulator.say(result.response)
 
@@ -161,6 +168,32 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
                 interrupt_policy="ALLOW",
                 task_id=task_id,
             )
+
+
+def _query_response_body_blocks(ctx: ExecutionTurnContext, result: TransactionResult) -> MessageDocument | None:
+    if not isinstance(result.patch, dict):
+        return None
+
+    query_result = result.patch.get("query_result")
+    if isinstance(query_result, dict):
+        try:
+            query_result = QueryResult.model_validate(query_result)
+        except ValueError:
+            return None
+    if not isinstance(query_result, QueryResult):
+        return None
+
+    try:
+        current_page = int(result.patch.get("current_page") or 0)
+    except (TypeError, ValueError):
+        current_page = 0
+
+    return QueryFormatter.format_blocks(
+        query_result,
+        current_page=current_page,
+        has_more=bool(query_result.has_more),
+        locale=_state_locale(ctx.state),
+    )
 
 
 __all__ = ["QueryTaskExecutor"]

@@ -96,6 +96,26 @@ class _StubUnitOfWork:
 
 
 @pytest.mark.asyncio
+async def test_telegram_presenter_say_prefers_body_blocks() -> None:
+    client = _StubFlowTelegramClient()
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+    intent = Say(
+        text="dense fallback",
+        body_blocks=[
+            {"type": "heading", "text": "Saved beneficiaries"},
+            {"type": "text", "text": "1. Mum\nMama Nkechi\nOpay • ···1023"},
+        ],
+    )
+    context = PresentationContext(channel="telegram", phone_number="123456789")
+
+    message_id = await presenter._present_say(intent, context)
+
+    assert message_id == "plain-msg-1"
+    assert client.send_text_calls[0]["text"] == "Saved beneficiaries\n\n1. Mum\nMama Nkechi\nOpay • ···1023"
+    assert "dense fallback" not in client.send_text_calls[0]["text"]
+
+
+@pytest.mark.asyncio
 async def test_telegram_presenter_say_uses_streamed_send_when_enabled() -> None:
     client = _StubStreamingTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))

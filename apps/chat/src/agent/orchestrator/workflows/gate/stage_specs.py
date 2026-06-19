@@ -1,7 +1,7 @@
 """Flat gate stage declarations used by the layered gate registry."""
 
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.contracts import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.contracts import (
     GateHandlerSpec,
     GateLayer,
     GateOutcomeKind,
@@ -14,8 +14,10 @@ from apps.chat.src.agent.orchestrator.workflows.gate.eligibility import (
     phrase_heavy_fastpath_allowed,
     task_planner_available,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.beneficiary_suggestion_stage import (
-    _stage_beneficiary_suggestion,
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.capability_boundary_stages import (
+    _stage_capability_boundary_followup,
+    _stage_deterministic_unsupported_capability,
+    _stage_semantic_unsupported_capability,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import _stage_context_frame_followup
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.contextual_followup_stages import (
@@ -49,28 +51,23 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.mixed_capability_sta
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.query_transfer_stages import (
     _stage_query_and_transfer_domain_guards,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.receipt_stages import (
-    _stage_receipt_request,
-    _stage_receipt_thread_followup,
-)
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.resume_stages import _stage_resume_prompt_action
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage import _stage_schedule_read_router
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_router_stage import (
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_routing import (
     _stage_semantic_router,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_unsupported_capability_stage import (
-    _stage_semantic_unsupported_capability,
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.session_action_stages import (
+    _stage_beneficiary_suggestion,
+    _stage_resume_prompt_action,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.stale_context_arbitration import (
     _stage_stale_context_arbitration,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.support_context_stages import (
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.support_receipt_stages import (
+    _stage_receipt_request,
+    _stage_receipt_thread_followup,
     _stage_recent_transaction_support_request,
     _stage_support_context_followup,
     _stage_support_issue_request,
-)
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.unsupported_boundary_followup_stage import (
-    _stage_capability_boundary_followup,
 )
 
 
@@ -149,6 +146,17 @@ GATE_STAGE_SPECS: tuple[GateHandlerSpec, ...] = (
         outcome_kind=GateOutcomeKind.DIRECT_RESPONSE,
         may_call_llm=True,
         description="Answer short follow-ups to recent unsupported capability refusals.",
+        eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state),
+    ),
+    GateHandlerSpec(
+        id="deterministic_unsupported_capability",
+        layer=GateLayer.CAPABILITY_GUARDS,
+        priority=25,
+        handler=_stage_deterministic_unsupported_capability,
+        owner="guardrail",
+        outcome_kind=GateOutcomeKind.DIRECT_RESPONSE,
+        may_call_llm=False,
+        description="Deterministic check for unsupported capability boundaries matching registry phrases.",
         eligibility=all_of(no_live_pending_interrupt, no_gate_blocking_state),
     ),
     GateHandlerSpec(

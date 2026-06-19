@@ -10,15 +10,15 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.mixed_capabilit
     mixed_clarify_params,
     mixed_policy_notice,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import _build_query_session_exit_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import GateStateView
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
     _next_direct_account_task_id,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
-from apps.chat.src.agent.orchestrator.workflows.gate.state_view import GateStateView
 from banking.presentation.i18n.renderer import render_message
 from shared.utils.logging import get_logger
 
@@ -70,7 +70,7 @@ async def _classify_mixed_capability(ctx: GateContext) -> MixedCapabilityMatch |
     return await analyze_mixed_supported_unsupported_semantic(
         text=ctx.message_text,
         locale=ctx.current_locale,
-        task_planner=ctx.task_planner,
+        capability_classifier_llm=ctx.capability_classifier_llm,
     )
 
 

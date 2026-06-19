@@ -10,9 +10,14 @@ from banking.scheduling.services.recurrence import (
     format_lagos_schedule_datetime,
     today_lagos,
 )
+from banking.transactions.shared.schedule_management import (
+    build_schedule_context_items,
+    format_schedule_context_blocks,
+)
 from banking.transfers.models.types import TransferGates, TransferPayload
 from banking.transfers.pipeline_factory import build_transfer_pipeline
 from banking.transfers.scheduling import TransferSchedulingHandler
+from shared.messaging.body_blocks import render_body_blocks_text
 
 
 class _FakeScheduleRepo:
@@ -138,6 +143,36 @@ async def test_schedule_management_list_shows_transfer_airtime_and_data(monkeypa
     assert "Data:" in result.response
     assert "sch-transfer" not in result.response
     assert "ID:" not in result.response
+
+
+def test_schedule_context_blocks_space_mixed_schedule_items_for_mobile() -> None:
+    schedules = [
+        _schedule(
+            "sch-transfer",
+            domain="transfer",
+            payload_snapshot={"amount": 5000, "recipient_name": "Mum"},
+        ),
+        _schedule(
+            "sch-airtime",
+            domain="airtime",
+            payload_snapshot={"amount": 1000, "recipient_phone": "08162511023", "network": "MTN"},
+        ),
+        _schedule(
+            "sch-data",
+            domain="data",
+            payload_snapshot={"amount": 1500, "target_phone": "08162511023", "plan_name": "1GB Daily"},
+        ),
+    ]
+    items = build_schedule_context_items(schedules, locale="en")
+
+    rendered = render_body_blocks_text(format_schedule_context_blocks(items, heading="Scheduled transactions:"))
+
+    assert rendered.startswith("Scheduled transactions")
+    assert "1. Transfer — ₦5,000 to Mum\nOne Time • 8:00 AM WAT\nNext:" in rendered
+    assert "\n\n2. Airtime — ₦1,000 • MTN airtime for 08162511023\nOne Time • 8:00 AM WAT" in rendered
+    assert "\n\n3. Data — ₦1,500 • 1GB Daily for 08162511023\nOne Time • 8:00 AM WAT" in rendered
+    assert "sch-transfer" not in rendered
+    assert "ID:" not in rendered
 
 
 @pytest.mark.asyncio

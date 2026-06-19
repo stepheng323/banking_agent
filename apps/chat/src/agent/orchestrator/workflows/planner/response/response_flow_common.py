@@ -5,6 +5,9 @@ from typing import Any, cast
 import redis.asyncio as redis
 
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
+    NON_BANKING_CONVERSATIONAL_INTENT,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_locale_update
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import PlannerStateView
 from banking.presentation.i18n.locale import LocaleManager
@@ -41,6 +44,8 @@ async def _build_bounded_conversational_reply(
     text: str,
     locale: str,
     conversation_responder: ConversationResponder | None,
+    intent: str = NON_BANKING_CONVERSATIONAL_INTENT,
+    extra_user_ctx: dict[str, object] | None = None,
 ) -> str | None:
     if conversation_responder is None:
         return None
@@ -50,8 +55,9 @@ async def _build_bounded_conversational_reply(
             {
                 **state_view.loaded_context_or_empty,
                 "language": locale,
+                **(extra_user_ctx or {}),
             },
-            intent="non_banking_conversational",
+            intent=intent,
         )
     except Exception as exc:
         logger.warning("conversation_responder_failed", error=str(exc))

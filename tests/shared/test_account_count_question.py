@@ -1,3 +1,5 @@
+from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 from banking.accounts.management.serialization import serialize_accounts
@@ -26,6 +28,20 @@ class _DummyRepo:
 class _DummyBankingProvider:
     async def get_balance(self, _account_id: str) -> None:
         return None
+
+
+class _AccountsRepo:
+    def __init__(self, accounts: list[Any]) -> None:
+        self.accounts = accounts
+
+    async def get_by_user(self, _user_id: str) -> list[Any]:
+        return self.accounts
+
+
+class _BalanceProvider:
+    async def get_balance(self, account_id: str) -> SimpleNamespace:
+        del account_id
+        return SimpleNamespace(available_balance=Decimal("30000.00"), currency="NGN")
 
 
 async def test_account_worker_answers_count_question() -> None:
@@ -104,8 +120,42 @@ async def test_account_worker_keeps_list_shape_distinct_from_count() -> None:
 
     assert result.outcome == AccountOutcome.OK
     assert result.response is not None
-    assert result.response.startswith("*Your Bank Accounts*")
+    assert result.response.startswith("Linked accounts")
+    assert result.outbox
+    assert result.outbox[0]["body_blocks"][0] == {"type": "heading", "text": "Linked accounts"}
     assert "You have 2 linked accounts." not in result.response
+
+
+async def test_account_worker_balance_returns_mobile_body_blocks() -> None:
+    worker = AccountWorker(
+        account_repo=_AccountsRepo(
+            [
+                SimpleNamespace(account_id="acc_1", bank_name="Access Bank", account_number="1234560003"),
+                SimpleNamespace(account_id="acc_2", bank_name="GTBank", account_number="1234560002"),
+            ]
+        ),
+        user_repo=_DummyRepo(),
+        llm=_DummyLLM(),
+        banking_provider=_BalanceProvider(),
+        session_manager=None,
+        direct_debit_provider=None,
+    )
+
+    result = await worker.run(
+        payload={"action": "check_balance"},
+        context={"profile": {"id": "u_1"}, "language": "en", "accounts": []},
+        user_message="Check balance",
+    )
+
+    assert result.outcome == AccountOutcome.OK
+    assert result.response is not None
+    assert result.response.startswith("Balances")
+    assert result.outbox[0]["body_blocks"] == [
+        {"type": "heading", "text": "Balances"},
+        {"type": "text", "text": "Access Bank (···0003): ₦30,000.00"},
+        {"type": "text", "text": "GTBank (···0002): ₦30,000.00"},
+        {"type": "key_value", "label": "Total", "value": "₦60,000.00"},
+    ]
 
 
 def test_account_worker_serializes_dict_accounts_for_context_frames() -> None:

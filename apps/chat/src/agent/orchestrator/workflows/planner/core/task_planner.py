@@ -6,14 +6,6 @@ from decimal import Decimal
 
 from langchain_openai import ChatOpenAI
 
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_models import (
-    UnsupportedBoundaryTurnOutput,
-    UnsupportedCapabilitySemanticOutput,
-)
-from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_semantic import (
-    unsupported_boundary_turn_messages,
-    unsupported_capability_semantic_messages,
-)
 from apps.chat.src.agent.orchestrator.task_state.service import TaskStateService
 from apps.chat.src.agent.orchestrator.workflows.planner.core import (
     task_planner_context_frame_prompts as context_frame_prompts,
@@ -26,9 +18,6 @@ from apps.chat.src.agent.orchestrator.workflows.planner.core import (
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core import (
     task_planner_quoted_replay_prompts as quoted_replay_prompts,
-)
-from apps.chat.src.agent.orchestrator.workflows.planner.core import (
-    task_planner_semantic_router_prompts as semantic_router_prompts,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_model_wiring import (
     build_task_planner_structured_outputs,
@@ -66,7 +55,6 @@ from shared.types.planner import (
     InterruptRouteDecision,
     PendingActionEditDecision,
     PlannerOutput,
-    SemanticRouteDecision,
     planner_output_model_for_transaction_executors,
 )
 from shared.types.quoted_replay import QuotedReplayInterpretation
@@ -322,8 +310,7 @@ class TaskPlanner:
         self._structured_planner_by_response_type: dict[type[PlannerOutput], object] = {
             PlannerOutput: self.structured_planner
         }
-        self.structured_semantic_router = structured_outputs.semantic_router
-        self.structured_schedule_read_router = structured_outputs.schedule_read_router
+
         self.structured_interrupt_router = structured_outputs.interrupt_router
         self.structured_quoted_replay = structured_outputs.quoted_replay
         self.structured_context_frame_followup = structured_outputs.context_frame_followup
@@ -331,8 +318,7 @@ class TaskPlanner:
         self.structured_pending_action_edit = structured_outputs.pending_action_edit
         self.structured_batch_slot_patch = structured_outputs.batch_slot_patch
         self.structured_confirmation_decision = structured_outputs.confirmation_decision
-        self.structured_unsupported_capability = structured_outputs.unsupported_capability
-        self.structured_unsupported_boundary_turn = structured_outputs.unsupported_boundary_turn
+
         self.task_state_service = task_state_service
         if not self.uses_dedicated_interrupt_model:
             logger.warning("interrupt_router_model_not_dedicated", mode="planner_fallback")
@@ -412,74 +398,6 @@ class TaskPlanner:
             raw_output=raw_output,
             planner_output=normalized_output,
             quality_report=quality_report,
-        )
-
-    async def route_semantic_turn(
-        self,
-        phone_number: str,
-        text: str,
-        context: str = "None",
-        *,
-        path_label: str = "direct_path",
-    ) -> SemanticRouteDecision:
-        """Top-level semantic routing before planner-owned dispatch."""
-        user_prompt = semantic_router_prompts.SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE.format(
-            phone_number=phone_number,
-            user_message=text,
-            context=context,
-        )
-        system_prompt = semantic_router_prompts.SEMANTIC_ROUTER_SYSTEM_PROMPT
-        return await invoke_structured_prompt(
-            self.structured_semantic_router,
-            SemanticRouteDecision,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            logger=logger,
-            event_name="semantic_router_llm_call",
-            model_llm=self.semantic_router_llm,
-            path_label=path_label,
-            latency_span="semantic_router_llm",
-            log_fields={
-                "context_chars": len(context),
-                "context_mode": "compact" if context == "None" else "full",
-            },
-            config=build_llm_runnable_config(
-                role="semantic_router",
-                phone_number=phone_number,
-                path_label=path_label,
-                task_domain="orchestrator",
-            ),
-        )
-
-    async def route_schedule_read_turn(
-        self,
-        phone_number: str,
-        text: str,
-        *,
-        path_label: str = "direct_path",
-    ) -> SemanticRouteDecision:
-        """Small semantic classifier for read-only scheduled-transaction list/count turns."""
-        user_prompt = semantic_router_prompts.SCHEDULE_READ_ROUTER_USER_PROMPT_TEMPLATE.format(
-            phone_number=phone_number,
-            user_message=text,
-        )
-        system_prompt = semantic_router_prompts.SCHEDULE_READ_ROUTER_SYSTEM_PROMPT
-        return await invoke_structured_prompt(
-            self.structured_schedule_read_router,
-            SemanticRouteDecision,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            logger=logger,
-            event_name="schedule_read_router_llm_call",
-            model_llm=self.semantic_router_llm,
-            path_label=path_label,
-            latency_span="schedule_read_router_llm",
-            config=build_llm_runnable_config(
-                role="semantic_router",
-                phone_number=phone_number,
-                path_label=path_label,
-                task_domain="schedule",
-            ),
         )
 
     async def route_pending_input(
@@ -585,100 +503,6 @@ class TaskPlanner:
         )
         log_latency_span(logger, span="confirmation_decision_llm", duration_ms=duration_ms, path_label=path_label)
         return result
-
-    async def classify_unsupported_capability(
-        self,
-        text: str,
-        *,
-        locale: str | None = None,
-        context: str = "None",
-        path_label: str = "direct_path",
-    ) -> UnsupportedCapabilitySemanticOutput:
-        """Bounded semantic classifier for unsupported capability boundaries."""
-        messages = unsupported_capability_semantic_messages(text=text, locale=locale, context=context)
-        try:
-            return await invoke_structured_prompt(
-                self.structured_unsupported_capability,
-                UnsupportedCapabilitySemanticOutput,
-                system_prompt=messages[0]["content"],
-                user_prompt=messages[1]["content"],
-                logger=logger,
-                event_name="unsupported_capability_semantic_llm_call",
-                model_llm=self.semantic_router_llm,
-                path_label=path_label,
-                latency_span="unsupported_capability_semantic_llm",
-                log_fields={
-                    "context_chars": len(context),
-                    "context_mode": "compact" if context == "None" else "full",
-                },
-                config=build_llm_runnable_config(
-                    role="semantic_router",
-                    path_label=path_label,
-                    task_domain="unsupported_capability",
-                    locale=locale,
-                ),
-                prompt_cache_key="unsupported_capability:semantic",
-            )
-        except Exception:
-            return UnsupportedCapabilitySemanticOutput(
-                action="unclear",
-                capability_key=None,
-                confidence=0.0,
-                reason="semantic_classifier_failed",
-            )
-
-    async def classify_unsupported_boundary_turn(
-        self,
-        text: str,
-        *,
-        boundary_key: str,
-        boundary_label: str,
-        followup_count: int = 0,
-        locale: str | None = None,
-        context: str = "None",
-        path_label: str = "direct_path",
-    ) -> UnsupportedBoundaryTurnOutput:
-        """Bounded semantic classifier for turns after an unsupported capability refusal."""
-        messages = unsupported_boundary_turn_messages(
-            text=text,
-            boundary_key=boundary_key,
-            boundary_label=boundary_label,
-            followup_count=followup_count,
-            locale=locale,
-            context=context,
-        )
-        try:
-            return await invoke_structured_prompt(
-                self.structured_unsupported_boundary_turn,
-                UnsupportedBoundaryTurnOutput,
-                system_prompt=messages[0]["content"],
-                user_prompt=messages[1]["content"],
-                logger=logger,
-                event_name="unsupported_boundary_turn_llm_call",
-                model_llm=self.semantic_router_llm,
-                path_label=path_label,
-                latency_span="unsupported_boundary_turn_llm",
-                log_fields={
-                    "boundary_key": boundary_key,
-                    "context_chars": len(context),
-                    "context_mode": "compact" if context == "None" else "full",
-                },
-                config=build_llm_runnable_config(
-                    role="semantic_router",
-                    path_label=path_label,
-                    task_domain="unsupported_capability",
-                    locale=locale,
-                    extra_metadata={"boundary_key": boundary_key},
-                ),
-                prompt_cache_key=f"unsupported_boundary:{boundary_key}",
-            )
-        except Exception:
-            return UnsupportedBoundaryTurnOutput(
-                action="unclear",
-                capability_key=None,
-                confidence=0.0,
-                reason="boundary_turn_classifier_failed",
-            )
 
     async def interpret_context_frame_followup(
         self,

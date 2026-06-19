@@ -6,7 +6,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.gate.core.node import session_gate_direct_path
 
 
 @dataclass(frozen=True)

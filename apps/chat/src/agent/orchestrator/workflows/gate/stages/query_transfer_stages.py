@@ -14,15 +14,15 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _obvious_mixed_transaction_executors,
     parse_source_aware_transfer_direct,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _build_direct_domain_task
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, hint_only, task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.query_session_exit import _build_query_session_exit_updates
-from apps.chat.src.agent.orchestrator.workflows.gate.router_context import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, hint_only, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
+from apps.chat.src.agent.orchestrator.workflows.gate.state.query_session_exit import _build_query_session_exit_updates
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import _build_direct_domain_task
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.router_context import (
     _build_direct_context_recap_response,
     _is_direct_context_recap_request,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.helpers import _build_bounded_conversational_reply
 from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)

@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from langchain_openai import ChatOpenAI
 
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual as contextual_responder
+import apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents as responder_intents
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_prompts as responder_prompts
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_text as responder_text
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_unsupported as unsupported_responder
@@ -60,6 +61,7 @@ class ConversationResponder:
         is_contextual_worker_followup = intent == contextual_responder.CONTEXTUAL_WORKER_FOLLOWUP_INTENT
         is_contextual_meta_followup = intent == contextual_responder.CONTEXTUAL_META_FOLLOWUP_INTENT
         is_unsupported_capability_followup = intent == unsupported_responder.UNSUPPORTED_CAPABILITY_FOLLOWUP_INTENT
+        is_social_meta = intent == responder_intents.SOCIAL_META_INTENT
         now = datetime.now(ZoneInfo("Africa/Lagos"))
         casual_streak = responder_text.count_trailing_casual_replies(history, locale=locale)
         redirect_text = responder_text.redirect_text(locale, casual_streak=casual_streak)
@@ -68,6 +70,7 @@ class ConversationResponder:
             not is_contextual_worker_followup
             and not is_contextual_meta_followup
             and not is_unsupported_capability_followup
+            and not is_social_meta
             and casual_streak >= responder_text.MAX_CASUAL_REPLY_STREAK
         ):
             return redirect_text
@@ -77,6 +80,7 @@ class ConversationResponder:
             not is_contextual_worker_followup
             and not is_contextual_meta_followup
             and not is_unsupported_capability_followup
+            and not is_social_meta
             and casual_streak == 0
             and responder_text.is_banking_result_reaction(text, history)
         )
@@ -98,6 +102,7 @@ class ConversationResponder:
             prefers_banking_humor=prefers_banking_humor,
             is_joke_turn=is_joke_turn,
             is_banking_reaction=is_banking_reaction,
+            is_social_meta=is_social_meta,
             is_contextual_worker_followup=is_contextual_worker_followup,
             is_contextual_meta_followup=is_contextual_meta_followup,
             is_unsupported_capability_followup=is_unsupported_capability_followup,
@@ -113,6 +118,7 @@ class ConversationResponder:
                 extra_metadata={
                     "intent": intent,
                     "casual_streak": casual_streak,
+                    "social_meta": is_social_meta,
                     "contextual_worker_followup": is_contextual_worker_followup,
                     "unsupported_capability_followup": is_unsupported_capability_followup,
                 },
@@ -127,6 +133,7 @@ class ConversationResponder:
                 self.llm,
                 messages,
                 config=config,
+                invocation_kwargs={"temperature": 0.3},
             )
         except Exception as exc:
             duration_ms = (time.perf_counter() - start) * 1000
@@ -146,6 +153,7 @@ class ConversationResponder:
                     "intent": intent,
                     "locale": locale,
                     "casual_streak": casual_streak,
+                    "social_meta": is_social_meta,
                     "contextual_worker_followup": is_contextual_worker_followup,
                     "contextual_meta_followup": is_contextual_meta_followup,
                     "unsupported_capability_followup": is_unsupported_capability_followup,
@@ -191,14 +199,21 @@ class ConversationResponder:
                 "intent": intent,
                 "locale": locale,
                 "casual_streak": casual_streak,
+                "social_meta": is_social_meta,
                 "contextual_worker_followup": is_contextual_worker_followup,
                 "contextual_meta_followup": is_contextual_meta_followup,
                 "unsupported_capability_followup": is_unsupported_capability_followup,
             },
         )
 
-        preface = responder_text.sanitize_preface(raw_content, locale=locale)
+        preface = responder_text.sanitize_preface(
+            raw_content,
+            locale=locale,
+            allow_positive_banking_anchor=is_social_meta,
+        )
         if not preface:
+            if is_social_meta:
+                return ""
             if is_contextual_worker_followup:
                 return contextual_responder.contextual_worker_fallback_reply(text, user_ctx, locale=locale)
             if is_contextual_meta_followup:
@@ -226,6 +241,10 @@ class ConversationResponder:
                 preface
             ) or unsupported_responder.UNSUPPORTED_CAPABILITY_PROMISE_RE.search(preface):
                 return unsupported_responder.unsupported_capability_fallback_reply(user_ctx, locale)
+            return preface
+        if is_social_meta:
+            if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(preface):
+                return ""
             return preface
         if is_banking_reaction:
             return preface

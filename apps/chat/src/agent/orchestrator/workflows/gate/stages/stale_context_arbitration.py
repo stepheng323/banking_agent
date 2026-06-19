@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from apps.chat.src.agent.orchestrator.context.frame_manager import ContextFrameManager
 from apps.chat.src.agent.orchestrator.context.models import ContextFrame
@@ -20,15 +20,15 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_data_request,
     _obvious_mixed_transaction_executors,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import planner_handoff
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import planner_handoff
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.contextual_followup_stages import (
     _candidate_locales,
     _looks_like_contextual_worker_acknowledgement,
 )
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.schedule_read_stage import _could_be_schedule_read_request
-from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_router_stage import _stage_semantic_router
-from apps.chat.src.agent.orchestrator.workflows.gate.support_identity import (
+from apps.chat.src.agent.orchestrator.workflows.gate.stages.semantic_routing.pipeline import _stage_semantic_router
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.support_identity import (
     _recent_batch_identity,
     _support_user_id,
 )
@@ -100,10 +100,10 @@ async def detect_stale_context(ctx: GateContext) -> StaleContextSnapshot:
     has_recent_batch_reference = False
 
     if ctx.redis_client is not None:
-        support_context = await SupportContextManager(ctx.redis_client).get(support_user_id)
+        support_context = await ctx.ensure_support_context()
         try:
             recent_batch = await get_recent_batch_reference(
-                ctx.redis_client,
+                cast(Any, ctx.redis_client),
                 identity=_recent_batch_identity(ctx.state_view),
             )
         except Exception as exc:  # pragma: no cover - defensive around Redis/test doubles

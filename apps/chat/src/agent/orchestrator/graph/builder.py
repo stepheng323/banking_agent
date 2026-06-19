@@ -15,6 +15,9 @@ from apps.chat.src.agent.orchestrator.workflows import (
     plan_tasks,
     session_gate_direct_path,
 )
+from shared.utils.logging import get_logger, log_fingerprint
+
+logger = get_logger(__name__)
 
 CompiledOrchestratorGraph = CompiledStateGraph[
     OrchestratorState,
@@ -24,11 +27,46 @@ CompiledOrchestratorGraph = CompiledStateGraph[
 ]
 
 
+def _route_interrupt(state: OrchestratorState) -> Literal["advance", "plan"] | str:
+    if state.final_response:
+        return END
+    if state.pending_interrupt:
+        return END
+    if state.current_wave_index < len(state.waves):
+        return "advance"
+    return "plan"
+
+
+def _route_gate(state: OrchestratorState) -> Literal["advance", "handle_interrupt", "plan"]:
+    if state.direct_path_triggered:
+        return "advance"
+    if state.pending_interrupt:
+        return "handle_interrupt"
+    return "plan"
+
+
+def _route_plan(state: OrchestratorState) -> str:
+    logger.info(
+        "route_plan_check",
+        has_final_response=bool(state.final_response),
+        final_response_hash=log_fingerprint(state.final_response),
+    )
+    if state.final_response:
+        return END
+    return "advance"
+
+
+def _route_advance(state: OrchestratorState) -> str:
+    if state.pending_interrupt:
+        return END
+    if state.current_wave_index >= len(state.waves):
+        return "finalize"
+    return "advance"
+
+
 def build_orchestrator_graph(checkpointer: Checkpointer = None) -> CompiledOrchestratorGraph:
     """Build the top-level Orchestrator Graph."""
-    builder: StateGraph[OrchestratorState, None, OrchestratorState, OrchestratorState] = StateGraph(
-        OrchestratorState
-    )
+    builder: StateGraph[OrchestratorState, None, OrchestratorState, OrchestratorState] = StateGraph(OrchestratorState)
 
     builder.add_node("ingest", ingest_message)
     builder.add_node("handle_interrupt", handle_pending_interrupt)
@@ -41,52 +79,14 @@ def build_orchestrator_graph(checkpointer: Checkpointer = None) -> CompiledOrche
 
     builder.add_edge("ingest", "gate")
 
-    def route_interrupt(state: OrchestratorState) -> Literal["advance", "plan"] | str:
-        if state.final_response:
-            return END
-        if state.pending_interrupt:
-            return END
-        if state.current_wave_index < len(state.waves):
-            return "advance"
-        return "plan"
-
-    builder.add_conditional_edges("handle_interrupt", route_interrupt, {"advance": "advance", "plan": "plan", END: END})
-
-    def route_gate(state: OrchestratorState) -> Literal["advance", "handle_interrupt", "plan"]:
-        if state.direct_path_triggered:
-            return "advance"
-        if state.pending_interrupt:
-            return "handle_interrupt"
-        return "plan"
-
     builder.add_conditional_edges(
-        "gate", route_gate, {"advance": "advance", "handle_interrupt": "handle_interrupt", "plan": "plan"}
+        "handle_interrupt", _route_interrupt, {"advance": "advance", "plan": "plan", END: END}
     )
-
-    from shared.utils.logging import get_logger, log_fingerprint
-
-    logger = get_logger(__name__)
-
-    def route_plan(state: OrchestratorState) -> str:
-        logger.info(
-            "route_plan_check",
-            has_final_response=bool(state.final_response),
-            final_response_hash=log_fingerprint(state.final_response),
-        )
-        if state.final_response:
-            return END
-        return "advance"
-
-    builder.add_conditional_edges("plan", route_plan, {"advance": "advance", END: END})
-
-    def route_advance(state: OrchestratorState) -> str:
-        if state.pending_interrupt:
-            return END
-        if state.current_wave_index >= len(state.waves):
-            return "finalize"
-        return "advance"
-
-    builder.add_conditional_edges("advance", route_advance, {"advance": "advance", "finalize": "finalize", END: END})
+    builder.add_conditional_edges(
+        "gate", _route_gate, {"advance": "advance", "handle_interrupt": "handle_interrupt", "plan": "plan"}
+    )
+    builder.add_conditional_edges("plan", _route_plan, {"advance": "advance", END: END})
+    builder.add_conditional_edges("advance", _route_advance, {"advance": "advance", "finalize": "finalize", END: END})
 
     builder.add_edge("finalize", END)
 

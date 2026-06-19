@@ -5,6 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presentation import (
+    unsupported_capability_params,
+)
+from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import (
+    get_unsupported_capability,
+)
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
@@ -19,6 +25,7 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.status.status_query_te
     _build_status_query_response,
 )
 from banking.presentation.formatters.currency import format_naira
+from banking.presentation.i18n.renderer import render_message
 from shared.types.planner import ActiveFlowQuestionType, InterruptRouteDecision
 from shared.utils.network_utils import format_network_display_name
 
@@ -74,7 +81,9 @@ _REQUIREMENT_REASONS: dict[str, str] = {
 }
 
 _SEPARATE_BANKING_TASK_PATTERNS = (
-    r"\b(balance|account balance|how much is in my account|available balance)\b",
+    r"^\s*(?:my\s+)?balance\s*$",
+    r"\b(check|what is my|what's my|show|tell me my)\s+balance\b",
+    r"\b(account balance|how much is in my account|available balance)\b",
     r"\b(show|list|view|check)\b.*\b(transaction|transactions|history|spend|spent|expenses?)\b",
     r"\b(spend|spent|expenses?|transaction history|transactions?)\b",
     r"\b(scheduled transactions?|schedule list|show schedule|show scheduled)\b",
@@ -153,7 +162,10 @@ def classify_deterministic_active_flow_question(
         target_field = target_field or "source_account_id"
     elif _contains_any(normalized, ("can i change", "can i edit", "can i update", "what can i change")):
         question_type = "editable_fields"
-    elif _contains_any(normalized, ("who", "how much", "which", "what plan", "what network", "what phone")):
+    elif _contains_any(
+        normalized,
+        ("who", "how much", "which", "what plan", "what network", "what phone", "amount", "balance"),
+    ):
         question_type = "current_value"
     else:
         question_type = "unknown"
@@ -265,7 +277,9 @@ def _build_active_flow_question_response(
     elif question_type == "fees_or_charges":
         response = _fees_or_charges_response(state=state, interrupt=interrupt)
     elif question_type == "unsupported_or_unsafe":
-        return _unsupported_or_unsafe_response(route)
+        response = _unsupported_or_unsafe_response(route, state)
+        if response.startswith("I cannot") or response.startswith("If you are unsure"):
+            return response
     else:
         return _unknown_response(state=state, interrupt=interrupt, current_task_types=current_task_types)
 
@@ -363,6 +377,25 @@ def _current_value_response(
     task = _first_task(state, interrupt)
     task_type = task.type if task is not None else ""
     payload = task.payload if task is not None and isinstance(task.payload, dict) else {}
+
+    # Check if this is a contextual balance/percentage calculation query
+    pct = payload.get("transfer_percentage")
+    amount = payload.get("amount")
+    transfer_all = payload.get("transfer_all")
+    if amount is not None and (pct is not None or transfer_all):
+        amount_val = float(amount)
+        source = _source_account_label(payload) or payload.get("source_bank_name") or "your account"
+        if pct is not None and float(pct) > 0:
+            pct_val = float(pct)
+            balance = round((amount_val * 100.0) / pct_val, 2)
+            balance_text = format_naira(balance)
+            amount_text = format_naira(amount_val)
+            pct_str = f"{int(pct_val)}%" if pct_val.is_integer() else f"{pct_val}%"
+            return f"Yes, {amount_text} is {pct_str} of your {source} balance (which is {balance_text})."
+        elif transfer_all:
+            amount_text = format_naira(amount_val)
+            return f"Yes, {amount_text} is your entire {source} balance."
+
     field = route.target_field or ""
     if not field:
         field = _best_required_field(None, _required_fields(interrupt)) or ""
@@ -413,7 +446,7 @@ def _fees_or_charges_response(*, state: OrchestratorState, interrupt: PendingInt
     return "I do not have a fee to show for this step. If a fee applies, it should be shown before authorization."
 
 
-def _unsupported_or_unsafe_response(route: InterruptRouteDecision) -> str:
+def _unsupported_or_unsafe_response(route: InterruptRouteDecision, state: OrchestratorState) -> str:
     reason = (route.unsafe_reason or "").strip().lower()
     if reason == "financial_advice":
         return (
@@ -435,6 +468,16 @@ def _unsupported_or_unsafe_response(route: InterruptRouteDecision) -> str:
             "If you are unsure, cancel now. Once a successful transfer is sent, "
             "it cannot be reversed or refunded from here."
         )
+
+    # Try finding it in registry for other unsupported capabilities
+
+    capability = get_unsupported_capability(reason)
+    if capability is not None:
+        state_view = interrupt_state_view(state)
+        locale = state_view.current_locale
+        params = unsupported_capability_params(capability, locale=locale)
+        return render_message("capability.unsupported_unavailable", locale, params)
+
     return "I cannot answer that safely for this pending request."
 
 
@@ -603,6 +646,18 @@ def _payload_current_summary(payload: dict[str, Any], task_type: str) -> str | N
     if task_type == "schedule":
         schedule = _schedule_label(payload)
         return f"The selected schedule is {schedule}." if schedule else None
+    if task_type in {"transfer", "send_money"}:
+        amount = _format_amount(payload.get("amount"))
+        recipient = _string(payload.get("recipient_resolved_name") or payload.get("recipient_name"))
+        source = _source_account_label(payload)
+        transfer_parts = []
+        if amount:
+            transfer_parts.append(f"The amount is {amount}.")
+        if recipient:
+            transfer_parts.append(f"This is going to {recipient}.")
+        if source:
+            transfer_parts.append(f"The source account is {source}.")
+        return " ".join(transfer_parts) if transfer_parts else "This is a pending transfer."
     return None
 
 
@@ -626,28 +681,39 @@ def _infer_target_field(normalized: str, interrupt: PendingInterrupt) -> str | N
 
 
 def _looks_like_question(normalized: str) -> bool:
-    return _contains_any(
-        normalized,
-        (
-            "why",
-            "what",
-            "where",
-            "who",
-            "which",
-            "how",
-            "when",
-            "can i",
-            "could i",
-            "will it",
-            "would",
-            "should i",
-            "is this",
-            "is it",
-            "are we",
-            "do you",
-            "do i",
-        ),
+    question_indicators = (
+        "why",
+        "what",
+        "where",
+        "who",
+        "which",
+        "how",
+        "when",
+        "can i",
+        "could i",
+        "will it",
+        "would",
+        "should i",
+        "is this",
+        "is it",
+        "are we",
+        "do you",
+        "do i",
     )
+    if _contains_any(normalized, question_indicators):
+        return True
+
+    if "?" in normalized:
+        # If it has "?" but no other question indicator keywords,
+        # ignore short phrases of 1-2 words (like "opay?") which are usually slot fills.
+        clean_text = normalized.replace("?", "").strip()
+        words = clean_text.split()
+        if len(words) <= 2:
+            return False
+        return True
+
+    return False
+
 
 
 def _matches_any(normalized: str, patterns: tuple[str, ...]) -> bool:

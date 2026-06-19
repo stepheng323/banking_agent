@@ -1,4 +1,4 @@
-"""Orchestrator Graph State Definition (V3).
+"""Orchestrator Graph State Definition.
 
 This state object is the single source of truth for the top-level OrchestratorGraph.
 It manages user context, planning outputs, execution progress, and interrupt gating.
@@ -39,7 +39,7 @@ class CapabilityBoundary(BaseModel):
 
 class OrchestratorState(BaseModel):
     """
-    Unified state for the Banking Agent Orchestrator (V3).
+    Unified state for the Banking Agent Orchestrator.
     Persisted via LangGraph checkpointing.
 
     This is the ONLY source of truth for workflow state.

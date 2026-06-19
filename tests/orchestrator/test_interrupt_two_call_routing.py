@@ -116,7 +116,7 @@ async def test_direct_switch_target_skips_planner_call() -> None:
         ),
         output=PlannerOutput(primary_intent="account"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -170,7 +170,7 @@ async def test_transaction_switch_target_skips_planner_call() -> None:
             ],
         ),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -216,7 +216,7 @@ async def test_amount_interrupt_send_amount_reply_continues_same_transfer_withou
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -258,7 +258,7 @@ async def test_transaction_switch_transfer_multi_recipient_fanout_preserved_with
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -312,7 +312,7 @@ async def test_transaction_switch_split_retry_uses_recipient_allocations_without
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner,
+            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
             "services": {"transfer": _TransferWorkerStub(extractor)},
         },
         "recursion_limit": 50,
@@ -375,7 +375,7 @@ async def test_status_query_requirements_skips_planner_and_uses_interrupt_router
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -426,7 +426,7 @@ async def test_status_query_recap_skips_planner_and_uses_interrupt_router_only()
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -476,7 +476,7 @@ async def test_ambiguous_status_wording_still_uses_interrupt_router() -> None:
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -521,7 +521,7 @@ async def test_transaction_switch_transfer_schedule_action_preserved_without_pla
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -562,7 +562,7 @@ async def test_transaction_switch_transfer_cancel_schedule_action_preserved_with
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -633,7 +633,7 @@ async def test_transaction_switch_uses_interrupt_extractor_seed() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner,
+            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
             "services": {"transfer": _TransferWorkerStub(extractor)},
         },
         "recursion_limit": 50,
@@ -681,7 +681,7 @@ async def test_confirmation_shortcut_skips_router_and_planner_calls() -> None:
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -725,7 +725,7 @@ async def test_confirmation_non_explicit_text_never_auto_approves_even_if_router
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -766,7 +766,7 @@ async def test_confirmation_explicit_approval_still_advances_on_llm_route_path()
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -809,7 +809,7 @@ async def test_status_shortcut_skips_router_and_planner_calls() -> None:
         ),
         output=PlannerOutput(primary_intent="account"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -848,7 +848,7 @@ async def test_auth_yes_text_still_uses_router_path() -> None:
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -924,7 +924,7 @@ async def test_auth_obvious_cancel_shortcut_resets_flow() -> None:
         ),
         output=PlannerOutput(primary_intent="cancel"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": None}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -967,7 +967,7 @@ async def test_auth_switch_intent_routes_once_and_stashes_transaction_flow() -> 
         ),
         output=PlannerOutput(primary_intent="account"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -1009,7 +1009,7 @@ async def test_auth_typed_pin_text_never_authorizes_without_callback() -> None:
         ),
         output=PlannerOutput(primary_intent="transfer"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 

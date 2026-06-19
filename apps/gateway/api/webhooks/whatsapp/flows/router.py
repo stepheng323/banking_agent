@@ -108,7 +108,7 @@ async def flow_webhook(
         normalized_action = (action or "").strip().lower()
 
         if normalized_action == "ping" and screen is None:
-            logger.info("whatsapp_flow_health_check", version=version, request_was_encrypted=request_was_encrypted)
+            logger.debug("whatsapp_flow_health_check", version=version, request_was_encrypted=request_was_encrypted)
             return _format_flow_response(
                 _flow_health_response(version),
                 request_was_encrypted=request_was_encrypted,

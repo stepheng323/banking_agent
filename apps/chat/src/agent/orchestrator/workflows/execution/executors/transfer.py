@@ -32,6 +32,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.session_stack import (
     pop_active_session,
     upsert_active_session,
 )
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import get_task
 from apps.chat.src.agent.orchestrator.workflows.execution.task_input import _maybe_user_message
 from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import (
     remove_task_payload_values,
@@ -41,8 +42,10 @@ from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import t
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
+from banking.transactions.shared.schedule_management import format_schedule_context_blocks
 from banking.transfers.funding.plan_validation import FUNDING_ADJUSTMENT_REVIEW_STATE
 from banking.transfers.resolution.names import normalize_name
+from shared.messaging.body_blocks import MessageDocument
 from shared.utils.logging import get_logger, log_orchestrator_diagnostic
 
 logger = get_logger(__name__)
@@ -339,9 +342,17 @@ def _maybe_mark_recipient_review_required(
 
     recipient_input_fields = {"recipient_account", "recipient_bank_name"}
     was_recipient_input_turn = bool(set(required_fields) & recipient_input_fields)
-    alias = _casefold_text(task.payload.get("recipient_name"))
-    resolved = _casefold_text(task.payload.get("recipient_resolved_name"))
-    alias_mismatch = bool(alias and resolved and alias != resolved)
+
+    from_saved = bool(task.payload.get("resolved_from_saved_beneficiary"))
+    formal_mismatch = bool(task.payload.get("name_mismatch"))
+
+    if from_saved:
+        alias_mismatch = formal_mismatch
+    else:
+        alias = _casefold_text(task.payload.get("recipient_name"))
+        resolved = _casefold_text(task.payload.get("recipient_resolved_name"))
+        alias_mismatch = bool(alias and resolved and alias != resolved)
+
     if not was_recipient_input_turn and not alias_mismatch:
         return False
 
@@ -416,7 +427,7 @@ def _result_makes_current_transfer_ready_for_batch(
     result: TransactionResult,
     ctx: ExecutionTurnContext,
 ) -> bool:
-    task = ctx.state.tasks.get(task_id)
+    task = get_task(ctx.state, task_id)
     payload = dict(task.payload) if task and isinstance(task.payload, dict) else {}
     if isinstance(result.patch, dict):
         payload.update(result.patch)
@@ -776,7 +787,11 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         if isinstance(schedule_items, list):
             push_schedule_list_frame(ctx, [item for item in schedule_items if isinstance(item, dict)])
     if result.response:
-        ctx.accumulator.say(result.response)
+        body_blocks = _schedule_response_body_blocks(task, result, locale=_state_locale(ctx.state))
+        if body_blocks:
+            ctx.accumulator.add_outbox({"type": "say", "text": result.response, "body_blocks": body_blocks})
+        else:
+            ctx.accumulator.say(result.response)
 
     _handle_transaction_outcome(
         task,
@@ -786,6 +801,33 @@ async def _execute_schedule_task(task: TaskSpec, task_id: str, ctx: ExecutionTur
         confirmation_gate="snapshot",
         default_error=None,
     )
+
+
+def _schedule_response_body_blocks(
+    task: TaskSpec,
+    result: TransactionResult,
+    *,
+    locale: str,
+) -> MessageDocument | None:
+    if not isinstance(result.patch, dict):
+        return None
+    if str(task.payload.get("schedule_response_mode") or "").strip().lower() == "count":
+        return None
+
+    schedule_items = result.patch.get("schedule_context_items")
+    if not isinstance(schedule_items, list):
+        return None
+    items = [item for item in schedule_items if isinstance(item, dict)]
+    if not items:
+        return None
+
+    action = str(task.payload.get("action") or "").strip().lower()
+    heading = (
+        render_message("schedule.find.header", locale)
+        if action == "find_scheduled_transaction"
+        else render_message("schedule.list.header", locale)
+    )
+    return format_schedule_context_blocks(items, heading=heading)
 
 
 __all__ = ["ScheduleTaskExecutor", "TransferTaskExecutor"]

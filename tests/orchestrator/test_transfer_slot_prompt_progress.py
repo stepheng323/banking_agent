@@ -206,7 +206,17 @@ class _MockTransferMixedConfirmWorker:
         if recipient_name.casefold() == "mum":
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_CONFIRMATION,
-                confirmation_snapshot={"amount": 10000, "recipient_name": "Mum"},
+                patch={
+                    "recipient_account": "8162511023",
+                    "recipient_bank_name": "Opay",
+                    "recipient_resolved_name": "Mum",
+                },
+                confirmation_snapshot={
+                    "amount": 10000,
+                    "recipient_name": "Mum",
+                    "recipient_account": "8162511023",
+                    "recipient_bank": "Opay",
+                },
                 confirmation_summary="Confirm Mum",
             )
 
@@ -220,7 +230,17 @@ class _MockTransferMixedConfirmWorker:
 
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_CONFIRMATION,
-            confirmation_snapshot={"amount": 10000, "recipient_name": "Tolu"},
+            patch={
+                "recipient_account": "8162511027",
+                "recipient_bank_name": "First Bank",
+                "recipient_resolved_name": "Tolu",
+            },
+            confirmation_snapshot={
+                "amount": 10000,
+                "recipient_name": "Tolu",
+                "recipient_account": "8162511027",
+                "recipient_bank": "First Bank",
+            },
             confirmation_summary="Confirm Tolu",
         )
 
@@ -1141,7 +1161,7 @@ async def test_multi_transfer_confirmation_preserves_existing_waiting_task() -> 
     first_updates = await advance_wave(state, config)
     assert first_updates["pending_interrupt"].kind == "input"
     assert first_updates["pending_interrupt"].task_ids == ["t2"]
-    assert first_updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert first_updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
     assert first_updates["tasks"]["t2"].stage == TaskStage.EXTRACTED
 
     state.tasks = first_updates["tasks"]
@@ -1151,18 +1171,30 @@ async def test_multi_transfer_confirmation_preserves_existing_waiting_task() -> 
 
     second_updates = await advance_wave(state, config)
 
-    assert worker.call_count == 3
-    assert worker.calls.count("Mum") == 1
+    assert worker.call_count == 4
+    assert worker.calls.count("Mum") == 2
 
     second_interrupt = second_updates["pending_interrupt"]
-    assert second_interrupt.kind == "confirmation"
-    assert set(second_interrupt.task_ids) == {"t1", "t2"}
+    assert second_interrupt.kind == "input"
+    assert second_interrupt.task_ids == ["t2"]
 
-    confirmation_entry = next(entry for entry in second_updates["outbox"] if entry["type"] == "request_confirmation")
+    state.tasks = second_updates["tasks"]
+    state.last_interrupt = second_updates["pending_interrupt"]
+    state.pending_interrupt = None
+    state.tasks["t2"].payload["recipient_review_required"] = False
+
+    third_updates = await advance_wave(state, config)
+
+    third_interrupt = third_updates["pending_interrupt"]
+    assert third_interrupt.kind == "confirmation"
+    assert set(third_interrupt.task_ids) == {"t1", "t2"}
+
+    confirmation_entry = next(entry for entry in third_updates["outbox"] if entry["type"] == "request_confirmation")
     assert set(confirmation_entry["task_ids"]) == {"t1", "t2"}
     assert confirmation_entry["header"] == "Confirm Transactions"
-    assert "Confirm Mum" in confirmation_entry["summary"]
-    assert "Confirm Tolu" in confirmation_entry["summary"]
+    assert "Confirm Transfers (2)" in confirmation_entry["summary"]
+    assert "Mum" in confirmation_entry["summary"]
+    assert "Tolu" in confirmation_entry["summary"]
 
 
 async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmation() -> None:
@@ -1205,7 +1237,7 @@ async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmatio
     first_updates = await advance_wave(state, config)
     assert first_updates["pending_interrupt"].kind == "input"
     assert first_updates["pending_interrupt"].task_ids == ["t1_r2"]
-    assert first_updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert first_updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
     assert first_updates["tasks"]["t1_r2"].stage == TaskStage.EXTRACTED
 
     state.tasks = first_updates["tasks"]
@@ -1215,14 +1247,27 @@ async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmatio
 
     second_updates = await advance_wave(state, config)
     second_interrupt = second_updates["pending_interrupt"]
-    assert second_interrupt.kind == "confirmation"
-    assert set(second_interrupt.task_ids) == {"t1", "t1_r2"}
+    assert second_interrupt.kind == "input"
+    assert second_interrupt.task_ids == ["t1_r2"]
 
-    confirmation_entry = next(entry for entry in second_updates["outbox"] if entry["type"] == "request_confirmation")
+    state.tasks = second_updates["tasks"]
+    state.last_interrupt = second_updates["pending_interrupt"]
+    state.pending_interrupt = None
+    state.tasks["t1_r2"].payload["recipient_review_required"] = False
+
+    third_updates = await advance_wave(state, config)
+
+    third_interrupt = third_updates["pending_interrupt"]
+    assert third_interrupt.kind == "confirmation"
+    assert set(third_interrupt.task_ids) == {"t1", "t1_r2"}
+
+    confirmation_entry = next(entry for entry in third_updates["outbox"] if entry["type"] == "request_confirmation")
     assert set(confirmation_entry["task_ids"]) == {"t1", "t1_r2"}
     assert confirmation_entry["header"] == "Confirm Transactions"
-    assert "Confirm Mum" in confirmation_entry["summary"]
-    assert "Confirm Tolu" in confirmation_entry["summary"]
+    assert "Confirm Transfers (2)" in confirmation_entry["summary"]
+    assert "Mum" in confirmation_entry["summary"]
+    assert "Tolu" in confirmation_entry["summary"]
+
 
 
 async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:

@@ -24,6 +24,7 @@ dependencies = [
     "bcrypt==4.0.1",
     "aioboto3>=15.5.0",
     "pycryptodome>=3.23.0",
+    "rich>=13.7.0",
 ]
 
 [tool.hatch.build.targets.wheel]

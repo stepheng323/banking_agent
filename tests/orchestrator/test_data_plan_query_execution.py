@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
-from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.gate.core.node import session_gate_direct_path
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from banking.runtime.results import TransactionOutcome, TransactionResult
 

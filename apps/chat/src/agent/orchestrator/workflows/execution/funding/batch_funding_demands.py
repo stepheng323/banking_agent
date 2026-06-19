@@ -4,7 +4,7 @@ from apps.chat.src.agent.orchestrator.models.domain import TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.common import TERMINAL_STAGES
 from apps.chat.src.agent.orchestrator.workflows.execution.recipient_review import recipient_review_signature
-from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks
+from apps.chat.src.agent.orchestrator.workflows.execution.task_access import existing_tasks, get_task
 from banking.transfers.funding.batch_models import SourceAffinity, TransferDemand
 from shared.money import MoneyAmount, require_naira, to_naira
 
@@ -126,7 +126,7 @@ def _batch_transfer_tasks_for_wave(
     if task_id is None:
         return transfer_tasks
 
-    current_task = state.tasks.get(task_id)
+    current_task = get_task(state, task_id)
     if not _is_non_terminal_transfer_task(current_task):
         return []
 

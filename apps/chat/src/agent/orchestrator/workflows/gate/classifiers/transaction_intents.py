@@ -11,7 +11,7 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains 
     _is_account_balance_request,
     _is_query_domain_request,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.language import _allow_phrase_heavy_fastpath
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.language import _allow_phrase_heavy_fastpath
 from banking.presentation.i18n.locale import LocaleManager
 from banking.transactions.shared.source_account_guard import find_account_by_bank_name
 from banking.transfers.extraction.parsers import parse_amount_input

@@ -61,7 +61,10 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R05_CANCEL_CONFIRM": "cancel_word->is_cancellation; pure_approve->is_confirmation",
     "R06_AMOUNT_NORMALIZATION": "5k->5000",
     "R07_OUT_OF_SCOPE": (
-        "harmless_non_banking->conversational.casual_chat; unsupported_non_banking->conversational.out_of_scope"
+        "harmless_non_banking->conversational.casual_chat; "
+        "unsupported_non_banking->conversational.out_of_scope; "
+        "unsupported_capability(lending/investments/financial_advice/international_transfers/pdf_exports/"
+        "csv_exports/all_time_history)->set unsupported_capability field"
     ),
     "R08_ACTION_EXECUTOR": "canonical action determines fixed runtime executor; never invent executor-like actions",
     "R09_CONTEXT_OVERRIDE": "active_flow_reply->slot_update unless switch/cancel",
@@ -177,6 +180,12 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
     '- Active transfer flow + "send it to her" -> {"selector":"previous"}.\n'
     '- Active transfer flow + "make it 20k" -> amount=20000.\n'
     "- Send 10k to Mum tomorrow 9am -> schedule_transfer.\n"
+    "- Send half my gtb balance to Adebayo -> action=send_money,"
+    "transfer_percentage=50,source_bank_name=GTBank,recipient_name=Adebayo.\n"
+    "- Bami fi idaji owo gtb mi ranse si Adebayo -> action=send_money,"
+    "transfer_percentage=50,source_bank_name=GTBank,recipient_name=Adebayo.\n"
+    "- Tura rabin kudin gtb dina zuwa Adebayo -> action=send_money,"
+    "transfer_percentage=50,source_bank_name=GTBank,recipient_name=Adebayo.\n"
     "- Send it to her every Friday -> recurring_transfer.\n"
     "- Split 20k between Adebayo and Mum -> action=send_money,"
     "recipient_allocations=Adebayo:10000,Mum:10000.\n"
@@ -188,6 +197,12 @@ PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
     "## TARGETED EXAMPLES (TRANSFER_ONLY)\n"
     "- Use GTBank to send 5k to Tolu Access for lunch -> action=send_money,source_bank_name=GTBank,"
     "recipient_name=Tolu Access,narration=Lunch; omit bank_name.\n"
+    "- Send half my gtb balance to Adebayo -> action=send_money,"
+    "transfer_percentage=50,source_bank_name=GTBank,recipient_name=Adebayo.\n"
+    "- Bami fi idaji owo gtb mi ranse si Adebayo -> action=send_money,"
+    "transfer_percentage=50,source_bank_name=GTBank,recipient_name=Adebayo.\n"
+    "- Tura rabin kudin gtb dina zuwa Adebayo -> action=send_money,"
+    "transfer_percentage=50,source_bank_name=GTBank,recipient_name=Adebayo.\n"
     "- 2k each -> action=send_money,"
     "recipient_allocations=[{recipient_name:Tolu Access,amount:2000},{recipient_name:Tolu GTB,amount:2000}],"
     "omit bank_name."

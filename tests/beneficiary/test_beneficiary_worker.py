@@ -2,8 +2,10 @@ from types import SimpleNamespace
 from typing import Any
 
 from banking.beneficiaries import worker as worker_module
+from banking.beneficiaries.formatter import BeneficiaryFormatter
 from banking.beneficiaries.worker import BeneficiaryWorker
 from banking.runtime.results import TransactionOutcome
+from shared.messaging.body_blocks import render_body_blocks_text
 
 
 class _FakeBeneficiaryRepo:
@@ -129,10 +131,13 @@ async def test_list_beneficiaries_count_shape_returns_count_first_preview(monkey
     assert result.outcome == TransactionOutcome.OK
     assert result.response == (
         "You have 4 saved beneficiaries.\n\n"
-        "Examples:\n"
-        "• Mum (Mama Nkechi) - Opay • …1023\n"
-        "• Tolu Access (Tolu Adebayo) - Access Bank • …0001\n"
-        "• Tolu GTB (Tolu Adeyemi) - GTBank • …0002"
+        "Examples\n\n"
+        "1. Mum — Mama Nkechi\n"
+        "Opay • ···1023\n\n"
+        "2. Tolu Access — Tolu Adebayo\n"
+        "Access Bank • ···0001\n\n"
+        "3. Tolu GTB — Tolu Adeyemi\n"
+        "GTBank • ···0002"
     )
     assert "Tolu First" not in result.response
 
@@ -179,7 +184,36 @@ async def test_list_beneficiaries_surface_list_keeps_full_list(monkeypatch) -> N
 
     assert result.outcome == TransactionOutcome.OK
     assert result.response is not None
-    assert result.response.startswith("*Saved Beneficiaries*")
-    assert "*Mum* (Mama Nkechi)" in result.response
-    assert "*Tolu Access* (Tolu Adebayo)" in result.response
+    assert result.response.startswith("Saved beneficiaries")
+    assert "1. Mum — Mama Nkechi\nOpay • ···1023" in result.response
+    assert "2. Tolu Access — Tolu Adebayo\nAccess Bank • ···0001" in result.response
     assert "You have 2 saved beneficiaries." not in result.response
+
+
+def test_beneficiary_list_blocks_render_mobile_spacing() -> None:
+    blocks = BeneficiaryFormatter.format_beneficiary_list_blocks(
+        [
+            {
+                "alias": "Mum",
+                "name": "Mama Nkechi",
+                "bank": "Opay",
+                "account": "8162511023",
+            },
+            {
+                "alias": "Tolu Access",
+                "name": "Tolu Adebayo",
+                "bank": "Access Bank",
+                "account": "2010000001",
+            },
+        ],
+        locale="en",
+    )
+
+    assert blocks is not None
+    assert render_body_blocks_text(blocks) == (
+        "Saved beneficiaries\n\n"
+        "1. Mum — Mama Nkechi\n"
+        "Opay • ···1023\n\n"
+        "2. Tolu Access — Tolu Adebayo\n"
+        "Access Bank • ···0001"
+    )

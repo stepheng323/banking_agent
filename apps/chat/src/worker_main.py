@@ -236,7 +236,8 @@ async def _run_schedule_dispatcher_loop(stop_event: asyncio.Event) -> None:
 
         stats = await _dispatch_due_schedules_with_lock(lock_ttl_seconds)
         if stats is not None:
-            logger.info("schedule_dispatcher_tick_completed", result=stats)
+            if stats.get("processed", 0) > 0 or stats.get("skipped", 0) > 0:
+                logger.info("schedule_dispatcher_tick_completed", result=stats)
 
 
 async def _warm_runtime_best_effort() -> None:

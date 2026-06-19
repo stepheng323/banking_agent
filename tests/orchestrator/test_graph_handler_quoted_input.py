@@ -149,6 +149,8 @@ async def test_graph_handler_invoke_passes_quoted_message_fields(monkeypatch: py
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -200,6 +202,8 @@ async def test_graph_handler_resume_flow_clears_quoted_message_fields(monkeypatc
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -265,6 +269,8 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -316,6 +322,8 @@ async def test_graph_handler_uses_lightweight_hydration_for_fresh_transfer(monke
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -386,6 +394,8 @@ async def test_graph_handler_cancel_prefastpath_uses_cache_only_hydration(monkey
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -445,6 +455,8 @@ async def test_graph_handler_meta_prefastpath_uses_minimal_hydration_and_skips_t
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -526,6 +538,8 @@ async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.Monk
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -595,6 +609,8 @@ async def test_graph_handler_keeps_delivery_metadata_empty_after_visible_progres
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -657,6 +673,8 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -758,6 +776,8 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -836,6 +856,8 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -959,6 +981,8 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),
@@ -1079,6 +1103,8 @@ async def test_deduped_progress_attempt_does_not_advance_progress(
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
+        semantic_router_llm=SimpleNamespace(),
+        capability_classifier_llm=SimpleNamespace(),
         transfer_service=SimpleNamespace(),
         airtime_service=SimpleNamespace(),
         query_service=SimpleNamespace(),

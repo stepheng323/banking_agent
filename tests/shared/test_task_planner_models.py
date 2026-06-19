@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner_prompt_models import PlannerPromptSignals
 from shared.config.settings import settings
@@ -76,16 +77,13 @@ class _StructuredFakeLLM:
 def test_task_planner_uses_dedicated_interrupt_model_when_provided() -> None:
     planner_llm = _FakeLLM("planner")
     interrupt_llm = _FakeLLM("interrupt")
-    semantic_router_llm = _FakeLLM("semantic")
 
     planner = TaskPlanner(
         planner_llm=planner_llm,
-        semantic_router_llm=semantic_router_llm,
         interrupt_llm=interrupt_llm,
     )
 
     assert planner.structured_planner == "planner:PlannerOutput"
-    assert planner.structured_semantic_router == "semantic:SemanticRouteDecision"
     assert planner.structured_interrupt_router == "interrupt:InterruptRouteDecision"
     assert planner.structured_quoted_replay == "planner:QuotedReplayInterpretation"
 
@@ -95,25 +93,23 @@ def test_task_planner_falls_back_to_planner_model_for_interrupt_router() -> None
 
     planner = TaskPlanner(planner_llm=planner_llm)
 
-    assert planner.structured_semantic_router == "planner:SemanticRouteDecision"
     assert planner.structured_interrupt_router == "planner:InterruptRouteDecision"
 
 
 def test_task_planner_falls_back_to_interrupt_model_for_semantic_router_when_not_provided() -> None:
-    planner_llm = _FakeLLM("planner")
-    interrupt_llm = _FakeLLM("interrupt")
-
-    planner = TaskPlanner(planner_llm=planner_llm, interrupt_llm=interrupt_llm)
-
-    assert planner.structured_semantic_router == "interrupt:SemanticRouteDecision"
-    assert planner.structured_interrupt_router == "interrupt:InterruptRouteDecision"
+    """SemanticRouterLLM is now a standalone class; this test verifies it uses the supplied LLM."""
+    semantic_llm = _FakeLLM("semantic")
+    router = SemanticRouterLLM(llm=semantic_llm)  # type: ignore[arg-type]
+    # The router holds two structured-output handles, both using the semantic LLM
+    assert router.structured_semantic_router == "semantic:SemanticRouteDecision"
+    assert router.structured_schedule_read_router == "semantic:SemanticRouteDecision"
 
 
 async def test_task_planner_route_semantic_turn_uses_shared_structured_invocation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "llm_response_cache_enabled", False)
-    planner_llm = _StructuredFakeLLM(
+    router_llm = _StructuredFakeLLM(
         {
             "SemanticRouteDecision": {
                 "decision": "domain_query",
@@ -124,9 +120,9 @@ async def test_task_planner_route_semantic_turn_uses_shared_structured_invocatio
             }
         }
     )
-    planner = TaskPlanner(planner_llm=planner_llm)
+    router = SemanticRouterLLM(llm=router_llm)  # type: ignore[arg-type]
 
-    decision = await planner.route_semantic_turn(
+    decision = await router.route_semantic_turn(
         "2348000000010",
         "what about last week",
         context="Recent query result",
@@ -134,8 +130,8 @@ async def test_task_planner_route_semantic_turn_uses_shared_structured_invocatio
 
     assert decision.decision == "domain_query"
     assert decision.target_intent == "query"
-    assert planner.structured_semantic_router.last_messages is not None
-    assert planner.structured_semantic_router.last_messages[1]["content"].startswith("User phone: 2348000000010")
+    assert router.structured_semantic_router.last_messages is not None
+    assert router.structured_semantic_router.last_messages[1]["content"].startswith("User phone: 2348000000010")
 
 
 async def test_task_planner_pending_action_edit_uses_shared_structured_invocation() -> None:

@@ -3,12 +3,8 @@ from typing import Any
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _is_obvious_data_request,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
-    _build_direct_domain_task,
-    _direct_domain_capability_block_message,
-)
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.domain_data_plan import (
     _apply_self_data_target,
     _extract_data_purchase_hints,
@@ -16,6 +12,10 @@ from apps.chat.src.agent.orchestrator.workflows.gate.stages.domain_data_plan imp
     _is_data_plan_query_request,
     _is_data_plan_reference_purchase_request,
     _resolved_data_plan_payload,
+)
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
+    _build_direct_domain_task,
+    _direct_domain_capability_block_message,
 )
 from shared.utils.logging import get_logger
 

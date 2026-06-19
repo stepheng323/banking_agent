@@ -25,12 +25,12 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_int
     _is_obvious_data_request,
     _obvious_mixed_transaction_executors,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _next_direct_domain_task_id
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import task_dispatch
-from apps.chat.src.agent.orchestrator.workflows.gate.routing import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.core.routing import (
     _route_observability_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import _next_direct_domain_task_id
 from apps.chat.src.agent.orchestrator.workflows.planner.context.frames.context_frame_followup_surface_engine import (
     build_surface_answer_context_for_state as build_context_frame_followup_context_for_state,
 )

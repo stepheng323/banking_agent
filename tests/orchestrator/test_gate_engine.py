@@ -3,28 +3,24 @@ from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.contracts import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.contracts import (
     GateEligibilityResult,
     GateHandlerSpec,
     GateLayer,
     GateOutcomeKind,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.engine import ordered_gate_handlers, run_gate_engine
-from apps.chat.src.agent.orchestrator.workflows.gate.family import build_gate_family_handler
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.engine import ordered_gate_handlers, run_gate_engine
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import (
     direct_response,
     hint_only,
     planner_handoff,
     policy_block,
     task_dispatch,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.registry import (
-    GATE_HANDLER_SPECS,
-)
-from apps.chat.src.agent.orchestrator.workflows.gate.runtime import build_gate_runtime
+from apps.chat.src.agent.orchestrator.workflows.gate.core.runtime import build_gate_runtime
+from apps.chat.src.agent.orchestrator.workflows.gate.core.trace import summarize_gate_trace
 from apps.chat.src.agent.orchestrator.workflows.gate.stage_specs import GATE_STAGE_SPECS
-from apps.chat.src.agent.orchestrator.workflows.gate.trace import summarize_gate_trace
 
 _GATE_STAGE_NAMES = (
     "_stage_language_switch",
@@ -33,6 +29,7 @@ _GATE_STAGE_NAMES = (
     "_stage_expired_pin",
     "_stage_mixed_supported_unsupported_capability",
     "_stage_capability_boundary_followup",
+    "_stage_deterministic_unsupported_capability",
     "_stage_semantic_unsupported_capability",
     "_stage_schedule_read_router",
     "_stage_resume_prompt_action",
@@ -66,16 +63,6 @@ _GATE_SPECS_WITH_INTERNAL_ELIGIBILITY = {
     "banking_ambiguity",
     "query_and_transfer_domain_guards",
 }
-_GATE_FAMILY_HANDLER_IDS = (
-    "preflight_cleanup_family",
-    "hard_guardrails_family",
-    "capability_guards_family",
-    "session_resume_family",
-    "specialized_fastpaths_family",
-    "context_followups_family",
-    "domain_fastpaths_family",
-    "semantic_routing_family",
-)
 
 
 def _context() -> GateContext:
@@ -119,36 +106,19 @@ def test_gate_registry_preserves_stage_order() -> None:
     )
 
 
-def test_gate_registry_uses_layer_family_handlers() -> None:
-    ordered_specs = ordered_gate_handlers(GATE_HANDLER_SPECS)
-
-    assert tuple(spec.id for spec in ordered_specs) == _GATE_FAMILY_HANDLER_IDS
-    assert tuple(spec.outcome_kind for spec in ordered_specs) == (GateOutcomeKind.FAMILY_ROUTER,) * len(
-        _GATE_FAMILY_HANDLER_IDS
-    )
-
-
 def test_gate_registry_has_unique_ids_and_stable_order() -> None:
-    ordered_specs = ordered_gate_handlers(GATE_HANDLER_SPECS)
     ordered_stage_specs = ordered_gate_handlers(GATE_STAGE_SPECS)
-    ids = [spec.id for spec in ordered_specs]
     stage_ids = [spec.id for spec in ordered_stage_specs]
-    layer_priority_pairs = [(spec.layer, spec.priority) for spec in ordered_specs]
     stage_layer_priority_pairs = [(spec.layer, spec.priority) for spec in ordered_stage_specs]
 
-    assert len(ids) == len(set(ids))
     assert len(stage_ids) == len(set(stage_ids))
-    assert len(layer_priority_pairs) == len(set(layer_priority_pairs))
     assert len(stage_layer_priority_pairs) == len(set(stage_layer_priority_pairs))
-    assert tuple(ordered_specs) == GATE_HANDLER_SPECS
     assert tuple(ordered_stage_specs) == GATE_STAGE_SPECS
-    assert all(spec.description.strip() for spec in ordered_specs)
     assert all(spec.description.strip() for spec in ordered_stage_specs)
 
 
 def test_gate_registry_metadata_is_reviewable_and_deliberate() -> None:
-    specs = (*ordered_gate_handlers(GATE_HANDLER_SPECS), *ordered_gate_handlers(GATE_STAGE_SPECS))
-    for spec in specs:
+    for spec in ordered_gate_handlers(GATE_STAGE_SPECS):
         assert spec.id.strip()
         assert spec.owner.strip()
         assert spec.description.strip()
@@ -162,8 +132,7 @@ def test_gate_registry_metadata_is_reviewable_and_deliberate() -> None:
 
 
 def test_gate_registry_eligibility_metadata_is_non_mutating() -> None:
-    specs = (*ordered_gate_handlers(GATE_HANDLER_SPECS), *ordered_gate_handlers(GATE_STAGE_SPECS))
-    for spec in specs:
+    for spec in ordered_gate_handlers(GATE_STAGE_SPECS):
         if spec.eligibility is None:
             continue
         ctx = _context()
@@ -248,65 +217,6 @@ async def test_gate_engine_short_circuits_on_first_match() -> None:
     assert result.trace[-1].routing_owner == "unit"
     assert result.trace[-1].routing_decision == "matched"
 
-
-async def test_gate_family_router_records_nested_subhandler_trace() -> None:
-    calls: list[str] = []
-
-    async def first(_: GateContext) -> None:
-        calls.append("first")
-        return None
-
-    async def second(_: GateContext) -> dict[str, Any]:
-        calls.append("second")
-        return {
-            "direct_path_triggered": True,
-            "routing_owner": "unit",
-            "routing_decision": "family_matched",
-        }
-
-    family_handler = build_gate_family_handler(
-        "unit_family",
-        (
-            _spec("first", GateLayer.DOMAIN_FASTPATHS, 10, first),
-            _spec("second", GateLayer.DOMAIN_FASTPATHS, 20, second),
-        ),
-    )
-    family_spec = GateHandlerSpec(
-        id="unit_family",
-        layer=GateLayer.DOMAIN_FASTPATHS,
-        priority=10,
-        handler=family_handler,
-        owner="family_router",
-        outcome_kind=GateOutcomeKind.FAMILY_ROUTER,
-        may_call_llm=False,
-        description="Unit family router.",
-    )
-
-    result = await run_gate_engine(_context(), (family_spec,))
-    summary = summarize_gate_trace(result)
-
-    assert calls == ["first", "second"]
-    assert result.matched_handler_id == "unit_family"
-    assert result.trace[0].nested_trace[0].handler_id == "first"
-    assert result.trace[0].nested_trace[0].matched is False
-    assert result.trace[0].nested_trace[1].handler_id == "second"
-    assert result.trace[0].nested_trace[1].matched is True
-    assert summary["family_traces"] == [
-        {
-            "handler_id": "unit_family",
-            "layer": "domain_fastpaths",
-            "entry_count": 2,
-            "matched_entries": [
-                {
-                    "handler_id": "second",
-                    "layer": "domain_fastpaths",
-                    "routing_owner": "unit",
-                    "routing_decision": "family_matched",
-                },
-            ],
-            "skipped_count": 0,
-        }
-    ]
 
 
 async def test_gate_engine_skips_ineligible_handler_without_calling_it() -> None:

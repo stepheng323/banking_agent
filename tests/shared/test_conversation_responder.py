@@ -5,7 +5,16 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
 )
 from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry import get_unsupported_capability
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
+    SOCIAL_META_INTENT,
+    SOCIAL_META_RENDER_PARAMS_CTX,
+    SOCIAL_META_RESPONSE_KEY_CTX,
+)
+from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import (
+    is_contextual_casual_followup_turn,
+)
 from banking.presentation.i18n.renderer import render_message
+from shared.observability.llm_call_metrics import start_llm_call_recording, stop_llm_call_recording
 
 
 def _unsupported_params(key: str) -> dict[str, object]:
@@ -34,6 +43,79 @@ async def test_conversation_responder_appends_deterministic_banking_redirect() -
     )
 
     assert reply == ("Today is Thursday, April 09, 2026.\n" + render_message("conversational.out_of_scope", "en"))
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_records_llm_call_metrics() -> None:
+    responder = ConversationResponder(_FakeLLM("Small money joke."))  # type: ignore[arg-type]
+    token = start_llm_call_recording()
+    try:
+        await responder.generate_reply(
+            "Tell me something funny about money",
+            {"language": "en", "history": [], "profile": {}},
+        )
+    finally:
+        calls = stop_llm_call_recording(token)
+
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["event_name"] == "conversation_responder_llm_call"
+    assert call["llm_role"] == "conversation_responder"
+    assert call["response_type"] == "ConversationResponderReply"
+    assert call["system_chars"] > 0
+    assert call["user_chars"] > 0
+    assert call["output_json_chars"] == len("Small money joke.")
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_social_meta_keeps_natural_banking_anchor_without_redirect() -> None:
+    llm = _FakeLLM("Hey Olamide, I'm here and ready to help with transfers or balances.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "How far my guy",
+        {
+            "language": "en",
+            "history": [],
+            "profile": {"first_name": "Olamide"},
+            SOCIAL_META_RESPONSE_KEY_CTX: "conversational.greeting",
+            SOCIAL_META_RENDER_PARAMS_CTX: {"display_name": "Olamide"},
+        },
+        intent=SOCIAL_META_INTENT,
+    )
+
+    assert reply == "Hey Olamide, I'm here and ready to help with transfers or balances."
+    assert render_message("conversational.out_of_scope", "en") not in reply
+    assert llm.messages is not None
+    assert "Match the user's energy" in llm.messages[0]["content"]
+    assert "Social response key: conversational.greeting" in llm.messages[1]["content"]
+    assert "Suggested display name: Olamide" in llm.messages[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_social_meta_returns_empty_for_unsafe_output() -> None:
+    responder = ConversationResponder(_FakeLLM("Here is investment advice: buy this stock immediately."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "Hi",
+        {"language": "en", "history": [], SOCIAL_META_RESPONSE_KEY_CTX: "conversational.greeting"},
+        intent=SOCIAL_META_INTENT,
+    )
+
+    assert reply == ""
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_social_meta_rejects_action_promise() -> None:
+    responder = ConversationResponder(_FakeLLM("Hi, I can send money for you now."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "Hi",
+        {"language": "en", "history": [], SOCIAL_META_RESPONSE_KEY_CTX: "conversational.greeting"},
+        intent=SOCIAL_META_INTENT,
+    )
+
+    assert reply == ""
 
 
 @pytest.mark.asyncio
@@ -103,6 +185,36 @@ async def test_conversation_responder_keeps_harmless_joke_reply_plus_redirect() 
         "Why did the banker bring a ladder? To reach the next interest level.\n"
         + render_message("conversational.out_of_scope", "en")
     )
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_keeps_harmless_fact_reply_plus_redirect() -> None:
+    responder = ConversationResponder(_FakeLLM("Octopus get three hearts, but one stops when it swims."))  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "Can you tell me something so weird but true",
+        {"language": "en", "history": [], "profile": {}},
+    )
+
+    assert reply == (
+        "Octopus get three hearts, but one stops when it swims.\n" + render_message("conversational.out_of_scope", "en")
+    )
+
+
+def test_contextual_casual_followup_recognizes_fact_history() -> None:
+    history = [
+        {"role": "user", "content": "Can you tell me something so weird but true"},
+        {
+            "role": "assistant",
+            "content": "See one: octopus get three hearts. Weird, but true.\n"
+            + render_message("conversational.out_of_scope", "en"),
+        },
+    ]
+
+    assert is_contextual_casual_followup_turn("Tell me more", history)
+    assert is_contextual_casual_followup_turn("more", history)
+    assert not is_contextual_casual_followup_turn("show more", history)
+    assert not is_contextual_casual_followup_turn("tell me more about the transfer", history)
 
 
 @pytest.mark.asyncio

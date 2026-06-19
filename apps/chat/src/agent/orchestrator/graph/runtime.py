@@ -9,8 +9,10 @@ from typing import Any
 import redis.asyncio as redis
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.capabilities.llm import CapabilityClassifierLLM
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.graph.progress import TurnProgressTracker
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.planner.core.task_planner import TaskPlanner
 from banking.accounts.repositories.account_repository import AccountRepository
 from banking.beneficiaries.repositories.beneficiary_repository import BeneficiaryRepository
@@ -27,6 +29,8 @@ class GraphConfigDependencies:
     """Dependencies exposed to LangGraph nodes through RunnableConfig."""
 
     task_planner: TaskPlanner
+    semantic_router_llm: SemanticRouterLLM
+    capability_classifier_llm: CapabilityClassifierLLM
     services: Mapping[str, WorkerProtocol]
     user_repo: UserRepository
     beneficiary_repo: BeneficiaryRepository
@@ -62,6 +66,8 @@ def build_graph_runnable_config(
     configurable: dict[str, Any] = {
         "thread_id": thread_id,
         "task_planner": dependencies.task_planner,
+        "semantic_router_llm": dependencies.semantic_router_llm,
+        "capability_classifier_llm": dependencies.capability_classifier_llm,
         "services": dependencies.services,
         "user_repo": dependencies.user_repo,
         "beneficiary_repo": dependencies.beneficiary_repo,

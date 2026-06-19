@@ -71,7 +71,7 @@ async def test_planner_injects_filter_refinement_guidance_for_active_query_sessi
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": planner,
+            "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
             "redis_client": _RedisWithQuerySession(),
             "services": {},
         },

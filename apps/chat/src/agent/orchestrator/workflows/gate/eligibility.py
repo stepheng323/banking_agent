@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.contracts import GateEligibility, GateEligibilityResult
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.contracts import GateEligibility, GateEligibilityResult
 
 
 def _result(eligible: bool, reason: str, details: dict[str, object] | None = None) -> GateEligibilityResult:

@@ -70,6 +70,20 @@ async def _resolve_pre_router_interrupt_updates(
     if status_updates is not None:
         return status_updates
 
+    question_route = classify_deterministic_active_flow_question(
+        text=runtime.text,
+        interrupt=runtime.interrupt,
+        current_task_types=runtime.current_task_types,
+    )
+    if question_route is not None and question_route.question_type not in {None, "unknown"}:
+        return active_flow_question_updates(
+            state=state,
+            interrupt=runtime.interrupt,
+            route=question_route,
+            current_task_types=runtime.current_task_types,
+            semantic_path_shape="deterministic_active_flow_question",
+        )
+
     account_switch_updates = await _account_balance_switch_updates(state=state, runtime=runtime)
     if account_switch_updates is not None:
         return account_switch_updates
@@ -103,20 +117,6 @@ async def _resolve_pre_router_interrupt_updates(
     )
     if schedule_read_updates is not None:
         return schedule_read_updates
-
-    question_route = classify_deterministic_active_flow_question(
-        text=runtime.text,
-        interrupt=runtime.interrupt,
-        current_task_types=runtime.current_task_types,
-    )
-    if question_route is not None and question_route.question_type not in {None, "unknown"}:
-        return active_flow_question_updates(
-            state=state,
-            interrupt=runtime.interrupt,
-            route=question_route,
-            current_task_types=runtime.current_task_types,
-            semantic_path_shape="deterministic_active_flow_question",
-        )
 
     fresh_command_updates = await _fresh_command_switch_updates(state=state, runtime=runtime)
     if fresh_command_updates is not None:

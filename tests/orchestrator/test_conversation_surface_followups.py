@@ -1,14 +1,17 @@
 import time
+from typing import cast
 
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.chat.src.agent.orchestrator.capabilities.llm import CapabilityClassifierLLM
 from apps.chat.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
 from apps.chat.src.agent.orchestrator.workflows.gate.stages.context_frame_stages import _stage_context_frame_followup
-from apps.chat.src.agent.orchestrator.workflows.gate.state_view import gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.gate.state.state_view import gate_state_view
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.semantic_router_llm import SemanticRouterLLM
 from apps.chat.src.agent.orchestrator.workflows.lifecycle.finalize import finalize
 from apps.chat.src.agent.orchestrator.workflows.planner.node import plan_tasks
 from shared.types.planner import (
@@ -79,6 +82,8 @@ def _config(planner: _SurfaceFollowupPlanner) -> RunnableConfig:
     return {
         "configurable": {
             "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
             "beneficiary_suggestion_service": None,
             "services": {},
             "redis_client": None,
@@ -99,6 +104,8 @@ async def _run_context_frame_gate_stage(
             config=_config(planner),
             redis_client=None,
             task_planner=planner,
+            semantic_router_llm=cast(SemanticRouterLLM, planner),
+            capability_classifier_llm=cast(CapabilityClassifierLLM, planner),
             conversation_responder=None,
             state_view=gate_state_view(state),
             message_text=state.last_message_text,
@@ -2127,6 +2134,8 @@ async def test_gate_context_frame_display_shortcut_avoids_llm_for_schedule_show_
         config=_config(planner),
         redis_client=None,
         task_planner=planner,
+        semantic_router_llm=cast(SemanticRouterLLM, planner),
+        capability_classifier_llm=cast(CapabilityClassifierLLM, planner),
         conversation_responder=None,
         message_text=state.last_message_text or "",
         current_locale="en",
@@ -2192,6 +2201,8 @@ async def test_gate_context_frame_display_formats_data_plan_details_naturally() 
         config=_config(planner),
         redis_client=None,
         task_planner=planner,
+        semantic_router_llm=cast(SemanticRouterLLM, planner),
+        capability_classifier_llm=cast(CapabilityClassifierLLM, planner),
         conversation_responder=None,
         message_text=state.last_message_text or "",
         current_locale="en",
@@ -2293,6 +2304,8 @@ async def test_gate_context_frame_replay_applies_structured_modifier_extraction(
         config=_config(planner),
         redis_client=None,
         task_planner=planner,
+        semantic_router_llm=cast(SemanticRouterLLM, planner),
+        capability_classifier_llm=cast(CapabilityClassifierLLM, planner),
         conversation_responder=None,
         message_text=state.last_message_text,
         current_locale="en",

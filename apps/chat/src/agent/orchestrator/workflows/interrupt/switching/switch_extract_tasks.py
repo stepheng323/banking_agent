@@ -5,7 +5,7 @@ from typing import Any, cast
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
 from apps.chat.src.agent.orchestrator.utils.task_payload import build_task_specs_and_waves_from_plan_items
-from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import _build_direct_domain_task
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import _build_direct_domain_task
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import _next_interrupt_task_id, logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.state_view import interrupt_state_view
 from apps.chat.src.agent.orchestrator.workflows.interrupt.switching.switch_extract_bill_seeds import (

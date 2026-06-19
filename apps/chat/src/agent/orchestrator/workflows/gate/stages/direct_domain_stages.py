@@ -14,13 +14,13 @@ from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains 
 from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.transaction_intents import (
     _is_obvious_airtime_request,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.context import GateContext
-from apps.chat.src.agent.orchestrator.workflows.gate.direct_tasks import (
+from apps.chat.src.agent.orchestrator.workflows.gate.core.context import GateContext
+from apps.chat.src.agent.orchestrator.workflows.gate.core.outcomes import direct_response, task_dispatch
+from apps.chat.src.agent.orchestrator.workflows.gate.utils.direct_tasks import (
     _build_direct_domain_task,
     _direct_domain_capability_block_message,
     _next_direct_account_task_id,
 )
-from apps.chat.src.agent.orchestrator.workflows.gate.outcomes import direct_response, task_dispatch
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

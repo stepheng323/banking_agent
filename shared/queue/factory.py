@@ -1,4 +1,4 @@
-from shared.config.settings import settings
+
 from shared.queue.adapter import QueuePublisher
 from shared.queue.contracts import TopicType
 from shared.queue.redis_stream_publisher import RedisStreamPublisher
@@ -28,18 +28,11 @@ class QueuePublisherFactory:
 
     @staticmethod
     def _build_async_publisher() -> QueuePublisher:
-        logger.info("creating_redis_async_queue_publisher")
         return RedisStreamPublisher()
 
     @staticmethod
     def get_publisher() -> QueuePublisher:
         """Return a composite publisher for chat ingress and async jobs."""
-        logger.info(
-            "creating_composite_queue_publisher",
-            chat_transport=settings.chat_transport,
-            async_transport="redis",
-        )
-
         return CompositeQueuePublisher(
             chat_publisher=RedisStreamPublisher(),
             async_publisher=QueuePublisherFactory._build_async_publisher(),

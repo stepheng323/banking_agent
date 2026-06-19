@@ -241,14 +241,14 @@ def test_planner_quality_dirty_when_source_first_alias_suffix_becomes_bank_name(
 
 def test_planner_quality_dirty_when_data_plan_is_patched() -> None:
     planner_output = _planner_output(
-            make_planned_task(
-                task_id="d1",
-                action="buy_data",
-                executor="data",
-                instruction="Buy 1GB MTN data for me",
-                parameters=DataTaskParameters(amount="1GB", network="MTN", is_self=True),
-                risk="MONEY_MOVE",
-            )
+        make_planned_task(
+            task_id="d1",
+            action="buy_data",
+            executor="data",
+            instruction="Buy 1GB MTN data for me",
+            parameters=DataTaskParameters(amount="1GB", network="MTN", is_self=True),
+            risk="MONEY_MOVE",
+        )
     )
 
     _normalized, quality = normalize_planner_transaction_output_with_quality(

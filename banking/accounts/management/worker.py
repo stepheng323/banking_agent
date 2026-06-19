@@ -1,5 +1,6 @@
 """Account management worker (stateless)."""
 
+from decimal import Decimal
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -24,6 +25,7 @@ from banking.runtime.results import AccountOutcome, AccountResult
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.messaging.body_blocks import MessageDocument
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -43,6 +45,12 @@ ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
     "change_bvn": AccountCapability.CHANGE_BVN,
     "add_joint_holder": AccountCapability.ADD_JOINT_HOLDER,
 }
+
+
+def _say_outbox(text: str | None, body_blocks: MessageDocument | None = None) -> list[dict[str, Any]]:
+    if not text or not body_blocks:
+        return []
+    return [{"type": "say", "text": text, "body_blocks": body_blocks}]
 
 
 class AccountWorker:
@@ -196,6 +204,7 @@ class AccountWorker:
             )
 
         viewed_accounts: list[dict[str, Any]] = []
+        body_blocks: MessageDocument | None = None
         try:
             if action == "link":
                 flow_data = await build_link_account_flow(
@@ -243,6 +252,16 @@ class AccountWorker:
                     account_identifiers=account_identifiers,
                     locale=locale,
                 )
+                total_balance = (
+                    sum((Decimal(str(item.get("amount") or "0")) for item in viewed_accounts), Decimal("0.00"))
+                    if len(viewed_accounts) > 1
+                    else None
+                )
+                body_blocks = AccountFormatter.format_balance_response_blocks(
+                    viewed_accounts,
+                    total_balance,
+                    locale=locale,
+                )
             else:
                 accounts = user_ctx.get("accounts")
                 if accounts:
@@ -251,12 +270,14 @@ class AccountWorker:
                     accounts = await self.account_repo.get_by_user(user_id)
                     response = AccountFormatter.format_account_list(accounts, locale=locale)
                 viewed_accounts = serialize_accounts(accounts)
+                body_blocks = AccountFormatter.format_account_list_blocks(accounts, locale=locale)
 
             return AccountResult(
                 outcome=AccountOutcome.OK,
                 response=response,
                 patch=patch,
                 details={"viewed_accounts": viewed_accounts} if viewed_accounts else {},
+                outbox=_say_outbox(response, body_blocks),
             )
         except Exception as e:
             logger.error("account_worker_failed", error=str(e), exc_info=True)

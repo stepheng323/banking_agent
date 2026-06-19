@@ -15,7 +15,7 @@ from apps.chat.src.agent.orchestrator.models.domain import (
 )
 from apps.chat.src.agent.orchestrator.models.state import CapabilityBoundary, OrchestratorState
 from apps.chat.src.agent.orchestrator.workflows.execution.node import advance_wave
-from apps.chat.src.agent.orchestrator.workflows.gate.node import session_gate_direct_path
+from apps.chat.src.agent.orchestrator.workflows.gate.core.node import session_gate_direct_path
 from apps.chat.src.agent.orchestrator.workflows.interrupt.node import handle_pending_interrupt
 from banking.bills.airtime.worker import AirtimeWorker
 from banking.bills.data.models.extraction import DataExtractionResult, DataPurchaseEntities
@@ -1183,7 +1183,7 @@ async def test_quality_audit_data_confirmation_balance_detour_stashes_and_runs_a
     assert account_worker.last_user_message == "Whats my access balance"
     assert account_updates["outbox"] == [
         {"type": "say", "text": "I paused the data purchase while I check your account."},
-        {"type": "say", "text": "Your Access Bank account (···0003) has a balance of ₦30,000.00."}
+        {"type": "say", "text": "Your Access Bank account (···0003) has a balance of ₦30,000.00."},
     ]
     assert switched_state.referent_memory.items
     assert any(item.source == "stashed_session" for item in switched_state.referent_memory.items)

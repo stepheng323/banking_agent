@@ -18,6 +18,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.task_mutations import 
 )
 from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _get_worker
+from banking.beneficiaries.formatter import BeneficiaryFormatter
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import AccountOutcome, AccountResult, TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
@@ -104,8 +105,10 @@ async def _execute_account_task(task: TaskSpec, task_id: str, ctx: ExecutionTurn
             )
         if result.response:
             set_task_payload_value(task, "result", result.response)
+        if result.outbox:
+            ctx.accumulator.extend_outbox(result.outbox)
+        else:
             ctx.accumulator.say(result.response)
-        ctx.accumulator.extend_outbox(result.outbox)
 
     elif result.outcome == AccountOutcome.NEEDS_INPUT:
         set_task_stage(task, TaskStage.EXTRACTED)
@@ -173,10 +176,29 @@ async def _execute_beneficiary_task(task: TaskSpec, task_id: str, ctx: Execution
             if result.details and "viewed_beneficiaries" in result.details:
                 viewed = result.details["viewed_beneficiaries"]
                 push_beneficiary_list_frame(ctx, viewed, metadata=_beneficiary_frame_metadata(task, viewed))
+                response_shape = str(task.payload.get("response_shape") or "").strip().lower()
+                if isinstance(viewed, list) and response_shape in _COUNT_PREVIEW_SHAPES and result.response:
+                    body_blocks = BeneficiaryFormatter.format_count_preview_blocks(
+                        viewed,
+                        result.response.splitlines()[0],
+                        locale=_state_locale(ctx.state),
+                    )
+                elif isinstance(viewed, list):
+                    body_blocks = BeneficiaryFormatter.format_beneficiary_list_blocks(
+                        viewed,
+                        locale=_state_locale(ctx.state),
+                    )
+                else:
+                    body_blocks = None
+            else:
+                body_blocks = None
 
             if result.response:
                 set_task_payload_value(task, "result", result.response)
-                ctx.accumulator.say(result.response)
+                if body_blocks:
+                    ctx.accumulator.add_outbox({"type": "say", "text": result.response, "body_blocks": body_blocks})
+                else:
+                    ctx.accumulator.say(result.response)
         elif result.outcome == TransactionOutcome.FAILED:
             err = result.error or render_message(
                 "orchestrator.error.beneficiary_operation_failed",
