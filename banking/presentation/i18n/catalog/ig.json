@@ -64,17 +64,17 @@
     "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nLaghachi na banking: Enwere m ike inyere gị aka na transfers, airtime/data, balances, transactions, na receipts."
   },
   "conversational": {
-    "greeting": "Ndeewo. Abụ m {app_name}. Kedu ihe ịchọrọ ka m mee taa?",
-    "greeting_named": "Ndeewo {display_name}. Abụ m {app_name}. Kedu ihe ịchọrọ ka m mee taa?",
+    "greeting": "Ndeewo. Abụ m {app_name}. Enwere m ike inyere gị aka na transfers, airtime/data, balances, na transactions. Kedu ihe ịchọrọ ime?",
+    "greeting_named": "Ndeewo {display_name}. Abụ m {app_name}. Enwere m ike inyere gị aka na transfers, airtime/data, balances, na transactions. Kedu ihe ịchọrọ ime?",
     "appreciation": "Nnoo. Kedu ọrụ ọzọ ka anyị ga-eme ugbu a?",
     "checkin": "Anọ m ebe a. Kedu mmegharị ego ka anyị ga-eme?",
     "identity": "Abụ m {app_name}, onye enyemaka banking na-enyere gị ịkwaga na ilele ego gị: transfer, airtime/data, balance, na ajụjụ transaction.",
     "identity_correction": "Ọ bụghị {addressed_name} 😄 Abụ m {app_name}. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction. Kedu ihe ịchọrọ ime?",
     "brand_origin": "Aha {app_name_short} sitere na {app_brand_inspiration}. Anyị họọrọ ya n'ihi na {app_brand_symbolism}: echiche dị n'azụ {app_name} bụ inyere ego gị aka ịga nke ọma, nke doro anya, ma nọrọ n'okpuru njikwa gị.",
     "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
-    "out_of_scope": "Ana m elekwasị anya na ọrụ banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
-    "out_of_scope_followup": "Ọ bụrụ na ịchọrọ, enwere m ike inyere gị aka kwa na transfer, airtime/data, balance, na ajụjụ transaction.",
-    "out_of_scope_firm": "Ka anyị laghachi na banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
+    "out_of_scope": "Laghachi na banking: kedu ihe ịchọrọ ime?",
+    "out_of_scope_followup": "A ka m nọ ebe a maka banking mgbe ị dị njikere.",
+    "out_of_scope_firm": "Ka anyị laghachi na banking. Kedu ihe anyị ga-eme?",
     "clarify": "Enwere m ike inyere gị aka na banking tasks: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "Aghọtara m.",

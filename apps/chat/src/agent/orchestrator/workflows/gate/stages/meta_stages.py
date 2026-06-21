@@ -17,7 +17,6 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intent
     SOCIAL_META_RESPONSE_KEYS,
 )
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_text import (
-    deterministic_joke_fallback,
     redirect_text,
 )
 from apps.chat.src.agent.orchestrator.guardrails.banking_ambiguity import (
@@ -129,7 +128,7 @@ async def _stage_deterministic_meta(ctx: GateContext) -> dict[str, Any] | None:
             ctx,
             locale,
             intent=NON_BANKING_CONVERSATIONAL_INTENT,
-        ) or f"{deterministic_joke_fallback(casual_streak=0)}\n{redirect_text(locale, casual_streak=0)}"
+        ) or redirect_text(locale, casual_streak=0)
     elif response_key in SOCIAL_META_RESPONSE_KEYS:
         final_response = await _build_bounded_conversational_reply(
             ctx,

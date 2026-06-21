@@ -124,7 +124,15 @@ DETERMINISTIC_CAPABILITY_PATTERNS = (
     ),
 )
 DETERMINISTIC_JOKE_REQUEST_RE = re.compile(
-    r"\b(?:joke|funny|laugh)\b",
+    r"\b(?:"
+    r"tell\s+me\s+(?:(?:a|one|small)\s+)?joke|"
+    r"tell\s+me\s+(?:\w+\s+){0,3}joke|"
+    r"give\s+me\s+(?:a\s+)?joke|"
+    r"say\s+(?:a\s+)?joke|"
+    r"make\s+me\s+laugh|"
+    r"something\s+funny|"
+    r"funny\s+(?:joke|line)"
+    r")\b",
     re.IGNORECASE,
 )
 DETERMINISTIC_LIGHT_BANTER_RE = re.compile(
@@ -143,6 +151,8 @@ DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[MessageKey, str]] = {
     "you dey": ("conversational.checkin", "pcm"),
     # Yoruba
     "pele o": ("conversational.greeting", "yo"),
+    "bawo": ("conversational.greeting", "yo"),
+    "bawo ni": ("conversational.greeting", "yo"),
     "e se": ("conversational.appreciation", "yo"),
     "ese": ("conversational.appreciation", "yo"),
     "ta lo je": ("conversational.identity", "yo"),
@@ -150,11 +160,13 @@ DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[MessageKey, str]] = {
     "kini o ma n se": ("conversational.capability_question", "yo"),
     # Hausa
     "sannu": ("conversational.greeting", "ha"),
+    "ina kwana": ("conversational.greeting", "ha"),
     "nagode": ("conversational.appreciation", "ha"),
     "kai wa ne": ("conversational.identity", "ha"),
     "me zaka iya yi": ("conversational.capability_question", "ha"),
     # Igbo
     "ndewo": ("conversational.greeting", "ig"),
+    "kedu": ("conversational.greeting", "ig"),
     "dalu": ("conversational.appreciation", "ig"),
     "onye ka i bu": ("conversational.identity", "ig"),
     "gini ka i nwere ike ime": ("conversational.capability_question", "ig"),
@@ -178,6 +190,16 @@ DETERMINISTIC_LOCALE_META_PATTERNS: tuple[tuple[re.Pattern[str], tuple[MessageKe
         ),
         ("conversational.checkin", "pcm"),
     ),
+)
+ACTIONABLE_CAPABILITY_DETAIL_RE = re.compile(
+    r"(?:"
+    r"\b(?:\d[\d,]*(?:\.\d+)?\s*(?:k|gb|mb|naira|ngn)?|"
+    r"\d{8,16}|"
+    r"(?:₦|ngn|n)\s*\d)|"
+    r"\b(?:to|for)\s+[a-z0-9][a-z0-9 ._-]{1,48}\b|"
+    r"\b(?:recipient|beneficiary|account\s+number|phone\s+number|my\s+line|this\s+line)\b"
+    r")",
+    re.IGNORECASE,
 )
 
 
@@ -246,6 +268,10 @@ def _is_brand_product_lookup(normalized: str) -> bool:
     return False
 
 
+def _is_actionable_capability_request(normalized: str) -> bool:
+    return bool(ACTIONABLE_CAPABILITY_DETAIL_RE.search(normalized))
+
+
 def classify_deterministic_meta_response(message_text: str) -> DeterministicMetaResponse | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if normalized in DETERMINISTIC_JAILBREAK_EXACT:
@@ -284,7 +310,9 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
         )
     if normalized in DETERMINISTIC_CAPABILITY_EXACT:
         return _meta_response("conversational.capability_question")
-    if any(pattern.match(normalized) for pattern in DETERMINISTIC_CAPABILITY_PATTERNS):
+    if any(pattern.match(normalized) for pattern in DETERMINISTIC_CAPABILITY_PATTERNS) and not (
+        _is_actionable_capability_request(normalized)
+    ):
         return _meta_response("conversational.capability_question")
     return None
 

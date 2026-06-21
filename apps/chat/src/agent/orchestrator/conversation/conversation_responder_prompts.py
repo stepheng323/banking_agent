@@ -9,7 +9,6 @@ from typing import Any
 import apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_registry as unsupported_registry
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_contextual as contextual_responder
 import apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents as responder_intents
-import apps.chat.src.agent.orchestrator.conversation.conversation_responder_text as responder_text
 from apps.chat.src.agent.assistant_profile.voice import build_conversation_voice_block
 
 
@@ -108,7 +107,7 @@ def _build_system_prompt(prompt_input: ConversationResponderPromptInput) -> str:
             "- For harmless casual asks like jokes, tiny banter, or date/time, answer directly "
             "instead of refusing.\n"
             "- If the user asks for a joke or playful banter, prefer banking-, money-, balance-, savings-, "
-            "or transfer-themed humor.\n"
+            "or transfer-themed humor. Keep humor harmless, non-insulting, and never advisory.\n"
             "- No financial, legal, medical, tax, or investment advice.\n"
             "- No promises about unsupported capabilities.\n"
             "- No broad topic drift, no markdown, no emojis.\n"
@@ -210,10 +209,6 @@ def _build_user_prompt(prompt_input: ConversationResponderPromptInput) -> str:
         user_parts.append("Use a banking-related joke or money-themed playful line if you answer with humor.")
     if prompt_input.name:
         user_parts.append(f"User name: {prompt_input.name}")
-
-    history_text = responder_text.recent_history_text(prompt_input.history)
-    if history_text:
-        user_parts.append(f"\nRecent turns:\n{history_text}")
 
     return "\n".join(user_parts)
 

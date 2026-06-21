@@ -93,6 +93,35 @@ async def test_conversation_responder_social_meta_keeps_natural_banking_anchor_w
 
 
 @pytest.mark.asyncio
+async def test_conversation_responder_prompt_uses_safe_grounding_not_raw_history() -> None:
+    llm = _FakeLLM("Hi, I'm here for banking.")
+    responder = ConversationResponder(llm)  # type: ignore[arg-type]
+
+    await responder.generate_reply(
+        "Hi",
+        {
+            "language": "en",
+            "history": [
+                {"role": "user", "content": "my PIN is 1234"},
+                {"role": "assistant", "content": "Use authorization code 9999"},
+                {"role": "user", "content": "my account number is 1234567890"},
+                {"role": "assistant", "content": "I can help with transfers."},
+            ],
+            SOCIAL_META_RESPONSE_KEY_CTX: "conversational.greeting",
+        },
+        intent=SOCIAL_META_INTENT,
+    )
+
+    assert llm.messages is not None
+    user_prompt = llm.messages[1]["content"]
+    assert "Recent turns:" not in user_prompt
+    assert "my PIN is 1234" not in user_prompt
+    assert "authorization code 9999" not in user_prompt
+    assert "1234567890" not in user_prompt
+    assert "...7890" in user_prompt
+
+
+@pytest.mark.asyncio
 async def test_conversation_responder_social_meta_returns_empty_for_unsafe_output() -> None:
     responder = ConversationResponder(_FakeLLM("Here is investment advice: buy this stock immediately."))  # type: ignore[arg-type]
 
@@ -228,10 +257,7 @@ async def test_conversation_responder_rejects_banking_only_refusal_for_harmless_
         {"language": "en", "history": [], "profile": {}},
     )
 
-    assert reply == (
-        "Why did the banker bring a ladder? To reach the next interest level.\n"
-        + render_message("conversational.out_of_scope", "en")
-    )
+    assert reply == render_message("conversational.out_of_scope", "en")
 
 
 @pytest.mark.asyncio
@@ -306,6 +332,7 @@ async def test_conversation_responder_prompt_prefers_banking_related_humor_for_j
     system_prompt = llm.messages[0]["content"]
     user_prompt = llm.messages[1]["content"]
     assert "prefer banking-, money-, balance-, savings-, or transfer-themed humor" in system_prompt
+    assert "Keep humor harmless, non-insulting, and never advisory" in system_prompt
     assert "Use a banking-related joke or money-themed playful line" in user_prompt
 
 
@@ -337,7 +364,7 @@ async def test_conversation_responder_treats_one_more_as_joke_followup_from_hist
 
 
 @pytest.mark.asyncio
-async def test_conversation_responder_uses_deterministic_joke_fallback_when_llm_returns_refusal() -> None:
+async def test_conversation_responder_uses_redirect_only_when_joke_llm_returns_refusal() -> None:
     responder = ConversationResponder(
         _FakeLLM("Sorry, I can't provide jokes - I'm here to help with your banking tasks only.")
     )  # type: ignore[arg-type]
@@ -357,10 +384,22 @@ async def test_conversation_responder_uses_deterministic_joke_fallback_when_llm_
         },
     )
 
-    assert reply == (
-        "Why do bankers love balance? Because it always checks out.\n"
-        + render_message("conversational.out_of_scope_followup", "en")
+    assert reply == render_message("conversational.out_of_scope_followup", "en")
+
+
+@pytest.mark.asyncio
+async def test_conversation_responder_non_english_joke_refusal_does_not_emit_english_fixed_joke() -> None:
+    responder = ConversationResponder(
+        _FakeLLM("Sorry, I can't provide jokes - I'm here to help with your banking tasks only.")
+    )  # type: ignore[arg-type]
+
+    reply = await responder.generate_reply(
+        "ka ba ni joke",
+        {"language": "ha", "history": [], "profile": {}},
     )
+
+    assert reply == render_message("conversational.out_of_scope", "ha")
+    assert "banker" not in reply.lower()
 
 
 @pytest.mark.asyncio

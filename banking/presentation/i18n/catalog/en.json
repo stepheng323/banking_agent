@@ -72,9 +72,9 @@
     "identity_correction": "Not {addressed_name} 😄 I'm {app_name}. I can help with transfers, airtime/data, balances, and transactions. What would you like to do?",
     "brand_origin": "The name {app_name_short} comes from {app_brand_inspiration}. We chose it because {app_brand_symbolism}: the idea behind {app_name} is to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
-    "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",
-    "out_of_scope_followup": "If you want, I can also help with transfers, airtime/data, balances, and transaction queries.",
-    "out_of_scope_firm": "Let's switch back to banking. I can help with transfers, airtime/data, balances, and transaction queries.",
+    "out_of_scope": "Back to banking: what would you like to do?",
+    "out_of_scope_followup": "Still here for banking when you're ready.",
+    "out_of_scope_firm": "Let's switch back to banking. What should we handle?",
     "clarify": "I can help with banking tasks. Try: show scheduled transactions, send money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "Got it.",

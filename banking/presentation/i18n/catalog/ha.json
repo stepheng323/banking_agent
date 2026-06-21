@@ -64,17 +64,17 @@
     "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nMu koma banking: Zan iya taimakawa da transfers, airtime/data, balances, transactions, da receipts."
   },
   "conversational": {
-    "greeting": "Sannu. Ni ne {app_name}. Me kake so mu yi yau?",
-    "greeting_named": "Sannu {display_name}. Ni ne {app_name}. Me kake so mu yi yau?",
+    "greeting": "Sannu. Ni ne {app_name}. Zan iya taimakawa da transfers, airtime/data, balances, da transactions. Me kake so mu yi?",
+    "greeting_named": "Sannu {display_name}. Ni ne {app_name}. Zan iya taimakawa da transfers, airtime/data, balances, da transactions. Me kake so mu yi?",
     "appreciation": "Babu komai. Wane aiki za mu yi na gaba?",
     "checkin": "Ina nan. Wane aikin kudi za mu fara?",
     "identity": "Ni ne {app_name}, mataimakin banking da ke taimaka maka motsa da duba kudinka: transfer, airtime/data, balance, da tambayoyin transaction.",
     "identity_correction": "Ba {addressed_name} ba ne 😄 Ni ne {app_name}. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction. Me kake so mu yi?",
     "brand_origin": "Sunan {app_name_short} ya fito daga {app_brand_inspiration}. Mun zabe shi saboda {app_brand_symbolism}: manufar {app_name} ita ce taimaka wa kudinka su motsa cikin sauki, a fili, kuma karkashin ikonka.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
-    "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
-    "out_of_scope_followup": "Idan kana so, zan kuma iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
-    "out_of_scope_firm": "Mu koma ga banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
+    "out_of_scope": "Mu koma banking: me kake so mu yi?",
+    "out_of_scope_followup": "Ina nan don banking idan ka shirya.",
+    "out_of_scope_firm": "Mu koma ga banking. Me za mu yi?",
     "clarify": "Zan iya taimakawa da banking tasks: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "Na gane.",

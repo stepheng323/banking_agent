@@ -1,5 +1,6 @@
 from typing import Any
 
+from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_display_name
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder import ConversationResponder
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
     SOCIAL_META_INTENT,
@@ -8,7 +9,7 @@ from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intent
     SOCIAL_META_RESPONSE_KEYS,
 )
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
-from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _build_policy_aware_greeting
+from apps.chat.src.agent.orchestrator.workflows.planner.policy.policy_locale import _render_greeting
 from apps.chat.src.agent.orchestrator.workflows.planner.response.response_flow_common import (
     _build_bounded_conversational_reply,
     _localized_planner_response,
@@ -63,6 +64,13 @@ async def _response_key_render_response(
     route_logger: Any | None,
 ) -> dict[str, Any]:
     logger.info("planner_response_key_used", key=response_key, locale=conversational_locale)
+    render_response_key = response_key
+    render_params: dict[str, object] = {}
+    if response_key == "conversational.greeting" and state_view.has_no_active_flow:
+        display_name = conversation_display_name(state_view.loaded_context_or_empty)
+        if display_name:
+            render_response_key = "conversational.greeting_named"
+            render_params["display_name"] = display_name
     if response_key in SOCIAL_META_RESPONSE_KEYS:
         responder_reply = await _build_bounded_conversational_reply(
             state_view=state_view,
@@ -71,8 +79,8 @@ async def _response_key_render_response(
             conversation_responder=conversation_responder,
             intent=SOCIAL_META_INTENT,
             extra_user_ctx={
-                SOCIAL_META_RESPONSE_KEY_CTX: response_key,
-                SOCIAL_META_RENDER_PARAMS_CTX: {},
+                SOCIAL_META_RESPONSE_KEY_CTX: render_response_key,
+                SOCIAL_META_RENDER_PARAMS_CTX: render_params,
             },
         )
         if responder_reply:
@@ -90,9 +98,9 @@ async def _response_key_render_response(
                 **conversational_locale_updates,
                 **context_read_updates,
             }
-    if response_key == "conversational.greeting":
+    if render_response_key == "conversational.greeting":
         return {
-            "final_response": _build_policy_aware_greeting(conversational_locale),
+            "final_response": _render_greeting(conversational_locale),
             **conversational_locale_updates,
             **context_read_updates,
         }
@@ -105,9 +113,9 @@ async def _response_key_render_response(
         fallback_path="planner_non_task",
         route_logger=route_logger,
     )
-    message_key = response_key if is_message_key(response_key) else "response.fallback.generic"
+    message_key = render_response_key if is_message_key(render_response_key) else "response.fallback.generic"
     return {
-        "final_response": render_message(message_key, conversational_locale),
+        "final_response": render_message(message_key, conversational_locale, render_params),
         **conversational_locale_updates,
         **context_read_updates,
     }

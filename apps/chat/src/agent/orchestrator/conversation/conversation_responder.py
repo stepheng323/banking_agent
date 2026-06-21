@@ -221,8 +221,7 @@ class ConversationResponder:
             if is_unsupported_capability_followup:
                 return unsupported_responder.unsupported_capability_fallback_reply(user_ctx, locale)
             if is_joke_turn:
-                joke = responder_text.deterministic_joke_fallback(casual_streak=casual_streak)
-                return f"{joke}\n{redirect_text}"
+                return redirect_text
             return redirect_text
         if is_contextual_worker_followup:
             if contextual_responder.CONTEXTUAL_ACTION_PROMISE_RE.search(

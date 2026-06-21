@@ -94,7 +94,7 @@ def _detected_locale_value(planner_output: PlannerOutput) -> str | None:
     return cast(str, LocaleManager.from_detection(detected_language).value)
 
 
-def _build_policy_aware_greeting(locale: str) -> str:
+def _render_greeting(locale: str) -> str:
     return cast(str, render_message("conversational.greeting", locale))
 
 
@@ -102,8 +102,8 @@ __all__ = [
     "SUPPORTED_EXECUTOR_LABELS",
     "SUPPORTED_EXECUTOR_LABELS_BY_LOCALE",
     "_build_locale_update",
-    "_build_policy_aware_greeting",
     "_detected_locale_value",
     "_locale_key",
+    "_render_greeting",
     "_supported_executor_label",
 ]

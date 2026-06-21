@@ -931,6 +931,89 @@ async def test_conversational_response_key_localizes_for_yoruba() -> None:
 
 
 @pytest.mark.asyncio
+async def test_conversational_greeting_passes_safe_display_name_to_responder() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.greeting",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="hi",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder("Hi Gaines, what banking task should we handle?")
+    state = OrchestratorState(
+        user_id="u_named_planner_greeting_1",
+        phone_number="2348444444499",
+        channel="whatsapp",
+        last_message_text="Hi",
+        loaded_context={"language": "en", "profile": {"first_name": "Gaines"}},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == responder.reply
+    assert responder.calls
+    assert responder.calls[0]["user_ctx"]["social_meta_response_key"] == "conversational.greeting_named"
+    assert responder.calls[0]["user_ctx"]["social_meta_render_params"] == {"display_name": "Gaines"}
+
+
+@pytest.mark.asyncio
+async def test_conversational_greeting_empty_responder_falls_back_to_named_catalog() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.greeting",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="hi",
+        tasks=[],
+    )
+    responder = _FakeConversationResponder("")
+    state = OrchestratorState(
+        user_id="u_named_planner_greeting_2",
+        phone_number="2348444444498",
+        channel="whatsapp",
+        last_message_text="Hi",
+        loaded_context={"language": "en", "channel_metadata": {"sender_display_name": "Gaines Abiodun"}},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+            "conversation_responder": responder,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == render_message(
+        "conversational.greeting_named",
+        "en",
+        {"display_name": "Gaines"},
+    )
+
+
+@pytest.mark.asyncio
 async def test_conversational_missing_response_uses_conversation_responder_not_clarify() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",

@@ -84,7 +84,7 @@ async def test_whatsapp_presenter_formats_markdown_and_redirect_spacing() -> Non
     sent = client.text_calls[0]["text"]
     assert "**" not in sent
     assert "*₦30,000.00*" in sent
-    assert "balance.\n\nI stay on banking." in sent
+    assert "balance.\n\nBack to banking:" in sent
 
 
 @pytest.mark.asyncio

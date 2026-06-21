@@ -64,17 +64,17 @@
     "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nPada si banking: Mo le ran ọ lọwọ pẹlu transfer, airtime/data, balance, transactions, ati receipts."
   },
   "conversational": {
-    "greeting": "Pẹlẹ o. Emi ni {app_name}. Kini o fẹ ki n ṣe fun ọ loni?",
-    "greeting_named": "Pẹlẹ o {display_name}. Emi ni {app_name}. Kini o fẹ ki n ṣe fun ọ loni?",
+    "greeting": "Pẹlẹ o. Emi ni {app_name}. Mo le ran ọ lọwọ pẹlu transfer, airtime/data, balance, ati transactions. Kini o fẹ ṣe?",
+    "greeting_named": "Pẹlẹ o {display_name}. Emi ni {app_name}. Mo le ran ọ lọwọ pẹlu transfer, airtime/data, balance, ati transactions. Kini o fẹ ṣe?",
     "appreciation": "Ko to nnkan. Iṣẹ wo ni a o ṣe lẹ́yìn eyi?",
     "checkin": "Mo wa nibi. Iṣẹ owo wo ni o fẹ ki a ṣe?",
     "identity": "Emi ni {app_name}, oluranlọwọ banking ti o ran ọ lọwọ lati gbe ati ṣayẹwo owo rẹ: gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "identity_correction": "Kii se {addressed_name} 😄 Emi ni {app_name}. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction. Kini o fẹ ṣe?",
     "brand_origin": "Orukọ {app_name_short} wa lati {app_brand_inspiration}. A yan an nitori {app_brand_symbolism}: ero lẹhin {app_name} ni lati ran owo rẹ lọwọ lati maa lọ ni irọrun, ni kedere, ati labẹ iṣakoso rẹ.",
     "capability_question": "Mo le ran ọ lọwọ pẹlu gbigbe owo, rira airtime/data, ayẹwo balance, ati ibeere transaction.",
-    "out_of_scope": "Mo n dojukọ iṣẹ banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
-    "out_of_scope_followup": "Ti o ba fẹ, mo tun le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
-    "out_of_scope_firm": "Ẹ jẹ ká pada sí banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
+    "out_of_scope": "Pada si banking: kini o fẹ ṣe?",
+    "out_of_scope_followup": "Mo ṣi wa nibi fun banking nigbati o ba ṣetan.",
+    "out_of_scope_firm": "Ẹ jẹ ká pada sí banking. Kini ká ṣe?",
     "clarify": "Mo le ran ọ lọwọ pẹlu banking tasks: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "Mo ti ye.",

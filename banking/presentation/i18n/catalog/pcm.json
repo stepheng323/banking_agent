@@ -72,9 +72,9 @@
     "identity_correction": "No be {addressed_name} 😄 I be {app_name}. I fit help with transfer, airtime/data, balance, and transaction gist. Wetin you wan do?",
     "brand_origin": "The name {app_name_short} come from {app_brand_inspiration}. We choose am because {app_brand_symbolism}: the idea behind {app_name} na to help your money move smoothly, clearly, and under your control.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
-    "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
-    "out_of_scope_followup": "If you want, I still fit help with transfer, airtime/data buy, balance check, and transaction query.",
-    "out_of_scope_firm": "Make we switch back to banking. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
+    "out_of_scope": "Back to banking: wetin you wan do?",
+    "out_of_scope_followup": "I still dey here for banking when you ready.",
+    "out_of_scope_firm": "Make we switch back to banking. Wetin we go handle?",
     "clarify": "I fit help with banking tasks. Try: show scheduled transactions, transfer money, buy airtime/data, check balance, or view transactions.",
     "contextual_worker_followup": {
       "generic": "I don get am.",

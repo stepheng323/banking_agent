@@ -50,7 +50,18 @@ SOCIAL_META_REFUSAL_PATTERN_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-JOKE_PATTERN_RE = re.compile(r"\b(?:joke|funny|laugh|another one)\b", re.IGNORECASE)
+JOKE_PATTERN_RE = re.compile(
+    r"\b(?:"
+    r"tell\s+me\s+(?:(?:a|one|small)\s+)?joke|"
+    r"tell\s+me\s+(?:\w+\s+){0,3}joke|"
+    r"give\s+me\s+(?:a\s+)?joke|"
+    r"say\s+(?:a\s+)?joke|"
+    r"make\s+me\s+laugh|"
+    r"something\s+funny|"
+    r"funny\s+(?:joke|line)"
+    r")\b",
+    re.IGNORECASE,
+)
 CASUAL_FACT_PATTERN_RE = re.compile(
     r"\b(?:"
     r"fun\s+facts?|interesting\s+facts?|weird\s+(?:facts?|but\s+true)|"
@@ -64,7 +75,6 @@ CASUAL_FOLLOWUP_PATTERN_RE = re.compile(
     r"\b(?:tell\s+me\s+more|another one|one more|again|continue|another joke|small joke|small one|more)\b",
     re.IGNORECASE,
 )
-JOKE_FOLLOWUP_PATTERN_RE = CASUAL_FOLLOWUP_PATTERN_RE
 CONTEXT_FRAME_DISPLAY_FOLLOWUP_RE = re.compile(
     r"\b(?:"
     r"show|view|see|display|open|list|details?|transaction|transactions|transfer|"
@@ -92,13 +102,6 @@ BANKING_REACTION_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-BANKING_JOKE_FALLBACKS = (
-    "Why did the banker bring a ladder? To reach the next interest level.",
-    "Why do bankers love balance? Because it always checks out.",
-    "Why was the debit card calm? It knew how to keep its balance.",
-)
-
-
 def recent_history_text(history: list[Any], *, limit: int = 4) -> str:
     lines: list[str] = []
     for turn in history[-limit:]:
@@ -254,11 +257,6 @@ def is_joke_turn(text: str, history: list[Any]) -> bool:
     return bool(JOKE_PATTERN_RE.search(history_text))
 
 
-def deterministic_joke_fallback(*, casual_streak: int) -> str:
-    index = min(casual_streak, len(BANKING_JOKE_FALLBACKS) - 1)
-    return BANKING_JOKE_FALLBACKS[index]
-
-
 __all__ = [
     "BLOCKED_PATTERN_RE",
     "CASUAL_FACT_PATTERN_RE",
@@ -268,7 +266,6 @@ __all__ = [
     "MAX_REPLY_CHARS",
     "MAX_REPLY_LINES",
     "count_trailing_casual_replies",
-    "deterministic_joke_fallback",
     "fold_text",
     "is_banking_refusal_reply",
     "is_banking_result_reaction",

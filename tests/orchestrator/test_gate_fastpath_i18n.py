@@ -19,6 +19,7 @@ from apps.chat.src.agent.orchestrator.context.referents.frame_memory import reme
 from apps.chat.src.agent.orchestrator.conversation.conversation_responder_intents import (
     NON_BANKING_CONVERSATIONAL_INTENT,
     SOCIAL_META_INTENT,
+    SOCIAL_META_RENDER_PARAMS_CTX,
     SOCIAL_META_RESPONSE_KEY_CTX,
 )
 from apps.chat.src.agent.orchestrator.models.domain import (
@@ -593,6 +594,22 @@ def test_addressed_greeting_distinguishes_generic_and_wrong_names() -> None:
         params={"addressed_name": "Claude Code"},
     )
     assert classify_deterministic_meta_response("Hi I want to send money") is None
+
+
+def test_deterministic_capability_question_ignores_actionable_payloads() -> None:
+    _assert_meta_response("what can you help me with", "conversational.capability_question")
+    _assert_meta_response("Can you help me send funds?", "conversational.capability_question")
+    assert classify_deterministic_meta_response("can you help me send 5k to Ada") is None
+    assert classify_deterministic_meta_response("can you help me buy data for 08012345678") is None
+
+
+def test_deterministic_joke_request_ignores_incidental_funny_word() -> None:
+    _assert_meta_response(
+        "tell me a joke",
+        "conversational.out_of_scope",
+        params={"casual_kind": "joke"},
+    )
+    assert classify_deterministic_meta_response("my failed transfer is not funny") is None
 
 
 def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3927,8 +3944,8 @@ async def test_gate_casual_joke_request_skips_context_frame_followup_llm() -> No
     assert planner.frame_followup_calls == 0
     assert planner.route_calls == 0
     assert updates["semantic_path_shape"] == "meta_direct"
-    assert "Why did the banker bring a ladder?" in updates["final_response"]
-    assert render_message("conversational.out_of_scope", "pcm") in updates["final_response"]
+    assert updates["final_response"] == render_message("conversational.out_of_scope", "pcm")
+    assert "Why did the banker bring a ladder?" not in updates["final_response"]
 
 
 async def test_gate_context_frame_lookup_preempts_beneficiary_reroute() -> None:
@@ -7109,6 +7126,26 @@ async def test_gate_deterministic_social_meta_falls_back_when_responder_returns_
 
 
 @pytest.mark.asyncio
+async def test_gate_deterministic_social_meta_passes_safe_display_name_to_responder() -> None:
+    responder = _FakeConversationResponder("Hi Gaines, what banking task should we handle?")
+    state = OrchestratorState(
+        user_id="u_social_meta_named_responder",
+        phone_number="23480099990003",
+        channel="whatsapp",
+        last_message_text="Hi",
+        loaded_context={"language": "en", "profile": {"first_name": "Gaines"}},
+    )
+    config: RunnableConfig = {"configurable": {"conversation_responder": responder}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert updates["final_response"] == responder.reply
+    assert responder.calls
+    assert responder.calls[0]["user_ctx"][SOCIAL_META_RESPONSE_KEY_CTX] == "conversational.greeting_named"
+    assert responder.calls[0]["user_ctx"][SOCIAL_META_RENDER_PARAMS_CTX] == {"display_name": "Gaines"}
+
+
+@pytest.mark.asyncio
 async def test_gate_deterministic_joke_request_uses_casual_conversation_responder() -> None:
     responder = _FakeConversationResponder(
         "Small one: bankers love balance because it always checks out.\n"
@@ -8990,4 +9027,3 @@ async def test_gate_melkor_easter_egg_semantic() -> None:
     from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_topic_for_response
     topic = conversation_topic_for_response(updates["final_response"], response_key="meta.melkor_easter_egg")
     assert topic == "unsupported_boundary"
-
