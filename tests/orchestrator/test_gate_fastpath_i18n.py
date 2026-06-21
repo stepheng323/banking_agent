@@ -8943,7 +8943,10 @@ async def test_gate_melkor_easter_egg_deterministic() -> None:
 
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "meta_direct"
-    assert "And thou Melkor shalt see that no theme may be played" in updates["final_response"]
+    assert "Nice try, Melkor." in updates["final_response"]
+    assert "The music is not changing today." in updates["final_response"]
+    assert "Back to banking: I can help with transfers" in updates["final_response"]
+    assert "And thou Melkor shalt see" not in updates["final_response"]
     assert updates["conversation_topic"] == "unsupported_boundary"
 
 
@@ -8979,10 +8982,12 @@ async def test_gate_melkor_easter_egg_semantic() -> None:
 
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "semantic_router_direct"
-    assert "And thou Melkor shalt see that no theme may be played" in updates["final_response"]
+    assert "Nice try, Melkor." in updates["final_response"]
+    assert "The music is not changing today." in updates["final_response"]
+    assert "Mu koma banking: Zan iya taimakawa" in updates["final_response"]
+    assert "And thou Melkor shalt see" not in updates["final_response"]
 
     from apps.chat.src.agent.orchestrator.conversation.conversation_grounding import conversation_topic_for_response
     topic = conversation_topic_for_response(updates["final_response"], response_key="meta.melkor_easter_egg")
     assert topic == "unsupported_boundary"
-
 

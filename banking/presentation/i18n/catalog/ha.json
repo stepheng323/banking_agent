@@ -61,7 +61,7 @@
     "brand_origin_fallback": "{brand_origin}",
     "capabilities_fallback": "Zan iya taimakawa da: {supported}.",
     "limits_fallback": "Ba zan iya yin {unsupported} a nan ba. Zan iya taimakawa da {supported}.",
-    "melkor_easter_egg": "And thou Melkor shalt see that no theme may be played that hath not its uttermost source in me, nor can any alter the music in my despite for he that attempteth shall prove but mine instrument in the devising of things more wonderful which he himself hath not imagined"
+    "melkor_easter_egg": "Nice try, Melkor. The music is not changing today.\nMu koma banking: Zan iya taimakawa da transfers, airtime/data, balances, transactions, da receipts."
   },
   "conversational": {
     "greeting": "Sannu. Ni ne {app_name}. Me kake so mu yi yau?",
