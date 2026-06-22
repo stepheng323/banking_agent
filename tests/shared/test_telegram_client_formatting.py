@@ -2,12 +2,10 @@ import httpx
 import pytest
 
 import shared.clients.telegram.client as telegram_client_module
-import shared.clients.telegram.drafts as telegram_drafts
 import shared.clients.telegram.mini_app as telegram_mini_app
-from shared.clients.abstractions.messaging import MessageResult
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.telegram.formatting import format_telegram_html, telegram_html_to_plain_text
-from shared.config.settings import Settings, settings
+from shared.config.settings import settings
 
 
 def test_telegram_html_formatter_escapes_html_and_formats_markdown() -> None:
@@ -33,18 +31,6 @@ def test_telegram_html_to_plain_text_strips_markup_for_mini_app_copy() -> None:
     rendered = telegram_html_to_plain_text("<b>₦3,000 -&gt; Ada</b>\n<code>GTBank</code>")
 
     assert rendered == "₦3,000 -> Ada\nGTBank"
-
-
-def test_telegram_message_draft_defaults_enabled_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", raising=False)
-    loaded = Settings()
-    assert loaded.telegram_enable_message_draft is True
-
-
-def test_telegram_message_draft_respects_false_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", "false")
-    loaded = Settings()
-    assert loaded.telegram_enable_message_draft is False
 
 
 @pytest.mark.asyncio
@@ -84,212 +70,6 @@ async def test_telegram_client_reuses_http_client(monkeypatch: pytest.MonkeyPatc
     await client.aclose()
     await client._call("sendMessage", {"chat_id": "12345", "text": "Again"})
     assert len(created_clients) == 2
-
-
-@pytest.mark.asyncio
-async def test_send_message_draft_calls_telegram_draft_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
-    client = TelegramClient()
-    calls: list[tuple[str, dict[str, object], int]] = []
-
-    async def _fake_call(
-        method: str,
-        payload: dict[str, object] | None = None,
-        files: dict[str, object] | None = None,
-        max_retries: int = 3,
-    ) -> dict[str, object]:
-        del files
-        calls.append((method, payload or {}, max_retries))
-        return {"ok": True, "result": True}
-
-    monkeypatch.setattr(client, "_call", _fake_call)
-
-    ok = await client.send_message_draft("12345", "Hello from draft")
-
-    assert ok is True
-    assert calls == [("sendMessageDraft", {"chat_id": "12345", "text": "Hello from draft"}, 1)]
-
-
-@pytest.mark.asyncio
-async def test_send_text_streamed_sends_drafts_before_final_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
-    client = TelegramClient()
-    calls: list[str] = []
-
-    async def _fake_call(
-        method: str,
-        payload: dict[str, object] | None = None,
-        files: dict[str, object] | None = None,
-        max_retries: int = 3,
-    ) -> dict[str, object]:
-        del payload, files, max_retries
-        calls.append(method)
-        if method == "sendMessage":
-            return {"ok": True, "result": {"message_id": 99}}
-        return {"ok": True, "result": True}
-
-    monkeypatch.setattr(client, "_call", _fake_call)
-
-    result = await client.send_text_streamed(
-        to="12345",
-        text="x" * 280,
-        draft_step_chars=100,
-        max_draft_updates=2,
-        draft_delay_seconds=0,
-    )
-
-    assert isinstance(result, MessageResult)
-    assert result.success is True
-    assert result.message_id == "99"
-    assert calls == ["sendMessageDraft", "sendMessageDraft", "sendMessageDraft", "sendMessage"]
-
-
-@pytest.mark.asyncio
-async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
-    client = TelegramClient()
-    calls: list[str] = []
-    log_events: list[tuple[str, dict[str, object]]] = []
-
-    class _Logger:
-        def info(self, event: str, **kwargs: object) -> None:
-            log_events.append((event, kwargs))
-
-        def warning(self, event: str, **kwargs: object) -> None:
-            log_events.append((event, kwargs))
-
-    monkeypatch.setattr(telegram_drafts, "logger", _Logger())
-
-    async def _fake_call(
-        method: str,
-        payload: dict[str, object] | None = None,
-        files: dict[str, object] | None = None,
-        max_retries: int = 3,
-    ) -> dict[str, object]:
-        del payload, files, max_retries
-        calls.append(method)
-        if method == "sendMessageDraft":
-            request = httpx.Request("POST", "https://api.telegram.org/botTEST/sendMessageDraft")
-            response = httpx.Response(status_code=400, request=request)
-            raise httpx.HTTPStatusError("400 Bad Request", request=request, response=response)
-        return {"ok": True, "result": {"message_id": 100}}
-
-    monkeypatch.setattr(client, "_call", _fake_call)
-
-    result = await client.send_text_streamed(
-        to="12345",
-        text="x" * 280,
-        draft_step_chars=100,
-        max_draft_updates=3,
-        draft_delay_seconds=0,
-    )
-
-    assert result.success is True
-    assert result.message_id == "100"
-    assert calls == ["sendMessageDraft", "sendMessage"]
-    assert (
-        "telegram_draft_endpoint_unsupported_disabled",
-        {"channel": "telegram", "method": "sendMessageDraft", "http_status": 400, "runtime_draft_enabled": False},
-    ) in log_events
-    assert (
-        "telegram_draft_fallback_to_final_send",
-        {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": False},
-    ) in log_events
-
-    calls.clear()
-    second = await client.send_text_streamed(
-        to="12345",
-        text="another message",
-        draft_step_chars=5,
-        max_draft_updates=3,
-        draft_delay_seconds=0,
-    )
-    assert second.success is True
-    assert calls == ["sendMessage"]
-
-
-@pytest.mark.asyncio
-async def test_send_text_streamed_logs_fallback_after_unexpected_draft_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
-    client = TelegramClient()
-    calls: list[str] = []
-    log_events: list[tuple[str, dict[str, object]]] = []
-
-    class _Logger:
-        def info(self, event: str, **kwargs: object) -> None:
-            log_events.append((event, kwargs))
-
-        def warning(self, event: str, **kwargs: object) -> None:
-            log_events.append((event, kwargs))
-
-    monkeypatch.setattr(telegram_drafts, "logger", _Logger())
-
-    async def _fake_call(
-        method: str,
-        payload: dict[str, object] | None = None,
-        files: dict[str, object] | None = None,
-        max_retries: int = 3,
-    ) -> dict[str, object]:
-        del payload, files, max_retries
-        calls.append(method)
-        if method == "sendMessageDraft":
-            raise RuntimeError("boom")
-        return {"ok": True, "result": {"message_id": 202}}
-
-    monkeypatch.setattr(client, "_call", _fake_call)
-
-    result = await client.send_text_streamed(
-        to="12345",
-        text="x" * 280,
-        draft_step_chars=100,
-        max_draft_updates=3,
-        draft_delay_seconds=0,
-    )
-
-    assert result.success is True
-    assert result.message_id == "202"
-    assert calls == ["sendMessageDraft", "sendMessage"]
-    assert (
-        "telegram_draft_fallback_to_final_send",
-        {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": True},
-    ) in log_events
-    assert any(event == "telegram_draft_attempt_failed" for event, _ in log_events)
-
-
-@pytest.mark.asyncio
-async def test_send_text_streamed_skips_draft_when_feature_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
-    monkeypatch.setattr(settings, "telegram_enable_message_draft", False)
-    client = TelegramClient()
-    calls: list[str] = []
-
-    async def _fake_call(
-        method: str,
-        payload: dict[str, object] | None = None,
-        files: dict[str, object] | None = None,
-        max_retries: int = 3,
-    ) -> dict[str, object]:
-        del payload, files, max_retries
-        calls.append(method)
-        return {"ok": True, "result": {"message_id": 101}}
-
-    monkeypatch.setattr(client, "_call", _fake_call)
-
-    result = await client.send_text_streamed(
-        to="12345",
-        text="x" * 280,
-        draft_step_chars=100,
-        max_draft_updates=3,
-        draft_delay_seconds=0,
-    )
-
-    assert result.success is True
-    assert result.message_id == "101"
-    assert calls == ["sendMessage"]
 
 
 @pytest.mark.asyncio

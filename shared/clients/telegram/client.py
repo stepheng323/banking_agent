@@ -6,7 +6,6 @@ from typing import Any
 import httpx
 
 import shared.clients.telegram.control as telegram_control
-import shared.clients.telegram.drafts as telegram_drafts
 import shared.clients.telegram.media as telegram_media
 import shared.clients.telegram.media_messages as telegram_media_messages
 import shared.clients.telegram.messages as telegram_messages
@@ -33,7 +32,6 @@ class TelegramClient(MessagingClient):
     def __init__(self) -> None:
         self.bot_token = settings.telegram_bot_token
         self.mini_app_base_url = settings.telegram_mini_app_base_url
-        self._draft_supported: bool = settings.telegram_enable_message_draft
         self._http_client: httpx.AsyncClient | None = None
         self._validate_config()
 
@@ -153,41 +151,6 @@ class TelegramClient(MessagingClient):
             text=text,
             message_id=message_id,
             suppress_typing_indicator=suppress_typing_indicator,
-        )
-
-    async def send_message_draft(self, to: str, text: str) -> bool:
-        """Set a draft message in chat using Telegram Bot API sendMessageDraft."""
-        result = await telegram_drafts.send_message_draft(
-            api_call=self._call,
-            to=to,
-            text=text,
-            draft_supported=self._draft_supported,
-        )
-        self._draft_supported = result.draft_supported
-        return result.sent
-
-    async def send_text_streamed(
-        self,
-        to: str,
-        text: str,
-        message_id: str | None = None,
-        *,
-        draft_step_chars: int = 120,
-        max_draft_updates: int = 12,
-        draft_delay_seconds: float = 0.2,
-    ) -> MessageResult:
-        """Stream a response as Telegram drafts, then publish the final message."""
-        return await telegram_drafts.send_text_streamed(
-            to=to,
-            text=text,
-            message_id=message_id,
-            draft_supported=self._draft_supported,
-            is_draft_supported=lambda: self._draft_supported,
-            send_text=self.send_text,
-            send_message_draft=self.send_message_draft,
-            draft_step_chars=draft_step_chars,
-            max_draft_updates=max_draft_updates,
-            draft_delay_seconds=draft_delay_seconds,
         )
 
     async def send_interactive(

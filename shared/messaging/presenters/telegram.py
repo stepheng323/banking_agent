@@ -208,21 +208,11 @@ class TelegramPresenter(Presenter):
                 button_count=len(inline_buttons),
             )
 
-        stream_enabled = bool(context.metadata.get("telegram_stream_response", True))
-        stream_min_chars = int(context.metadata.get("telegram_stream_min_chars", 48))
-        stream_client = cast(Any, self.client)
-        if (
-            stream_enabled
-            and len(text.strip()) >= stream_min_chars
-            and hasattr(stream_client, "send_text_streamed")
-        ):
-            resp = await stream_client.send_text_streamed(to=context.phone_number, text=text)
-        else:
-            resp = await self.client.send_text(
-                to=context.phone_number,
-                text=text,
-                suppress_typing_indicator=self._suppress_typing(context),
-            )
+        resp = await self.client.send_text(
+            to=context.phone_number,
+            text=text,
+            suppress_typing_indicator=self._suppress_typing(context),
+        )
         return self._extract_message_id(resp)
 
     @staticmethod

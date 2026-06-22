@@ -284,7 +284,6 @@ class Settings:
         self.telegram_mini_app_base_url: str = os.getenv("TELEGRAM_MINI_APP_BASE_URL", "")
         self.telegram_webhook_secret_token: str = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "")
         self.telegram_init_data_max_age_seconds: int = int(os.getenv("TELEGRAM_INIT_DATA_MAX_AGE_SECONDS", "600"))
-        self.telegram_enable_message_draft: bool = os.getenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", "true").lower() == "true"
         self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "0"))
         self.receipt_verification_base_url: str = os.getenv("RECEIPT_VERIFICATION_BASE_URL", "").strip()
 

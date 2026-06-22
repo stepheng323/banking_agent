@@ -21,13 +21,6 @@ def build_send_message_payload(
     return payload
 
 
-def build_message_draft_payload(*, to: str, text: str) -> dict[str, Any]:
-    return {
-        "chat_id": to,
-        "text": text[:4096],
-    }
-
-
 def build_interactive_message_payload(
     *,
     to: str,
