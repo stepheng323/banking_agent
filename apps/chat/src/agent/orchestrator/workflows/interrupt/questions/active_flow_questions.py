@@ -82,7 +82,7 @@ _REQUIREMENT_REASONS: dict[str, str] = {
 
 _SEPARATE_BANKING_TASK_PATTERNS = (
     r"^\s*(?:my\s+)?balance\s*$",
-    r"\b(check|what is my|what's my|show|tell me my)\s+balance\b",
+    r"\b(check|what is my|what's my|whats my|what my|show|tell me my)\s+(?:.*?\s+)?balance\b",
     r"\b(account balance|how much is in my account|available balance)\b",
     r"\b(show|list|view|check)\b.*\b(transaction|transactions|history|spend|spent|expenses?)\b",
     r"\b(spend|spent|expenses?|transaction history|transactions?)\b",
