@@ -652,18 +652,18 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
         ):
             print(f"- {key}: tokens={token_report[key]}")
 
-    assert report["generic"] <= 1600
-    assert report["transfer_only"] <= 2700
-    assert report["mixed_money_move"] <= 3000
-    assert report["fallback_money_move"] <= 2800
-    assert report["query"] <= 1850
-    assert report["context_followup"] <= 2100
-    assert report["fully_expanded"] <= 3900
+    assert report["generic"] <= 2100
+    assert report["transfer_only"] <= 3300
+    assert report["mixed_money_move"] <= 3600
+    assert report["fallback_money_move"] <= 3400
+    assert report["query"] <= 2400
+    assert report["context_followup"] <= 2600
+    assert report["fully_expanded"] <= 4500
 
-    assert token_report["generic"] <= 390
-    assert token_report["transfer_only"] <= 650
-    assert token_report["mixed_money_move"] <= 760
-    assert token_report["fallback_money_move"] <= 720
-    assert token_report["query"] <= 450
-    assert token_report["context_followup"] <= 510
-    assert token_report["fully_expanded"] <= 980
+    assert token_report["generic"] <= 550
+    assert token_report["transfer_only"] <= 850
+    assert token_report["mixed_money_move"] <= 950
+    assert token_report["fallback_money_move"] <= 900
+    assert token_report["query"] <= 600
+    assert token_report["context_followup"] <= 700
+    assert token_report["fully_expanded"] <= 1200

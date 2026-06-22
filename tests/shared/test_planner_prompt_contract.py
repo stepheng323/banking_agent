@@ -321,8 +321,8 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     assert "domain_schedule" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "domain_account" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "planner_mixed" in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert "expected_transaction_executors" in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert "schedule_response_mode" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "execs: array of" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "sch_mode" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "explicit mixed transaction requests" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "include every mentioned executor" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '["transfer","airtime"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
@@ -346,13 +346,13 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
     assert '"How many scheduled transactions are pending" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert '"How many scheduled transactions are pending" -> domain_schedule, schedule_response_mode=count' in (
+    assert '"How many scheduled transactions are pending" -> domain_schedule, sch_mode=count' in (
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
-    assert '"Do I have any pending scheduled transactions?" -> domain_schedule, schedule_response_mode=count' in (
+    assert '"Do I have any pending scheduled transactions?" -> domain_schedule, sch_mode=count' in (
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
-    assert '"Do i have any pending scheduled transsction" -> domain_schedule, schedule_response_mode=count' in (
+    assert '"Do i have any pending scheduled transsction" -> domain_schedule, sch_mode=count' in (
         SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
     assert '"How many scheduled transaction is pending" -> domain_schedule' in SEMANTIC_ROUTER_SYSTEM_PROMPT
@@ -375,14 +375,14 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
 
 def test_semantic_router_language_switch_contract_present() -> None:
     """Semantic-router contract must expose explicit language-switch request capture."""
-    assert "requested_language: English | Pidgin | Yoruba | Hausa | Igbo | null" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "req_lang: English | Pidgin | Yoruba | Hausa | Igbo | null" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert (
         'If user asks to switch language (for example, "Can you switch to Pidgin?", "speak Yoruba now"), set'
         in SEMANTIC_ROUTER_SYSTEM_PROMPT
     )
     assert '"Can you switch to Pidgin?"' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"speak Yoruba now"' in SEMANTIC_ROUTER_SYSTEM_PROMPT
-    assert "requested_language to the requested locale" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "req_lang to the requested locale" in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "Do not apply cancellation/flow-guess logic for this request." in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert "decision=direct_reply" in SEMANTIC_ROUTER_SYSTEM_PROMPT
 

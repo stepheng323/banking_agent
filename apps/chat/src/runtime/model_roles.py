@@ -26,54 +26,18 @@ class ChatRoleModels:
 
 
 def resolve_role_model(*, role: str, configured_model: str, planner_model: str, app_env: str) -> str:
-    """Resolve role model from env and emit actionable overlap warnings."""
-    role_env_map = {
-        "query": "QUERY_MODEL",
-        "semantic_router": "SEMANTIC_ROUTER_MODEL",
-        "interrupt_router": "INTERRUPT_ROUTER_MODEL",
-        "extractor": "EXTRACTOR_MODEL",
-    }
-    recommended_model_map = {
-        "query": None,
-        "semantic_router": "gpt-5.4-nano",
-        "interrupt_router": "gpt-5.4-nano",
-        "extractor": "gpt-5.4-mini",
-    }
-    env_var = role_env_map[role]
-    recommended_model = recommended_model_map[role]
+    """Resolve role model from env and log the selected model."""
     model = configured_model.strip()
     if not model:
         model = planner_model
-        logger.warning(
-            f"{role}_model_missing_fallback",
-            app_env=app_env,
-            fallback_model=model,
-            planner_model=planner_model,
-            recommended_env=env_var,
-            recommended_model=recommended_model,
-        )
 
-    if model == planner_model:
-        logger.warning(
-            f"{role}_model_same_as_planner",
-            app_env=app_env,
-            model=model,
-            planner_model=planner_model,
-            recommended_env=env_var,
-            dedicated=False,
-            recommended_model=recommended_model,
-        )
-    else:
-        logger.info(
-            f"{role}_model_dedicated",
-            app_env=app_env,
-            model=model,
-            planner_model=planner_model,
-            recommended_env=env_var,
-            dedicated=True,
-            recommended_model=recommended_model,
-        )
+    logger.info(
+        f"{role}_model_selected",
+        app_env=app_env,
+        model=model,
+    )
     return model
+
 
 
 def build_chat_role_models(
