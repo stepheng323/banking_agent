@@ -1171,6 +1171,16 @@
       "body": "Hi, Ina {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "pre_onboarding": {
+    "greeting": "Barka da zuwa {app_name}. Zan iya taimakawa da transfers, airtime/data, balances, da transaction history. Da farko, mu kammala account setup ɗinka.",
+    "inquiry": "Setup yana taimaka min tabbatar da kai da haɗa bank accounts ɗinka cikin aminci. Bayananka suna encrypted kuma ana amfani da su don verification kawai.",
+    "compliance": "Madalla. Danna maballin da ke sama don ci gaba da account setup ɗinka.",
+    "objection": "Na fahimci damuwarka. Setup ya zama dole kafin in iya duba banking information ko taimaka da transactions.",
+    "banking_request": "Zan iya taimakawa da hakan idan setup ya kammala. Da farko, mu gama account setup ɗinka.",
+    "out_of_scope": "Ina mayar da hankali kan banking. Don amfani da Nenya, da fatan za ka kammala account setup ɗinka tukunna.",
+    "cooldown": "Zan kasance a nan idan ka shirya. Danna maballin a kowane lokaci don ci gaba da setup.",
+    "telegram_share_contact_hint": "Danna Share Contact a kasa don ci gaba."
+  },
   "schedule": {
     "prompt": {
       "time": "Wani lokaci zan schedule shi?",

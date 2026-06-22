@@ -413,8 +413,19 @@ async def test_contact_share_for_new_user_creates_opaque_onboarding_token(
     }
     assert session_manager.redis.values["telegram:onboarding:12345:flow_token"] == "onboarding-tg-opaque-token"
 
-    [(method, payload)] = telegram_client.api_calls
+    assert len(telegram_client.api_calls) == 2
+    ack_method, ack_payload = telegram_client.api_calls[0]
+    assert ack_method == "sendMessage"
+    assert ack_payload["text"] == "Thanks. I'll use this number only to start your account setup."
+    assert ack_payload["reply_markup"] == {"remove_keyboard": True}
+
+    method, payload = telegram_client.api_calls[1]
     assert method == "sendMessage"
+    assert payload["text"] == (
+        f"Welcome to {telegram_service_module.settings.app_name}.\n\n"
+        "You're almost in. I couldn't find an existing account for this phone number, so let's complete setup."
+    )
+    assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "Complete setup"
     app_url = payload["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"]
     assert "boot=boot-new-user" in app_url
     assert "flow_token=onboarding-tg-opaque-token" not in app_url
@@ -524,6 +535,71 @@ async def test_existing_user_contact_share_requires_whatsapp_authorization(
 
 
 @pytest.mark.asyncio
+async def test_unlinked_user_with_pending_onboarding_gets_continue_setup_cta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _NewUserRepositoryStub:
+        async def get_by_channel_identity(self, channel: str, identity: str) -> Any:
+            assert channel == "telegram"
+            assert identity == "12345"
+            return None
+
+    async def _load_channel_identity_user(channel: str, identity: str) -> Any:
+        assert channel == "telegram"
+        assert identity == "12345"
+        return None
+
+    session_manager = _SessionManagerStub()
+    session_manager.redis.values["telegram:onboarding:12345:flow_token"] = "onboarding-token"
+    session_manager.sessions["onboarding-token"] = {
+        "phone_number": "2348162511023",
+        "step": "bvn_entry",
+    }
+    monkeypatch.setattr(telegram_service_module, "session_manager", session_manager)
+    monkeypatch.setattr(telegram_service_module, "load_channel_identity_user", _load_channel_identity_user)
+    monkeypatch.setattr(telegram_service_module.settings, "telegram_mini_app_base_url", "https://mini.test")
+
+    async def _create_bootstrap(**kwargs: Any) -> str:
+        assert kwargs == {
+            "chat_id": "12345",
+            "flow_token": "onboarding-token",
+            "endpoint": "onboarding",
+        }
+        return "boot-resume"
+
+    monkeypatch.setattr(telegram_service_module, "create_telegram_miniapp_bootstrap", _create_bootstrap)
+
+    telegram_client = _TelegramClientStub()
+    service = telegram_service_module.TelegramWebhookService(
+        publisher=_PublisherStub(),  # type: ignore[arg-type]
+        user_repository=_NewUserRepositoryStub(),  # type: ignore[arg-type]
+        telegram_client=telegram_client,  # type: ignore[arg-type]
+    )
+
+    handled = await service.process_update(
+        {
+            "update_id": 14,
+            "message": {
+                "message_id": 204,
+                "chat": {"id": 12345},
+                "from": {"id": 12345, "first_name": "Gaines"},
+                "text": "hi",
+            },
+        }
+    )
+
+    assert handled is True
+    assert len(telegram_client.api_calls) == 1
+    method, payload = telegram_client.api_calls[0]
+    assert method == "sendMessage"
+    assert payload["text"] == "You're almost there. Tap below to continue your account setup."
+    assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "Continue setup"
+    assert "boot=boot-resume" in payload["reply_markup"]["inline_keyboard"][0][0]["web_app"]["url"]
+    assert session_manager.sessions["onboarding-token"]["cta_message_id"] == "77"
+    assert session_manager.sessions["onboarding-token"]["cta_chat_id"] == "12345"
+
+
+@pytest.mark.asyncio
 async def test_stale_telegram_button_payload_does_not_link_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     session_manager = _SessionManagerStub()
     session_manager.sessions["channel-link-opaque-token"] = {
@@ -610,3 +686,60 @@ async def test_contact_share_rejects_non_self_contact(monkeypatch: pytest.Monkey
 
     assert handled is True
     assert "share your own Telegram phone number" in telegram_client.api_calls[-1][1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_request_contact_uses_warm_setup_copy() -> None:
+    telegram_client = _TelegramClientStub()
+    service = telegram_service_module.TelegramWebhookService(
+        publisher=_PublisherStub(),  # type: ignore[arg-type]
+        user_repository=_UserRepositoryStub(),  # type: ignore[arg-type]
+        telegram_client=telegram_client,  # type: ignore[arg-type]
+    )
+
+    await service._request_contact("12345")
+
+    method, payload = telegram_client.api_calls[-1]
+    assert method == "sendMessage"
+    assert payload["text"] == (
+        f"Welcome to {telegram_service_module.settings.app_name}.\n\n"
+        "To set up your banking access, please share the Telegram phone number you want to use."
+    )
+    assert payload["reply_markup"] == {
+        "keyboard": [[{"text": "Share Contact", "request_contact": True}]],
+        "resize_keyboard": True,
+        "one_time_keyboard": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_pre_onboarding_response_calls_attention_to_share_contact_button() -> None:
+    telegram_client = _TelegramClientStub()
+    service = telegram_service_module.TelegramWebhookService(
+        publisher=_PublisherStub(),  # type: ignore[arg-type]
+        user_repository=_UserRepositoryStub(),  # type: ignore[arg-type]
+        telegram_client=telegram_client,  # type: ignore[arg-type]
+    )
+
+    await service._send_pre_onboarding_response(
+        "12345",
+        telegram_service_module.PreOnboardingResponse(
+            action="respond",
+            message_key="pre_onboarding.greeting",
+            should_resend_onboarding_cta=True,
+        ),
+    )
+
+    method, payload = telegram_client.api_calls[-1]
+    assert method == "sendMessage"
+    assert payload["text"] == (
+        f"Welcome to {telegram_service_module.settings.app_name}. "
+        "I can help with transfers, airtime/data, balances, and transaction history. "
+        "First, let's complete your account setup.\n\n"
+        "Tap Share Contact below to continue."
+    )
+    assert payload["reply_markup"] == {
+        "keyboard": [[{"text": "Share Contact", "request_contact": True}]],
+        "resize_keyboard": True,
+        "one_time_keyboard": True,
+    }

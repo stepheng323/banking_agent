@@ -404,6 +404,37 @@ def test_catalog_completeness():
     validate_catalog_completeness()
 
 
+@pytest.mark.parametrize(
+    ("locale", "expected_fragment"),
+    [
+        ("en", "First, let's complete your account setup."),
+        ("pcm", "First, make we complete your account setup."),
+        ("yo", "Lakọọkọ, jẹ ká pari account setup rẹ."),
+        ("ha", "Da farko, mu kammala account setup"),
+        ("ig", "Nke mbụ, ka anyị mezue account setup gị."),
+    ],
+)
+def test_pre_onboarding_greeting_orients_to_setup(locale: str, expected_fragment: str):
+    text = render_message("pre_onboarding.greeting", locale, {"app_name": "Nenya AI"})
+
+    assert "Nenya AI" in text
+    assert expected_fragment in text
+
+
+@pytest.mark.parametrize(
+    ("locale", "expected_fragment"),
+    [
+        ("en", "Tap Share Contact below to continue."),
+        ("pcm", "Tap Share Contact below make we continue."),
+        ("yo", "Tẹ Share Contact ni isalẹ lati tẹsiwaju."),
+        ("ha", "Danna Share Contact a kasa don ci gaba."),
+        ("ig", "Pịa Share Contact dị n'okpuru iji gaa n'ihu."),
+    ],
+)
+def test_pre_onboarding_telegram_share_contact_hint_is_localized(locale: str, expected_fragment: str):
+    assert render_message("pre_onboarding.telegram_share_contact_hint", locale) == expected_fragment
+
+
 def _allowed_neutral_duplicate(message_key: str, value: str) -> bool:
     if message_key in _STRUCTURAL_DUPLICATE_KEYS:
         return True

@@ -1171,6 +1171,16 @@
       "body": "Hi, Mo n {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "pre_onboarding": {
+    "greeting": "Kaabo si {app_name}. Mo le ran ọ lọwọ pẹlu transfer, airtime/data, balance, ati transaction history. Lakọọkọ, jẹ ká pari account setup rẹ.",
+    "inquiry": "Setup yii n ran mi lọwọ lati verify ẹni ti o jẹ ati so ọ pọ mọ bank accounts rẹ ni aabo. A encrypt details rẹ, a si lo wọn fun verification nikan.",
+    "compliance": "O dara. Tẹ bọtini ti o wa loke lati tẹsiwaju pẹlu account setup rẹ.",
+    "objection": "Mo loye ibakcdun rẹ. Setup jẹ dandan ki n to le wọle si banking information tabi ran ọ lọwọ pẹlu transactions.",
+    "banking_request": "Mo le ran ọ lọwọ pẹlu iyẹn nigbati setup ba pari. Lakọọkọ, jẹ ká pari account setup rẹ.",
+    "out_of_scope": "Mo dojukọ banking. Lati lo Nenya, jọwọ pari account setup rẹ lakọọkọ.",
+    "cooldown": "Mo wa nibi nigbati o ba ṣetan. Tẹ bọtini nigbakugba lati tẹsiwaju setup.",
+    "telegram_share_contact_hint": "Tẹ Share Contact ni isalẹ lati tẹsiwaju."
+  },
   "schedule": {
     "prompt": {
       "time": "Akoko wo ni ki n schedule e?",

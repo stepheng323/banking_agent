@@ -1205,6 +1205,16 @@
       "body": "Hi, I'm {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "pre_onboarding": {
+    "greeting": "Welcome to {app_name}. I can help with transfers, airtime/data, balances, and transaction history. First, let's complete your account setup.",
+    "inquiry": "Setup helps me verify your identity and connect your bank accounts safely. Your details are encrypted and used only for verification.",
+    "compliance": "Great. Tap the button above to continue your account setup.",
+    "objection": "I understand your concern. Setup is required before I can access banking information or help with transactions.",
+    "banking_request": "I can help with that once setup is complete. First, let's finish your account setup.",
+    "out_of_scope": "I focus on banking. To use Nenya, please complete your account setup first.",
+    "cooldown": "I'll be here when you're ready. Tap the button anytime to continue setup.",
+    "telegram_share_contact_hint": "Tap Share Contact below to continue."
+  },
   "schedule": {
     "prompt": {
       "time": "What time should I schedule it?",

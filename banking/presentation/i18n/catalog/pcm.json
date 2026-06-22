@@ -1149,9 +1149,9 @@
         "warm": "Done. {plan_name} data don dey active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}",
         "celebratory": "All set. {plan_name} data don dey active for {recipient_phone} ({network}).\nAmount: ₦{amount}\nTransaction ID: {transaction_id}"
       },
-      "pending_message": "⏳ Your {plan_name} purchase (₦{amount}) for {recipient_phone} dey process.\n\nYou go receive confirmation soon. If e no enter within 5 minutes, contact support.",
+      "pending_message": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} dey process.\n\nYou go receive confirmation soon. If e no enter within 5 minutes, contact support.",
       "pending_message_variants": {
-        "standard": "⏳ Your {plan_name} purchase (₦{amount}) for {recipient_phone} dey process.\n\nYou go receive confirmation soon. If e no enter within 5 minutes, contact support.",
+        "standard": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} dey process.\n\nYou go receive confirmation soon. If e no enter within 5 minutes, contact support.",
         "warm": "I don get am. Your {plan_name} purchase (₦{amount}) for {recipient_phone} dey process.\n\nYou go receive confirmation soon.",
         "reassuring": "Your {plan_name} purchase (₦{amount}) for {recipient_phone} dey process. Provider confirmation fit take small time."
       },
@@ -1170,6 +1170,16 @@
       "header": "Welcome to {app_name}",
       "body": "Hi, I dey {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
+  },
+  "pre_onboarding": {
+    "greeting": "Welcome to {app_name}. I fit help with transfer, airtime/data, balance, and transaction history. First, make we complete your account setup.",
+    "inquiry": "Setup go help me verify who you be and connect your bank accounts safely. Your details dey encrypted and na only for verification we go use am.",
+    "compliance": "Sharp. Tap the button above to continue your account setup.",
+    "objection": "I understand your concern. Setup dey required before I fit access banking info or help with transactions.",
+    "banking_request": "I fit help with that once setup complete. First, make we finish your account setup.",
+    "out_of_scope": "Na banking I dey do. To use Nenya, abeg complete your account setup first.",
+    "cooldown": "I go dey here when you ready. Tap the button anytime to continue setup.",
+    "telegram_share_contact_hint": "Tap Share Contact below make we continue."
   },
   "schedule": {
     "prompt": {

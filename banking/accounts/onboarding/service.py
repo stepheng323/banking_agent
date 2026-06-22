@@ -28,6 +28,7 @@ class OnboardingService:
         channel: str = "whatsapp",
         locale: str = "en",
         onboarding_phone: str | None = None,
+        override_body: str | None = None,
     ) -> None:
         """Send the onboarding flow to the user."""
         try:
@@ -59,7 +60,7 @@ class OnboardingService:
                     "screen_name": "BVN_ENTRY",
                     "header": render_message("onboarding.flow.header", locale),
                     "flow_token": flow_token,
-                    "text_body": render_message("onboarding.flow.body", locale),
+                    "text_body": override_body or render_message("onboarding.flow.body", locale),
                 },
                 fallback_text=fallback_text,
             )

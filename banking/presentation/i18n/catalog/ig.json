@@ -1171,6 +1171,16 @@
       "body": "Hi, Ana m {app_name}, an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "pre_onboarding": {
+    "greeting": "Nnọọ na {app_name}. Enwere m ike inyere gị aka na transfers, airtime/data, balances, na transaction history. Nke mbụ, ka anyị mezue account setup gị.",
+    "inquiry": "Setup na-enyere m verify onye ị bụ ma jikọọ bank accounts gị n'udo. A na-encrypt details gị ma jiri ha naanị maka verification.",
+    "compliance": "Ọ dị mma. Pịa bọtịnụ dị n'elu iji gaa n'ihu na account setup gị.",
+    "objection": "Aghọtara m nchegbu gị. Setup dị mkpa tupu m nwee ike ịnweta banking information ma ọ bụ nyere gị aka na transactions.",
+    "banking_request": "Enwere m ike inyere gị aka na nke ahụ mgbe setup gwụchara. Nke mbụ, ka anyị mechaa account setup gị.",
+    "out_of_scope": "Ana m elekwasị anya na banking. Iji jiri Nenya, biko mezue account setup gị mbụ.",
+    "cooldown": "Aga m anọ ebe a mgbe ị dị njikere. Pịa bọtịnụ oge ọ bụla iji gaa n'ihu na setup.",
+    "telegram_share_contact_hint": "Pịa Share Contact dị n'okpuru iji gaa n'ihu."
+  },
   "schedule": {
     "prompt": {
       "time": "Kedu time ka m schedule ya?",

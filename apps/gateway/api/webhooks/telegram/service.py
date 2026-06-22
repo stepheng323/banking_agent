@@ -6,12 +6,17 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
+from langchain_openai import ChatOpenAI
+
 from apps.gateway.adapters.telegram import ParsedTelegramMessage, parse_update
+from banking.accounts.onboarding.pre_onboarding_classifier import PreOnboardingClassifier
+from banking.accounts.onboarding.pre_onboarding_gate import PreOnboardingGate, PreOnboardingResponse
 from banking.accounts.onboarding.runtime import session_manager
 from banking.accounts.onboarding.session import OnboardingStep
 from banking.identity.channel_linking.authorization import CHANNEL_LINK_SESSION_PURPOSE, build_channel_link_pin_token
 from banking.identity.channel_linking.telegram_miniapp_bootstrap import create_telegram_miniapp_bootstrap
 from banking.identity.repositories.user_repository import UserRepository
+from banking.presentation.i18n.renderer import render_message
 from shared.cache.channel_identity_cache import load_channel_identity_user, store_channel_identity_user
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -37,6 +42,7 @@ def _new_channel_link_token() -> str:
 
 def _telegram_onboarding_token_key(chat_id: str) -> str:
     return f"telegram:onboarding:{chat_id}:flow_token"
+
 
 
 async def _store_telegram_onboarding_token(chat_id: str, flow_token: str) -> None:
@@ -81,10 +87,14 @@ class TelegramWebhookService:
         publisher: QueuePublisher,
         user_repository: UserRepository,
         telegram_client: TelegramClient | None = None,
+        pre_onboarding_gate: PreOnboardingGate | None = None,
     ) -> None:
         self.publisher = publisher
         self.user_repository = user_repository
         self.telegram_client = telegram_client or TelegramClient()
+        self.pre_onboarding_gate: PreOnboardingGate = pre_onboarding_gate or PreOnboardingGate(
+            classifier=PreOnboardingClassifier(llm=ChatOpenAI(model=settings.semantic_router_model, temperature=0.0))
+        )
 
     async def process_update(self, update: dict[str, Any]) -> bool:
         """Process a single Telegram update. Returns True if handled."""
@@ -138,9 +148,9 @@ class TelegramWebhookService:
                     "sendMessage",
                     {
                         "chat_id": msg.chat_id,
-                        "text": "Please tap the button below to finish creating your account! 🚀",
+                        "text": "You're almost there. Tap below to continue your account setup.",
                         "reply_markup": {
-                            "inline_keyboard": [[{"text": "🛠 Continue Setup", "web_app": {"url": app_url}}]]
+                            "inline_keyboard": [[{"text": "Continue setup", "web_app": {"url": app_url}}]]
                         },
                     },
                 )
@@ -155,7 +165,17 @@ class TelegramWebhookService:
                 return True
 
             logger.info("telegram_unlinked_user_blocked", chat_id_hash=log_fingerprint(msg.chat_id))
-            await self._request_contact(msg.chat_id)
+
+            await self.telegram_client._call("sendChatAction", {"chat_id": msg.chat_id, "action": "typing"})
+
+            # Use PreOnboardingGate to get the appropriate response
+            response = await self.pre_onboarding_gate.handle_unonboarded_message(
+                channel=_TELEGRAM_CHANNEL,
+                channel_user_id=str(msg.chat_id),
+                text=msg.text or "",
+            )
+
+            await self._send_pre_onboarding_response(msg.chat_id, response)
             return True  # Handled (by blocking)
 
         if msg.text and msg.text.strip() == "/start":
@@ -176,7 +196,7 @@ class TelegramWebhookService:
                 "sendMessage",
                 {
                     "chat_id": msg.chat_id,
-                    "text": "✓ Your Telegram account is already linked to your banking profile.",
+                    "text": "Your Telegram account is already linked to your banking profile.",
                     "reply_markup": {"remove_keyboard": True},
                 },
             )
@@ -194,7 +214,11 @@ class TelegramWebhookService:
                 {
                     "chat_id": msg.chat_id,
                     "text": "Please tap the Share Contact button and share your own Telegram phone number.",
-                    "reply_markup": {"remove_keyboard": True},
+                    "reply_markup": {
+                        "keyboard": [[{"text": "Share Contact", "request_contact": True}]],
+                        "resize_keyboard": True,
+                        "one_time_keyboard": True,
+                    },
                 },
             )
             return True
@@ -297,10 +321,6 @@ class TelegramWebhookService:
                 },
             )
         else:
-            # We don't have a profile for this phone. They are a brand new user.
-            # Pre-seed the onboarding session with the real phone number so
-            # downstream services (bvn_verification, account_linking) can find it.
-
             flow_token = _new_onboarding_flow_token()
             await session_manager.update_session_strict(
                 flow_token,
@@ -320,20 +340,29 @@ class TelegramWebhookService:
                 endpoint="onboarding",
             )
 
+            await self.telegram_client._call(
+                "sendMessage",
+                {
+                    "chat_id": msg.chat_id,
+                    "text": "Thanks. I'll use this number only to start your account setup.",
+                    "reply_markup": {"remove_keyboard": True},
+                },
+            )
+
             cta_result = await self.telegram_client._call(
                 "sendMessage",
                 {
                     "chat_id": msg.chat_id,
                     "text": (
-                        f"Welcome to {settings.app_name}! 🚀\n\n"
-                        "We couldn't find an existing account matching your phone number.\n"
-                        "Please click the button below to securely create your new account."
+                        f"Welcome to {settings.app_name}.\n\n"
+                        "You're almost in. I couldn't find an existing account for this phone number, "
+                        "so let's complete setup."
                     ),
                     "reply_markup": {
                         "inline_keyboard": [
                             [
                                 {
-                                    "text": "Start Onboarding",
+                                    "text": "Complete setup",
                                     "web_app": {"url": app_url},
                                 }
                             ]
@@ -351,6 +380,49 @@ class TelegramWebhookService:
 
         return True
 
+    async def _send_pre_onboarding_response(self, chat_id: str, gate_response: PreOnboardingResponse) -> None:
+        """Send a pre-onboarding response with optional contact share keyboard."""
+
+        locale = "en"
+        if gate_response.lang:
+            locale = "en"
+            lang_lower = gate_response.lang.lower()
+            if "pidgin" in lang_lower:
+                locale = "pcm"
+            elif "yoruba" in lang_lower:
+                locale = "yo"
+            elif "hausa" in lang_lower:
+                locale = "ha"
+            elif "igbo" in lang_lower:
+                locale = "ig"
+
+        message_text = render_message(
+            gate_response.message_key,
+            locale,
+            params={"app_name": settings.app_name},
+        )
+
+        reply_markup = None
+        if gate_response.should_resend_onboarding_cta:
+            contact_hint = render_message("pre_onboarding.telegram_share_contact_hint", locale)
+            message_text = f"{message_text}\n\n{contact_hint}"
+            reply_markup = {
+                "keyboard": [[{"text": "Share Contact", "request_contact": True}]],
+                "resize_keyboard": True,
+                "one_time_keyboard": True,
+            }
+        else:
+            reply_markup = {"remove_keyboard": True}
+
+        await self.telegram_client._call(
+            "sendMessage",
+            {
+                "chat_id": chat_id,
+                "text": message_text,
+                "reply_markup": reply_markup,
+            },
+        )
+
     async def _request_contact(self, chat_id: str) -> None:
         """Send the 'Share Contact' button keyboard."""
         await self.telegram_client._call(
@@ -358,12 +430,11 @@ class TelegramWebhookService:
             {
                 "chat_id": chat_id,
                 "text": (
-                    f"Welcome to {settings.app_name}! 🏦\n\n"
-                    "To access your account, we first need to verify your phone number. "
-                    "Please tap the button below to share your contact securely."
+                    f"Welcome to {settings.app_name}.\n\n"
+                    "To set up your banking access, please share the Telegram phone number you want to use."
                 ),
                 "reply_markup": {
-                    "keyboard": [[{"text": "📱 Share Contact", "request_contact": True}]],
+                    "keyboard": [[{"text": "Share Contact", "request_contact": True}]],
                     "resize_keyboard": True,
                     "one_time_keyboard": True,
                 },
@@ -372,7 +443,6 @@ class TelegramWebhookService:
 
     async def _handle_callback_query(self, msg: ParsedTelegramMessage) -> bool:
         """Process an inline button press — treat as interactive text input."""
-        # Silence taps on the 'Authorized' badge — no further action needed
         if msg.text == "auth:done":
             if msg.callback_query_id:
                 await self.telegram_client.answer_callback_query(msg.callback_query_id)
@@ -384,7 +454,15 @@ class TelegramWebhookService:
         user = await self._resolve_linked_user(msg.chat_id)
         if not user:
             logger.info("telegram_unlinked_user_blocked_callback", chat_id_hash=log_fingerprint(msg.chat_id))
-            await self._request_contact(msg.chat_id)
+
+            await self.telegram_client._call("sendChatAction", {"chat_id": msg.chat_id, "action": "typing"})
+
+            response = await self.pre_onboarding_gate.handle_unonboarded_message(
+                channel=_TELEGRAM_CHANNEL,
+                channel_user_id=str(msg.chat_id),
+                text=msg.text or "",
+            )
+            await self._send_pre_onboarding_response(msg.chat_id, response)
             return True
 
         if msg.callback_query_id:
@@ -452,7 +530,7 @@ class TelegramWebhookService:
             # Acknowledge gently.
             await self.telegram_client.send_text(
                 to=msg.chat_id,
-                text="🎉 Account setup complete! You can now use all banking features.",
+                text="Account setup complete! You can now use all banking features.",
             )
             return True
 
