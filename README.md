@@ -113,6 +113,7 @@ Start with [Glossary](docs/glossary.md) if terms like gate, planner, wave, inter
 | Transfers, pooled funding, auth, refunds, receipts | [docs/money-movement.md](docs/money-movement.md) |
 | Accounts, queries, bills, beneficiaries, schedules, support | [docs/domains.md](docs/domains.md) |
 | Setup, local stack, tests, readiness scripts | [docs/local-development.md](docs/local-development.md) |
+| Screen-recording demo script | [docs/demo.md](docs/demo.md) |
 | Deployment, env vars, observability, runbooks | [docs/operations.md](docs/operations.md) |
 
 ## 6. Repository Layout & Tech Stack
