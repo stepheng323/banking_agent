@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from apps.chat.src.agent.assistant_profile.loader import load_assistant_profile
 from banking.presentation.i18n.renderer import render_message
-from shared.branding import brand_name_aliases, brand_template_params, legacy_brand_names, render_brand_template
+from shared.branding import brand_name_aliases, brand_template_params, render_brand_template
 from shared.config.settings import Settings, settings
 
 
@@ -40,7 +40,7 @@ def test_brand_template_params_are_centralized(monkeypatch) -> None:
     monkeypatch.setattr(settings, "app_name", "Aurora Pay")
     monkeypatch.setattr(settings, "app_name_short", "Aurora")
     monkeypatch.setattr(settings, "app_name_aliases", ("Auro",))
-    monkeypatch.setattr(settings, "app_legacy_names", ("Old Aurora",))
+
     monkeypatch.setattr(settings, "app_creator", "Aurora team")
     monkeypatch.setattr(settings, "app_brand_inspiration", "a better myth")
     monkeypatch.setattr(settings, "app_brand_symbolism", "a better money metaphor")
@@ -54,20 +54,20 @@ def test_brand_template_params_are_centralized(monkeypatch) -> None:
     assert params["app_brand_symbolism"] == "a better money metaphor"
     assert params["app_public_base_url"] == "https://aurora.example"
     assert brand_name_aliases() == {"aurora pay", "aurora", "auro"}
-    assert legacy_brand_names() == {"old aurora"}
+
     assert render_brand_template("{app_name_short} -> {app_public_base_url}") == ("Aurora -> https://aurora.example")
 
 
 def test_brand_aliases_load_from_env(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("APP_NAME_ALIASES", "Aurora, Aurora Bot")
-    monkeypatch.setenv("APP_LEGACY_NAMES", "Old Aurora, Legacy Pay")
+
     monkeypatch.setenv("APP_BRAND_SYMBOLISM", "clear money movement")
 
     loaded = Settings()
 
     assert loaded.app_name_aliases == ("Aurora", "Aurora Bot")
-    assert loaded.app_legacy_names == ("Old Aurora", "Legacy Pay")
+
     assert loaded.app_brand_symbolism == "clear money movement"
 
 

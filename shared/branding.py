@@ -40,11 +40,6 @@ def brand_name_aliases() -> set[str]:
     return _normalized_brand_names((settings.app_name, settings.app_name_short, *settings.app_name_aliases))
 
 
-def legacy_brand_names() -> set[str]:
-    """Return normalized previous app names configured for recognition."""
-    from shared.config.settings import settings
-
-    return _normalized_brand_names(settings.app_legacy_names)
 
 
 def brand_template_params(*, html_escape_values: bool = False) -> dict[str, str]:

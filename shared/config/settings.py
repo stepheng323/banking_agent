@@ -99,7 +99,6 @@ class Settings:
         self.app_name: str = os.getenv("APP_NAME", "Nenya AI").strip() or "Nenya AI"
         self.app_name_short: str = os.getenv("APP_NAME_SHORT", "").strip() or self.app_name.split()[0]
         self.app_name_aliases: tuple[str, ...] = self._parse_csv(os.getenv("APP_NAME_ALIASES", ""))
-        self.app_legacy_names: tuple[str, ...] = self._parse_csv(os.getenv("APP_LEGACY_NAMES", ""))
         self.app_creator: str = os.getenv("APP_CREATOR", "Nenya AI team").strip() or "Nenya AI team"
         self.app_brand_inspiration: str = (
             os.getenv(
@@ -134,13 +133,13 @@ class Settings:
         self.pending_transaction_ttl: int = int(os.getenv("PENDING_TRANSACTION_TTL", "300"))
 
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-        self.planner_model: str = os.getenv("PLANNER_MODEL", "gpt-4o-mini")
+        self.planner_model: str = os.getenv("PLANNER_MODEL", "gpt-5.4-mini")
         self.query_model: str = os.getenv("QUERY_MODEL", self.planner_model).strip()
-        self.interrupt_router_model: str = os.getenv("INTERRUPT_ROUTER_MODEL", self.planner_model).strip()
+        self.interrupt_router_model: str = os.getenv("INTERRUPT_ROUTER_MODEL", "gpt-5.4-nano").strip()
         self.semantic_router_model: str = os.getenv("SEMANTIC_ROUTER_MODEL", "gpt-5.4-nano").strip()
         self.extractor_model: str = os.getenv("EXTRACTOR_MODEL", "gpt-5.4-mini").strip()
-        self.media_image_model: str = os.getenv("MEDIA_IMAGE_MODEL", "gpt-5-mini").strip()
-        self.audio_transcription_model: str = os.getenv("AUDIO_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe").strip()
+        self.media_image_model: str = os.getenv("MEDIA_IMAGE_MODEL", "gpt-5.4-mini").strip()
+        self.audio_transcription_model: str = os.getenv("AUDIO_TRANSCRIPTION_MODEL", "whisper-1").strip()
         self.media_image_max_bytes: int = int(os.getenv("MEDIA_IMAGE_MAX_BYTES", "5000000"))
         self.llm_observability_enabled: bool = os.getenv("LLM_OBSERVABILITY_ENABLED", "true").lower() == "true"
         self.llm_trace_privacy_mode: str = os.getenv("LLM_TRACE_PRIVACY_MODE", "masked").strip().lower() or "masked"

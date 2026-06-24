@@ -557,7 +557,7 @@ def test_addressed_greeting_uses_current_brand_settings(monkeypatch: pytest.Monk
     monkeypatch.setattr(settings, "app_name", "Aurora Pay")
     monkeypatch.setattr(settings, "app_name_short", "Aurora")
     monkeypatch.setattr(settings, "app_name_aliases", ())
-    monkeypatch.setattr(settings, "app_legacy_names", ())
+
 
     _assert_meta_response("Hi Aurora", "conversational.greeting")
     _assert_meta_response("Hi, Aurora Pay", "conversational.greeting")
@@ -570,13 +570,6 @@ def test_addressed_greeting_uses_current_brand_settings(monkeypatch: pytest.Monk
     monkeypatch.setattr(settings, "app_name_aliases", (non_canonical_name,))
     _assert_meta_response(f"Hi {non_canonical_name}", "conversational.greeting")
 
-    monkeypatch.setattr(settings, "app_name_aliases", ())
-    monkeypatch.setattr(settings, "app_legacy_names", (non_canonical_name,))
-    _assert_meta_response(
-        f"Hi {non_canonical_name}",
-        "conversational.identity_correction",
-        params={"addressed_name": non_canonical_name},
-    )
 
 
 def test_addressed_greeting_distinguishes_generic_and_wrong_names() -> None:
@@ -626,7 +619,7 @@ def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.Mo
     monkeypatch.setattr(settings, "app_name", "Aurora Pay")
     monkeypatch.setattr(settings, "app_name_short", "Aurora")
     monkeypatch.setattr(settings, "app_name_aliases", ())
-    monkeypatch.setattr(settings, "app_legacy_names", ())
+
 
     _assert_meta_response("what is the meaning of Aurora", "conversational.brand_origin")
     _assert_meta_response("what is Aurora", "conversational.identity")
