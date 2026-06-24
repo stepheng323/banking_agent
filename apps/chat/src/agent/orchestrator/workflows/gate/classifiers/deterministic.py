@@ -8,7 +8,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
     unsupported_capability_params,
 )
 from banking.presentation.i18n.message_keys import MessageKey
-from shared.branding import brand_name_aliases, legacy_brand_names, normalize_brand_name
+from shared.branding import brand_name_aliases, normalize_brand_name
 
 DETERMINISTIC_GREETING_EXACT = {
     "hi",
@@ -232,8 +232,7 @@ def _classify_addressed_greeting(normalized: str) -> DeterministicMetaResponse |
         return _meta_response("conversational.greeting")
     if address in brand_name_aliases() or address in GENERIC_GREETING_ADDRESSES:
         return _meta_response("conversational.greeting")
-    if address in legacy_brand_names():
-        return _meta_response("conversational.identity_correction", params=_addressed_name_param(address))
+
     address_tokens = address.split()
     if len(address_tokens) > 3 or set(address_tokens) & ADDRESSED_GREETING_NON_NAME_TOKENS:
         return None
@@ -241,7 +240,7 @@ def _classify_addressed_greeting(normalized: str) -> DeterministicMetaResponse |
 
 
 def _is_brand_origin_lookup(normalized: str) -> bool:
-    for alias in brand_name_aliases() | legacy_brand_names():
+    for alias in brand_name_aliases():
         if normalized in {
             f"what does {alias} mean",
             f"what is the meaning of {alias}",

@@ -94,6 +94,10 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R26_ONE_SHOT_COMPLETENESS": "one_shot_tx->extract all explicit fields without correction dependence",
     "R27_RECIPIENT_SPLIT": "split_people->recipient_allocations; split_my_accounts->explicit_split",
     "R28_RESPONSE_SHAPE": "how_many=count; any=bool; show/list=list; last/latest=detail",
+    "R29_IDENTITY_CORRECTION": (
+        "wrong_name_used->set planner_output.response to politely correct the name "
+        "before addressing the rest of the message"
+    ),
 }
 
 PLANNER_RULE_ATOM_ORDER = [
@@ -121,6 +125,7 @@ PLANNER_RULE_ATOM_ORDER = [
     "R26_ONE_SHOT_COMPLETENESS",
     "R27_RECIPIENT_SPLIT",
     "R28_RESPONSE_SHAPE",
+    "R29_IDENTITY_CORRECTION",
 ]
 
 PLANNER_RULE_SEMANTIC_GUARD_IDS = {
@@ -142,6 +147,7 @@ PLANNER_BASE_RULE_ATOMS = {
     "R23_MULTILINGUAL_SAFETY",
     "R24_BENEFICIARY_ROUTE",
     "R25_ACCOUNT_ACTION_HINT",
+    "R29_IDENTITY_CORRECTION",
 }
 
 PLANNER_MONEY_MOVE_RULE_ATOMS = {

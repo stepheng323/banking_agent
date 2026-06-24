@@ -456,11 +456,11 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
             expected_transaction_executors=("transfer", "airtime"),
         ),
     )
-    assert len(generic_prompt) <= 1600
-    assert len(expanded_prompt) <= 4350
+    assert len(generic_prompt) <= 1650
+    assert len(expanded_prompt) <= 4400
     encoding = tiktoken.get_encoding("o200k_base")
-    assert len(encoding.encode(generic_prompt)) <= 390
-    assert len(encoding.encode(expanded_prompt)) <= 1130
+    assert len(encoding.encode(generic_prompt)) <= 400
+    assert len(encoding.encode(expanded_prompt)) <= 1150
 
 
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:
