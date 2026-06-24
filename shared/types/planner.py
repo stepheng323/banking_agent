@@ -890,6 +890,7 @@ RouterDomainIntent: TypeAlias = Literal[
     "airtime",
     "data",
     "schedule",
+    "faq",
 ]
 AccountActionHint: TypeAlias = Literal[
     "list",
@@ -917,6 +918,7 @@ SemanticRoutingDecision: TypeAlias = Literal[
     "domain_airtime",
     "domain_data",
     "domain_schedule",
+    "domain_faq",
     "planner_mixed",
     "planner_ambiguous",
     "cancel",
@@ -1101,20 +1103,20 @@ class PendingActionEditDecision(BaseModel):
     )
     confidence: float = Field(default=0.0, description="Confidence in the pending-action edit interpretation")
     detected_language: str | None = Field(default=None, description="Detected language for the user turn")
-    target_task_ids: list[str] = Field(
-        default_factory=list,
+    target_task_ids: list[str] | None = Field(
+        default=None,
         description="Task ids explicitly inferred from the pending task context; suggestions only",
     )
-    target_types: list[Literal["transfer", "airtime", "data"]] = Field(
-        default_factory=list,
+    target_types: list[Literal["transfer", "airtime", "data"]] | None = Field(
+        default=None,
         description="Transaction task types targeted by the edit",
     )
-    target_texts: list[str] = Field(
-        default_factory=list,
+    target_texts: list[str] | None = Field(
+        default=None,
         description="Natural-language target references such as recipient, amount, bank, phone, or 'both transfers'",
     )
-    updates: list[PendingActionTargetedUpdate] = Field(
-        default_factory=list,
+    updates: list[PendingActionTargetedUpdate] | None = Field(
+        default=None,
         description="Scoped field updates when one message edits multiple targets differently",
     )
     amount: MoneyAmount | None = Field(default=None, description="Updated transaction amount")

@@ -40,6 +40,7 @@ _ROUTE_TO_DOMAIN: dict[str, RouterDomainIntent] = {
     "domain_transfer": "transfer",
     "domain_airtime": "airtime",
     "domain_data": "data",
+    "domain_faq": "faq",
 }
 
 

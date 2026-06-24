@@ -72,7 +72,7 @@ def _direct_task_response_shape(
 def _build_direct_domain_task(
     *,
     state_view: GateStateView,
-    domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule"],
+    domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data", "schedule", "faq"],
     mode: str | None = None,
     schedule_response_mode: Literal["list", "count"] | None = None,
     message_text: str | None = None,
@@ -129,6 +129,8 @@ def _build_direct_domain_task(
         payload["action"] = "list_scheduled_transactions"
         if schedule_response_mode in {"list", "count"}:
             payload["schedule_response_mode"] = schedule_response_mode
+    elif domain == "faq":
+        payload["action"] = "answer_question"
 
     spec = TaskSpec(
         id=task_id,
