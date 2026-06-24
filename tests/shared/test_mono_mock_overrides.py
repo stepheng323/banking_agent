@@ -64,8 +64,8 @@ def test_settings_media_models_have_dedicated_defaults(monkeypatch) -> None:
     cfg = Settings()
 
     assert cfg.extractor_model == "extractor-test"
-    assert cfg.media_image_model == "gpt-5-mini"
-    assert cfg.audio_transcription_model == "gpt-4o-mini-transcribe"
+    assert cfg.media_image_model == "gpt-5.4-mini"
+    assert cfg.audio_transcription_model == "whisper-1"
 
 
 def test_settings_media_models_can_be_overridden(monkeypatch) -> None:

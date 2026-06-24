@@ -194,9 +194,12 @@ class FlutterwavePaymentProvider(PayoutProvider):
         del sender_account_number
         reference = str(reference or self._reference()).strip()
         transfer_amount = require_naira(amount)
+        request_account_number = "0690000032" if self.use_sandbox else recipient_account_number
+        request_bank_code = "044" if self.use_sandbox else recipient_bank_code
+
         payload = {
-            "account_bank": recipient_bank_code,
-            "account_number": recipient_account_number,
+            "account_bank": request_bank_code,
+            "account_number": request_account_number,
             "amount": naira_to_provider_value(transfer_amount),
             "currency": currency,
             "reference": reference,

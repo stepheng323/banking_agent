@@ -64,7 +64,7 @@ async def test_flutterwave_initiate_transfer_posts_real_transfer_payload() -> No
             "endpoint": "/v3/transfers",
             "payload": {
                 "account_bank": "044",
-                "account_number": "8162511023",
+                "account_number": "0690000032",
                 "amount": 5000,
                 "currency": "NGN",
                 "reference": "idem-1",
