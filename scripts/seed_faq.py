@@ -34,7 +34,7 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-FAQ_DIR = project_root / "data" / "faq"
+FAQ_DIR = project_root / "banking" / "faq" / "data"
 FAQEntryPayload = dict[str, Any]
 
 
