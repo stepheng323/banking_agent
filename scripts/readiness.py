@@ -33,6 +33,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "latency",
             "llm-latency",
             "planner",
+            "adversarial_bad_player",
+            "system_intelligence",
+            "extended_casual",
+            "complex_interruptions",
         ),
     )
     parser.add_argument("--phone", help="Existing test user's phone number. Required for --mode dry-run.")

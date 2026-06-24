@@ -22,6 +22,10 @@ ReadinessScenarioName = Literal[
     "latency",
     "llm-latency",
     "planner",
+    "adversarial_bad_player",
+    "system_intelligence",
+    "extended_casual",
+    "complex_interruptions",
 ]
 
 
