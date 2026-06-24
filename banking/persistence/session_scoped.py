@@ -242,6 +242,27 @@ class SessionScopedTransactionRepository(_SessionScopedRepositoryMixin, Transact
             recipient_name,
         )
 
+    async def get_successful_transfer_personality_stats(
+        self,
+        user_id: str,
+        *,
+        recipient_account_number: str | None = None,
+        recipient_name: str | None = None,
+        recipient_since: datetime | None = None,
+        exclude_transaction_id: str | None = None,
+        exclude_idempotency_key: str | None = None,
+    ):
+        return await self._call_with_session(
+            TransactionRepository,
+            "get_successful_transfer_personality_stats",
+            user_id,
+            recipient_account_number=recipient_account_number,
+            recipient_name=recipient_name,
+            recipient_since=recipient_since,
+            exclude_transaction_id=exclude_transaction_id,
+            exclude_idempotency_key=exclude_idempotency_key,
+        )
+
     async def update_status(
         self,
         transaction_id: str,

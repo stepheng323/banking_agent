@@ -266,10 +266,7 @@ class FundingStepRepository(BaseRepository[FundingStep]):
                 step.failed_at = now
             elif status == FundingStepStatusEnum.REFUNDED.value:
                 step.refunded_at = now
-            elif status in (
-                FundingStepStatusEnum.REFUND_PENDING.value,
-                FundingStepStatusEnum.REFUND_PROCESSING.value,
-            ):
+            elif status == FundingStepStatusEnum.REFUND_PROCESSING.value:
                 if not step.refund_initiated_at:
                     step.refund_initiated_at = now
             elif status == FundingStepStatusEnum.REFUND_FAILED.value:
@@ -298,11 +295,7 @@ class FundingStepRepository(BaseRepository[FundingStep]):
         if status:
             step.status = status
             if (
-                status
-                in (
-                    FundingStepStatusEnum.REFUND_PENDING.value,
-                    FundingStepStatusEnum.REFUND_PROCESSING.value,
-                )
+                status == FundingStepStatusEnum.REFUND_PROCESSING.value
                 and not step.refund_initiated_at
             ):
                 step.refund_initiated_at = now
