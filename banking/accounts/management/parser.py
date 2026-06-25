@@ -14,9 +14,9 @@ logger = get_logger(__name__)
 class AccountIntent(BaseModel):
     """Structured output for account intent."""
 
-    action: Literal["list", "count", "check_balance", "set_default", "unlink", "link", "unknown"] = Field(
+    action: Literal["list", "count", "check_balance", "set_default", "unlink", "link", "reinitiate_mandate", "unknown"] = Field(
         description=(
-            "The action to perform: 'list', 'count', 'check_balance', 'set_default', 'unlink', 'link', or 'unknown'"
+            "The action to perform: 'list', 'count', 'check_balance', 'set_default', 'unlink', 'link', 'reinitiate_mandate', or 'unknown'"
         )
     )
     identifier: str | None = Field(
@@ -65,9 +65,11 @@ class AccountParser:
             "   - Examples: 'Make GTB my default', 'Set number 1 as default', 'Yi GTB ya zama default'\n"
             "4. 'unlink': User wants to remove/disconnect a linked account.\n"
             "   - Examples: 'Unlink my Access bank', 'Remove account 2', 'Cire asusun UBA'\n"
-            "5. 'link': User wants to add/connect a new bank account.\n"
-            "   - Examples: 'Link a new account', 'Add another bank', 'Ina so in kara asusu'\n\n"
-            "6. 'unknown': Intent is unclear or unrelated to account management.\n\n"
+            "5. 'link': User wants to add/connect a new bank account or start a completely fresh linking setup.\n"
+            "   - Examples: 'Link a new account', 'I want to link a different bank', 'Link another account', 'Ina so in kara sabuwar asusu'\n"
+            "6. 'reinitiate_mandate': User explicitly wants to resume an existing pending mandate setup or re-send instructions. (Also applies to ambiguous 'restart setup')\n"
+            "   - Examples: 'Resend setup instructions', 'Restart setup', 'Reinitiate mandate', 'Reinitiate now', 'I missed the 50 naira linking fee', 'Sake aiko da sakon'\n\n"
+            "7. 'unknown': Intent is unclear or unrelated to account management.\n\n"
             "**IDENTIFIER / IDENTIFIERS:**\n"
             "Extract the bank name(s), alias(es), or list index (number) mentioned.\n"
             "- 'Set GTBank as default' -> identifier: 'GTBank'\n"

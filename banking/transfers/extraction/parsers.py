@@ -211,7 +211,9 @@ def parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
             and not bank_name.isdigit()
             and not _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name)
         ):
-            return normalized_account, display_bank_name(bank_name) or bank_name
+            known_bank = display_bank_name(bank_name)
+            if known_bank:
+                return normalized_account, known_bank
 
     for pattern in (_ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN, _ACCOUNT_BANK_BANK_FIRST_PATTERN):
         match = pattern.match(re.sub(r"\s+", " ", text.replace("\n", " ")).strip())
@@ -228,7 +230,9 @@ def parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
         if _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name):
             continue
 
-        return normalized_account, display_bank_name(bank_name) or bank_name
+        known_bank = display_bank_name(bank_name)
+        if known_bank:
+            return normalized_account, known_bank
 
     return None
 

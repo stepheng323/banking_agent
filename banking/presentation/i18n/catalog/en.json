@@ -559,6 +559,7 @@
       "success": "✓ *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
       "only_account": "⚠️ You can't unlink your only account. Link another one first."
     },
+    "mandate_reinitiated_success": "I've re-sent the setup instructions to your phone. Please follow them to complete your linking!",
     "list": {
       "empty": "You don't have any linked bank accounts yet.\n\nSay 'link account' to connect your bank.",
       "header": "*Your Bank Accounts*",
@@ -582,12 +583,15 @@
     "prompt": {
       "unlink_identifier": "Which account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
       "default_identifier": "Which account should be your default? Say 'set [bank name] as default'.",
-      "which_account": "Which account?"
+      "which_account": "Which account?",
+      "reinitiate_clarify": "You have a pending setup for {bank_name}. Should I re-send the instructions for that, or do you want to start fresh and link a completely different account?"
     },
     "error": {
       "status_check_failed": "Account status check failed. Please try again.",
       "default_update_failed": "Sorry, I couldn't update your default account.",
-      "unlink_failed": "Sorry, I couldn't unlink that account."
+      "unlink_failed": "Sorry, I couldn't unlink that account.",
+      "no_pending_mandate": "I didn't find any pending account setups to restart.",
+      "mandate_not_pending": "That account's setup is already complete and active."
     },
     "linking": {
       "unavailable": "Account linking unavailable.",
@@ -807,9 +811,9 @@
       "process_failed": "Failed to process beneficiary request."
     },
     "list": {
-      "empty": "You haven't saved any beneficiaries yet.",
+      "empty": "You haven't saved any beneficiaries yet. They will automatically appear here when you choose to save a contact after a successful transfer.",
       "header": "*Saved Beneficiaries*",
-      "count_zero": "You haven't saved any beneficiaries yet.",
+      "count_zero": "You haven't saved any beneficiaries yet. They will automatically appear here when you choose to save a contact after a successful transfer.",
       "count_one": "You have 1 saved beneficiary.",
       "count_many": "You have {count} saved beneficiaries.",
       "preview_header": "Examples:"

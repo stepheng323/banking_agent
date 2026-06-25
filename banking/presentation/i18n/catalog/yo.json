@@ -559,6 +559,7 @@
       "success": "success: ✓ *Account unlinked!*\n\n{bank_name} ({masked}) removed.",
       "only_account": "⚠️ O can't unlink or only account. Link another one first."
     },
+    "mandate_reinitiated_success": "Mo ti tun fi awọn ilana setup ranṣẹ si foonu rẹ. Jọwọ tẹle wọn lati pari linking rẹ!",
     "list": {
       "empty": "O don't have any linked bank accounts yet.\n\nSay 'link account' to connect or bank.",
       "header": "*Tirẹ Bank Accounts*",
@@ -582,12 +583,15 @@
     "prompt": {
       "unlink_identifier": "Ewo account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
       "default_identifier": "Ewo account should be your default? Say 'set [bank name] as default'.",
-      "which_account": "Account wo?"
+      "which_account": "Account wo?",
+      "reinitiate_clarify": "O ni pending setup fun {bank_name}. Ṣe mo le tun fi awọn ilana rẹ ranṣẹ, tabi o fẹ bẹrẹ titun ki o link account miiran?"
     },
     "error": {
       "status_check_failed": "Account status check kuna. Jọwọ gbiyanju lẹẹkansi.",
       "default_update_failed": "Sorry, Mi o le update your default account.",
-      "unlink_failed": "Sorry, Mi o le unlink that account."
+      "unlink_failed": "Sorry, Mi o le unlink account yen.",
+      "no_pending_mandate": "Mi o ri eyikeyi pending account setup lati tun bẹrẹ.",
+      "mandate_not_pending": "Setup account yẹn ti pari ati pe o wa lọwọlọwọ."
     },
     "linking": {
       "unavailable": "Linking account ko si bayi.",

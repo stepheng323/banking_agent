@@ -48,6 +48,9 @@ BANK_ALIASES: dict[str, str] = {
     "optimus": "optimus",
     "rmb": "rand merchant",
     "rand merchant": "rand merchant",
+    "zenith": "zenith",
+    "heritage": "heritage",
+    "standard chartered": "standard chartered",
 }
 
 BANK_DISPLAY_NAMES: dict[str, str] = {
@@ -70,6 +73,9 @@ BANK_DISPLAY_NAMES: dict[str, str] = {
     "palmpay": "PalmPay",
     "kuda": "Kuda",
     "moniepoint": "Moniepoint",
+    "zenith": "Zenith Bank",
+    "heritage": "Heritage Bank",
+    "standard chartered": "Standard Chartered",
 }
 
 

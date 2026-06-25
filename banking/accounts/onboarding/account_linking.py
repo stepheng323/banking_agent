@@ -170,6 +170,12 @@ class AccountLinkingService:
                 if telegram_chat_id:
                     await uow.users.link_channel_identity(str(user.id), "telegram", telegram_chat_id)
 
+            try:
+                from shared.cache.user_data import UserDataCache
+                await UserDataCache().invalidate_all_user_data(phone_number)
+            except Exception:
+                pass
+
             stored = await self.session.update_session_strict(
                 flow_token,
                 {"step": OnboardingStep.COMPLETE.value},

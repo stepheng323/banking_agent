@@ -41,6 +41,7 @@ ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
     "set_default": AccountCapability.SET_DEFAULT,
     "unlink": AccountCapability.UNLINK_ACCOUNT,
     "link": AccountCapability.LINK_ACCOUNT,
+    "reinitiate_mandate": AccountCapability.LINK_ACCOUNT,
     "close_account": AccountCapability.CLOSE_ACCOUNT,
     "change_bvn": AccountCapability.CHANGE_BVN,
     "add_joint_holder": AccountCapability.ADD_JOINT_HOLDER,
@@ -167,14 +168,41 @@ class AccountWorker:
                 response = generate_limitation_message(missing_caps, locale=locale)
                 return AccountResult(outcome=AccountOutcome.OK, response=response, patch=patch)
 
-        if action in ("unlink", "set_default") and not identifier:
-            prompt = missing_identifier_prompt(action, locale)
-            return AccountResult(
-                outcome=AccountOutcome.NEEDS_INPUT,
-                required_fields=["identifier"],
-                prompt=prompt,
-                patch=patch,
-            )
+        if action in ("unlink", "set_default", "reinitiate_mandate") and not identifier:
+            if action == "reinitiate_mandate":
+                accounts = user_ctx.get("accounts") or []
+                pending_accounts = [acc for acc in accounts if getattr(acc, "mandate_status", "") == "pending"]
+                
+                if not pending_accounts:
+                    return AccountResult(
+                        outcome=AccountOutcome.OK,
+                        response=render_message("account.error.no_pending_mandate", locale),
+                        patch=patch,
+                    )
+                
+                if len(pending_accounts) == 1 and not payload.get("reinitiate_clarified"):
+                    patch["reinitiate_clarified"] = True
+                    return AccountResult(
+                        outcome=AccountOutcome.NEEDS_INPUT,
+                        required_fields=["identifier"],
+                        prompt=render_message(
+                            "account.prompt.reinitiate_clarify", 
+                            locale, 
+                            {"bank_name": pending_accounts[0].bank_name}
+                        ),
+                        patch=patch,
+                    )
+                elif len(pending_accounts) == 1:
+                    identifier = pending_accounts[0].bank_name
+                    patch["identifier"] = identifier
+            if not identifier:
+                prompt = missing_identifier_prompt(action, locale)
+                return AccountResult(
+                    outcome=AccountOutcome.NEEDS_INPUT,
+                    required_fields=["identifier"],
+                    prompt=prompt,
+                    patch=patch,
+                )
 
         profile = user_ctx.get("profile") or {}
         user_id = str(profile.get("id") or context.get("user_id") or "")
@@ -227,6 +255,46 @@ class AccountWorker:
                             }
                         ],
                     )
+            elif action == "reinitiate_mandate":
+                from banking.accounts.management.serialization import find_account_by_bank_name
+                from banking.accounts.onboarding.mandate import MandateService
+                
+                accounts = user_ctx.get("accounts") or []
+                if not accounts:
+                    accounts = await self.account_repo.get_by_user(user_id)
+                
+                selected_account = None
+                try:
+                    account_index = int(str(identifier))
+                    if 1 <= account_index <= len(accounts):
+                        selected_account = accounts[account_index - 1]
+                except ValueError:
+                    selected_account = find_account_by_bank_name(accounts, str(identifier))
+                    
+                if not selected_account:
+                    response = render_message(
+                        "account.account_not_found_with_count",
+                        locale,
+                        {
+                            "identifier": str(identifier),
+                            "count": len(accounts),
+                        },
+                    )
+                else:
+                    if getattr(selected_account, "mandate_status", "") != "pending":
+                        response = render_message("account.error.mandate_not_pending", locale)
+                    else:
+                        mandate_service = MandateService()
+                        result = await mandate_service.reinitiate_mandate(
+                            phone_number=profile.get("phone_number") or "",
+                            account_id=str(selected_account.account_id),
+                            channel="whatsapp"
+                        )
+                        if result.get("success"):
+                            # The outbox message with instructions is enqueued by MandateService
+                            response = render_message("account.mandate_reinitiated_success", locale)
+                        else:
+                            response = result.get("error") or "Failed to reinitiate mandate."
             elif action == "set_default":
                 response = await set_default_account(
                     account_repo=self.account_repo,

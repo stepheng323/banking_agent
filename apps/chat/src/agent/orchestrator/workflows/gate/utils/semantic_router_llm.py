@@ -159,6 +159,8 @@ Rules:
      their true domain or planner_mixed with mode=new even if old receipt/support/context exists.
    - Do not treat amounts inside a full fresh command as receipt selectors.
    - If uncertain, choose planner_ambiguous rather than domain_support.
+4c) If the context indicates an expired account authorization (e.g. "Your account authorization has expired. Please reinitiate to continue."):
+   - "reinitiate", "reinitiate now", or "yes" -> domain_account
 5) Balance/account-status asks are domain_account, not domain_query.
    Examples:
    - "check my balance" -> domain_account
@@ -169,7 +171,7 @@ Rules:
    - "N15,000 din nan shine rabin kudi na?" -> direct_context_answer (Hausa contextual validation)
    - "So 15k is half of my balance?" -> direct_context_answer (English contextual validation)
 6) Route clear single-domain non-query asks directly to their owner:
-   - account linking/list/default/unlink -> domain_account
+   - account linking/list/default/unlink, explicit mandate setup resume (e.g. "resend linking instructions") -> domain_account
    - saved beneficiaries/beneficiary management -> domain_beneficiary
    - support issue, reversal, failed transfer, ticket status -> domain_support
    - simple FAQ questions (e.g. transfer fees, limits, app features) -> domain_faq

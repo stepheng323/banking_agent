@@ -6,7 +6,7 @@ from banking.accounts.onboarding.bvn_verification import BvnVerificationService
 from banking.accounts.onboarding.mandate import MandateService
 from shared.cache.flow_session_manager import FlowSessionManager
 
-session_manager = FlowSessionManager(key_prefix="onboarding")
+session_manager = FlowSessionManager(key_prefix="onboarding", ttl=30 * 24 * 3600)  # 30 days TTL for drop-offs
 mandate_service = MandateService()
 bvn_service = BvnVerificationService(session_manager)
 account_service = AccountLinkingService(session_manager, mandate_service)
