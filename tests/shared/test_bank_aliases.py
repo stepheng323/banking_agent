@@ -65,6 +65,11 @@ class TestGetBankSearchTerms:
         # "guaranty trust" is in aliases
         assert "guaranty trust" in terms
 
+    def test_first_alias_display_name(self):
+        """first should normalize to First Bank for user-facing copy."""
+        assert normalize_bank_name("first") == "firstbank"
+        assert display_bank_name("first") == "First Bank"
+
     def test_uba_search_terms(self):
         """UBA should return uba-related search terms."""
         terms = get_bank_search_terms("UBA")
@@ -88,7 +93,7 @@ class TestDisplayBankName:
         assert display_bank_name("opay") == "Opay"
 
     def test_display_unknown_preserves_input(self):
-        assert display_bank_name("Access Bank Nigeria") == "Access Bank Nigeria"
+        assert display_bank_name("Random Bank Nigeria") == "Random Bank Nigeria"
         assert display_bank_name("") is None
 
 

@@ -346,6 +346,30 @@
           "generic": "Èyí tó kẹ́yìn gba {bank_name} kọjá."
         }
       },
+      "description": {
+        "named": "Transaction {counterparty} jẹ fun {description}.",
+        "generic": "Ó jẹ́ fún {description}."
+      },
+      "reference": {
+        "named": "Reference number fun transaction {counterparty} naa ni {reference}.",
+        "generic": "Reference rẹ ni {reference}.",
+        "unavailable": "Mo ri transaction naa, ṣugbọn mi ò le jẹrisi reference."
+      },
+      "account": {
+        "named": "Transaction {counterparty} naa kọja lori {account}.",
+        "generic": "Ó kọjá lórí {account}.",
+        "unavailable": "Mo ri transaction naa, ṣugbọn mi ò le jẹrisi account."
+      },
+      "direction": {
+        "named": "Transaction {counterparty} naa jẹ́ {direction}.",
+        "generic": "Ó jẹ́ {direction}.",
+        "unavailable": "Mo ri transaction naa, ṣugbọn mi ò le jẹrisi direction."
+      },
+      "category": {
+        "named": "Transaction {counterparty} naa wa labẹ ẹka {category}.",
+        "generic": "Ó wà lábẹ́ ẹka {category}.",
+        "unavailable": "Mo ri transaction naa, ṣugbọn mi ò le jẹrisi category."
+      },
       "aggregate": {
         "scope": "Apapọ yẹn jẹ́ fún {scope_label} nìkan{period_suffix}.{total_suffix}",
         "scope_hint": "Ó jẹ́ apapọ {count} {transaction_label} nínú scope yẹn.",
@@ -463,7 +487,9 @@
       "ranked_heading": "🏆 *{summary}*",
       "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
       "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
-      "transaction_item": "{amount} • {label} — {narration}"
+      "transaction_item": "{amount} • {label} — {narration}",
+      "direct_answer_grouped_lead": "Eyi ni {name}.",
+      "show_more_hint": "_Sọ 'show more' lati tẹsiwaju._"
     },
     "affordability": {
       "balance_unavailable": "Ko le gba balance.",
@@ -506,6 +532,9 @@
       "aggregation_completed": "Aggregation pari.",
       "breakdown_by": "Pipin nipa {group_by}",
       "group_by_transaction_type": "iru transaction",
+      "timeframe_last_30_days": " ni ọjọ 30 si kẹhin",
+      "timeframe_month": " ni oṣu {month}",
+      "timeframe_this_month": " ni oṣu yii",
       "timeframe_default": " ni ọjọ 30 si kẹhin",
       "timeframe_today": " today",
       "timeframe_yesterday": " lana",
@@ -520,7 +549,8 @@
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
       "summary_line": "{name} • ₦{total} ({count}x)",
       "no_outgoing_transfers": "Ko si outgoing transfers found.",
-      "reply_name_hint": "_Fesi pelu a name to see those transactions_"
+      "reply_name_hint": "_Fesi pelu a name to see those transactions_",
+      "summary_heading": "Eyi ni {summary}:"
     },
     "time_comparison": {
       "prompt_specify_period": "Jọwọ sọ a time period to compare.",
@@ -531,7 +561,9 @@
       "verb_spent_more": "na diẹ sii",
       "verb_spent_less": "na kere",
       "same_spending": "Tirẹ spending in {current_label} is the same as {comparison_label}.",
-      "summary": "You {verb} (₦{amount}) in {current_label} compared si {comparison_label}."
+      "summary": "You {verb} (₦{amount}) in {current_label} compared si {comparison_label}.",
+      "summary_spent_more": "O ti náwó púpọ̀ sí i {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nÌyàtọ̀: ₦{amount}",
+      "summary_spent_less": "O ti náwó kéré {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nÌyàtọ̀: ₦{amount}"
     },
     "fetch": {
       "counterparty": {
@@ -838,9 +870,9 @@
       "not_supported": "Update beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Ṣe o fẹ́ kí n fi {recipient_display} ({bank_display} • {masked_account}) pamọ́ gẹ́gẹ́ bí beneficiary?\n- Dahun 'save' kí n fi pamọ́ gẹ́gẹ́ bí '{alias}'\n- Tàbí fi orúkọ míì ranṣẹ́",
-      "ask_save_transfer_default": "Ṣe o fẹ́ kí n fi {recipient_display} ({bank_display} • {masked_account}) pamọ́ gẹ́gẹ́ bí beneficiary?\n- Dahun 'save' kí n fi pamọ́\n- Tàbí fi orúkọ ranṣẹ́ (e.g., 'Mum') kí n lo gẹ́gẹ́ bí alias",
-      "ask_save_phone_default": "Ṣe o fẹ́ kí n fi {recipient_display} ({network} • {masked_phone}) pamọ́ gẹ́gẹ́ bí beneficiary?\n- Dahun 'save' kí n fi pamọ́\n- Tàbí fi orúkọ ranṣẹ́ (e.g., 'Mum') kí n lo gẹ́gẹ́ bí alias",
+      "ask_save_transfer_with_alias": "Ṣe o fẹ́ kí n fi pamọ́ gẹ́gẹ́ bí beneficiary? Dahun 'save' kí n fi pamọ́ gẹ́gẹ́ bí '{alias}' tàbí fi orúkọ míì ranṣẹ́.",
+      "ask_save_transfer_default": "Ṣe o fẹ́ kí n fi pamọ́ gẹ́gẹ́ bí beneficiary? Dahun 'save' tàbí fi orúkọ ránṣẹ́ (f.b. 'Mummy').",
+      "ask_save_phone_default": "Ṣe o fẹ́ kí n fi pamọ́ gẹ́gẹ́ bí beneficiary? Dahun 'save' tàbí fi orúkọ ránṣẹ́ (f.b. 'Mummy').",
       "no_recent": "Mi ò rántí beneficiary suggestion kankan laipẹ. Transaction gbọdọ̀ jẹ́ ti laipẹ kí n tó lè fi pamọ́.",
       "user_not_found": "A kò rí user.",
       "default_alias": "My Beneficiary",

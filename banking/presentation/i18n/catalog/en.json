@@ -164,7 +164,7 @@
         "insufficient_funds": "Use another source account or reduce the amount before retrying.",
         "validation_error": "Check the recipient account and bank details before retrying.",
         "source_account": "Choose another source account or fix the mandate before retrying.",
-        "execution_error": "This looks like a processing error. You can retry, and contact support if it repeats."
+        "execution_error": "This appears to be a processing error. You can retry, and contact support if it repeats."
       }
     },
     "wrong_debit": {
@@ -291,25 +291,25 @@
     },
     "reply": {
       "date": {
-        "debit_named": "Looks like you paid {counterparty} on {date}.",
-        "credit_named": "Looks like you got money from {counterparty} on {date}.",
-        "generic": "Looks like that was on {date}."
+        "debit_named": "You paid {counterparty} on {date}.",
+        "credit_named": "You got money from {counterparty} on {date}.",
+        "generic": "That was on {date}."
       },
       "counterparty": {
-        "debit_named": "Looks like that went to {counterparty}.",
-        "credit_named": "Looks like that came from {counterparty}.",
-        "generic": "Looks like that was with {counterparty}.",
+        "debit_named": "That went to {counterparty}.",
+        "credit_named": "That came from {counterparty}.",
+        "generic": "That was with {counterparty}.",
         "unavailable": "I found the transaction, but I couldn't confirm the counterparty."
       },
       "amount": {
-        "debit_named": "Looks like you sent {amount} to {counterparty}.",
-        "credit_named": "Looks like you received {amount} from {counterparty}.",
-        "generic": "Looks like it was {amount}."
+        "debit_named": "You sent {amount} to {counterparty}.",
+        "credit_named": "You received {amount} from {counterparty}.",
+        "generic": "It was {amount}."
       },
       "bank": {
-        "debit_named": "Looks like it went to {counterparty} through {bank_name}.",
-        "credit_named": "Looks like it came from {counterparty} through {bank_name}.",
-        "generic": "Looks like it went through {bank_name}.",
+        "debit_named": "It went to {counterparty} through {bank_name}.",
+        "credit_named": "It came from {counterparty} through {bank_name}.",
+        "generic": "It went through {bank_name}.",
         "unavailable": "I found the transaction, but the bank name isn't available."
       },
       "status": {
@@ -323,6 +323,30 @@
         "failed_bank_posted": "Our app record says that transaction failed, but a matching debit is posted in your bank history. Please ask support to review it.",
         "generic": "That transaction status is {status}.",
         "unavailable": "I found the transaction, but I couldn't confirm the status."
+      },
+      "description": {
+        "named": "The {counterparty} transaction was for {description}.",
+        "generic": "It was for {description}."
+      },
+      "reference": {
+        "named": "The reference number for the {counterparty} transaction is {reference}.",
+        "generic": "The reference is {reference}.",
+        "unavailable": "I found the transaction, but I couldn't confirm the reference."
+      },
+      "account": {
+        "named": "The {counterparty} transaction was on {account}.",
+        "generic": "It was on {account}.",
+        "unavailable": "I found the transaction, but I couldn't confirm the account."
+      },
+      "direction": {
+        "named": "The {counterparty} transaction was {direction}.",
+        "generic": "It was {direction}.",
+        "unavailable": "I found the transaction, but I couldn't confirm the direction."
+      },
+      "category": {
+        "named": "The {counterparty} transaction was categorized as {category}.",
+        "generic": "It was categorized as {category}.",
+        "unavailable": "I found the transaction, but I couldn't confirm the category."
       },
       "latest": {
         "date": {
@@ -397,7 +421,7 @@
     },
     "format": {
       "no_results_display": "No results to display.",
-      "accounts_header": "💰 *Your Accounts*",
+      "accounts_header": "*Your Accounts*",
       "total_line": "*Total: {total}*",
       "breakdown_item": "{amount} — {name} ({percentage}, {count} txns)",
       "total_spent_month": "Total spent this month: ₦{amount}",
@@ -421,7 +445,7 @@
       "heading_type_debit": "Debit",
       "heading_period_today": "Today",
       "heading_period_this_month": "This Month",
-      "heading_period_range": "{start}–{end}",
+      "heading_period_range": "{start}-{end}",
       "transaction_details_title": "Transaction Details",
       "last_transaction_title": "Your last transaction was:",
       "last_transaction_type_title": "Your last {transaction_type} transaction was:",
@@ -441,8 +465,8 @@
       "pagination_showing": "Showing {showing} of {total}",
       "transactions_across_accounts": "*Transactions* _(across {account_count} accounts)_",
       "recipient_fallback": "recipient",
-      "label_received": "Received",
-      "label_sent": "Sent",
+      "label_received": "came in",
+      "label_sent": "went out",
       "remaining_transactions": "_{count} more transactions. Reply **Next** to continue._",
       "more_for_next_page": "_*more* for next page_",
       "unknown": "Unknown",
@@ -459,8 +483,10 @@
       "type_incoming_credit": "Incoming (Credit)",
       "type_outgoing_debit": "Outgoing (Debit)",
       "accounts_item": "{amount} — {bank_name}",
-      "breakdown_heading": "📊 *{summary}*",
-      "ranked_heading": "🏆 *{summary}*",
+      "direct_answer_grouped_lead": "That was {name}.",
+      "breakdown_heading": "Here is your 📊 {summary}:",
+      "ranked_heading": "Here are your 🏆 {summary}:",
+      "show_more_hint": "_Say 'show more' to keep going._",
       "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
       "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
       "transaction_item": "{amount} • {label} — {narration}"
@@ -486,9 +512,9 @@
       "target_counterparty": " with {counterparty}",
       "target_counterparty_debit": " to {counterparty}",
       "target_counterparty_credit": " from {counterparty}",
-      "summary_spent": "You spent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_sent": "You sent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
-      "summary_received": "You received *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_spent": "You spent ₦{total}{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_sent": "You sent ₦{total}{target_description}{timeframe}, across {count} {transaction_label}.",
+      "summary_received": "₦{total} came into your accounts{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_average": "Your average transaction is *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' to see details_",
       "summary_count": "You made *{count}* {transaction_label}{timeframe}.",
       "summary_count_zero": "You didn't make any transactions{timeframe}.",
@@ -510,7 +536,10 @@
       "timeframe_today": " today",
       "timeframe_yesterday": " yesterday",
       "timeframe_on_date": " on {date}",
-      "timeframe_range": " from {start} to {end}"
+      "timeframe_range": " from {start} to {end}",
+      "timeframe_this_month": " this month",
+      "timeframe_month": " in {month}",
+      "timeframe_last_30_days": " in the last 30 days"
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",
@@ -518,9 +547,10 @@
       "timeframe_range": "{start} – {end}",
       "timeframe_last_30_days": "last 30 days",
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
+      "summary_heading": "Here are your {summary}:",
       "summary_line": "{name} • ₦{total} ({count}x)",
       "no_outgoing_transfers": "No outgoing transfers found.",
-      "reply_name_hint": "_Reply with a name to see those transactions_"
+      "reply_name_hint": "_Say a name if you'd like to see the specific transactions._"
     },
     "time_comparison": {
       "prompt_specify_period": "Please specify a time period to compare.",
@@ -531,7 +561,8 @@
       "verb_spent_more": "spent more",
       "verb_spent_less": "spent less",
       "same_spending": "Your spending in {current_label} is the same as {comparison_label}.",
-      "summary": "You {verb} (₦{amount}) in {current_label} compared to {comparison_label}."
+      "summary_spent_more": "You've spent more {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nDifference: ₦{amount}",
+      "summary_spent_less": "You've spent less {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nDifference: ₦{amount}"
     },
     "fetch": {
       "counterparty": {
@@ -841,9 +872,9 @@
       "suggestion": "💡 Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'save' to save as '{alias}'\n- Or send a different name",
-      "ask_save_transfer_default": "Would you like to save {recipient_display} ({bank_display} • {masked_account}) as a beneficiary?\n- Reply 'save' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
-      "ask_save_phone_default": "Would you like to save {recipient_display} ({network} • {masked_phone}) as a beneficiary?\n- Reply 'save' to save\n- Or send a name (e.g., 'Mum') to save with that alias",
+      "ask_save_transfer_with_alias": "Save as beneficiary? Reply 'save' to use '{alias}' or send a different nickname.",
+      "ask_save_transfer_default": "Save as beneficiary? Reply 'save' or send a nickname (e.g. 'Mum').",
+      "ask_save_phone_default": "Save as beneficiary? Reply 'save' or send a nickname (e.g. 'Mum').",
       "no_recent": "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them.",
       "user_not_found": "User not found.",
       "default_alias": "My Beneficiary",
@@ -929,7 +960,7 @@
         "title": "*{amount} → {recipient_name}*",
         "title_variants": {
           "standard": "*{amount} → {recipient_name}*",
-          "warm": "*Ready: {amount} to {recipient_name}*",
+          "warm": "*{amount} to {recipient_name}*",
           "careful": "*Review carefully: {amount} to {recipient_name}*",
           "trusted_careful": "*Ready, please review: {amount} to {recipient_name}*"
         },

@@ -76,59 +76,63 @@ def format_transaction_list_item(
     *,
     locale: str,
     metadata: dict[str, Any] | None = None,
+    include_date: bool = True,
 ) -> str:
     """Format a compact transaction row for list-style query surfaces."""
+    title, subtitle = format_transaction_list_item_parts(
+        transaction,
+        locale=locale,
+        metadata=metadata,
+        include_date=include_date,
+    )
+    if subtitle:
+        return f"• {title} — {subtitle}"
+    return f"• {title}"
+
+
+def format_transaction_list_item_parts(
+    transaction: Any,
+    *,
+    locale: str,
+    metadata: dict[str, Any] | None = None,
+    include_date: bool = True,
+) -> tuple[str, str]:
+    """Return title/subtitle parts for row-style transaction lists."""
     data = metadata or _metadata(transaction)
     description = _string(_field(transaction, "description"))
-    counterparty = data.get("counterparty")
+    counterparty = _display_name(_string(data.get("counterparty")))
     tx_type = _string(data.get("type")).lower()
     transaction_type = _string(data.get("transaction_type")).lower()
     amount = _format_amount_plain(_field(transaction, "amount"))
+    date_text = _format_short_date(_field(transaction, "date"))
     status_label = _transaction_list_status_label(transaction, data)
 
     if transaction_type in {"airtime", "data"}:
         recipient = counterparty or _extract_phone_recipient(description)
-        narration = render_message(
-            "query.format.narration.type_for_recipient",
-            locale,
-            {
-                "type": transaction_type.title(),
-                "recipient": recipient or render_message("query.format.recipient_fallback", locale),
-            },
-        )
+        recipient_label = recipient or render_message("query.format.recipient_fallback", locale)
+        narration = f"{transaction_type.title()} for {recipient_label}"
     elif isinstance(counterparty, str) and counterparty.strip():
-        if "transfer" in description.lower():
-            prefix = (
-                render_message("query.format.narration.transfer_from", locale)
-                if tx_type == "credit"
-                else render_message("query.format.narration.transfer_to", locale)
-            )
+        description_lower = description.lower()
+        if transaction_type == "transfer" or any(token in description_lower for token in ("transfer", "sent", "paid")):
+            prefix = "Received from" if tx_type == "credit" else "Transfer to" if status_label else "Sent to"
             narration = f"{prefix} {counterparty.strip()}"
         else:
             narration = counterparty.strip()
     else:
         narration = description or render_message("query.format.narration.transaction", locale)
 
-    if status_label is not None and isinstance(counterparty, str) and counterparty.strip():
-        narration = counterparty.strip()
-
-    label = status_label or (
-        render_message("query.format.label_received", locale)
-        if tx_type == "credit"
-        else render_message("query.format.label_sent", locale)
-    )
     bank_name = _string(data.get("bank_name"))
-    if bank_name:
-        return render_message(
-            "query.format.transaction_item_with_bank",
-            locale,
-            {"amount": amount, "label": label, "narration": narration, "bank_name": bank_name},
-        )
-    return render_message(
-        "query.format.transaction_item",
-        locale,
-        {"amount": amount, "label": label, "narration": narration},
-    )
+    account = _masked_account(data)
+    subtitle_parts = [part for part in (narration, bank_name, account) if part]
+    title = f"{date_text} · {amount}" if include_date and date_text else amount
+    if status_label:
+        title = f"{status_label} · {title}"
+    return title, " · ".join(subtitle_parts)
+
+
+def format_transaction_list_item_date(transaction: Any) -> str:
+    """Return the display date label for grouping transaction list rows."""
+    return _format_short_date(_field(transaction, "date"))
 
 
 def _transaction_list_status_label(transaction: Any, metadata: dict[str, Any]) -> str | None:
@@ -143,18 +147,36 @@ def _transaction_list_status_label(transaction: Any, metadata: dict[str, Any]) -
     if status in {"success", "successful", "completed", "complete", "confirmed", "posted"}:
         return None
 
-    transaction_type = _string(metadata.get("transaction_type")).lower()
-    description = _string(_field(transaction, "description")).lower()
-    is_transfer = transaction_type == "transfer" or "transfer" in description
-    noun = "transfer" if is_transfer else "transaction"
-
     if status in {"failed", "failure", "declined", "rejected"}:
-        return f"Failed {noun}"
+        return "Failed"
     if status in {"reversed", "refunded"}:
-        return f"Reversed {noun}"
+        return "Reversed"
     if status in {"pending", "processing", "queued", "in progress"}:
-        return f"Processing {noun}"
+        return "Processing"
     return None
+
+
+def _display_name(value: str) -> str:
+    text = " ".join(value.split())
+    if not text:
+        return ""
+    letters = [char for char in text if char.isalpha()]
+    if letters and text.upper() == text:
+        return text.title()
+    return text
+
+
+def _masked_account(metadata: dict[str, Any]) -> str:
+    for key in (
+        "account_number",
+        "recipient_account",
+        "recipient_account_number",
+        "source_account_number",
+    ):
+        digits = "".join(ch for ch in _string(metadata.get(key)) if ch.isdigit())
+        if digits:
+            return f"···{digits[-4:]}"
+    return ""
 
 
 def format_transaction_evidence_line(

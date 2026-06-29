@@ -67,16 +67,29 @@ def test_format_transaction_list_item_uses_query_row_copy() -> None:
     item = SimpleNamespace(
         amount=10000,
         description="Transfer to Tolu",
+        date=date(2026, 6, 11),
         metadata={"type": "debit", "counterparty": "Tolu Adebayo", "bank_name": "GTBank"},
     )
 
-    assert format_transaction_list_item(item, locale="en") == "₦10,000 • Sent — Transfer to Tolu Adebayo _(GTBank)_"
+    assert format_transaction_list_item(item, locale="en") == "• Jun 11 · ₦10,000 — Sent to Tolu Adebayo · GTBank"
+
+
+def test_format_transaction_list_item_humanizes_uppercase_counterparty() -> None:
+    item = SimpleNamespace(
+        amount=5000,
+        description="Transfer",
+        date=date(2026, 6, 25),
+        metadata={"type": "debit", "transaction_type": "transfer", "counterparty": "FATIMA ZAHRA MUSA"},
+    )
+
+    assert format_transaction_list_item(item, locale="en") == "• Jun 25 · ₦5,000 — Sent to Fatima Zahra Musa"
 
 
 def test_format_transaction_list_item_marks_failed_transfer_without_sent_label() -> None:
     item = SimpleNamespace(
         amount=50000,
         description="Transfer to Tolu",
+        date=date(2026, 6, 11),
         metadata={
             "type": "debit",
             "transaction_type": "transfer",
@@ -86,13 +99,14 @@ def test_format_transaction_list_item_marks_failed_transfer_without_sent_label()
         },
     )
 
-    assert format_transaction_list_item(item, locale="en") == "₦50,000 • Failed transfer — Tolu Adebayo _(GTBank)_"
+    assert format_transaction_list_item(item, locale="en") == "• Failed · Jun 11 · ₦50,000 — Transfer to Tolu Adebayo · GTBank"
 
 
 def test_format_transaction_list_item_marks_reversed_transfer_without_sent_label() -> None:
     item = SimpleNamespace(
         amount=3000,
         description="Transfer to Tolu",
+        date=date(2026, 6, 11),
         metadata={
             "type": "debit",
             "transaction_type": "transfer",
@@ -102,7 +116,7 @@ def test_format_transaction_list_item_marks_reversed_transfer_without_sent_label
         },
     )
 
-    assert format_transaction_list_item(item, locale="en") == "₦3,000 • Reversed transfer — Tolu Adebayo _(GTBank)_"
+    assert format_transaction_list_item(item, locale="en") == "• Reversed · Jun 11 · ₦3,000 — Transfer to Tolu Adebayo · GTBank"
 
 
 def test_build_transaction_detail_lines_uses_query_field_copy() -> None:

@@ -346,6 +346,30 @@
           "generic": "Na ƙarshe ya bi ta {bank_name}."
         }
       },
+      "description": {
+        "named": "Wannan transaction na {counterparty} don {description} ne.",
+        "generic": "Don {description} ne."
+      },
+      "reference": {
+        "named": "Lambar reference na transaction din {counterparty} ita ce {reference}.",
+        "generic": "Lambar reference ita ce {reference}.",
+        "unavailable": "Na ga transaction din, amma ban iya tabbatar da reference ba."
+      },
+      "account": {
+        "named": "Transaction din {counterparty} ya bi ta {account}.",
+        "generic": "Ya bi ta {account}.",
+        "unavailable": "Na ga transaction din, amma ban iya tabbatar da account ba."
+      },
+      "direction": {
+        "named": "Transaction din {counterparty} ya kasance {direction}.",
+        "generic": "Ya kasance {direction}.",
+        "unavailable": "Na ga transaction din, amma ban iya tabbatar da direction ba."
+      },
+      "category": {
+        "named": "Transaction din {counterparty} yana karkashin rukunin {category}.",
+        "generic": "Yana karkashin rukunin {category}.",
+        "unavailable": "Na ga transaction din, amma ban iya tabbatar da category ba."
+      },
       "aggregate": {
         "scope": "Wannan jimillar ta shafi {scope_label} kawai{period_suffix}.{total_suffix}",
         "scope_hint": "Ta haɗa {count} {transaction_label} a cikin wannan scope.",
@@ -463,7 +487,9 @@
       "ranked_heading": "🏆 *{summary}*",
       "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
       "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
-      "transaction_item": "{amount} • {label} — {narration}"
+      "transaction_item": "{amount} • {label} — {narration}",
+      "direct_answer_grouped_lead": "Wannan shine {name}.",
+      "show_more_hint": "_Faɗi 'show more' don ci gaba._"
     },
     "affordability": {
       "balance_unavailable": "Ba a iya samun balance ba.",
@@ -506,6 +532,9 @@
       "aggregation_completed": "Aggregation kammala.",
       "breakdown_by": "Rarrabuwa ta {group_by}",
       "group_by_transaction_type": "irin transaction",
+      "timeframe_last_30_days": " a kwanaki 30 na karshe",
+      "timeframe_month": "(translated) {month}",
+      "timeframe_this_month": "(translated) this month",
       "timeframe_default": " a kwanaki 30 na karshe",
       "timeframe_today": " today",
       "timeframe_yesterday": " jiya",
@@ -520,7 +549,8 @@
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
       "summary_line": "{name} • ₦{total} ({count}x)",
       "no_outgoing_transfers": "Babu outgoing transfers found.",
-      "reply_name_hint": "_Amsa da a name to see those transactions_"
+      "reply_name_hint": "_Amsa da a name to see those transactions_",
+      "summary_heading": "Ga {summary} naku:"
     },
     "time_comparison": {
       "prompt_specify_period": "Da fatan bayyana a time period to compare.",
@@ -531,7 +561,9 @@
       "verb_spent_more": "ya kashe fiye",
       "verb_spent_less": "ya kashe kasa",
       "same_spending": "Na ka spending in {current_label} is the same as {comparison_label}.",
-      "summary": "You {verb} (₦{amount}) in {current_label} compared zuwa {comparison_label}."
+      "summary": "You {verb} (₦{amount}) in {current_label} compared zuwa {comparison_label}.",
+      "summary_spent_more": "Ka kashe kuɗi da yawa {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nBambanci: ₦{amount}",
+      "summary_spent_less": "Ka kashe kuɗi kaɗan {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nBambanci: ₦{amount}"
     },
     "fetch": {
       "counterparty": {
@@ -838,9 +870,9 @@
       "not_supported": "Update beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Kana so a ajiye {recipient_display} ({bank_display} • {masked_account}) a matsayin beneficiary?\n- Ka rubuta 'save' don ajiye shi da suna '{alias}'\n- Ko ka turo wani suna",
-      "ask_save_transfer_default": "Kana so a ajiye {recipient_display} ({bank_display} • {masked_account}) a matsayin beneficiary?\n- Ka rubuta 'save' don ajiye shi\n- Ko ka turo suna (e.g., 'Mum') don amfani da shi a matsayin alias",
-      "ask_save_phone_default": "Kana so a ajiye {recipient_display} ({network} • {masked_phone}) a matsayin beneficiary?\n- Ka rubuta 'save' don ajiye shi\n- Ko ka turo suna (e.g., 'Mum') don amfani da shi a matsayin alias",
+      "ask_save_transfer_with_alias": "Kana so a ajiye shi a matsayin beneficiary? Ka rubuta 'save' don amfani da '{alias}' ko ka turo wani suna.",
+      "ask_save_transfer_default": "Kana so a ajiye shi a matsayin beneficiary? Ka rubuta 'save' ko ka tura wani suna (misali 'Umma').",
+      "ask_save_phone_default": "Kana so a ajiye shi a matsayin beneficiary? Ka rubuta 'save' ko ka tura wani suna (misali 'Umma').",
       "no_recent": "Ban tuna da wani beneficiary suggestion kwanan nan ba. Transaction dole ya kasance na baya-bayan nan kafin a iya ajiye shi.",
       "user_not_found": "Ba a sami user ba.",
       "default_alias": "My Beneficiary",

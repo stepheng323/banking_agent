@@ -84,11 +84,12 @@ def test_transaction_list_blocks_use_mobile_spacing_instead_of_dense_rows() -> N
 
     rendered = render_body_blocks_text(QueryFormatter.format_blocks(result, locale="en"))
 
-    assert rendered.startswith("Debit Transactions")
-    assert "Jun 11" in rendered
-    assert "₦30,000 • Sent to Mum\nWema • ···2221" in rendered
-    assert "\n\n₦2,000 • Airtime for 08162511023\nAccess Bank" in rendered
-    assert "Showing 1-2 of 2" in rendered
+    assert "I found 2 debit transactions for Jun 11." in rendered
+    assert "*Jun 11*" in rendered
+    assert rendered.count("*Jun 11*") == 1
+    assert "• ₦30,000 — Sent to Mum · Wema · ···2221" in rendered
+    assert "• ₦2,000 — Airtime for 08162511023 · Access Bank" in rendered
+    assert "Showing 1-2 of 2" not in rendered
 
 
 def test_failed_transaction_list_blocks_do_not_label_failed_transfer_as_sent() -> None:
@@ -114,7 +115,9 @@ def test_failed_transaction_list_blocks_do_not_label_failed_transfer_as_sent() -
 
     rendered = render_body_blocks_text(QueryFormatter.format_blocks(result, locale="en"))
 
-    assert "Failed transfer — Tolu Adebayo" in rendered
+    assert "*Jun 11*" in rendered
+    assert "Failed · ₦50,000" in rendered
+    assert "Transfer to Tolu Adebayo" in rendered
     assert "Sent to Tolu Adebayo" not in rendered
 
 

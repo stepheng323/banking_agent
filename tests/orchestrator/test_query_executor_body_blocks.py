@@ -9,6 +9,8 @@ from apps.chat.src.agent.orchestrator.workflows.services import OrchestrationSer
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.models.domain import (
     Filters,
+    QueryAnswerContext,
+    QueryAnswerStrategy,
     QueryExecutionContract,
     QueryIntent,
     QueryIR,
@@ -96,8 +98,90 @@ async def test_query_executor_attaches_mobile_body_blocks_to_say_outbox() -> Non
     assert outbox[0]["text"] == "fallback query response"
     today_str = lagos_today().strftime("%b %d").replace(" 0", " ")
     assert outbox[0]["body_blocks"] == [
-        {"type": "heading", "text": "Debit Transactions — Today"},
-        {"type": "heading", "text": today_str},
-        {"type": "text", "text": "₦30,000 • Sent to Mum\nWema • ···2221"},
-        {"type": "text", "text": "Showing 1-1 of 1"},
+        {"type": "text", "text": "I found one debit transaction today."},
+        {"type": "text", "text": f"*{today_str}*\n• ₦30,000 — Sent to Mum · Wema · ···2221"},
     ]
+
+
+async def test_query_executor_does_not_attach_body_blocks_for_empty_direct_answer() -> None:
+    task = TaskSpec(
+        id="query_1",
+        type="query",
+        stage=TaskStage.DRAFT,
+        payload={"action": "transaction_list"},
+    )
+    state = OrchestratorState(
+        user_id="user-1",
+        phone_number="2348000000001",
+        loaded_context={"user_id": "user-1", "language": "en"},
+        tasks={"query_1": task},
+    )
+    query_result = QueryResult(
+        summary_text="accounts:1|showing:1-0|total:0",
+        items=[],
+        query_contract=_query_contract(),
+    )
+    worker = _InjectedQueryWorker(query_result)
+    ctx = ExecutionTurnContext(
+        state=state,
+        config={"configurable": {}},
+        services=OrchestrationServices.from_mapping({"query": worker}),
+        current_wave_len=1,
+        accumulator=ExecutionAccumulator(state.tasks),
+    )
+
+    await QueryTaskExecutor().execute(task, "query_1", ctx)
+
+    outbox = ctx.accumulator.to_updates()["outbox"]
+    assert outbox[0]["text"] == "fallback query response"
+    assert "body_blocks" not in outbox[0]
+
+
+async def test_query_executor_does_not_attach_body_blocks_for_direct_fact_answer() -> None:
+    task = TaskSpec(
+        id="query_1",
+        type="query",
+        stage=TaskStage.DRAFT,
+        payload={"action": "transaction_detail"},
+    )
+    state = OrchestratorState(
+        user_id="user-1",
+        phone_number="2348000000001",
+        loaded_context={"user_id": "user-1", "language": "en"},
+        tasks={"query_1": task},
+    )
+    query_result = QueryResult(
+        summary_text="The reference is txn_010.",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Netflix Monthly Subscription",
+                amount=6500,
+                date=lagos_today(),
+                metadata={"type": "debit", "counterparty": "Netflix", "reference": "txn_010"},
+            )
+        ],
+        query_contract=QueryExecutionContract.from_query_ir(
+            QueryIR(
+                intent=QueryIntent.TRANSACTION_DETAIL,
+                time_range=TimeRange(start=lagos_today(), end=lagos_today()),
+                answer_fact_field="reference",
+            )
+        ),
+        answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
+        answer_context=QueryAnswerContext(primary_text="The reference is txn_010."),
+    )
+    worker = _InjectedQueryWorker(query_result)
+    ctx = ExecutionTurnContext(
+        state=state,
+        config={"configurable": {}},
+        services=OrchestrationServices.from_mapping({"query": worker}),
+        current_wave_len=1,
+        accumulator=ExecutionAccumulator(state.tasks),
+    )
+
+    await QueryTaskExecutor().execute(task, "query_1", ctx)
+
+    outbox = ctx.accumulator.to_updates()["outbox"]
+    assert outbox[0]["text"] == "fallback query response"
+    assert "body_blocks" not in outbox[0]

@@ -346,6 +346,30 @@
           "generic": "Nke ikpeazụ gara site na {bank_name}."
         }
       },
+      "description": {
+        "named": "Transaction {counterparty} a bụ maka {description}.",
+        "generic": "Ọ bụ maka {description}."
+      },
+      "reference": {
+        "named": "Nọmba reference maka transaction {counterparty} ahụ bụ {reference}.",
+        "generic": "Reference ya bụ {reference}.",
+        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye reference ya."
+      },
+      "account": {
+        "named": "Transaction {counterparty} ahụ siri na {account} gafee.",
+        "generic": "O siri na {account} gafee.",
+        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye account ya."
+      },
+      "direction": {
+        "named": "Transaction {counterparty} ahụ bụ {direction}.",
+        "generic": "Ọ bụ {direction}.",
+        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye direction ya."
+      },
+      "category": {
+        "named": "Transaction {counterparty} ahụ dị n'okpuru ngalaba {category}.",
+        "generic": "Ọ dị n'okpuru ngalaba {category}.",
+        "unavailable": "Ahụrụ m transaction ahụ, mana enweghị m ike ikwenye category ya."
+      },
       "aggregate": {
         "scope": "Ngụkọta ahụ bụ naanị maka {scope_label}{period_suffix}.{total_suffix}",
         "scope_hint": "Ọ bụ mkpokọta nke {count} {transaction_label} n’ime scope ahụ.",
@@ -463,7 +487,9 @@
       "ranked_heading": "🏆 *{summary}*",
       "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
       "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
-      "transaction_item": "{amount} • {label} — {narration}"
+      "transaction_item": "{amount} • {label} — {narration}",
+      "direct_answer_grouped_lead": "Nke a bụ {name}.",
+      "show_more_hint": "_Kwuo 'show more' iji gaa n'ihu._"
     },
     "affordability": {
       "balance_unavailable": "Enweghị ike inweta balance.",
@@ -506,6 +532,9 @@
       "aggregation_completed": "Aggregation gwụrụ.",
       "breakdown_by": "Nkewa site na {group_by}",
       "group_by_transaction_type": "ụdị transaction",
+      "timeframe_last_30_days": " n'ụbọchị 30 gara aga",
+      "timeframe_month": " n'ọnwa {month}",
+      "timeframe_this_month": " n'ọnwa a",
       "timeframe_default": " n’ụbọchị 30 gara aga",
       "timeframe_today": " today",
       "timeframe_yesterday": " ụnyaahụ",
@@ -520,7 +549,8 @@
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
       "summary_line": "{name} • ₦{total} ({count}x)",
       "no_outgoing_transfers": "Enweghị outgoing transfers found.",
-      "reply_name_hint": "_Zaa na a name to see those transactions_"
+      "reply_name_hint": "_Zaa na a name to see those transactions_",
+      "summary_heading": "Nke a bụ {summary}:"
     },
     "time_comparison": {
       "prompt_specify_period": "Biko kọwaa a time period to compare.",
@@ -531,7 +561,9 @@
       "verb_spent_more": "nara karịa",
       "verb_spent_less": "nara obere",
       "same_spending": "Nke gị spending in {current_label} is the same as {comparison_label}.",
-      "summary": "You {verb} (₦{amount}) in {current_label} compared nye {comparison_label}."
+      "summary": "You {verb} (₦{amount}) in {current_label} compared nye {comparison_label}.",
+      "summary_spent_more": "I mefuru ego karịrị {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nIhe dị iche: ₦{amount}",
+      "summary_spent_less": "I mefuru ego pere mpe {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nIhe dị iche: ₦{amount}"
     },
     "fetch": {
       "counterparty": {
@@ -838,9 +870,9 @@
       "not_supported": "Update beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "Ị chọrọ ka m chekwaa {recipient_display} ({bank_display} • {masked_account}) dịka beneficiary?\n- Zaa 'save' ka m chekwaa ya dịka '{alias}'\n- Ma ọ bụ zitere m aha ọzọ",
-      "ask_save_transfer_default": "Ị chọrọ ka m chekwaa {recipient_display} ({bank_display} • {masked_account}) dịka beneficiary?\n- Zaa 'save' ka m chekwaa ya\n- Ma ọ bụ zitere m aha (e.g., 'Mum') ka m jiri ya dịka alias",
-      "ask_save_phone_default": "Ị chọrọ ka m chekwaa {recipient_display} ({network} • {masked_phone}) dịka beneficiary?\n- Zaa 'save' ka m chekwaa ya\n- Ma ọ bụ zitere m aha (e.g., 'Mum') ka m jiri ya dịka alias",
+      "ask_save_transfer_with_alias": "Ị chọrọ ka m chekwaa ya dịka beneficiary? Zaa 'save' ka m jiri '{alias}' ma ọ bụ zitere m aha ọzọ.",
+      "ask_save_transfer_default": "Ị chọrọ ka m chekwaa ya dịka beneficiary? Zaa 'save' ma ọ bụ zitere m aha (e.g., 'Mum').",
+      "ask_save_phone_default": "Ị chọrọ ka m chekwaa ya dịka beneficiary? Zaa 'save' ma ọ bụ zitere m aha (e.g., 'Mum').",
       "no_recent": "Anaghị m echeta beneficiary suggestion ọ bụla n'oge na-adịbeghị anya. Transaction ahụ ga-abụ nke nso nso a tupu m nwee ike ichekwa ya.",
       "user_not_found": "Ahụghị user.",
       "default_alias": "My Beneficiary",

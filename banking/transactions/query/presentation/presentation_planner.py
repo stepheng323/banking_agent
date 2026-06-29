@@ -11,6 +11,8 @@ from banking.presentation.i18n.renderer import render_message
 from banking.transactions.query.contracts import (
     PresentationMode,
     PresentationPlan,
+    SelectionPayload,
+    SurfaceItemView,
     SurfaceView,
     SurfaceViewMode,
 )
@@ -28,7 +30,7 @@ from banking.transactions.query.presentation.formatting import (
     is_zero_structural_list_summary,
     parse_summary_parts,
 )
-from banking.transactions.query.presentation.scope import build_breakdown_heading
+from banking.transactions.query.presentation.scope import build_breakdown_heading, period_label
 from banking.transactions.query.presentation.surface_builder import build_surface_view, result_query_contract
 from banking.transactions.query.presentation.transaction_list_plan import (
     build_transaction_list_presentation_plan,
@@ -36,7 +38,7 @@ from banking.transactions.query.presentation.transaction_list_plan import (
 from banking.transactions.query.utils.timezone import lagos_today
 
 
-def build_presentation_plan(
+def _build_raw_presentation_plan(
     result: QueryResult,
     *,
     locale: str = "en",
@@ -66,14 +68,47 @@ def build_presentation_plan(
             selection_payloads=[item.payload for item in surface_view.items],
         )
 
+    if (
+        surface_view.mode == SurfaceViewMode.DIRECT_ANSWER
+        and isinstance(surface_view.context, dict)
+        and surface_view.context.get("focus_type") == "beneficiary"
+    ):
+        return _build_beneficiary_summary_presentation_plan(
+            result,
+            display_items=surface_view.items,
+            selection_payloads=[item.payload for item in surface_view.items],
+            has_more=False,
+            locale=locale,
+        )
+
     if surface_view.mode == SurfaceViewMode.DIRECT_ANSWER:
+        if _is_ranked_transaction_surface(result, surface_view=surface_view):
+            return _build_ranked_transaction_presentation_plan(result, locale=locale, current_page=current_page)
+        if isinstance(surface_view.context, dict) and surface_view.context.get("focus_type") in {
+            "group_bucket",
+            "account",
+        }:
+            return _build_focused_group_presentation_plan(result, surface_view=surface_view, locale=locale)
         return _build_single_item_detail_presentation_plan(result, locale=locale)
 
     if surface_view.mode == SurfaceViewMode.GROUPED_SUMMARY:
+        query_contract = result_query_contract(result)
+        context = surface_view.context if isinstance(surface_view.context, dict) else {}
+        if str(context.get("view") or "").strip() == "beneficiary_summary":
+            return _build_grouped_summary_presentation_plan(result, surface_view=surface_view, locale=locale)
+        if len(surface_view.items) == 1 and query_contract and query_contract.result_limit == 1:
+            item = surface_view.items[0]
+            amount_str = f"₦{abs(float(item.amount or 0.0)):,.0f}"
+            return PresentationPlan(
+                mode=PresentationMode.DIRECT_ANSWER,
+                lead_text=render_message("query.format.direct_answer_grouped_lead", locale, {"name": item.label}),
+                evidence_lines=[amount_str],
+                selection_payloads=[item.payload],
+            )
         return _build_grouped_summary_presentation_plan(result, surface_view=surface_view, locale=locale)
 
     if _is_ranked_transaction_surface(result, surface_view=surface_view):
-        return _build_ranked_transaction_presentation_plan(result, locale=locale)
+        return _build_ranked_transaction_presentation_plan(result, locale=locale, current_page=current_page)
 
     return build_transaction_list_presentation_plan(
         result,
@@ -83,6 +118,27 @@ def build_presentation_plan(
         show_expanded=show_expanded,
         has_more=has_more,
     )
+
+
+def build_presentation_plan(
+    result: QueryResult,
+    *,
+    locale: str = "en",
+    current_page: int = 0,
+    show_expanded: bool = False,
+    has_more: bool = False,
+) -> PresentationPlan | None:
+    """Build a typed presentation plan from the execution result, applying any conversational prefix."""
+    plan = _build_raw_presentation_plan(
+        result,
+        locale=locale,
+        current_page=current_page,
+        show_expanded=show_expanded,
+        has_more=has_more,
+    )
+    if plan is not None and getattr(result, "conversational_prefix", None):
+        plan.lead_text = f"{result.conversational_prefix} {plan.lead_text}"
+    return plan
 
 
 def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) -> PresentationPlan | None:
@@ -211,13 +267,24 @@ def _build_grouped_summary_presentation_plan(
     *,
     surface_view: SurfaceView,
     locale: str,
+    current_page: int = 0,
 ) -> PresentationPlan:
     context = surface_view.context if isinstance(surface_view.context, dict) else {}
-    selection_payloads = [item.payload for item in surface_view.items]
+    page_size = 5
+    start_idx = current_page * page_size
+    display_items = surface_view.items[start_idx : start_idx + page_size]
+    has_more = len(surface_view.items) > start_idx + page_size
+
+    selection_payloads = [item.payload for item in display_items]
     summary_parts = parse_summary_parts(result.summary_text)
 
     if summary_parts and "accounts" in summary_parts and "showing" not in summary_parts:
         total = summary_parts.get("total", "₦0")
+        hint = (
+            render_message("query.format.show_more_hint", locale)
+            if has_more
+            else render_message("query.format.total_line", locale, {"total": total})
+        )
         return PresentationPlan(
             mode=PresentationMode.SUMMARY_LIST,
             heading=render_message("query.format.accounts_header", locale),
@@ -230,43 +297,42 @@ def _build_grouped_summary_presentation_plan(
                         "bank_name": item.label,
                     },
                 )
-                for item in surface_view.items
+                for item in display_items
             ],
-            hint_text=render_message("query.format.total_line", locale, {"total": total}),
+            hint_text=hint,
             selection_payloads=selection_payloads,
         )
 
     if str(context.get("view") or "").strip() == "beneficiary_summary":
-        return PresentationPlan(
-            mode=PresentationMode.SUMMARY_LIST,
-            heading=result.summary_text,
-            items=[
-                render_message(
-                    "query.beneficiary.summary_line",
-                    locale,
-                    {
-                        "name": item.label,
-                        "total": f"{abs(float(item.amount or 0.0)):,.0f}",
-                        "count": item.count or int(item.metadata.get("count", 0)),
-                    },
-                )
-                for item in surface_view.items
-            ],
-            hint_text=render_message("query.beneficiary.reply_name_hint", locale),
+        return _build_beneficiary_summary_presentation_plan(
+            result,
+            display_items=display_items,
             selection_payloads=selection_payloads,
+            has_more=has_more,
+            locale=locale,
         )
 
     group_by = str(context.get("group_by") or "").strip()
     if str(context.get("surface_type") or "").strip() == "breakdown":
-        total_abs = float(sum(abs(item.amount or 0.0) for item in surface_view.items))
+        visible_total_abs = float(sum(abs(item.amount or 0.0) for item in surface_view.items))
+        overall_total = float(sum(abs(item.amount or 0.0) for item in surface_view.items))
+        total_abs = overall_total if overall_total > 0 else visible_total_abs
+
+        has_more = len(surface_view.items) > start_idx + page_size
+        hint_text = render_message("query.format.total_line", locale, {"total": format_naira(total_abs)})
+        if has_more:
+            hint_text += f"\n{render_message('query.format.show_more_hint', locale)}"
+
+        summary = build_breakdown_heading(
+            result_query_contract(result),
+            group_by=group_by or None,
+            locale=locale,
+            fallback_summary=result.summary_text,
+        )
+
         return PresentationPlan(
             mode=PresentationMode.SUMMARY_LIST,
-            heading=build_breakdown_heading(
-                result_query_contract(result),
-                group_by=group_by or None,
-                locale=locale,
-                fallback_summary=result.summary_text,
-            ),
+            heading=render_message("query.format.breakdown_heading", locale, {"summary": summary}),
             items=[
                 render_message(
                     "query.format.breakdown_item",
@@ -278,9 +344,9 @@ def _build_grouped_summary_presentation_plan(
                         "count": item.count or int(item.metadata.get("count", 0)),
                     },
                 )
-                for item in surface_view.items
+                for item in display_items
             ],
-            hint_text=render_message("query.format.total_line", locale, {"total": format_naira(total_abs)}),
+            hint_text=hint_text,
             selection_payloads=selection_payloads,
         )
 
@@ -291,7 +357,173 @@ def _build_grouped_summary_presentation_plan(
     )
 
 
-def _build_ranked_transaction_presentation_plan(result: QueryResult, *, locale: str) -> PresentationPlan:
+def _build_beneficiary_summary_presentation_plan(
+    result: QueryResult,
+    *,
+    display_items: list[SurfaceItemView],
+    selection_payloads: list[SelectionPayload],
+    has_more: bool,
+    locale: str,
+) -> PresentationPlan:
+    query_contract = result_query_contract(result)
+    tx_type = query_contract.filters.transaction_type if query_contract and query_contract.filters else "debit"
+    sort_by = query_contract.aggregation.sort_by if query_contract and query_contract.aggregation else "amount"
+    is_credit = tx_type == "credit"
+    is_frequency = sort_by == "count"
+    period = _beneficiary_summary_period_phrase(query_contract, result.summary_text, locale=locale)
+    answer_only = bool(query_contract and query_contract.result_limit == 1)
+
+    # If this is a time_delta or replace_scope continuation, we want to maintain the summary
+    # context and avoid aggressively rendering a direct answer UI card just because there's 1 result.
+    is_rescope = bool(
+        query_contract and query_contract.continuation_delta_type in {"time_delta", "replace_scope"}
+    )
+    if is_rescope and answer_only:
+        answer_only = False
+
+    if answer_only:
+        display_items = display_items[:1]
+        selection_payloads = selection_payloads[:1]
+        has_more = False
+
+    lead_text = result.summary_text
+    if display_items:
+        first = display_items[0]
+        first_name = _humanize_grouped_name(first.label)
+        amount = format_naira(abs(float(first.amount or 0.0)))
+        period_suffix = f" {period}" if period else ""
+        if answer_only:
+            if is_credit:
+                lead_text = (
+                    f"{first_name} sent you money most often{period_suffix}."
+                    if is_frequency
+                    else f"{first_name} sent you the most{period_suffix}: {amount}."
+                )
+            else:
+                lead_text = (
+                    f"You sent {first_name} money most often{period_suffix}."
+                    if is_frequency
+                    else f"You sent {first_name} the most{period_suffix}: {amount}."
+                )
+        else:
+            count = len(display_items)
+            noun = "sender" if is_credit else "recipient"
+            noun = noun if count == 1 else f"{noun}s"
+            if is_credit:
+                lead_text = f"You received money from {count} {noun}{period_suffix}."
+            else:
+                lead_text = f"You sent money to {count} {noun}{period_suffix}."
+
+    if answer_only:
+        if display_items:
+            item = display_items[0]
+            count = item.count or int(item.metadata.get("count", 0))
+            if count > 0:
+                transfer_noun = "transfer" if count == 1 else "transfers"
+                lead_text = f"{lead_text} ({count} {transfer_noun})"
+        return PresentationPlan(
+            mode=PresentationMode.DIRECT_ANSWER,
+            lead_text=lead_text,
+            selection_payloads=selection_payloads,
+        )
+
+    label = "top senders" if is_credit else "top recipients"
+    if is_frequency:
+        label = "most frequent senders" if is_credit else "most frequent recipients"
+
+    hint = "Say a name to see the matching transactions."
+    if has_more:
+        hint = f"{render_message('query.format.show_more_hint', locale)}\n{hint}"
+
+    return PresentationPlan(
+        mode=PresentationMode.SUMMARY_LIST,
+        lead_text=lead_text,
+        items=[
+            f"Your {label}:",
+            *[_format_beneficiary_summary_item(item) for item in display_items],
+        ],
+        hint_text=hint,
+        selection_payloads=selection_payloads,
+    )
+
+
+def _format_beneficiary_answer_detail(item: SurfaceItemView) -> str:
+    count = item.count or int(item.metadata.get("count", 0))
+    transfer_noun = "transfer" if count == 1 else "transfers"
+    return f"{count} {transfer_noun}"
+
+
+def _beneficiary_summary_period_phrase(
+    query_contract: QueryExecutionContract | None,
+    summary_text: str,
+    *,
+    locale: str,
+) -> str:
+    if query_contract is not None:
+        label = period_label(query_contract.time_range, locale=locale)
+        if label:
+            return _sentence_period_label(label)
+
+    if " this month" in summary_text.lower():
+        return "this month"
+    return ""
+
+
+def _sentence_period_label(label: str) -> str:
+    cleaned = " ".join(label.strip().split())
+    if not cleaned:
+        return ""
+    if cleaned.lower() in {"today", "yesterday", "this week", "last week", "this month", "last month"}:
+        return cleaned.lower()
+    if "–" in cleaned or "-" in cleaned:
+        return f"for {cleaned}"
+    return f"in {cleaned}"
+
+
+def _format_beneficiary_summary_item(item: SurfaceItemView) -> str:
+    count = item.count or int(item.metadata.get("count", 0))
+    transfer_noun = "transfer" if count == 1 else "transfers"
+    return (
+        f"{_humanize_grouped_name(item.label)} · "
+        f"{format_naira(abs(float(item.amount or 0.0)))} · "
+        f"{count} {transfer_noun}"
+    )
+
+
+def _humanize_grouped_name(value: str) -> str:
+    cleaned = " ".join(str(value or "").strip().split())
+    if cleaned and cleaned == cleaned.upper() and any(char.isalpha() for char in cleaned):
+        return cleaned.title()
+    return cleaned
+
+
+def _build_focused_group_presentation_plan(
+    result: QueryResult,
+    *,
+    surface_view: SurfaceView,
+    locale: str,
+) -> PresentationPlan:
+    item = surface_view.items[0] if surface_view.items else None
+    if item is None:
+        return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=result.summary_text)
+    amount_str = format_naira(abs(float(item.amount or 0.0)))
+    return PresentationPlan(
+        mode=PresentationMode.DIRECT_ANSWER,
+        lead_text=result.summary_text
+        or render_message("query.format.direct_answer_grouped_lead", locale, {"name": item.label}),
+        evidence_lines=[amount_str],
+        selection_payloads=[item.payload],
+    )
+
+
+def _build_ranked_transaction_presentation_plan(
+    result: QueryResult, *, locale: str, current_page: int = 0
+) -> PresentationPlan:
+    page_size = 5
+    start_idx = current_page * page_size
+    display_items = (result.items or [])[start_idx : start_idx + page_size]
+    has_more = len(result.items or []) > start_idx + page_size
+
     heading = (
         result.summary_text
         if result.summary_text and result.summary_text.startswith("🏆")
@@ -302,8 +534,8 @@ def _build_ranked_transaction_presentation_plan(result: QueryResult, *, locale: 
         )
     )
     items: list[str] = []
-    for i, item in enumerate(result.items or []):
-        rank = i + 1
+    for i, item in enumerate(display_items):
+        rank = start_idx + i + 1
         if item.metadata and item.metadata.get("rank"):
             rank = int(item.metadata["rank"])
         bank_suffix = ""
@@ -326,6 +558,7 @@ def _build_ranked_transaction_presentation_plan(result: QueryResult, *, locale: 
         mode=PresentationMode.SUMMARY_LIST,
         heading=heading,
         items=items,
+        hint_text=render_message("query.format.show_more_hint", locale) if has_more else None,
         selection_payloads=[],
     )
 
@@ -382,6 +615,13 @@ def _build_single_item_detail_presentation_plan(result: QueryResult, *, locale: 
 
 
 def _is_ranked_transaction_surface(result: QueryResult, *, surface_view: SurfaceView) -> bool:
+    if surface_view.mode == SurfaceViewMode.DIRECT_ANSWER and isinstance(surface_view.context, dict):
+        if surface_view.context.get("focus_type") == "transaction" and surface_view.context.get("ranked_type") in {
+            "largest",
+            "smallest",
+        }:
+            return True
+        return False
     if surface_view.mode != SurfaceViewMode.TRANSACTION_LIST:
         return False
     if isinstance(surface_view.context, dict) and surface_view.context.get("type") in ("largest", "smallest"):

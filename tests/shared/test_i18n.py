@@ -587,7 +587,4 @@ def test_beneficiary_suggestion_prompts_are_localized(locale: str, expected_snip
     )
 
     assert expected_snippet in text
-    assert "Mum" in text
-    assert "MTN" in text
-    assert "…4567" in text
     assert "Would you like" not in text

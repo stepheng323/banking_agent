@@ -346,6 +346,30 @@
           "generic": "The last one pass through {bank_name}."
         }
       },
+      "description": {
+        "named": "The {counterparty} transaction na for {description}.",
+        "generic": "Na for {description}."
+      },
+      "reference": {
+        "named": "The reference number for the {counterparty} transaction na {reference}.",
+        "generic": "The reference na {reference}.",
+        "unavailable": "I see the transaction, but I no fit confirm the reference."
+      },
+      "account": {
+        "named": "The {counterparty} transaction pass through {account}.",
+        "generic": "E pass through {account}.",
+        "unavailable": "I see the transaction, but I no fit confirm the account."
+      },
+      "direction": {
+        "named": "The {counterparty} transaction na {direction}.",
+        "generic": "Na {direction}.",
+        "unavailable": "I see the transaction, but I no fit confirm the direction."
+      },
+      "category": {
+        "named": "The {counterparty} transaction enter {category} category.",
+        "generic": "E enter {category} category.",
+        "unavailable": "I see the transaction, but I no fit confirm the category."
+      },
       "aggregate": {
         "scope": "That total na only for {scope_label}{period_suffix}.{total_suffix}",
         "scope_hint": "E add up {count} {transaction_label} for that scope.",
@@ -459,8 +483,10 @@
       "type_incoming_credit": "Incoming credit",
       "type_outgoing_debit": "Outgoing debit",
       "accounts_item": "{amount} — {bank_name}",
-      "breakdown_heading": "📊 *{summary}*",
-      "ranked_heading": "🏆 *{summary}*",
+      "direct_answer_grouped_lead": "Na {name}.",
+      "breakdown_heading": "See your 📊 {summary}:",
+      "ranked_heading": "See your 🏆 {summary}:",
+      "show_more_hint": "_Talk 'show more' to continue._",
       "ranked_item": "{rank}. *{amount}* — {name} {date}{bank_suffix}",
       "transaction_item_with_bank": "{amount} • {label} — {narration} _({bank_name})_",
       "transaction_item": "{amount} • {label} — {narration}"
@@ -506,6 +532,9 @@
       "aggregation_completed": "Aggregation complete.",
       "breakdown_by": "Breakdown by {group_by}",
       "group_by_transaction_type": "transaction kind",
+      "timeframe_last_30_days": " for the last 30 days",
+      "timeframe_month": "(translated) {month}",
+      "timeframe_this_month": "(translated) this month",
       "timeframe_default": " in the last 30 days",
       "timeframe_today": " today",
       "timeframe_yesterday": " yesterday",
@@ -520,7 +549,8 @@
       "summary_header": "*{heading_type} Recipients* ({timeframe})",
       "summary_line": "{name} • ₦{total} ({count}x)",
       "no_outgoing_transfers": "No outgoing transfers found.",
-      "reply_name_hint": "_Reply a name to see those transactions_"
+      "reply_name_hint": "_Reply a name to see those transactions_",
+      "summary_heading": "See your {summary}:"
     },
     "time_comparison": {
       "prompt_specify_period": "Abeg specify a time period to compare.",
@@ -531,7 +561,9 @@
       "verb_spent_more": "spend more",
       "verb_spent_less": "spend less",
       "same_spending": "Your spending for {current_label} same as {comparison_label}.",
-      "summary": "You {verb} (₦{amount}) for {current_label} compared to {comparison_label}."
+      "summary": "You {verb} (₦{amount}) for {current_label} compared to {comparison_label}.",
+      "summary_spent_more": "You don spend pass {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nDifference: ₦{amount}",
+      "summary_spent_less": "You spend less {current_label}.\n{comparison_label}: ₦{comparison_amount}\n{current_label}: ₦{current_amount}\nDifference: ₦{amount}"
     },
     "fetch": {
       "counterparty": {
@@ -838,9 +870,9 @@
       "not_supported": "Updating beneficiaries is not yet supported."
     },
     "suggestion": {
-      "ask_save_transfer_with_alias": "You wan save {recipient_display} ({bank_display} • {masked_account}) as beneficiary?\n- Reply 'save' make I save am as '{alias}'\n- Or send another name",
-      "ask_save_transfer_default": "You wan save {recipient_display} ({bank_display} • {masked_account}) as beneficiary?\n- Reply 'save' make I save am\n- Or send name (e.g., 'Mum') make I use am as alias",
-      "ask_save_phone_default": "You wan save {recipient_display} ({network} • {masked_phone}) as beneficiary?\n- Reply 'save' make I save am\n- Or send name (e.g., 'Mum') make I use am as alias",
+      "ask_save_transfer_with_alias": "Save as beneficiary? Reply 'save' to use '{alias}' or send another name.",
+      "ask_save_transfer_default": "You wan save am as beneficiary? Reply 'save' or send name (e.g. 'Mum').",
+      "ask_save_phone_default": "You wan save am as beneficiary? Reply 'save' or send name (e.g. 'Mum').",
       "no_recent": "I no remember any beneficiary suggestion recently. Transaction need to dey recent before I fit save am.",
       "user_not_found": "I no find user.",
       "default_alias": "My Beneficiary",

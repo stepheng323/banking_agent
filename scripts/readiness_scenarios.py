@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Readiness transcript scenario catalog."""
 
 from __future__ import annotations
@@ -500,8 +501,28 @@ def resolve_scenarios(name: ReadinessScenarioName) -> tuple[ReadinessScenario, .
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(
+                        "How much came in this month?",
+                        ReadinessExpectation(expect_any=("came in", "₦", "received", "income")),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Did I spend more than I earned this month?",
+                        ReadinessExpectation(expect_any=("came in", "went out", "up", "down", "cash flow")),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
                         "Show the transactions behind that",
                         ReadinessExpectation(expect_any=("transaction", "showing", "sent", "received")),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Show my GTBank transactions",
+                        ReadinessExpectation(expect_any=("gtbank", "transaction", "showing")),
+                        modes=("dry-run",),
+                    ),
+                    ReadinessTurn(
+                        "Only for this week",
+                        ReadinessExpectation(expect_any=("gtbank", "this week", "transaction", "showing")),
                         modes=("dry-run",),
                     ),
                     ReadinessTurn(

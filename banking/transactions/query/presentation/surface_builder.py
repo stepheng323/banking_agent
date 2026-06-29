@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from banking.transactions.query.contracts import (
+    FactCapability,
     FocusedReferent,
     SelectionPayload,
     SurfaceItemView,
@@ -18,10 +19,22 @@ from banking.transactions.query.models.domain import (
     QueryFactField,
     QueryIntent,
     QueryIR,
-    QueryOperation,
     QueryResult,
     QueryResultItem,
     TimeRange,
+)
+
+ALL_FACT_CAPABILITIES: tuple[FactCapability, ...] = (
+    "date",
+    "amount",
+    "bank",
+    "counterparty",
+    "status",
+    "description",
+    "reference",
+    "account",
+    "direction",
+    "category",
 )
 
 
@@ -75,7 +88,7 @@ def build_focus_referent(
         entity_type="transaction",
         entity_id=item.id,
         label=label,
-        fact_capabilities=["date", "amount", "bank", "counterparty"],
+        fact_capabilities=list(ALL_FACT_CAPABILITIES),
         handoff_payload=handoff_payload,
     )
     return FocusedReferent(
@@ -112,10 +125,18 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
         result_items = result.items or []
         if len(result_items) == 1:
             item = result_items[0]
+            base_context = build_surface_view_context(result=result, mode=SurfaceViewMode.DIRECT_ANSWER)
+            focus_type = "transaction"
+            if query_contract and query_contract.aggregation and query_contract.aggregation.group_by:
+                focus_type = "account" if query_contract.aggregation.group_by == "account" else "group_bucket"
+            item_context = _focused_context(
+                base=base_context,
+                focus_type=focus_type,
+            )
             payload = _build_selection_payload(
                 item,
                 mode=SurfaceViewMode.DIRECT_ANSWER,
-                context={"type": "single_transaction"},
+                context=item_context,
             )
             direct_items = [
                 SurfaceItemView(
@@ -129,6 +150,7 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
             context.update(
                 {
                     "type": "single_transaction",
+                    "focus_type": "transaction",
                     "selected_payload": payload.model_dump(mode="json"),
                     "selected_item_id": item.id,
                 }
@@ -148,10 +170,80 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     if (
         result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
         and query_contract is not None
+        and query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+        and query_contract.result_limit == 1
+        and result.items
+    ):
+        context = _focused_context(
+            base=build_surface_view_context(result=result, mode=SurfaceViewMode.GROUPED_SUMMARY),
+            focus_type="beneficiary",
+        )
+        item = result.items[0]
+        payload = _build_selection_payload(
+            item,
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            context=context,
+        )
+        return SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=[
+                SurfaceItemView(
+                    id=item.id,
+                    label=item.description,
+                    amount=item.amount,
+                    count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
+                    payload=payload,
+                    metadata=item.metadata or {},
+                )
+            ],
+            lead_text=result.summary_text,
+            context={
+                **context,
+                "selected_payload": payload.model_dump(mode="json"),
+                "selected_item_id": item.id,
+            },
+        )
+
+    if (
+        result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
+        and query_contract is not None
         and query_contract.aggregation is not None
         and query_contract.aggregation.type in {"largest", "smallest"}
         and result.items
     ):
+        if len(result.items) == 1 or query_contract.result_limit == 1:
+            context = _focused_context(
+                base={
+                    **build_surface_view_context(result=result, mode=SurfaceViewMode.TRANSACTION_LIST),
+                    "ranked_type": query_contract.aggregation.type,
+                },
+                focus_type="transaction",
+            )
+            item = result.items[0]
+            payload = _build_selection_payload(
+                item,
+                mode=SurfaceViewMode.DIRECT_ANSWER,
+                context=context,
+            )
+            return SurfaceView(
+                mode=SurfaceViewMode.DIRECT_ANSWER,
+                items=[
+                    SurfaceItemView(
+                        id=item.id,
+                        label=item.description,
+                        amount=item.amount,
+                        count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
+                        payload=payload,
+                        metadata=item.metadata or {},
+                    )
+                ],
+                context={
+                    **context,
+                    "selected_payload": payload.model_dump(mode="json"),
+                    "selected_item_id": item.id,
+                },
+            )
+
         ranking_context = {
             **build_surface_view_context(result=result, mode=SurfaceViewMode.TRANSACTION_LIST),
             "type": query_contract.aggregation.type,
@@ -174,6 +266,50 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
                 for item in result.items or []
             ],
             context=ranking_context,
+        )
+
+    if (
+        result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
+        and query_contract is not None
+        and query_contract.aggregation is not None
+        and (
+            query_contract.aggregation.group_by is not None
+            or query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+        )
+        and query_contract.result_limit == 1
+        and result.items
+    ):
+        if query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY:
+            focus_type = "beneficiary"
+        else:
+            focus_type = "account" if query_contract.aggregation.group_by == "account" else "group_bucket"
+        context = _focused_context(
+            base=build_surface_view_context(result=result, mode=SurfaceViewMode.GROUPED_SUMMARY),
+            focus_type=focus_type,
+        )
+        item = result.items[0]
+        payload = _build_selection_payload(
+            item,
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            context=context,
+        )
+        return SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=[
+                SurfaceItemView(
+                    id=item.id,
+                    label=item.description,
+                    amount=item.amount,
+                    count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
+                    payload=payload,
+                    metadata=item.metadata or {},
+                )
+            ],
+            context={
+                **context,
+                "selected_payload": payload.model_dump(mode="json"),
+                "selected_item_id": item.id,
+            },
         )
 
     if result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST:
@@ -221,6 +357,13 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     return SurfaceView(mode=mode, items=items, context=context)
 
 
+def _focused_context(*, base: dict[str, Any], focus_type: str) -> dict[str, Any]:
+    context = dict(base)
+    context["focus_type"] = focus_type
+    context.setdefault("type", f"focused_{focus_type}")
+    return context
+
+
 def apply_selection_payload_to_query(
     query_contract: QueryExecutionContract,
     payload: SelectionPayload,
@@ -250,7 +393,6 @@ def apply_selection_payload_to_query(
     return QueryExecutionContract.from_query_ir(
         QueryIR(
             intent=QueryIntent.TRANSACTION_LIST,
-            query_operation=QueryOperation.LIST_TRANSACTIONS,
             timezone=query_contract.timezone,
             time_range=time_range,
             filters=filters,
@@ -310,12 +452,17 @@ def _build_selection_payload(
     handoff_payload = build_query_transfer_handoff_payload(item)
 
     group_by = str(context.get("group_by") or "").strip()
-    if mode == SurfaceViewMode.GROUPED_SUMMARY and group_by:
+    if mode in {SurfaceViewMode.GROUPED_SUMMARY, SurfaceViewMode.DIRECT_ANSWER} and group_by:
         group_key = str(metadata.get("key") or item.description).strip()
         filters_patch: dict[str, Any] = {}
         time_patch: dict[str, Any] | None = None
+        selection_kind = "group_bucket"
+        entity_type = "group_bucket"
         if group_by == "account":
             filters_patch["account_filter"] = group_key
+            if context.get("focus_type") == "account":
+                selection_kind = "account"
+                entity_type = "account"
         elif group_by == "merchant":
             filters_patch["counterparty"] = [group_key]
         elif group_by == "transaction_type":
@@ -331,18 +478,21 @@ def _build_selection_payload(
         else:
             filters_patch["category"] = [group_key.lower()]
         return SelectionPayload(
-            selection_kind="group_bucket",
-            entity_type="group_bucket",
+            selection_kind=cast(Any, selection_kind),
+            entity_type=entity_type,
             entity_id=item.id,
             label=item.description,
             group_by=cast(Any, group_by or None),
             group_key=group_key,
             filters_patch=filters_patch,
             time_patch=time_patch,
-            fact_capabilities=["date", "amount"],
+            fact_capabilities=list(ALL_FACT_CAPABILITIES),
         )
 
-    is_beneficiary_summary = mode == SurfaceViewMode.GROUPED_SUMMARY and context.get("view") == "beneficiary_summary"
+    is_beneficiary_summary = context.get("view") == "beneficiary_summary" and mode in {
+        SurfaceViewMode.GROUPED_SUMMARY,
+        SurfaceViewMode.DIRECT_ANSWER,
+    }
     if is_beneficiary_summary:
         recipient_name = str(metadata.get("recipient_name") or item.description).strip()
         return SelectionPayload(
@@ -351,7 +501,7 @@ def _build_selection_payload(
             entity_id=item.id,
             label=recipient_name,
             filters_patch={"counterparty": [recipient_name]},
-            fact_capabilities=["date", "amount", "bank", "counterparty"],
+            fact_capabilities=list(ALL_FACT_CAPABILITIES),
         )
 
     return SelectionPayload(
@@ -359,7 +509,7 @@ def _build_selection_payload(
         entity_type="transaction",
         entity_id=item.id,
         label=item.description,
-        fact_capabilities=["date", "amount", "bank", "counterparty"],
+        fact_capabilities=list(ALL_FACT_CAPABILITIES),
         handoff_payload=handoff_payload,
     )
 

@@ -45,24 +45,10 @@ def build_interactive_message_payload(
 
 
 def build_inline_keyboard_rows(options: list[dict[str, str]]) -> list[list[dict[str, str]]]:
-    buttons = [
-        {"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")} for opt in options
+    return [
+        [{"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}]
+        for opt in options
     ]
-    if len(buttons) <= 1:
-        return [buttons] if buttons else []
-
-    rows: list[list[dict[str, str]]] = []
-    remaining = list(buttons)
-    while remaining:
-        if len(remaining) == 4 or len(remaining) == 2:
-            row_size = 2
-        else:
-            row_size = min(3, len(remaining))
-            if len(remaining) - row_size == 1 and row_size > 2:
-                row_size -= 1
-        rows.append(remaining[:row_size])
-        remaining = remaining[row_size:]
-    return rows
 
 
 def build_image_payload(*, to: str, image_url: str, caption: str = "") -> dict[str, Any]:

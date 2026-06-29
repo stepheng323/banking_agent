@@ -143,35 +143,51 @@ def build_beneficiary_summary_header(
     timeframe: str,
     locale: str = "en",
 ) -> str:
+    target_type = query_contract.filters.transaction_type if query_contract and query_contract.filters else "debit"
+    entity_label = "Senders" if target_type == "credit" else "Recipients"
+
     if query_contract is None:
-        return f"*{ranking_heading} Recipients* ({timeframe})"
+        return f"*{ranking_heading} {entity_label}* — {timeframe}"
 
     amount_label = build_amount_scope_label(query_contract, locale=locale)
     if locale == "en" and amount_label:
+        verb = "received" if target_type == "credit" else "sent"
         if (
             query_contract.filters
             and query_contract.filters.max_amount is not None
             and query_contract.filters.min_amount is None
         ):
-            heading = f"Recipients I sent under {format_naira(float(query_contract.filters.max_amount))} to"
+            if target_type == "credit":
+                heading = f"{entity_label} I {verb} under {format_naira(float(query_contract.filters.max_amount))} from"
+            else:
+                heading = f"Recipients I sent under {format_naira(float(query_contract.filters.max_amount))} to"
         elif (
             query_contract.filters
             and query_contract.filters.min_amount is not None
             and query_contract.filters.max_amount is None
         ):
-            heading = f"Recipients I sent over {format_naira(float(query_contract.filters.min_amount))} to"
+            if target_type == "credit":
+                heading = f"{entity_label} I {verb} over {format_naira(float(query_contract.filters.min_amount))} from"
+            else:
+                heading = f"Recipients I sent over {format_naira(float(query_contract.filters.min_amount))} to"
         elif (
             query_contract.filters
             and query_contract.filters.min_amount is not None
             and query_contract.filters.max_amount is not None
             and float(query_contract.filters.min_amount) == float(query_contract.filters.max_amount)
         ):
-            heading = f"Recipients I sent {format_naira(float(query_contract.filters.min_amount))} to"
+            if target_type == "credit":
+                heading = f"{entity_label} I {verb} {format_naira(float(query_contract.filters.min_amount))} from"
+            else:
+                heading = f"Recipients I sent {format_naira(float(query_contract.filters.min_amount))} to"
         else:
-            heading = "Recipients I sent within that amount range to"
+            if target_type == "credit":
+                heading = f"{entity_label} I {verb} within that amount range from"
+            else:
+                heading = "Recipients I sent within that amount range to"
         base = f"*{heading}*"
     else:
-        base = f"*{ranking_heading} Recipients*"
+        base = f"*{ranking_heading} {entity_label}*"
 
     qualifiers: list[str] = []
     account_filter = (query_contract.filters.account_filter or "").strip() if query_contract.filters else ""
