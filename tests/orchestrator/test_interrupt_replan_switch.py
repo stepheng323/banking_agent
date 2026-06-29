@@ -2435,7 +2435,7 @@ async def test_input_recipient_alias_shortcut_skips_interrupt_router() -> None:
 
 
 @pytest.mark.asyncio
-async def test_input_query_pivot_still_uses_interrupt_router() -> None:
+async def test_input_query_pivot_bypasses_interrupt_router_via_fresh_command() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_shortcut_input_4",
         phone_number="2348066666702",
@@ -2477,7 +2477,7 @@ async def test_input_query_pivot_still_uses_interrupt_router() -> None:
 
     updates = await handle_pending_interrupt(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["pending_interrupt"] is None
     assert len(updates["stashed_sessions"]) == 1
     switched_task_ids = list(updates["tasks"].keys())

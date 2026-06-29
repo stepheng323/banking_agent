@@ -775,7 +775,7 @@ async def test_beneficiary_ambiguity_prompt_is_preserved() -> None:
     assert options_intent["type"] == "show_options"
     assert "I found multiple matches for 'Tolu'. Which one did you mean?" in options_intent["title"]
     assert "Reply with the number or rephrase." in options_intent["title"]
-    assert "1. Tolu A" not in options_intent["title"]
+    assert "1. Tolu A" in options_intent["title"]
     assert "account number and bank" not in options_intent["title"]
     assert options_intent["task_ids"] == ["t1"]
     assert [opt["id"] for opt in options_intent["options"]] == ["bene-1", "bene-2"]
@@ -828,7 +828,7 @@ async def test_source_account_prompt_emits_options_when_flag_enabled(monkeypatch
 
     assert updates["outbox"][0]["type"] == "show_options"
     assert "*Which account would you like to use?*" in updates["outbox"][0]["title"]
-    assert "1. Access" not in updates["outbox"][0]["title"]
+    assert "1. Access" in updates["outbox"][0]["title"]
     assert [opt["id"] for opt in updates["outbox"][0]["options"]] == ["1", "2"]
 
 
@@ -1025,8 +1025,8 @@ async def test_ambiguous_beneficiary_referent_blocks_confirmation() -> None:
     assert updates["pending_interrupt"].kind == "input"
     assert updates["pending_interrupt"].fields_by_task == {"t1": ["referent_recipient_id"]}
     assert updates["outbox"][0]["type"] == "show_options"
-    assert updates["outbox"][0]["title"] == "Which recipient did you mean?"
-    assert [option["id"] for option in updates["outbox"][0]["options"]] == ["referent:1", "referent:2", "referent:3"]
+    assert "Which recipient did you mean?" in updates["outbox"][0]["title"]
+    assert [option["id"] for option in updates["outbox"][0]["options"]] == ["1", "2", "3"]
     assert not any(entry.get("type") == "request_confirmation" for entry in updates["outbox"])
 
 

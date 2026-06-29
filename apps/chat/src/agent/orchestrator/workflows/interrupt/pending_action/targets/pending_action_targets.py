@@ -25,7 +25,7 @@ def _pending_edit_target_task_ids(
     if not active_task_ids:
         return []
 
-    explicit_ids = [task_id for task_id in decision.target_task_ids if task_id in active_task_ids]
+    explicit_ids = [task_id for task_id in (decision.target_task_ids or []) if task_id in active_task_ids]
     if explicit_ids:
         return list(dict.fromkeys(explicit_ids))
 
@@ -49,7 +49,7 @@ def _pending_edit_target_task_ids(
     if matched_ids:
         return list(dict.fromkeys(matched_ids))
 
-    target_types = {str(task_type) for task_type in getattr(decision, "target_types", []) if task_type}
+    target_types = {str(task_type) for task_type in (getattr(decision, "target_types", []) or []) if task_type}
     if target_types:
         type_matches = [
             task_id

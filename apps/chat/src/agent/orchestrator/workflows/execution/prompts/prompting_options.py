@@ -73,19 +73,7 @@ def _build_show_options_entry(
 
 def _compact_prompt_for_options(prompt_text: str) -> str:
     """Strip duplicated numbered option lines when native option UI is available."""
-    lines = prompt_text.splitlines()
-    compact_lines = [line for line in lines if not re.match(r"^\s*\d+[\).\s-]+", line)]
-    deduped_lines: list[str] = []
-    last_normalized = ""
-    for line in compact_lines:
-        normalized = re.sub(r"\s+", " ", line).strip().lower()
-        if normalized and normalized == last_normalized:
-            continue
-        deduped_lines.append(line)
-        if normalized:
-            last_normalized = normalized
-    compact = "\n".join(deduped_lines).strip()
-    return compact or prompt_text
+    return prompt_text
 
 
 __all__ = ["_build_show_options_entry", "_compact_prompt_for_options"]

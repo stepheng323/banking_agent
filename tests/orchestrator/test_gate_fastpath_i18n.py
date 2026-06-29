@@ -2527,6 +2527,76 @@ async def test_gate_query_followup_preempts_stale_unsupported_boundary_llm() -> 
     assert task.payload["message"] == "What bank was that?"
 
 
+async def test_gate_active_query_owns_direct_context_answer_followup() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_context_answer",
+            mode="continuation",
+            confidence=0.91,
+            detected_language="English",
+            response_key=None,
+            response="This should not answer from FAQ context.",
+            expected_transaction_executors=[],
+            reason="misclassified short query followup",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_context_answer",
+        phone_number="2348999999996",
+        channel="whatsapp",
+        last_message_text="When",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+        stashed_query_session={
+            "session_active": True,
+            "query_contract": {
+                "intent": "beneficiary_summary",
+                "time_start": "2026-06-01",
+                "time_end": "2026-06-27",
+                "timezone": "Africa/Lagos",
+                "filters": {"transaction_type": "credit"},
+                "aggregation": {"type": "sum", "sort_by": "amount", "limit": 5},
+                "result_limit": 1,
+            },
+            "query_result": {
+                "summary_text": "Acme Corp sent you the most this month: ₦950,000.",
+                "items": [
+                    {
+                        "id": "bene_1",
+                        "description": "Acme Corp",
+                        "amount": 950000,
+                        "date": "2026-06-24",
+                        "metadata": {"count": 1, "recipient_name": "Acme Corp"},
+                    }
+                ],
+            },
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "semantic_router_llm": planner,
+            "capability_classifier_llm": planner,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["semantic_path_shape"] == "query_followup_bypass"
+    assert updates["routing_owner"] == "query_session"
+    assert updates["routing_decision"] == "query_followup_bypass"
+    assert updates["routing_target_domain"] == "query"
+    assert updates["routing_mode"] == "continuation"
+    assert updates["waves"] == [["direct_query"]]
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "When"
+    assert updates.get("final_response") is None
+
+
 async def test_gate_time_rescope_followup_bypasses_planner_without_context_frames() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -2551,7 +2621,6 @@ async def test_gate_time_rescope_followup_bypasses_planner_without_context_frame
             "session_active": True,
             "query_contract": {
                 "intent": "analytics_summary",
-                "query_operation": "count_transactions",
                 "time_start": "2026-06-08",
                 "time_end": "2026-06-08",
                 "timezone": "Africa/Lagos",
@@ -2600,7 +2669,6 @@ async def test_gate_assertive_time_correction_bypasses_planner_without_context_f
             "session_active": True,
             "query_contract": {
                 "intent": "analytics_summary",
-                "query_operation": "count_transactions",
                 "time_start": "2026-06-08",
                 "time_end": "2026-06-08",
                 "timezone": "Africa/Lagos",
@@ -2655,7 +2723,6 @@ async def test_gate_multilingual_active_query_time_followups_use_semantic_router
             "session_active": True,
             "query_contract": {
                 "intent": "analytics_summary",
-                "query_operation": "count_transactions",
                 "time_start": "2026-06-08",
                 "time_end": "2026-06-08",
                 "timezone": "Africa/Lagos",
@@ -3022,6 +3089,74 @@ async def test_gate_keeps_structural_transaction_list_query_direct() -> None:
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my transactions"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_keeps_bank_scoped_transaction_list_query_direct() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
+            mode="new",
+            target_intent=None,
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response="I can help with that.",
+            expected_transaction_executors=[],
+            reason="should not own structural query shortcut",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_structural_direct_bank_1",
+        phone_number="2348999999916",
+        channel="whatsapp",
+        last_message_text="Show my gtb transactions",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Show my gtb transactions"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_routes_affordability_probe_as_query_direct() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="should not own affordability query shortcut",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_affordability_direct_1",
+        phone_number="2348999999917",
+        channel="whatsapp",
+        last_message_text="Can I send 100k?",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Can I send 100k?"
     assert task.payload["force_new_query"] is True
 
 

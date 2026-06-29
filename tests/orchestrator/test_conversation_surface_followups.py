@@ -1294,7 +1294,7 @@ async def test_query_surface_check_again_reruns_active_query_contract() -> None:
     updates = await _run_context_frame_gate_stage(
         state,
         planner,
-        query_session_snapshot={"session_active": True, "query_contract": {"intent": "transaction_list"}},
+        query_session_snapshot={"session_active": False, "query_contract": {"intent": "transaction_list"}},
     )
 
     assert updates is not None
@@ -2276,7 +2276,7 @@ async def test_gate_context_frame_replay_applies_structured_modifier_extraction(
         channel="whatsapp",
         last_message_text="Encore avec dix mille depuis gtb pour loyer",
         stashed_query_session={
-            "session_active": True,
+            "session_active": False,
             "query_result": {"summary_text": "Recent transaction results are still open."},
         },
         loaded_context={

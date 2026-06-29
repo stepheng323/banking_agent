@@ -3,6 +3,7 @@
 from typing import Any
 
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import _is_query_domain_request
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.input.input_beneficiary import (
     _is_beneficiary_clarification_interrupt,
@@ -18,6 +19,8 @@ from shared.types.planner import InterruptRouteDecision
 
 
 def _fresh_supported_command_target(text: str) -> tuple[str, str] | None:
+    if _is_query_domain_request(text):
+        return "query", "deterministic query request during pending interrupt"
     if _could_be_schedule_interrupt_read_request(text):
         return "schedule", "deterministic schedule read request during pending interrupt"
     if looks_like_support_problem_statement(text):

@@ -25,6 +25,9 @@ from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_d
     _input_shortcut_updates,
     _suggested_funding_acceptance_updates,
 )
+from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_query import (
+    _standalone_query_switch_updates,
+)
 from apps.chat.src.agent.orchestrator.workflows.interrupt.deterministic.runner_deterministic_status import (
     _account_balance_switch_updates,
     _deterministic_status_query_updates,
@@ -88,6 +91,14 @@ async def _resolve_pre_router_interrupt_updates(
     if account_switch_updates is not None:
         return account_switch_updates
 
+    fresh_command_updates = await _fresh_command_switch_updates(state=state, runtime=runtime)
+    if fresh_command_updates is not None:
+        return fresh_command_updates
+
+    standalone_query_updates = await _standalone_query_switch_updates(state=state, runtime=runtime)
+    if standalone_query_updates is not None:
+        return standalone_query_updates
+
     suggested_funding_updates = await _suggested_funding_acceptance_updates(state=state, runtime=runtime)
     if suggested_funding_updates is not None:
         return suggested_funding_updates
@@ -117,10 +128,6 @@ async def _resolve_pre_router_interrupt_updates(
     )
     if schedule_read_updates is not None:
         return schedule_read_updates
-
-    fresh_command_updates = await _fresh_command_switch_updates(state=state, runtime=runtime)
-    if fresh_command_updates is not None:
-        return fresh_command_updates
 
     additive_updates = _deterministic_additive_transaction_updates(state=state, runtime=runtime)
     if additive_updates is not None:

@@ -107,6 +107,27 @@ async def test_batch_slot_fastpath_single_detail_only_patches_focused_task() -> 
     assert "recipient_account" not in tasks["t_ay"].payload
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Who sent me the most money this month",
+        "Where did my money go this month",
+        "Show failed transactions for this month",
+    ],
+)
+@pytest.mark.asyncio
+async def test_pending_transfer_input_switches_to_standalone_query(message: str) -> None:
+    state = _batch_state(text=message)
+
+    updates = await handle_pending_interrupt(state, {"configurable": {}, "recursion_limit": 50})
+
+    assert updates["pending_interrupt"] is None
+    query_tasks = [task for task in updates["tasks"].values() if task.type == "query"]
+    assert len(query_tasks) == 1
+    assert query_tasks[0].payload["message"] == message
+    assert query_tasks[0].payload["force_new_query"] is True
+
+
 @pytest.mark.asyncio
 async def test_batch_slot_invalid_account_bank_detail_does_not_apply_partial_patch() -> None:
     state = _batch_state(text="8067892221, wema for mum and 8080844362")

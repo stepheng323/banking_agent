@@ -13,6 +13,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_regist
 )
 from apps.chat.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
 from apps.chat.src.agent.orchestrator.models.state import OrchestratorState
+from apps.chat.src.agent.orchestrator.workflows.gate.classifiers.direct_domains import _is_query_domain_request
 from apps.chat.src.agent.orchestrator.workflows.interrupt.context import logger
 from apps.chat.src.agent.orchestrator.workflows.interrupt.return_to_flow import append_return_to_flow_tail
 from apps.chat.src.agent.orchestrator.workflows.interrupt.signals import TRANSACTION_INTENTS
@@ -106,6 +107,8 @@ def classify_deterministic_active_flow_question(
 
     normalized = _normalize(text)
     if not normalized or not _looks_like_question(normalized):
+        return None
+    if _is_query_domain_request(text):
         return None
     if _matches_any(normalized, _SEPARATE_BANKING_TASK_PATTERNS):
         return None

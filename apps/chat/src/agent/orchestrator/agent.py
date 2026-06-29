@@ -29,6 +29,7 @@ class OrchestratorAgent:
         self.task_planner = TaskPlanner(
             planner_llm=deps.llm,
             interrupt_llm=deps.interrupt_llm,
+            semantic_router_llm=deps.semantic_router_llm,
             task_state_service=deps.task_state_service,
         )
         self.semantic_router_llm = SemanticRouterLLM(llm=deps.semantic_router_llm or deps.interrupt_llm or deps.llm)

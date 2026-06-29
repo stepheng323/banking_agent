@@ -140,6 +140,7 @@ def _maybe_query_followup_bypass(ctx: GateContext) -> dict[str, Any] | None:
     return None
 
 
+
 def _maybe_structural_query_domain(ctx: GateContext, *, can_consider_query_domain: bool) -> dict[str, Any] | None:
     if not can_consider_query_domain or not _is_structural_query_domain_request(ctx.message_text):
         return None

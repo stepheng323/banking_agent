@@ -39,7 +39,11 @@ def _scope_requested(interpretation: QuotedReplayInterpretation) -> bool:
 
 
 def _seed_task_matches_scope(task: dict[str, Any], interpretation: QuotedReplayInterpretation) -> bool:
-    target_task_ids = {str(task_id).strip() for task_id in interpretation.target_task_ids if str(task_id).strip()}
+    target_task_ids = {
+        str(task_id).strip()
+        for task_id in (interpretation.target_task_ids or [])
+        if str(task_id).strip()
+    }
     target_types = {str(task_type).strip().lower() for task_type in interpretation.target_types}
     target_statuses = {str(status).strip().lower() for status in interpretation.target_statuses}
 

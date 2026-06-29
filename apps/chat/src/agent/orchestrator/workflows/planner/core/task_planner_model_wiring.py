@@ -96,5 +96,6 @@ def build_task_planner_structured_outputs(
         confirmation_decision=with_structured_output(
             interrupt_llm,
             ConfirmationDecisionOutput,
+            method="function_calling",
         ),
     )

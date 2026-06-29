@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Top-level semantic-router and schedule-read router prompts and LLM class."""
 
 from langchain_openai import ChatOpenAI
@@ -147,6 +148,10 @@ Rules:
    - active query + "ti ana nko" -> domain_query, mode=continuation
    - active query + "na jiya fa" -> domain_query, mode=continuation
    - active query + "hier alors" -> domain_query, mode=continuation
+   - active query + "When", "When?", or "What time" -> domain_query, mode=continuation
+   - active query + "Quand" (French), "Yaushe" (Hausa), "Igba wo" (Yoruba) -> domain_query, mode=continuation
+   - active query + "More", "Next", or "Previous" -> domain_query, mode=continuation
+   - active query + single-word temporal or pagination cues MUST be routed to domain_query, not conversational.clarify
    - active query + "Send 5k to Adebayo" -> domain_transfer, mode=new
    - active query + "Buy me 2k airtime" -> domain_airtime, mode=new
    - active query + "Send 10k to Adebayo and buy me 2k airtime" -> planner_mixed, mode=new,

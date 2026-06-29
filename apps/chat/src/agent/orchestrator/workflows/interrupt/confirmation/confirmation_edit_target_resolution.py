@@ -35,13 +35,17 @@ def _target_task_ids_from_decision(
     state: OrchestratorState,
     removed: bool = False,
 ) -> list[str]:
-    explicit_ids = [str(task_id) for task_id in getattr(decision, "target_task_ids", []) if str(task_id) in task_ids]
+    explicit_ids = [
+        str(task_id)
+        for task_id in (getattr(decision, "target_task_ids", []) or [])
+        if str(task_id) in task_ids
+    ]
     if explicit_ids:
         return list(dict.fromkeys(explicit_ids))
 
     target_types = {
         str(task_type).strip().lower()
-        for task_type in getattr(decision, "target_types", [])
+        for task_type in (getattr(decision, "target_types", []) or [])
         if str(task_type).strip().lower() in TRANSACTION_INTENTS
     }
     if target_types:

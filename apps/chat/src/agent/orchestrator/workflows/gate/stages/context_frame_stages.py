@@ -420,15 +420,20 @@ async def _stage_context_frame_followup(ctx: GateContext) -> dict[str, Any] | No
             data_plan_followup = _data_plan_redisplay_updates(ctx)
             if data_plan_followup is not None:
                 return data_plan_followup
-        read_only_refresh = _read_only_refresh_updates(ctx, frame)
-        if read_only_refresh is not None:
-            return read_only_refresh
+
+        bypass_read_only = False
+        if _has_active_query_session(ctx):
+            logger.info("gate_read_only_refresh_bypassed_for_active_query")
+            bypass_read_only = True
+
+        if not bypass_read_only:
+            read_only_refresh = _read_only_refresh_updates(ctx, frame)
+            if read_only_refresh is not None:
+                return read_only_refresh
 
     if _has_active_query_session(ctx):
-        if not _looks_like_context_frame_replay(ctx.message_text):
-            logger.info("gate_context_frame_followup_skipped_for_active_query_session")
-            return None
-        logger.info("gate_context_frame_followup_active_query_replay_bypass")
+        logger.info("gate_context_frame_followup_skipped_for_active_query_session")
+        return None
 
     if frame is None or not frame.items:
         return None

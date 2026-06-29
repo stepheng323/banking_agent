@@ -44,15 +44,33 @@ GENERIC_ACCOUNT_BALANCE_REQUEST_PATTERNS = (
 )
 _QUERY_DOMAIN_PATTERNS = (
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)",
+    r"^(?:show|list|view|get)\s+(?:my\s+)?(?:failed|pending|successful|reversed)\s+(?:transactions?|transfers?|payments?)\b",
+    r"^(?:show|list|view|get)\s+(?:my\s+)?"
+    r"(?:gtb|gtbank|access|zenith|wema|uba|opay|kuda|moniepoint|palmpay|first bank|fcmb|stanbic|"
+    r"sterling|union|fidelity|keystone|providus|polaris)\s+(?:transactions|transaction\s+history|history|statement)\b",
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?",
     r"^how\s+much\s+(?:(?:total|in\s+total)\s+)?(?:did|have)\s+i\s+(?:spend|spent|send|sent|pay|paid|receive|received)",
+    r"^how\s+much\s+(?:came|come)\s+in\b",
+    r"^how\s+much\s+(?:money\s+)?(?:entered|was\s+received|got\s+credited)\b",
     r"^(?:what(?:'s| is|'s)|how\s+much\s+is)\s+my\s+(?:spending|expenses?|income|inflow)",
     r"^who\s+did\s+i\s+(?:send|transfer|pay)\s+(?:money\s+)?to",
+    r"^who\s+sent\s+me\s+(?:the\s+most\s+)?(?:money\s+)?",
+    r"^where\s+did\s+my\s+money\s+go\b",
+    r"^what\s+did\s+i\s+spend\s+(?:on|money\s+on)\b",
     r"^(?:top|my)\s+(?:recipients?|beneficiar)",
+    r"^(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+.+",
 )
 _STRUCTURAL_QUERY_DIRECT_PATTERNS = (
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
+    r"^(?:show|list|view|get)\s+(?:my\s+)?(?:failed|pending|successful|reversed)\s+(?:transactions?|transfers?|payments?)\b",
+    r"^(?:show|list|view|get)\s+(?:my\s+)?"
+    r"(?:gtb|gtbank|access|zenith|wema|uba|opay|kuda|moniepoint|palmpay|first bank|fcmb|stanbic|"
+    r"sterling|union|fidelity|keystone|providus|polaris)\s+(?:transactions|transaction\s+history|history|statement)\b",
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?\b",
+    r"^(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+.+",
+    r"^how\s+much\s+(?:came|come)\s+in\b",
+    r"^who\s+sent\s+me\s+(?:the\s+most\s+)?(?:money\s+)?",
+    r"^where\s+did\s+my\s+money\s+go\b",
 )
 
 

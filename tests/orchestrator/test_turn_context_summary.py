@@ -39,10 +39,10 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     summary_to_state_payload,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
+from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
-    ExtractionIntent,
     PendingClarificationState,
     QueryExtractionResult,
 )
@@ -521,9 +521,9 @@ def test_get_or_build_turn_context_summary_reuses_cached_state_payload(monkeypat
 def test_turn_context_summary_compacts_pydantic_payload_objects() -> None:
     pending = PendingClarificationState(
         original_query="How much did I spend last",
-        current_intent=ExtractionIntent.SPENDING_TOTAL,
+        current_intent=QueryIntent.ANALYTICS_SUMMARY,
         original_extraction=QueryExtractionResult(
-            intent=ExtractionIntent.SPENDING_TOTAL,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
             ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
             raw_query="How much did I spend last",
         ),

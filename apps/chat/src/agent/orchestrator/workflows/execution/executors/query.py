@@ -32,7 +32,7 @@ from apps.chat.src.agent.orchestrator.workflows.execution.worker_lookup import _
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
 from banking.transactions.query.contracts import FocusedReferent
-from banking.transactions.query.models.domain import QueryResult
+from banking.transactions.query.models.domain import QueryAnswerStrategy, QueryIntent, QueryResult
 from banking.transactions.query.presentation.formatter import QueryFormatter
 from shared.messaging.body_blocks import MessageDocument
 
@@ -158,7 +158,9 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         ctx.accumulator.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
 
     if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT):
-        if handoff_payload and result.outcome == TransactionOutcome.OK:
+        if (handoff_payload and result.outcome == TransactionOutcome.OK) or (
+            isinstance(result.patch, dict) and result.patch.get("session_active") is False
+        ):
             pop_active_session(ctx, domain="query")
         else:
             upsert_active_session(
@@ -182,6 +184,15 @@ def _query_response_body_blocks(ctx: ExecutionTurnContext, result: TransactionRe
             return None
     if not isinstance(query_result, QueryResult):
         return None
+    if not query_result.items:
+        return None
+    if query_result.answer_strategy != QueryAnswerStrategy.TRANSACTION_LIST:
+        query_contract = query_result.query_contract
+        if query_contract is None or query_contract.intent not in {
+            QueryIntent.TRANSACTION_LIST,
+            QueryIntent.TRANSACTION_SEARCH,
+        }:
+            return None
 
     try:
         current_page = int(result.patch.get("current_page") or 0)
