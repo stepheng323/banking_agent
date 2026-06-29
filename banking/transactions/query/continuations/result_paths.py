@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 from typing import Any, cast
 
 import banking.transactions.query.continuations.compiler_paths as compiler_paths
@@ -310,10 +311,24 @@ async def resolve_result_continuation_updates(
         drill_idx = raw_drill_idx if isinstance(raw_drill_idx, int) and raw_drill_idx >= 0 else None
         answer_fact_field = resolve_requested_fact_field(decision)
         drill_down_action = decision.drill_down_action or ("answer_fact" if answer_fact_field is not None else None)
+        surface_context = getattr(surface_view, "context", {}) or {} if surface_view else {}
+        if drill_idx is None and surface_view is not None:
+            if len(getattr(surface_view, "items", []) or []) == 1:
+                drill_idx = 0
+            elif surface_context.get("type") in {"single_transaction", "focused_transaction"}:
+                selected_item_id = surface_context.get("selected_item_id")
+                if selected_item_id:
+                    for idx, item in enumerate(items):
+                        if item.id == selected_item_id:
+                            drill_idx = idx
+                            break
+                if drill_idx is None:
+                    drill_idx = session.get("selected_item_index")
+
         if (
             drill_idx is None
-            and surface_view is not None
-            and len(getattr(surface_view, "items", []) or []) == 1
+            and _is_focused_aggregate_contract(session_query_contract)
+            and len(items) == 1
         ):
             drill_idx = 0
 
@@ -326,6 +341,7 @@ async def resolve_result_continuation_updates(
             selection_payload,
             session_query_contract=session_query_contract,
             surface_view=surface_view,
+            items=items,
             drill_idx=drill_idx,
         )
 
@@ -472,6 +488,7 @@ def _normalize_focused_aggregate_selection_payload(
     *,
     session_query_contract: Any | None,
     surface_view: Any | None,
+    items: list[QueryResultItem],
     drill_idx: int | None,
 ) -> SelectionPayload | None:
     """Repair stale focused aggregate payloads into scoped query payloads.
@@ -481,10 +498,9 @@ def _normalize_focused_aggregate_selection_payload(
     and focused surface are enough to preserve the semantic selection without
     reading rendered text.
     """
-    intent = getattr(session_query_contract, "intent", None)
     if (
         session_query_contract is None
-        or intent not in {QueryIntent.BENEFICIARY_SUMMARY, QueryIntent.ANALYTICS_SUMMARY}
+        or not _is_focused_aggregate_contract(session_query_contract)
         or surface_view is None
         or drill_idx is None
     ):
@@ -496,9 +512,72 @@ def _normalize_focused_aggregate_selection_payload(
 
     surface_items = getattr(surface_view, "items", None) or []
     if len(surface_items) != 1 or not (0 <= drill_idx < len(surface_items)):
-        return selection_payload
+        return _focused_aggregate_selection_payload_from_result_item(
+            selection_payload,
+            session_query_contract=session_query_contract,
+            items=items,
+            drill_idx=drill_idx,
+        )
 
     surface_item = surface_items[drill_idx]
+    return _focused_aggregate_selection_payload_from_surface_item(
+        selection_payload,
+        session_query_contract=session_query_contract,
+        surface_item=surface_item,
+    )
+
+
+def _is_focused_aggregate_contract(session_query_contract: Any | None) -> bool:
+    if session_query_contract is None:
+        return False
+    intent = getattr(session_query_contract, "intent", None)
+    if intent == QueryIntent.BENEFICIARY_SUMMARY:
+        return True
+    if intent != QueryIntent.ANALYTICS_SUMMARY:
+        return False
+    aggregation = getattr(session_query_contract, "aggregation", None)
+    return bool(getattr(aggregation, "group_by", None))
+
+
+def _focused_aggregate_selection_payload_from_result_item(
+    selection_payload: SelectionPayload | None,
+    *,
+    session_query_contract: Any,
+    items: list[QueryResultItem],
+    drill_idx: int,
+) -> SelectionPayload | None:
+    if not (0 <= drill_idx < len(items)):
+        return selection_payload
+
+    item = items[drill_idx]
+    label = str(
+        getattr(selection_payload, "label", "") if selection_payload is not None else ""
+    ).strip() or str(getattr(item, "description", "") or "").strip()
+    if not label:
+        return selection_payload
+
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    synthetic_surface_item = SimpleNamespace(
+        id=item.id,
+        label=label,
+        description=item.description,
+        date=item.date,
+        metadata=metadata,
+    )
+    return _focused_aggregate_selection_payload_from_surface_item(
+        selection_payload,
+        session_query_contract=session_query_contract,
+        surface_item=synthetic_surface_item,
+    )
+
+
+def _focused_aggregate_selection_payload_from_surface_item(
+    selection_payload: SelectionPayload | None,
+    *,
+    session_query_contract: Any,
+    surface_item: Any,
+) -> SelectionPayload | None:
+    intent = getattr(session_query_contract, "intent", None)
     label = str(
         getattr(selection_payload, "label", "") if selection_payload is not None else ""
     ).strip() or str(getattr(surface_item, "label", "") or "").strip()
