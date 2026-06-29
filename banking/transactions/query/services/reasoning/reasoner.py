@@ -31,7 +31,17 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 _MAX_PROMPT_ITEMS = 5
 _MAX_PROMPT_QUERY_FRAMES = 3
-_SURFACE_CONTEXT_KEYS = ("type", "view", "count", "total_results", "has_more", "group_by")
+_SURFACE_CONTEXT_KEYS = (
+    "type",
+    "view",
+    "count",
+    "total_results",
+    "has_more",
+    "group_by",
+    "focus_type",
+    "selected_item_id",
+    "ranked_type",
+)
 _ITEM_METADATA_KEYS = ("status", "bank_name", "recipient_name", "recipient_bank_name", "type", "transaction_type")
 _ORDINAL_WORDS: dict[str, int] = {
     "first": 0,
@@ -45,21 +55,6 @@ _ORDINAL_WORDS: dict[str, int] = {
     "fifth": 4,
     "5th": 4,
 }
-_FACT_FIELD_PATTERNS: tuple[tuple[reasoner_models.FactFieldType, tuple[str, ...]], ...] = (
-    ("bank", ("bank", "which bank", "what bank")),
-    ("account", ("account", "which account", "what account")),
-    ("status", ("status", "state", "successful", "failed", "pending")),
-    ("amount", ("amount", "how much", "how many naira")),
-    ("date", ("date", "when", "time")),
-    ("reference", ("reference", "ref")),
-    ("category", ("category", "type of transaction")),
-    ("direction", ("direction", "debit", "credit", "incoming", "outgoing")),
-    ("description", ("description", "narration", "what was it for", "what is it for")),
-    ("recipient", ("recipient", "who did", "who was", "sent to", "send to")),
-    ("counterparty", ("counterparty", "merchant", "person")),
-)
-_REFERENTIAL_MARKERS = ("that", "this", "it", "one", "transaction", "payment", "transfer")
-
 
 class QuerySemanticReasoner:
     """Single semantic reasoner for fresh query, clarification, and continuation."""
@@ -84,7 +79,6 @@ class QuerySemanticReasoner:
             reasoner_context_mode=context_mode,
             reasoner_llm_used=llm_used,
             continuation_type=decision.continuation_type,
-            query_operation=decision.query_operation.value if decision.query_operation is not None else None,
             confidence=decision.confidence,
             reason=decision.reason,
         )
@@ -116,9 +110,6 @@ class QuerySemanticReasoner:
             llm_used=llm_used,
             semantic_decision=decision.decision if decision is not None else None,
             continuation_type=decision.continuation_type if decision is not None else None,
-            query_operation=decision.query_operation.value
-            if decision is not None and decision.query_operation is not None
-            else None,
             prompt_item_count=prompt_item_count,
             prompt_frame_count=prompt_frame_count,
             prompt_surface_type=prompt_surface_type,
@@ -230,6 +221,38 @@ class QuerySemanticReasoner:
             return "none"
         payload = {key: surface_view.context.get(key) for key in _SURFACE_CONTEXT_KEYS if key in surface_view.context}
         payload["mode"] = surface_view.mode.value
+        if surface_view.lead_text:
+            payload["lead_text"] = surface_view.lead_text
+        if len(surface_view.items) == 1:
+            item = surface_view.items[0]
+            item_metadata = item.metadata if isinstance(item.metadata, dict) else {}
+            payload["focused_item"] = {
+                "id": item.id,
+                "label": item.label,
+                "amount": item.amount,
+                "count": item.count,
+                "selection_kind": item.payload.selection_kind,
+                "entity_type": item.payload.entity_type,
+                "fact_capabilities": item.payload.fact_capabilities,
+                "metadata": {
+                    key: item_metadata.get(key)
+                    for key in (
+                        "date",
+                        "status",
+                        "bank_name",
+                        "recipient_name",
+                        "recipient_bank_name",
+                        "counterparty",
+                        "type",
+                        "transaction_type",
+                    )
+                    if key in item_metadata
+                },
+                "has_filters_patch": bool(item.payload.filters_patch),
+                "has_time_patch": item.payload.time_patch is not None,
+                "group_by": item.payload.group_by,
+                "group_key": item.payload.group_key,
+            }
         return QuerySemanticReasoner._serialize(payload or None)
 
     @staticmethod
@@ -261,9 +284,6 @@ class QuerySemanticReasoner:
             return "none"
         payload = {
             "intent": query_contract.intent.value,
-            "query_operation": (
-                query_contract.query_operation.value if query_contract.query_operation is not None else None
-            ),
             "time_start": query_contract.time_start.isoformat(),
             "time_end": query_contract.time_end.isoformat(),
             "filters": query_contract.filters.model_dump(exclude_none=True)
@@ -330,13 +350,6 @@ class QuerySemanticReasoner:
         return None
 
     @staticmethod
-    def _deterministic_fact_field(normalized: str) -> reasoner_models.FactFieldType | None:
-        for field, patterns in _FACT_FIELD_PATTERNS:
-            if any(pattern in normalized for pattern in patterns):
-                return field
-        return None
-
-    @staticmethod
     def _has_visible_items(surface_view: SurfaceView | None) -> bool:
         return surface_view is not None and bool(surface_view.items)
 
@@ -355,22 +368,6 @@ class QuerySemanticReasoner:
 
         normalized = cls._normalize(message)
         ordinal_index = cls._deterministic_ordinal_index(normalized)
-        fact_field = cls._deterministic_fact_field(normalized)
-        item_count = len(surface_view.items) if surface_view is not None else 0
-        has_referential_marker = any(marker in normalized for marker in _REFERENTIAL_MARKERS)
-
-        if fact_field is not None and (ordinal_index is not None or item_count == 1 and has_referential_marker):
-            return reasoner_models.QuerySemanticDecision(
-                decision="continuation",
-                confidence=1.0,
-                reason=f"deterministic_fact_{fact_field}",
-                continuation_type="drill_down",
-                drill_down_index=ordinal_index if ordinal_index is not None else 0,
-                drill_down_action="answer_fact",
-                fact_field=fact_field,
-                requested_field=fact_field,
-            )
-
         if ordinal_index is None:
             return None
         if not re.search(r"\b(?:show|open|view|see|details?|transaction|payment|transfer|one)\b", normalized):
@@ -413,13 +410,14 @@ class QuerySemanticReasoner:
                 followup_intent=followup_intent,
             )
         action_map = {
-            "get_receipt": ("deterministic_receipt", "get_receipt"),
-            "report_issue": ("deterministic_report_issue", "report_issue"),
+            "get_receipt": ("deterministic_receipt", "get_receipt", None),
+            "report_issue": ("deterministic_report_issue", "report_issue", None),
+            "answer_date": ("deterministic_fact_field", "answer_fact", "date"),
         }
         action_tuple = action_map.get(shortcut.action)
         if action_tuple is None:
             return None
-        reason, drill_down_action = action_tuple
+        reason, drill_down_action, fact_field = action_tuple
         return reasoner_models.QuerySemanticDecision(
             decision="continuation",
             confidence=1.0,
@@ -430,6 +428,7 @@ class QuerySemanticReasoner:
                 Literal["view_details", "get_receipt", "report_issue", "re_transfer", "answer_fact"],
                 drill_down_action,
             ),
+            fact_field=cast(reasoner_models.FactFieldType, fact_field) if fact_field else None,
         )
 
     @staticmethod
@@ -673,10 +672,6 @@ class QuerySemanticReasoner:
             decision = await self._invoke_llm(context)
             if decision.extraction is not None:
                 decision.extraction.raw_query = decision.extraction.raw_query or context.message
-                if decision.extraction.query_operation is None and decision.query_operation is not None:
-                    decision.extraction.query_operation = decision.query_operation
-            if decision.query_operation is None and decision.extraction is not None:
-                decision.query_operation = decision.extraction.query_operation
             decision = await self._return_annotated_decision(
                 context=context,
                 decision=decision,

@@ -133,7 +133,7 @@ async def test_answer_fact_returns_status_from_selected_item() -> None:
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["session_active"] is True
-    assert "Status:" in (result.response or "")
+    assert "transaction is processing" in (result.response or "")
 
 
 @pytest.mark.asyncio

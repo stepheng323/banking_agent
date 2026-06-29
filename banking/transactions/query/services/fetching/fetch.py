@@ -139,15 +139,51 @@ def _apply_transaction_analysis(transaction: dict[str, Any]) -> dict[str, Any]:
     return transaction
 
 
+def normalize_transaction_status(transaction: dict[str, Any]) -> str:
+    """Return canonical transaction status for filtering and presentation decisions."""
+    raw_status = (
+        transaction.get("display_status")
+        or transaction.get("status")
+        or transaction.get("local_status")
+        or transaction.get("provider_status")
+        or transaction.get("bank_status")
+        or ""
+    )
+    status = " ".join(str(raw_status or "").strip().lower().replace("_", " ").split())
+    if status in {"failed", "failure", "declined", "rejected"} or "fail" in status:
+        return "failed"
+    if status in {"reversed", "refunded"} or "revers" in status:
+        return "reversed"
+    if status in {"pending", "processing", "queued", "in progress"}:
+        return "pending"
+    if status in {"", "posted", "success", "successful", "completed", "complete", "confirmed"}:
+        return "successful"
+    return status
+
+
+def is_settled_transaction(transaction: dict[str, Any]) -> bool:
+    """Return true when a transaction should appear in ordinary settled-history lists."""
+    return normalize_transaction_status(transaction) == "successful"
+
+
 def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[dict[str, Any]]:
     """Apply filters to transaction list."""
     result = transactions
 
+    if filters.status:
+        result = [t for t in result if normalize_transaction_status(t) == filters.status]
+
     if filters.min_amount is not None:
-        result = [t for t in result if abs(t.get("amount", 0)) >= filters.min_amount]
+        if filters.min_amount_inclusive:
+            result = [t for t in result if abs(t.get("amount", 0)) >= filters.min_amount]
+        else:
+            result = [t for t in result if abs(t.get("amount", 0)) > filters.min_amount]
 
     if filters.max_amount is not None:
-        result = [t for t in result if abs(t.get("amount", 0)) <= filters.max_amount]
+        if filters.max_amount_inclusive:
+            result = [t for t in result if abs(t.get("amount", 0)) <= filters.max_amount]
+        else:
+            result = [t for t in result if abs(t.get("amount", 0)) < filters.max_amount]
 
     if filters.transaction_type:
         result = [t for t in result if t.get("type") == filters.transaction_type]

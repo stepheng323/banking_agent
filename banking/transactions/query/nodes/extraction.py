@@ -76,6 +76,8 @@ class ExtractionStep(QueryStep):
     @staticmethod
     def _append_query_session_transition(updates: dict[str, Any], transition: str) -> dict[str, Any]:
         updates["_query_session_transition"] = transition
+        if transition == "replace_session_new_query":
+            updates["flow_state"] = "executing"
         return updates
 
     @staticmethod

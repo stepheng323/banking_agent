@@ -12,7 +12,6 @@ from banking.transactions.query.models.domain import (
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
-    ExtractionIntent,
     PendingClarificationState,
     QueryExtractionResult,
     QueryParseResult,
@@ -53,9 +52,9 @@ def _contract(query: QueryIR) -> QueryExecutionContract:
 def _pending_state() -> PendingClarificationState:
     return PendingClarificationState(
         original_query="How much did I spend last",
-        current_intent=ExtractionIntent.SPENDING_TOTAL,
+        current_intent=QueryIntent.ANALYTICS_SUMMARY,
         original_extraction=QueryExtractionResult(
-            intent=ExtractionIntent.SPENDING_TOTAL,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
             ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
             raw_query="How much did I spend last",
@@ -184,7 +183,7 @@ async def test_reasoner_fresh_query_without_raw_query_injects_message_for_debit_
         QuerySemanticDecision(
             decision="fresh_query",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.SPENDING_TOTAL,
+                intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
             ),
         ),
@@ -211,7 +210,7 @@ async def test_pending_clarification_new_query_compiles_without_parser_parse() -
         return QuerySemanticDecision(
             decision="new_query",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.SPENDING_TOTAL,
+                intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
                 raw_query="How much did I spend this week",
             ),
@@ -257,7 +256,7 @@ async def test_pending_clarification_recent_list_interrupts_and_clears_old_scope
         return QueryParseResult(
             outcome=ResolverOutcome.OK,
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 raw_query=question,
             ),
             query_contract=contract.model_dump(),
@@ -305,7 +304,7 @@ async def test_pending_clarification_day_scoped_list_interrupts_and_executes_new
         return QueryParseResult(
             outcome=ResolverOutcome.OK,
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 raw_query=question,
             ),
             query_contract=contract.model_dump(),

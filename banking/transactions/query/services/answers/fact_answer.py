@@ -48,6 +48,7 @@ def build_direct_fact_answer(
     query_contract: QueryExecutionContract | None,
     fact_field: str,
     locale: str = "en",
+    is_followup: bool = False,
 ) -> QueryAnswerContext:
     """Build a compact conversational answer for a single fact-style transaction answer."""
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
@@ -71,7 +72,12 @@ def build_direct_fact_answer(
         result_reference=query_contract.result_reference if query_contract is not None else None,
     )
     primary, used_fields = _compose_direct_reply(fact, locale=locale)
-    secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields, locale=locale)
+
+    if is_followup:
+        secondary = None
+    else:
+        secondary = _build_evidence_line(item, query_contract=query_contract, used_fields=used_fields, locale=locale)
+
     return QueryAnswerContext(primary_text=primary, secondary_text=secondary)
 
 
@@ -255,35 +261,88 @@ def _compose_direct_reply(fact: DirectAnswerFact, *, locale: str) -> tuple[str, 
             {"status"} if fact.status_text else set(),
         )
     if fact.fact_kind == "description":
-        return (f"It was for {fact.fallback_description}.", {"description"})
+        if fact.counterparty:
+            return (
+                render_message(
+                    "query.reply.description.named",
+                    locale,
+                    {"counterparty": fact.counterparty, "description": fact.fallback_description},
+                ),
+                {"description", "counterparty"},
+            )
+        return (
+            render_message("query.reply.description.generic", locale, {"description": fact.fallback_description}),
+            {"description"},
+        )
+
     if fact.fact_kind == "reference":
+        if not fact.reference_text:
+            return (render_message("query.reply.reference.unavailable", locale), set())
+        if fact.counterparty:
+            return (
+                render_message(
+                    "query.reply.reference.named",
+                    locale,
+                    {"counterparty": fact.counterparty, "reference": fact.reference_text},
+                ),
+                {"reference", "counterparty"},
+            )
         return (
-            f"The reference is {fact.reference_text}."
-            if fact.reference_text
-            else "I found the transaction, but I couldn't confirm the reference.",
-            {"reference"} if fact.reference_text else set(),
+            render_message("query.reply.reference.generic", locale, {"reference": fact.reference_text}),
+            {"reference"},
         )
+
     if fact.fact_kind == "account":
+        if not fact.account_text:
+            return (render_message("query.reply.account.unavailable", locale), set())
+        if fact.counterparty:
+            return (
+                render_message(
+                    "query.reply.account.named",
+                    locale,
+                    {"counterparty": fact.counterparty, "account": fact.account_text},
+                ),
+                {"account", "counterparty"},
+            )
         return (
-            f"It was on {fact.account_text}."
-            if fact.account_text
-            else "I found the transaction, but I couldn't confirm the account.",
-            {"account"} if fact.account_text else set(),
+            render_message("query.reply.account.generic", locale, {"account": fact.account_text}),
+            {"account"},
         )
+
     if fact.fact_kind == "direction":
+        if not fact.direction_text:
+            return (render_message("query.reply.direction.unavailable", locale), set())
+        if fact.counterparty:
+            return (
+                render_message(
+                    "query.reply.direction.named",
+                    locale,
+                    {"counterparty": fact.counterparty, "direction": fact.direction_text},
+                ),
+                {"direction", "counterparty"},
+            )
         return (
-            f"It was {fact.direction_text}."
-            if fact.direction_text
-            else "I found the transaction, but I couldn't confirm the direction.",
-            {"direction"} if fact.direction_text else set(),
+            render_message("query.reply.direction.generic", locale, {"direction": fact.direction_text}),
+            {"direction"},
         )
+
     if fact.fact_kind == "category":
+        if not fact.category_text:
+            return (render_message("query.reply.category.unavailable", locale), set())
+        if fact.counterparty:
+            return (
+                render_message(
+                    "query.reply.category.named",
+                    locale,
+                    {"counterparty": fact.counterparty, "category": fact.category_text},
+                ),
+                {"category", "counterparty"},
+            )
         return (
-            f"It was categorized as {fact.category_text}."
-            if fact.category_text
-            else "I found the transaction, but I couldn't confirm the category.",
-            {"category"} if fact.category_text else set(),
+            render_message("query.reply.category.generic", locale, {"category": fact.category_text}),
+            {"category"},
         )
+
     return (render_message("query.reply.bank.unavailable", locale), set())
 
 
@@ -442,7 +501,14 @@ def _implicit_history_status_label(item: QueryResultItem, metadata: dict[str, ob
 
 def _reference_label(item: QueryResultItem) -> str | None:
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
-    for key in ("transaction_id", "reference", "ref"):
+    for key in (
+        "provider_reference",
+        "bank_transaction_id",
+        "transaction_id",
+        "reference",
+        "ref",
+        "local_transaction_id",
+    ):
         value = str(metadata.get(key) or "").strip()
         if value:
             return value

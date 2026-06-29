@@ -41,6 +41,10 @@ def _query_result_item_from_transaction(
             "transaction_type": transaction.get("transaction_type"),
             "status": transaction.get("status", ""),
             "transaction_id": transaction.get("transaction_id") or transaction.get("id"),
+            "provider_reference": transaction.get("provider_reference"),
+            "bank_transaction_id": transaction.get("bank_transaction_id"),
+            "local_transaction_id": transaction.get("local_transaction_id"),
+            "reference": transaction.get("reference"),
             "counterparty": transaction.get("counterparty"),
             "counterparty_role": transaction.get("counterparty_role"),
             "recipient_name": transaction.get("recipient_name") or transaction.get("counterparty"),
@@ -70,6 +74,8 @@ def maybe_build_fact_answer_from_decision(
         return None
     if session_query_contract is None:
         return None
+    if session_query_contract.intent == session_query_contract.intent.BENEFICIARY_SUMMARY:
+        return None
 
     raw_fact_field = getattr(decision, "fact_field", None) or session_query_contract.answer_fact_field
     if raw_fact_field == "recipient":
@@ -86,6 +92,8 @@ def maybe_build_fact_answer_from_decision(
         "direction",
         "category",
     }:
+        return None
+    if _requires_scoped_fact_query(session_query_contract):
         return None
 
     selected_index_raw = session.get("selected_item_index")
@@ -148,6 +156,7 @@ def maybe_build_fact_answer_from_decision(
         query_contract=answer_contract,
         fact_field=raw_fact_field,
         locale=language,
+        is_followup=True,
     )
     lines = [answer_context.primary_text]
     if answer_context.secondary_text:
@@ -163,6 +172,14 @@ def maybe_build_fact_answer_from_decision(
         "selected_item_index": drill_index,
         "_query_session_transition": "answer_fact_active_result",
     }
+
+
+def _requires_scoped_fact_query(query_contract: QueryExecutionContract) -> bool:
+    """Aggregate rows are scopes, not concrete transactions."""
+    if query_contract.intent == query_contract.intent.BENEFICIARY_SUMMARY:
+        return True
+    aggregation = query_contract.aggregation
+    return bool(aggregation is not None and aggregation.group_by is not None)
 
 
 __all__ = ["maybe_build_fact_answer_from_decision"]

@@ -8,10 +8,9 @@ from calendar import monthrange
 from datetime import date
 
 from banking.intent.routing_signals import looks_like_support_problem_statement
-from banking.transactions.query.models.domain import TimeRange
+from banking.transactions.query.models.domain import QueryIntent, TimeRange
 from banking.transactions.query.models.extraction import (
     AmbiguityCode,
-    ExtractionIntent,
     QueryAggregation,
     QueryExtractionResult,
     QueryRequestShape,
@@ -250,6 +249,21 @@ def _recipient_summary_candidate(
     )
 
 
+def _incoming_beneficiary_summary_candidate(raw_query: str) -> bool:
+    normalized = f" {_normalize_match_text(raw_query)} "
+    if not normalized.strip():
+        return False
+    incoming_patterns = (
+        r"\bwho\s+(?:sent|paid|credited|transferred)\s+me\b",
+        r"\bwho\s+did\s+i\s+receive\b",
+        r"\bwho\s+have\s+i\s+received\b",
+        r"\bwho\s+paid\s+me\b",
+        r"\btop\s+senders?\b",
+        r"\bmost\s+money\s+(?:from|sent\s+to\s+me)\b",
+    )
+    return any(re.search(pattern, normalized) for pattern in incoming_patterns)
+
+
 def _latest_counterparty_fact_candidate(raw_query: str) -> bool:
     normalized = " ".join((raw_query or "").strip().lower().split())
     if not normalized:
@@ -431,9 +445,6 @@ def recover_known_fragile_query_shapes(
     extraction = normalize_recent_list_time_range(extraction, raw_query=raw_query)
     extraction = normalize_day_scoped_singular_list_query(extraction, raw_query=raw_query)
 
-    # Parser precedence is typed extraction first, semantic hints second. This
-    # backstop only repairs weak grouped-recipient outputs; it should never be
-    # the primary intent router or override explicit fact/comparison shapes.
     if (
         extraction.request_shape in {QueryRequestShape.FACT, QueryRequestShape.EXISTENCE}
         or extraction.fact_query_kind is not None
@@ -444,7 +455,7 @@ def recover_known_fragile_query_shapes(
     amount_bounds = extract_beneficiary_query_amount_bounds(raw_query)
     if extraction.answer_fact_field is not None:
         return extraction
-    if extraction.intent not in {ExtractionIntent.TRANSACTION_LIST, ExtractionIntent.BENEFICIARY_SUMMARY}:
+    if extraction.intent not in {QueryIntent.TRANSACTION_LIST, QueryIntent.BENEFICIARY_SUMMARY}:
         return extraction
     if (
         extraction.request_shape
@@ -457,20 +468,23 @@ def recover_known_fragile_query_shapes(
     if not _recipient_summary_candidate(raw_query, extracted_recipient=extraction.filters.recipient, language=language):
         return extraction
 
-    extraction.intent = ExtractionIntent.BENEFICIARY_SUMMARY
+    extraction.intent = QueryIntent.BENEFICIARY_SUMMARY
     if _is_placeholder_group_noun(extraction.filters.recipient, language=language):
         extraction.filters.recipient = None
-    extraction.filters.transaction_type = "debit"
+    if extraction.filters.transaction_type not in {"credit", "debit"}:
+        extraction.filters.transaction_type = (
+            "credit" if _incoming_beneficiary_summary_candidate(raw_query) else "debit"
+        )
     if amount_bounds is not None:
         min_amount, max_amount = amount_bounds
         extraction.filters.min_amount = min_amount
         extraction.filters.max_amount = max_amount
     extraction.request_shape = QueryRequestShape.GROUPED_SUMMARY
     if extraction.aggregation is None:
-        extraction.aggregation = QueryAggregation(type="sum", sort_by="count", limit=5)
+        extraction.aggregation = QueryAggregation(type="sum", sort_by="amount", limit=5)
     else:
         extraction.aggregation.type = extraction.aggregation.type or "sum"
-        extraction.aggregation.sort_by = extraction.aggregation.sort_by or "count"
+        extraction.aggregation.sort_by = extraction.aggregation.sort_by or "amount"
         extraction.aggregation.limit = extraction.aggregation.limit or 5
     if extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
         recovered_time = extract_relative_time_range_from_query(raw_query)
@@ -482,7 +496,7 @@ def recover_known_fragile_query_shapes(
 def normalize_recent_list_time_range(extraction: QueryExtractionResult, *, raw_query: str) -> QueryExtractionResult:
     list_shaped_intents = {
         "transaction_list",
-        "single_transaction",
+        "transaction_detail",
     }
     request_shape = extraction.request_shape.value if extraction.request_shape is not None else None
     if extraction.intent.value not in list_shaped_intents and request_shape != "list":
@@ -530,7 +544,7 @@ def normalize_day_scoped_singular_list_query(
 
     period = match.group(1).replace("'s", "").replace(" ", "_")
 
-    extraction.intent = ExtractionIntent.TRANSACTION_LIST
+    extraction.intent = QueryIntent.TRANSACTION_LIST
     extraction.request_shape = None
     extraction.fact_query_kind = None
     extraction.answer_fact_field = None

@@ -9,14 +9,14 @@ from banking.transactions.query.compiler.time_ranges import build_time_range
 from banking.transactions.query.continuations.transforms import rebuild_query_contract
 from banking.transactions.query.models.domain import (
     QueryExecutionContract,
-    QueryOperation,
+    QueryIntent,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     QueryExtractionResult,
     QueryTimeRange,
     ResolverOutcome,
+    TimeReference,
 )
 from banking.transactions.query.services.parsing.parser import QueryParser
 
@@ -72,8 +72,7 @@ def _compile_clarification_time_range(parsed: QueryTimeRange, *, today: date) ->
     return build_time_range(
         QueryExtractionResult(time_range=parsed),
         today=today,
-        effective_intent=ExtractionIntent.TRANSACTION_LIST,
-        query_operation=QueryOperation.LIST_TRANSACTIONS,
+        intent=QueryIntent.TRANSACTION_LIST,
         answer_fact_field=None,
         result_reference=None,
     )
@@ -122,6 +121,66 @@ def is_correction_time_rescope_message(message: str, *, today: date) -> bool:
     )
 
 
+def has_semantic_time_signal(decision: Any) -> bool:
+    """Return true when the semantic reasoner supplied a resolvable time signal."""
+    if getattr(decision, "time_range", None) is not None:
+        return True
+    if getattr(decision, "time_period", None):
+        return True
+    extraction = getattr(decision, "extraction", None)
+    if extraction is None:
+        return False
+    time_range = getattr(extraction, "time_range", None)
+    return bool(
+        time_range is not None
+        and (
+            getattr(time_range, "reference_type", None) != TimeReference.UNSPECIFIED
+            or getattr(time_range, "period", None)
+            or getattr(time_range, "days_back", None) is not None
+        )
+    )
+
+
+def has_semantic_time_only_signal(decision: Any) -> bool:
+    """Return true when the reasoner payload means only "change the time scope"."""
+    if not has_semantic_time_signal(decision):
+        return False
+    if getattr(decision, "followup_intent", None) in {"continue_pagination", "previous_pagination"}:
+        return False
+
+    continuation_type = getattr(decision, "continuation_type", None)
+    delta_type = getattr(decision, "delta_type", None)
+    if continuation_type == "time_delta" or delta_type == "time":
+        return True
+    if continuation_type != "unclear" or getattr(decision, "followup_intent", None) not in {None, "none"}:
+        return False
+
+    extraction = getattr(decision, "extraction", None)
+    if extraction is None:
+        return True
+    if getattr(extraction, "intent", None) != QueryIntent.TRANSACTION_LIST:
+        return False
+    if getattr(extraction, "comparison", None) is not None or getattr(extraction, "aggregation", None) is not None:
+        return False
+    if (
+        getattr(extraction, "request_shape", None) is not None
+        or getattr(extraction, "fact_query_kind", None) is not None
+    ):
+        return False
+    if (
+        getattr(extraction, "result_limit", None) is not None
+        or getattr(extraction, "result_reference", None) is not None
+    ):
+        return False
+    if getattr(extraction, "answer_fact_field", None) is not None:
+        return False
+
+    filters = getattr(extraction, "filters", None)
+    if filters is None:
+        return True
+    return not bool(filters.model_dump(exclude_defaults=True, exclude_none=True))
+
+
 async def maybe_recover_time_rescope_continuation(
     step: Any,
     *,
@@ -149,7 +208,7 @@ async def maybe_recover_time_rescope_continuation(
         and getattr(decision, "continuation_type", None) != "time_delta"
         and getattr(decision, "time_range", None) is None
         and not getattr(decision, "time_period", None)
-        and getattr(decision, "extraction", None) is None
+        and not has_semantic_time_only_signal(decision)
         and not is_direct_time_rescope_message(message, today=today)
     ):
         step._log_time_rescope_recovery(
@@ -193,6 +252,12 @@ async def maybe_recover_time_rescope_continuation(
         "query_contract": rebuild_query_contract(
             session_query_contract,
             time_range=resolved_time_range,
+            filters=(
+                getattr(decision, "filters", None)
+                if getattr(decision, "filters", None) is not None
+                else session_query_contract.filters
+            ),
+            merge_filters=True,
             result_limit=decision.result_limit
             if decision.result_limit is not None
             else session_query_contract.result_limit,
@@ -219,8 +284,12 @@ async def resolve_time_delta_range(
     started_at = perf_counter()
     semantic_decision = getattr(decision, "decision", None)
     continuation_type = getattr(decision, "continuation_type", None)
+
     direct_rescope = direct_time_rescope_range(message, today=today)
-    if direct_rescope is not None:
+    if direct_rescope is not None and (
+        getattr(decision, "continuation_type", None) == "time_delta"
+        or getattr(decision, "delta_type", None) == "time"
+    ):
         if state is not None:
             step._log_query_trace(
                 state=state,
@@ -247,36 +316,8 @@ async def resolve_time_delta_range(
             )
         return resolved_time_range, None
 
-    normalized_message = " ".join(message.strip().split())
-    if normalized_message:
-        parts = normalized_message.split()
-        for start in range(len(parts)):
-            candidate = " ".join(parts[start:])
-            parsed_time_range = step.parser.parse_clarification_time_range(candidate, today=today)
-            if parsed_time_range is None:
-                continue
-            query_ir = step.parser.build_query_ir_from_extraction(
-                QueryExtractionResult(
-                    time_range=parsed_time_range,
-                    raw_query=message,
-                ),
-                today=today,
-                language=language,
-            )
-            if state is not None:
-                step._log_query_trace(
-                    state=state,
-                    phase="time_resolution",
-                    latency_ms=(perf_counter() - started_at) * 1000.0,
-                    outcome="resolved",
-                    resolution_source="message_suffix_parse",
-                    semantic_decision=semantic_decision,
-                    continuation_type=continuation_type,
-                )
-            return query_ir.time_range, None
-
     extraction = getattr(decision, "extraction", None)
-    if extraction is not None:
+    if extraction is not None and has_semantic_time_signal(decision):
         if not extraction.raw_query:
             extraction = extraction.model_copy(update={"raw_query": message})
         result = step.parser.compile_extraction(extraction, today=today, language=language)
@@ -351,6 +392,48 @@ async def resolve_time_delta_range(
             )
         return query_ir.time_range, None
 
+    direct_rescope = direct_time_rescope_range(message, today=today)
+    if direct_rescope is not None:
+        if state is not None:
+            step._log_query_trace(
+                state=state,
+                phase="time_resolution",
+                latency_ms=(perf_counter() - started_at) * 1000.0,
+                outcome="resolved",
+                resolution_source="direct_message_time_rescope",
+                semantic_decision=semantic_decision,
+                continuation_type=continuation_type,
+            )
+        return direct_rescope, None
+
+    normalized_message = " ".join(message.strip().split())
+    if normalized_message:
+        parts = normalized_message.split()
+        for start in range(len(parts)):
+            candidate = " ".join(parts[start:])
+            parsed_time_range = step.parser.parse_clarification_time_range(candidate, today=today)
+            if parsed_time_range is None:
+                continue
+            query_ir = step.parser.build_query_ir_from_extraction(
+                QueryExtractionResult(
+                    time_range=parsed_time_range,
+                    raw_query=message,
+                ),
+                today=today,
+                language=language,
+            )
+            if state is not None:
+                step._log_query_trace(
+                    state=state,
+                    phase="time_resolution",
+                    latency_ms=(perf_counter() - started_at) * 1000.0,
+                    outcome="resolved",
+                    resolution_source="message_suffix_parse",
+                    semantic_decision=semantic_decision,
+                    continuation_type=continuation_type,
+                )
+            return query_ir.time_range, None
+
     if state is not None:
         step._log_query_trace(
             state=state,
@@ -366,6 +449,8 @@ async def resolve_time_delta_range(
 
 __all__ = [
     "direct_time_rescope_range",
+    "has_semantic_time_signal",
+    "has_semantic_time_only_signal",
     "is_correction_time_rescope_message",
     "is_direct_time_rescope_message",
     "is_single_day_direct_time_rescope_message",

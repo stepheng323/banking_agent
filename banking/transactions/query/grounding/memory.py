@@ -51,15 +51,18 @@ def build_memory_answer(
             {"current_label": current_label, "comparison_label": comparison_label},
         )
 
-    verb_key: MessageKey = (
-        "query.time_comparison.verb_spent_more" if spending_change > 0 else "query.time_comparison.verb_spent_less"
+    key: MessageKey = (
+        "query.time_comparison.summary_spent_more"
+        if spending_change > 0
+        else "query.time_comparison.summary_spent_less"
     )
     return render_message(
-        "query.time_comparison.summary",
+        key,
         language,
         {
-            "verb": render_message(verb_key, language),
             "amount": f"{abs(spending_change):,.0f}",
+            "current_amount": f"{current_facts.amount:,.0f}",
+            "comparison_amount": f"{comparison_facts.amount:,.0f}",
             "current_label": current_label,
             "comparison_label": comparison_label,
         },

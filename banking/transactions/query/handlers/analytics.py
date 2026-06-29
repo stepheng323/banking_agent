@@ -18,6 +18,7 @@ from banking.transactions.query.services.fetching.fetch import (
     parse_date,
 )
 from banking.transactions.query.utils.timezone import lagos_today
+from banking.transactions.query.utils.totals import calculate_financial_totals
 from shared.clients.abstractions.banking import BankDataProvider
 
 
@@ -46,10 +47,19 @@ async def handle_analytics(
         return QueryResult(summary_text=render_message("query.analytics.no_aggregation", language))
 
     agg_type = contract.aggregation.type
-    transactions = _settled_transactions_for_analytics(transactions)
+
+    totals = calculate_financial_totals(transactions, account_id)
+    transactions = totals.settled_transactions
 
     if agg_type == "sum":
-        total = sum(abs(t.get("amount", 0)) for t in transactions)
+        total = (
+            totals.total_inflow
+            if contract.filters and contract.filters.transaction_type == "credit"
+            else totals.total_outflow
+        )
+        if not contract.filters or contract.filters.transaction_type not in {"credit", "debit"}:
+            total = totals.total_inflow + totals.total_outflow
+
         count = len(transactions)
         if count == 0:
             tx_type = contract.filters.transaction_type if contract.filters else None
@@ -252,7 +262,7 @@ async def handle_analytics(
         return QueryResult(summary_text=summary_text, items=items, has_more=has_more)
 
     elif agg_type == "breakdown":
-        return await _aggregate_breakdown(transactions, contract, language)
+        return await _aggregate_breakdown(transactions, contract, totals, language)
 
     return QueryResult(summary_text=render_message("query.analytics.aggregation_completed", language))
 
@@ -266,6 +276,18 @@ def _build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
         yesterday = today - timedelta(days=1)
         if time_range.start == time_range.end == yesterday:
             return render_message("query.analytics.timeframe_yesterday", locale)
+
+        if time_range.granularity == "month":
+            if time_range.start.month == today.month and time_range.start.year == today.year:
+                return render_message("query.analytics.timeframe_this_month", locale)
+            else:
+                return render_message(
+                    "query.analytics.timeframe_month", locale, {"month": time_range.start.strftime("%B %Y")}
+                )
+
+        if time_range.start == today - timedelta(days=30) and time_range.end == today:
+            return render_message("query.analytics.timeframe_last_30_days", locale)
+
         if time_range.start == time_range.end:
             return render_message(
                 "query.analytics.timeframe_on_date",
@@ -350,36 +372,16 @@ def _transaction_label(count: int, locale: str) -> str:
     return render_message("query.analytics.transaction_plural", locale)
 
 
-def _settled_transactions_for_analytics(transactions: list[dict]) -> list[dict]:
-    """Exclude failed/reversed/in-flight app transactions from spend analytics."""
-    return [transaction for transaction in transactions if _is_settled_analytics_transaction(transaction)]
-
-
-def _is_settled_analytics_transaction(transaction: dict) -> bool:
-    status = _normalized_status(
-        transaction.get("display_status")
-        or transaction.get("status")
-        or transaction.get("local_status")
-        or transaction.get("provider_status")
-    )
-    if status is None:
-        return True
-    return status in {"posted", "success", "successful", "completed", "complete"}
-
-
-def _normalized_status(value: object) -> str | None:
-    status = str(value or "").strip().lower().replace("_", " ").replace("-", " ")
-    if not status:
-        return None
-    return " ".join(status.split())
-
-
 async def _aggregate_breakdown(
     transactions: list[dict],
     contract: QueryExecutionContract,
+    totals: Any | None = None,
     language: str = "en",
 ) -> QueryResult:
     """Aggregate transactions by day/category/merchant."""
+    if totals is None:
+        totals = calculate_financial_totals(transactions)
+
     group_by = contract.aggregation.group_by if contract.aggregation else "day"
     grouped: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
@@ -395,7 +397,8 @@ async def _aggregate_breakdown(
         if group_by == "day":
             key = t.get("date", "")[:10]
         elif group_by == "category":
-            key = get_transaction_category(t) or "other"
+            resolved = get_transaction_category(t)
+            key = "Other" if not resolved or resolved.lower() == "other" else resolved
         elif group_by == "merchant":
             key = t.get("counterparty") or extract_counterparty(t.get("narration", ""), locale=language)
         elif group_by == "account":
@@ -409,7 +412,7 @@ async def _aggregate_breakdown(
         else:
             key = t.get("date", "")[:10]
 
-        tx_type = t.get("type", "unknown")
+        tx_type = str(t.get("type", "unknown")).strip().lower()
         if group_by == "category":
             source = t.get("category_source") or ("provider" if t.get("category") else "unknown")
             grouped[key]["category_sources"].add(str(source))
@@ -427,9 +430,12 @@ async def _aggregate_breakdown(
 
     sorted_items = sorted(grouped.items(), key=sort_key, reverse=True)
 
-    # Apply limit if requested
-    limit = contract.aggregation.limit if contract.aggregation and contract.aggregation.limit is not None else 10
+    # Apply limit if requested, default to 5 for breakdowns
+    limit = contract.aggregation.limit if contract.aggregation and contract.aggregation.limit is not None else 5
     sorted_items = sorted_items[:limit]
+
+    # Include total spent in summary if it's a category/merchant breakdown of expenses
+    total_spent = totals.total_outflow
 
     items: list[QueryResultItem] = []
     for i, (key, data) in enumerate(sorted_items):
@@ -442,6 +448,7 @@ async def _aggregate_breakdown(
             "credit": data["credit"],
             "count": data["count"],
             "key": key,  # Original key for drill-down
+            "overall_total": total_spent,
         }
         if group_by == "category":
             category_sources = sorted(str(source) for source in data["category_sources"] if source)
@@ -459,12 +466,17 @@ async def _aggregate_breakdown(
             )
         )
 
+    summary_msg = render_message(
+        "query.analytics.breakdown_by",
+        language,
+        {"group_by": _breakdown_group_label(group_by, language)},
+    )
+    if contract.filters and contract.filters.transaction_type == "debit" and total_spent > 0:
+        timeframe = _build_timeframe_suffix(contract, language)
+        summary_msg = f"You spent ₦{total_spent:,.0f}{timeframe}. {summary_msg}"
+
     return QueryResult(
-        summary_text=render_message(
-            "query.analytics.breakdown_by",
-            language,
-            {"group_by": _breakdown_group_label(group_by, language)},
-        ),
+        summary_text=summary_msg,
         items=items,
     )
 

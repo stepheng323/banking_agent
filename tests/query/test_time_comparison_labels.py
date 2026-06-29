@@ -51,8 +51,11 @@ async def test_time_comparison_uses_naira_amounts_without_kobo_division(
         del args, kwargs
         calls += 1
         if calls == 1:
-            return [{"id": "current", "amount": 5000, "type": "debit"}]
-        return [{"id": "previous", "amount": 3000, "type": "debit"}]
+            return [
+                {"id": "current", "amount": 5000, "type": "debit", "status": "successful"},
+                {"id": "failed", "amount": 50000, "type": "debit", "display_status": "failed"},
+            ]
+        return [{"id": "previous", "amount": 3000, "type": "debit", "status": "successful"}]
 
     monkeypatch.setattr(
         "banking.transactions.query.handlers.time_comparison.fetch_and_filter",

@@ -12,14 +12,15 @@ from banking.transactions.query.compiler import filtering as filter_compiler
 from banking.transactions.query.compiler import lexical_recovery
 from banking.transactions.query.compiler import operations as operation_compiler
 from banking.transactions.query.compiler.resolver import Decision, Prompt, resolve
-from banking.transactions.query.models.domain import QueryOperation
+from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
-    ExtractionIntent,
     FactQueryKind,
     ParserQueryExtraction,
     PendingClarificationState,
+    QueryAggregation,
+    QueryComparison,
     QueryExtractionResult,
     QueryFilters,
     QueryParseResult,
@@ -47,7 +48,7 @@ def build_pending_clarification(
 ) -> PendingClarificationState:
     return PendingClarificationState(
         original_query=message or extraction.raw_query or "",
-        current_intent=operation_compiler.resolve_effective_intent_from_extraction(extraction),
+        current_intent=extraction.intent,
         original_extraction=extraction.model_copy(deep=True),
         ambiguities=list(extraction.ambiguities),
         resolver_message=resolver_message,
@@ -87,7 +88,7 @@ def derive_requested_capabilities(
     parser: Any,
     extraction: QueryExtractionResult,
     *,
-    effective_intent: ExtractionIntent,
+    intent: QueryIntent,
 ) -> list[RequestedCapability]:
     requested_capabilities: list[RequestedCapability] = []
 
@@ -95,11 +96,10 @@ def derive_requested_capabilities(
         if capability not in requested_capabilities:
             requested_capabilities.append(capability)
 
-    query_operation = operation_compiler.infer_query_operation(extraction, effective_intent=effective_intent)
     inferred_transaction_type = filter_compiler.infer_transaction_type(
         extracted_transaction_type=extraction.filters.transaction_type,
         raw_query=extraction.raw_query,
-        effective_intent=effective_intent,
+        intent=intent,
     )
 
     if extraction.filters.recipient:
@@ -120,22 +120,16 @@ def derive_requested_capabilities(
     elif extraction.time_range.reference_type in {TimeReference.EXPLICIT, TimeReference.VAGUE}:
         _add(RequestedCapability.TIME_RELATIVE)
 
-    if effective_intent == ExtractionIntent.TIME_COMPARISON or query_operation == QueryOperation.COMPARE_PERIODS:
+    if intent == QueryIntent.TIME_COMPARISON:
         _add(RequestedCapability.TIME_COMPARISON)
 
-    if query_operation in {
-        QueryOperation.SUM_TRANSACTIONS,
-        QueryOperation.COUNT_TRANSACTIONS,
-        QueryOperation.AVERAGE_TRANSACTIONS,
-        QueryOperation.RANK_LARGEST_TRANSACTION,
-        QueryOperation.RANK_SMALLEST_TRANSACTION,
-    }:
-        _add(RequestedCapability.AGGREGATE_SUM)
+    if intent == QueryIntent.ANALYTICS_SUMMARY:
+        if extraction.aggregation and extraction.aggregation.type == "breakdown":
+            _add(RequestedCapability.AGGREGATE_GROUP)
+        else:
+            _add(RequestedCapability.AGGREGATE_SUM)
 
-    if (
-        query_operation == QueryOperation.BREAKDOWN_TRANSACTIONS
-        or effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY
-    ):
+    if intent == QueryIntent.BENEFICIARY_SUMMARY:
         _add(RequestedCapability.AGGREGATE_GROUP)
 
     return requested_capabilities
@@ -165,19 +159,15 @@ def inflate_parser_extraction(
         )
 
     inflated.raw_query = question
-    # Precedence: typed model extraction first, derived shape next, then a
-    # narrow locale-aware recovery pass only for semantically inconsistent output.
     inflated = parser._recover_known_fragile_query_shapes(inflated, language=language)
     if inflated.request_shape is None:
         inflated.request_shape = parser._derive_request_shape(inflated)
     if inflated.fact_query_kind is None:
         inflated.fact_query_kind = parser._derive_fact_query_kind(inflated)
-    effective_intent = operation_compiler.resolve_effective_intent_from_extraction(inflated)
-    inflated.query_operation = operation_compiler.infer_query_operation(inflated, effective_intent=effective_intent)
     if not inflated.requested_capabilities:
         inflated.requested_capabilities = parser._derive_requested_capabilities(
             inflated,
-            effective_intent=effective_intent,
+            intent=inflated.intent,
         )
     if not inflated.ambiguities:
         inflated.ambiguities = parser._derive_ambiguities(inflated)
@@ -191,17 +181,17 @@ def derive_request_shape(extraction: QueryExtractionResult) -> QueryRequestShape
     if extraction.fact_query_kind is not None or extraction.answer_fact_field is not None:
         return QueryRequestShape.FACT
 
-    if extraction.intent == ExtractionIntent.TIME_COMPARISON:
+    if extraction.intent == QueryIntent.TIME_COMPARISON:
         return QueryRequestShape.COMPARISON
-    if extraction.intent == ExtractionIntent.AFFORDABILITY:
+    if extraction.intent == QueryIntent.AFFORDABILITY:
         return QueryRequestShape.AFFORDABILITY
-    if extraction.intent in {ExtractionIntent.BENEFICIARY_SUMMARY, ExtractionIntent.CATEGORY_BREAKDOWN}:
+    if extraction.intent == QueryIntent.BENEFICIARY_SUMMARY:
         return QueryRequestShape.GROUPED_SUMMARY
-    if extraction.intent == ExtractionIntent.SPENDING_TOTAL:
+    if extraction.intent == QueryIntent.ANALYTICS_SUMMARY:
         return QueryRequestShape.ANALYTICS
-    if extraction.intent == ExtractionIntent.SINGLE_TRANSACTION:
+    if extraction.intent in (QueryIntent.TRANSACTION_DETAIL, QueryIntent.TRANSACTION_SEARCH):
         return QueryRequestShape.DETAIL
-    if extraction.intent == ExtractionIntent.TRANSACTION_LIST:
+    if extraction.intent == QueryIntent.TRANSACTION_LIST:
         return QueryRequestShape.LIST
     return None
 
@@ -253,6 +243,7 @@ def finalize_extraction(
 ) -> QueryParseResult:
     extraction = extraction.model_copy(deep=True)
     extraction = parser._normalize_month_name_without_year(extraction)
+    extraction = operation_compiler.normalize_query_extraction(extraction)
     parser._validate_capabilities(extraction)
     decision = resolve(extraction, language=language)
 
@@ -330,6 +321,95 @@ def parse_deterministic(
     if not normalized:
         return None
 
+    came_in_match = re.fullmatch(
+        r"(?:how much|what amount|total)\s+(?:came in|come in|entered|was received|did i receive)"
+        r"(?:(?:\s+(?:in|for|during|over)\s+|\s+)(.+))?",
+        normalized,
+    )
+    if came_in_match:
+        explicit_time_text = came_in_match.group(1)
+        time_range = (
+            parser._extract_relative_time_range_from_query(question)
+            if explicit_time_text
+            else QueryTimeRange(reference_type=TimeReference.UNSPECIFIED)
+        )
+        if time_range is None:
+            time_range = QueryTimeRange(reference_type=TimeReference.UNSPECIFIED)
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            raw_query=question,
+            time_range=time_range,
+            filters=QueryFilters(transaction_type="credit"),
+            aggregation=QueryAggregation(type="sum"),
+            request_shape=QueryRequestShape.ANALYTICS,
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
+    affordability_match = re.fullmatch(
+        r"(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+"
+        r"(?:₦|ngn\s*)?(\d[\d,]*(?:\.\d+)?)\s*(k|m|naira|ngn)?",
+        normalized,
+    )
+    if affordability_match:
+        amount = operation_compiler._parse_affordability_amount(  # type: ignore[attr-defined]
+            affordability_match.group(1),
+            affordability_match.group(2),
+        )
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.AFFORDABILITY,
+            raw_query=question,
+            filters=QueryFilters(min_amount=amount, max_amount=amount),
+            request_shape=QueryRequestShape.AFFORDABILITY,
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
+    cashflow_by_account_match = re.fullmatch(
+        r"(?:(?:break\s*down|breakdown|show|list)\s+)?(?:my\s+)?cash\s*flow\s+by\s+(?:account|bank)",
+        normalized,
+    )
+    if cashflow_by_account_match:
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.CASH_FLOW_SUMMARY,
+            raw_query=question,
+            time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+            aggregation=QueryAggregation(type="breakdown", group_by="account"),
+            request_shape=QueryRequestShape.ANALYTICS,
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
+    month_comparison_match = re.fullmatch(
+        r"(?:did\s+i\s+)?(?:spend|spent)\s+more\s+"
+        r"(this month|last month)\s+than\s+(this month|last month)",
+        normalized,
+    )
+    if month_comparison_match:
+        primary_period, comparison_period = month_comparison_match.groups()
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.TIME_COMPARISON,
+            raw_query=question,
+            time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period=primary_period.replace(" ", "_")),
+            comparison=QueryComparison(mode="explicit_period", period=comparison_period.replace(" ", "_")),
+            filters=QueryFilters(transaction_type="debit"),
+            request_shape=QueryRequestShape.COMPARISON,
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
+    same_period_last_month_match = re.fullmatch(
+        r"compare\s+(?:my\s+)?(?:spending\s+)?this month\s+"
+        r"(?:with|to|vs|versus)\s+(?:the\s+)?same period last month",
+        normalized,
+    )
+    if same_period_last_month_match:
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.TIME_COMPARISON,
+            raw_query=question,
+            time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+            comparison=QueryComparison(mode="explicit_period", period="same_period_last_month"),
+            filters=QueryFilters(transaction_type="debit"),
+            request_shape=QueryRequestShape.COMPARISON,
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
     latest_status_match = re.fullmatch(
         r"(?:(?:what(?:'s| is)|whats|tell me|check|show|get)\s+)?"
         r"(?:the\s+)?status\s+of\s+(?:my\s+)?(?:last|latest|most recent)\s+"
@@ -340,8 +420,7 @@ def parse_deterministic(
     )
     if latest_status_match:
         extraction = QueryExtractionResult(
-            intent=ExtractionIntent.SINGLE_TRANSACTION,
-            query_operation=QueryOperation.SEARCH_SINGLE_TRANSACTION,
+            intent=QueryIntent.TRANSACTION_DETAIL,
             raw_query=question,
             time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
             request_shape=QueryRequestShape.FACT,
@@ -349,6 +428,31 @@ def parse_deterministic(
             result_limit=1,
             result_reference="latest",
             answer_fact_field="status",
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
+    status_list_match = re.fullmatch(
+        r"(?:(?:show|list|view|get|check|display|see)\s+)?(?:my\s+)?"
+        r"(failed|failure|declined|rejected|pending|processing|successful|success|posted|completed|reversed|refunded)\s+"
+        r"(?:transactions?|transfers?|payments?)"
+        r"(?:\s+(?:in|for|during|over)\s+(.+))?",
+        normalized,
+    )
+    if status_list_match:
+        status_text, explicit_time_text = status_list_match.groups()
+        status = filter_compiler.infer_status_filter(extracted_status=status_text, raw_query=question)
+        time_range = (
+            parser._extract_relative_time_range_from_query(question)
+            if explicit_time_text
+            else QueryTimeRange(reference_type=TimeReference.UNSPECIFIED)
+        )
+        if time_range is None:
+            time_range = QueryTimeRange(reference_type=TimeReference.UNSPECIFIED)
+        extraction = QueryExtractionResult(
+            intent=QueryIntent.TRANSACTION_LIST,
+            raw_query=question,
+            time_range=time_range,
+            filters=QueryFilters(status=status),
         )
         return parser._finalize_extraction(extraction, today=today, language=language)
 
@@ -373,8 +477,7 @@ def parse_deterministic(
         if time_range is None:
             time_range = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="recent_30_days", days_back=30)
         extraction = QueryExtractionResult(
-            intent=ExtractionIntent.TRANSACTION_LIST,
-            query_operation=QueryOperation.LIST_TRANSACTIONS,
+            intent=QueryIntent.TRANSACTION_LIST,
             raw_query=question,
             time_range=time_range,
             filters=QueryFilters(transaction_type=tx_type),
@@ -398,8 +501,7 @@ def parse_deterministic(
         elif noun.startswith("credit"):
             tx_type = "credit"
         extraction = QueryExtractionResult(
-            intent=ExtractionIntent.TRANSACTION_LIST,
-            query_operation=QueryOperation.LIST_TRANSACTIONS,
+            intent=QueryIntent.TRANSACTION_LIST,
             raw_query=question,
             time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period=normalized_period),
             filters=QueryFilters(transaction_type=tx_type),
@@ -410,8 +512,7 @@ def parse_deterministic(
         r"(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)", normalized
     ):
         extraction = QueryExtractionResult(
-            intent=ExtractionIntent.TRANSACTION_LIST,
-            query_operation=QueryOperation.LIST_TRANSACTIONS,
+            intent=QueryIntent.TRANSACTION_LIST,
             raw_query=question,
             time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         )
@@ -421,8 +522,7 @@ def parse_deterministic(
     if match:
         limit = int(match.group(1))
         extraction = QueryExtractionResult(
-            intent=ExtractionIntent.TRANSACTION_LIST,
-            query_operation=QueryOperation.LIST_TRANSACTIONS,
+            intent=QueryIntent.TRANSACTION_LIST,
             raw_query=question,
             time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
             result_limit=limit,
@@ -537,6 +637,6 @@ def validate_capabilities(extraction: QueryExtractionResult) -> None:
 
 def requires_time_comparison_period(extraction: QueryExtractionResult) -> bool:
     return (
-        extraction.intent == ExtractionIntent.TIME_COMPARISON
+        extraction.intent == QueryIntent.TIME_COMPARISON
         and extraction.time_range.reference_type == TimeReference.UNSPECIFIED
     )

@@ -5,22 +5,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from banking.transactions.query.models.domain import QueryFactField, QueryOperation
+from banking.transactions.query.models.domain import QueryFactField, QueryIntent
 
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
-
-
-class ExtractionIntent(str, Enum):
-    """Query intent types."""
-
-    TRANSACTION_LIST = "transaction_list"  # Show me transactions
-    SPENDING_TOTAL = "spending_total"  # How much did I spend
-    CATEGORY_BREAKDOWN = "category_breakdown"  # Breakdown by category
-    BENEFICIARY_SUMMARY = "beneficiary_summary"  # Top recipients
-    TIME_COMPARISON = "time_comparison"  # Compare periods
-    SINGLE_TRANSACTION = "single_transaction"  # Find specific transaction
-    AFFORDABILITY = "affordability"  # Can I afford X
 
 
 class QueryRequestShape(str, Enum):
@@ -101,8 +89,11 @@ class QueryFilters(BaseModel):
     recipient: str | None = Field(default=None, description="Who to filter by")
     min_amount: float | None = Field(default=None)
     max_amount: float | None = Field(default=None)
+    min_amount_inclusive: bool = Field(default=True)
+    max_amount_inclusive: bool = Field(default=True)
     category: str | None = Field(default=None)
     transaction_type: str | None = Field(default=None, description="credit/debit")
+    status: Literal["failed", "pending", "successful", "reversed"] | None = Field(default=None)
     bank: str | None = Field(default=None)
     narration_keyword: str | None = Field(default=None, description="Keyword to search")
 
@@ -134,10 +125,18 @@ class QueryComparison(BaseModel):
     period: str | None = Field(default=None, description="Explicit comparison period when mode=explicit_period")
 
 
+class ClarificationPatch(BaseModel):
+    """Patch payload for query clarification follow-ups."""
+
+    target_session_id: str | None = Field(default=None)
+    fields: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = Field(default=1.0)
+
+
 class ParserQueryExtraction(BaseModel):
     """Minimal parser-only extraction returned by the fresh-query LLM path."""
 
-    intent: ExtractionIntent = Field(default=ExtractionIntent.TRANSACTION_LIST)
+    intent: QueryIntent = Field(default=QueryIntent.TRANSACTION_LIST)
     filters: QueryFilters = Field(default_factory=QueryFilters)
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
     comparison: QueryComparison | None = Field(default=None)
@@ -156,8 +155,7 @@ class QueryExtractionResult(BaseModel):
     """Pure query extraction with requested_capabilities."""
 
     schema_version: int = Field(default=SCHEMA_VERSION)
-    intent: ExtractionIntent = Field(default=ExtractionIntent.TRANSACTION_LIST)
-    query_operation: QueryOperation | None = Field(default=None)
+    intent: QueryIntent = Field(default=QueryIntent.TRANSACTION_LIST)
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
     filters: QueryFilters = Field(default_factory=QueryFilters)
@@ -172,6 +170,7 @@ class QueryExtractionResult(BaseModel):
         description="Relative positioning for results when user asks for most recent/oldest",
     )
     answer_fact_field: QueryFactField | None = Field(default=None)
+    clarification_patch: ClarificationPatch | None = Field(default=None)
 
     requested_capabilities: list[RequestedCapability] = Field(
         default_factory=list,
@@ -189,8 +188,7 @@ class QueryExtractionResult(BaseModel):
 class ReasonerQueryExtraction(BaseModel):
     """Minimal extraction returned by the semantic reasoner on follow-up turns."""
 
-    intent: ExtractionIntent = Field(default=ExtractionIntent.TRANSACTION_LIST)
-    query_operation: QueryOperation | None = Field(default=None)
+    intent: QueryIntent = Field(default=QueryIntent.TRANSACTION_LIST)
     filters: QueryFilters = Field(default_factory=QueryFilters)
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
     comparison: QueryComparison | None = Field(default=None)
@@ -206,7 +204,6 @@ class ReasonerQueryExtraction(BaseModel):
         """Expand minimal reasoner extraction into the parser/compiler shape."""
         return QueryExtractionResult(
             intent=self.intent,
-            query_operation=self.query_operation,
             filters=self.filters.model_copy(deep=True),
             time_range=self.time_range.model_copy(deep=True),
             comparison=self.comparison.model_copy(deep=True) if self.comparison is not None else None,
@@ -249,7 +246,7 @@ class PendingClarificationState(BaseModel):
 
     kind: Literal["pending_clarification"] = "pending_clarification"
     original_query: str
-    current_intent: ExtractionIntent
+    current_intent: QueryIntent
     original_extraction: QueryExtractionResult
     ambiguities: list[Ambiguity] = Field(default_factory=list)
     resolver_message: str | None = None

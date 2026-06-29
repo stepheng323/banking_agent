@@ -10,11 +10,11 @@ from banking.transactions.query.compiler import lexical_recovery, query_compiler
 from banking.transactions.query.compiler.resolver import Prompt
 from banking.transactions.query.models.domain import (
     QueryExecutionContract,
+    QueryIntent,
     QueryIR,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     FactQueryKind,
     ParserQueryExtraction,
     QueryExtractionResult,
@@ -106,12 +106,12 @@ class QueryParser:
         self,
         extraction: QueryExtractionResult,
         *,
-        effective_intent: ExtractionIntent,
+        intent: QueryIntent,
     ):
         return finalize_compiler.derive_requested_capabilities(
             self,
             extraction,
-            effective_intent=effective_intent,
+            intent=intent,
         )
 
     @staticmethod

@@ -10,7 +10,7 @@ from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.models import LocaleCode
 
 QueryShortcutKind = Literal["pagination", "actionable"]
-QueryShortcutAction = Literal["show_more", "show_previous", "get_receipt", "report_issue"]
+QueryShortcutAction = Literal["show_more", "show_previous", "get_receipt", "report_issue", "answer_date"]
 
 SUPPORTED_QUERY_SHORTCUT_LOCALES = {
     LocaleCode.EN,
@@ -52,11 +52,14 @@ _SHORTCUTS_BY_LOCALE: dict[LocaleCode, dict[str, tuple[QueryShortcutKind, QueryS
         "next page": ("pagination", "show_more"),
         "show more": ("pagination", "show_more"),
         "back": ("pagination", "show_previous"),
-        "previous": ("pagination", "show_previous"),
         "previous page": ("pagination", "show_previous"),
         "receipt": ("actionable", "get_receipt"),
         "issue": ("actionable", "report_issue"),
         "report issue": ("actionable", "report_issue"),
+        "when": ("actionable", "answer_date"),
+        "when?": ("actionable", "answer_date"),
+        "what time": ("actionable", "answer_date"),
+        "what date": ("actionable", "answer_date"),
     },
     LocaleCode.PCM: {
         "more": ("pagination", "show_more"),
@@ -64,11 +67,14 @@ _SHORTCUTS_BY_LOCALE: dict[LocaleCode, dict[str, tuple[QueryShortcutKind, QueryS
         "next page": ("pagination", "show_more"),
         "show more": ("pagination", "show_more"),
         "back": ("pagination", "show_previous"),
-        "previous": ("pagination", "show_previous"),
         "previous page": ("pagination", "show_previous"),
         "receipt": ("actionable", "get_receipt"),
         "issue": ("actionable", "report_issue"),
         "report issue": ("actionable", "report_issue"),
+        "when": ("actionable", "answer_date"),
+        "when?": ("actionable", "answer_date"),
+        "what time": ("actionable", "answer_date"),
+        "what date": ("actionable", "answer_date"),
     },
     LocaleCode.YO: {},
     LocaleCode.HA: {},

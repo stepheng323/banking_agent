@@ -17,6 +17,7 @@ from banking.transactions.query.continuations.time_rescope import (
     resolve_time_delta_range,
 )
 from banking.transactions.query.continuations.transforms import rebuild_query_contract
+from banking.transactions.query.contracts import SelectionPayload
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
@@ -28,6 +29,7 @@ from banking.transactions.query.models.domain import (
 from banking.transactions.query.presentation.selection_resolver import find_selection_payload
 from banking.transactions.query.presentation.surface_builder import apply_selection_payload_to_query
 from banking.transactions.query.services.answers.coverage import build_query_coverage_answer
+from banking.transactions.query.services.conversation.targets import resolve_requested_fact_field
 
 
 async def resolve_result_continuation_updates(
@@ -60,7 +62,7 @@ async def resolve_result_continuation_updates(
         if session_query_contract is None:
             return step._ambiguous_followup_updates(locale=locale, session=session)
         if followup_intent in {"continue_pagination", "previous_pagination"}:
-            if session_query_contract.intent != QueryIntent.TRANSACTION_LIST:
+            if session_query_contract.intent not in {QueryIntent.TRANSACTION_LIST, QueryIntent.ANALYTICS_SUMMARY}:
                 return step._ambiguous_followup_updates(locale=locale, session=session)
             current_page = int(session.get("current_page", 0) or 0)
             if followup_intent == "previous_pagination":
@@ -77,6 +79,7 @@ async def resolve_result_continuation_updates(
                 answer_fact_field=None,
                 continuation_type=cont_type,
                 continuation_delta_type=continuation_delta_type,
+                conversational_prefix=decision.response_text,
             )
             updates["current_page"] = 0
             updates["show_expanded"] = False
@@ -95,6 +98,7 @@ async def resolve_result_continuation_updates(
             answer_fact_field=None,
             continuation_type=cont_type,
             continuation_delta_type=continuation_delta_type,
+            conversational_prefix=decision.response_text,
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False
@@ -205,6 +209,7 @@ async def resolve_result_continuation_updates(
             else session_query_contract.result_reference,
             continuation_type=cont_type,
             continuation_delta_type=continuation_delta_type,
+            conversational_prefix=decision.response_text,
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False
@@ -235,6 +240,7 @@ async def resolve_result_continuation_updates(
             else session_query_contract.result_reference,
             continuation_type=cont_type,
             continuation_delta_type=continuation_delta_type,
+            conversational_prefix=decision.response_text,
         )
         updates["current_page"] = 0
         updates["show_expanded"] = False
@@ -302,26 +308,27 @@ async def resolve_result_continuation_updates(
     elif cont_type == "drill_down":
         raw_drill_idx = decision.drill_down_index
         drill_idx = raw_drill_idx if isinstance(raw_drill_idx, int) and raw_drill_idx >= 0 else None
-        answer_fact_field: QueryFactField | None = None
-        if decision.fact_field in {
-            "date",
-            "amount",
-            "bank",
-            "counterparty",
-            "status",
-            "description",
-            "reference",
-            "account",
-            "direction",
-            "category",
-        }:
-            answer_fact_field = cast(QueryFactField, decision.fact_field)
+        answer_fact_field = resolve_requested_fact_field(decision)
+        drill_down_action = decision.drill_down_action or ("answer_fact" if answer_fact_field is not None else None)
+        if (
+            drill_idx is None
+            and surface_view is not None
+            and len(getattr(surface_view, "items", []) or []) == 1
+        ):
+            drill_idx = 0
 
         selection_payload = None
         if surface_view is not None and message:
             selection_payload = find_selection_payload(surface_view, label=message)
         if selection_payload is None and drill_idx is not None:
             selection_payload = find_selection_payload(surface_view, index=drill_idx)
+        selection_payload = _normalize_focused_aggregate_selection_payload(
+            selection_payload,
+            session_query_contract=session_query_contract,
+            surface_view=surface_view,
+            drill_idx=drill_idx,
+        )
+
         if (
             session_query_contract is not None
             and selection_payload is not None
@@ -331,25 +338,28 @@ async def resolve_result_continuation_updates(
                 or selection_payload.time_patch is not None
             )
         ):
+            query_fact_field: QueryFactField | None = None
+            if drill_down_action == "answer_fact" and answer_fact_field is not None:
+                query_fact_field = "counterparty" if answer_fact_field == "recipient" else answer_fact_field
             updates["query_contract"] = apply_selection_payload_to_query(
                 session_query_contract,
                 selection_payload,
-                fact_field=answer_fact_field if decision.drill_down_action == "answer_fact" else None,
+                fact_field=query_fact_field,
                 continuation_type=cont_type,
                 continuation_delta_type=decision.delta_type,
             )
             updates["current_page"] = 0
             updates["show_expanded"] = False
-            return updates
+            return step._append_query_session_transition(updates, "replace_session_new_query")
 
         if drill_idx is not None and items and 0 <= drill_idx < len(items):
             updates["selected_item_index"] = drill_idx
             if selection_payload is not None:
                 updates["selected_payload"] = selection_payload
-            updates["drill_down_action"] = decision.drill_down_action
-            if decision.fact_field:
-                updates["fact_field"] = decision.fact_field
-            if decision.drill_down_action == "answer_fact":
+            updates["drill_down_action"] = drill_down_action
+            if answer_fact_field:
+                updates["fact_field"] = "recipient" if answer_fact_field == "counterparty" else answer_fact_field
+            if drill_down_action == "answer_fact":
                 updates["_query_session_transition"] = "answer_fact_active_result"
 
     elif cont_type == "recipient_drill_down":
@@ -424,6 +434,18 @@ async def resolve_result_continuation_updates(
             return recovered_updates
         return step._ambiguous_followup_updates(locale=locale, session=session)
 
+    elif cont_type == "recheck":
+        if session_query_contract is None:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        updates["query_contract"] = rebuild_query_contract(
+            session_query_contract,
+            continuation_type=cont_type,
+            continuation_delta_type=continuation_delta_type,
+            conversational_prefix=decision.response_text,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
+
     elif cont_type == "aggregate":
         aggregate_updates = await compile_aggregate_continuation_updates(
             step,
@@ -439,7 +461,108 @@ async def resolve_result_continuation_updates(
             return aggregate_updates
         return step._ambiguous_followup_updates(locale=locale, session=session)
 
+    if "query_contract" in updates and updates.get("query_contract") is not session_query_contract:
+        return step._append_query_session_transition(updates, "replace_session_new_query")
+
     return updates
+
+
+def _normalize_focused_aggregate_selection_payload(
+    selection_payload: SelectionPayload | None,
+    *,
+    session_query_contract: Any | None,
+    surface_view: Any | None,
+    drill_idx: int | None,
+) -> SelectionPayload | None:
+    """Repair stale focused aggregate payloads into scoped query payloads.
+
+    Older persisted query sessions may have a focused beneficiary surface whose
+    item payload still looks like a concrete transaction. The active contract
+    and focused surface are enough to preserve the semantic selection without
+    reading rendered text.
+    """
+    intent = getattr(session_query_contract, "intent", None)
+    if (
+        session_query_contract is None
+        or intent not in {QueryIntent.BENEFICIARY_SUMMARY, QueryIntent.ANALYTICS_SUMMARY}
+        or surface_view is None
+        or drill_idx is None
+    ):
+        return selection_payload
+    if selection_payload is not None and (
+        bool(selection_payload.filters_patch) or selection_payload.time_patch is not None
+    ):
+        return selection_payload
+
+    surface_items = getattr(surface_view, "items", None) or []
+    if len(surface_items) != 1 or not (0 <= drill_idx < len(surface_items)):
+        return selection_payload
+
+    surface_item = surface_items[drill_idx]
+    label = str(
+        getattr(selection_payload, "label", "") if selection_payload is not None else ""
+    ).strip() or str(getattr(surface_item, "label", "") or "").strip()
+    if not label:
+        return selection_payload
+
+    filters_patch: dict[str, Any] = {}
+    time_patch: dict[str, Any] | None = None
+    selection_kind = "group_bucket"
+    entity_type = "group_bucket"
+    group_by = None
+    group_key = label
+
+    if intent == QueryIntent.BENEFICIARY_SUMMARY:
+        selection_kind = "beneficiary"
+        entity_type = "beneficiary"
+        filters_patch = {"counterparty": [label]}
+    else:
+        aggregation = getattr(session_query_contract, "aggregation", None)
+        group_by = getattr(aggregation, "group_by", None) if aggregation else None
+        if not group_by:
+            return selection_payload
+
+        metadata = getattr(surface_item, "metadata", {}) or {}
+        group_key = str(metadata.get("key") or getattr(surface_item, "description", "") or label).strip()
+
+        if group_by == "account":
+            filters_patch["account_filter"] = group_key
+        elif group_by == "merchant":
+            filters_patch["counterparty"] = [group_key]
+        elif group_by == "transaction_type":
+            tx_type = group_key.lower()
+            if tx_type in {"credit", "debit"}:
+                filters_patch["transaction_type"] = tx_type
+        elif group_by == "day":
+            date_val = getattr(surface_item, "date", None)
+            if date_val:
+                time_patch = {"start": date_val.isoformat(), "end": date_val.isoformat(), "granularity": "day"}
+        else:
+            filters_patch["category"] = [group_key.lower()]
+
+    if selection_payload is None:
+        return SelectionPayload(
+            selection_kind=cast(Any, selection_kind),
+            entity_type=entity_type,
+            entity_id=str(getattr(surface_item, "id", "") or "") or None,
+            label=label,
+            group_by=group_by,
+            group_key=group_key,
+            filters_patch=filters_patch,
+            time_patch=time_patch,
+        )
+
+    return selection_payload.model_copy(
+        update={
+            "selection_kind": selection_kind,
+            "entity_type": entity_type,
+            "label": label,
+            "group_by": group_by,
+            "group_key": group_key,
+            "filters_patch": filters_patch,
+            "time_patch": time_patch,
+        }
+    )
 
 
 __all__ = ["resolve_result_continuation_updates"]

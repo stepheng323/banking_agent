@@ -11,7 +11,11 @@ from banking.transactions.query.models.domain import (
     QueryResultItem,
 )
 from banking.transactions.query.presentation.scope import build_beneficiary_summary_header
-from banking.transactions.query.services.fetching.fetch import extract_counterparty, fetch_and_filter
+from banking.transactions.query.services.fetching.fetch import (
+    extract_counterparty,
+    fetch_and_filter,
+    is_settled_transaction,
+)
 from shared.clients.abstractions.banking import BankDataProvider
 
 _TRAILING_RECIPIENT_PUNCTUATION = ".,;:!?"
@@ -20,6 +24,8 @@ _TRAILING_RECIPIENT_PUNCTUATION = ".,;:!?"
 def _clean_recipient_display_name(name: str) -> str:
     """Normalize cosmetic recipient variants without fuzzy merging."""
     cleaned = " ".join(name.strip().split()).rstrip(_TRAILING_RECIPIENT_PUNCTUATION).strip()
+    if cleaned and cleaned == cleaned.upper() and any(char.isalpha() for char in cleaned):
+        cleaned = cleaned.title()
     return cleaned or " ".join(name.strip().split())
 
 
@@ -51,18 +57,26 @@ async def handle_beneficiary_summary(
 
     # Filter to actual transfers (exclude bank charges, fees, etc.)
     exclude_patterns = ("CHARGE", "FEE", "STAMP DUTY", "VAT", "SMS ALERT", "CARD MAINTENANCE", "COT", "NOTIFICATION")
-    debits = [
+    target_type = (
+        contract.filters.transaction_type if contract.filters and contract.filters.transaction_type else "debit"
+    )
+    filtered_txns = [
         t
         for t in transactions
-        if t.get("type") == "debit" and not any(pat in t.get("narration", "").upper() for pat in exclude_patterns)
+        if t.get("type") == target_type
+        and is_settled_transaction(t)
+        and not any(pat in t.get("narration", "").upper() for pat in exclude_patterns)
     ]
 
-    # Group by recipient with minimal normalization (case/space/trailing punctuation).
+    # Group by counterparty with minimal normalization (case/space/trailing punctuation).
     counterparties: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"display_name": "", "total": 0, "count": 0, "transactions": []}
     )
-    for t in debits:
-        recipient_name = str(t.get("recipient_name") or t.get("counterparty") or "").strip()
+    for t in filtered_txns:
+        if target_type == "credit":
+            recipient_name = str(t.get("sender_name") or t.get("counterparty") or "").strip()
+        else:
+            recipient_name = str(t.get("recipient_name") or t.get("counterparty") or "").strip()
         raw_name = recipient_name or extract_counterparty(t.get("narration", ""), locale=language)
         display_name = _clean_recipient_display_name(raw_name)
         key = _normalize_recipient_key(display_name)
@@ -112,6 +126,7 @@ async def handle_beneficiary_summary(
         ranking_heading=heading_type,
         locale=language,
     )
+
     items = []
 
     for i, data in enumerate(sorted_cp[:limit]):
@@ -131,7 +146,8 @@ async def handle_beneficiary_summary(
         )
 
     if not items:
-        return QueryResult(summary_text=render_message("query.beneficiary.no_outgoing_transfers", language))
+        direction = "incoming" if target_type == "credit" else "outgoing"
+        return QueryResult(summary_text=f"No {direction} transfers found.")
 
     return QueryResult(
         summary_text=heading,

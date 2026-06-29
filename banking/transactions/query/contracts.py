@@ -41,6 +41,20 @@ class PresentationMode(str, Enum):
     CLARIFY = "clarify"
 
 
+FactCapability = Literal[
+    "date",
+    "amount",
+    "bank",
+    "counterparty",
+    "status",
+    "description",
+    "reference",
+    "account",
+    "direction",
+    "category",
+]
+
+
 class SelectionPayload(BaseModel):
     """Stable selection payload emitted by query surfaces."""
 
@@ -52,7 +66,7 @@ class SelectionPayload(BaseModel):
     group_key: str | None = None
     filters_patch: dict[str, Any] = Field(default_factory=dict)
     time_patch: dict[str, Any] | None = None
-    fact_capabilities: list[Literal["date", "amount", "bank", "counterparty"]] = Field(default_factory=list)
+    fact_capabilities: list[FactCapability] = Field(default_factory=list)
     handoff_payload: dict[str, Any] | None = None
 
 

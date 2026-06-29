@@ -8,6 +8,16 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+_STALE_SELECTION_KEYS = {
+    "selected_item_index",
+    "selected_item_id",
+    "selected_payload",
+    "selected_query_item",
+    "selected_frame_id",
+    "fact_field",
+    "drill_down_action",
+}
+
 
 class QueryStep(ABC):
     """Abstract base class for a single step in the query pipeline."""
@@ -57,7 +67,12 @@ class QueryPipeline:
         if result.patch is None:
             result.patch = {}
 
+        explicit_patch_keys = set(result.patch)
         # Merge current state into result.patch
         result.patch.update(state)
+        if "query_contract" in explicit_patch_keys:
+            for key in _STALE_SELECTION_KEYS:
+                if key not in explicit_patch_keys:
+                    result.patch.pop(key, None)
 
         return result

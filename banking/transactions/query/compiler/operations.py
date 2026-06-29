@@ -2,203 +2,182 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal, cast
 
 from banking.transactions.query.capabilities import QUERY_LIMITS
-from banking.transactions.query.models.domain import QueryFactField, QueryIntent, QueryOperation
+from banking.transactions.query.models.domain import QueryFactField, QueryIntent
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     FactQueryKind,
+    QueryAggregation,
     QueryExtractionResult,
+    QueryFilters,
     QueryRequestShape,
 )
-from shared.utils.logging import get_logger
-
-logger = get_logger(__name__)
 
 
-def resolve_effective_intent_from_extraction(extraction: QueryExtractionResult) -> ExtractionIntent:
-    effective_intent = resolve_effective_intent(
-        extraction.raw_query,
-        extraction.intent,
-        request_shape=extraction.request_shape,
-        fact_query_kind=extraction.fact_query_kind,
-        answer_fact_field=extraction.answer_fact_field,
-    )
-    if effective_intent != extraction.intent:
-        logger.info(
-            "query_parser_intent_recovered_from_list_misclassification",
-            original_intent=extraction.intent.value,
-            recovered_intent=effective_intent.value,
-        )
-    return effective_intent
+def normalize_query_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
+    extraction = _normalize_cash_flow_extraction(extraction)
+    extraction = _normalize_affordability_extraction(extraction)
+
+    # 1. Transaction detail ambiguity handling
+    if extraction.intent == QueryIntent.TRANSACTION_DETAIL:
+        if not extraction.filters or (
+            not extraction.filters.recipient
+            and not extraction.filters.narration_keyword
+            and not extraction.filters.bank
+            and not extraction.answer_fact_field
+        ):
+            extraction.intent = QueryIntent.QUERY_CLARIFICATION
+
+    # 2. Affordability validation
+    if extraction.intent == QueryIntent.AFFORDABILITY:
+        has_amount = False
+        if extraction.filters:
+            if (
+                extraction.filters.min_amount is not None
+                or extraction.filters.max_amount is not None
+                or getattr(extraction.filters, "amount", None) is not None
+            ):
+                has_amount = True
+        if not has_amount:
+            extraction.intent = QueryIntent.QUERY_CLARIFICATION
+
+    return extraction
 
 
-def resolve_effective_intent(
-    raw_query: str | None,
-    intent: ExtractionIntent,
-    *,
-    request_shape: QueryRequestShape | None = None,
-    fact_query_kind: FactQueryKind | None = None,
-    answer_fact_field: str | None = None,
-) -> ExtractionIntent:
-    raw_lower = (raw_query or "").strip().lower()
-    if request_shape in {QueryRequestShape.FACT, QueryRequestShape.EXISTENCE}:
-        return ExtractionIntent.SINGLE_TRANSACTION
-    if request_shape in {
-        QueryRequestShape.ANALYTICS,
-        QueryRequestShape.GROUPED_SUMMARY,
-        QueryRequestShape.COMPARISON,
-        QueryRequestShape.AFFORDABILITY,
-        QueryRequestShape.LIST,
-    }:
-        return intent
-    if fact_query_kind is not None or answer_fact_field in {
-        "date",
-        "counterparty",
-        "amount",
-        "bank",
-        "status",
-        "description",
-        "reference",
-        "account",
-        "direction",
-        "category",
-    }:
-        return ExtractionIntent.SINGLE_TRANSACTION
-    if intent == ExtractionIntent.TRANSACTION_LIST and is_aggregate_total_query(raw_lower):
-        return ExtractionIntent.SPENDING_TOTAL
-    return intent
-
-
-def intent_from_query_operation(query_operation: QueryOperation) -> QueryIntent:
-    if query_operation == QueryOperation.LIST_TRANSACTIONS:
-        return QueryIntent.TRANSACTION_LIST
-    if query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION:
-        return QueryIntent.TRANSACTION_SEARCH
-    if query_operation in {
-        QueryOperation.SUM_TRANSACTIONS,
-        QueryOperation.COUNT_TRANSACTIONS,
-        QueryOperation.AVERAGE_TRANSACTIONS,
-        QueryOperation.RANK_LARGEST_TRANSACTION,
-        QueryOperation.RANK_SMALLEST_TRANSACTION,
-        QueryOperation.BREAKDOWN_TRANSACTIONS,
-    }:
-        return QueryIntent.ANALYTICS_SUMMARY
-    if query_operation == QueryOperation.COMPARE_PERIODS:
-        return QueryIntent.TIME_COMPARISON
-    if query_operation == QueryOperation.SUMMARIZE_BENEFICIARIES:
-        return QueryIntent.BENEFICIARY_SUMMARY
-    return QueryIntent.AFFORDABILITY
-
-
-def infer_query_operation(extraction: QueryExtractionResult, *, effective_intent: ExtractionIntent) -> QueryOperation:
-    raw_lower = (extraction.raw_query or "").strip().lower()
+_CASH_FLOW_DIRECT_RE = re.compile(r"\bcash\s*flow\b|\bcashflow\b", re.IGNORECASE)
+_BIDIRECTIONAL_CASH_FLOW_RE = re.compile(
+    r"\b(?:spend|spent|spending|expenses?|outflow|went out|go out|money go)\b"
+    r".{0,80}\b(?:earn(?:ed)?|income|received?|came in|come in|inflow|credited?)\b"
+    r"|"
+    r"\b(?:earn(?:ed)?|income|received?|came in|come in|inflow|credited?)\b"
+    r".{0,80}\b(?:spend|spent|spending|expenses?|outflow|went out|go out|money go)\b",
+    re.IGNORECASE,
+)
+_INCOME_VS_OUTFLOW_RE = re.compile(
+    r"\b(?:income|inflow|money in|came in|come in|earn(?:ed)?|received?)\b"
+    r"\s*(?:vs|versus|and|against|compared to|compare(?:d)? with)\s*"
+    r"\b(?:spending|expenses?|outflow|money out|went out|spent)\b"
+    r"|"
+    r"\b(?:spending|expenses?|outflow|money out|went out|spent)\b"
+    r"\s*(?:vs|versus|and|against|compared to|compare(?:d)? with)\s*"
+    r"\b(?:income|inflow|money in|came in|come in|earn(?:ed)?|received?)\b",
+    re.IGNORECASE,
+)
+_AFFORDABILITY_PROBE_RE = re.compile(
+    r"^\s*(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+"
+    r"(?:₦|ngn\s*)?(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>k|m|naira|ngn)?\b(?!\s+to\b)",
+    re.IGNORECASE,
+)
+_SINGLE_DIRECTION_INFLOW_TOTAL_RE = re.compile(
+    r"\b(?:how much|what amount|total)\b.{0,40}\b"
+    r"(?:came in|come in|entered|was received|did i receive|have i received|received|credited)\b",
+    re.IGNORECASE,
+)
+def _looks_like_single_direction_inflow_total(raw_query: str) -> bool:
+    if not raw_query:
+        return False
     if (
-        extraction.query_operation == QueryOperation.LIST_TRANSACTIONS
-        and effective_intent == ExtractionIntent.TRANSACTION_LIST
-        and is_aggregate_count_query(raw_lower)
+        _CASH_FLOW_DIRECT_RE.search(raw_query)
+        or _BIDIRECTIONAL_CASH_FLOW_RE.search(raw_query)
+        or _INCOME_VS_OUTFLOW_RE.search(raw_query)
     ):
-        return QueryOperation.COUNT_TRANSACTIONS
-    if extraction.query_operation is not None:
-        return extraction.query_operation
-    if extraction.request_shape == QueryRequestShape.EXISTENCE:
-        return QueryOperation.SUM_TRANSACTIONS
-    if extraction.request_shape == QueryRequestShape.FACT or (
-        extraction.fact_query_kind is not None
-        and extraction.request_shape
-        not in {
-            QueryRequestShape.ANALYTICS,
-            QueryRequestShape.GROUPED_SUMMARY,
-            QueryRequestShape.COMPARISON,
-            QueryRequestShape.AFFORDABILITY,
-            QueryRequestShape.LIST,
-        }
+        return False
+    return bool(_SINGLE_DIRECTION_INFLOW_TOTAL_RE.search(raw_query))
+
+
+def _normalize_cash_flow_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
+    """Validate semantic cash-flow meaning after parser/reasoner extraction."""
+    raw_query = " ".join((extraction.raw_query or "").split())
+    if _looks_like_single_direction_inflow_total(raw_query):
+        extraction.intent = QueryIntent.ANALYTICS_SUMMARY
+        extraction.filters.transaction_type = "credit"
+        extraction.aggregation = QueryAggregation(type="sum")
+        extraction.request_shape = QueryRequestShape.ANALYTICS
+        return extraction
+
+    if extraction.intent == QueryIntent.CASH_FLOW_SUMMARY:
+        return extraction
+
+    aggregation_group = (extraction.aggregation.group_by or "").strip().lower() if extraction.aggregation else ""
+    if aggregation_group in {"transaction_type", "type"} and extraction.intent == QueryIntent.ANALYTICS_SUMMARY:
+        if extraction.aggregation and extraction.aggregation.type != "breakdown":
+            extraction.intent = QueryIntent.CASH_FLOW_SUMMARY
+        return extraction
+
+    if not raw_query:
+        return extraction
+
+    if (
+        _CASH_FLOW_DIRECT_RE.search(raw_query)
+        or _BIDIRECTIONAL_CASH_FLOW_RE.search(raw_query)
+        or _INCOME_VS_OUTFLOW_RE.search(raw_query)
     ):
-        return QueryOperation.SEARCH_SINGLE_TRANSACTION
-    aggregation_type = extraction.aggregation.type if extraction.aggregation is not None else None
-    if aggregation_type == "count":
-        return QueryOperation.COUNT_TRANSACTIONS
-    if aggregation_type == "average":
-        return QueryOperation.AVERAGE_TRANSACTIONS
-    if aggregation_type == "largest":
-        return QueryOperation.RANK_LARGEST_TRANSACTION
-    if aggregation_type == "smallest":
-        return QueryOperation.RANK_SMALLEST_TRANSACTION
-    if aggregation_type == "breakdown":
-        return QueryOperation.BREAKDOWN_TRANSACTIONS
-    if effective_intent == ExtractionIntent.SINGLE_TRANSACTION:
-        return QueryOperation.SEARCH_SINGLE_TRANSACTION
-    if effective_intent == ExtractionIntent.SPENDING_TOTAL:
-        return QueryOperation.SUM_TRANSACTIONS
-    if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
-        return QueryOperation.BREAKDOWN_TRANSACTIONS
-    if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY:
-        return QueryOperation.SUMMARIZE_BENEFICIARIES
-    if effective_intent == ExtractionIntent.TIME_COMPARISON:
-        return QueryOperation.COMPARE_PERIODS
-    if effective_intent == ExtractionIntent.AFFORDABILITY:
-        return QueryOperation.CHECK_AFFORDABILITY
-    if effective_intent == ExtractionIntent.TRANSACTION_LIST and is_aggregate_count_query(raw_lower):
-        return QueryOperation.COUNT_TRANSACTIONS
-    return QueryOperation.LIST_TRANSACTIONS
+        extraction.intent = QueryIntent.CASH_FLOW_SUMMARY
+        extraction.request_shape = QueryRequestShape.COMPARISON
+
+    return extraction
 
 
-def is_aggregate_total_query(raw_query: str) -> bool:
+def _parse_affordability_amount(raw_amount: str, suffix: str | None) -> float | None:
+    try:
+        amount = float(raw_amount.replace(",", ""))
+    except ValueError:
+        return None
+    suffix = (suffix or "").strip().lower()
+    if suffix == "k":
+        amount *= 1_000
+    elif suffix == "m":
+        amount *= 1_000_000
+    return amount if amount > 0 else None
+
+
+def _normalize_affordability_extraction(extraction: QueryExtractionResult) -> QueryExtractionResult:
+    """Recover read-only affordability probes that can look like transfer requests."""
+    raw_query = " ".join((extraction.raw_query or "").split())
     if not raw_query:
-        return False
-    if not any(cue in raw_query for cue in ("how much", "total", "sum")):
-        return False
-    return any(
-        cue in raw_query
-        for cue in (
-            "spend",
-            "spent",
-            "spending",
-            "expense",
-            "expenses",
-            "pay",
-            "paid",
-            "send",
-            "sent",
-            "transfer",
-            "transferred",
-            "receive",
-            "received",
-            "credit",
-            "credited",
-            "income",
-            "inflow",
-        )
-    )
+        return extraction
+
+    match = _AFFORDABILITY_PROBE_RE.search(raw_query)
+    if not match:
+        return extraction
+
+    amount = _parse_affordability_amount(match.group("amount"), match.group("suffix"))
+    if amount is None:
+        return extraction
+
+    extraction.intent = QueryIntent.AFFORDABILITY
+    extraction.request_shape = QueryRequestShape.FACT
+    filters = extraction.filters or QueryFilters()
+    filters.min_amount = amount
+    filters.max_amount = amount
+    extraction.filters = filters
+    return extraction
 
 
-def is_aggregate_count_query(raw_query: str) -> bool:
-    if not raw_query:
-        return False
-    return any(
-        cue in raw_query
-        for cue in (
-            "how many transaction",
-            "how many transactions",
-            "number of transaction",
-            "number of transactions",
-            "count transaction",
-            "count transactions",
-            "transaction count",
-        )
-    )
+def infer_query_result_limit(
+    extraction: QueryExtractionResult,
+    *,
+    intent: QueryIntent,
+) -> int | None:
+    if intent == QueryIntent.BENEFICIARY_SUMMARY and extraction.aggregation is not None:
+        if extraction.aggregation.limit == 1:
+            return 1
+    return None
+
+
 
 
 def resolve_result_limit(
     raw_limit: int | None,
     *,
-    effective_intent: ExtractionIntent,
+    effective_intent: QueryIntent,
     request_shape: QueryRequestShape | None = None,
     result_reference: Literal["latest", "oldest"] | None = None,
 ) -> int | None:
     result_limit = raw_limit
-    if effective_intent == ExtractionIntent.SINGLE_TRANSACTION and result_limit is None:
+    if effective_intent == QueryIntent.TRANSACTION_DETAIL and result_limit is None:
         if request_shape == QueryRequestShape.FACT and result_reference is None:
             return None
         result_limit = result_limit or 1
@@ -210,11 +189,11 @@ def resolve_result_limit(
 def infer_result_reference(
     extraction: QueryExtractionResult,
     *,
-    query_operation: QueryOperation,
+    intent: QueryIntent,
 ) -> Literal["latest", "oldest"] | None:
     if extraction.result_reference in {"latest", "oldest"}:
         return cast(Literal["latest", "oldest"], extraction.result_reference)
-    if query_operation != QueryOperation.SEARCH_SINGLE_TRANSACTION:
+    if intent != QueryIntent.TRANSACTION_DETAIL:
         return None
     raw_query = f" {(extraction.raw_query or '').strip().lower()} "
     if any(cue in raw_query for cue in (" last ", " latest ", " most recent ")):

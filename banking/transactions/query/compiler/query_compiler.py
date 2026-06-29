@@ -20,7 +20,6 @@ from banking.transactions.query.models.domain import (
     QueryFactField,
     QueryIntent,
     QueryIR,
-    QueryOperation,
     TimeRange,
     derive_query_intent_spec_from_fields,
 )
@@ -53,7 +52,6 @@ def build_query_ir_from_extraction(
 
     return QueryIR(
         intent=cast(QueryIntent, compiled["intent"]),
-        query_operation=cast(QueryOperation | None, compiled["query_operation"]),
         raw_query=extraction.raw_query,
         language=language,
         timezone="Africa/Lagos",
@@ -90,33 +88,34 @@ def compile_query_fields_from_extraction(
     # The compiler keeps the same precedence as parser finalization:
     # typed extraction, then derived shape, then locale-aware semantic repair.
     extraction = recover_known_fragile_query_shapes(extraction.model_copy(deep=True), language=language)
-    effective_intent = operation_compiler.resolve_effective_intent_from_extraction(extraction)
-    query_operation = operation_compiler.infer_query_operation(extraction, effective_intent=effective_intent)
-    result_reference = operation_compiler.infer_result_reference(extraction, query_operation=query_operation)
+    extraction = operation_compiler.normalize_query_extraction(extraction)
+    intent = extraction.intent
+
+    result_reference = operation_compiler.infer_result_reference(extraction, intent=intent)
     answer_fact_field = operation_compiler.infer_answer_fact_field(extraction)
     result_limit = operation_compiler.resolve_result_limit(
         extraction.result_limit,
-        effective_intent=effective_intent,
+        effective_intent=intent,
         request_shape=extraction.request_shape,
         result_reference=result_reference,
     )
+    if result_limit is None:
+        result_limit = operation_compiler.infer_query_result_limit(extraction, intent=intent)
     time_range = time_compiler.build_time_range(
         extraction,
         today=today,
-        effective_intent=effective_intent,
-        query_operation=query_operation,
+        intent=intent,
         answer_fact_field=answer_fact_field,
         result_reference=result_reference,
     )
-    filters = filter_compiler.build_filters(extraction, effective_intent=effective_intent)
+    filters = filter_compiler.build_filters(extraction, intent=intent)
     aggregation = aggregation_compiler.build_aggregation(
         extraction,
-        effective_intent=effective_intent,
-        query_operation=query_operation,
+        intent=intent,
     )
     if aggregation is not None and aggregation.type in {"largest", "smallest"}:
         result_reference = None
-    intent = operation_compiler.intent_from_query_operation(query_operation)
+
     fallback_time_range = time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day")
     intent_spec = derive_query_intent_spec_from_fields(
         intent=intent,
@@ -125,15 +124,18 @@ def compile_query_fields_from_extraction(
         answer_fact_field=answer_fact_field,
         request_shape=extraction.request_shape.value if extraction.request_shape is not None else None,
     )
+    amount_check = None
+    if intent == QueryIntent.AFFORDABILITY and extraction.filters:
+        amount_check = extraction.filters.min_amount or extraction.filters.max_amount
+
     return {
         "intent": intent,
-        "query_operation": query_operation,
         "time_range": fallback_time_range,
         "filters": filters,
         "aggregation": aggregation,
         "accounts_scope": "all",
         "account_name": None,
-        "amount_check": None,
+        "amount_check": amount_check,
         "item_name": None,
         "analysis_type": "immediate",
         "result_limit": result_limit,

@@ -13,7 +13,6 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryExecutionContract,
     QueryFrame,
-    QueryOperation,
     QueryResultItem,
     TimeRange,
 )
@@ -46,6 +45,7 @@ ContinuationType = Literal[
     "recipient_drill_down",
     "aggregate",
     "unclear",
+    "recheck",
 ]
 
 FollowupIntentType = Literal["refine_existing", "replace_scope", "continue_pagination", "previous_pagination", "none"]
@@ -92,7 +92,6 @@ class QuerySemanticDecision(BaseModel):
     reason: str | None = Field(default=None)
 
     extraction: QueryExtractionResult | None = Field(default=None)
-    query_operation: QueryOperation | None = Field(default=None)
     time_period: str | None = Field(default=None)
 
     continuation_type: ContinuationType | None = Field(default=None)
@@ -134,7 +133,6 @@ class ActiveContinuationDecision(BaseModel):
     confidence: float | None = Field(default=None)
     reason: str | None = Field(default=None)
     extraction: ReasonerQueryExtraction | None = Field(default=None)
-    query_operation: QueryOperation | None = Field(default=None)
     time_period: str | None = Field(default=None)
     continuation_type: ContinuationType | None = Field(default=None)
     followup_intent: FollowupIntentType | None = Field(default=None)
@@ -168,7 +166,6 @@ class ActiveContinuationDecision(BaseModel):
             confidence=self.confidence,
             reason=self.reason,
             extraction=extraction,
-            query_operation=self.query_operation,
             time_period=self.time_period,
             continuation_type=self.continuation_type,
             followup_intent=self.followup_intent,
@@ -204,7 +201,6 @@ class PendingClarificationDecision(BaseModel):
     confidence: float | None = Field(default=None)
     reason: str | None = Field(default=None)
     extraction: ReasonerQueryExtraction | None = Field(default=None)
-    query_operation: QueryOperation | None = Field(default=None)
     time_period: str | None = Field(default=None)
     answer_mode: AnswerModeType | None = Field(default=None)
     referenced_frame_ids: list[str] | None = Field(default=None)
@@ -221,7 +217,6 @@ class PendingClarificationDecision(BaseModel):
             confidence=self.confidence,
             reason=self.reason,
             extraction=extraction,
-            query_operation=self.query_operation,
             time_period=self.time_period,
             answer_mode=self.answer_mode,
             referenced_frame_ids=self.referenced_frame_ids,

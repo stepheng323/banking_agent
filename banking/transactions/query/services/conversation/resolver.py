@@ -29,7 +29,12 @@ def build_query_conversation_updates(
     if getattr(decision, "decision", None) != "continuation":
         return None
     continuation_type = getattr(decision, "continuation_type", None)
-    if continuation_type != "drill_down" and not decision_has_target_reference(decision, text):
+    if continuation_type in {"filter_delta", "time_delta", "aggregate"}:
+        return None
+    if (
+        continuation_type not in {"drill_down", "recipient_drill_down"}
+        and not decision_has_target_reference(decision, text)
+    ):
         return None
 
     matches, miss_response = resolve_query_target(
@@ -86,6 +91,8 @@ def build_query_conversation_updates(
 
     match = matches[0]
     payload: SelectionPayload = match.item.payload
+    if _is_focused_aggregate_scope(surface_view=surface_view, query_result=query_result, payload=payload):
+        return None
     if payload.selection_kind == "group_bucket" or bool(payload.filters_patch) or payload.time_patch is not None:
         return None
 
@@ -119,6 +126,28 @@ def build_query_conversation_updates(
         "drill_down_action": action,
         **({"fact_field": "recipient" if field == "counterparty" else field} if field else {}),
     }
+
+
+def _is_focused_aggregate_scope(
+    *,
+    surface_view: SurfaceView | None,
+    query_result: QueryResult | None,
+    payload: SelectionPayload,
+) -> bool:
+    if payload.selection_kind in {"beneficiary", "group_bucket", "account"}:
+        return True
+
+    context = surface_view.context if surface_view is not None and isinstance(surface_view.context, dict) else {}
+    focus_type = str(context.get("focus_type") or "").strip()
+    if focus_type in {"beneficiary", "group_bucket", "account"}:
+        return True
+
+    query_contract = query_result.query_contract if query_result is not None else None
+    if query_contract is None:
+        return False
+    if query_contract.intent == query_contract.intent.BENEFICIARY_SUMMARY:
+        return True
+    return bool(query_contract.aggregation is not None and query_contract.aggregation.group_by is not None)
 
 
 __all__ = ["build_query_conversation_updates"]

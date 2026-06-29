@@ -67,7 +67,7 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
         language="en",
     )
 
-    assert result.summary_text == "You spent *₦42,000* yesterday, across 2 transactions."
+    assert result.summary_text == "You spent ₦42,000 yesterday, across 2 transactions."
 
 
 @pytest.mark.asyncio
@@ -130,7 +130,7 @@ async def test_analytics_sum_excludes_failed_and_reversed_transactions(monkeypat
         language="en",
     )
 
-    assert result.summary_text == "You spent *₦20,000* today, across 2 transactions."
+    assert result.summary_text == "You spent ₦20,000 today, across 2 transactions."
 
 
 @pytest.mark.asyncio
@@ -177,7 +177,7 @@ async def test_analytics_sum_response_names_retained_account_scope(monkeypatch: 
         language="en",
     )
 
-    assert result.summary_text == "You spent *₦96,200* with First Bank from May 01 to May 11, across 2 transactions."
+    assert result.summary_text == "You spent ₦96,200 with First Bank from May 01 to May 11, across 2 transactions."
 
 
 @pytest.mark.asyncio
@@ -224,7 +224,7 @@ async def test_analytics_sum_response_names_recipient_scope(monkeypatch: pytest.
         language="en",
     )
 
-    assert result.summary_text == "You sent *₦15,000* to Tolu from May 01 to May 20, across 2 transactions."
+    assert result.summary_text == "You sent ₦15,000 to Tolu from May 01 to May 20, across 2 transactions."
 
 
 def test_transaction_heading_title_cases_lowercase_recipient_scope(monkeypatch: pytest.MonkeyPatch) -> None:

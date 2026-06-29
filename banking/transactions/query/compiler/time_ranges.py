@@ -14,11 +14,9 @@ from banking.transactions.query.models.domain import (
     ComparisonDirective,
     QueryFactField,
     QueryIntent,
-    QueryOperation,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     QueryExtractionResult,
     TimeReference,
 )
@@ -43,15 +41,16 @@ def resolve_period_to_range(period: str, *, today: date, current_range: TimeRang
         this_week_start = today - timedelta(days=today.weekday())
         week_end = this_week_start - timedelta(days=1)
         week_start = week_end - timedelta(days=6)
-        duration = _duration_days(current_range)
-        if duration <= 0:
-            return TimeRange(start=week_start, end=week_end, granularity="week")
-        aligned_end = min(week_end, week_start + timedelta(days=duration - 1))
-        return TimeRange(start=week_start, end=aligned_end, granularity="week")
+        if "same_period" in token or current_range is not None:
+            duration = _duration_days(current_range)
+            if duration > 0:
+                aligned_end = min(week_end, week_start + timedelta(days=duration - 1))
+                return TimeRange(start=week_start, end=aligned_end, granularity="week")
+        return TimeRange(start=week_start, end=week_end, granularity="week")
     if token in {"this_month", "current_month", "month"}:
         month_start = date(today.year, today.month, 1)
         return TimeRange(start=month_start, end=today, granularity="month")
-    if token in {"last_month", "previous_month"}:
+    if token in {"last_month", "previous_month", "same_period_last_month"}:
         year = today.year
         month = today.month - 1
         if month == 0:
@@ -60,11 +59,12 @@ def resolve_period_to_range(period: str, *, today: date, current_range: TimeRang
         last_day = __import__("calendar").monthrange(year, month)[1]
         month_start = date(year, month, 1)
         month_end = date(year, month, last_day)
-        duration = _duration_days(current_range)
-        if duration <= 0:
-            return TimeRange(start=month_start, end=month_end, granularity="month")
-        aligned_end = min(month_end, month_start + timedelta(days=duration - 1))
-        return TimeRange(start=month_start, end=aligned_end, granularity="month")
+        if "same_period" in token or current_range is not None:
+            duration = _duration_days(current_range)
+            if duration > 0:
+                aligned_end = min(month_end, month_start + timedelta(days=duration - 1))
+                return TimeRange(start=month_start, end=aligned_end, granularity="month")
+        return TimeRange(start=month_start, end=month_end, granularity="month")
     if token in {"this_year", "current_year", "year"}:
         return TimeRange(start=date(today.year, 1, 1), end=today, granularity="month")
     if token in {"last_year", "previous_year"}:
@@ -112,8 +112,7 @@ def build_time_range(
     extraction: QueryExtractionResult,
     *,
     today: date,
-    effective_intent: ExtractionIntent,
-    query_operation: QueryOperation,
+    intent: QueryIntent,
     answer_fact_field: QueryFactField | None,
     result_reference: Literal["latest", "oldest"] | None,
 ) -> TimeRange | None:
@@ -134,8 +133,7 @@ def build_time_range(
         days_back = 30
     if reference_type == TimeReference.ALL_TIME or (
         reference_type == TimeReference.UNSPECIFIED
-        and effective_intent == ExtractionIntent.SINGLE_TRANSACTION
-        and query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
+        and intent == QueryIntent.TRANSACTION_DETAIL
         and result_reference == "latest"
         and answer_fact_field
         in {

@@ -44,7 +44,15 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
         QueryIntent.TIME_COMPARISON,
         QueryIntent.AFFORDABILITY,
     }:
-        result.answer_strategy = QueryAnswerStrategy.SUMMARY_LIST
+        if (
+            query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+            and query_contract.aggregation
+            and query_contract.aggregation.type in {"sum", "average"}
+        ):
+            result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
+            result.answer_context = QueryAnswerContext(primary_text=result.summary_text)
+        else:
+            result.answer_strategy = QueryAnswerStrategy.SUMMARY_LIST
         return result
 
     if result.summary_text and not result.items and not parse_summary_parts(result.summary_text):

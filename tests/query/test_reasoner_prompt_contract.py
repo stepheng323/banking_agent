@@ -43,17 +43,6 @@ def test_query_reasoner_prompt_covers_fact_fields() -> None:
         assert field in QUERY_SEMANTIC_REASONER_SYSTEM, f"Missing fact_field: {field}"
 
 
-def test_query_reasoner_prompt_covers_query_operations() -> None:
-    for op in (
-        "sum_transactions",
-        "breakdown_transactions",
-        "summarize_beneficiaries",
-        "list_transactions",
-        "compare_periods",
-    ):
-        assert op in QUERY_SEMANTIC_REASONER_SYSTEM, f"Missing query_operation: {op}"
-
-
 def test_query_reasoner_prompt_covers_frame_grounding() -> None:
     assert "referenced_frame_ids" in QUERY_SEMANTIC_REASONER_SYSTEM
     assert "grounded_operation" in QUERY_SEMANTIC_REASONER_SYSTEM
@@ -74,20 +63,12 @@ def test_query_reasoner_prompt_covers_dismissive_end_session() -> None:
 
 def test_query_reasoner_prompt_covers_extraction_rules() -> None:
     assert "extraction" in QUERY_SEMANTIC_REASONER_SYSTEM
-    assert "query_operation" in QUERY_SEMANTIC_REASONER_SYSTEM
     assert "result_reference" in QUERY_SEMANTIC_REASONER_SYSTEM
 
 
 def test_query_reasoner_prompt_mentions_multilingual_support() -> None:
     assert "Nigerian Pidgin" in QUERY_SEMANTIC_REASONER_SYSTEM
     assert "Yoruba" in QUERY_SEMANTIC_REASONER_SYSTEM
-
-
-def test_query_parser_prompt_mentions_bounded_query_operations() -> None:
-    assert "QUERY OPERATION" in QUERY_PARSER_PROMPT
-    assert "list_transactions" in QUERY_PARSER_PROMPT
-    assert "search_single_transaction" in QUERY_PARSER_PROMPT
-    assert "compare_periods" in QUERY_PARSER_PROMPT
 
 
 def test_query_parser_prompt_covers_recipient_summary_and_ranking() -> None:
@@ -132,7 +113,6 @@ def test_query_parser_prompt_uses_positive_output_contract() -> None:
     assert "existence" in QUERY_PARSER_PROMPT
     assert "reference" in QUERY_PARSER_PROMPT
     assert "Do not rely on raw wording for recovery" in QUERY_PARSER_PROMPT
-    assert "The runtime derives `query_operation`" in QUERY_PARSER_PROMPT
     assert "REQUESTED CAPABILITIES" not in QUERY_PARSER_PROMPT
     assert "AMBIGUITIES" not in QUERY_PARSER_PROMPT
 
@@ -147,6 +127,18 @@ def test_query_prompts_require_typed_multilingual_fact_semantics() -> None:
     assert "quelle banque pour ma derniere transaction" in QUERY_PARSER_PROMPT
     assert "did I send money to mum this month" in QUERY_PARSER_PROMPT
     assert "what was the reference for that payment" in QUERY_PARSER_PROMPT
+    assert "single focused item" in QUERY_SEMANTIC_REASONER_SYSTEM
+    assert "short referential questions about one safe" in QUERY_SEMANTIC_REASONER_SYSTEM
+    assert "fact_capabilities" in QUERY_SEMANTIC_REASONER_SYSTEM
+    assert "date/time occurrence questions" in QUERY_SEMANTIC_REASONER_SYSTEM
+    assert "Do not classify focused-item fact questions as recheck/rerun/refresh" in QUERY_SEMANTIC_REASONER_SYSTEM
+
+
+def test_query_parser_prompt_distinguishes_plain_grouped_sender_from_winner() -> None:
+    assert '"who sent me money this month" → beneficiary_summary' in QUERY_PARSER_PROMPT
+    assert '"who sent me the most money this month" → beneficiary_summary' in QUERY_PARSER_PROMPT
+    assert "aggregation.limit=1" in QUERY_PARSER_PROMPT
+    assert "Do not answer plain grouped sender/recipient asks as a winner" in QUERY_PARSER_PROMPT
 
 
 def test_query_prompts_put_dynamic_message_late_for_cache_reuse() -> None:

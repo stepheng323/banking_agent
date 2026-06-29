@@ -36,6 +36,7 @@ def _has_specific_scope_filters(filters: Any | None) -> bool:
             bool(getattr(filters, "category", None)),
             getattr(filters, "min_amount", None) is not None,
             getattr(filters, "max_amount", None) is not None,
+            getattr(filters, "status", None) is not None,
             bool(getattr(filters, "exclude", None)),
             bool(getattr(filters, "account_filter", None)),
         )
@@ -132,7 +133,6 @@ def _sanitize_aggregate_extraction(extraction: QueryExtractionResult) -> QueryEx
             "request_shape": QueryRequestShape.ANALYTICS,
             "result_limit": None,
             "result_reference": None,
-            "query_operation": None,
         }
     )
 

@@ -60,7 +60,7 @@ def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> No
 
     assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
     assert selected.answer_context is not None
-    assert selected.answer_context.primary_text == "Looks like you paid Mum on March 24, 2026."
+    assert selected.answer_context.primary_text == "You paid Mum on March 24, 2026."
     assert selected.followup_referent is not None
     assert selected.followup_referent.recipient_account == "8162511023"
 
@@ -81,6 +81,34 @@ def test_select_answer_strategy_does_not_direct_answer_structural_empty_list_sum
 
     assert selected.answer_context is None
     assert selected.answer_strategy == QueryAnswerStrategy.TRANSACTION_LIST
+
+
+def test_select_answer_strategy_direct_answers_analytics_sum_without_list_dump() -> None:
+    result = QueryResult(
+        summary_text="You spent ₦42,000 today, across 2 transactions.",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=32000,
+                date=date(2026, 3, 28),
+                metadata={"type": "debit"},
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="debit"),
+                aggregation={"type": "sum"},
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "You spent ₦42,000 today, across 2 transactions."
 
 
 def test_select_answer_strategy_uses_localized_reply_for_single_fact_match() -> None:
@@ -451,8 +479,42 @@ def test_select_answer_strategy_answers_reference_fact_directly() -> None:
 
     assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
     assert selected.answer_context is not None
-    assert selected.answer_context.primary_text == "The reference is ref_123."
-    assert selected.answer_context.secondary_text == "₦50,000 • Mar 24 • Mum"
+    assert selected.answer_context.primary_text == "The reference number for the Mum transaction is ref_123."
+    assert selected.answer_context.secondary_text == "₦50,000 • Mar 24 • Opay"
+
+
+def test_select_answer_strategy_prefers_provider_reference_for_reference_fact() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={
+                    "type": "debit",
+                    "recipient_name": "Mum",
+                    "provider_reference": "mono_ref_123",
+                    "bank_transaction_id": "bank_ref_456",
+                    "transaction_id": "internal_ref_789",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="reference",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "The reference number for the Mum transaction is mono_ref_123."
 
 
 def test_select_answer_strategy_answers_existence_yes_with_total() -> None:

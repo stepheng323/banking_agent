@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 import pytest
@@ -9,17 +10,15 @@ from banking.transactions.query.models.domain import (
     Filters,
     QueryExecutionContract,
     QueryFrame,
-    QueryIntent,
     QueryIR,
-    QueryOperation,
     QueryResultItem,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     PendingClarificationState,
     QueryExtractionResult,
     QueryFilters,
+    QueryIntent,
     QueryParseResult,
     QueryTimeRange,
     ResolverOutcome,
@@ -107,6 +106,77 @@ def _contract(
     return QueryExecutionContract.from_query_ir(query)
 
 
+def test_reasoner_serializes_focused_surface_contract() -> None:
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.DIRECT_ANSWER,
+        items=[
+            SurfaceItemView(
+                id="bene_1",
+                label="Acme Corp",
+                amount=950000,
+                count=1,
+                payload=SelectionPayload(
+                    selection_kind="beneficiary",
+                    entity_type="beneficiary",
+                    entity_id="bene_1",
+                    label="Acme Corp",
+                    filters_patch={"counterparty": ["Acme Corp"]},
+                    fact_capabilities=["date", "reference", "bank"],
+                ),
+            )
+        ],
+        context={
+            "mode": "direct_answer",
+            "focus_type": "beneficiary",
+            "selected_item_id": "bene_1",
+        },
+    )
+
+    payload = json.loads(QuerySemanticReasoner._serialize_surface_snapshot(surface_view=surface_view))
+
+    assert payload["focus_type"] == "beneficiary"
+    assert payload["selected_item_id"] == "bene_1"
+    assert payload["focused_item"]["selection_kind"] == "beneficiary"
+    assert payload["focused_item"]["fact_capabilities"] == ["date", "reference", "bank"]
+    assert payload["focused_item"]["has_filters_patch"] is True
+
+
+def test_reasoner_surface_snapshot_includes_direct_answer_focus_context() -> None:
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.DIRECT_ANSWER,
+        lead_text="That was with Acme Corp.",
+        items=[
+            SurfaceItemView(
+                id="txn-acme",
+                label="Acme Corp",
+                amount=950000,
+                count=1,
+                payload=SelectionPayload(
+                    selection_kind="transaction",
+                    entity_type="transaction",
+                    entity_id="txn-acme",
+                    label="Acme Corp",
+                    fact_capabilities=["date", "amount", "bank", "reference"],
+                ),
+                metadata={
+                    "date": "2026-06-28",
+                    "bank_name": "Zenith Bank",
+                    "counterparty": "Acme Corp",
+                    "type": "credit",
+                },
+            )
+        ],
+        context={"type": "single_transaction", "focus_type": "transaction", "selected_item_id": "txn-acme"},
+    )
+
+    snapshot = QuerySemanticReasoner._serialize_surface_snapshot(surface_view=surface_view)
+
+    assert "That was with Acme Corp." in snapshot
+    assert "2026-06-28" in snapshot
+    assert "date" in snapshot
+    assert "Acme Corp" in snapshot
+
+
 @pytest.mark.asyncio
 async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
     reasoner = QuerySemanticReasoner(_FailingLLM())
@@ -164,8 +234,20 @@ async def test_reasoner_uses_deterministic_first_item_detail_without_llm() -> No
 
 
 @pytest.mark.asyncio
-async def test_reasoner_uses_deterministic_visible_bank_fact_without_llm() -> None:
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+async def test_reasoner_uses_llm_for_visible_bank_fact() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.95,
+            reason="semantic_visible_bank_fact",
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            drill_down_index=0,
+            fact_field="bank",
+            requested_field="bank",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     surface_view = SurfaceView(
         mode=SurfaceViewMode.DIRECT_ANSWER,
         items=[_transaction_surface_item(1)],
@@ -193,7 +275,68 @@ async def test_reasoner_uses_deterministic_visible_bank_fact_without_llm() -> No
     assert decision.fact_field == "bank"
     assert decision.requested_field == "bank"
     assert decision.drill_down_index == 0
-    assert decision.semantic_llm_used is False
+    assert decision.semantic_llm_used is True
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reasoner_does_not_shortcut_fresh_credit_total_as_focused_amount_fact() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.96,
+            reason="semantic_credit_total_query",
+            extraction=QueryExtractionResult(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                raw_query="How much came in this month",
+            ),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.DIRECT_ANSWER,
+        items=[
+            SurfaceItemView(
+                id="bene_1",
+                label="Acme Corp",
+                amount=950000,
+                count=1,
+                payload=SelectionPayload(
+                    selection_kind="beneficiary",
+                    entity_type="beneficiary",
+                    entity_id="bene_1",
+                    label="Acme Corp",
+                    filters_patch={"counterparty": ["Acme Corp"]},
+                    fact_capabilities=["date", "amount", "bank", "reference"],
+                ),
+            )
+        ],
+        context={"focus_type": "beneficiary", "selected_item_id": "bene_1"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="How much came in this month",
+            today=date(2026, 6, 27),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.BENEFICIARY_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 27)),
+                    filters=Filters(transaction_type="credit"),
+                    aggregation=Aggregation(type="sum", sort_by="amount"),
+                    result_limit=1,
+                )
+            ),
+            surface_view=surface_view,
+        )
+    )
+
+    assert llm.structured.calls == 1
+    assert decision.decision == "new_query"
+    assert decision.continuation_type is None
+    assert decision.drill_down_action is None
+    assert decision.fact_field is None
 
 
 @pytest.mark.asyncio
@@ -650,7 +793,6 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
             "reasoner_context_mode": "active_result",
             "reasoner_llm_used": False,
             "continuation_type": "drill_down",
-            "query_operation": None,
             "confidence": 1.0,
             "reason": "deterministic_receipt",
         },
@@ -714,7 +856,6 @@ async def test_reasoner_logs_llm_fact_answer_decision(
             "reasoner_context_mode": "active_result",
             "reasoner_llm_used": True,
             "continuation_type": "drill_down",
-            "query_operation": None,
             "confidence": 0.91,
             "reason": "llm_fact_recipient",
         },
@@ -768,43 +909,10 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
             "reasoner_context_mode": "active_result",
             "reasoner_llm_used": True,
             "continuation_type": None,
-            "query_operation": None,
             "confidence": 0.93,
             "reason": "llm_fresh_query",
         },
     ) in events
-
-
-@pytest.mark.asyncio
-async def test_reasoner_copies_top_level_query_operation_into_extraction() -> None:
-    llm = _TrackingLLM(
-        QuerySemanticDecision(
-            decision="fresh_query",
-            confidence=0.93,
-            reason="llm_fresh_sum_query",
-            query_operation=QueryOperation.SUM_TRANSACTIONS,
-            extraction=QueryExtractionResult(raw_query="can we see how much I spent today"),
-        )
-    )
-    reasoner = QuerySemanticReasoner(llm)
-
-    decision = await reasoner.reason(
-        SemanticReasonerContext(
-            message="can we see how much I spent today",
-            today=date(2026, 3, 13),
-            language="en",
-            query_contract=_contract(
-                _query_ir(
-                    intent=QueryIntent.TRANSACTION_SEARCH,
-                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
-                )
-            ),
-        )
-    )
-
-    assert decision.query_operation == QueryOperation.SUM_TRANSACTIONS
-    assert decision.extraction is not None
-    assert decision.extraction.query_operation == QueryOperation.SUM_TRANSACTIONS
 
 
 @pytest.mark.asyncio
@@ -1000,7 +1108,7 @@ async def test_reasoner_passes_through_single_item_contrastive_yesterday_replace
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
             ),
         )
@@ -1042,7 +1150,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_with_
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
             ),
         )
@@ -1358,7 +1466,7 @@ async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
             language="en",
             pending_clarification=PendingClarificationState(
                 original_query="How much did I spend last",
-                current_intent=ExtractionIntent.SPENDING_TOTAL,
+                current_intent=QueryIntent.ANALYTICS_SUMMARY,
                 original_extraction=QueryExtractionResult(raw_query="How much did I spend last"),
                 resolver_message="What time period did you mean by 'last'?",
                 language="en",
@@ -1375,7 +1483,6 @@ async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
             "reasoner_context_mode": "pending_clarification",
             "reasoner_llm_used": True,
             "continuation_type": None,
-            "query_operation": None,
             "confidence": 0.9,
             "reason": "llm_pending_time_reply",
         },
@@ -1589,7 +1696,7 @@ async def test_extraction_step_does_not_reparse_support_problem_as_query_continu
             confidence=0.95,
             reason="misread support issue as query",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 raw_query="I was debited but they didn't receive it",
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today"),
             ),
@@ -1681,7 +1788,7 @@ async def test_extraction_step_active_result_new_query_compiles_without_parser_p
         return QuerySemanticDecision(
             decision="new_query",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.SPENDING_TOTAL,
+                intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
                 raw_query="How much did I spend this week",
             ),

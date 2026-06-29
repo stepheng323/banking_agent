@@ -13,6 +13,7 @@ from banking.transactions.query.models.domain import (
     TimeRange,
 )
 from banking.transactions.query.presentation.formatter import QueryFormatter
+from banking.transactions.query.services.fetching.fetch import apply_filters
 from banking.transactions.services.unified_transactions import UnifiedTransactionService
 from shared.config.settings import settings
 
@@ -70,6 +71,46 @@ def _contract(query: QueryIR) -> QueryExecutionContract:
     return QueryExecutionContract.from_query_ir(query)
 
 
+def test_amount_filter_respects_strict_minimum_bound() -> None:
+    rows = [
+        {"id": "equal", "amount": 50000, "type": "debit"},
+        {"id": "above", "amount": 50001, "type": "debit"},
+    ]
+
+    result = apply_filters(
+        rows,
+        Filters(transaction_type="debit", min_amount=50000, min_amount_inclusive=False),
+    )
+
+    assert [row["id"] for row in result] == ["above"]
+
+
+def test_amount_filter_keeps_inclusive_minimum_bound() -> None:
+    rows = [
+        {"id": "equal", "amount": 50000, "type": "debit"},
+        {"id": "above", "amount": 50001, "type": "debit"},
+    ]
+
+    result = apply_filters(
+        rows,
+        Filters(transaction_type="debit", min_amount=50000, min_amount_inclusive=True),
+    )
+
+    assert [row["id"] for row in result] == ["equal", "above"]
+
+
+def test_status_filter_matches_failed_transactions() -> None:
+    rows = [
+        {"id": "success", "amount": 50000, "type": "debit", "status": "successful"},
+        {"id": "failed", "amount": 50000, "type": "debit", "display_status": "failed"},
+        {"id": "pending", "amount": 50000, "type": "debit", "status": "pending"},
+    ]
+
+    result = apply_filters(rows, Filters(status="failed"))
+
+    assert [row["id"] for row in result] == ["failed"]
+
+
 @pytest.fixture(autouse=True)
 def _disable_unified_transaction_view(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "enable_unified_transaction_view", False)
@@ -89,6 +130,55 @@ async def test_query_results_are_bank_feed_only_when_provider_returns_no_transac
     )
 
     assert result.items == []
+
+
+@pytest.mark.asyncio
+async def test_transaction_list_excludes_failed_rows_unless_status_filter_requested() -> None:
+    query_day = date(2026, 3, 6)
+    rows = [
+        {
+            "id": "success",
+            "amount": 2000,
+            "type": "debit",
+            "status": "successful",
+            "date": query_day.isoformat(),
+            "narration": "Transfer to Ada",
+        },
+        {
+            "id": "failed",
+            "amount": 3000,
+            "type": "debit",
+            "display_status": "failed",
+            "date": query_day.isoformat(),
+            "narration": "Failed transfer to Ada",
+        },
+    ]
+
+    default_result = await handle_transaction_list(
+        _ProviderWithRows(rows),  # type: ignore[arg-type]
+        _contract(_query_for_today(query_day)),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        user_id="user_1",
+        language="en",
+    )
+    failed_result = await handle_transaction_list(
+        _ProviderWithRows(rows),  # type: ignore[arg-type]
+        _contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=query_day, end=query_day),
+                filters=Filters(status="failed"),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        user_id="user_1",
+        language="en",
+    )
+
+    assert [item.id for item in default_result.items or []] == ["success"]
+    assert [item.id for item in failed_result.items or []] == ["failed"]
 
 
 @pytest.mark.asyncio
@@ -122,6 +212,7 @@ async def test_unified_view_includes_newer_local_transaction_before_bank_feed_ac
     query = _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=date(2026, 5, 1), end=date(2026, 5, 17)),
+        filters=Filters(status="failed"),
         result_reference="latest",
         result_limit=1,
     )

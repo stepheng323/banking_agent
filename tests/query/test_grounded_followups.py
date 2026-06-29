@@ -199,7 +199,7 @@ async def test_grounded_which_one_was_higher_uses_memory_answer() -> None:
     )
 
     assert updates["flow_state"] == "complete"
-    assert updates["response"] == "You spent less (₦4,000) in Mar 16 - Mar 19 compared to Mar 09 - Mar 15."
+    assert updates["response"] == "You've spent less Mar 16 - Mar 19.\nMar 09 - Mar 15: ₦64,000\nMar 16 - Mar 19: ₦60,000\nDifference: ₦4,000"
 
 
 @pytest.mark.asyncio

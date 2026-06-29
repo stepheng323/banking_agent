@@ -18,6 +18,7 @@ from banking.transactions.query.models.domain import (
     TimeRange,
 )
 from banking.transactions.query.services.fetching.fetch import fetch_and_filter
+from banking.transactions.query.utils.totals import calculate_financial_totals
 from shared.clients.abstractions.banking import BankDataProvider
 
 
@@ -191,25 +192,12 @@ def _get_comparison_period(current: TimeRange, directive: ComparisonDirective | 
 
 def _calculate_stats(transactions: list[dict]) -> dict[str, Any]:
     """Calculate statistics from transactions."""
-    debit_total = 0.0
-    credit_total = 0.0
-    count = 0
-
-    for t in transactions:
-        amount = float(t.get("amount", 0) or 0)
-        tx_type = t.get("type", "")
-        count += 1
-
-        if tx_type == "debit":
-            debit_total += amount
-        elif tx_type == "credit":
-            credit_total += amount
-
+    totals = calculate_financial_totals(transactions)
     return {
-        "debit_total": debit_total,
-        "credit_total": credit_total,
-        "count": count,
-        "net": credit_total - debit_total,
+        "debit_total": float(totals.total_outflow),
+        "credit_total": float(totals.total_inflow),
+        "count": len(totals.settled_transactions),
+        "net": float(totals.net_flow),
     }
 
 
@@ -262,25 +250,32 @@ def _build_summary(
     spending_change = current_stats["debit_total"] - comparison_stats["debit_total"]
 
     if spending_change > 0:
-        verb = render_message("query.time_comparison.verb_spent_more", locale)
-        amount = spending_change
+        return render_message(
+            "query.time_comparison.summary_spent_more",
+            locale,
+            {
+                "current_label": current_label,
+                "comparison_label": comparison_label,
+                "current_amount": f"{current_stats['debit_total']:,.0f}",
+                "comparison_amount": f"{comparison_stats['debit_total']:,.0f}",
+                "amount": f"{spending_change:,.0f}",
+            },
+        )
     elif spending_change < 0:
-        verb = render_message("query.time_comparison.verb_spent_less", locale)
-        amount = abs(spending_change)
+        return render_message(
+            "query.time_comparison.summary_spent_less",
+            locale,
+            {
+                "current_label": current_label,
+                "comparison_label": comparison_label,
+                "current_amount": f"{current_stats['debit_total']:,.0f}",
+                "comparison_amount": f"{comparison_stats['debit_total']:,.0f}",
+                "amount": f"{abs(spending_change):,.0f}",
+            },
+        )
     else:
         return render_message(
             "query.time_comparison.same_spending",
             locale,
             {"current_label": current_label, "comparison_label": comparison_label},
         )
-
-    return render_message(
-        "query.time_comparison.summary",
-        locale,
-        {
-            "verb": verb,
-            "amount": f"{amount:,.0f}",
-            "current_label": current_label,
-            "comparison_label": comparison_label,
-        },
-    )

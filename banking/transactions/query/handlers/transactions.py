@@ -16,6 +16,7 @@ from banking.transactions.query.services.fetching.fetch import (
     build_cache_scope_fingerprint,
     decide_transaction_cache_reuse,
     fetch_transactions_base,
+    is_settled_transaction,
     parse_date,
 )
 from shared.clients.abstractions.banking import BankDataProvider
@@ -145,6 +146,8 @@ async def handle_transaction_list(
         window_start=current_window_start,
         window_end=current_window_end,
     )
+    if not (contract.filters and contract.filters.status):
+        scoped_transactions = [t for t in scoped_transactions if is_settled_transaction(t)]
     transactions = (
         apply_filters(scoped_transactions, contract.filters) if contract.filters else list(scoped_transactions)
     )

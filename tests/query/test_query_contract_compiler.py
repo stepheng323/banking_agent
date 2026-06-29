@@ -2,17 +2,14 @@ from datetime import date
 
 import pytest
 
-from banking.transactions.query.models.domain import (
-    QueryIntent,
-    QueryOperation,
-)
+from banking.transactions.query.models.domain import QueryExecutionContract
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     FactQueryKind,
     QueryAggregation,
     QueryComparison,
     QueryExtractionResult,
     QueryFilters,
+    QueryIntent,
     QueryRequestShape,
     QueryTimeRange,
     TimeReference,
@@ -30,7 +27,7 @@ def test_build_query_contract_from_extraction_preserves_lagos_today_window() -> 
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 6)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
         raw_query="how much did I spend today",
     )
@@ -48,7 +45,7 @@ def test_explicit_time_comparison_extraction_compiles_to_time_comparison() -> No
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 6)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
         raw_query="compare my spending this month vs last month",
     )
@@ -64,7 +61,7 @@ def test_explicit_beneficiary_summary_extraction_compiles_count_ranking() -> Non
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 7)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=5),
         aggregation=QueryAggregation(type="sum", sort_by="count"),
         raw_query="Who did I send money to the most this week",
@@ -83,33 +80,13 @@ def test_explicit_beneficiary_summary_extraction_compiles_count_ranking() -> Non
     assert query_ir.time_range.end == today
 
 
-def test_query_operation_sum_hint_compiles_to_analytics_summary() -> None:
-    parser = QueryParser(_DummyLLM())
-    today = date(2026, 3, 6)
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
-        query_operation=QueryOperation.SUM_TRANSACTIONS,
-        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
-        raw_query="how much did I spend today",
-    )
-
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
-
-    assert query_ir.query_operation == QueryOperation.SUM_TRANSACTIONS
-    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert contract.query_operation == QueryOperation.SUM_TRANSACTIONS
-    assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert contract.aggregation is not None
-    assert contract.aggregation.type == "sum"
 
 
-def test_query_operation_beneficiary_hint_compiles_to_beneficiary_summary() -> None:
+def test_intent_beneficiary_hint_compiles_to_beneficiary_summary() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
-        query_operation=QueryOperation.SUMMARIZE_BENEFICIARIES,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="who did I send money to this month",
     )
@@ -117,40 +94,46 @@ def test_query_operation_beneficiary_hint_compiles_to_beneficiary_summary() -> N
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
     contract = parser.build_execution_contract_from_ir(query_ir)
 
-    assert query_ir.query_operation == QueryOperation.SUMMARIZE_BENEFICIARIES
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
-    assert contract.query_operation == QueryOperation.SUMMARIZE_BENEFICIARIES
     assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.sort_by == "amount"
+    assert query_ir.result_limit is None
+    assert contract.aggregation is not None
+    assert contract.aggregation.sort_by == "amount"
+    assert contract.result_limit is None
 
 
-def test_query_operation_breakdown_hint_preserves_transaction_type_grouping() -> None:
+def test_incoming_beneficiary_hint_compiles_to_amount_ranked_grouped_summary() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
-        query_operation=QueryOperation.BREAKDOWN_TRANSACTIONS,
-        aggregation=QueryAggregation(type="breakdown", group_by="transaction_type"),
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
-        raw_query="compare the income vs spending",
+        raw_query="who sent me money this month",
     )
 
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
     contract = parser.build_execution_contract_from_ir(query_ir)
 
-    assert query_ir.query_operation == QueryOperation.BREAKDOWN_TRANSACTIONS
-    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "credit"
     assert query_ir.aggregation is not None
-    assert query_ir.aggregation.type == "breakdown"
-    assert query_ir.aggregation.group_by == "transaction_type"
+    assert query_ir.aggregation.sort_by == "amount"
+    assert query_ir.result_limit is None
     assert contract.aggregation is not None
-    assert contract.aggregation.group_by == "transaction_type"
+    assert contract.aggregation.sort_by == "amount"
+    assert contract.result_limit is None
+
+
 
 
 def test_explicit_amount_ranked_beneficiary_summary_compiles_amount_sort() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         aggregation=QueryAggregation(type="sum", sort_by="amount"),
         raw_query="Who got the most money this month",
@@ -171,7 +154,7 @@ def test_parser_lexically_recovers_plain_recipient_summary_text() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="Who did I send money to this month",
     )
@@ -191,7 +174,7 @@ def test_parser_does_not_lexically_upgrade_comparison_text() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="compare my spending this month vs last month",
     )
@@ -207,7 +190,7 @@ def test_explicit_largest_transfer_extraction_compiles_to_largest_analytics_quer
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         aggregation=QueryAggregation(type="largest", limit=1),
         result_reference="latest",
@@ -232,7 +215,7 @@ def test_parser_does_not_lexically_upgrade_highest_single_transfer_text() -> Non
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         result_reference="latest",
         raw_query="Whats my most single transfer this month",
@@ -251,7 +234,7 @@ def test_explicit_this_week_without_days_back_compiles_to_calendar_week_to_date(
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 19)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
         raw_query="how much did I spend this week",
     )
@@ -265,11 +248,140 @@ def test_explicit_this_week_without_days_back_compiles_to_calendar_week_to_date(
     assert contract.time_end == today
 
 
+def test_explicit_this_month_without_days_back_compiles_to_calendar_month_to_date() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 27)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
+        raw_query="how much did I spend this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.time_range.start == date(2026, 6, 1)
+    assert query_ir.time_range.end == today
+    assert contract.time_start == date(2026, 6, 1)
+    assert contract.time_end == today
+
+
+def test_came_in_query_compiles_to_credit_sum_only() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 27)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="How much came in this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "credit"
+    assert contract.filters is not None
+    assert contract.filters.transaction_type == "credit"
+
+
+def test_failed_transaction_query_compiles_to_status_filter() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 27)
+    result = parser.parse_deterministic("Show failed transaction for this month", today=today, language="en")
+
+    assert result is not None
+    contract = QueryExecutionContract.model_validate(result.query_contract)
+    assert contract.intent == QueryIntent.TRANSACTION_LIST
+    assert contract.filters is not None
+    assert contract.filters.status == "failed"
+    assert contract.time_start == date(2026, 6, 1)
+    assert contract.time_end == today
+
+
+def test_can_i_send_amount_compiles_to_affordability_amount_check() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 27)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.TRANSACTION_LIST,
+        raw_query="Can I send 100k?",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.AFFORDABILITY
+    assert query_ir.amount_check == 100000
+    assert contract.intent == QueryIntent.AFFORDABILITY
+    assert contract.amount_check == 100000
+
+
+def test_cashflow_by_account_compiles_to_account_breakdown() -> None:
+    parser = QueryParser(_DummyLLM())
+    result = parser.parse_deterministic("Breakdown my cash flow by account", today=date(2026, 6, 27), language="en")
+
+    assert result is not None
+    contract = QueryExecutionContract.model_validate(result.query_contract)
+    assert contract.intent == QueryIntent.CASH_FLOW_SUMMARY
+    assert contract.aggregation is not None
+    assert contract.aggregation.group_by == "account"
+
+
+def test_where_did_my_money_go_compiles_to_category_breakdown() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 27)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Where did my money go this month?",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.type == "breakdown"
+    assert query_ir.aggregation.group_by == "category"
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"
+    assert contract.aggregation is not None
+    assert contract.aggregation.type == "breakdown"
+
+
+def test_amount_filter_above_is_strict_and_and_above_is_inclusive() -> None:
+    parser = QueryParser(_DummyLLM())
+    strict_ir = parser.build_query_ir_from_extraction(
+        QueryExtractionResult(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=QueryFilters(transaction_type="debit", min_amount=50000),
+            raw_query="show debits above 50k",
+        ),
+        today=date(2026, 6, 27),
+        language="en",
+    )
+    inclusive_ir = parser.build_query_ir_from_extraction(
+        QueryExtractionResult(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=QueryFilters(transaction_type="debit", min_amount=50000),
+            raw_query="show debits 50k and above",
+        ),
+        today=date(2026, 6, 27),
+        language="en",
+    )
+
+    assert strict_ir.filters is not None
+    assert strict_ir.filters.min_amount == 50000
+    assert strict_ir.filters.min_amount_inclusive is False
+    assert inclusive_ir.filters is not None
+    assert inclusive_ir.filters.min_amount == 50000
+    assert inclusive_ir.filters.min_amount_inclusive is True
+
+
 def test_explicit_last_month_without_days_back_compiles_to_full_previous_month() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 19)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_month"),
         raw_query="show my transactions last month",
     )
@@ -287,7 +399,7 @@ def test_contract_compiles_from_query_ir() -> None:
     parser = QueryParser(_DummyLLM())
     query_ir = parser.build_query_ir_from_extraction(
         QueryExtractionResult(
-            intent=ExtractionIntent.TRANSACTION_LIST,
+            intent=QueryIntent.TRANSACTION_LIST,
             time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
             raw_query="show my transactions yesterday",
         ),
@@ -305,7 +417,7 @@ def test_contract_compiles_from_query_ir() -> None:
 def test_structured_comparison_year_ago_compiles_to_contract() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
         comparison=QueryComparison(mode="year_ago"),
         raw_query="compare this month to same period last year",
@@ -323,7 +435,7 @@ def test_structured_comparison_year_ago_compiles_to_contract() -> None:
 def test_structured_comparison_explicit_period_compiles_to_explicit_range() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
         comparison=QueryComparison(mode="explicit_period", period="last_month"),
         raw_query="compare this month vs last month",
@@ -344,7 +456,7 @@ def test_structured_comparison_explicit_period_compiles_to_explicit_range() -> N
 def test_structured_comparison_last_month_aligns_to_current_window_duration() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=6),
         comparison=QueryComparison(mode="explicit_period", period="last_month"),
         raw_query="compare this month vs last month",
@@ -365,7 +477,7 @@ def test_structured_comparison_last_month_aligns_to_current_window_duration() ->
 def test_structured_comparison_last_week_compiles_to_explicit_range() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=7),
         comparison=QueryComparison(mode="explicit_period", period="last_week"),
         raw_query="compare this week vs last week",
@@ -386,7 +498,7 @@ def test_structured_comparison_last_week_compiles_to_explicit_range() -> None:
 def test_structured_comparison_last_week_aligns_to_current_window_duration() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=4),
         comparison=QueryComparison(mode="explicit_period", period="last_week"),
         raw_query="compare this week vs last week",
@@ -407,7 +519,7 @@ def test_structured_comparison_last_week_aligns_to_current_window_duration() -> 
 def test_structured_comparison_explicit_period_handles_leap_february() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
         comparison=QueryComparison(mode="explicit_period", period="last_month"),
         raw_query="compare this month with last month",
@@ -428,7 +540,7 @@ def test_structured_comparison_explicit_period_handles_leap_february() -> None:
 def test_structured_comparison_invalid_explicit_period_falls_back_to_previous_equivalent() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TIME_COMPARISON,
+        intent=QueryIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
         comparison=QueryComparison(mode="explicit_period", period="banana_week"),
         raw_query="compare this month to banana week",
@@ -448,7 +560,7 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        intent=QueryIntent.TRANSACTION_DETAIL,
         filters=QueryFilters(recipient="Mum", transaction_type="debit"),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="when did I last pay Mum this month",
@@ -467,61 +579,15 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
     assert contract.answer_fact_field == "date"
 
 
-def test_typed_beneficiary_summary_fact_shape_compiles_to_single_transaction_query() -> None:
-    parser = QueryParser(_DummyLLM())
-    today = date(2026, 3, 28)
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
-        request_shape=QueryRequestShape.FACT,
-        fact_query_kind=FactQueryKind.DATE,
-        filters=QueryFilters(recipient="Mum"),
-        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
-        raw_query="when last did I send mum money",
-        result_reference="latest",
-    )
-
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-    contract = parser.build_execution_contract_from_ir(query_ir)
-
-    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
-    assert query_ir.answer_fact_field == "date"
-    assert query_ir.filters is not None
-    assert query_ir.filters.counterparty == ["Mum"]
-    assert query_ir.time_range.start == date(2025, 9, 29)
-    assert query_ir.time_range.end == today
-    assert query_ir.result_reference == "latest"
-    assert contract.intent == QueryIntent.TRANSACTION_SEARCH
-    assert contract.answer_fact_field == "date"
-    assert contract.result_reference == "latest"
 
 
-def test_unscoped_fact_latest_query_defaults_to_latest_across_available_history() -> None:
-    parser = QueryParser(_DummyLLM())
-    today = date(2026, 3, 28)
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SINGLE_TRANSACTION,
-        request_shape=QueryRequestShape.FACT,
-        fact_query_kind=FactQueryKind.DATE,
-        filters=QueryFilters(recipient="Mum"),
-        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
-        raw_query="when last did I send money to mum",
-        result_reference="latest",
-    )
-
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-
-    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
-    assert query_ir.answer_fact_field == "date"
-    assert query_ir.result_reference == "latest"
-    assert query_ir.time_range.start == date(2025, 9, 29)
-    assert query_ir.time_range.end == today
 
 
 def test_request_shape_fact_overrides_grouped_summary_without_keyword_recovery() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 28)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
         request_shape=QueryRequestShape.FACT,
         fact_query_kind=FactQueryKind.DATE,
         filters=QueryFilters(recipient="Mum"),
@@ -531,8 +597,6 @@ def test_request_shape_fact_overrides_grouped_summary_without_keyword_recovery()
 
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
 
-    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
-    assert query_ir.query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
     assert query_ir.answer_fact_field == "date"
 
 
@@ -540,7 +604,7 @@ def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        intent=QueryIntent.TRANSACTION_DETAIL,
         request_shape=QueryRequestShape.FACT,
         fact_query_kind=FactQueryKind.COUNTERPARTY,
         filters=QueryFilters(min_amount=500000, max_amount=500000),
@@ -555,39 +619,74 @@ def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:
     assert query_ir.answer_fact_field == "counterparty"
 
 
-def test_who_did_i_send_money_to_last_compiles_to_latest_counterparty_fact() -> None:
+def test_who_sent_me_most_money_compiles_to_credit_beneficiary_summary() -> None:
     parser = QueryParser(_DummyLLM())
-    today = date(2026, 3, 28)
+    today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
-        request_shape=QueryRequestShape.FACT,
-        fact_query_kind=FactQueryKind.COUNTERPARTY,
-        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
-        raw_query="who did I send money to last",
-        result_reference="latest",
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        aggregation=QueryAggregation(type="sum", sort_by="amount"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="who sent me the most money this month",
+        result_limit=1,
     )
 
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
     contract = parser.build_execution_contract_from_ir(query_ir)
 
-    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
-    assert query_ir.answer_fact_field == "counterparty"
-    assert query_ir.result_reference == "latest"
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.filters is not None
-    assert query_ir.filters.transaction_type == "debit"
-    assert query_ir.filters.counterparty is None
-    assert query_ir.time_range.start == date(2025, 9, 29)
-    assert query_ir.time_range.end == today
-    assert contract.intent == QueryIntent.TRANSACTION_SEARCH
-    assert contract.answer_fact_field == "counterparty"
-    assert contract.result_reference == "latest"
+    assert query_ir.filters.transaction_type == "credit"
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.sort_by == "amount"
+    assert query_ir.result_limit == 1
+    assert contract.filters is not None
+    assert contract.filters.transaction_type == "credit"
+    assert contract.result_limit == 1
+
+
+def test_beneficiary_aggregation_limit_one_compiles_to_single_result_limit() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        aggregation=QueryAggregation(type="sum", sort_by="amount", limit=1),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="semantic singular beneficiary winner",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.result_limit == 1
+    assert contract.result_limit == 1
+
+
+def test_explicit_top_senders_query_does_not_compile_to_single_result_limit() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        aggregation=QueryAggregation(type="sum", sort_by="amount"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="show top senders this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.result_limit is None
+    assert contract.result_limit is None
+
+
 
 
 def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        intent=QueryIntent.TRANSACTION_DETAIL,
         request_shape=QueryRequestShape.FACT,
         fact_query_kind=FactQueryKind.COUNTERPARTY,
         filters=QueryFilters(recipient="unknown", min_amount=500000, max_amount=500000),
@@ -606,11 +705,11 @@ def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
 @pytest.mark.parametrize(
     ("raw_query", "intent"),
     [
-        ("when did I last pay Mum", ExtractionIntent.SINGLE_TRANSACTION),
-        ("which bank was that", ExtractionIntent.TRANSACTION_LIST),
+        ("when did I last pay Mum", QueryIntent.TRANSACTION_DETAIL),
+        ("which bank was that", QueryIntent.TRANSACTION_LIST),
     ],
 )
-def test_raw_text_alone_does_not_infer_fact_fields(raw_query: str, intent: ExtractionIntent) -> None:
+def test_raw_text_alone_does_not_infer_fact_fields(raw_query: str, intent: QueryIntent) -> None:
     parser = QueryParser(_DummyLLM())
     extraction_kwargs: dict[str, object] = {}
     if "Mum" in raw_query:
@@ -649,7 +748,7 @@ def test_typed_fact_query_kind_compiles_to_answer_fact_field(
 ) -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         request_shape=QueryRequestShape.FACT,
         fact_query_kind=fact_query_kind,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
@@ -659,34 +758,16 @@ def test_typed_fact_query_kind_compiles_to_answer_fact_field(
 
     query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 28), language="en")
 
-    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
-    assert query_ir.query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
     assert query_ir.answer_fact_field == expected
 
 
-@pytest.mark.parametrize("answer_fact_field", ["counterparty", "amount", "bank", "reference", "status"])
-def test_typed_answer_fact_field_compiles_to_single_transaction(answer_fact_field: str) -> None:
-    parser = QueryParser(_DummyLLM())
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
-        answer_fact_field=answer_fact_field,
-        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
-        raw_query="typed answer field query",
-        result_reference="latest",
-    )
-
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 28), language="en")
-
-    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
-    assert query_ir.answer_fact_field == answer_fact_field
 
 
 def test_existence_request_shape_compiles_to_direct_sum_query() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 28)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
-        query_operation=QueryOperation.SUM_TRANSACTIONS,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         request_shape=QueryRequestShape.EXISTENCE,
         filters=QueryFilters(recipient="Mum", transaction_type="debit"),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
@@ -697,7 +778,6 @@ def test_existence_request_shape_compiles_to_direct_sum_query() -> None:
     contract = parser.build_execution_contract_from_ir(query_ir)
 
     assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_ir.query_operation == QueryOperation.SUM_TRANSACTIONS
     assert query_ir.request_shape == "existence"
     assert query_ir.filters is not None
     assert query_ir.filters.counterparty == ["Mum"]
@@ -705,29 +785,13 @@ def test_existence_request_shape_compiles_to_direct_sum_query() -> None:
     assert contract.request_shape == "existence"
 
 
-def test_spending_by_account_compiles_to_account_breakdown_with_debit_filter() -> None:
-    parser = QueryParser(_DummyLLM())
-    today = date(2026, 3, 21)
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.CATEGORY_BREAKDOWN,
-        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
-        raw_query="break down my spending by account",
-    )
-
-    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
-
-    assert query_ir.aggregation is not None
-    assert query_ir.aggregation.type == "breakdown"
-    assert query_ir.aggregation.group_by == "account"
-    assert query_ir.filters is not None
-    assert query_ir.filters.transaction_type == "debit"
 
 
 def test_spending_by_account_overrides_wrong_extracted_category_grouping() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.CATEGORY_BREAKDOWN,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         aggregation=QueryAggregation(type="breakdown", group_by="category"),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="break down my spending by account",
@@ -746,7 +810,7 @@ def test_amount_filtered_people_query_compiles_to_beneficiary_summary_with_rolli
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 27)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="show people I sent 20k to in the last 2 weeks",
     )
@@ -755,7 +819,7 @@ def test_amount_filtered_people_query_compiles_to_beneficiary_summary_with_rolli
 
     assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_ir.aggregation is not None
-    assert query_ir.aggregation.sort_by == "count"
+    assert query_ir.aggregation.sort_by == "amount"
     assert query_ir.filters is not None
     assert query_ir.filters.transaction_type == "debit"
     assert query_ir.filters.min_amount == 20000
@@ -768,7 +832,7 @@ def test_greater_than_amount_people_query_compiles_to_beneficiary_summary_with_m
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 27)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="show people I sent greater than 20k to in the last 2 weeks",
     )
@@ -788,7 +852,7 @@ def test_plain_people_query_compiles_to_beneficiary_summary_without_literal_peop
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 30)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         filters=QueryFilters(recipient="people"),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="show people I sent money to this month",
@@ -801,7 +865,7 @@ def test_plain_people_query_compiles_to_beneficiary_summary_without_literal_peop
     assert query_ir.filters.transaction_type == "debit"
     assert query_ir.filters.counterparty is None
     assert query_ir.aggregation is not None
-    assert query_ir.aggregation.sort_by == "count"
+    assert query_ir.aggregation.sort_by == "amount"
 
 
 @pytest.mark.parametrize(
@@ -823,7 +887,7 @@ def test_multilingual_recipient_summary_queries_compile_to_beneficiary_summary(
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 30)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         filters=QueryFilters(recipient=placeholder_recipient),
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query=question,
@@ -836,4 +900,4 @@ def test_multilingual_recipient_summary_queries_compile_to_beneficiary_summary(
     assert query_ir.filters.transaction_type == "debit"
     assert query_ir.filters.counterparty is None
     assert query_ir.aggregation is not None
-    assert query_ir.aggregation.sort_by == "count"
+    assert query_ir.aggregation.sort_by == "amount"

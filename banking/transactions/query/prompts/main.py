@@ -20,7 +20,8 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 | show_more             | previous_pagination  | go back to the previous page of an existing list                   |
 | show_more             | refine_existing      | show underlying transactions for summary/breakdown                |
 | show_evidence         | refine_existing      | show the transactions behind an aggregate answer                  |
-| unclear               | refine_existing      | rerun/refresh the same query: "check again", "recheck", "refresh" |
+| unclear               | refine_existing      | ambiguous follow-up that cannot be resolved                       |
+| recheck               | refine_existing      | rerun/refresh the same query: "check again", "recheck", "refresh" |
 | grouped_total_followup | refine_existing     | grouped summary -> total over the same scope                      |
 | time_delta            | replace_scope        | explicit scope replacement: "what about last week", "only today"  |
 | time_delta            | refine_existing      | scoped time delta keeping anchor                                  |
@@ -37,6 +38,21 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 For drill_down with `answer_fact`, set `fact_field` to:
 status|amount|recipient|counterparty|bank|date|description|reference|account|direction|category.
 Only use answer_fact when user clearly refers to the currently displayed item.
+If the surface context has a single focused item, classify short referential questions about one safe
+fact of that item as `continuation_type=drill_down`, `drill_down_action=answer_fact`, and set
+`fact_field` to the semantic fact requested. Referential wording can use this/that/it/the transaction/
+the payment or equivalent multilingual phrasing. Use the focused item's `selection_kind` and
+`fact_capabilities`; do not infer unsupported facts.
+Map date/time occurrence questions to `fact_field=date`, bank/account questions to `bank` or `account`,
+reference/receipt-id questions to `reference`, success/state questions to `status`, purpose/narration
+questions to `description`, and value questions to `amount`.
+If the focused item is an aggregate scope such as beneficiary, category, merchant, or account, still
+return drill_down + answer_fact. Runtime will compile the scope to a transaction fact query.
+Do not classify focused-item fact questions as recheck/rerun/refresh of the previous answer.
+Examples with a single focused item:
+- date/time fact follow-up about the focused item → continuation, drill_down, answer_fact, fact_field=date
+- bank/account fact follow-up about the focused item → continuation, drill_down, answer_fact, fact_field=bank/account
+- reference fact follow-up about the focused item → continuation, drill_down, answer_fact, fact_field=reference
 For visible result references, populate typed targets instead of relying on free-form text:
 - target_index: 1-based displayed item number when the user says "second", "3rd", "number 2".
 - target_amount: numeric naira amount when the user says "20k", "₦25,000", "500 naira".
@@ -53,12 +69,12 @@ CONTINUATION GUIDELINES
   Include `time_range`, `time_period`, or `extraction.time_range` when the scope is clear; runtime may validate it.
 - Time-delta recognition must work in English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
   Examples: "what about yesterday", "yesterday nko", "what of last week", "for today only",
-  "ti ana nko", "na jiya fa", "hier alors".
+  "last week nko", "ti ana nko", "na jiya fa", "hier alors", "la semaine dernière alors".
 - For aggregate continuations, preserve the current result scope unless user explicitly changes it.
   Include `extraction` for the derived analytical query when possible.
-- Recheck/refresh follow-ups like "check again", "check againo", "recheck", "run it again",
-  "try again", and "refresh" must be `decision=continuation`, `continuation_type=unclear`,
-  `followup_intent=refine_existing`; do not emit `fresh_query`/`new_query` and do not change the query shape.
+- Recheck/refresh follow-ups like "are you sure", "check again", "recheck", and "refresh" MUST be `decision=continuation`, `continuation_type=recheck`, `followup_intent=refine_existing`. YOU MUST ALSO emit a reassuring localized conversational reply in the `response_text` field (e.g. "Yes, I've checked again for you:") so the user feels heard.
+- For `show_more`, `show_evidence`, `time_delta`, and `filter_delta` continuations, YOU MUST emit a connective or transitional conversational prefix in the `response_text` field (e.g. "Here is the exact breakdown:", "Let's look at yesterday:", "Checking Tunde's transfers:").
+- For fresh queries and direct math/aggregate totals, DO NOT emit a prefix, to avoid robotic redundancy.
 - Distinguish recheck from evidence: "show me/show them/list them" means show underlying rows;
   "check again/recheck/refresh" means rerun the same answer.
 - When user refers to prior result frames ("both", "the first one", "that week"),
@@ -73,9 +89,9 @@ Active list/summary context:
 - "only today"/"just this week" → time_delta, replace_scope
 - "more"/"next page" → show_more, continue_pagination
 - "back"/"previous page" → show_more, previous_pagination
-- "show them"/"show me" after summary → show_more, refine_existing
-- "show me" after aggregate total/summary answer → show_evidence, refine_existing
-- "check again"/"check againo"/"recheck"/"refresh" after any query answer → unclear, refine_existing
+- "show them"/"show me" after summary → show_more, refine_existing, response_text="Here is the breakdown:"
+- "show me" after aggregate total/summary answer → show_evidence, refine_existing, response_text="No problem, here are the transactions:"
+- "check again"/"are you sure"/"recheck"/"refresh" after any query answer → recheck, refine_existing, response_text="Yes, I'm sure. I've checked the latest records:"
 - "so what the total?" after grouped recipient summary → grouped_total_followup, refine_existing
 - "how much total"/"sum it up" → aggregate, refine_existing
 - "total for mum" → aggregate, refine_existing (narrow recipient filter, keep time scope)
@@ -113,11 +129,11 @@ Populate: intent, filters, time_range, comparison, aggregation, request_shape, f
 - For singular transaction fact questions in any supported language, always set `request_shape=fact`,
   `fact_query_kind`, and `answer_fact_field`. Runtime validation will not infer these fields from raw text.
 - For yes/no transaction existence questions ("did I...", "have I...", "did money come from..."),
-  set `request_shape=existence`, `query_operation=sum_transactions`, and the exact filters.
+  set `request_shape=existence`, and the exact filters.
 - Superlatives by amount ("highest transfer") → aggregation.type=largest/smallest over result_reference.
-- query_operation values: list_transactions, search_single_transaction, sum_transactions, count_transactions,
-  average_transactions, rank_largest_transaction, rank_smallest_transaction, breakdown_transactions,
-  compare_periods, summarize_beneficiaries, check_affordability.
+- STRICT LIST VS ANALYTICS DISTINCTION:
+  - "show my spending", "show debits", "list my expenses" → intent=TRANSACTION_LIST, request_shape=list (user wants to see the items).
+  - "how much did I spend", "what is my total", "sum up my spending" → intent=ANALYTICS_SUMMARY, request_shape=analytics (user wants a calculated total).
 
 MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
 
@@ -152,24 +168,19 @@ Extract structured parameters for a banking transaction query. Return schema-con
 
 INTENTS
 - transaction_list: show/list/history/statement ("last N transactions")
-- single_transaction: one specific transaction ("that 15k", "the Uber one")
-- spending_total: totals/sums ("how much did I spend")
-- category_breakdown: breakdown/categorize ("break down my spending", "how did I spend")
+- transaction_detail: one specific transaction or fact ("that 15k", "the Uber one", "who sent me...", "when did...")
+- transaction_search: find transactions matching a term without aggregating them
+- analytics_summary: single-direction totals/sums/breakdowns ("how much did I spend", "how much came in", "total received", "where did my money go", "break down my spending", "what did I spend on")
 - beneficiary_summary: recipient ranking or grouped summary ("who did I send money to", "top recipients")
 - time_comparison: compare periods ("this month vs last month")
+- cash_flow_summary: strict bidirectional comparisons only - net cash, inflow vs outflow (e.g. "did I spend more than I earned/received", "cash flow")
 - affordability: "can I afford", "do I have enough"
-
-QUERY OPERATION
-The runtime derives `query_operation` from the semantic fields you extract.
-Use these semantic targets internally while extracting intent/aggregation:
-list_transactions | search_single_transaction | sum_transactions | count_transactions |
-average_transactions | rank_largest_transaction | rank_smallest_transaction | breakdown_transactions |
-compare_periods | summarize_beneficiaries | check_affordability
 
 FILTERS
 - recipient: merchant/person name when user refers to a sender, payee, or merchant
-- transaction_type: "spent/paid/sent/transferred" → debit; "received/earned/salary/income" → credit
-- amount: "over/above/at least X" → min_amount; "under/below/less than X" → max_amount
+- transaction_type: infer direction semantically ("who paid me"/money entered/received → credit; "where did my money go"/"who did I send to"/spent → debit)
+- status: failed, pending, successful, or reversed when user asks for transaction state ("failed transactions", "pending transfers")
+- amount: "above/over/more than X" → min_amount with min_amount_inclusive=false; "at least/minimum/X and above" → min_amount with min_amount_inclusive=true; "below/under/less than X" → max_amount with max_amount_inclusive=false; "up to/at most X" → max_amount with max_amount_inclusive=true
 - narration_keyword: exact word to search
 
 TIME NORMALIZATION
@@ -183,12 +194,12 @@ TIME NORMALIZATION
 - time_comparison: primary period must be explicit; if missing, keep unspecified
 
 AGGREGATION
-- spending_total → sum; "largest/highest" (singular) → largest, limit=1; plural/numbered → largest, limit=N
+- analytics_summary → sum; "largest/highest" (singular) → largest, limit=1; plural/numbered → largest, limit=N
 - "smallest/lowest" → smallest
-- category_breakdown → breakdown (default group_by=category; "by merchant" → merchant; "by bank" → account; "income vs spending" → transaction_type)
-- beneficiary_summary → sum; sort_by="count" for frequency, sort_by="amount" for amount ranking
+- analytics_summary (breakdown) → aggregation.type=breakdown, default group_by=category ("where did my money go", "break down my spending", "what did I spend on"); "by merchant" → merchant; "by bank" → account; "income vs spending" → transaction_type
+- beneficiary_summary → sum; sort_by="amount" for money/value summaries; sort_by="count" only when the user semantically asks about frequency/how often
 - time_comparison → sum unless user implies otherwise
-- transaction_list/single_transaction → no aggregation
+- transaction_list/transaction_detail → no aggregation
 
 COMPARISON (time_comparison only)
 - default: mode="previous_equivalent"
@@ -204,38 +215,62 @@ Return only these fields: intent, filters, time_range, comparison, aggregation, 
 If the user is vague, express that through the semantic fields:
 - vague time → reference_type=vague and estimate days_back when possible
 - missing/unclear fields → leave the field null instead of fabricating values
-- For grouped recipient/ranking asks, set `intent=beneficiary_summary` and `request_shape=grouped_summary`.
+- For singular grouped recipient/ranking asks such as "who sent me the most", "who paid me the highest",
+  or "who did I send to most", set `intent=beneficiary_summary`, `request_shape=grouped_summary`,
+  `aggregation.sort_by=amount`, `aggregation.limit=1`, and `result_limit=1`.
+- For plain grouped sender/recipient asks such as "who sent me money", "who paid me", or "who did I send money to",
+  set `intent=beneficiary_summary`, `request_shape=grouped_summary`, `aggregation.sort_by=amount`, and leave `result_limit` unset.
+- Do not answer plain grouped sender/recipient asks as a winner. They are lists unless the semantic meaning is a single winner.
+- For explicit list/ranking asks such as "top senders", "show top recipients", or "list people I sent to",
+  set `intent=beneficiary_summary`, `request_shape=grouped_summary`, and leave `result_limit` unset unless the user gives a number.
 - For grouped recipient asks about sent/paid/transferred money, set `filters.transaction_type=debit`.
-- For singular transaction fact questions in any supported language, set `intent=single_transaction`,
+- For singular transaction fact questions in any supported language, set `intent=transaction_detail`,
   `request_shape=fact`, `fact_query_kind`, and `answer_fact_field`. Do not rely on raw wording for recovery.
+- For queries asking for a total quantity ("how much", "total spent"), set `aggregation.type=sum`.
+- For single-direction inflow totals ("how much came in", "total received", "what got credited"),
+  set `intent=analytics_summary`, `aggregation.type=sum`, and `filters.transaction_type=credit`.
+  Do not use `cash_flow_summary` unless the user asks for inflow vs outflow, net cashflow, or spent vs earned.
+- For "where did my money go" or spending breakdowns, set `intent=analytics_summary`, `aggregation.type=breakdown`, `aggregation.group_by=category`, and `filters.transaction_type=debit`.
+- For bidirectional money movement ("cash flow", "cashflow", "did I spend more than I earned", income vs expenses, money in vs money out), set `intent=cash_flow_summary` and do not force a debit/credit transaction_type.
 
 MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
 
 EXAMPLES
-"how much have I spent today" → spending_total, sum, explicit today (days_back=0), debit
-"how much have I received today" → spending_total, sum, explicit today, credit
-"how much have I sent to mum this week" → spending_total, sum, explicit this_week, debit, recipient=mum
+"how much have I spent today" → analytics_summary, sum, explicit today (days_back=0), debit
+"how much have I received today" → analytics_summary, sum, explicit today, credit
+"how much came in this month" → analytics_summary, sum, explicit this_month, credit
+"who sent me money this month" → beneficiary_summary, grouped_summary, sum, explicit this_month, credit, sort_by=amount
+"who sent me the most money this month" → beneficiary_summary, grouped_summary, sum, explicit this_month, credit, sort_by=amount, aggregation.limit=1, result_limit=1
+"who sent me money most often this month" → beneficiary_summary, grouped_summary, sum, explicit this_month, credit, sort_by=count, aggregation.limit=1, result_limit=1
+"where did my money go this month" → analytics_summary, breakdown, category, explicit this_month, debit
+"did I spend more than I earned this month" → cash_flow_summary, explicit this_month
+"cashflow this month" → cash_flow_summary, explicit this_month
+"cash flow this month" → cash_flow_summary, explicit this_month
+"how much have I sent to mum this week" → analytics_summary, sum, explicit this_week, debit, recipient=mum
+"show debits above 50k" → transaction_list, debit, min_amount=50000, min_amount_inclusive=false
+"show debits 50k and above" → transaction_list, debit, min_amount=50000, min_amount_inclusive=true
 "show my transactions" → transaction_list, unspecified
 "what was my last transaction status" → transaction_list, result_limit=1, result_reference=latest
-"who did I send money to this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
-"who I send money give this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
-"tani mo ran owo si ni osu yi" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
-"onye ka m zigara ego n'onwa a" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
-"wa na tura wa kudi a wannan watan" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
-"qui ai je envoye de l argent ce mois ci" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
-"tani mo send money to this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
-"when did I last send mum money" → single_transaction, fact, fact_query_kind=date, answer_fact_field=date, result_reference=latest, recipient=mum, debit
-"did I send money to mum this month" → spending_total, existence, sum_transactions, recipient=mum, debit, explicit this_month
-"did I spend on bolt yesterday" → spending_total, existence, sum_transactions, recipient=bolt, debit, explicit yesterday
-"did acme send me money this month" → spending_total, existence, sum_transactions, recipient=acme, credit, explicit this_month
-"who send me 500k last week" → single_transaction, fact, fact_query_kind=counterparty, answer_fact_field=counterparty, credit, explicit last_week
-"bank wo ni mo lo fun last transfer" → single_transaction, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
-"nawa ne bank din last transaction dina" → single_transaction, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
-"ole ego ka m zigara tolu ikpeazu" → single_transaction, fact, fact_query_kind=amount, answer_fact_field=amount, result_reference=latest, recipient=tolu, debit
-"quelle banque pour ma derniere transaction" → single_transaction, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
-"what was the reference for that payment" → single_transaction, fact, fact_query_kind=reference, answer_fact_field=reference
-"what was it for" → single_transaction, fact, fact_query_kind=description, answer_fact_field=description
-"what's my highest single transfer this month" → spending_total, largest, limit=1, debit, explicit this_month
+"who did I send money to this month" → beneficiary_summary, grouped_summary, sum, sort_by=amount, debit, explicit this_month
+"who did I send money to most often this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month, aggregation.limit=1, result_limit=1
+"who I send money give this month" → beneficiary_summary, grouped_summary, sum, sort_by=amount, debit, explicit this_month
+"tani mo ran owo si ni osu yi" → beneficiary_summary, grouped_summary, sum, sort_by=amount, debit, explicit this_month
+"onye ka m zigara ego n'onwa a" → beneficiary_summary, grouped_summary, sum, sort_by=amount, debit, explicit this_month
+"wa na tura wa kudi a wannan watan" → beneficiary_summary, grouped_summary, sum, sort_by=amount, debit, explicit this_month
+"qui ai je envoye de l argent ce mois ci" → beneficiary_summary, grouped_summary, sum, sort_by=amount, debit, explicit this_month
+"tani mo send money to this month" → beneficiary_summary, grouped_summary, sum, sort_by=amount, debit, explicit this_month
+"when did I last send mum money" → transaction_detail, fact, fact_query_kind=date, answer_fact_field=date, result_reference=latest, recipient=mum, debit
+"did I send money to mum this month" → analytics_summary, existence, sum, recipient=mum, debit, explicit this_month
+"did I spend on bolt yesterday" → analytics_summary, existence, sum, recipient=bolt, debit, explicit yesterday
+"did acme send me money this month" → analytics_summary, existence, sum, recipient=acme, credit, explicit this_month
+"who send me 500k last week" → transaction_detail, fact, fact_query_kind=counterparty, answer_fact_field=counterparty, credit, explicit last_week
+"bank wo ni mo lo fun last transfer" → transaction_detail, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
+"nawa ne bank din last transaction dina" → transaction_detail, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
+"ole ego ka m zigara tolu ikpeazu" → transaction_detail, fact, fact_query_kind=amount, answer_fact_field=amount, result_reference=latest, recipient=tolu, debit
+"quelle banque pour ma derniere transaction" → transaction_detail, fact, fact_query_kind=bank, answer_fact_field=bank, result_reference=latest
+"what was the reference for that payment" → transaction_detail, fact, fact_query_kind=reference, answer_fact_field=reference
+"what was it for" → transaction_detail, fact, fact_query_kind=description, answer_fact_field=description
+"what's my highest single transfer this month" → analytics_summary, largest, limit=1, debit, explicit this_month
 
 TODAY: {today}
 USER MESSAGE: {question}

@@ -155,56 +155,34 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         )
 
     if drill_down_action == "answer_fact":
-        metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
         response = None
 
-        if fact_field in {"amount", "bank", "date", "recipient", "counterparty"}:
+        if fact_field in {
+            "amount",
+            "bank",
+            "date",
+            "recipient",
+            "counterparty",
+            "status",
+            "reference",
+            "account",
+            "direction",
+            "category",
+            "description",
+        }:
             query_contract = _query_contract_from_state(state)
             answer_context = build_direct_fact_answer(
                 item,
                 query_contract=query_contract,
                 fact_field="counterparty" if fact_field == "recipient" else fact_field,
                 locale=locale,
+                is_followup=True,
             )
             lines = [answer_context.primary_text]
             if answer_context.secondary_text:
                 lines.extend(["", answer_context.secondary_text])
             response = "\n".join(lines)
-        elif fact_field == "status":
-            status = str(metadata.get("status") or "")
-            if status:
-                status_display = (
-                    render_message("query.format.status_success", locale)
-                    if status.lower() in ("success", "completed", "successful")
-                    else render_message("query.format.status_pending_generic", locale, {"status": status.title()})
-                )
-                response = render_message("query.format.field_status", locale, {"status": status_display})
-        elif fact_field == "description":
-            response = f"Description: {item.description}"
-        elif fact_field == "reference":
-            reference = str(metadata.get("transaction_id") or metadata.get("reference") or item.id or "").strip()
-            if reference:
-                response = f"Reference: {reference}"
-        elif fact_field == "account":
-            account = str(
-                metadata.get("source_account_number")
-                or metadata.get("account_number")
-                or metadata.get("account")
-                or metadata.get("bank_name")
-                or ""
-            ).strip()
-            if account:
-                response = f"Account: {account}"
-        elif fact_field == "direction":
-            direction = str(
-                metadata.get("direction") or metadata.get("transaction_type") or metadata.get("type") or ""
-            ).strip()
-            if direction:
-                response = f"Direction: {direction.title()}"
-        elif fact_field == "category":
-            category = str(metadata.get("resolved_category") or metadata.get("category") or "").strip()
-            if category:
-                response = f"Category: {category.replace('_', ' ').title()}"
+
         if response:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
@@ -284,7 +262,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         if not is_transfer_item:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                response=f"I can only resend transfer transactions. This looks like {transaction_type_display}.",
+                response=f"I can only resend transfer transactions. This is {transaction_type_display}.",
                 patch={"session_active": True},
             )
         return TransactionResult(

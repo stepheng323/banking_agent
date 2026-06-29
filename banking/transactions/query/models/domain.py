@@ -18,26 +18,13 @@ class QueryIntent(str, Enum):
 
     TRANSACTION_LIST = "transaction_list"
     TRANSACTION_SEARCH = "transaction_search"
+    TRANSACTION_DETAIL = "transaction_detail"
     ANALYTICS_SUMMARY = "analytics_summary"
     TIME_COMPARISON = "time_comparison"
+    CASH_FLOW_SUMMARY = "cash_flow_summary"
     BENEFICIARY_SUMMARY = "beneficiary_summary"
     AFFORDABILITY = "affordability"
-
-
-class QueryOperation(str, Enum):
-    """Bounded internal query operations above handler-level intents."""
-
-    LIST_TRANSACTIONS = "list_transactions"
-    SEARCH_SINGLE_TRANSACTION = "search_single_transaction"
-    SUM_TRANSACTIONS = "sum_transactions"
-    COUNT_TRANSACTIONS = "count_transactions"
-    AVERAGE_TRANSACTIONS = "average_transactions"
-    RANK_LARGEST_TRANSACTION = "rank_largest_transaction"
-    RANK_SMALLEST_TRANSACTION = "rank_smallest_transaction"
-    BREAKDOWN_TRANSACTIONS = "breakdown_transactions"
-    COMPARE_PERIODS = "compare_periods"
-    SUMMARIZE_BENEFICIARIES = "summarize_beneficiaries"
-    CHECK_AFFORDABILITY = "check_affordability"
+    QUERY_CLARIFICATION = "query_clarification"
 
 
 QueryFactField = Literal[
@@ -81,7 +68,13 @@ class Filters(BaseModel):
     counterparty: list[str] | None = Field(default=None, description="Parsed sender/recipient/merchant match")
     min_amount: float | None = Field(default=None, description="Minimum amount in naira")
     max_amount: float | None = Field(default=None, description="Maximum amount in naira")
+    min_amount_inclusive: bool = Field(default=True, description="Whether the minimum amount is inclusive")
+    max_amount_inclusive: bool = Field(default=True, description="Whether the maximum amount is inclusive")
     transaction_type: Literal["credit", "debit"] | None = Field(default=None, description="Filter by type")
+    status: Literal["failed", "pending", "successful", "reversed"] | None = Field(
+        default=None,
+        description="Filter by transaction status",
+    )
     exclude: list[str] | None = Field(default=None, description="Exclude patterns")
     account_filter: str | None = Field(default=None, description="Bank/account name to filter by")
 
@@ -161,7 +154,6 @@ class QueryIR(BaseModel):
     """LLM-facing interpretation model before runtime contract compilation."""
 
     intent: QueryIntent
-    query_operation: QueryOperation | None = None
     raw_query: str | None = None
     language: str = "en"
     timezone: str = "Africa/Lagos"
@@ -180,6 +172,7 @@ class QueryIR(BaseModel):
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
+    conversational_prefix: str | None = None
     intent_spec: QueryIntentSpec | None = None
 
 
@@ -187,7 +180,6 @@ class QueryExecutionContract(BaseModel):
     """Runtime-facing contract consumed by query handlers."""
 
     intent: QueryIntent
-    query_operation: QueryOperation | None = None
     time_start: date
     time_end: date
     timezone: str = "Africa/Lagos"
@@ -201,10 +193,12 @@ class QueryExecutionContract(BaseModel):
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = None
     answer_fact_field: QueryFactField | None = None
+    resolution_policy: Literal["strict_single", "latest_if_ambiguous", "ask_if_ambiguous"] = "ask_if_ambiguous"
     request_shape: QueryContractRequestShape | None = None
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
+    conversational_prefix: str | None = None
     intent_spec: QueryIntentSpec | None = None
     execution_plan: QueryExecutionPlan | None = None
 
@@ -219,7 +213,6 @@ class QueryExecutionContract(BaseModel):
         """Project the runtime contract back into query IR for safe rebuilds."""
         return QueryIR(
             intent=self.intent,
-            query_operation=self.query_operation,
             timezone=self.timezone,
             time_range=self.time_range or TimeRange(start=self.time_start, end=self.time_end),
             filters=self.filters.model_copy(deep=True) if self.filters is not None else None,
@@ -236,6 +229,7 @@ class QueryExecutionContract(BaseModel):
             comparison=self.comparison.model_copy(deep=True) if self.comparison is not None else None,
             continuation_type=self.continuation_type,
             continuation_delta_type=self.continuation_delta_type,
+            conversational_prefix=self.conversational_prefix,
             intent_spec=self.intent_spec.model_copy(deep=True) if self.intent_spec is not None else None,
         )
 
@@ -262,7 +256,6 @@ class QueryExecutionContract(BaseModel):
         )
         return cls(
             intent=ir.intent,
-            query_operation=ir.query_operation,
             time_start=ir.time_range.start,
             time_end=ir.time_range.end,
             timezone=ir.timezone,
@@ -280,6 +273,7 @@ class QueryExecutionContract(BaseModel):
             comparison=ir.comparison,
             continuation_type=ir.continuation_type,
             continuation_delta_type=ir.continuation_delta_type,
+            conversational_prefix=ir.conversational_prefix,
             intent_spec=intent_spec,
             execution_plan=execution_plan,
         )
@@ -346,6 +340,34 @@ class QueryResultItem(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class AccountCashFlowBreakdown(BaseModel):
+    """Per-account breakdown for cash flow queries."""
+
+    account_id: str
+    bank_name: str
+    masked_account_number: str
+    total_inflow: int
+    total_outflow: int
+    net_flow: int
+
+
+class CashFlowSummaryResult(BaseModel):
+    """Rich payload for cash flow summary queries."""
+
+    period_label: str
+    currency: str = "NGN"
+    total_inflow: int
+    total_outflow: int
+    net_flow: int
+    inflow_count: int
+    outflow_count: int
+    account_scope: Literal["single", "all"]
+    account_breakdown: list[AccountCashFlowBreakdown] | None = None
+    excluded_internal_transfers_count: int = 0
+    excluded_reversals_count: int = 0
+    status: Literal["positive", "negative", "neutral"]
+
+
 class QueryResult(BaseModel):
     """
     Query execution result - includes context_key for follow-ups.
@@ -357,11 +379,13 @@ class QueryResult(BaseModel):
     items: list[QueryResultItem] | None = None
     context_key: str = Field(default_factory=lambda: f"qr:{uuid4()}")
     has_more: bool = False
+    conversational_prefix: str | None = None
     query_contract: QueryExecutionContract | None = None
     interpretation: dict[str, Any] | None = None
     surface_view: SurfaceView | None = None
     answer_strategy: QueryAnswerStrategy | None = None
     answer_context: QueryAnswerContext | None = None
+    cash_flow: CashFlowSummaryResult | None = None
     followup_referent: FocusedReferent | None = None
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None

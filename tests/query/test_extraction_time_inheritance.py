@@ -15,18 +15,17 @@ from banking.transactions.query.contracts import (
 from banking.transactions.query.models.domain import (
     Aggregation,
     Filters,
+    QueryAnswerStrategy,
     QueryExecutionContract,
-    QueryIntent,
     QueryIR,
-    QueryOperation,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     QueryExtractionResult,
     QueryFilters,
+    QueryIntent,
     QueryParseResult,
     QueryRequestShape,
     QueryTimeRange,
@@ -34,6 +33,7 @@ from banking.transactions.query.models.extraction import (
     TimeReference,
 )
 from banking.transactions.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.presentation.surface_builder import build_surface_view
 from banking.transactions.query.services.reasoning.models import QuerySemanticDecision
 
 
@@ -94,7 +94,7 @@ async def test_parse_new_query_does_not_inherit_time_range_for_unspecified_time(
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 4)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="show my transfers",
     )
@@ -157,7 +157,7 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
     session_contract = _contract(session_query)
 
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=5),
         raw_query="who did I send money to the most this week",
     )
@@ -328,7 +328,7 @@ async def test_fresh_recent_transactions_followup_replaces_scope_instead_of_inhe
         )
         return _ok_result(
             QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 raw_query=question,
             ),
             parsed_query,
@@ -401,7 +401,7 @@ async def test_fresh_recent_transactions_with_explicit_period_replaces_scope() -
         )
         return _ok_result(
             QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 raw_query=question,
             ),
             parsed_query,
@@ -670,6 +670,568 @@ async def test_recipient_fact_drilldown_follow_up_converts_summary_to_transactio
 
 
 @pytest.mark.asyncio
+async def test_focused_beneficiary_fact_followup_uses_selection_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="credit"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        aggregation=Aggregation(type="sum", sort_by="amount", limit=5),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    query_result = QueryResult(
+        summary_text="*Top Senders* — This Month",
+        items=[
+            QueryResultItem(
+                id="bene_1",
+                description="Acme Corp",
+                amount=950000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Acme Corp"},
+            ),
+            QueryResultItem(
+                id="bene_2",
+                description="Techcorp Nigeria Ltd",
+                amount=850000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Techcorp Nigeria Ltd"},
+            ),
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+    )
+    query_result.surface_view = build_surface_view(query_result)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            fact_field="date",
+            confidence=0.98,
+            reason="semantic_focused_beneficiary_fact",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.answer_fact_field == "date"
+    assert query_contract.filters is not None
+    assert query_contract.filters.counterparty == ["Acme Corp"]
+    assert query_contract.result_limit is None
+
+
+@pytest.mark.asyncio
+async def test_focused_beneficiary_this_referential_fact_followup_uses_selection_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="credit"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        aggregation=Aggregation(type="sum", sort_by="amount", limit=5),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    query_result = QueryResult(
+        summary_text="Acme Corp sent you the most this month: ₦950,000.",
+        items=[
+            QueryResultItem(
+                id="bene_1",
+                description="Acme Corp",
+                amount=950000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Acme Corp"},
+            ),
+            QueryResultItem(
+                id="bene_2",
+                description="Techcorp Nigeria Ltd",
+                amount=850000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Techcorp Nigeria Ltd"},
+            ),
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+    )
+    query_result.surface_view = build_surface_view(query_result)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            fact_field="date",
+            confidence=0.98,
+            reason="semantic_focused_beneficiary_referential_fact",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When was this", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.answer_fact_field == "date"
+    assert query_contract.filters is not None
+    assert query_contract.filters.counterparty == ["Acme Corp"]
+    assert query_contract.result_limit is None
+
+
+@pytest.mark.asyncio
+async def test_focused_beneficiary_requested_field_followup_normalizes_to_answer_fact() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="credit"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        aggregation=Aggregation(type="sum", sort_by="amount", limit=1),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    query_result = QueryResult(
+        summary_text="Acme Corp sent you the most this month: ₦950,000.",
+        items=[
+            QueryResultItem(
+                id="bene_1",
+                description="Acme Corp",
+                amount=950000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Acme Corp"},
+            )
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+    )
+    query_result.surface_view = build_surface_view(query_result)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            requested_field="date",
+            confidence=0.98,
+            reason="semantic_requested_date_fact_without_action",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When was this", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.answer_fact_field == "date"
+    assert query_contract.filters is not None
+    assert query_contract.filters.counterparty == ["Acme Corp"]
+    assert query_contract.aggregation is None
+
+
+@pytest.mark.asyncio
+async def test_focused_beneficiary_drilldown_without_fact_field_scopes_to_transactions() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="credit"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        aggregation=Aggregation(type="sum", sort_by="amount", limit=1),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    query_result = QueryResult(
+        summary_text="Acme Corp sent you the most this month: ₦950,000.",
+        items=[
+            QueryResultItem(
+                id="bene_1",
+                description="Acme Corp",
+                amount=950000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Acme Corp"},
+            )
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+    )
+    query_result.surface_view = build_surface_view(query_result)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            confidence=0.98,
+            reason="User refers to the focused beneficiary item and asks for its date fact.",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When was this", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.answer_fact_field is None
+    assert query_contract.filters is not None
+    assert query_contract.filters.counterparty == ["Acme Corp"]
+    assert query_contract.aggregation is None
+    assert query_contract.result_limit is None
+
+
+@pytest.mark.asyncio
+async def test_stale_focused_beneficiary_payload_is_repaired_to_scoped_transactions() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="credit"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        aggregation=Aggregation(type="sum", sort_by="amount", limit=1),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    stale_payload = SelectionPayload(
+        selection_kind="transaction",
+        entity_type="transaction",
+        entity_id="bene_1",
+        label="Acme Corp",
+        fact_capabilities=["date", "amount", "bank", "counterparty"],
+    )
+    query_result = QueryResult(
+        summary_text="Acme Corp sent you the most this month: ₦950,000.",
+        items=[
+            QueryResultItem(
+                id="bene_1",
+                description="Acme Corp",
+                amount=950000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Acme Corp"},
+            )
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            lead_text="Acme Corp sent you the most this month: ₦950,000.",
+            items=[
+                SurfaceItemView(
+                    id="bene_1",
+                    label="Acme Corp",
+                    amount=950000,
+                    count=1,
+                    payload=stale_payload,
+                    metadata={"count": 1, "recipient_name": "Acme Corp"},
+                )
+            ],
+            context={
+                "type": "focused_beneficiary",
+                "focus_type": "beneficiary",
+                "selected_item_id": "bene_1",
+                "selected_payload": stale_payload.model_dump(mode="json"),
+            },
+        ),
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            confidence=0.98,
+            reason="User refers to the currently focused beneficiary item and asks for its date fact.",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When was this", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.filters is not None
+    assert query_contract.filters.counterparty == ["Acme Corp"]
+    assert query_contract.aggregation is None
+    assert query_contract.result_limit is None
+
+
+@pytest.mark.asyncio
+async def test_generic_direct_answer_beneficiary_payload_is_repaired_from_contract() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        filters=Filters(transaction_type="credit"),
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        aggregation=Aggregation(type="sum", sort_by="amount", limit=1),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    stale_payload = SelectionPayload(
+        selection_kind="transaction",
+        entity_type="transaction",
+        entity_id="bene_1",
+        label="Acme Corp",
+        fact_capabilities=["date", "amount", "bank", "counterparty"],
+    )
+    query_result = QueryResult(
+        summary_text="Acme Corp sent you the most this month: ₦950,000.",
+        items=[
+            QueryResultItem(
+                id="bene_1",
+                description="Acme Corp",
+                amount=950000,
+                date=today,
+                metadata={"count": 1, "recipient_name": "Acme Corp"},
+            )
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            lead_text="Acme Corp sent you the most this month: ₦950,000.",
+            items=[
+                SurfaceItemView(
+                    id="bene_1",
+                    label="Acme Corp",
+                    amount=950000,
+                    count=1,
+                    payload=stale_payload,
+                    metadata={"count": 1, "recipient_name": "Acme Corp"},
+                )
+            ],
+            context={"type": "single_transaction", "selected_item_id": "bene_1"},
+        ),
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            confidence=0.98,
+            reason="User refers to the focused item and asks for its date fact.",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When was this", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.filters is not None
+    assert query_contract.filters.counterparty == ["Acme Corp"]
+    assert query_contract.aggregation is None
+    assert query_contract.result_limit is None
+
+
+@pytest.mark.asyncio
+async def test_focused_category_fact_followup_uses_selection_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="breakdown", group_by="category", sort_by="amount", limit=5),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    query_result = QueryResult(
+        summary_text="Shopping took the most this month: ₦620,000.",
+        items=[
+            QueryResultItem(
+                id="cat_shopping",
+                description="Shopping",
+                amount=620000,
+                date=today,
+                metadata={"count": 3, "key": "shopping"},
+            ),
+            QueryResultItem(
+                id="cat_transfers",
+                description="Transfers",
+                amount=437000,
+                date=today,
+                metadata={"count": 19, "key": "transfers"},
+            ),
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+    )
+    query_result.surface_view = build_surface_view(query_result)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            fact_field="reference",
+            confidence=0.98,
+            reason="semantic_focused_category_fact",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Reference?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.answer_fact_field == "reference"
+    assert query_contract.filters is not None
+    assert query_contract.filters.category == ["shopping"]
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.aggregation is None
+    assert query_contract.result_limit is None
+
+
+@pytest.mark.asyncio
+async def test_focused_account_fact_followup_uses_selection_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 6, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="breakdown", group_by="account", sort_by="amount", limit=5),
+        result_limit=1,
+    )
+    session_contract = _contract(session_query)
+    query_result = QueryResult(
+        summary_text="GTBank had the highest outflow this month: ₦120,000.",
+        items=[
+            QueryResultItem(
+                id="acct_gtb",
+                description="GTBank",
+                amount=120000,
+                date=today,
+                metadata={"count": 4, "key": "GTBank"},
+            ),
+            QueryResultItem(
+                id="acct_access",
+                description="Access Bank",
+                amount=80000,
+                date=today,
+                metadata={"count": 2, "key": "Access Bank"},
+            ),
+        ],
+        query_contract=session_contract,
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+    )
+    query_result.surface_view = build_surface_view(query_result)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            drill_down_action="answer_fact",
+            fact_field="date",
+            confidence=0.98,
+            reason="semantic_focused_account_fact",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert updates["flow_state"] == "executing"
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.answer_fact_field == "date"
+    assert query_contract.filters is not None
+    assert query_contract.filters.account_filter == "GTBank"
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.aggregation is None
+    assert query_contract.result_limit is None
+
+
+@pytest.mark.asyncio
 async def test_direct_answer_recipient_delta_follow_up_reuses_scope_and_swaps_counterparty() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 4, 6)
@@ -819,7 +1381,6 @@ async def test_recheck_follow_up_preserves_count_query_shape() -> None:
     today = date(2026, 6, 9)
     session_query = _query_ir(
         intent=QueryIntent.ANALYTICS_SUMMARY,
-        query_operation=QueryOperation.COUNT_TRANSACTIONS,
         time_range=TimeRange(start=today, end=today),
         aggregation=Aggregation(type="count"),
     )
@@ -850,7 +1411,6 @@ async def test_recheck_follow_up_preserves_count_query_shape() -> None:
 
     query_contract = updates["query_contract"]
     assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.query_operation == QueryOperation.COUNT_TRANSACTIONS
     assert query_contract.aggregation is not None
     assert query_contract.aggregation.type == "count"
     assert query_contract.time_start == today
@@ -1046,7 +1606,6 @@ async def test_account_breakdown_drilldown_converts_to_transaction_list_with_acc
     today = date(2026, 3, 28)
     session_query = _query_ir(
         intent=QueryIntent.ANALYTICS_SUMMARY,
-        query_operation=QueryOperation.BREAKDOWN_TRANSACTIONS,
         time_range=TimeRange(start=date(2026, 2, 26), end=today),
         filters=Filters(transaction_type="debit"),
         aggregation=Aggregation(type="breakdown", group_by="account"),
@@ -1131,7 +1690,6 @@ async def test_account_breakdown_drilldown_converts_to_transaction_list_with_acc
 
     query_contract = updates["query_contract"]
     assert query_contract.intent == QueryIntent.TRANSACTION_LIST
-    assert query_contract.query_operation == QueryOperation.LIST_TRANSACTIONS
     assert query_contract.aggregation is None
     assert query_contract.filters is not None
     assert query_contract.filters.account_filter == "First Bank"
@@ -1146,7 +1704,6 @@ async def test_account_breakdown_drilldown_prefers_explicit_label_over_ordinal_i
     today = date(2026, 3, 28)
     session_query = _query_ir(
         intent=QueryIntent.ANALYTICS_SUMMARY,
-        query_operation=QueryOperation.BREAKDOWN_TRANSACTIONS,
         time_range=TimeRange(start=date(2026, 2, 26), end=today),
         filters=Filters(transaction_type="debit"),
         aggregation=Aggregation(type="breakdown", group_by="account"),
@@ -1235,7 +1792,7 @@ async def test_account_breakdown_drilldown_prefers_explicit_label_over_ordinal_i
 
 
 @pytest.mark.asyncio
-async def test_show_me_follow_up_does_not_convert_summary_on_pagination_intent() -> None:
+async def test_show_me_follow_up_increments_pagination_on_summary_intent() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)
     session_query = _query_ir(
@@ -1251,7 +1808,7 @@ async def test_show_me_follow_up_does_not_convert_summary_on_pagination_intent()
             continuation_type="show_more",
             followup_intent="continue_pagination",
             confidence=0.95,
-            reason="pagination_on_summary_is_invalid",
+            reason="pagination_on_summary",
         )
 
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
@@ -1262,11 +1819,12 @@ async def test_show_me_follow_up_does_not_convert_summary_on_pagination_intent()
             "session_active": True,
             "query_contract": session_contract.model_dump(),
             "query_result": {"items": []},
+            "current_page": 0,
         },
     )
 
-    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
-    assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")
+    assert updates["current_page"] == 1
+    assert updates["continuation_type"] == "show_more"
 
 
 @pytest.mark.asyncio
@@ -1403,7 +1961,7 @@ async def test_summary_contrastive_last_week_replaces_scope_and_preserves_recipi
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
             ),
             confidence=0.97,
@@ -1435,6 +1993,148 @@ async def test_summary_contrastive_last_week_replaces_scope_and_preserves_recipi
 
 
 @pytest.mark.asyncio
+async def test_semantic_unclear_time_signal_recovers_scoped_gtbank_no_result_followup() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 6, 23), end=today, granularity="week"),
+        filters=Filters(account_filter="GTBank"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            extraction=QueryExtractionResult(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+            ),
+            confidence=0.91,
+            reason="semantic_time_scope_in_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What of last week", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "No GTBank transactions found for this week.",
+                "items": [],
+            },
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.time_start == date(2026, 6, 15)
+    assert query_contract.time_end == date(2026, 6, 21)
+    assert query_contract.filters is not None
+    assert query_contract.filters.account_filter == "GTBank"
+    assert updates["continuation_type"] == "time_delta"
+    assert updates["continuation_delta_type"] == "time"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.parametrize(
+    ("message", "language"),
+    [
+        ("yesterday nko", "pcm"),
+        ("ti ana nko", "yo"),
+        ("na jiya fa", "ha"),
+        ("hier alors", "fr"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_semantic_multilingual_time_signal_preserves_active_scope(message: str, language: str) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 6, 23), end=today, granularity="week"),
+        filters=Filters(account_filter="GTBank"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            time_range=TimeRange(start=date(2026, 6, 26), end=date(2026, 6, 26), granularity="day"),
+            confidence=0.88,
+            reason="multilingual_time_scope",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": message, "today": today, "language": language},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.time_start == date(2026, 6, 26)
+    assert query_contract.time_end == date(2026, 6, 26)
+    assert query_contract.filters is not None
+    assert query_contract.filters.account_filter == "GTBank"
+    assert updates["continuation_type"] == "time_delta"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_unclear_non_time_followup_does_not_recover_to_time_delta() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 27)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 6, 23), end=today, granularity="week"),
+        filters=Filters(account_filter="GTBank"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.92,
+            reason="non_time_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "what of it", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+        },
+    )
+
+    assert "query_contract" not in updates
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["session_active"] is True
+
+
+@pytest.mark.asyncio
 async def test_summary_contrastive_last_week_logs_semantic_reasoner_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)
@@ -1457,7 +2157,7 @@ async def test_summary_contrastive_last_week_logs_semantic_reasoner_resolution(m
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
             ),
             confidence=0.97,
@@ -1559,7 +2259,6 @@ async def test_assertive_yesterday_correction_rescopes_active_count_from_reasone
     today = date(2026, 3, 19)
     session_query = _query_ir(
         intent=QueryIntent.ANALYTICS_SUMMARY,
-        query_operation=QueryOperation.COUNT_TRANSACTIONS,
         time_range=TimeRange(start=today, end=today),
         aggregation=Aggregation(type="count"),
     )
@@ -1575,7 +2274,7 @@ async def test_assertive_yesterday_correction_rescopes_active_count_from_reasone
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
             ),
             confidence=0.96,
@@ -1597,7 +2296,6 @@ async def test_assertive_yesterday_correction_rescopes_active_count_from_reasone
 
     query_contract = updates["query_contract"]
     assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.query_operation == QueryOperation.COUNT_TRANSACTIONS
     assert query_contract.aggregation is not None
     assert query_contract.aggregation.type == "count"
     assert query_contract.time_start == date(2026, 3, 18)
@@ -1719,7 +2417,7 @@ async def test_explicit_aggregate_scope_drops_inherited_beneficiary_filter() -> 
             continuation_type="aggregate",
             followup_intent="refine_existing",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.SPENDING_TOTAL,
+                intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
                 raw_query="How have I spent this month so far",
             ),
@@ -1770,7 +2468,7 @@ async def test_aggregate_continuation_without_reasoner_extraction_uses_determini
     )
     session_contract = _contract(session_query)
     parsed_extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="How much have I spent this month so far",
     )
@@ -1841,7 +2539,7 @@ async def test_aggregate_continuation_with_polluted_reasoner_extraction_prefers_
     )
     session_contract = _contract(session_query)
     parsed_extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="How much have I spent this month so far",
     )
@@ -1860,7 +2558,7 @@ async def test_aggregate_continuation_with_polluted_reasoner_extraction_prefers_
             confidence=0.92,
             reason="polluted_reasoner_aggregate_extraction",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.SPENDING_TOTAL,
+                intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=QueryFilters(recipient="mum", transaction_type="debit"),
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
                 request_shape=QueryRequestShape.FACT,
@@ -1915,7 +2613,7 @@ async def test_beneficiary_summary_aggregate_followup_prefers_clean_total_parse(
     )
     session_contract = _contract(session_query)
     parsed_extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="How much did I send in total this month",
     )
@@ -1934,7 +2632,7 @@ async def test_beneficiary_summary_aggregate_followup_prefers_clean_total_parse(
             confidence=0.93,
             reason="beneficiary_summary_total_followup",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+                intent=QueryIntent.BENEFICIARY_SUMMARY,
                 filters=QueryFilters(transaction_type="debit"),
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
                 request_shape=QueryRequestShape.GROUPED_SUMMARY,
@@ -2214,7 +2912,7 @@ async def test_unclear_income_repair_followup_uses_reasoner_compiler_without_par
     )
     session_contract = _contract(session_query)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="I mean my income this month",
     )
@@ -2285,7 +2983,7 @@ async def test_unclear_highest_single_transfer_repair_clarifies_without_explicit
     )
     session_contract = _contract(session_query)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
+        intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="I mean my highest single transfer",
     )
@@ -2342,7 +3040,7 @@ async def test_unclear_credit_pivot_followup_clarifies_without_grounded_reasoner
     )
     session_contract = _contract(session_query)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         raw_query="What about credit",
     )
     parsed_query = _query_ir(
@@ -2433,7 +3131,7 @@ async def test_plain_recipient_summary_followup_reparses_as_new_beneficiary_summ
     session_contract = _contract(session_query)
 
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=QueryIntent.TRANSACTION_LIST,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
         raw_query="Who did I send money to this month",
     )
@@ -2546,7 +3244,7 @@ async def test_summary_contrastive_yesterday_without_reasoner_time_payload_repar
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
             ),
             confidence=0.96,
@@ -2867,7 +3565,7 @@ async def test_single_item_contrastive_yesterday_preserves_latest_shape() -> Non
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
             ),
             confidence=0.94,
@@ -3139,6 +3837,99 @@ async def test_single_item_current_fact_followup_answers_selected_item_from_sema
 
 
 @pytest.mark.asyncio
+async def test_direct_fact_counterparty_answer_when_was_that_followup_uses_focused_item() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 6, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 6, 1), end=today),
+        filters=Filters(transaction_type="credit"),
+        result_limit=1,
+        answer_fact_field="counterparty",
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            drill_down_action="answer_fact",
+            fact_field="date",
+            confidence=0.96,
+            reason="semantic_direct_fact_referential_date_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When was that", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "That was with Acme Corp.",
+                "items": [
+                    QueryResultItem(
+                        id="txn_acme",
+                        description="Acme Corp",
+                        amount=950000.0,
+                        date=today,
+                        metadata={
+                            "date": "2026-06-28",
+                            "type": "credit",
+                            "transaction_type": "credit",
+                            "counterparty": "Acme Corp",
+                            "recipient_name": "Acme Corp",
+                            "bank_name": "Zenith Bank",
+                        },
+                    ).model_dump(mode="json")
+                ],
+                "surface_view": {
+                    "mode": "direct_answer",
+                    "lead_text": "That was with Acme Corp.",
+                    "items": [
+                        SurfaceItemView(
+                            id="txn_acme",
+                            label="Acme Corp",
+                            amount=950000.0,
+                            payload=SelectionPayload(
+                                selection_kind="transaction",
+                                entity_type="transaction",
+                                entity_id="txn_acme",
+                                label="Acme Corp",
+                                fact_capabilities=["date", "amount", "bank", "reference"],
+                            ),
+                            metadata={
+                                "date": "2026-06-28",
+                                "type": "credit",
+                                "counterparty": "Acme Corp",
+                                "bank_name": "Zenith Bank",
+                            },
+                        ).model_dump(mode="json")
+                    ],
+                    "context": {
+                        "type": "single_transaction",
+                        "focus_type": "transaction",
+                        "selected_item_id": "txn_acme",
+                    },
+                },
+            },
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "drill_down"
+    assert updates["selected_item_id"] == "txn_acme"
+    assert updates["selected_item_index"] == 0
+    assert updates["drill_down_action"] == "answer_fact"
+    assert updates["fact_field"] == "date"
+
+
+@pytest.mark.asyncio
 async def test_summary_last_month_only_replaces_scope_and_preserves_debit_filter() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)
@@ -3200,7 +3991,7 @@ async def test_summary_contrastive_last_week_correction_wrapper_replaces_scope_v
             continuation_type="time_delta",
             followup_intent="replace_scope",
             extraction=QueryExtractionResult(
-                intent=ExtractionIntent.TRANSACTION_LIST,
+                intent=QueryIntent.TRANSACTION_LIST,
                 time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
             ),
             confidence=0.98,
@@ -3356,7 +4147,6 @@ async def test_account_breakdown_followup_uses_selection_payload_without_surface
 
     query_contract = updates["query_contract"]
     assert query_contract.intent == QueryIntent.TRANSACTION_LIST
-    assert query_contract.query_operation == QueryOperation.LIST_TRANSACTIONS
     assert query_contract.filters is not None
     assert query_contract.filters.account_filter == "First Bank"
     assert query_contract.aggregation is None

@@ -95,7 +95,7 @@ class QueryExecutor:
                     accounts_info,
                     current_page,
                     page_size,
-                    user_id=user_id,  # Explicitly passing it
+                    user_id=user_id,
                     language=language,
                     continuation_type=continuation_type,
                     continuation_delta_type=continuation_delta_type,
@@ -111,10 +111,11 @@ class QueryExecutor:
                     accounts_info,
                     current_page,
                     page_size,
-                    user_id=user_id,  # Explicitly passing it
+                    user_id=user_id,
                     language=language,
                 )
             result.query_contract = query
+            result.conversational_prefix = query.conversational_prefix
             logger.info(
                 "query_trace",
                 turn_id=(trace_context or {}).get("turn_id"),

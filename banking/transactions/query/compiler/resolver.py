@@ -17,6 +17,7 @@ from banking.transactions.query.capabilities import (
     QueryCapability,
     generate_limitation_message,
 )
+from banking.transactions.query.models.domain import QueryIntent
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
@@ -117,6 +118,13 @@ def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtraction
 
 def resolve(extraction: QueryExtractionResult, *, language: str = "en") -> ResolverDecision:
     """Main resolver entry point."""
+
+    if extraction.intent == QueryIntent.QUERY_CLARIFICATION:
+        return ResolverDecision(
+            decision=Decision.ASK_CLARIFY,
+            extraction=extraction,
+            prompts=[Prompt(key="query.clarify.unsure_rephrase")],
+        )
 
     if extraction.ambiguities:
         time_vague = next((a for a in extraction.ambiguities if a.code == AmbiguityCode.TIME_VAGUE), None)

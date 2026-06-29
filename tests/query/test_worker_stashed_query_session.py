@@ -16,7 +16,6 @@ from banking.transactions.query.models.domain import (
     TimeRange,
 )
 from banking.transactions.query.models.extraction import (
-    ExtractionIntent,
     PendingClarificationState,
     QueryExtractionResult,
     QueryTimeRange,
@@ -246,9 +245,9 @@ async def test_worker_persists_pending_query_clarification_session() -> None:
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     pending = PendingClarificationState(
         original_query="How much did I spend last",
-        current_intent=ExtractionIntent.SPENDING_TOTAL,
+        current_intent=QueryIntent.ANALYTICS_SUMMARY,
         original_extraction=QueryExtractionResult(
-            intent=ExtractionIntent.SPENDING_TOTAL,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
             raw_query="How much did I spend last",
         ),
@@ -1122,7 +1121,7 @@ async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_foll
             continuation_type="filter_delta",
             followup_intent="refine_existing",
             delta_type="filter",
-            filters=Filters(transaction_type="credit"),
+            filters=Filters(min_amount=3000),
             confidence=0.98,
             reason="llm_credit_filter_followup",
         )
@@ -1130,7 +1129,7 @@ async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_foll
     followup_worker.extractor.reasoner.reason = _followup_reason  # type: ignore[method-assign]
 
     second_result = await followup_worker.run(
-        payload={"message": "Only credits"},
+        payload={"message": "Only above 3k"},
         context={
             "phone_number": "2348000000317",
             "user_id": "u-worker-filter-cache",
@@ -1239,7 +1238,7 @@ async def test_worker_restores_persisted_analytics_followup_for_time_delta(
 
     query_result = second_result.patch["query_result"]
     assert isinstance(query_result, QueryResult)
-    assert query_result.summary_text == "You spent *₦5,000* today, across 1 transaction."
+    assert query_result.summary_text == "You spent ₦5,000 today, across 1 transaction."
     assert [item.description for item in query_result.items or []] == ["Card purchase"]
 
 

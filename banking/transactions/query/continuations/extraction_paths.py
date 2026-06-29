@@ -17,6 +17,7 @@ from banking.transactions.query.continuations.supported_recovery import (
     maybe_recover_supported_followup_query,
 )
 from banking.transactions.query.continuations.time_rescope import (
+    has_semantic_time_only_signal,
     is_direct_time_rescope_message,
     maybe_recover_time_rescope_continuation,
 )
@@ -170,6 +171,28 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
         followup_intent=decision.followup_intent,
         delta_type=decision.delta_type,
     )
+
+    if decision.decision == "continuation" and has_semantic_time_only_signal(decision):
+        recovered_updates = await maybe_recover_time_rescope_continuation(
+            step,
+            trigger_reason="semantic_time_signal",
+            decision=decision,
+            state=state,
+            session=session,
+            session_query_contract=session_query_contract,
+            message=message,
+            today=today,
+            language=locale,
+        )
+        if recovered_updates is not None:
+            step._log_single_item_followup(
+                surface_view=surface_view,
+                continuation_type="time_delta",
+                followup_outcome="time_rescope_query",
+                decision=decision.decision,
+            )
+            recovered_updates.update(step._semantic_trace_updates(decision))
+            return recovered_updates
 
     if decision.decision == "end_session":
         step._log_single_item_followup(
