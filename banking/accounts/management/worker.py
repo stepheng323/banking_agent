@@ -172,22 +172,22 @@ class AccountWorker:
             if action == "reinitiate_mandate":
                 accounts = user_ctx.get("accounts") or []
                 pending_accounts = [acc for acc in accounts if getattr(acc, "mandate_status", "") == "pending"]
-                
+
                 if not pending_accounts:
                     return AccountResult(
                         outcome=AccountOutcome.OK,
                         response=render_message("account.error.no_pending_mandate", locale),
                         patch=patch,
                     )
-                
+
                 if len(pending_accounts) == 1 and not payload.get("reinitiate_clarified"):
                     patch["reinitiate_clarified"] = True
                     return AccountResult(
                         outcome=AccountOutcome.NEEDS_INPUT,
                         required_fields=["identifier"],
                         prompt=render_message(
-                            "account.prompt.reinitiate_clarify", 
-                            locale, 
+                            "account.prompt.reinitiate_clarify",
+                            locale,
                             {"bank_name": pending_accounts[0].bank_name}
                         ),
                         patch=patch,
@@ -258,11 +258,11 @@ class AccountWorker:
             elif action == "reinitiate_mandate":
                 from banking.accounts.management.serialization import find_account_by_bank_name
                 from banking.accounts.onboarding.mandate import MandateService
-                
+
                 accounts = user_ctx.get("accounts") or []
                 if not accounts:
                     accounts = await self.account_repo.get_by_user(user_id)
-                
+
                 selected_account = None
                 try:
                     account_index = int(str(identifier))
@@ -270,7 +270,7 @@ class AccountWorker:
                         selected_account = accounts[account_index - 1]
                 except ValueError:
                     selected_account = find_account_by_bank_name(accounts, str(identifier))
-                    
+
                 if not selected_account:
                     response = render_message(
                         "account.account_not_found_with_count",

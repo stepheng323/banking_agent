@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Parser for account management intents."""
 
 from typing import Any, Literal, cast

@@ -91,6 +91,8 @@ _PROMPT_APPROVE_EXTRAS: dict[ConfirmationPromptKind, dict[LocaleCode, set[str]]]
     },
     "transaction_confirmation": {},
     "amount_suggestion": {},
+    "recipient_review": {},
+    "funding_suggestion": {},
 }
 
 _PROMPT_REJECT_EXTRAS: dict[ConfirmationPromptKind, dict[LocaleCode, set[str]]] = {

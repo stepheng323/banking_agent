@@ -63,6 +63,9 @@ def confirmation_decision_messages(
 ) -> list[dict[str, str]]:
     system_prompt = (
         "Classify the user's reply to one active banking prompt. "
+        "Users are Nigerian and may reply in English, Nigerian Pidgin (e.g. 'oya', 'oya na', 'e don do', "
+        "'abeg proceed', 'na so', 'correct'), Yoruba (e.g. 'beeni', 'o dara'), "
+        "Hausa (e.g. 'na'am', 'to'), or Igbo (e.g. 'ee', 'ga n'ihu'). "
         "Return approve only when the user clearly agrees to the active prompt. "
         "Return reject when they decline, cancel, or defer. "
         "Return modify when they change amount, recipient, bank, account, source, or other details. "
@@ -96,6 +99,10 @@ async def classify_confirmation_reply(
         output = await structured_llm.ainvoke(
             confirmation_decision_messages(text=text, prompt_kind=prompt_kind, context=context)
         )
+        if isinstance(output, dict) and "parsed" in output:
+            if output.get("parsing_error"):
+                raise output["parsing_error"]
+            output = output["parsed"]
         parsed = (
             output
             if isinstance(output, ConfirmationDecisionOutput)
@@ -110,17 +117,17 @@ async def classify_confirmation_reply(
             return ConfirmationDecision("unclear", "llm", parsed.confidence, "approval_below_threshold")
         if not is_safe_guarded_approval_text(text, prompt_kind=prompt_kind):
             return ConfirmationDecision("unclear", "guardrail", parsed.confidence, "unsafe_llm_approval")
-        return ConfirmationDecision("approve", "llm", parsed.confidence, parsed.reason, parsed.custom_data)
+        return ConfirmationDecision("approve", "llm", parsed.confidence, parsed.reason)
 
     if parsed.action == "reject":
         if parsed.confidence < REJECTION_CONFIDENCE_THRESHOLD:
             return ConfirmationDecision("unclear", "llm", parsed.confidence, "rejection_below_threshold")
-        return ConfirmationDecision("reject", "llm", parsed.confidence, parsed.reason, parsed.custom_data)
+        return ConfirmationDecision("reject", "llm", parsed.confidence, parsed.reason)
 
     if parsed.action in {"modify", "new_request"}:
-        return ConfirmationDecision(parsed.action, "llm", parsed.confidence, parsed.reason, parsed.custom_data)
+        return ConfirmationDecision(parsed.action, "llm", parsed.confidence, parsed.reason)
 
-    return ConfirmationDecision("unclear", "llm", parsed.confidence, parsed.reason, parsed.custom_data)
+    return ConfirmationDecision("unclear", "llm", parsed.confidence, parsed.reason)
 
 
 __all__ = [

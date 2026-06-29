@@ -75,9 +75,10 @@ def render_beneficiary_retry_prompt(
     locale: str,
 ) -> str:
     numbered_lines = [
-        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)
+        f"{idx}. {str(candidate.get('body_label') or candidate.get('label') or f'Option {idx}')}"
+        for idx, candidate in enumerate(candidates, start=1)
     ]
-    candidates_list = "\n".join(numbered_lines)
+    candidates_list = "\n\n".join(numbered_lines)
     prompt = render_message(
         "response.templates.clarify_beneficiary",
         locale,

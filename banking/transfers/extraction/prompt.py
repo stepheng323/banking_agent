@@ -13,7 +13,8 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | recipient_account | 10-digit account number | — |
 | bank_name | Destination bank (recipient's bank) | Standardize: gtb→GTBank, zenith→Zenith Bank |
 | source_bank_name | Source bank (sender's account) | Use for: "from my access", "use zenith", "X bank instead" |
-| source_account_index | Selection from numbered list | 1 for "first"/"1"/"one", 2 for "second"/"2"/"two" |
+| source_account_index | Selection from numbered list for source account | 1 for "first"/"1", 2 for "second"/"2" |
+| recipient_binding_index | Selection from numbered list for recipient/beneficiary | 1 for "first"/"1", 2 for "second"/"2". **CRITICAL: NEVER resolve the index to the person's name. Always output the index.** |
 | recipient_name | Name/alias | "to mum", "john's gtb" |
 | is_self | Transfer to own account | true for "to my [bank]", "to myself" |
 | narration | Optional memo | Capture explicit purpose/note, e.g. "for groceries", "purpose: rent" |

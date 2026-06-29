@@ -12,7 +12,9 @@ BANK_ALIASES: dict[str, str] = {
     "guaranty trust": "gtbank",
     "uba": "uba",
     "united bank": "uba",
+    "access bank nigeria": "access",
     "fbn": "firstbank",
+    "first": "firstbank",
     "first bank": "firstbank",
     "fcmb": "fcmb",
     "stanbic": "stanbic",
@@ -94,6 +96,14 @@ def normalize_bank_name(name: str) -> str:
 
     normalized = name.lower().strip()
     return BANK_ALIASES.get(normalized, normalized)
+
+
+def is_known_bank_alias(name: str | None) -> bool:
+    """Check if the name maps to a known, supported bank."""
+    if not name:
+        return False
+    normalized = normalize_bank_name(name)
+    return normalized in BANK_DISPLAY_NAMES
 
 
 def display_bank_name(name: str | None) -> str | None:

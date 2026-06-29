@@ -215,17 +215,29 @@ def build_beneficiary_clarify_result(
     options = []
     for idx, candidate in enumerate(candidates, start=1):
         beneficiary_id = str(candidate.id)
-        option_id = f"bene:{beneficiary_id}"
-        label = (
-            f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • "
-            f"****{str(candidate.account_number)[-4:]}"
-        )
+        option_id = str(idx)
+
+        primary_name = candidate.account_name or candidate.alias or "Unknown Name"
+
+        display_name_html = f"<b>{primary_name}</b>"
+        if candidate.alias and candidate.account_name and candidate.alias.lower() != candidate.account_name.lower():
+            if primary_name == candidate.account_name:
+                display_name_html += f" (Alias: {candidate.alias})"
+            else:
+                display_name_html += f" ({candidate.account_name})"
+
+        bank_details = f"{candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
+
+        body_label = f"{display_name_html} • {bank_details}"
+        fallback_label = f"{primary_name} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
+
         candidate_list.append(
             {
                 "index": idx,
                 "beneficiary_id": beneficiary_id,
                 "option_id": option_id,
-                "label": label,
+                "label": fallback_label,
+                "body_label": body_label,
                 "recipient_name": candidate.alias or candidate.account_name,
                 "recipient_resolved_name": candidate.account_name or candidate.alias,
                 "recipient_account": optional_text(candidate.account_number),
@@ -236,10 +248,19 @@ def build_beneficiary_clarify_result(
                 "resolved_from_saved_beneficiary": True,
             }
         )
-        options.append({"id": option_id, "title": label})
 
-    numbered_lines = [f"{candidate['index']}. {candidate['label']}" for candidate in candidate_list]
-    candidates_list = "\n".join(numbered_lines)
+        button_title = f"{idx}. {primary_name}"
+        if len(button_title) > 24:
+            button_title = button_title[:21] + "..."
+
+        options.append({
+            "id": option_id,
+            "title": button_title,
+            "description": bank_details
+        })
+
+    numbered_lines = [f"{candidate['index']}. {candidate['body_label']}" for candidate in candidate_list]
+    candidates_list = "\n\n".join(numbered_lines)
     prompt = render_message(
         "response.templates.clarify_beneficiary",
         locale,
@@ -309,7 +330,7 @@ def build_memory_recipient_clarify_result(resolution: dict[str, Any], locale: st
         if bank or account:
             suffix = " • ".join(part for part in (bank, f"****{account[-4:]}" if account else "") if part)
             label = f"{label} • {suffix}"
-        option_id = f"referent:{idx}"
+        option_id = str(idx)
         record = beneficiary_record_from_referent_item(item)
         candidate_list.append(
             {

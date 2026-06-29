@@ -67,7 +67,14 @@ class TransferEntities(BaseModel):
     source_account_index: int | None = Field(
         default=None,
         description=(
-            "1-based index when user selects from a numbered list. "
+            "1-based index when user selects from a numbered list for source account. "
+            "Set to 1 for 'first', '1', 'one', 'option 1'; set to 2 for 'second', '2', 'two', 'option 2', etc."
+        ),
+    )
+    recipient_binding_index: int | None = Field(
+        default=None,
+        description=(
+            "1-based index when user selects from a numbered list for recipient/beneficiary. "
             "Set to 1 for 'first', '1', 'one', 'option 1'; set to 2 for 'second', '2', 'two', 'option 2', etc."
         ),
     )

@@ -30,7 +30,6 @@ class ConfirmationDecisionOutput(BaseModel):
     )
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str = Field(default="llm_classification")
-    custom_data: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

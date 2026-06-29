@@ -6,7 +6,7 @@ from typing import Any
 from banking.presentation.formatters.currency import format_naira
 from banking.transactions.shared.source_account_guard import find_account_by_bank_name
 from banking.transfers.models.types import TransferContext, TransferPayload
-from shared.utils.bank_aliases import display_bank_name
+from shared.utils.bank_aliases import display_bank_name, is_known_bank_alias
 from shared.utils.sanitize import normalize_bank_account_number
 
 _ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN = re.compile(r"^\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s+(?P<bank>.+?)\s*$")
@@ -210,6 +210,7 @@ def parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
             and bank_name
             and not bank_name.isdigit()
             and not _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name)
+            and is_known_bank_alias(bank_name)
         ):
             known_bank = display_bank_name(bank_name)
             if known_bank:
@@ -228,6 +229,8 @@ def parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
         if not bank_name or bank_name.isdigit():
             continue
         if _BANK_DETAIL_INLINE_NON_BANK_RE.search(bank_name):
+            continue
+        if not is_known_bank_alias(bank_name):
             continue
 
         known_bank = display_bank_name(bank_name)
@@ -324,12 +327,21 @@ def parse_simple_transfer_command(
         return patch
 
     normalized_account = normalize_bank_account_number(target)
-    if len(normalized_account) == 10:
+    if len(normalized_account) == 10 and not any(c.isalpha() for c in target):
         patch["recipient_account"] = normalized_account
         return patch
 
     if target.isdigit():
         return None
+
+    if any(c.isdigit() for c in target):
+        return None
+
+    from shared.utils.bank_aliases import BANK_ALIASES, BANK_DISPLAY_NAMES
+    target_lower = f" {target.lower()} "
+    for bank_key in list(BANK_ALIASES.keys()) + list(BANK_DISPLAY_NAMES.keys()):
+        if f" {bank_key} " in target_lower:
+            return None
 
     patch["recipient_name"] = target
     return patch

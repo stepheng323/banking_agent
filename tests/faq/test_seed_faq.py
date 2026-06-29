@@ -16,7 +16,7 @@ def _write_faq(path: Path, content: str) -> Path:
 
 
 def test_parse_current_faq_docs() -> None:
-    entries = seed_faq.parse_faq_directory(Path("data/faq"))
+    entries = seed_faq.parse_faq_directory(Path("banking/faq/data"))
 
     assert len(entries) == 57
     assert {entry["category"] for entry in entries} == {

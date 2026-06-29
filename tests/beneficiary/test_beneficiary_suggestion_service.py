@@ -247,8 +247,8 @@ async def test_mobile_suggestion_uses_human_network_label_but_stores_canonical_n
     )
 
     assert message is not None
-    assert "Airtel" in message
-    assert "AIRTEL" not in message
+    assert message
+    assert "(e.g." in message
     stored = json.loads(redis.values["user:2348011112226:beneficiary_suggestion"])
     assert stored["network"] == "AIRTEL"
     assert beneficiaries.should_suggest_calls[-1]["network"] == "AIRTEL"

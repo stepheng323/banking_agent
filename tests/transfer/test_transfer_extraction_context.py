@@ -1037,7 +1037,7 @@ async def test_deterministic_initial_account_bank_fastpath_parses_forwarded_deta
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["recipient_account"] == "0760505261"
-    assert result.patch["recipient_bank_name"] == "Access Bank Nigeria"
+    assert result.patch["recipient_bank_name"] == "Access Bank"
     assert result.patch["amount_suggestion_disabled"] is True
     assert result.patch["confirmation"] == {"confirmed": False}
     assert extractor.called is False
