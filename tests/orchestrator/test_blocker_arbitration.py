@@ -104,7 +104,7 @@ def test_grouped_confirmation_expands_by_async_group_and_preserves_wave_order() 
     assert decision.task_ids == ["first", "last"]
 
 
-def test_no_blocker_allows_terminal_wave_to_advance() -> None:
+async def test_no_blocker_allows_terminal_wave_to_advance() -> None:
     state = _state(
         {"done": _task("done", stage=TaskStage.COMPLETED)},
         wave=["done"],
@@ -129,6 +129,6 @@ def test_no_blocker_allows_terminal_wave_to_advance() -> None:
         mandate_gate_accounts=[],
     )
 
-    updates = finalize_execution_wave_updates(state=state, runtime=runtime)
+    updates = await finalize_execution_wave_updates(state=state, runtime=runtime)
 
     assert updates["current_wave_index"] == 1

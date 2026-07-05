@@ -107,7 +107,7 @@ async def run_execution_wave(state: OrchestratorState, config: RunnableConfig) -
             worker_phase_entered=True,
         )
 
-    updates: dict[str, Any] = finalize_execution_wave_updates(state=state, runtime=runtime)
+    updates: dict[str, Any] = await finalize_execution_wave_updates(state=state, runtime=runtime)
     return ExecutionWaveResult(
         updates=updates,
         phase="finalized",

@@ -3153,11 +3153,10 @@ async def test_confirmation_switch_to_account_uses_user_message_for_balance_exec
     execution_updates = await advance_wave(switched_state, execution_config)
 
     assert account_worker.last_user_message == "what's my balance"
-    assert execution_updates["outbox"][0] == {
-        "type": "say",
-        "text": "I paused the transfer while I check your account.",
-    }
-    assert execution_updates["outbox"][1]["text"].startswith("*Your Balance*")
+    assert len(execution_updates["outbox"]) == 1
+    text = execution_updates["outbox"][0]["text"]
+    assert "I paused the transfer while I check your account." in text
+    assert "*Your Balance*" in text
 
 
 @pytest.mark.asyncio
@@ -3274,6 +3273,55 @@ async def test_confirmation_additive_self_airtime_bypasses_pending_edit_and_rout
     assert task.payload["skip_extraction"] is True
     assert task.payload["source_account_id"] == "acct_access"
     assert updates["waves"] == [["t_transfer", task.id]]
+
+
+@pytest.mark.asyncio
+async def test_confirmation_mixed_edit_and_additive_turn_uses_pending_edit_path() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_add_airtime_mixed_edit",
+        phone_number="2348077777785",
+        channel="whatsapp",
+        last_message_text="Make it 5k, also buy me 1k airtime",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer"]),
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 4000,
+                    "recipient_name": "Tolu Access",
+                    "source_account_id": "acct_access",
+                    "source_bank_name": "Access Bank",
+                    "confirmation": {"summary": "Confirm transfer", "confirmed": False},
+                },
+            )
+        },
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _PendingEditOnlyPlanner(
+                PendingActionEditDecision(
+                    operation="update_fields",
+                    confidence=0.95,
+                    detected_language="English",
+                    target_types=["transfer"],
+                    amount=5000,
+                    reason="edit existing pending transfer amount",
+                )
+            )
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert list(updates["tasks"].keys()) == ["t_transfer"]
+    assert updates["tasks"]["t_transfer"].payload["amount"] == 5000
+    assert updates["tasks"]["t_transfer"].payload["confirmation"] == {"confirmed": False}
 
 
 @pytest.mark.asyncio

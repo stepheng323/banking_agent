@@ -216,11 +216,12 @@ async def test_mixed_intent_outbox_contains_notice_then_transfer_prompt() -> Non
     state = _apply(state, await advance_wave(state, config))
 
     outbox = state.outbox
-    assert len(outbox) >= 2
-    assert "investments or crypto" in outbox[0]["text"]
-    assert "I can proceed with money transfer" in outbox[0]["text"]
-    assert "I can help with send money or review recent transactions instead." in outbox[0]["text"]
-    assert "account number for tolu" in outbox[1]["text"].lower()
+    assert len(outbox) >= 1
+    text = outbox[0]["text"]
+    assert "investments or crypto" in text
+    assert "I can proceed with money transfer" in text
+    assert "I can help with send money or review recent transactions instead." in text
+    assert "account number for tolu" in text.lower()
     assert state.policy_notice is None
 
 

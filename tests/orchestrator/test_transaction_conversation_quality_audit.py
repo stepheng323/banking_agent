@@ -1181,10 +1181,11 @@ async def test_quality_audit_data_confirmation_balance_detour_stashes_and_runs_a
     account_updates = await advance_wave(switched_state, config)
 
     assert account_worker.last_user_message == "Whats my access balance"
-    assert account_updates["outbox"] == [
-        {"type": "say", "text": "I paused the data purchase while I check your account."},
-        {"type": "say", "text": "Your Access Bank account (···0003) has a balance of ₦30,000.00."},
-    ]
+    assert len(account_updates["outbox"]) == 1
+    assert account_updates["outbox"][0] == {
+        "type": "say",
+        "text": "I paused the data purchase while I check your account.\n\nYour Access Bank account (···0003) has a balance of ₦30,000.00.",
+    }
     assert switched_state.referent_memory.items
     assert any(item.source == "stashed_session" for item in switched_state.referent_memory.items)
 
