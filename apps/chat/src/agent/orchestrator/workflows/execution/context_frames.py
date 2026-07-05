@@ -160,7 +160,7 @@ def push_schedule_list_frame(ctx: ExecutionTurnContext, items: list[dict[str, An
 
 
 def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> None:
-    if query_result is None:
+    if query_result is None or isinstance(query_result, dict):
         return
 
     surface_view = getattr(query_result, "surface_view", None)

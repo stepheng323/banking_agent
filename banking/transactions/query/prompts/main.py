@@ -11,7 +11,7 @@ DECISIONS
 - reinterpret_query: user restates/reframes the current query. Include `extraction`.
 - continuation: active-session follow-up. Include `continuation_type` + `followup_intent` (always required).
 - new_query: different query while session is active. Include `extraction`.
-- end_session: thanks/cancel/abort/stop. Include `end_session_kind` (courtesy|dismissive|generic).
+- end_session: thanks/cancel/abort/stop. Include `end_session_kind` (courtesy|dismissive|generic). For courtesy messages ("thanks", "ok"), you MUST provide a natural, conversational reply in `end_session_response` (e.g. "You're welcome! Let me know if you need anything else.").
 
 CONTINUATION TYPES & FOLLOWUP INTENT
 | continuation_type     | followup_intent      | when                                                              |
