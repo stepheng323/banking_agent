@@ -112,6 +112,25 @@ def test_query_conversation_resolver_selects_visible_amount_reference() -> None:
     assert updates["selected_payload"].entity_id == "tx-adebayo"
 
 
+def test_query_conversation_resolver_prefers_visible_amount_over_bad_reasoner_index() -> None:
+    updates = build_query_conversation_updates(
+        surface_view=_surface(),
+        query_result=_query_result(),
+        decision=QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.95,
+            continuation_type="drill_down",
+            drill_down_action="view_details",
+            target_index=6,
+        ),
+        text="show the 25k one",
+    )
+
+    assert updates is not None
+    assert updates["selected_item_id"] == "tx-adebayo"
+    assert updates["selected_item_index"] == 1
+
+
 def test_query_conversation_resolver_target_overrides_misclassified_pagination() -> None:
     updates = build_query_conversation_updates(
         surface_view=_surface(),
@@ -316,6 +335,23 @@ def test_query_conversation_resolver_leaves_filter_delta_to_query_refinement() -
             filters=Filters(transaction_type="debit"),
         ),
         text="what about debits",
+    )
+
+    assert updates is None
+
+
+def test_query_conversation_resolver_leaves_coverage_to_coverage_handler() -> None:
+    updates = build_query_conversation_updates(
+        surface_view=_surface(),
+        query_result=_query_result(),
+        decision=QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.95,
+            continuation_type="coverage",
+            followup_intent="none",
+            target_text="list",
+        ),
+        text="is this all?",
     )
 
     assert updates is None

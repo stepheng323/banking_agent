@@ -212,6 +212,43 @@ def test_select_answer_strategy_uses_latest_amount_reply() -> None:
     assert selected.answer_context.secondary_text == "Mar 24 • Opay"
 
 
+def test_select_answer_strategy_uses_latest_fact_without_ambiguity_for_multiple_matches() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-2|total:2",
+        items=[
+            QueryResultItem(
+                id="tx-latest",
+                description="Payment to Tolu Adebayo",
+                amount=5000,
+                date=date(2026, 6, 29),
+                metadata={"type": "debit", "recipient_name": "Tolu Adebayo", "recipient_bank_name": "Access Bank"},
+            ),
+            QueryResultItem(
+                id="tx-older",
+                description="Payment to Tolu Adebayo",
+                amount=25000,
+                date=date(2026, 6, 23),
+                metadata={"type": "debit", "recipient_name": "Tolu Adebayo", "recipient_bank_name": "First Bank"},
+            ),
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Tolu Adebayo"]),
+                answer_fact_field="amount",
+                result_reference="latest",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "The last transfer to Tolu Adebayo was ₦5,000."
+    assert selected.answer_context.secondary_text == "Jun 29 • Access Bank"
+
+
 def test_select_answer_strategy_uses_posted_status_for_history_item_without_status() -> None:
     result = QueryResult(
         summary_text="accounts:1|showing:1-1|total:1",
@@ -573,3 +610,39 @@ def test_select_answer_strategy_answers_existence_no_without_coverage_disclaimer
     assert selected.answer_context is not None
     assert selected.answer_context.primary_text == "No. I don't see any payment to Mum in that period."
     assert "local" not in selected.answer_context.primary_text.lower()
+
+
+def test_select_answer_strategy_uses_compact_followup_fact_answer_without_evidence() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={
+                    "type": "debit",
+                    "transaction_type": "transfer",
+                    "recipient_name": "Mum",
+                    "recipient_bank_name": "Opay",
+                },
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="date",
+                continuation_type="drill_down",
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+
+    assert selected.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER
+    assert selected.answer_context is not None
+    assert selected.answer_context.primary_text == "You paid Mum on March 24, 2026."
+    assert selected.answer_context.secondary_text is None

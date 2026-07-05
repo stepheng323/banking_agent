@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from apps.chat.src.agent.orchestrator.context.query_surface import build_query_context_for_worker
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
 from apps.chat.src.agent.orchestrator.workflows.execution.context_frames import (
@@ -42,6 +43,33 @@ class QueryTaskExecutor:
         await _execute_query_task(task, task_id, ctx)
 
 
+def _compact_query_session_patch(patch: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep only pending-query compatibility fields for orchestrator checkpoint state."""
+    if not isinstance(patch, dict):
+        return None
+    allowed = {
+        "session_active",
+        "query_contract",
+        "pending_clarification",
+        "current_page",
+        "page_size",
+        "show_expanded",
+        "timestamp",
+    }
+    compact: dict[str, Any] = {}
+    for key in allowed:
+        value = patch.get(key)
+        if value is None:
+            continue
+        if hasattr(value, "model_dump"):
+            compact[key] = value.model_dump(mode="json")
+        elif isinstance(value, list):
+            compact[key] = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in value]
+        else:
+            compact[key] = value
+    return compact or None
+
+
 async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnContext) -> None:
     worker = _get_worker(
         ctx.services,
@@ -65,6 +93,7 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
         "turn_id": turn.last_message_id,
         "stashed_query_session": turn.stashed_query_session,
         "progress_tracker": ctx.dependencies.progress_tracker,
+        **build_query_context_for_worker(ctx.state),
     }
 
     result = cast(
@@ -109,11 +138,11 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
             else:
                 ctx.accumulator.say(result.response)
 
-        if result.patch and isinstance(result.patch, dict):
-            push_query_surface_frame(ctx, result.patch.get("query_result"))
-
         if followup_referent and not handoff_payload:
             push_query_followup_referent_frame(ctx, followup_referent)
+
+        if result.patch and isinstance(result.patch, dict):
+            push_query_surface_frame(ctx, result.patch.get("query_result"))
 
         if handoff_payload:
             transfer_payload = dict(handoff_payload)
@@ -141,6 +170,9 @@ async def _execute_query_task(task: TaskSpec, task_id: str, ctx: ExecutionTurnCo
                 ctx.accumulator.say("Okay. I will resend that transfer now.")
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
+        compact_session = _compact_query_session_patch(result.patch)
+        if compact_session is not None:
+            ctx.accumulator.set_stashed_query_session(compact_session)
         set_task_stage(task, TaskStage.EXTRACTED)
         if result.response:
             ctx.accumulator.add_prompt(result.response, task_id)

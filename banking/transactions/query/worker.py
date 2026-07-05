@@ -2,7 +2,7 @@
 
 Stateless worker for Query tasks.
 Executes: Extract headers -> Parse/Continuity -> Execute -> Format.
-Manages session persistence via Redis.
+Receives follow-up context from the orchestrator checkpoint.
 """
 
 from datetime import date
@@ -15,16 +15,15 @@ from banking.presentation.formatters.transaction_copy_context import build_copy_
 from banking.presentation.i18n.locale import LocaleManager
 from banking.presentation.i18n.renderer import render_message
 from banking.runtime.results import TransactionOutcome, TransactionResult
-from banking.transactions.query.grounding.frames import append_query_frame, restore_query_frames
 from banking.transactions.query.models.domain import (
     Filters,
     QueryExecutionContract,
     QueryIntent,
-    QueryResult,
     TimeRange,
 )
 from banking.transactions.query.nodes.execution import ExecutionStep
 from banking.transactions.query.nodes.extraction import ExtractionStep
+from banking.transactions.query.nodes.generative_formatter import GenerativeFormattingStep
 from banking.transactions.query.pipeline import QueryPipeline
 from banking.transactions.query.session import (
     QuerySessionManager,
@@ -61,7 +60,8 @@ class QueryWorker:
 
         self.extractor = ExtractionStep(llm)
         self.executor = ExecutionStep()
-        self._default_pipeline = QueryPipeline([self.extractor, self.executor])
+        self.formatter = GenerativeFormattingStep(llm)
+        self._default_pipeline = QueryPipeline([self.extractor, self.executor, self.formatter])
         self.pipeline: Any = _InstrumentedQueryPipeline(self)
 
     @staticmethod
@@ -359,9 +359,11 @@ class QueryWorker:
         # 1. Load Session
         phone_number = context.get("phone_number")
         session_key = f"query:session:{phone_number}"
-        query_session = await self.session_manager.load(session_key) or {}
+        active_query_session = context.get("active_query_session")
+        query_session = dict(active_query_session) if isinstance(active_query_session, dict) else {}
         restored_from_stashed_query_session = False
-        session_source = "redis" if query_session else "none"
+        session_source = "orchestrator_context" if query_session else "none"
+
         if query_session:
             self._log_session_shape(
                 event="query_session_loaded",
@@ -395,13 +397,9 @@ class QueryWorker:
                         else QueryExecutionContract.model_validate(raw_contract)
                     )
                     stashed_query_session["query_contract"] = contract.model_dump()
-                    if stashed_query_session.get("query_frames") is not None:
-                        stashed_query_session["query_frames"] = restore_query_frames(
-                            stashed_query_session.get("query_frames")
-                        )
                     query_session = stashed_query_session
                     restored_from_stashed_query_session = True
-                    session_source = "stashed"
+                    session_source = "stashed_compat"
                     self._log_session_shape(
                         event="query_session_restored_from_stash",
                         session=query_session,
@@ -499,34 +497,11 @@ class QueryWorker:
                 restored_from_stashed_query_session=restored_from_stashed_query_session,
             )
 
-            # 5. Handle Session Persistence
+            # 5. Clear legacy Redis query sessions. The orchestrator checkpoint
+            # owns query follow-up state; the worker returns typed patches only.
             if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT) and result.patch:
                 final_state = {**state, **result.patch}
-                session_active = final_state.get("session_active", False)
-
-                if session_active:
-                    query_contract = result.patch.get("query_contract")
-                    query_result = result.patch.get("query_result")
-                    query_frames = restore_query_frames(final_state.get("query_frames"))
-                    if isinstance(query_contract, dict):
-                        try:
-                            query_contract = QueryExecutionContract.model_validate(query_contract)
-                        except Exception:
-                            query_contract = None
-                    if isinstance(query_result, dict):
-                        try:
-                            query_result = QueryResult.model_validate(query_result)
-                        except Exception:
-                            query_result = None
-                    if query_contract and isinstance(query_result, QueryResult):
-                        final_state["query_frames"] = append_query_frame(
-                            query_frames,
-                            query_contract=query_contract,
-                            result=query_result,
-                        )
-                    final_state["timestamp"] = __import__("time").time()
-                    await self.session_manager.save(session_key, final_state)
-                else:
+                if not final_state.get("session_active", False):
                     await self.session_manager.clear(session_key)
 
                 if restored_from_stashed_query_session:
@@ -559,4 +534,12 @@ class QueryWorker:
         execution_result = cast(TransactionResult, await self.executor.run(state, worker_context))
         if execution_result.patch:
             state.update(execution_result.patch)
+
+        if execution_result.outcome != TransactionOutcome.OK:
+            return self._finalize_result(execution_result, state)
+
+        formatting_result = cast(TransactionResult, await self.formatter.run(state, worker_context))
+        if formatting_result.response:
+            execution_result.response = formatting_result.response
+
         return self._finalize_result(execution_result, state)
