@@ -34,6 +34,11 @@ def _surface_frame_type(surface_view: SurfaceView) -> ContextFrameType | None:
     if surface_view.mode == SurfaceViewMode.CLARIFICATION:
         return None
     if surface_view.mode == SurfaceViewMode.DIRECT_ANSWER:
+        if (
+            surface_view.context.get("focus_type") == "summary_scope"
+            or surface_view.context.get("type") == "summary_scope"
+        ):
+            return ContextFrameType.GENERIC
         if len(surface_view.items) == 1:
             return ContextFrameType.TRANSACTION_DETAIL
         return ContextFrameType.GENERIC

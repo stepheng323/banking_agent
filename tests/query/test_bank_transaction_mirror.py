@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -14,6 +16,7 @@ from banking.transactions.query.models.domain import (
     QueryIR,
     TimeRange,
 )
+from banking.transactions.query.services.fetching.bank_transaction_mirror import _mirror_row_from_transaction
 from banking.transactions.query.services.fetching.fetch import (
     _is_missing_mirror_table_error,
     fetch_and_filter,
@@ -36,6 +39,29 @@ def test_missing_mirror_table_error_is_detected_without_full_sqlalchemy_exceptio
     error = RuntimeError('relation "bank_transaction_coverage" does not exist')
 
     assert _is_missing_mirror_table_error(error) is True
+
+
+def test_mirror_row_raw_payload_is_json_safe_for_decimal_amounts() -> None:
+    row = _mirror_row_from_transaction(
+        TransactionData(
+            transaction_id="txn_decimal",
+            date="2026-06-26",
+            narration="Transfer to Mum",
+            amount=Decimal("50000.00"),
+            transaction_type="debit",
+            category="Transfers",
+        ),
+        account=SimpleNamespace(
+            user_id="user-1",
+            linked_account_id="linked-1",
+            account_id="acc_1",
+            bank_name="GTBank",
+        ),
+    )
+
+    json.dumps(row["raw_payload"])
+    assert row["raw_payload"]["amount"] == "50000.00"
+    assert row["raw_payload"]["date"] == "2026-06-26"
 
 
 class _FakeDbSession:

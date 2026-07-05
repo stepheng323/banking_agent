@@ -58,7 +58,7 @@ _QUERY_DOMAIN_PATTERNS = (
     r"^where\s+did\s+my\s+money\s+go\b",
     r"^what\s+did\s+i\s+spend\s+(?:on|money\s+on)\b",
     r"^(?:top|my)\s+(?:recipients?|beneficiar)",
-    r"^(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+.+",
+    r"^(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+(?!.*\bto\b).+",
 )
 _STRUCTURAL_QUERY_DIRECT_PATTERNS = (
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:recent\s+|latest\s+)?(?:transactions?|transaction\s+history|history|statement)\b",
@@ -67,7 +67,7 @@ _STRUCTURAL_QUERY_DIRECT_PATTERNS = (
     r"(?:gtb|gtbank|access|zenith|wema|uba|opay|kuda|moniepoint|palmpay|first bank|fcmb|stanbic|"
     r"sterling|union|fidelity|keystone|providus|polaris)\s+(?:transactions|transaction\s+history|history|statement)\b",
     r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?\b",
-    r"^(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+.+",
+    r"^(?:can|could)\s+i\s+(?:afford|send|transfer|pay|spend|cover)\s+(?!.*\bto\b).+",
     r"^how\s+much\s+(?:came|come)\s+in\b",
     r"^who\s+sent\s+me\s+(?:the\s+most\s+)?(?:money\s+)?",
     r"^where\s+did\s+my\s+money\s+go\b",

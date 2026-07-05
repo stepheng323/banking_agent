@@ -115,10 +115,11 @@ class _LoadedSessionManager(_SessionManager):
     def __init__(self, loaded_state: dict[str, Any]) -> None:
         super().__init__()
         self.loaded_state = loaded_state
+        self.load_calls: list[str] = []
         self.cleared_key: str | None = None
 
     async def load(self, key: str) -> dict[str, Any] | None:
-        del key
+        self.load_calls.append(key)
         return dict(self.loaded_state)
 
     async def clear(self, key: str) -> None:
@@ -153,6 +154,13 @@ class _RedisStoreStub:
     async def expire(self, key: str, ttl: int) -> bool:
         self.expire_calls.append((key, ttl))
         return True
+
+
+def _active_session_from_result(result: TransactionResult) -> dict[str, Any]:
+    assert result.patch is not None
+    session = dict(result.patch)
+    session["session_active"] = True
+    return session
 
 
 def _contract(query: QueryIR) -> QueryExecutionContract:
@@ -196,7 +204,7 @@ async def test_worker_restores_from_stashed_query_session_and_marks_patch() -> N
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["restored_from_stashed_query_session"] is True
-    assert session_manager.saved_state is not None
+    assert session_manager.saved_state is None
 
 
 @pytest.mark.asyncio
@@ -240,7 +248,7 @@ async def test_worker_does_not_restore_stale_stashed_query_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_worker_persists_pending_query_clarification_session() -> None:
+async def test_worker_returns_pending_query_clarification_without_redis_persistence() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     pending = PendingClarificationState(
@@ -277,13 +285,14 @@ async def test_worker_persists_pending_query_clarification_session() -> None:
     )
 
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
-    assert session_manager.saved_state is not None
-    assert session_manager.saved_state["session_active"] is True
-    assert session_manager.saved_state["pending_clarification"] == pending
+    assert result.patch is not None
+    assert result.patch["session_active"] is True
+    assert result.patch["pending_clarification"] == pending
+    assert session_manager.saved_state is None
 
 
 @pytest.mark.asyncio
-async def test_worker_appends_recent_query_frame_history_on_successful_query() -> None:
+async def test_worker_returns_query_state_without_redis_frame_persistence() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     query_contract = _contract(
@@ -340,13 +349,10 @@ async def test_worker_appends_recent_query_frame_history_on_successful_query() -
     )
 
     assert result.outcome == TransactionOutcome.OK
-    assert session_manager.saved_state is not None
-    frames = session_manager.saved_state.get("query_frames")
-    assert isinstance(frames, list)
-    assert len(frames) == 1
-    assert frames[0].frame_id == "qf_1"
-    assert frames[0].facts.amount == 60000.0
-    assert "surface" not in session_manager.saved_state
+    assert session_manager.saved_state is None
+    assert result.patch is not None
+    assert result.patch["query_contract"] == query_contract
+    assert result.patch["query_result"] == query_result
 
 
 def test_session_shape_detects_surface_view() -> None:
@@ -746,7 +752,7 @@ async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pyt
     assert (
         "query_session_restored_from_stash",
         {
-            "session_source": "stashed",
+            "session_source": "stashed_compat",
             "session_active": True,
             "has_query_contract": True,
             "has_query_result": True,
@@ -758,7 +764,7 @@ async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
-async def test_worker_warns_when_loaded_active_session_is_missing_query_contract(
+async def test_worker_does_not_load_redis_query_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session_manager = _LoadedSessionManager(
@@ -799,17 +805,9 @@ async def test_worker_warns_when_loaded_active_session_is_missing_query_contract
     )
 
     assert result.outcome == TransactionOutcome.OK
+    assert session_manager.load_calls == []
     assert session_manager.cleared_key == "query:session:2348000000311"
-    assert (
-        "query_session_missing_contract_cleared",
-        {
-            "session_source": "redis",
-            "session_active": True,
-            "has_query_result": True,
-            "has_surface": True,
-            "has_query_frames": False,
-        },
-    ) in warnings
+    assert warnings == []
 
 
 @pytest.mark.asyncio
@@ -955,7 +953,7 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
 
 
 @pytest.mark.asyncio
-async def test_worker_reuses_persisted_cached_transactions_for_time_delta_followup() -> None:
+async def test_worker_reuses_context_cached_transactions_for_time_delta_followup() -> None:
     redis = _RedisStoreStub()
     session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
     provider = _RecordingProvider(
@@ -1043,6 +1041,7 @@ async def test_worker_reuses_persisted_cached_transactions_for_time_delta_follow
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 4),
+            "active_query_session": _active_session_from_result(first_result),
         },
     )
 
@@ -1056,7 +1055,7 @@ async def test_worker_reuses_persisted_cached_transactions_for_time_delta_follow
 
 
 @pytest.mark.asyncio
-async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_followup() -> None:
+async def test_worker_reuses_context_cached_transactions_for_filter_delta_followup() -> None:
     redis = _RedisStoreStub()
     session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
     provider = _RecordingProvider(
@@ -1136,6 +1135,7 @@ async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_foll
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 4),
+            "active_query_session": _active_session_from_result(first_result),
         },
     )
 
@@ -1149,7 +1149,7 @@ async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_foll
 
 
 @pytest.mark.asyncio
-async def test_worker_restores_persisted_analytics_followup_for_time_delta(
+async def test_worker_restores_context_analytics_followup_for_time_delta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("banking.transactions.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
@@ -1224,6 +1224,7 @@ async def test_worker_restores_persisted_analytics_followup_for_time_delta(
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
+            "active_query_session": _active_session_from_result(first_result),
         },
     )
 
@@ -1316,6 +1317,7 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
+            "active_query_session": _active_session_from_result(first_result),
         },
     )
 
@@ -1347,6 +1349,7 @@ async def test_worker_count_time_delta_followup_renders_yesterday(
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
+            "active_query_session": _active_session_from_result(second_result),
         },
     )
 
@@ -1409,7 +1412,7 @@ async def test_worker_count_zero_summary_uses_natural_copy(
 
 
 @pytest.mark.asyncio
-async def test_worker_restores_persisted_time_comparison_followup_for_time_delta() -> None:
+async def test_worker_restores_context_time_comparison_followup_for_time_delta() -> None:
     redis = _RedisStoreStub()
     session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
     provider = _WindowedProvider(
@@ -1482,6 +1485,7 @@ async def test_worker_restores_persisted_time_comparison_followup_for_time_delta
             "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
             "language": "en",
             "today": date(2026, 3, 19),
+            "active_query_session": _active_session_from_result(first_result),
         },
     )
 

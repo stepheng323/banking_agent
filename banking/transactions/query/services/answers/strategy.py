@@ -73,7 +73,7 @@ def _apply_fact_answer_strategy(
         result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
         return result
 
-    if len(result.items) > 1:
+    if len(result.items) > 1 and query_contract.result_reference not in {"latest", "oldest"}:
         result.answer_strategy = QueryAnswerStrategy.CLARIFY
         result.answer_context = QueryAnswerContext(
             primary_text=build_soft_clarification(result.items, context="Which transaction", locale=locale)
@@ -87,6 +87,7 @@ def _apply_fact_answer_strategy(
         query_contract=query_contract,
         fact_field=fact_field,
         locale=locale,
+        is_followup=bool(query_contract and query_contract.continuation_type),
     )
     focus_referent = build_focus_referent(item, query_contract=query_contract)
     if focus_referent is not None:

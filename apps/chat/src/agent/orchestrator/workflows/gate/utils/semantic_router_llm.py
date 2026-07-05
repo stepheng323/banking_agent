@@ -138,6 +138,9 @@ Rules:
 4a) Active query sessions are semantic context, not a forced route.
    If context/hints show an active query session:
    - Query follow-ups route to domain_query with mode=continuation.
+   - Completeness, missing-data, sync, or coverage challenges about the displayed query results
+     also route to domain_query with mode=continuation, even when they mention a bank/account/entity
+     that is not currently visible.
    - Fresh money-move or bill-payment requests route to their true domain or planner_mixed.
    - Do not rely on English keywords only; classify the user's intent semantically across supported languages.
    Examples:
@@ -151,6 +154,9 @@ Rules:
    - active query + "When", "When?", or "What time" -> domain_query, mode=continuation
    - active query + "Quand" (French), "Yaushe" (Hausa), "Igba wo" (Yoruba) -> domain_query, mode=continuation
    - active query + "More", "Next", or "Previous" -> domain_query, mode=continuation
+   - active query + "is this all?" -> domain_query, mode=continuation
+   - active query + "why is Zenith missing?" -> domain_query, mode=continuation
+   - active query + "did you include my Access account?" -> domain_query, mode=continuation
    - active query + single-word temporal or pagination cues MUST be routed to domain_query, not conversational.clarify
    - active query + "Send 5k to Adebayo" -> domain_transfer, mode=new
    - active query + "Buy me 2k airtime" -> domain_airtime, mode=new

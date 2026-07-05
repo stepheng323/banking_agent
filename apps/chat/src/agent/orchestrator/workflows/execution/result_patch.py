@@ -62,6 +62,9 @@ class ExecutionResultPatch:
     def clear_stashed_query_session(self) -> None:
         self._updates["stashed_query_session"] = None
 
+    def set_stashed_query_session(self, session: dict[str, Any] | None) -> None:
+        self._updates["stashed_query_session"] = session
+
     def set_last_interrupt(self, interrupt: Any) -> None:
         self._updates["last_interrupt"] = interrupt
 

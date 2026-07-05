@@ -3160,6 +3160,42 @@ async def test_gate_routes_affordability_probe_as_query_direct() -> None:
     assert task.payload["force_new_query"] is True
 
 
+async def test_gate_routes_affordability_probe_as_query_direct_with_active_query_session() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="should not own affordability query shortcut",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_affordability_direct_active_1",
+        phone_number="2348999999918",
+        channel="whatsapp",
+        last_message_text="Can I send 35k?",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Can I send 35k?"
+    assert task.payload["force_new_query"] is True
+
+
 async def test_gate_non_structural_query_phrase_falls_through_without_semantic_router() -> None:
     state = OrchestratorState(
         user_id="u_gate_query_phrase_no_router_1",
@@ -8899,15 +8935,32 @@ async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> No
 
 
 async def test_gate_explicit_cancel_during_pending_query_clarification_uses_query_goodbye() -> None:
-    redis_client = _TrackingRedisWithSession(
-        '{"session_active": true, "pending_clarification": {"kind": "pending_clarification", "original_query": "How much did I spend last", "current_intent": "spending_total", "original_extraction": {"intent": "spending_total", "filters": {}, "time_range": {"reference_type": "vague", "days_back": 30}, "requested_capabilities": [], "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "raw_query": "How much did I spend last"}, "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "resolver_message": "What time period did you mean by last?", "language": "en"}}'
-    )
+    redis_client = _TrackingRedisWithSession(None)
     state = OrchestratorState(
         user_id="u_gate_query_cancel_1",
         phone_number="2348000000019",
         channel="whatsapp",
         last_message_text="abort",
         loaded_context={"language": "en"},
+        stashed_query_session={
+            "session_active": True,
+            "pending_clarification": {
+                "kind": "pending_clarification",
+                "original_query": "How much did I spend last",
+                "current_intent": "spending_total",
+                "original_extraction": {
+                    "intent": "spending_total",
+                    "filters": {},
+                    "time_range": {"reference_type": "vague", "days_back": 30},
+                    "requested_capabilities": [],
+                    "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}],
+                    "raw_query": "How much did I spend last",
+                },
+                "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}],
+                "resolver_message": "What time period did you mean by last?",
+                "language": "en",
+            },
+        },
     )
     config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
 

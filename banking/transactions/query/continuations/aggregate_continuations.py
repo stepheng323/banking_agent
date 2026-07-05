@@ -137,6 +137,30 @@ def _sanitize_aggregate_extraction(extraction: QueryExtractionResult) -> QueryEx
     )
 
 
+def _preserve_active_direction_unless_filter_delta(
+    *,
+    decision: Any,
+    session_query_contract: QueryExecutionContract,
+    updated_filters: Any | None,
+) -> Any | None:
+    """Keep active credit/debit scope for grouping-only aggregate refinements."""
+    if updated_filters is None:
+        return updated_filters
+    if getattr(decision, "delta_type", None) == "filter":
+        return updated_filters
+
+    active_filters = session_query_contract.filters
+    active_type = getattr(active_filters, "transaction_type", None) if active_filters is not None else None
+    updated_type = getattr(updated_filters, "transaction_type", None)
+    if active_type not in {"credit", "debit"} or updated_type not in {"credit", "debit"}:
+        return updated_filters
+    if active_type == updated_type:
+        return updated_filters
+    if hasattr(updated_filters, "model_copy"):
+        return updated_filters.model_copy(update={"transaction_type": active_type})
+    return updated_filters
+
+
 async def compile_aggregate_continuation_updates(
     step: Any,
     *,
@@ -203,6 +227,23 @@ async def compile_aggregate_continuation_updates(
     if extraction is not None:
         compiled = step.parser.compile_extraction(extraction, today=today, language=language)
         extracted_contract = step._validated_query_contract(compiled.query_contract)
+        if extraction.intent == QueryIntent.CASH_FLOW_SUMMARY and extracted_contract is not None:
+            cashflow_contract = extracted_contract.model_copy(
+                update={
+                    "intent": QueryIntent.CASH_FLOW_SUMMARY,
+                    "filters": None,
+                    "aggregation": None,
+                }
+            )
+            patched_result = compiled.model_copy(
+                update={
+                    "extraction": extraction,
+                    "query_contract": cashflow_contract.model_dump(mode="json"),
+                    "query_ir": None,
+                }
+            )
+            updates = parse_result_to_updates(step, patched_result, state=state, today=today, language=language)
+            return step._append_query_session_transition(updates, "replace_session_new_query")
         if (
             deterministic_result is not None
             and deterministic_result.outcome == ResolverOutcome.OK
@@ -234,6 +275,7 @@ async def compile_aggregate_continuation_updates(
             updates = parse_result_to_updates(step, deterministic_result, state=state, today=today, language=language)
             return step._append_query_session_transition(updates, "replace_session_new_query")
         if extracted_contract is not None and extracted_contract.intent in {
+            QueryIntent.CASH_FLOW_SUMMARY,
             QueryIntent.TIME_COMPARISON,
             QueryIntent.BENEFICIARY_SUMMARY,
             QueryIntent.AFFORDABILITY,
@@ -250,6 +292,11 @@ async def compile_aggregate_continuation_updates(
             )
 
     updated_filters = extracted_contract.filters if extracted_contract is not None else None
+    updated_filters = _preserve_active_direction_unless_filter_delta(
+        decision=decision,
+        session_query_contract=session_query_contract,
+        updated_filters=updated_filters,
+    )
     reset_inherited_filters = _should_reset_inherited_aggregate_filters(
         extraction=extraction,
         session_query_contract=session_query_contract,

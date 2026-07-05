@@ -1,5 +1,3 @@
-import json
-
 import pytest
 from langchain_core.runnables import RunnableConfig
 
@@ -25,36 +23,6 @@ class _StaticPlanner:
         del phone_number, text
         self.last_context = context
         return self.output
-
-
-class _RedisWithLiveQuerySession:
-    async def get(self, key: str) -> str | None:
-        if ":beneficiary_suggestion" in key:
-            return None
-        if "query:session:" in key:
-            return json.dumps(
-                {
-                    "session_active": True,
-                    "current_page": 0,
-                    "query_result": {"summary_text": "You spent ₦5,000 today."},
-                    "query_contract": {
-                        "intent": "transaction_list",
-                        "time_start": "2026-03-04",
-                        "time_end": "2026-03-04",
-                        "timezone": "Africa/Lagos",
-                        "normalized_query": {
-                            "intent": "transaction_list",
-                            "time_range": {"start": "2026-03-04", "end": "2026-03-04", "granularity": "day"},
-                            "accounts_scope": "all",
-                        },
-                    },
-                }
-            )
-        return None
-
-    async def delete(self, key: str) -> int:
-        del key
-        return 0
 
 
 class _RedisWithoutQuerySession:
@@ -100,11 +68,27 @@ async def test_planner_stashes_live_query_session_when_switching_to_transfer() -
         tasks={},
         waves=[],
         current_wave_index=0,
+        stashed_query_session={
+            "session_active": True,
+            "current_page": 0,
+            "query_result": {"summary_text": "You spent ₦5,000 today."},
+            "query_contract": {
+                "intent": "transaction_list",
+                "time_start": "2026-03-04",
+                "time_end": "2026-03-04",
+                "timezone": "Africa/Lagos",
+                "normalized_query": {
+                    "intent": "transaction_list",
+                    "time_range": {"start": "2026-03-04", "end": "2026-03-04", "granularity": "day"},
+                    "accounts_scope": "all",
+                },
+            },
+        },
     )
     config: RunnableConfig = {
         "configurable": {
             "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
-            "redis_client": _RedisWithLiveQuerySession(),
+            "redis_client": _RedisWithoutQuerySession(),
             "services": {},
         },
         "recursion_limit": 50,
@@ -116,7 +100,11 @@ async def test_planner_stashes_live_query_session_when_switching_to_transfer() -
     stashed = updates["stashed_query_session"]
     assert isinstance(stashed, dict)
     assert stashed.get("session_active") is True
-    assert isinstance(stashed.get("query_result"), dict)
+    assert "query_result" not in stashed
+    assert "query_frames" not in stashed
+    assert "selected_item_index" not in stashed
+    assert "selected_payload" not in stashed
+    assert "cached_transactions" not in stashed
     assert isinstance(stashed.get("query_contract"), dict)
 
 
@@ -148,7 +136,10 @@ async def test_planner_uses_stashed_query_session_context_when_redis_session_mis
         current_wave_index=0,
         stashed_query_session={
             "session_active": True,
-            "query_result": {"summary_text": "You spent ₦5,000 today."},
+            "pending_clarification": {
+                "original_query": "How much did I spend last",
+                "resolver_message": "What time period did you mean by last?",
+            },
         },
     )
     config: RunnableConfig = {
@@ -165,7 +156,8 @@ async def test_planner_uses_stashed_query_session_context_when_redis_session_mis
     assert updates["final_response"] == "Noted."
     assert planner.last_context is not None
     assert "Active Query Session" in planner.last_context
-    assert "You spent ₦5,000 today." in planner.last_context
+    assert "How much did I spend last" in planner.last_context
+    assert "What time period did you mean by last?" in planner.last_context
 
 
 @pytest.mark.asyncio
@@ -196,7 +188,10 @@ async def test_planner_uses_stashed_query_session_context_without_redis_client()
         current_wave_index=0,
         stashed_query_session={
             "session_active": True,
-            "query_result": {"summary_text": "You spent ₦5,000 today."},
+            "pending_clarification": {
+                "original_query": "How much did I spend last",
+                "resolver_message": "What time period did you mean by last?",
+            },
         },
     )
     config: RunnableConfig = {
@@ -212,4 +207,5 @@ async def test_planner_uses_stashed_query_session_context_without_redis_client()
     assert updates["final_response"] == "Noted."
     assert planner.last_context is not None
     assert "Active Query Session" in planner.last_context
-    assert "You spent ₦5,000 today." in planner.last_context
+    assert "How much did I spend last" in planner.last_context
+    assert "What time period did you mean by last?" in planner.last_context

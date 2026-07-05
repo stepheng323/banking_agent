@@ -54,7 +54,7 @@ async def build_context_flow_state(
     current_flow_type = state_view.current_wave_first_task_type
     is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS
 
-    query_session_snapshot, query_session_source = await _load_query_session_snapshot(state_view, redis_client)
+    query_session_snapshot, query_session_source = await _load_query_session_snapshot(state_view)
     query_session_active = False
     if query_session_snapshot and not is_transactional_flow:
         query_session_active = bool(query_session_snapshot.get("session_active"))

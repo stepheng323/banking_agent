@@ -939,6 +939,49 @@ def test_formatter_direct_answer_uses_answer_strategy_without_transaction_card()
     assert "Transaction Details" not in response
 
 
+def test_direct_analytics_answer_builds_summary_scope_surface_without_evidence_focus() -> None:
+    result = QueryResult(
+        summary_text="You spent ₦75,000 this month, across 2 transactions.",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 6, 24),
+                metadata={"type": "debit", "counterparty": "Mum"},
+            ),
+            QueryResultItem(
+                id="tx2",
+                description="Transfer to Dad",
+                amount=25000,
+                date=date(2026, 6, 23),
+                metadata={"type": "debit", "counterparty": "Dad"},
+            ),
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="debit"),
+                aggregation=Aggregation(type="sum"),
+                time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 29)),
+            )
+        ),
+    )
+
+    selected = select_answer_strategy(result, locale="en")
+    surface = build_surface_view(selected)
+    response = QueryFormatter.format(selected, locale="en")
+
+    assert response == "You spent ₦75,000 this month, across 2 transactions."
+    assert surface is not None
+    assert surface.mode == SurfaceViewMode.DIRECT_ANSWER
+    assert surface.context["focus_type"] == "summary_scope"
+    assert surface.context["type"] == "summary_scope"
+    assert len(surface.items) == 1
+    assert surface.items[0].payload.selection_kind == "summary_scope"
+    assert surface.items[0].id == "summary_scope"
+
+
 def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() -> None:
     result = QueryResult(
         summary_text="",
@@ -1499,3 +1542,60 @@ def test_formatter_breakdown_heading_includes_amount_scope_and_period(
     response = QueryFormatter.format(result, locale="en")
 
     assert response.splitlines()[0] == "Here is your 📊 Spending by account — Over ₦20,000 — This Month:"
+
+
+def test_formatter_credit_account_breakdown_uses_income_direction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today = date(2026, 4, 15)
+    monkeypatch.setattr(
+        "banking.transactions.query.presentation.scope.lagos_today",
+        lambda: today,
+    )
+    result = QueryResult(
+        summary_text="Breakdown by account",
+        items=[
+            QueryResultItem(
+                id="1",
+                description="Zenith Bank",
+                amount=950000,
+                date=today,
+                metadata={"count": 1},
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="credit"),
+                aggregation=Aggregation(type="breakdown", group_by="account"),
+                time_range=TimeRange(start=today.replace(day=1), end=today),
+            )
+        ),
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.GROUPED_SUMMARY,
+            items=[
+                SurfaceItemView(
+                    id="1",
+                    label="Zenith Bank",
+                    amount=950000,
+                    count=1,
+                    payload=SelectionPayload(
+                        selection_kind="group_bucket",
+                        entity_type="group_bucket",
+                        entity_id="1",
+                        label="Zenith Bank",
+                        group_by="account",
+                        group_key="Zenith Bank",
+                        filters_patch={"account_filter": "Zenith Bank"},
+                    ),
+                )
+            ],
+            context={"surface_type": "breakdown", "group_by": "account"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    first_line = response.splitlines()[0]
+    assert first_line == "Here is your 📊 Money came in by account — This Month:"
+    assert "Spending by account" not in response

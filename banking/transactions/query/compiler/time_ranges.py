@@ -22,6 +22,12 @@ from banking.transactions.query.models.extraction import (
 )
 
 
+def default_rolling_time_range(today: date) -> TimeRange:
+    """Return the inclusive default recent window."""
+    days_back = max(int(QUERY_LIMITS["default_lookback_days"]) - 1, 0)
+    return TimeRange(start=today - timedelta(days=days_back), end=today, granularity="day")
+
+
 def resolve_period_to_range(period: str, *, today: date, current_range: TimeRange | None = None) -> TimeRange | None:
     def _duration_days(range_value: TimeRange | None) -> int:
         if range_value is None:
@@ -125,12 +131,6 @@ def build_time_range(
         explicit_range = resolve_period_to_range(period_lower, today=today)
         if explicit_range is not None:
             return explicit_range
-    if period_lower == "today":
-        days_back = 0
-    elif period_lower == "yesterday":
-        days_back = 1
-    if days_back is None:
-        days_back = 30
     if reference_type == TimeReference.ALL_TIME or (
         reference_type == TimeReference.UNSPECIFIED
         and intent == QueryIntent.TRANSACTION_DETAIL
@@ -149,9 +149,24 @@ def build_time_range(
             "category",
         }
     ):
-        days_back = QUERY_LIMITS["max_lookback_days"]
-    elif reference_type == TimeReference.UNSPECIFIED:
-        days_back = 30
+        return TimeRange(
+            start=today - timedelta(days=QUERY_LIMITS["max_lookback_days"]),
+            end=today,
+            granularity="day",
+        )
+    if reference_type == TimeReference.UNSPECIFIED:
+        return default_rolling_time_range(today)
+    if period_lower == "today":
+        days_back = 0
+    elif period_lower == "yesterday":
+        days_back = 1
+    if days_back is None:
+        days_back = max(int(QUERY_LIMITS["default_lookback_days"]) - 1, 0)
+    elif (
+        period_lower == "recent_30_days"
+        or reference_type == TimeReference.VAGUE
+    ) and days_back == QUERY_LIMITS["default_lookback_days"]:
+        days_back = max(days_back - 1, 0)
     range_start = today - timedelta(days=days_back)
     range_end = today
     if period_lower == "today":

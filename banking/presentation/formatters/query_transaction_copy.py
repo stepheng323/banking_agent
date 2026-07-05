@@ -116,6 +116,10 @@ def format_transaction_list_item_parts(
         if transaction_type == "transfer" or any(token in description_lower for token in ("transfer", "sent", "paid")):
             prefix = "Received from" if tx_type == "credit" else "Transfer to" if status_label else "Sent to"
             narration = f"{prefix} {counterparty.strip()}"
+        elif tx_type == "credit":
+            narration = f"Received from {counterparty.strip()}"
+        elif tx_type == "debit":
+            narration = f"Paid to {counterparty.strip()}"
         else:
             narration = counterparty.strip()
     else:

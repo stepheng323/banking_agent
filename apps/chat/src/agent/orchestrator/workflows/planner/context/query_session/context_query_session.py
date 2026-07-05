@@ -1,10 +1,12 @@
 """Query session snapshot helpers for planner context construction."""
-
-import json
 from typing import Any, Protocol
 
-import redis.asyncio as redis
-
+from apps.chat.src.agent.orchestrator.context.models import ContextFrame
+from apps.chat.src.agent.orchestrator.context.query_surface import (
+    build_query_session_snapshot_from_surface,
+    get_active_query_surface,
+    summarize_query_surface_for_planner,
+)
 from apps.chat.src.agent.orchestrator.workflows.planner.context.rendering.context_rendering_core import (
     _build_query_session_context,
 )
@@ -12,6 +14,22 @@ from banking.transactions.query.session import _session_has_surface_view, is_que
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_STASHED_COMPAT_KEYS = {
+    "session_active",
+    "query_contract",
+    "pending_clarification",
+    "current_page",
+    "page_size",
+    "show_expanded",
+    "timestamp",
+    "account_id",
+    "account_ids",
+    "cache_fingerprint",
+    "cache_scope_fingerprint",
+    "cache_window_start",
+    "cache_window_end",
+}
 
 
 class QuerySessionStateView(Protocol):
@@ -21,36 +39,28 @@ class QuerySessionStateView(Protocol):
     @property
     def stashed_query_session(self) -> dict[str, Any] | None: ...
 
+    @property
+    def context_frames(self) -> list[ContextFrame]: ...
+
 
 async def _load_query_session_snapshot(
     state_view: QuerySessionStateView,
-    redis_client: redis.Redis | None,
     *,
     snapshot_logger: Any | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
 
-    if redis_client:
-        try:
-            query_session_key = f"query:session:{state_view.phone_number}"
-            query_session_data = await redis_client.get(query_session_key)
-            if query_session_data:
-                if isinstance(query_session_data, bytes):
-                    query_session_data = query_session_data.decode("utf-8")
-                parsed = json.loads(query_session_data)
-                if isinstance(parsed, dict):
-                    query_session_snapshot = parsed
-                    query_session_source = "redis"
-                    if is_query_session_stale(query_session_snapshot):
-                        query_session_snapshot["session_active"] = False
-        except Exception:
-            query_session_snapshot = None
-            query_session_source = None
+    active_query_surface = get_active_query_surface(state_view)
+    if active_query_surface is not None:
+        query_session_snapshot = build_query_session_snapshot_from_surface(active_query_surface)
+        if query_session_snapshot is not None:
+            query_session_snapshot["active_query_surface"] = active_query_surface
+            query_session_source = "context_frame"
 
     if query_session_snapshot is None and isinstance(state_view.stashed_query_session, dict):
-        query_session_snapshot = dict(state_view.stashed_query_session)
-        query_session_source = "stashed"
+        query_session_snapshot = _compact_stashed_compat_snapshot(state_view.stashed_query_session)
+        query_session_source = "stashed_compat"
         if is_query_session_stale(query_session_snapshot):
             query_session_snapshot["session_active"] = False
 
@@ -69,10 +79,19 @@ async def _load_query_session_snapshot(
     return query_session_snapshot, query_session_source
 
 
+def _compact_stashed_compat_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Drop legacy successful-result state from checkpoint-stashed query compatibility data."""
+    return {key: value for key, value in snapshot.items() if key in _STASHED_COMPAT_KEYS}
+
+
 def _query_session_summary_text(query_session_snapshot: dict[str, Any] | None) -> tuple[str | None, bool]:
     if not isinstance(query_session_snapshot, dict):
         return None, False
     session_active = bool(query_session_snapshot.get("session_active"))
+    if query_session_snapshot.get("_query_session_source") == "context_frame":
+        raw_surface = query_session_snapshot.get("active_query_surface")
+        if isinstance(raw_surface, ContextFrame):
+            return summarize_query_surface_for_planner(raw_surface), session_active
     summary_text = None
     query_result = query_session_snapshot.get("query_result")
     if isinstance(query_result, dict):

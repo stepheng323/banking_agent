@@ -14,6 +14,7 @@ from banking.transactions.query.contracts import (
 )
 from banking.transactions.query.models.domain import (
     Filters,
+    QueryAnswerContext,
     QueryAnswerStrategy,
     QueryExecutionContract,
     QueryFactField,
@@ -120,6 +121,12 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     query_contract = result_query_contract(result)
 
     if result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER and result.answer_context is not None:
+        if query_contract is not None and _is_summary_scope_direct_answer(query_contract):
+            return _build_summary_scope_surface_view(
+                result,
+                answer_context=result.answer_context,
+                query_contract=query_contract,
+            )
         direct_items: list[SurfaceItemView] = []
         context: dict[str, Any] = {"hint_text": result.answer_context.hint_text}
         result_items = result.items or []
@@ -342,6 +349,8 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
         else SurfaceViewMode.TRANSACTION_LIST
     )
     context = build_surface_view_context(result=result, mode=mode)
+    if len(result.items) == 1:
+        context["single_item"] = True
 
     items = [
         SurfaceItemView(
@@ -357,10 +366,88 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     return SurfaceView(mode=mode, items=items, context=context)
 
 
+def _is_summary_scope_direct_answer(query_contract: QueryExecutionContract | None) -> bool:
+    if query_contract is None:
+        return False
+    if query_contract.answer_fact_field is not None:
+        return False
+    if query_contract.intent in {
+        QueryIntent.ANALYTICS_SUMMARY,
+        QueryIntent.CASH_FLOW_SUMMARY,
+        QueryIntent.TIME_COMPARISON,
+        QueryIntent.AFFORDABILITY,
+    }:
+        return True
+    return False
+
+
+def _build_summary_scope_surface_view(
+    result: QueryResult,
+    *,
+    answer_context: QueryAnswerContext,
+    query_contract: QueryExecutionContract,
+) -> SurfaceView:
+    context = _focused_context(
+        base=build_surface_view_context(result=result, mode=SurfaceViewMode.DIRECT_ANSWER),
+        focus_type="summary_scope",
+    )
+    context.update(
+        {
+            "type": "summary_scope",
+            "summary_intent": query_contract.intent.value,
+            "summary_filters": query_contract.filters.model_dump(mode="json")
+            if query_contract.filters is not None
+            else None,
+            "summary_aggregation": query_contract.aggregation.model_dump(mode="json")
+            if query_contract.aggregation is not None
+            else None,
+            "summary_time_range": query_contract.time_range.model_dump(mode="json")
+            if query_contract.time_range is not None
+            else {"start": query_contract.time_start.isoformat(), "end": query_contract.time_end.isoformat()},
+            "supported_followups": [
+                "show_evidence",
+                "breakdown",
+                "filter_delta",
+                "time_delta",
+                "cashflow_compare",
+            ],
+        }
+    )
+    label = answer_context.primary_text or result.summary_text or "Summary"
+    payload = SelectionPayload(
+        selection_kind="summary_scope",
+        entity_type="summary_scope",
+        entity_id="summary_scope",
+        label=label,
+        filters_patch={},
+        fact_capabilities=[],
+    )
+    context["selected_payload"] = payload.model_dump(mode="json")
+    context["selected_item_id"] = "summary_scope"
+    return SurfaceView(
+        mode=SurfaceViewMode.DIRECT_ANSWER,
+        items=[
+            SurfaceItemView(
+                id="summary_scope",
+                label=label,
+                payload=payload,
+                metadata={
+                    "surface_mode": SurfaceViewMode.DIRECT_ANSWER.value,
+                    "focus_type": "summary_scope",
+                    "summary_intent": query_contract.intent.value,
+                },
+            )
+        ],
+        lead_text=answer_context.primary_text,
+        context=context,
+    )
+
+
 def _focused_context(*, base: dict[str, Any], focus_type: str) -> dict[str, Any]:
     context = dict(base)
     context["focus_type"] = focus_type
     context.setdefault("type", f"focused_{focus_type}")
+    context["single_item"] = True
     return context
 
 

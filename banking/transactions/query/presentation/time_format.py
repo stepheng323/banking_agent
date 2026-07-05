@@ -21,7 +21,7 @@ def build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
             else:
                 return f" in {time_range.start.strftime('%B %Y')}"
 
-        if time_range.start == today - timedelta(days=30) and time_range.end == today:
+        if time_range.end == today and (today - time_range.start).days in {29, 30}:
             return " in the last 30 days"
 
         if time_range.start == time_range.end:

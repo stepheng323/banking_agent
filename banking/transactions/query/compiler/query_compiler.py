@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any, Literal, cast
 
 from banking.transactions.query.compiler import aggregation as aggregation_compiler
@@ -20,7 +20,6 @@ from banking.transactions.query.models.domain import (
     QueryFactField,
     QueryIntent,
     QueryIR,
-    TimeRange,
     derive_query_intent_spec_from_fields,
 )
 from banking.transactions.query.models.extraction import QueryExtractionResult
@@ -38,11 +37,7 @@ def build_query_ir_from_extraction(
 ) -> QueryIR:
     base_today = today or lagos_today()
     compiled = parser._compile_query_fields_from_extraction(extraction, today=base_today, language=language)
-    time_range = compiled["time_range"] or TimeRange(
-        start=base_today - timedelta(days=30),
-        end=base_today,
-        granularity="day",
-    )
+    time_range = compiled["time_range"] or time_compiler.default_rolling_time_range(base_today)
     comparison = time_compiler.build_comparison_directive(
         extraction,
         intent=cast(QueryIntent, compiled["intent"]),
@@ -116,7 +111,7 @@ def compile_query_fields_from_extraction(
     if aggregation is not None and aggregation.type in {"largest", "smallest"}:
         result_reference = None
 
-    fallback_time_range = time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day")
+    fallback_time_range = time_range or time_compiler.default_rolling_time_range(today)
     intent_spec = derive_query_intent_spec_from_fields(
         intent=intent,
         filters=filters,

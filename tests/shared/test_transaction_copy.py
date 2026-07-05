@@ -119,6 +119,34 @@ def test_format_transaction_list_item_marks_reversed_transfer_without_sent_label
     assert format_transaction_list_item(item, locale="en") == "• Reversed · Jun 11 · ₦3,000 — Transfer to Tolu Adebayo · GTBank"
 
 
+def test_format_transaction_list_item_labels_non_transfer_credit_direction() -> None:
+    item = SimpleNamespace(
+        amount=950000,
+        description="Acme Corp",
+        date=date(2026, 6, 26),
+        metadata={"type": "credit", "counterparty": "Acme Corp", "bank_name": "Zenith Bank"},
+    )
+
+    assert (
+        format_transaction_list_item(item, locale="en")
+        == "• Jun 26 · ₦950,000 — Received from Acme Corp · Zenith Bank"
+    )
+
+
+def test_format_transaction_list_item_labels_non_transfer_debit_direction() -> None:
+    item = SimpleNamespace(
+        amount=450000,
+        description="Slot Systems",
+        date=date(2026, 6, 6),
+        metadata={"type": "debit", "counterparty": "Slot Systems", "bank_name": "First Bank"},
+    )
+
+    assert (
+        format_transaction_list_item(item, locale="en")
+        == "• Jun 6 · ₦450,000 — Paid to Slot Systems · First Bank"
+    )
+
+
 def test_build_transaction_detail_lines_uses_query_field_copy() -> None:
     item = SimpleNamespace(
         id="tx-ref-1",

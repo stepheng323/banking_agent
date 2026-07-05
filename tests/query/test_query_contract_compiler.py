@@ -41,6 +41,66 @@ def test_build_query_contract_from_extraction_preserves_lagos_today_window() -> 
     assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
 
 
+def test_unspecified_time_defaults_to_rolling_30_days() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 29)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="show my transactions",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.time_range.start == date(2026, 5, 31)
+    assert query_ir.time_range.end == today
+    assert query_ir.time_range.granularity == "day"
+    assert contract.time_start == date(2026, 5, 31)
+    assert contract.time_end == today
+
+
+def test_missing_time_defaults_to_rolling_30_days() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 29)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        raw_query="how much came in",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.time_range.start == date(2026, 5, 31)
+    assert query_ir.time_range.end == today
+    assert query_ir.time_range.granularity == "day"
+    assert contract.time_start == date(2026, 5, 31)
+    assert contract.time_end == today
+
+
+def test_explicit_recent_30_days_stays_rolling_window() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 6, 29)
+    extraction = QueryExtractionResult(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(
+            reference_type=TimeReference.EXPLICIT,
+            period="recent_30_days",
+            days_back=29,
+        ),
+        raw_query="show recent transactions",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.time_range.start == date(2026, 5, 31)
+    assert query_ir.time_range.end == today
+    assert query_ir.time_range.granularity == "day"
+    assert contract.time_start == date(2026, 5, 31)
+    assert contract.time_end == today
+
+
 def test_explicit_time_comparison_extraction_compiles_to_time_comparison() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 6)

@@ -7,9 +7,10 @@ from apps.chat.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.chat.src.agent.orchestrator.context.surface_adapter import build_context_frame_from_surface_view
 from apps.chat.src.agent.orchestrator.models.domain import TaskSpec
 from apps.chat.src.agent.orchestrator.workflows.execution.context import ExecutionTurnContext
-from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import push_context_frame
+from apps.chat.src.agent.orchestrator.workflows.execution.context_surface import context_surface, push_context_frame
 from apps.chat.src.agent.orchestrator.workflows.execution.turn_metadata import turn_metadata
 from banking.transactions.query.contracts import FocusedReferent, SelectionPayload
+from banking.transactions.query.grounding.frames import build_query_frame
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -172,6 +173,11 @@ def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> No
             logger.warning("query_surface_frame_build_failed", error=str(exc))
             return
     if surface_view is None or not getattr(surface_view, "items", None):
+        frame = _build_direct_query_summary_frame(ctx, query_result, surface_view=surface_view)
+        if frame is None:
+            return
+        _push_frame(ctx, frame)
+        logger.info("context_frame_pushed", type=frame.frame_type.value, count=len(frame.items))
         return
 
     frame = build_context_frame_from_surface_view(
@@ -181,9 +187,84 @@ def push_query_surface_frame(ctx: ExecutionTurnContext, query_result: Any) -> No
     )
     if frame is None:
         return
+    query_contract = getattr(query_result, "query_contract", None)
+    if query_contract is not None and hasattr(query_contract, "model_dump"):
+        frame.metadata["query_contract"] = query_contract.model_dump(mode="json")
+        try:
+            frame.metadata["query_frame"] = build_query_frame(
+                query_contract=query_contract,
+                result=query_result,
+                turn_index=context_surface(ctx.state).frame_count + 1,
+            ).model_dump(mode="json")
+        except Exception as exc:
+            logger.warning("query_context_frame_compact_frame_failed", error=str(exc))
+    summary_text = getattr(query_result, "summary_text", None)
+    if isinstance(summary_text, str) and summary_text.strip():
+        frame.metadata["summary_text"] = summary_text.strip()
+    if surface_view.lead_text:
+        frame.metadata["lead_text"] = surface_view.lead_text
+    frame.metadata["surface_context"] = surface_view.context
+    frame.metadata["has_more"] = bool(getattr(query_result, "has_more", False))
 
     _push_frame(ctx, frame)
     logger.info("context_frame_pushed", type=frame.frame_type.value, count=len(frame.items))
+
+
+def _build_direct_query_summary_frame(
+    ctx: ExecutionTurnContext,
+    query_result: Any,
+    *,
+    surface_view: Any | None,
+) -> ContextFrame | None:
+    """Build a compact query frame for direct answers that have no visible rows."""
+    query_contract = getattr(query_result, "query_contract", None)
+    if query_contract is None or not hasattr(query_contract, "model_dump"):
+        return None
+
+    summary_text = str(getattr(query_result, "summary_text", "") or "").strip()
+    lead_text = str(getattr(surface_view, "lead_text", "") or "").strip() if surface_view is not None else ""
+    label = summary_text or lead_text
+    if not label:
+        return None
+
+    now = int(time.time())
+    entity = ContextEntity(
+        entity_type=EntityType.GENERIC,
+        entity_id=f"query_summary_{now}",
+        label=label,
+        data={
+            "id": f"query_summary_{now}",
+            "label": label,
+            "surface_mode": "direct_answer",
+            "lead_text": lead_text or summary_text,
+        },
+    )
+    frame = ContextFrame(
+        frame_id=f"query_surface_{now}",
+        frame_type=ContextFrameType.GENERIC,
+        items=[entity],
+        focus_index=0,
+        created_at_ts=now,
+        source_message_id=turn_metadata(ctx.state).last_message_id,
+        metadata={
+            "source": "query",
+            "surface_mode": "direct_answer",
+            "query_contract": query_contract.model_dump(mode="json"),
+            "summary_text": summary_text,
+            "lead_text": lead_text or None,
+            "surface_context": getattr(surface_view, "context", {}) if surface_view is not None else {},
+            "has_more": bool(getattr(query_result, "has_more", False)),
+        },
+    )
+    try:
+        frame.metadata["query_frame"] = build_query_frame(
+            query_contract=query_contract,
+            result=query_result,
+            turn_index=context_surface(ctx.state).frame_count + 1,
+        ).model_dump(mode="json")
+    except Exception as exc:
+        logger.warning("query_context_frame_compact_frame_failed", error=str(exc))
+    return frame
 
 
 def query_pagination_actionable_payload(ctx: ExecutionTurnContext, result: Any) -> dict[str, Any] | None:

@@ -9,16 +9,15 @@ logger = get_logger(__name__)
 _QUERY_SESSION_STASH_KEYS = (
     "session_active",
     "query_contract",
-    "query_result",
-    "surface",
     "show_expanded",
     "current_page",
     "page_size",
     "account_id",
     "account_ids",
-    "cached_transactions",
-    "cache_fetched_at",
     "cache_fingerprint",
+    "cache_scope_fingerprint",
+    "cache_window_start",
+    "cache_window_end",
     "timestamp",
 )
 
@@ -30,7 +29,7 @@ def _stash_query_session_for_transaction_switch(
     planned_tasks: list[PlannedTask],
 ) -> dict[str, Any] | None:
     if (
-        query_session_source != "redis"
+        query_session_source not in {"context_frame", "stashed_compat"}
         or not query_session_snapshot
         or not bool(query_session_snapshot.get("session_active"))
         or not any(getattr(task, "executor", None) in TRANSACTION_EXECUTORS for task in planned_tasks)

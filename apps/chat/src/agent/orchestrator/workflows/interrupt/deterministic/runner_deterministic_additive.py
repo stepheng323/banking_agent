@@ -24,6 +24,10 @@ _SELF_TARGET_RE = re.compile(
     re.IGNORECASE,
 )
 _ADDITIVE_CUE_RE = re.compile(r"\b(?:also|add|plus|and\s+(?:also\s+)?)\b", re.IGNORECASE)
+_PENDING_EDIT_CUE_RE = re.compile(
+    r"\b(?:make|change|update|switch|replace|increase|reduce|set|correct|instead|i\s+said)\b",
+    re.IGNORECASE,
+)
 _EXPLICIT_AIRTIME_DOMAIN_RE = re.compile(r"\bairtime\b", re.IGNORECASE)
 _EXPLICIT_DATA_DOMAIN_RE = re.compile(r"\b(?:data|bundle)\b|\b\d+(?:\.\d+)?\s*(?:gb|mb)\b", re.IGNORECASE)
 
@@ -69,6 +73,10 @@ def _has_explicit_additive_domain(text: str, target_intent: str) -> bool:
     if target_intent == "data":
         return bool(_EXPLICIT_DATA_DOMAIN_RE.search(text))
     return False
+
+
+def _looks_like_pending_confirmation_edit(text: str) -> bool:
+    return bool(_PENDING_EDIT_CUE_RE.search(text))
 
 
 def _deterministic_additive_payload(text: str) -> tuple[str, dict[str, Any]] | None:
@@ -125,6 +133,8 @@ def _deterministic_additive_transaction_updates(
 
     parsed = _deterministic_additive_payload(runtime.text)
     if parsed is None:
+        return None
+    if _looks_like_pending_confirmation_edit(runtime.text):
         return None
 
     target_intent, payload = parsed

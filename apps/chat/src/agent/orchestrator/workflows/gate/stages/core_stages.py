@@ -70,15 +70,6 @@ async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
     """Explicit cancel handling."""
     if not is_explicit_cancel_message(ctx.message_text):
         return None
-    if has_cancelable_state(ctx.state):
-        cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
-        return {
-            **ctx.gate_updates,
-            **cleanup_updates,
-            "direct_path_triggered": True,
-            "final_response": cancelled_message(ctx.state, ctx.current_locale),
-            **_route_observability_updates(owner="guardrail", decision="cancel"),
-        }
 
     await ctx.ensure_query_session()
 
@@ -92,6 +83,16 @@ async def _stage_cancel(ctx: GateContext) -> dict[str, Any] | None:
             **ctx.gate_updates,
             "direct_path_triggered": True,
             "final_response": render_message("query.session.goodbye", ctx.current_locale),
+            "stashed_query_session": None,
+            **_route_observability_updates(owner="guardrail", decision="cancel"),
+        }
+    if has_cancelable_state(ctx.state):
+        cleanup_updates = await build_cancellation_reset_updates(ctx.state, ctx.redis_client)
+        return {
+            **ctx.gate_updates,
+            **cleanup_updates,
+            "direct_path_triggered": True,
+            "final_response": cancelled_message(ctx.state, ctx.current_locale),
             **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
     if _has_pending_mandate_without_ready_accounts(ctx.state_view.loaded_context):

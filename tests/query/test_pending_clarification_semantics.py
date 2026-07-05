@@ -250,7 +250,7 @@ async def test_pending_clarification_recent_list_interrupts_and_clears_old_scope
         contract = _contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
-                time_range=TimeRange(start=today - timedelta(days=30), end=today),
+                time_range=TimeRange(start=today - timedelta(days=29), end=today),
             )
         )
         return QueryParseResult(

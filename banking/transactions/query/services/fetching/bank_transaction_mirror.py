@@ -9,6 +9,7 @@ from typing import Any
 from banking.transactions.query.services.analysis.narration import analyze_transaction_narration
 from banking.transactions.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider, TransactionData, TransactionPageData
+from shared.utils.json import to_json_safe_dict
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -221,20 +222,22 @@ def _mirror_row_from_transaction(
         "category_source": analysis.category_source,
         "parser_rule": analysis.parser_rule,
         "bank_name": account.bank_name,
-        "raw_payload": {
-            "transaction_id": transaction.transaction_id,
-            "date": transaction.date,
-            "narration": transaction.narration,
-            "amount": transaction.amount,
-            "transaction_type": transaction.transaction_type,
-            "category": transaction.category,
-            "counterparty": analysis.counterparty,
-            "counterparty_role": analysis.counterparty_role,
-            "counterparty_source": analysis.counterparty_source,
-            "resolved_category": analysis.resolved_category,
-            "category_source": analysis.category_source,
-            "parser_rule": analysis.parser_rule,
-        },
+        "raw_payload": to_json_safe_dict(
+            {
+                "transaction_id": transaction.transaction_id,
+                "date": transaction.date,
+                "narration": transaction.narration,
+                "amount": transaction.amount,
+                "transaction_type": transaction.transaction_type,
+                "category": transaction.category,
+                "counterparty": analysis.counterparty,
+                "counterparty_role": analysis.counterparty_role,
+                "counterparty_source": analysis.counterparty_source,
+                "resolved_category": analysis.resolved_category,
+                "category_source": analysis.category_source,
+                "parser_rule": analysis.parser_rule,
+            }
+        ),
     }
 
 

@@ -357,14 +357,6 @@ def resolve_visible_query_target(
         return [], None
 
     items = surface_view.items
-    indexed_or_ranked, indexed_miss = _matches_from_items(
-        items=items,
-        query_result=query_result,
-        decision=decision,
-    )
-    if indexed_or_ranked or indexed_miss:
-        return indexed_or_ranked, indexed_miss
-
     amount_refs = set()
     target_amount = getattr(decision, "target_amount", None)
     if isinstance(target_amount, (int, float)):
@@ -382,6 +374,16 @@ def resolve_visible_query_target(
         ]
         if matches:
             return matches, None
+
+    indexed_or_ranked, indexed_miss = _matches_from_items(
+        items=items,
+        query_result=query_result,
+        decision=decision,
+    )
+    if indexed_or_ranked or indexed_miss:
+        return indexed_or_ranked, indexed_miss
+
+    if amount_refs:
         amounts = ", ".join(_format_naira(amount) for amount in sorted(amount_refs))
         return [], f"I don't see {amounts} in the transactions I showed."
 

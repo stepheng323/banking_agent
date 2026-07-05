@@ -1,5 +1,3 @@
-import json
-
 import pytest
 from langchain_core.runnables import RunnableConfig
 
@@ -38,17 +36,9 @@ class _CapturingPlanner:
         )
 
 
-class _RedisWithQuerySession:
+class _RedisWithoutQuerySession:
     async def get(self, key: str) -> str | None:
-        if ":beneficiary_suggestion" in key:
-            return None
-        if "query:session:" in key:
-            return json.dumps(
-                {
-                    "session_active": True,
-                    "query_result": {"summary_text": "You spent ₦5,000 today."},
-                }
-            )
+        del key
         return None
 
     async def delete(self, key: str) -> int:
@@ -68,11 +58,15 @@ async def test_planner_injects_filter_refinement_guidance_for_active_query_sessi
         tasks={},
         waves=[],
         current_wave_index=0,
+        stashed_query_session={
+            "session_active": True,
+            "query_result": {"summary_text": "You spent ₦5,000 today."},
+        },
     )
     config: RunnableConfig = {
         "configurable": {
             "task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner,
-            "redis_client": _RedisWithQuerySession(),
+            "redis_client": _RedisWithoutQuerySession(),
             "services": {},
         },
         "recursion_limit": 50,

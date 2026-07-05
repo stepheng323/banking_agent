@@ -4,16 +4,8 @@ from time import time
 
 import pytest
 
-from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
-    QueryFrame,
-    QueryFrameFacts,
-    QueryIntent,
-    QueryIR,
-    QueryResult,
-    QueryResultItem,
-    TimeRange,
-)
+from banking.transactions.query.models.domain import QueryExecutionContract, QueryIntent, QueryIR, TimeRange
+from banking.transactions.query.models.extraction import PendingClarificationState, QueryExtractionResult
 from banking.transactions.query.session import SESSION_TTL, QuerySessionManager
 
 
@@ -117,7 +109,7 @@ async def test_load_disarms_stale_query_session_without_refresh() -> None:
 
     assert isinstance(loaded, dict)
     assert loaded["session_active"] is False
-    assert loaded["query_result"] is None
+    assert "query_result" not in loaded
     assert loaded.get("pending_clarification") is None
     assert redis.expire_calls == []
 
@@ -136,71 +128,72 @@ async def test_load_expire_failure_is_non_fatal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_query_result_interpretation_round_trips_through_session_storage() -> None:
+async def test_legacy_successful_result_state_is_not_restored_from_session_storage() -> None:
     redis = _RedisStoreStub()
     manager = QuerySessionManager(redis)  # type: ignore[arg-type]
     key = "query:session:2348000000003"
 
-    query_result = QueryResult(
-        summary_text="summary",
-        items=[QueryResultItem(description="item", amount=1000, date=date(2026, 3, 7))],
-        interpretation={
-            "intent": "time_comparison",
-            "time_window": {"start": "2026-03-01", "end": "2026-03-07", "timezone": "Africa/Lagos"},
-        },
-    )
-
     await manager.save(
         key,
         {
             "session_active": True,
-            "query_result": query_result,
+            "query_result": {
+                "summary_text": "summary",
+                "items": [{"description": "item", "amount": 1000, "date": "2026-03-07"}],
+            },
+            "query_frames": [{"frame_id": "qf_1"}],
+            "selected_item_index": 0,
+            "selected_payload": {"selection_kind": "transaction"},
+            "cached_transactions": [{"id": "tx-1"}],
         },
     )
     loaded = await manager.load(key)
 
     assert isinstance(loaded, dict)
-    restored_result = loaded.get("query_result")
-    assert isinstance(restored_result, QueryResult)
-    assert restored_result.interpretation is not None
-    assert restored_result.interpretation["intent"] == "time_comparison"
+    assert "query_result" not in loaded
+    assert "query_frames" not in loaded
+    assert "selected_item_index" not in loaded
+    assert "selected_payload" not in loaded
+    assert "cached_transactions" not in loaded
 
 
 @pytest.mark.asyncio
-async def test_query_frames_round_trip_through_session_storage() -> None:
+async def test_pending_clarification_round_trips_through_session_storage() -> None:
     redis = _RedisStoreStub()
     manager = QuerySessionManager(redis)  # type: ignore[arg-type]
     key = "query:session:2348000000005"
 
-    frame = QueryFrame(
-        frame_id="qf_1",
-        turn_index=1,
-        query_contract=_contract(
-            _query_ir(
-                intent=QueryIntent.ANALYTICS_SUMMARY,
-                time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
-            )
+    pending = PendingClarificationState(
+        original_query="How much did I spend last",
+        current_intent=QueryIntent.ANALYTICS_SUMMARY,
+        original_extraction=QueryExtractionResult(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            raw_query="How much did I spend last",
         ),
-        summary_text="You spent ₦60,000 this week.",
-        interpretation={"intent": "analytics_summary"},
-        facts=QueryFrameFacts(metric_kind="amount", amount=60000.0, count=2, direction="debit"),
+        resolver_message="What time period did you mean by last?",
     )
 
     await manager.save(
         key,
         {
             "session_active": True,
-            "query_frames": [frame],
+            "pending_clarification": pending,
+            "query_contract": _contract(
+                _query_ir(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+                )
+            ),
         },
     )
     loaded = await manager.load(key)
 
     assert isinstance(loaded, dict)
-    restored_frames = loaded.get("query_frames")
-    assert isinstance(restored_frames, list)
-    assert len(restored_frames) == 1
-    assert isinstance(restored_frames[0], QueryFrame)
-    assert restored_frames[0].facts.amount == 60000.0
+    restored_pending = loaded.get("pending_clarification")
+    assert isinstance(restored_pending, PendingClarificationState)
+    assert restored_pending.original_query == "How much did I spend last"
+    assert restored_pending.resolver_message == "What time period did you mean by last?"
+    assert isinstance(loaded.get("query_contract"), QueryExecutionContract)
 
 
 @pytest.mark.asyncio

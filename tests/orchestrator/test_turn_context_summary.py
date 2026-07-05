@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import date
 from decimal import Decimal
-from time import time
 
 import pytest
 
@@ -39,7 +40,7 @@ from apps.chat.src.agent.orchestrator.workflows.planner.context.summary.context_
     summary_to_state_payload,
 )
 from apps.chat.src.agent.orchestrator.workflows.planner.state_view import planner_state_view
-from banking.transactions.query.models.domain import QueryIntent
+from banking.transactions.query.models.domain import QueryExecutionContract, QueryIntent, QueryIR, TimeRange
 from banking.transactions.query.models.extraction import (
     Ambiguity,
     AmbiguityCode,
@@ -48,7 +49,92 @@ from banking.transactions.query.models.extraction import (
 )
 
 
-async def test_load_query_session_snapshot_prefers_redis_then_stashed() -> None:
+async def test_load_query_session_snapshot_uses_compact_stash_when_no_context_frame() -> None:
+    class _Redis:
+        async def get(self, key: str) -> str:
+            raise AssertionError(f"Redis should not be queried for planner session state: {key}")
+
+    state = OrchestratorState(
+        user_id="u_ctx_stashed",
+        phone_number="2348000000301",
+        channel="whatsapp",
+        stashed_query_session={"session_active": True, "query_result": {"summary_text": "stashed"}},
+    )
+
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
+
+    assert source == "stashed_compat"
+    assert snapshot is not None
+    assert snapshot["session_active"] is True
+    assert "query_result" not in snapshot
+
+
+async def test_load_query_session_snapshot_ignores_redis_when_no_orchestrator_context() -> None:
+    class _Redis:
+        async def get(self, key: str) -> str:
+            raise AssertionError(f"Redis should not be queried for planner session state: {key}")
+
+    state = OrchestratorState(
+        user_id="u_ctx_no_redis",
+        phone_number="2348000000301",
+        channel="whatsapp",
+        stashed_query_session=None,
+    )
+
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
+
+    assert source is None
+    assert snapshot is None
+
+
+async def test_load_query_session_snapshot_prefers_context_frame_over_stashed() -> None:
+    contract = QueryExecutionContract.from_query_ir(
+        QueryIR(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            time_range=TimeRange(start=date(2026, 6, 1), end=date(2026, 6, 28)),
+            result_limit=1,
+        )
+    )
+    frame = ContextFrame(
+        frame_id="query_surface_1",
+        frame_type=ContextFrameType.TRANSACTION_DETAIL,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.TRANSACTION,
+                entity_id="txn-1",
+                label="Netflix",
+            )
+        ],
+        created_at_ts=int(time.time()),
+        metadata={
+            "source": "query",
+            "surface_mode": "direct_answer",
+            "summary_text": "Netflix was ₦5,000.",
+            "query_contract": contract.model_dump(mode="json"),
+            "surface_context": {"mode": "direct_answer", "type": "single_transaction"},
+        },
+    )
+
+    class _Redis:
+        async def get(self, key: str) -> str:
+            raise AssertionError(f"Redis should not be queried for planner session state: {key}")
+
+    state = OrchestratorState(
+        user_id="u_ctx_frame",
+        phone_number="2348000000301",
+        channel="whatsapp",
+        context_frames=[frame],
+        stashed_query_session={"session_active": True, "query_result": {"summary_text": "stashed"}},
+    )
+
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
+
+    assert source == "context_frame"
+    assert snapshot is not None
+    assert snapshot["query_result"]["summary_text"] == "Netflix was ₦5,000."
+
+
+async def test_load_query_session_snapshot_no_longer_prefers_redis_then_stashed() -> None:
     class _Redis:
         async def get(self, key: str) -> str:
             assert key == "query:session:2348000000301"
@@ -61,11 +147,12 @@ async def test_load_query_session_snapshot_prefers_redis_then_stashed() -> None:
         stashed_query_session={"session_active": True, "query_result": {"summary_text": "stashed"}},
     )
 
-    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "redis"
+    assert source == "stashed_compat"
     assert snapshot is not None
-    assert snapshot["query_result"]["summary_text"] == "You spent ₦5,000 today."
+    assert snapshot["session_active"] is True
+    assert "query_result" not in snapshot
 
 
 def test_compact_payload_for_prompt_serializes_decimal_amounts() -> None:
@@ -84,17 +171,10 @@ def test_compact_payload_for_prompt_serializes_decimal_amounts() -> None:
     assert decoded["nested"]["refund_amount"] == "50.25"
 
 
-async def test_load_query_session_snapshot_marks_stale_redis_session_inactive() -> None:
+async def test_load_query_session_snapshot_ignores_stale_redis_session() -> None:
     class _Redis:
         async def get(self, key: str) -> str:
-            assert key == "query:session:2348000000306"
-            return json.dumps(
-                {
-                    "session_active": True,
-                    "timestamp": time() - 600,
-                    "query_result": {"summary_text": "You spent ₦5,000 yesterday."},
-                }
-            )
+            raise AssertionError(f"Redis should not be queried for planner session state: {key}")
 
     state = OrchestratorState(
         user_id="u_ctx_redis_stale",
@@ -103,12 +183,10 @@ async def test_load_query_session_snapshot_marks_stale_redis_session_inactive() 
         stashed_query_session=None,
     )
 
-    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "redis"
-    assert snapshot is not None
-    assert snapshot["session_active"] is False
-    assert snapshot["query_result"]["summary_text"] == "You spent ₦5,000 yesterday."
+    assert source is None
+    assert snapshot is None
 
 
 @pytest.mark.asyncio
@@ -124,12 +202,12 @@ async def test_load_query_session_snapshot_marks_stale_stashed_session_inactive(
         },
     )
 
-    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), None)
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "stashed"
+    assert source == "stashed_compat"
     assert snapshot is not None
     assert snapshot["session_active"] is False
-    assert snapshot["query_result"]["summary_text"] == "You spent ₦4,000 yesterday."
+    assert "query_result" not in snapshot
 
 
 @pytest.mark.asyncio
@@ -144,41 +222,34 @@ async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytes
         _capture,
     )
 
-    class _Redis:
-        async def get(self, key: str) -> str:
-            assert key == "query:session:2348000000313"
-            return json.dumps(
-                {
-                    "session_active": True,
-                    "query_contract": {"intent": "analytics_summary"},
-                    "query_result": {
-                        "summary_text": "You spent ₦5,000 today.",
-                        "surface_view": {"mode": "grouped_summary", "items": [], "context": {"type": "spending_total"}},
-                    },
-                    "query_frames": [{"frame_id": "qf_1"}],
-                }
-            )
-
     state = OrchestratorState(
         user_id="u_ctx_log_shape",
         phone_number="2348000000313",
         channel="whatsapp",
-        stashed_query_session=None,
+        stashed_query_session={
+            "session_active": True,
+            "query_contract": {"intent": "analytics_summary"},
+            "query_result": {
+                "summary_text": "You spent ₦5,000 today.",
+                "surface_view": {"mode": "grouped_summary", "items": [], "context": {"type": "spending_total"}},
+            },
+            "query_frames": [{"frame_id": "qf_1"}],
+        },
     )
 
-    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "redis"
+    assert source == "stashed_compat"
     assert snapshot is not None
     assert (
         "planner_query_session_snapshot",
         {
-            "query_session_source": "redis",
+            "query_session_source": "stashed_compat",
             "session_active": True,
             "has_query_contract": True,
-            "has_query_result": True,
-            "has_surface": True,
-            "has_query_frames": True,
+            "has_query_result": False,
+            "has_surface": False,
+            "has_query_frames": False,
         },
     ) in events
 
@@ -197,41 +268,34 @@ async def test_load_query_session_snapshot_logs_typed_surface_shape_without_lega
         _capture,
     )
 
-    class _Redis:
-        async def get(self, key: str) -> str:
-            assert key == "query:session:2348000000314"
-            return json.dumps(
-                {
-                    "session_active": True,
-                    "query_contract": {"intent": "analytics_summary"},
-                    "query_result": {
-                        "summary_text": "You spent ₦5,000 today.",
-                        "surface_view": {"mode": "grouped_summary", "items": [], "context": {}},
-                    },
-                    "query_frames": [{"frame_id": "qf_1"}],
-                }
-            )
-
     state = OrchestratorState(
         user_id="u_ctx_log_typed_surface",
         phone_number="2348000000314",
         channel="whatsapp",
-        stashed_query_session=None,
+        stashed_query_session={
+            "session_active": True,
+            "query_contract": {"intent": "analytics_summary"},
+            "query_result": {
+                "summary_text": "You spent ₦5,000 today.",
+                "surface_view": {"mode": "grouped_summary", "items": [], "context": {}},
+            },
+            "query_frames": [{"frame_id": "qf_1"}],
+        },
     )
 
-    snapshot, source = await _load_query_session_snapshot(planner_state_view(state), _Redis())
+    snapshot, source = await _load_query_session_snapshot(planner_state_view(state))
 
-    assert source == "redis"
+    assert source == "stashed_compat"
     assert snapshot is not None
     assert (
         "planner_query_session_snapshot",
         {
-            "query_session_source": "redis",
+            "query_session_source": "stashed_compat",
             "session_active": True,
             "has_query_contract": True,
-            "has_query_result": True,
-            "has_surface": True,
-            "has_query_frames": True,
+            "has_query_result": False,
+            "has_surface": False,
+            "has_query_frames": False,
         },
     ) in events
 
@@ -294,7 +358,7 @@ def test_turn_context_summary_builds_compact_shared_view() -> None:
     summary = build_turn_context_summary(
         state,
         query_session_snapshot={"session_active": True, "query_result": {"summary_text": "You spent ₦5,000 today."}},
-        query_session_source="redis",
+        query_session_source="context_frame",
     )
 
     assert summary.profile_name == "Gaines Doe"
@@ -302,7 +366,7 @@ def test_turn_context_summary_builds_compact_shared_view() -> None:
     assert summary.session_domain == "account"
     assert summary.recent_answer_focus == "linked_accounts_summary"
     assert summary.query_session_active is True
-    assert summary.query_session_source == "redis"
+    assert summary.query_session_source == "context_frame"
     assert summary.query_session_summary is not None
     assert "You spent ₦5,000 today." in summary.query_session_summary
     assert summary.active_flow_intent == "transfer"
@@ -374,7 +438,7 @@ def test_router_context_includes_pending_query_clarification_hint() -> None:
                 "resolver_message": "What time period did you mean by last?",
             },
         },
-        query_session_source="redis",
+        query_session_source="stashed_compat",
     )
 
     router_context = build_router_context_from_summary(summary, expected_executors=["transfer"])
@@ -393,7 +457,7 @@ def test_router_context_ignores_inactive_query_session_for_continuation() -> Non
             active_domain="query",
         ),
         query_session_snapshot={"session_active": False, "query_result": {"summary_text": "You spent ₦5,000 today."}},
-        query_session_source="redis",
+        query_session_source="context_frame",
     )
 
     router_context = build_router_context_from_summary(summary, expected_executors=["transfer"])

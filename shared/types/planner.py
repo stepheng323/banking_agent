@@ -197,7 +197,7 @@ class ScheduleTaskParameters(BaseTaskParameters):
 class QueryTaskParameters(BaseTaskParameters):
     """Read-only query task parameters."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
 
     response_shape: ResponseShape | None = None
     schedule_response_mode: Literal["list", "count"] | None = None

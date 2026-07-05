@@ -127,6 +127,8 @@ def build_breakdown_heading(
 
     if tx_type == "debit":
         base = f"Spending by {group_label}"
+    elif tx_type == "credit" and group_by == "account":
+        base = "Money came in by account"
     elif tx_type == "credit":
         base = f"Income by {group_label}"
     else:

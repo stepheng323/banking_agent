@@ -88,7 +88,11 @@ async def resolve_result_continuation_updates(
             return step._ambiguous_followup_updates(locale=locale, session=session)
 
     elif cont_type == "show_evidence":
-        if session_query_contract is None or session_query_contract.intent != QueryIntent.ANALYTICS_SUMMARY:
+        if session_query_contract is None or session_query_contract.intent not in {
+            QueryIntent.ANALYTICS_SUMMARY,
+            QueryIntent.CASH_FLOW_SUMMARY,
+            QueryIntent.TIME_COMPARISON,
+        }:
             return step._ambiguous_followup_updates(locale=locale, session=session)
         updates["query_contract"] = rebuild_query_contract(
             session_query_contract,
@@ -264,6 +268,22 @@ async def resolve_result_continuation_updates(
         )
 
     elif cont_type == "coverage":
+        list_coverage_response = _build_result_list_coverage_response(
+            restored_query_result=restored_query_result,
+            session_query_contract=session_query_contract,
+            session=session,
+        )
+        if list_coverage_response is not None:
+            return {
+                "transaction_outcome": TransactionOutcome.OK,
+                "response": list_coverage_response,
+                "session_active": True,
+                "flow_state": "complete",
+                "resolver_message": None,
+                "show_expanded": bool(session.get("show_expanded", False)),
+                "current_page": session.get("current_page", 0),
+                **step._semantic_trace_updates(decision),
+            }
         accounts_raw = state.get("accounts")
         accounts_info = (
             [account for account in accounts_raw if isinstance(account, dict)] if isinstance(accounts_raw, list) else []
@@ -313,9 +333,7 @@ async def resolve_result_continuation_updates(
         drill_down_action = decision.drill_down_action or ("answer_fact" if answer_fact_field is not None else None)
         surface_context = getattr(surface_view, "context", {}) or {} if surface_view else {}
         if drill_idx is None and surface_view is not None:
-            if len(getattr(surface_view, "items", []) or []) == 1:
-                drill_idx = 0
-            elif surface_context.get("type") in {"single_transaction", "focused_transaction"}:
+            if surface_context.get("type") in {"single_transaction", "focused_transaction"}:
                 selected_item_id = surface_context.get("selected_item_id")
                 if selected_item_id:
                     for idx, item in enumerate(items):
@@ -324,6 +342,8 @@ async def resolve_result_continuation_updates(
                             break
                 if drill_idx is None:
                     drill_idx = session.get("selected_item_index")
+            elif len(getattr(surface_view, "items", []) or []) == 1:
+                drill_idx = 0
 
         if (
             drill_idx is None
@@ -481,6 +501,31 @@ async def resolve_result_continuation_updates(
         return step._append_query_session_transition(updates, "replace_session_new_query")
 
     return updates
+
+
+def _build_result_list_coverage_response(
+    *,
+    restored_query_result: QueryResult | None,
+    session_query_contract: Any | None,
+    session: dict[str, Any],
+) -> str | None:
+    if restored_query_result is None:
+        return None
+    query_contract = restored_query_result.query_contract or session_query_contract
+    if query_contract is None or query_contract.intent != QueryIntent.TRANSACTION_LIST:
+        return None
+    visible_count = len(restored_query_result.items or [])
+    current_page = int(session.get("current_page", 0) or 0)
+    page_size = int(session.get("page_size", 5) or 5)
+    shown_count = max(visible_count, (current_page * page_size) + visible_count)
+    if restored_query_result.has_more:
+        return (
+            f"No, this is not the complete list. I have shown {shown_count} matching transactions so far, "
+            "and there are more results available."
+        )
+    if visible_count:
+        return f"Yes, that is the complete visible list for this search: {shown_count} matching transactions."
+    return "Yes, that is the complete result for this search. I did not find matching transactions."
 
 
 def _normalize_focused_aggregate_selection_payload(

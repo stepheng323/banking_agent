@@ -394,7 +394,7 @@ async def test_recent_transaction_list_defaults_to_bounded_30_day_window() -> No
     assert result.pending_clarification is None
     assert result.query_contract is not None
     assert result.query_contract["intent"] == "transaction_list"
-    assert result.query_contract["time_start"] == date(2026, 2, 26)
+    assert result.query_contract["time_start"] == date(2026, 2, 27)
     assert result.query_contract["time_end"] == date(2026, 3, 28)
 
 

@@ -472,10 +472,10 @@ def parse_deterministic(
         time_range = (
             parser._extract_relative_time_range_from_query(question)
             if explicit_time_text
-            else QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="recent_30_days", days_back=30)
+            else QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="recent_30_days", days_back=29)
         )
         if time_range is None:
-            time_range = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="recent_30_days", days_back=30)
+            time_range = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="recent_30_days", days_back=29)
         extraction = QueryExtractionResult(
             intent=QueryIntent.TRANSACTION_LIST,
             raw_query=question,

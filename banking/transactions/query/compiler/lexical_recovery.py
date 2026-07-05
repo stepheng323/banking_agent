@@ -522,7 +522,7 @@ def normalize_recent_list_time_range(extraction: QueryExtractionResult, *, raw_q
     extraction.time_range = QueryTimeRange(
         reference_type=TimeReference.EXPLICIT,
         period="recent_30_days",
-        days_back=30,
+        days_back=29,
     )
     extraction.ambiguities = [
         ambiguity

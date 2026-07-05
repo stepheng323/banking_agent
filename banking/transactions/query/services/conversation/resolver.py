@@ -29,7 +29,7 @@ def build_query_conversation_updates(
     if getattr(decision, "decision", None) != "continuation":
         return None
     continuation_type = getattr(decision, "continuation_type", None)
-    if continuation_type in {"filter_delta", "time_delta", "aggregate"}:
+    if continuation_type in {"filter_delta", "time_delta", "aggregate", "coverage"}:
         return None
     if (
         continuation_type not in {"drill_down", "recipient_drill_down"}

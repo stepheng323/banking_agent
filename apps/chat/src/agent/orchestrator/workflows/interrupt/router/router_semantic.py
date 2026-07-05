@@ -34,7 +34,7 @@ async def _route_interrupt_semantic_turn(
         summary, _ = get_or_build_turn_context_summary(
             state,
             query_session_snapshot=stashed_query_session,
-            query_session_source="stashed" if stashed_query_session is not None else None,
+            query_session_source="stashed_compat" if stashed_query_session is not None else None,
             path_label="interrupt_path",
         )
         semantic_context = build_router_context_from_summary(

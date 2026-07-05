@@ -40,7 +40,7 @@ def build_planner_context_sections(
 
     query_session_summary = getattr(turn_summary, "query_session_summary", None)
     if query_session_summary and not is_transactional_flow:
-        section_name = "query_session" if query_session_source == "redis" else "query_session_stashed"
+        section_name = "query_session_stashed_compat" if query_session_source == "stashed_compat" else "query_session"
         sections.append((section_name, _clip_text(query_session_summary, PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS)))
         logger.info("planner_context_injected", context=section_name)
 

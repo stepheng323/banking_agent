@@ -157,7 +157,7 @@ def _transaction_list_time_phrase(contract: QueryExecutionContract | None) -> st
         return "today"
     if start == end:
         return f"for {_format_lead_date(start)}"
-    if end == today and (end - start).days == 30:
+    if end == today and (end - start).days in {29, 30}:
         return "in the last 30 days"
     if end == today and start == today.replace(day=1):
         return "this month"

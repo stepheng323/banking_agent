@@ -48,8 +48,14 @@ reference/receipt-id questions to `reference`, success/state questions to `statu
 questions to `description`, and value questions to `amount`.
 If the focused item is an aggregate scope such as beneficiary, category, merchant, or account, still
 return drill_down + answer_fact. Runtime will compile the scope to a transaction fact query.
+If the active surface context has `focus_type=summary_scope`, treat follow-ups as operations on that
+summary scope: evidence/list requests show the underlying transactions, grouping requests compile a
+breakdown over the same scope, filter/time changes preserve the summary scope, and in-vs-out compare
+requests compile to cash_flow_summary over the same time range.
+If the surface context has `single_item: true` or a single focused item, classify short referential questions about one safe
+fact of that item as `continuation_type=drill_down`, `drill_down_action=answer_fact`.
 Do not classify focused-item fact questions as recheck/rerun/refresh of the previous answer.
-Examples with a single focused item:
+Examples with `single_item: true` or a single focused item:
 - date/time fact follow-up about the focused item → continuation, drill_down, answer_fact, fact_field=date
 - bank/account fact follow-up about the focused item → continuation, drill_down, answer_fact, fact_field=bank/account
 - reference fact follow-up about the focused item → continuation, drill_down, answer_fact, fact_field=reference
@@ -72,6 +78,10 @@ CONTINUATION GUIDELINES
   "last week nko", "ti ana nko", "na jiya fa", "hier alors", "la semaine dernière alors".
 - For aggregate continuations, preserve the current result scope unless user explicitly changes it.
   Include `extraction` for the derived analytical query when possible.
+- For coverage continuations, classify the user's semantic concern, not a fixed phrase. This includes:
+  completeness checks over visible rows, challenges that an expected bank/account/entity is absent,
+  sync/authorization freshness questions, and questions about whether local data covers the active
+  query window. Put the missing or challenged bank/account/entity in `target_text` when present.
 - Recheck/refresh follow-ups like "are you sure", "check again", "recheck", and "refresh" MUST be `decision=continuation`, `continuation_type=recheck`, `followup_intent=refine_existing`. YOU MUST ALSO emit a reassuring localized conversational reply in the `response_text` field (e.g. "Yes, I've checked again for you:") so the user feels heard.
 - For `show_more`, `show_evidence`, `time_delta`, and `filter_delta` continuations, YOU MUST emit a connective or transitional conversational prefix in the `response_text` field (e.g. "Here is the exact breakdown:", "Let's look at yesterday:", "Checking Tunde's transfers:").
 - For fresh queries and direct math/aggregate totals, DO NOT emit a prefix, to avoid robotic redundancy.

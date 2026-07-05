@@ -21,6 +21,7 @@ class SelectionKind(str, Enum):
     BENEFICIARY = "beneficiary"
     ACCOUNT = "account"
     REFERENT = "referent"
+    SUMMARY_SCOPE = "summary_scope"
 
 
 class SurfaceViewMode(str, Enum):
@@ -58,7 +59,7 @@ FactCapability = Literal[
 class SelectionPayload(BaseModel):
     """Stable selection payload emitted by query surfaces."""
 
-    selection_kind: Literal["transaction", "group_bucket", "beneficiary", "account", "referent"]
+    selection_kind: Literal["transaction", "group_bucket", "beneficiary", "account", "referent", "summary_scope"]
     entity_type: str = "generic"
     entity_id: str | None = None
     label: str

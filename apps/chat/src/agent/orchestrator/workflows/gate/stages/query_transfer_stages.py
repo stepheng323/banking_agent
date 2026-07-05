@@ -50,6 +50,14 @@ def _can_consider_query_domain(ctx: GateContext, *, has_active_query_session: bo
     )
 
 
+def _can_consider_structural_query_domain(ctx: GateContext) -> bool:
+    return (
+        not ctx.live_pending_interrupt
+        and not ctx.state_view.has_quote
+        and ctx.phrase_heavy_fastpath_allowed
+    )
+
+
 def _can_consider_contextual_casual_followup(ctx: GateContext, *, has_active_query_session: bool) -> bool:
     return (
         not ctx.live_pending_interrupt
@@ -351,6 +359,11 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
         return updates
     if updates := _maybe_direct_context_recap(ctx):
         return updates
+    if updates := _maybe_structural_query_domain(
+        ctx,
+        can_consider_query_domain=_can_consider_structural_query_domain(ctx),
+    ):
+        return updates
     if has_active_query_session and ctx.task_planner is not None:
         ctx.add_routing_hint(
             domain="query",
@@ -366,8 +379,6 @@ async def _stage_query_and_transfer_domain_guards(ctx: GateContext) -> dict[str,
         return updates
 
     can_consider_query_domain = _can_consider_query_domain(ctx, has_active_query_session=has_active_query_session)
-    if updates := _maybe_structural_query_domain(ctx, can_consider_query_domain=can_consider_query_domain):
-        return updates
     if _attach_query_domain_hint_if_needed(ctx, can_consider_query_domain=can_consider_query_domain):
         return None
 

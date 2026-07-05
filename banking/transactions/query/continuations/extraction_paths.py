@@ -37,6 +37,7 @@ _SHOW_EXISTING_TRANSACTIONS_MESSAGES = {
     "show me",
     "show transactions",
     "show the transactions",
+    "show the transactions behind that",
     "show details",
     "show the details",
     "list them",
@@ -59,9 +60,11 @@ def _normalize_show_existing_message(message: str) -> str:
 
 
 def _is_show_existing_transactions_followup(message: str, session_query_contract: Any | None) -> bool:
-    if session_query_contract is None or session_query_contract.intent != QueryIntent.ANALYTICS_SUMMARY:
-        return False
-    if session_query_contract.aggregation is None:
+    if session_query_contract is None or session_query_contract.intent not in {
+        QueryIntent.ANALYTICS_SUMMARY,
+        QueryIntent.CASH_FLOW_SUMMARY,
+        QueryIntent.TIME_COMPARISON,
+    }:
         return False
     return _normalize_show_existing_message(message) in _SHOW_EXISTING_TRANSACTIONS_MESSAGES
 
@@ -313,6 +316,23 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             "query_continuation_resolution", path="fallback_clarify_active_session", semantic_decision=decision.decision
         )
         return step._ambiguous_followup_updates(locale=locale, session=session)
+
+    if cont_type == "coverage":
+        return await resolve_result_continuation_updates(
+            step,
+            decision=decision,
+            cont_type=cont_type,
+            followup_intent=decision.followup_intent or "none",
+            state=state,
+            session=session,
+            session_query_contract=session_query_contract,
+            restored_query_result=restored_query_result,
+            surface_view=surface_view,
+            items=items,
+            message=message,
+            today=today,
+            locale=locale,
+        )
 
     conversation_updates = build_query_conversation_updates(
         surface_view=surface_view,

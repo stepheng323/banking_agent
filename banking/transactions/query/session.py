@@ -6,11 +6,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
-from banking.transactions.query.grounding.frames import restore_query_frames
-from banking.transactions.query.models.domain import (
-    QueryExecutionContract,
-    QueryResult,
-)
+from banking.transactions.query.models.domain import QueryExecutionContract
 from banking.transactions.query.models.extraction import PendingClarificationState
 from shared.utils.logging import get_logger
 
@@ -22,8 +18,8 @@ SESSION_TTL = 300
 def _session_has_surface_view(session: dict[str, Any]) -> bool:
     """Return whether the snapshot carries typed surface state."""
     query_result = session.get("query_result")
-    if isinstance(query_result, QueryResult):
-        return query_result.surface_view is not None
+    if hasattr(query_result, "surface_view"):
+        return getattr(query_result, "surface_view", None) is not None
     if isinstance(query_result, dict):
         return bool(query_result.get("surface_view"))
     return False
@@ -48,7 +44,7 @@ def is_query_session_stale(
 
 
 class QuerySessionManager:
-    """Manages query session state in Redis."""
+    """Manages compact legacy query compatibility state in Redis."""
 
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
@@ -74,12 +70,14 @@ class QuerySessionManager:
                     logger.warning("query_contract_restore_error", error=str(e))
                     session["query_contract"] = None
 
-            if session.get("query_result") and isinstance(session["query_result"], dict):
-                try:
-                    session["query_result"] = QueryResult.model_validate(session["query_result"])
-                except Exception as e:
-                    logger.warning("query_result_restore_error", error=str(e))
-                    session["query_result"] = None
+            # Successful query meaning now lives in orchestrator context frames.
+            # Do not restore legacy result/frame snapshots from Redis.
+            session.pop("query_result", None)
+            session.pop("query_frames", None)
+            session.pop("selected_item_index", None)
+            session.pop("selected_payload", None)
+            session.pop("cached_transactions", None)
+            session.pop("cache_fetched_at", None)
 
             if session.get("pending_clarification") and isinstance(session["pending_clarification"], dict):
                 try:
@@ -90,9 +88,6 @@ class QuerySessionManager:
                     logger.warning("pending_clarification_restore_error", error=str(e))
                     session["pending_clarification"] = None
 
-            if session.get("query_frames"):
-                session["query_frames"] = restore_query_frames(session["query_frames"])
-
             if is_query_session_stale(session):
                 logger.info(
                     "query_session_stale_disarmed",
@@ -101,9 +96,7 @@ class QuerySessionManager:
                 )
                 session["session_active"] = False
                 session["query_contract"] = None
-                session["query_result"] = None
                 session["pending_clarification"] = None
-                session["query_frames"] = []
                 session["current_page"] = 0
                 session["show_expanded"] = False
             else:
@@ -118,22 +111,15 @@ class QuerySessionManager:
         return None
 
     async def save(self, key: str, state: dict[str, Any]) -> None:
-        """Save session state to Redis."""
+        """Save compact compatibility state to Redis."""
         try:
             save_state = {}
             allowed_keys = (
                 "phone_number",
                 "account_id",
                 "account_ids",
-                "accounts",
-                "current_account_index",
-                "account_info",
                 "current_page",
                 "page_size",
-                "total_results",
-                "has_more",
-                "cached_transactions",
-                "cache_fetched_at",
                 "cache_fingerprint",
                 "cache_scope_fingerprint",
                 "cache_window_start",
@@ -141,25 +127,16 @@ class QuerySessionManager:
                 "language",
                 "session_active",
                 "query_contract",
-                "query_result",
                 "show_expanded",
                 "clarification_attempts",
-                "recipient_name",
-                "filters",
                 "pending_clarification",
-                "query_frames",
-                "selected_item_index",
                 "timestamp",
             )
             for k, v in state.items():
                 if k not in allowed_keys:
                     continue
-                if k in ("query_contract", "query_result", "pending_clarification") and v and hasattr(v, "model_dump"):
+                if k in ("query_contract", "pending_clarification") and v and hasattr(v, "model_dump"):
                     save_state[k] = v.model_dump()
-                elif k == "query_frames" and isinstance(v, list):
-                    save_state[k] = [frame.model_dump() if hasattr(frame, "model_dump") else frame for frame in v]
-                elif k == "cached_transactions" and v:
-                    save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]
                 else:
                     save_state[k] = v
             await self.redis.set(key, json.dumps(save_state, default=str), ex=SESSION_TTL)
