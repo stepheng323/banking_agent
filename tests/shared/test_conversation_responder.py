@@ -596,7 +596,7 @@ async def test_conversation_responder_unsupported_capability_rejects_loan_promis
         intent="unsupported_capability_followup",
     )
 
-    assert reply == render_message("capability.unsupported_unavailable_followup", "en", _unsupported_params("lending"))
+    assert reply == render_message("capability.unsupported_unavailable_followup_lending", "en", _unsupported_params("lending"))
 
 
 @pytest.mark.asyncio

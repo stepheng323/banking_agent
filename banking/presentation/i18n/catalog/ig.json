@@ -9,8 +9,11 @@
     "blocked_no_alternative": "Enweghị m ike ime {action} ebe a. Enwere m ike inyere gị aka naanị na ọrụ banking akwadoro. Gwa m ihe ịchọrọ ime ọzọ.",
     "generic_blocked": "Omume ahụ adịghị ugbu a. Enwere m ike inyere gị aka na ọrụ banking akwadoro. Kedu ihe ịchọrọ ime ọzọ?",
     "unsupported_unavailable": "Enweghị m ike inyere aka na {capability}. Enwere m ike inyere gị aka na {supported}.",
+    "unsupported_unavailable_lending": "Aghọtara m na ị nwere ike na-achọ enyemaka ego, mana enweghị m ike inyere gị aka na mbinye ego ma ọ bụ loan. Enwere m ike inyere gị aka ilele balance gị ma ọ bụ nyochaa transactions gị nke nso nso a.",
     "unsupported_unavailable_followup": "Aghọtara m, mana enweghị m ike inyere aka na {capability}. Enwere m ike inyere gị aka na {supported}.",
-    "unsupported_unavailable_firm": "Enweghị m ike inyere aka na {capability}. Ka anyị laghachi na banking: {supported}."
+    "unsupported_unavailable_followup_lending": "Anụrụ m gị, ma ghọta na ọ dị mkpa, mana enweghị m ike inye mbinye ego. Enwere m ike inyere gị aka ilele balance gị ma ọ bụ nyochaa transactions gị.",
+    "unsupported_unavailable_firm": "Enweghị m ike inyere aka na {capability}. Ka anyị laghachi na banking: {supported}.",
+    "unsupported_unavailable_firm_lending": "Enweghị m ike inyere aka na mbinye ego. Ka anyị lelee balance gị ma ọ bụ nyochaa transactions gị."
   },
   "planner": {
     "policy_notice_with_alternative": "Enwere m ike ịga n'ihu na {supported}. Enweghị m ike ime {unsupported} ebe a. Enwere m ike inyere gị aka na {alternative} kama. Zaghachi nhọrọ gị.",

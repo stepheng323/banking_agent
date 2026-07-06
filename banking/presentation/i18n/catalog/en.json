@@ -9,8 +9,11 @@
     "blocked_no_alternative": "{action} isn't available yet. I can help with supported banking tasks only. Tell me what you want to do next.",
     "generic_blocked": "That action isn't available yet. I can help with supported banking tasks. What would you like to do next?",
     "unsupported_unavailable": "I can't help with {capability}. I can help with {supported}.",
+    "unsupported_unavailable_lending": "I understand you might be looking for financial support, but I cannot assist with loans or lending. I can help you check your balances or review recent transactions.",
     "unsupported_unavailable_followup": "I hear you, but I can't help with {capability}. I can help with {supported}.",
-    "unsupported_unavailable_firm": "I can't help with {capability}. Let's switch back to banking: {supported}."
+    "unsupported_unavailable_followup_lending": "I hear you, and I understand it is important, but I really cannot help with loans or lending. I can assist with checking balances or reviewing transactions.",
+    "unsupported_unavailable_firm": "I can't help with {capability}. Let's switch back to banking: {supported}.",
+    "unsupported_unavailable_firm_lending": "I cannot support loan or lending requests. Let's focus on checking your balances or reviewing recent transactions."
   },
   "planner": {
     "policy_notice_with_alternative": "I can proceed with {supported}. I can't handle {unsupported} here. I can help with {alternative} instead. Reply with your choice.",

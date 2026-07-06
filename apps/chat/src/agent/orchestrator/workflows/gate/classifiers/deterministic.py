@@ -8,6 +8,7 @@ from apps.chat.src.agent.orchestrator.capabilities.unsupported_capability_presen
     unsupported_capability_params,
 )
 from banking.presentation.i18n.message_keys import MessageKey
+from banking.presentation.i18n.renderer import message_key_exists
 from shared.branding import brand_name_aliases, normalize_brand_name
 
 DETERMINISTIC_GREETING_EXACT = {
@@ -303,8 +304,11 @@ def classify_deterministic_meta_response(message_text: str) -> DeterministicMeta
         return _meta_response("conversational.brand_origin")
     unsupported_capability = detect_unsupported_capability(normalized)
     if unsupported_capability is not None:
+        base_key = "capability.unsupported_unavailable"
+        specific_key = f"{base_key}_{unsupported_capability.key}"
+        response_key = specific_key if message_key_exists(specific_key, "en") else base_key
         return _meta_response(
-            "capability.unsupported_unavailable",
+            response_key,
             params=unsupported_capability_params(unsupported_capability),
         )
     if normalized in DETERMINISTIC_CAPABILITY_EXACT:

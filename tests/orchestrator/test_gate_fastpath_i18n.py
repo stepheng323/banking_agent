@@ -72,6 +72,42 @@ def _unsupported_params(key: str, *, locale: str | None = None) -> dict[str, obj
     return unsupported_capability_params(capability, locale=locale)
 
 
+def _active_query_context_frame(
+    *,
+    summary_text: str = "Query result",
+    query_contract: dict[str, object] | None = None,
+    frame_id: str = "active-query-frame",
+) -> ContextFrame:
+    contract = query_contract or {
+        "intent": "transaction_list",
+        "time_start": "2026-03-01",
+        "time_end": "2026-03-19",
+        "timezone": "Africa/Lagos",
+        "filters": {"transaction_type": "debit"},
+        "result_limit": 5,
+    }
+    return ContextFrame(
+        frame_id=frame_id,
+        frame_type=ContextFrameType.TRANSACTION_LIST,
+        items=[
+            ContextEntity(
+                entity_id="query-item-1",
+                entity_type=EntityType.TRANSACTION,
+                label=summary_text,
+                data={"amount": 1000},
+            )
+        ],
+        created_at_ts=int(time.time()),
+        metadata={
+            "source": "query",
+            "summary_text": summary_text,
+            "query_contract": contract,
+            "surface_mode": "direct_answer",
+            "surface_context": {"mode": "direct_answer"},
+        },
+    )
+
+
 def test_obvious_casual_classifier_recognizes_fact_requests_without_banking_terms() -> None:
     assert looks_like_obvious_casual_or_meta_turn("Can you tell me something so weird but true")
     assert looks_like_obvious_casual_or_meta_turn("Tell me a fun fact")
@@ -638,7 +674,7 @@ def test_brand_origin_meaning_variants_use_brand_settings(monkeypatch: pytest.Mo
 def test_lending_requests_use_capability_boundary(message_text: str) -> None:
     _assert_meta_response(
         message_text,
-        "capability.unsupported_unavailable",
+        "capability.unsupported_unavailable_lending",
         params=_unsupported_params("lending"),
     )
 
@@ -778,7 +814,7 @@ async def test_gate_lending_request_uses_capability_boundary_without_semantic_ro
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == render_message(
-        "capability.unsupported_unavailable",
+        "capability.unsupported_unavailable_lending",
         "en",
         _unsupported_params("lending"),
     )
@@ -1195,7 +1231,7 @@ async def test_gate_lending_followup_uses_capability_boundary_before_context_fra
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
-        "capability.unsupported_unavailable_followup",
+        "capability.unsupported_unavailable_followup_lending",
         "en",
         _unsupported_params("lending"),
     )
@@ -1262,7 +1298,7 @@ async def test_gate_lending_followup_gets_firm_redirect_after_two_followups() ->
 
     assert updates["semantic_path_shape"] == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
-        "capability.unsupported_unavailable_firm",
+        "capability.unsupported_unavailable_firm_lending",
         "en",
         _unsupported_params("lending"),
     )
@@ -1302,7 +1338,7 @@ async def test_gate_lending_payback_followup_stays_in_capability_boundary() -> N
     assert planner.route_calls == 0
     assert updates["semantic_path_shape"] == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
-        "capability.unsupported_unavailable_followup",
+        "capability.unsupported_unavailable_followup_lending",
         "en",
         _unsupported_params("lending"),
     )
@@ -1321,7 +1357,7 @@ async def test_gate_lending_payback_followup_infers_recent_boundary_from_history
             reason="semantic router should not run",
         ),
     )
-    refusal = render_message("capability.unsupported_unavailable", "en", _unsupported_params("lending"))
+    refusal = render_message("capability.unsupported_unavailable_lending", "en", _unsupported_params("lending"))
     state = OrchestratorState(
         user_id="u_gate_lending_history_followup",
         phone_number="2348777777728",
@@ -1351,7 +1387,7 @@ async def test_gate_lending_payback_followup_infers_recent_boundary_from_history
     assert planner.route_calls == 0
     assert updates["semantic_path_shape"] == "capability_boundary_followup"
     assert updates["final_response"] == render_message(
-        "capability.unsupported_unavailable_followup",
+        "capability.unsupported_unavailable_followup_lending",
         "en",
         _unsupported_params("lending"),
     )
@@ -2453,7 +2489,7 @@ async def test_gate_query_shortcut_followup_uses_semantic_router_without_pending
                 interrupt_policy="ALLOW",
             )
         ],
-        stashed_query_session={"session_active": True, "query_result": {"summary_text": "Showing 1-5 of 8"}},
+        context_frames=[_active_query_context_frame(summary_text="Showing 1-5 of 8")],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -2495,6 +2531,8 @@ async def test_gate_query_followup_preempts_stale_unsupported_boundary_llm() -> 
         phone_number="2348999999997",
         channel="whatsapp",
         last_message_text="What bank was that?",
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         capability_boundary=CapabilityBoundary(key="lending", label="loans or lending", followup_count=1),
         context_frames=[
             ContextFrame(
@@ -2509,9 +2547,19 @@ async def test_gate_query_followup_preempts_stale_unsupported_boundary_llm() -> 
                     )
                 ],
                 created_at_ts=int(time.time()),
+                metadata={
+                    "source": "query",
+                    "summary_text": "Airtime for My Number",
+                    "query_contract": {
+                        "intent": "transaction_list",
+                        "time_start": "2026-03-01",
+                        "time_end": "2026-03-19",
+                        "timezone": "Africa/Lagos",
+                    },
+                    "surface_mode": "transaction_list",
+                },
             )
         ],
-        stashed_query_session={"session_active": True, "query_result": {"summary_text": "Showing transaction 1"}},
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -2519,7 +2567,7 @@ async def test_gate_query_followup_preempts_stale_unsupported_boundary_llm() -> 
 
     assert planner.boundary_calls == 0
     assert planner.route_calls == 1
-    assert updates["capability_boundary"] is None
+    assert updates.get("capability_boundary") is None
     assert updates["semantic_path_shape"] == "semantic_router_domain"
     assert updates["routing_decision"] == "domain_query"
     task = updates["tasks"]["direct_query"]
@@ -2548,30 +2596,20 @@ async def test_gate_active_query_owns_direct_context_answer_followup() -> None:
         loaded_context={"language": "en"},
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {
-                "intent": "beneficiary_summary",
-                "time_start": "2026-06-01",
-                "time_end": "2026-06-27",
-                "timezone": "Africa/Lagos",
-                "filters": {"transaction_type": "credit"},
-                "aggregation": {"type": "sum", "sort_by": "amount", "limit": 5},
-                "result_limit": 1,
-            },
-            "query_result": {
-                "summary_text": "Acme Corp sent you the most this month: ₦950,000.",
-                "items": [
-                    {
-                        "id": "bene_1",
-                        "description": "Acme Corp",
-                        "amount": 950000,
-                        "date": "2026-06-24",
-                        "metadata": {"count": 1, "recipient_name": "Acme Corp"},
-                    }
-                ],
-            },
-        },
+        context_frames=[
+            _active_query_context_frame(
+                summary_text="Acme Corp sent you the most this month: ₦950,000.",
+                query_contract={
+                    "intent": "beneficiary_summary",
+                    "time_start": "2026-06-01",
+                    "time_end": "2026-06-27",
+                    "timezone": "Africa/Lagos",
+                    "filters": {"transaction_type": "credit"},
+                    "aggregation": {"type": "sum", "sort_by": "amount", "limit": 5},
+                    "result_limit": 1,
+                },
+            )
+        ],
     )
     config: RunnableConfig = {
         "configurable": {
@@ -2617,17 +2655,8 @@ async def test_gate_time_rescope_followup_bypasses_planner_without_context_frame
         channel="whatsapp",
         last_message_text="What about yesterday",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {
-                "intent": "analytics_summary",
-                "time_start": "2026-06-08",
-                "time_end": "2026-06-08",
-                "timezone": "Africa/Lagos",
-                "aggregation": {"type": "count"},
-            },
-            "query_result": {"summary_text": "You made 4 transaction(s) today."},
-        },
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -2665,17 +2694,8 @@ async def test_gate_assertive_time_correction_bypasses_planner_without_context_f
         channel="whatsapp",
         last_message_text="I said yesterday",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {
-                "intent": "analytics_summary",
-                "time_start": "2026-06-08",
-                "time_end": "2026-06-08",
-                "timezone": "Africa/Lagos",
-                "aggregation": {"type": "count"},
-            },
-            "query_result": {"summary_text": "You made 4 transaction(s) today."},
-        },
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -2719,17 +2739,8 @@ async def test_gate_multilingual_active_query_time_followups_use_semantic_router
         channel="whatsapp",
         last_message_text=message_text,
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {
-                "intent": "analytics_summary",
-                "time_start": "2026-06-08",
-                "time_end": "2026-06-08",
-                "timezone": "Africa/Lagos",
-                "aggregation": {"type": "count"},
-            },
-            "query_result": {"summary_text": "You made 4 transaction(s) today."},
-        },
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -2768,11 +2779,8 @@ async def test_gate_active_query_fresh_transfer_uses_semantic_router_and_clears_
         channel="whatsapp",
         last_message_text="Send 5k to Adebayo",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {"intent": "analytics_summary"},
-            "query_result": {"summary_text": "You made 4 transaction(s) today."},
-        },
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {
         "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
@@ -2787,9 +2795,8 @@ async def test_gate_active_query_fresh_transfer_uses_semantic_router_and_clears_
     assert updates["semantic_path_shape"] == "semantic_router_domain"
     assert updates["routing_decision"] == "domain_transfer"
     assert updates["routing_target_domain"] == "transfer"
-    assert updates["stashed_query_session"] is None
+    assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
-    assert redis_client.deleted_keys == ["query:session:2348999999973"]
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 5k to Adebayo"
@@ -2815,11 +2822,8 @@ async def test_gate_active_query_mixed_transaction_uses_semantic_router_and_clea
         channel="whatsapp",
         last_message_text="Send 10k to Adebayo and buy me 2k airtime",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {"intent": "analytics_summary"},
-            "query_result": {"summary_text": "You made 4 transaction(s) today."},
-        },
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {
         "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
@@ -2834,9 +2838,8 @@ async def test_gate_active_query_mixed_transaction_uses_semantic_router_and_clea
     assert updates["routing_owner"] == "planner"
     assert updates["routing_decision"] == "planner_mixed"
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
-    assert updates["stashed_query_session"] is None
+    assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
-    assert redis_client.deleted_keys == ["query:session:2348999999974"]
 
 
 async def test_gate_active_query_session_preempts_context_frame_followup() -> None:
@@ -2860,7 +2863,8 @@ async def test_gate_active_query_session_preempts_context_frame_followup() -> No
         channel="whatsapp",
         last_message_text="details",
         loaded_context={"language": "en"},
-        stashed_query_session={"session_active": True, "query_result": {"summary_text": "Showing 1-5 of 8"}},
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         context_frames=[
             ContextFrame(
                 frame_id="surface_tx_details",
@@ -2918,23 +2922,21 @@ async def test_gate_latest_fact_next_followup_stays_in_active_query_session() ->
         channel="whatsapp",
         last_message_text="Then who next?",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {
-                "intent": "transaction_search",
-                "time_start": "2026-04-01",
-                "time_end": "2026-04-10",
-                "timezone": "Africa/Lagos",
-                "filters": {"transaction_type": "debit"},
-                "result_limit": 1,
-                "result_reference": "latest",
-                "answer_fact_field": "counterparty",
-            },
-            "query_result": {
-                "summary_text": "The last person you sent money to was Mum.",
-                "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
-            },
-        },
+        context_frames=[
+            _active_query_context_frame(
+                summary_text="The last person you sent money to was Mum.",
+                query_contract={
+                    "intent": "transaction_search",
+                    "time_start": "2026-04-01",
+                    "time_end": "2026-04-10",
+                    "timezone": "Africa/Lagos",
+                    "filters": {"transaction_type": "debit"},
+                    "result_limit": 1,
+                    "result_reference": "latest",
+                    "answer_fact_field": "counterparty",
+                },
+            )
+        ],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -8606,7 +8608,7 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
         loaded_context={"language": "en"},
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
-        stashed_query_session={"session_active": True, "query_result": {"summary_text": "No spend yesterday."}},
+        context_frames=[_active_query_context_frame(summary_text="No spend yesterday.")],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -8640,10 +8642,10 @@ async def test_gate_routes_show_me_active_query_followup_directly_to_query_worke
         channel="whatsapp",
         last_message_text="show me",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_result": {"summary_text": "You spent ₦60,000 on mum this week."},
-            "query_contract": {
+        context_frames=[
+            _active_query_context_frame(
+                summary_text="You spent ₦60,000 on mum this week.",
+                query_contract={
                 "intent": "analytics_summary",
                 "time_start": "2026-03-16",
                 "time_end": "2026-03-19",
@@ -8654,8 +8656,9 @@ async def test_gate_routes_show_me_active_query_followup_directly_to_query_worke
                     "filters": {"transaction_type": "debit", "merchant": ["mum"]},
                     "accounts_scope": "all",
                 },
-            },
-        },
+                },
+            )
+        ],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -8690,10 +8693,10 @@ async def test_gate_routes_last_week_active_query_followup_directly_to_query_wor
         channel="whatsapp",
         last_message_text="What about last week",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_result": {"summary_text": "You spent ₦60,000 on mum this week."},
-            "query_contract": {
+        context_frames=[
+            _active_query_context_frame(
+                summary_text="You spent ₦60,000 on mum this week.",
+                query_contract={
                 "intent": "analytics_summary",
                 "time_start": "2026-03-16",
                 "time_end": "2026-03-19",
@@ -8704,8 +8707,9 @@ async def test_gate_routes_last_week_active_query_followup_directly_to_query_wor
                     "filters": {"transaction_type": "debit", "merchant": ["mum"]},
                     "accounts_scope": "all",
                 },
-            },
-        },
+                },
+            )
+        ],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -8739,10 +8743,10 @@ async def test_gate_routes_how_much_total_active_query_followup_directly_to_quer
         channel="whatsapp",
         last_message_text="How much total",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_result": {"summary_text": "You showed 5 transactions to Mum this month.", "items": []},
-            "query_contract": {
+        context_frames=[
+            _active_query_context_frame(
+                summary_text="You showed 5 transactions to Mum this month.",
+                query_contract={
                 "intent": "transaction_list",
                 "time_start": "2026-03-01",
                 "time_end": "2026-03-19",
@@ -8753,8 +8757,9 @@ async def test_gate_routes_how_much_total_active_query_followup_directly_to_quer
                     "filters": {"transaction_type": "debit", "merchant": ["mum"]},
                     "accounts_scope": "all",
                 },
-            },
-        },
+                },
+            )
+        ],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -8802,10 +8807,10 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
         channel="whatsapp",
         last_message_text="show me",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "query_result": {"summary_text": "You spent ₦60,000 on mum this week."},
-            "query_contract": {
+        context_frames=[
+            _active_query_context_frame(
+                summary_text="You spent ₦60,000 on mum this week.",
+                query_contract={
                 "intent": "analytics_summary",
                 "time_start": "2026-03-16",
                 "time_end": "2026-03-19",
@@ -8816,8 +8821,9 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
                     "filters": {"transaction_type": "debit", "merchant": ["mum"]},
                     "accounts_scope": "all",
                 },
-            },
-        },
+                },
+            )
+        ],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -8853,13 +8859,8 @@ async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> Non
         channel="whatsapp",
         last_message_text="Hi",
         loaded_context={"language": "en"},
-        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
-        stashed_query_session={
-            "session_active": True,
-            "query_contract": {"intent": "transaction_search"},
-            "query_result": {"summary_text": "Result"},
-        },
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner}, "recursion_limit": 50}
 
@@ -8869,9 +8870,8 @@ async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> Non
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "en")
-    assert updates["stashed_query_session"] is None
+    assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
-    assert updates["active_domain"] is None
     assert "tasks" not in updates or "direct_query" not in updates["tasks"]
 
 
@@ -8887,7 +8887,6 @@ async def test_gate_semantic_router_cancel_response_clears_query_state() -> None
             reason="explicit cancel",
         )
     )
-    redis_client = _TrackingRedis()
     state = OrchestratorState(
         user_id="u_gate_8",
         phone_number="2348000000008",
@@ -8899,10 +8898,9 @@ async def test_gate_semantic_router_cancel_response_clears_query_state() -> None
         tasks={"t1": TaskSpec(id="t1", type="query", stage=TaskStage.DRAFT, payload={"message": "more"})},
         waves=[["t1"]],
         current_wave_index=0,
-        stashed_query_session={"session_active": True},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner, "redis_client": redis_client},
+        "configurable": {"task_planner": planner, "semantic_router_llm": planner, "capability_classifier_llm": planner},
         "recursion_limit": 50,
     }
 
@@ -8912,10 +8910,8 @@ async def test_gate_semantic_router_cancel_response_clears_query_state() -> None
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "semantic_router_direct"
     assert updates["final_response"] == render_cancelled_prompt("en")
-    assert updates["stashed_query_session"] is None
+    assert updates.get("active_domain") is None
     assert updates["session_stack"] == []
-    assert updates["active_domain"] is None
-    assert redis_client.deleted_keys
 
 
 async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> None:
@@ -8933,42 +8929,24 @@ async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> No
     assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == render_message("conversational.clarify", "en")
 
-
 async def test_gate_explicit_cancel_during_pending_query_clarification_uses_query_goodbye() -> None:
-    redis_client = _TrackingRedisWithSession(None)
     state = OrchestratorState(
         user_id="u_gate_query_cancel_1",
         phone_number="2348000000019",
         channel="whatsapp",
         last_message_text="abort",
         loaded_context={"language": "en"},
-        stashed_query_session={
-            "session_active": True,
-            "pending_clarification": {
-                "kind": "pending_clarification",
-                "original_query": "How much did I spend last",
-                "current_intent": "spending_total",
-                "original_extraction": {
-                    "intent": "spending_total",
-                    "filters": {},
-                    "time_range": {"reference_type": "vague", "days_back": 30},
-                    "requested_capabilities": [],
-                    "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}],
-                    "raw_query": "How much did I spend last",
-                },
-                "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}],
-                "resolver_message": "What time period did you mean by last?",
-                "language": "en",
-            },
-        },
+        active_domain="query",
+        session_stack=[ActiveSession(domain="query", state="WAITING_FOR_INPUT", interrupt_policy="ALLOW")],
     )
-    config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
     updates = await session_gate_direct_path(state, config)
 
     assert updates["direct_path_triggered"] is True
-    assert updates["final_response"] == render_message("query.session.goodbye", "en")
-    assert redis_client.deleted_keys == ["query:session:2348000000019"]
+    assert updates["final_response"] == render_cancelled_prompt("en")
+    assert updates.get("active_domain") is None
+    assert updates["session_stack"] == []
 
 
 async def test_gate_pending_query_clarification_time_reply_uses_semantic_router() -> None:
@@ -9059,7 +9037,6 @@ async def test_gate_stale_query_interrupt_is_cleared_before_fresh_query_routing(
 
 
 async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance() -> None:
-    redis_client = _TrackingRedis()
     state = OrchestratorState(
         user_id="u_gate_9",
         phone_number="2348000000009",
@@ -9071,9 +9048,8 @@ async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance
         tasks={"t1": TaskSpec(id="t1", type="query", stage=TaskStage.DRAFT, payload={"message": "more"})},
         waves=[["t1"]],
         current_wave_index=0,
-        stashed_query_session={"session_active": True},
     )
-    config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
     updates = await session_gate_direct_path(state, config)
 
@@ -9088,13 +9064,10 @@ async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance
     assert task.payload["action"] == "check_balance"
     assert task.payload["skip_parse"] is True
     assert updates["session_stack"] == []
-    assert updates["active_domain"] is None
-    assert updates["stashed_query_session"] is None
-    assert redis_client.deleted_keys == ["query:session:2348000000009"]
+    assert updates.get("active_domain") is None
 
 
 async def test_gate_lending_request_blocks_even_with_stale_support_context() -> None:
-    # Set up state with stale support context so that stale_context_arbitration is eligible
     redis = _RedisWithSupportContext(
         {
             "last_transaction_ref": "tx-success",
@@ -9112,9 +9085,6 @@ async def test_gate_lending_request_blocks_even_with_stale_support_context() -> 
         session_stack=[],
     )
 
-    # We will pass a dummy/mock planner and semantic router LLM. If the semantic router
-    # or planner LLM is called, they will raise an exception or fail, because we expect
-    # the deterministic guard to intercept the call before calling the LLM.
     class FailingPlanner:
         async def route_semantic_turn(self, *args, **kwargs):
             raise AssertionError("Semantic router LLM should not be called!")
@@ -9138,7 +9108,7 @@ async def test_gate_lending_request_blocks_even_with_stale_support_context() -> 
     assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == render_message(
-        "capability.unsupported_unavailable",
+        "capability.unsupported_unavailable_lending",
         "en",
         _unsupported_params("lending"),
     )

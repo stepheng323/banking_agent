@@ -32,21 +32,27 @@ from apps.chat.src.agent.orchestrator.workflows.gate.utils.unsupported_capabilit
     semantic_boundary_turn,
     semantic_unsupported_capability,
 )
-from banking.presentation.i18n.renderer import render_message
+from banking.presentation.i18n.renderer import render_message, message_key_exists
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _resolve_unsupported_key(base_key: str, capability_key: str, locale: str) -> str:
+    specific_key = f"{base_key}_{capability_key}"
+    if message_key_exists(specific_key, locale):
+        return specific_key
+    return base_key
 
 
 async def _query_can_own_capability_turn(ctx: GateContext) -> bool:
     if _is_query_domain_request(ctx.message_text):
         return True
 
-    await ctx.ensure_query_session()
     bypass_reason, _ = _query_followup_bypass_reason(
         message_text=ctx.message_text,
         locale=ctx.current_locale,
-        query_session_snapshot=ctx.query_session_snapshot if isinstance(ctx.query_session_snapshot, dict) else None,
+        has_active_query_session=await ctx.has_active_query_session(),
         has_context_frames=ctx.state_view.has_context_frames,
     )
     return bypass_reason is not None
@@ -70,7 +76,11 @@ async def _stage_deterministic_unsupported_capability(ctx: GateContext) -> dict[
             label=capability.label,
         ),
         "direct_path_triggered": True,
-        "final_response": render_message("capability.unsupported_unavailable", locale, params),
+        "final_response": render_message(
+            _resolve_unsupported_key("capability.unsupported_unavailable", capability.key, locale),
+            locale,
+            params,
+        ),
         "semantic_path_shape": "meta_direct",
         **_route_observability_updates(
             owner="guardrail",
@@ -101,7 +111,11 @@ async def _stage_semantic_unsupported_capability(ctx: GateContext) -> dict[str, 
         **ctx.gate_updates,
         "capability_boundary": CapabilityBoundary(key=capability.key, label=capability.label),
         "direct_path_triggered": True,
-        "final_response": render_message("capability.unsupported_unavailable", ctx.current_locale, params),
+        "final_response": render_message(
+            _resolve_unsupported_key("capability.unsupported_unavailable", capability.key, ctx.current_locale),
+            ctx.current_locale,
+            params,
+        ),
         "semantic_path_shape": "semantic_unsupported_capability",
         **_route_observability_updates(
             owner="guardrail",
@@ -192,9 +206,17 @@ async def _stage_capability_boundary_followup(ctx: GateContext) -> dict[str, Any
     params = unsupported_capability_params(capability, locale=ctx.current_locale)
     response: str | None
     if next_count > FOLLOWUP_CONVERSATIONAL_LIMIT:
-        response = render_message("capability.unsupported_unavailable_firm", ctx.current_locale, params)
+        response = render_message(
+            _resolve_unsupported_key("capability.unsupported_unavailable_firm", capability.key, ctx.current_locale),
+            ctx.current_locale,
+            params,
+        )
     else:
-        response = render_message("capability.unsupported_unavailable_followup", ctx.current_locale, params)
+        response = render_message(
+            _resolve_unsupported_key("capability.unsupported_unavailable_followup", capability.key, ctx.current_locale),
+            ctx.current_locale,
+            params,
+        )
 
     logger.info(
         "gate_unsupported_capability_followup",

@@ -169,7 +169,7 @@ UNSUPPORTED_CAPABILITY_REGISTRY: tuple[UnsupportedCapability, ...] = (
             "mbinye",
             "binye",
         ),
-        planner_alternatives=("send money", "check balances"),
+        planner_alternatives=("check balances", "review recent transactions"),
         safety_note="Do not lend money, arrange loans, approve credit, or suggest lenders.",
         labels_by_locale={
             "pcm": "loans or lending",

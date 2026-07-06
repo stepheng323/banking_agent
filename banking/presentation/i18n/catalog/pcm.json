@@ -9,8 +9,11 @@
     "blocked_no_alternative": "I no fit do {action} here. Na only supported banking tasks I fit handle. Tell me wetin you wan do next.",
     "generic_blocked": "That action never dey available yet. I fit help with supported banking tasks. Wetin you wan do next?",
     "unsupported_unavailable": "I no fit help with {capability}. I fit help with {supported}.",
+    "unsupported_unavailable_lending": "I understand say you fit need money, but I no fit help with loan or borrowing. I fit help you check balance or look your recent transactions.",
     "unsupported_unavailable_followup": "I hear you, but I no fit help with {capability}. I fit help with {supported}.",
-    "unsupported_unavailable_firm": "I no fit help with {capability}. Make we return to banking: {supported}."
+    "unsupported_unavailable_followup_lending": "I hear you, and I understand say e important, but I really no fit help with loan. I fit help you check balance or review your transactions.",
+    "unsupported_unavailable_firm": "I no fit help with {capability}. Make we return to banking: {supported}.",
+    "unsupported_unavailable_firm_lending": "I no fit do loan matter. Make we check your balance or look your recent transactions instead."
   },
   "planner": {
     "policy_notice_with_alternative": "I fit continue with {supported}. I no fit handle {unsupported} here. I fit help with {alternative} instead. Reply your choice.",

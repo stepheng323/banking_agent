@@ -9,8 +9,11 @@
     "blocked_no_alternative": "Ba zan iya yin {action} a nan ba. Zan iya taimakawa da ayyukan banking da ake goyon baya kawai. Ka fada abin da kake son yi na gaba.",
     "generic_blocked": "Wannan aikin bai samu ba tukuna. Zan iya taimakawa da ayyukan banking da ake goyon baya. Me kake son yi na gaba?",
     "unsupported_unavailable": "Ba zan iya taimakawa da {capability} ba. Zan iya taimakawa da {supported}.",
+    "unsupported_unavailable_lending": "Na fahimci kana buƙatar tallafin kuɗi, amma ba zan iya taimaka maka da bashi ko lamuni ba. Zan iya taimaka maka ka duba balance ɗinka ko bincika transactions ɗinka na baya.",
     "unsupported_unavailable_followup": "Na gane, amma ba zan iya taimakawa da {capability} ba. Zan iya taimakawa da {supported}.",
-    "unsupported_unavailable_firm": "Ba zan iya taimakawa da {capability} ba. Mu koma banking: {supported}."
+    "unsupported_unavailable_followup_lending": "Na ji ka, kuma na fahimci cewa yana da muhimmanci, amma ba zan iya ba da bashi ba. Zan iya taimaka maka ka duba balance ko bincika transactions ɗinka.",
+    "unsupported_unavailable_firm": "Ba zan iya taimakawa da {capability} ba. Mu koma banking: {supported}.",
+    "unsupported_unavailable_firm_lending": "Ba zan iya taimakawa da maganar bashi ba. Bari mu koma kan duba balance ko bincika transactions ɗinka."
   },
   "planner": {
     "policy_notice_with_alternative": "Zan iya ci gaba da {supported}. Ba zan iya yin {unsupported} a nan ba. Zan iya taimakawa da {alternative} maimakon haka. Ka amsa zabinka.",

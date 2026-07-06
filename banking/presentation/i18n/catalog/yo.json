@@ -9,8 +9,11 @@
     "blocked_no_alternative": "Mi o le ṣe {action} nibi. Mo le ran ọ lọwọ pẹlu awọn iṣẹ banking to wa nikan. Sọ ohun to fẹ ṣe nigbamii.",
     "generic_blocked": "Iṣe yẹn ko si sibẹ. Mo le ran ọ lọwọ pẹlu awọn iṣẹ banking to wa. Kini o fẹ ṣe nigbamii?",
     "unsupported_unavailable": "Mi o le ran ọ lọwọ pẹlu {capability}. Mo le ran ọ lọwọ pẹlu {supported}.",
+    "unsupported_unavailable_lending": "Mo loye pe o le nilo atilẹyin owo, ṣugbọn mi o le ran ọ lọwọ pẹlu awin tabi loan. Mo le ran ọ lọwọ lati wo balance rẹ tabi awọn transaction to kọja.",
     "unsupported_unavailable_followup": "Mo gbọ ọ, ṣugbọn mi o le ran ọ lọwọ pẹlu {capability}. Mo le ran ọ lọwọ pẹlu {supported}.",
-    "unsupported_unavailable_firm": "Mi o le ran ọ lọwọ pẹlu {capability}. Jẹ ki a pada si banking: {supported}."
+    "unsupported_unavailable_followup_lending": "Mo gbọ ọ, ati pe mo loye pe o ṣe pataki, ṣugbọn mi o le ran ọ lọwọ pẹlu loan. Mo le ran ọ lọwọ lati yẹ balance rẹ wo tabi wo awọn transaction rẹ.",
+    "unsupported_unavailable_firm": "Mi o le ran ọ lọwọ pẹlu {capability}. Jẹ ki a pada si banking: {supported}.",
+    "unsupported_unavailable_firm_lending": "Mi o le ran ọ lọwọ pẹlu ọrọ loan. Jẹ ki a pada si bi a ṣe le wo balance tabi yẹ awọn transaction wo."
   },
   "planner": {
     "policy_notice_with_alternative": "Mo le tẹsiwaju pẹlu {supported}. Mi o le ṣe {unsupported} nibi. Mo le ran ọ lọwọ pẹlu {alternative} dipo. Dahun yiyan rẹ.",
